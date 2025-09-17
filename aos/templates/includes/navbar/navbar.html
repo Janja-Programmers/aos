@@ -1,0 +1,83 @@
+<nav class="navbar navbar-light navbar-expand-lg">
+	<div class="container d-flex align-items-center justify-content-between">
+		<a class="navbar-brand" href="{{ url_prefix }}{{ home_page or "/" }}">
+			{%- if brand_html -%}
+				{{ brand_html }}
+			{%- elif banner_image -%}
+				<img src='{{ banner_image }}'>
+			{%- else -%}
+				<span>{{ (frappe.get_hooks("brand_html") or [_("Home")])[0] }}</span>
+			{%- endif -%}
+		</a>
+
+		<ul class="navbar-nav flex-row align-items-center ml-auto list-unstyled mb-0 order-1 order-lg-2">
+			<li class="shopping-cart cart-icon hidden">
+				<a class="nav-link" href="/cart">
+					<svg class="icon icon-lg">
+						<use href="#icon-assets"></use>
+					</svg>
+					<span class="badge badge-primary shopping-badge" id="cart-count"></span>
+				</a>
+			</li>
+			{% if frappe.db.get_single_value("Webshop Settings", "enable_wishlist") %}
+			<li class="wishlist wishlist-icon hidden">
+				<a class="nav-link" href="/wishlist">
+					<svg class="icon icon-lg">
+						<use href="#icon-heart"></use>
+					</svg>
+					<span class="badge badge-primary shopping-badge" id="wish-count"></span>
+				</a>
+			</li>
+			{% endif %}
+		<!-- post login tools -->
+			{% if not only_static %}
+				{% if frappe.session.user != 'Guest' %}
+				<li class="nav-item dropdown logged-in" id="website-post-login" data-label="website-post-login" style="display: none">
+					<a href="#" class="nav-link nav-avatar" data-toggle="dropdown">
+						<span class="user-image-wrapper"></span>
+					</a>
+					<ul class="dropdown-menu dropdown-menu-right" role="menu">
+						{%- for child in post_login -%}
+						{%- if child.url -%}
+						<a class="dropdown-item" href="{{ child.url | abs_url }}"  {% if child.open_in_new_tab %} target="_blank" {% endif %} rel="nofollow">
+							{{ child.label }}
+						</a>
+						{%- endif -%}
+						{%- endfor -%}
+						<a class="dropdown-item switch-to-desk hidden" href="/app">{{ _('Switch To Desk') }}</a>
+						<a class="dropdown-item apps hidden" href="/apps">{{ _('Apps') }}</a>
+					</ul>
+				</li>
+				{% endif %}
+
+				{% if not hide_login %}
+					{% if frappe.session.user == 'Guest' %}
+						<li class="nav-item mr-2">
+							<a class="nav-link btn-login-area" href="/login">{{ _("Login") }}</a>
+						</li>
+						<li class="nav-item">
+							<a class="btn-login-area btn btn-primary" href="/login#signup">{{ _("Register") }}</a>
+						</li>
+					{% endif %}
+				{% endif %}
+			{% endif %}
+
+			<li class="nav-item ml-2">
+				<button class="navbar-toggler" type="button"
+					data-toggle="collapse"
+					data-target="#navbarSupportedContent"
+					aria-controls="navbarSupportedContent"
+					aria-expanded="false"
+					aria-label="Toggle navigation">
+					<img src="/assets/aos/icons/menu.svg" alt="Menu Icon" class="icon icon-lg">
+				</button>
+			</li>
+		</ul>
+		<div class="collapse navbar-collapse order-2 order-lg-1" id="navbarSupportedContent">
+			{% include "templates/includes/navbar/navbar_items.html" %}
+		</div>
+		<div class="form-group mb-0 hide" id="language-switcher">
+			<select class="form-control"></select>
+		</div>
+	</div>
+</nav>

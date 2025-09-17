@@ -8,7 +8,7 @@ app_license = "mit"
 # Apps
 # ------------------
 
-# required_apps = []
+required_apps = ["webshop"]
 
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
@@ -29,8 +29,12 @@ app_license = "mit"
 # app_include_js = "/assets/aos/js/aos.js"
 
 # include js, css files in header of web template
-# web_include_css = "/assets/aos/css/aos.css"
-# web_include_js = "/assets/aos/js/aos.js"
+web_include_css = "/assets/aos/css/aos.css"
+web_include_js = [
+    "/assets/aos/js/product_ui/views.js",
+    "/assets/aos/js/product_ui/grid.js",
+    "/assets/aos/js/product_ui/list.js",
+]
 
 # include custom scss in every website theme (without file extension ".scss")
 # website_theme_scss = "aos/public/scss/website"
@@ -86,7 +90,8 @@ app_license = "mit"
 # ------------
 
 # before_install = "aos.install.before_install"
-# after_install = "aos.install.after_install"
+after_install = "aos.setup.install.run_all_setup"
+before_migrate = "aos.setup.install.run_all_setup"
 
 # Uninstallation
 # ------------
