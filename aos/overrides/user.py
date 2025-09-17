@@ -76,7 +76,4 @@ def sign_up(email: str, full_name: str, user_type: str, phone: str, password: st
 			return 1, _("Please check your email for verification")
 		else:
 			login_url = "/login"
-			return {
-        		"status": 2,
-        		"message": _("Registration successful. You can now log in.")
-    		}
+			return 2, _("Registration successful. You can now log in.")
