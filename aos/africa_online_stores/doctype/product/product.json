@@ -1,0 +1,158 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:PROD-{####}",
+ "creation": "2025-06-24 12:46:40.996686",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "item_name",
+  "item_code",
+  "item_price",
+  "column_break_nujt",
+  "category",
+  "vendor",
+  "section_break_azps",
+  "image",
+  "slide_show",
+  "column_break_hlml",
+  "demo_video",
+  "section_break_uxzp",
+  "web_long_description",
+  "column_break_jzyu",
+  "short_description",
+  "website_specifications"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Item Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Item Code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_price",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Item Price",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_nujt",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "category",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Category",
+   "options": "Item Group",
+   "reqd": 1
+  },
+  {
+   "fieldname": "vendor",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Vendor",
+   "options": "Supplier"
+  },
+  {
+   "fieldname": "section_break_azps",
+   "fieldtype": "Section Break",
+   "label": "Display Images"
+  },
+  {
+   "fieldname": "image",
+   "fieldtype": "Attach Image",
+   "label": "Image"
+  },
+  {
+   "fieldname": "slide_show",
+   "fieldtype": "Link",
+   "label": "Slide Show",
+   "options": "Website Slideshow"
+  },
+  {
+   "fieldname": "column_break_hlml",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "demo_video",
+   "fieldtype": "Attach",
+   "label": "Demo Video"
+  },
+  {
+   "fieldname": "section_break_uxzp",
+   "fieldtype": "Section Break",
+   "label": "Display Information"
+  },
+  {
+   "fieldname": "web_long_description",
+   "fieldtype": "Text Editor",
+   "label": "Website Description"
+  },
+  {
+   "fieldname": "column_break_jzyu",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "short_description",
+   "fieldtype": "Small Text",
+   "label": "Short Website Description"
+  },
+  {
+   "fieldname": "website_specifications",
+   "fieldtype": "Table",
+   "label": "Website Specifications",
+   "options": "Product Website Specification"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-09-17 16:08:58.111495",
+ "modified_by": "Administrator",
+ "module": "Africa Online Stores",
+ "name": "Product",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Item Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "item_name"
+}

@@ -1,0 +1,131 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2025-09-16 18:31:26.740993",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "reporting_date",
+  "reported_by",
+  "product",
+  "product_name",
+  "column_break_vxiz",
+  "status",
+  "reason",
+  "comment"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "UGC-.YY.-.MM.-.#####",
+   "reqd": 1
+  },
+  {
+   "default": "Now",
+   "fieldname": "reporting_date",
+   "fieldtype": "Datetime",
+   "label": "Reporting Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "reported_by",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Reported By",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "product",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Product",
+   "options": "Website Item",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "product.item_name",
+   "fieldname": "product_name",
+   "fieldtype": "Read Only",
+   "label": "Product Name"
+  },
+  {
+   "fieldname": "column_break_vxiz",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Pending\nIn Review\nActioned\nDismissed"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Reason",
+   "options": "Illegal Content\nHarassment\nSexual Content\nViolence\nIP Violation\nSpam\nPrivacy Issue\nOther",
+   "reqd": 1
+  },
+  {
+   "fieldname": "comment",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Comment",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-09-17 16:13:16.764461",
+ "modified_by": "Administrator",
+ "module": "Africa Online Stores",
+ "name": "Reported Product",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Customer"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "color": "Yellow",
+   "title": "Pending"
+  },
+  {
+   "color": "Blue",
+   "title": "In Review"
+  },
+  {
+   "color": "Green",
+   "title": "Actioned"
+  },
+  {
+   "color": "Red",
+   "title": "Dismissed"
+  }
+ ]
+}
