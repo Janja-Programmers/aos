@@ -24,9 +24,9 @@ def sign_up(email: str, full_name: str, user_type: str, phone: str, password: st
 			)
 
 		# Set role profile if vendor
-		role_profiles = []
+		role_profile = None
 		if user_type.lower() == "vendor":
-			role_profiles.append({"role_profile": "Vendor"})
+			role_profile = "Vendor"
 
 		# Create user
 		user = frappe.get_doc({
@@ -37,7 +37,7 @@ def sign_up(email: str, full_name: str, user_type: str, phone: str, password: st
 			"new_password": password or random_string(10),
 			"user_type": "System User" if user_type.lower() == "vendor" else "Website User",
 			"phone": phone,
-			"role_profile_name": role_profiles
+			"role_profile_name": role_profile
 		})
 
 		user.flags.ignore_permissions = True
