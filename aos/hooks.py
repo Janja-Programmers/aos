@@ -242,3 +242,33 @@ before_migrate = "aos.setup.install.run_all_setup"
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
+
+fixtures = [
+    {
+        "doctype": "Custom Field",
+        "filters": [
+            [
+                "dt", "in", [
+                    "Website Slideshow",
+                    "Item Price",
+                    "GL Entry",
+                    "Supplier",
+                    "Item",
+                    "Quotation",
+                    "Price List",
+                    "Sales Order",
+                    "Material Request",
+                    "Website Item",
+                    "Purchase Order",
+                    "Sales Invoice",
+                    "Stock Ledger Entry",
+                    "Payment Request",
+                    "Stock Entry",
+                    "Payment Entry"
+                ]
+            ]
+        ]
+    },
+    "Property Setter",
+    "Role Profile",
+]
