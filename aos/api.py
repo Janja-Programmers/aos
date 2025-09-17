@@ -1,4 +1,5 @@
 import frappe
+from frappe import _
 from frappe.exceptions import DoesNotExistError
 
 
@@ -120,7 +121,6 @@ def delete_account():
         doc.first_name = "Deleted"
         doc.last_name = "User"
         doc.phone = ""
-        doc.user_image = None
         doc.save(ignore_permissions=True)
 
         # Logout after deletion
