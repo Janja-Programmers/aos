@@ -112,16 +112,16 @@ def delete_account():
         if user == "Guest":
             frappe.throw(_("You must be logged in to delete your account."))
 
-        # Fetch user
-        doc = frappe.get_doc("User", user)
+        # Ensure uniqueness for email
+        random_suffix = frappe.generate_hash(length=6)
 
-        # Anonymize user info
-        doc.enabled = 0
-        doc.email = f"deleted_{user}"
-        doc.first_name = "Deleted"
-        doc.last_name = "User"
-        doc.phone = ""
-        doc.save(ignore_permissions=True)
+        frappe.db.set_value("User", user, {
+            "enabled": 0,
+            "email": f"deleted_{user}_{random_suffix}",
+            "first_name": "Deleted",
+            "last_name": "User"
+        })
+        frappe.db.commit()
 
         # Logout after deletion
         frappe.local.login_manager.logout()
@@ -131,7 +131,7 @@ def delete_account():
             "message": _("Your account has been deleted.")
         }
 
-    except Exception as e:
+    except Exception:
         frappe.log_error(frappe.get_traceback(), "Delete Account Error")
         return {
             "status": "error",
