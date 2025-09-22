@@ -59,7 +59,7 @@
 				fields: [
 					{fieldname: "title", fieldtype: "Data", label: "Headline", reqd: 1},
 					{fieldname: "rating", fieldtype: "Rating", label: "Overall Rating", reqd: 1},
-					{fieldtype: "comment", fieldtype: "Small Text", label: "Your Review"}
+					{fieldname: "comment", fieldtype: "Small Text", label: "Your Review"}
 				],
 				primary_action: function() {
 					var data = d.get_values();
@@ -98,21 +98,16 @@
 				fields: [
 					{fieldname: "reason", fieldtype: "Select", label: "Reason", reqd: 1,
 						options: "Illegal Content\nHarassment\nSexual Content\nViolence\nIP Violation\nSpam\nPrivacy Issue\nOther"},
-					{fieldname: "comment", fieldtype: "Small Text", label: "Additional Details", reqd: 1}
+					{fieldname: "comment", fieldtype: "Small Text", label: "Additional Details"}
 				],
 				primary_action: function() {
 					var data = d.get_values();
 					frappe.call({
-						method: "frappe.client.insert",
+						method: "aos.africa_online_stores.doctype.reported_product.reported_product.report_product",
 						args: {
-							doc: {
-								doctype: "Reported Product",
-								product: "{{ doc.name }}",
-								reported_by: frappe.session.user,
-								reason: data.reason,
-								comment: data.comment,
-								status: "Pending"
-							}
+							web_item: "{{ doc.name }}",
+							reason: data.reason,
+							comment: data.comment
 						},
 						freeze: true,
 						freeze_message: __("Submitting Report ..."),
@@ -124,6 +119,7 @@
 									indicator: "orange"
 								});
 								d.hide();
+								location.reload();
 							}
 						}
 					});

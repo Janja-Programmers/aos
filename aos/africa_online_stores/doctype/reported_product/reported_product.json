@@ -6,14 +6,16 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
-  "reporting_date",
-  "reported_by",
-  "product",
-  "product_name",
+  "website_item",
+  "user",
+  "customer",
   "column_break_vxiz",
-  "status",
+  "item",
+  "published_on",
+  "naming_series",
+  "reports_section",
   "reason",
+  "status",
   "comment"
  ],
  "fields": [
@@ -23,35 +25,6 @@
    "label": "Series",
    "options": "UGC-.YY.-.MM.-.#####",
    "reqd": 1
-  },
-  {
-   "default": "Now",
-   "fieldname": "reporting_date",
-   "fieldtype": "Datetime",
-   "label": "Reporting Date",
-   "reqd": 1
-  },
-  {
-   "fieldname": "reported_by",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Reported By",
-   "options": "User",
-   "reqd": 1
-  },
-  {
-   "fieldname": "product",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Product",
-   "options": "Website Item",
-   "reqd": 1
-  },
-  {
-   "fetch_from": "product.item_name",
-   "fieldname": "product_name",
-   "fieldtype": "Read Only",
-   "label": "Product Name"
   },
   {
    "fieldname": "column_break_vxiz",
@@ -65,24 +38,66 @@
   },
   {
    "fieldname": "reason",
-   "fieldtype": "Select",
-   "in_list_view": 1,
+   "fieldtype": "Data",
    "label": "Reason",
-   "options": "Illegal Content\nHarassment\nSexual Content\nViolence\nIP Violation\nSpam\nPrivacy Issue\nOther",
+   "read_only": 1
+  },
+  {
+   "fieldname": "website_item",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Website Item",
+   "options": "Website Item",
+   "read_only": 1,
    "reqd": 1
+  },
+  {
+   "fieldname": "reports_section",
+   "fieldtype": "Section Break",
+   "label": "Report"
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "website_item.item_code",
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "published_on",
+   "fieldtype": "Data",
+   "label": "Published on",
+   "read_only": 1
   },
   {
    "fieldname": "comment",
    "fieldtype": "Small Text",
    "in_list_view": 1,
    "label": "Comment",
-   "reqd": 1
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-09-22 14:30:40.831917",
+ "modified": "2025-09-22 15:47:23.817116",
  "modified_by": "Administrator",
  "module": "Africa Online Stores",
  "name": "Reported Product",
@@ -103,9 +118,20 @@
   },
   {
    "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
    "read": 1,
-   "role": "Customer",
+   "report": 1,
+   "role": "Website Manager",
+   "share": 1,
    "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "role": "Customer"
   }
  ],
  "row_format": "Dynamic",
