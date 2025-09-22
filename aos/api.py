@@ -48,6 +48,7 @@ def get_product_detail(item_code):
 
         return {
 		    "item_code": item_code,
+            "web_item_id": website_item.name,
 		    "name": website_item.web_item_name or item.item_name,
 		    "owner": item.custom_vendor,
 		    "category": item.item_group,
