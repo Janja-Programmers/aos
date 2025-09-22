@@ -82,7 +82,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-09-17 16:13:16.764461",
+ "modified": "2025-09-22 14:30:40.831917",
  "modified_by": "Administrator",
  "module": "Africa Online Stores",
  "name": "Reported Product",
@@ -104,7 +104,8 @@
   {
    "create": 1,
    "read": 1,
-   "role": "Customer"
+   "role": "Customer",
+   "write": 1
   }
  ],
  "row_format": "Dynamic",
