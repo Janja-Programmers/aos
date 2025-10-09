@@ -13,10 +13,15 @@ def set_stock_settings():
 def set_website_settings():
     settings = frappe.get_single("Website Settings")
     settings.home_page = "all-products"
-    settings.title_prefix = "Africa Online Stores"
-    settings.app_name = "Africa Online Stores"
+    settings.title_prefix = "AOS"
+    settings.app_name = "Africa Online Stores®"
+    settings.app_logo = "/files/aos-logo-sm.png"
     settings.disable_signup = 0
-    settings.copyright = "Africa Online Stores"
+    settings.banner_image = "/files/aos-logo-sm.png"
+    settings.splash_image = "/files/aos-logo-sm.png"
+    settings.favicon = "/files/aos-logo-sm.png"
+    settings.copyright = "2025 Africa Online Stores"
+    settings.footer_powered = "Powered by Africa Online Stores"
     settings.save()
 
 def set_webshop_settings():

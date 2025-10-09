@@ -29,7 +29,10 @@ required_apps = ["webshop"]
 # app_include_js = "/assets/aos/js/aos.js"
 
 # include js, css files in header of web template
-web_include_css = "/assets/aos/css/aos.css"
+web_include_css = [
+    "/assets/aos/css/aos.css",
+]
+
 web_include_js = [
     "/assets/aos/js/product_ui/views.js",
     "/assets/aos/js/product_ui/grid.js",
