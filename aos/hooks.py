@@ -4,6 +4,7 @@ app_publisher = "Kalutu Daniel"
 app_description = "A multi-vendor platform that connects buyers and vendors."
 app_email = "kalutudaniel@gmail.com"
 app_license = "mit"
+app_logo_url = "/files/aos-logo-sm.png"
 
 # Apps
 # ------------------
@@ -25,7 +26,9 @@ required_apps = ["webshop"]
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/assets/aos/css/aos.css"
+app_include_css = [
+    "/assets/aos/css/theme.css",
+]
 # app_include_js = "/assets/aos/js/aos.js"
 
 # include js, css files in header of web template
@@ -267,11 +270,52 @@ fixtures = [
                     "Stock Ledger Entry",
                     "Payment Request",
                     "Stock Entry",
-                    "Payment Entry"
+                    "Payment Entry",
                 ]
             ]
-        ]
+        ],
     },
-    "Property Setter",
-    "Role Profile",
+    {
+        "doctype": "Property Setter",
+        "filters": [
+            [
+                "doc_type", "in", [
+                    "Website Slideshow",
+                    "Item Price",
+                    "GL Entry",
+                    "Supplier",
+                    "Item",
+                    "Quotation",
+                    "Price List",
+                    "Sales Order",
+                    "Material Request",
+                    "Website Item",
+                    "Purchase Order",
+                    "Sales Invoice",
+                    "Stock Ledger Entry",
+                    "Payment Request",
+                    "Stock Entry",
+                    "Payment Entry",
+                ]
+            ]
+        ],
+    },
+    {
+        "doctype": "Role Profile",
+        "filters": {
+            "name": ["in", ["Vendor"]],
+        },
+    },
+    {
+        "doctype": "Custom HTML Block",
+        "filters": {
+            "name": ["in", ["Home"]],
+        },
+    },
+    {
+        "doctype": "Workspace",
+        "filters": {
+            "name": ["in", ["Home"]]
+        },
+    },
 ]
