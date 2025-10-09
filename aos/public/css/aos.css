@@ -1,57 +1,96 @@
+/* PRODUCT & CARD RESPONSIVENESS */
 @media (max-width: 600px) {
-  /* Image container adjustments */
-  .item-card-group-section .card-img-container {
-    height: 100px !important;
-    width: 100% !important;
-  }
+	/* Image container adjustments */
+	.item-card-group-section .card-img-container {
+		height: 100px !important;
+		width: 100% !important;
+	}
 
-  .item-card-group-section .card-img {
-    max-height: 100px !important;
-    margin-top: 0.75rem !important;
-  }
+	.item-card-group-section .card-img {
+		max-height: 100px !important;
+		margin-top: 0.75rem !important;
+	}
 
-  .item-card-group-section .no-image {
-    height: 100px !important;
-  }
+	.item-card-group-section .no-image {
+		height: 100px !important;
+	}
 
-  .item-card-group-section .no-image-list {
-    height: 100px !important;
-    margin-top: 10px;
-    margin-bottom: 10px;
-  }
+	.item-card-group-section .no-image-list {
+		height: 100px !important;
+		margin-top: 10px !important;
+		margin-bottom: 10px !important;
+	}
 
-  /* Card body adjustments */
-  .item-card-group-section .card-body-flex {
-    padding: 8px !important;
-    font-size: 13px !important;
-  }
+	/* Card body adjustments */
+	.item-card-group-section .card-body-flex {
+		padding: 8px !important;
+		font-size: 13px !important;
+	}
 
-  .item-card-group-section .product-title {
-    font-size: 12px !important;
-  }
+	.item-card-group-section .product-title {
+		font-size: 12px !important;
+	}
 
-  .item-card-group-section .product-description {
-    font-size: 11px !important;
-    margin: 10px 0 !important;
-    -webkit-line-clamp: 3 !important;
-  }
+	.item-card-group-section .product-description {
+		font-size: 11px !important;
+		margin: 10px 0 !important;
+		-webkit-line-clamp: 3 !important;
+	}
 
-  .item-card-group-section .product-category {
-    font-size: 11px !important;
-    margin: 5px 0 !important;
-  }
+	.item-card-group-section .product-category {
+		font-size: 11px !important;
+		margin: 5px 0 !important;
+	}
 
-  .item-card-group-section .product-price {
-    font-size: 16px !important;
-    margin: 5px 0 !important;
-  }
+	.item-card-group-section .product-price {
+		font-size: 16px !important;
+		margin: 5px 0 !important;
+	}
 
-  #page-cart .cart-container .number-spinner {
-    min-width: 75px !important;
-  }
+	#page-cart .cart-container .number-spinner {
+		min-width: 75px !important;
+	}
 }
 
 .product-code .product-item-group {
-  padding-right: 0.25rem !important;
-  border-right: none !important;
+	padding-right: 0.25rem !important;
+	border-right: none !important;
+}
+
+/* HERO SLIDER RESPONSIVENESS */
+.section-carousel {
+	width: 100% !important;
+	overflow: hidden !important;
+}
+
+/* Maintain a consistent rectangular shape (16:9) */
+.section-carousel .carousel-inner {
+	aspect-ratio: 16 / 9 !important;
+	position: relative !important;
+}
+
+.section-carousel .carousel-item {
+	width: 100% !important;
+	height: 100% !important;
+	position: relative !important;
+}
+
+.section-carousel img.d-block {
+	width: 100% !important;
+	height: 100% !important;
+	object-fit: contain !important;
+	display: block !important;
+	margin: 0 auto !important;
+}
+
+@media (max-width: 768px) {
+	.section-carousel .carousel-inner {
+		aspect-ratio: 16 / 10 !important;
+	}
+}
+
+@media (max-width: 480px) {
+	.section-carousel .carousel-inner {
+		aspect-ratio: 4 / 3 !important;
+	}
 }
