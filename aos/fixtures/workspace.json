@@ -14,7 +14,7 @@
   "external_link": null,
   "for_user": "",
   "hide_custom": 0,
-  "icon": "home",
+  "icon": "retail",
   "indicator_color": null,
   "is_hidden": 0,
   "label": "Home",
@@ -277,7 +277,7 @@
     "type": "Link"
    }
   ],
-  "modified": "2025-10-09 20:47:00.453582",
+  "modified": "2025-10-09 22:02:43.324679",
   "module": "Setup",
   "name": "Home",
   "number_cards": [],
