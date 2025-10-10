@@ -28,8 +28,11 @@ required_apps = ["webshop"]
 # include js, css files in header of desk.html
 app_include_css = [
     "/assets/aos/css/theme.css",
+    "/assets/aos/css/navbar.css",
 ]
-# app_include_js = "/assets/aos/js/aos.js"
+app_include_js = [
+    "/assets/aos/js/navbar.js",
+]
 
 # include js, css files in header of web template
 web_include_css = [
