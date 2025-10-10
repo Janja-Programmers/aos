@@ -1,22 +1,27 @@
-frappe.ready(() => {
-	frappe.call({
-		method: "frappe.client.get_value",
-		args: {
-			doctype: "Global Defaults",
-			fieldname: ["default_company"],
-		},
-		callback: function (r) {
-			if (r.message && r.message.default_company) {
-				const companyName = r.message.default_company;
+frappe.after_ajax(() => {
+	let checkNavbar = setInterval(() => {
+		const navbar = document.querySelector(".navbar-brand.navbar-home");
 
-				const navbarBrand = document.querySelector(".navbar-brand.navbar-home");
-				if (navbarBrand) {
-					const span = document.createElement("span");
-					span.classList.add("navbar-company-name");
-					span.textContent = ` ${companyName}`;
-					navbarBrand.appendChild(span);
-				}
+		if (navbar) {
+			clearInterval(checkNavbar);
+
+			const className = "navbar-company-name";
+			if (!document.querySelector("." + className)) {
+				const span = document.createElement("span");
+				span.className = className;
+
+				frappe.call({
+					method: "frappe.client.get_value",
+					args: {
+						doctype: "Global Defaults",
+						fieldname: ["default_company"],
+					},
+					callback: function (r) {
+						span.textContent = r.message?.default_company || "Africa Online Stores";
+						navbar.appendChild(span);
+					},
+				});
 			}
-		},
-	});
+		}
+	}, 200);
 });
