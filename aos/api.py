@@ -138,3 +138,8 @@ def delete_account():
             "status": "error",
             "message": _("Something went wrong while deleting your account. Please try again later.")
         }
+
+@frappe.whitelist(allow_guest=True)
+def get_default_company():
+    company = frappe.db.get_single_value("Global Defaults", "default_company")
+    return company or "Africa Online Stores"

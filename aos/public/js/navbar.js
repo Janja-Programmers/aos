@@ -11,13 +11,9 @@ frappe.after_ajax(() => {
 				span.className = className;
 
 				frappe.call({
-					method: "frappe.client.get_value",
-					args: {
-						doctype: "Global Defaults",
-						fieldname: ["default_company"],
-					},
+					method: "aos.api.get_default_company",
 					callback: function (r) {
-						span.textContent = r.message?.default_company || "Africa Online Stores";
+						span.textContent = r.message;
 						navbar.appendChild(span);
 					},
 				});
