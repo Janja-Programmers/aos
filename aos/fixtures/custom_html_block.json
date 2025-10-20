@@ -2,8 +2,8 @@
  {
   "docstatus": 0,
   "doctype": "Custom HTML Block",
-  "html": "<div id=\"user-profile-banner\" class=\"profile-banner\">\n  <div class=\"banner-wrapper\">\n    <img src=\"/files/Africa.png\" alt=\"Banner image\" class=\"banner-img\">\n    <div class=\"avatar-wrapper\"></div>\n  </div>\n\n  <div class=\"info\">\n    <div class=\"full-name\"></div>\n    <div class=\"email\"></div>\n  </div>\n</div>\n",
-  "modified": "2025-10-09 23:47:26.068920",
+  "html": "<div id=\"user-profile-banner\" class=\"profile-banner\">\n  <div class=\"banner-wrapper\">\n    <img src=\"/files/aos-banner.png\" alt=\"Banner image\" class=\"banner-img\">\n    <div class=\"avatar-wrapper\"></div>\n  </div>\n\n  <div class=\"info\">\n    <div class=\"full-name\"></div>\n    <div class=\"email\"></div>\n  </div>\n</div>\n",
+  "modified": "2025-10-20 13:20:43.371563",
   "name": "Home",
   "private": 0,
   "roles": [],
