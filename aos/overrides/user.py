@@ -37,7 +37,8 @@ def sign_up(email: str, full_name: str, user_type: str, phone: str, password: st
 			"new_password": password or random_string(10),
 			"user_type": "System User" if user_type.lower() == "vendor" else "Website User",
 			"phone": phone,
-			"role_profile_name": role_profile
+			"role_profile_name": role_profile,
+			"send_welcome_email": 0
 		})
 
 		user.flags.ignore_permissions = True
@@ -71,9 +72,7 @@ def sign_up(email: str, full_name: str, user_type: str, phone: str, password: st
 
 		if redirect_to:
 			frappe.cache.hset("redirect_after_login", user.name, redirect_to)
-
-		if user.flags.email_sent:
-			return 1, _("Please check your email for verification")
 		else:
 			login_url = "/login"
-			return 2, _("Registration successful. You can now log in.")
+			frappe.msgprint(_("Click <a href='{0}'>here</a> to log in.").format(login_url))
+			return 2, _("Registration successful")
