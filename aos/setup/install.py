@@ -4,6 +4,7 @@ def run_all_setup():
     set_stock_settings()
     set_website_settings()
     set_webshop_settings()
+    set_portal_settings()
 
 def set_stock_settings():
     settings = frappe.get_single("Stock Settings")
@@ -113,3 +114,9 @@ def set_webshop_settings():
 
     settings.payment_gateway_account = gateway_account
     settings.save()
+
+def set_portal_settings():
+    settings = frappe.get_single("Portal Settings")
+    settings.default_role = "Customer"
+    settings.save()
+    frappe.db.commit()
