@@ -182,6 +182,9 @@ before_migrate = "aos.setup.install.run_all_setup"
 
 # Overriding Methods
 # ------------------------------
+on_session_creation = [
+    "aos.overrides.portal.update_debtors_account",
+]
 #
 # override_whitelisted_methods = {
 # 	"frappe.desk.doctype.event.event.get_events": "aos.event.get_events"
