@@ -1,0 +1,288 @@
+{% extends "templates/web.html" %} {% block page_content %}
+<main class="max-w-3xl mx-auto text-gray-800">
+	<header class="text-center">
+		<h1 class="text-3xl font-bold mb-2">Support</h1>
+	</header>
+
+	<section class="mb-6">
+		<p class="text-sm">
+			Welcome to Africa Online Stores ("we", "our", "us") Support. We are here to assist you
+			with any issues, questions, or feedback related to our application and related
+			services. By contacting support, you agree to provide accurate information so we can
+			help you effectively.
+		</p>
+	</section>
+
+	<!-- FAQs / Common Questions -->
+	<section class="mb-6" x-data="{ openQuestion: null }">
+		<h6 class="text-xl font-semibold mb-2 border-b pb-1">Frequently Asked Questions (FAQs)</h6>
+		<div class="row">
+			<!-- General Users -->
+			<div class="col-12 col-md-4">
+				<strong>For All Users:</strong>
+
+				<div class="border-b py-2">
+					<button
+						@click="openQuestion === 1 ? openQuestion = null : openQuestion = 1"
+						class="w-full text-left flex justify-between items-center text-sm font-medium"
+					>
+						<span>How do I create an account?</span>
+						<span x-text="openQuestion === 1 ? '-' : '+'"></span>
+					</button>
+					<div
+						x-show="openQuestion === 1"
+						x-transition
+						class="mt-2 text-gray-700 text-sm"
+					>
+						Download the Africa Online Stores mobile app from Play Store or App Store,
+						or visit
+						<a href="https://africaonlinestores.com/" style="color: blue"
+							>our website</a
+						>. On the login page, click “Don’t have an account? Sign up.” Fill in your
+						details, choose your user type (Buyer or Vendor), agree to the terms, and
+						click Sign Up.
+					</div>
+				</div>
+
+				<div class="border-b py-2">
+					<button
+						@click="openQuestion === 2 ? openQuestion = null : openQuestion = 2"
+						class="w-full text-left flex justify-between items-center text-sm font-medium"
+					>
+						<span>How do I log in?</span>
+						<span x-text="openQuestion === 2 ? '-' : '+'"></span>
+					</button>
+					<div
+						x-show="openQuestion === 2"
+						x-transition
+						class="mt-2 text-gray-700 text-sm"
+					>
+						To log in, you must have an account. Enter your registered email and
+						password on the login page and click Login.
+					</div>
+				</div>
+
+				<div class="border-b py-2">
+					<button
+						@click="openQuestion === 3 ? openQuestion = null : openQuestion = 3"
+						class="w-full text-left flex justify-between items-center text-sm font-medium"
+					>
+						<span>How do I reset my password?</span>
+						<span x-text="openQuestion === 3 ? '-' : '+'"></span>
+					</button>
+					<div
+						x-show="openQuestion === 3"
+						x-transition
+						class="mt-2 text-gray-700 text-sm"
+					>
+						Click “Forgot Password?” on the login page, enter your email, and follow
+						the instructions sent to your email to reset your password.
+					</div>
+				</div>
+
+				<div class="border-b py-2">
+					<button
+						@click="openQuestion === 4 ? openQuestion = null : openQuestion = 4"
+						class="w-full text-left flex justify-between items-center text-sm font-medium"
+					>
+						<span>How do I delete my account?</span>
+						<span x-text="openQuestion === 4 ? '-' : '+'"></span>
+					</button>
+					<div
+						x-show="openQuestion === 4"
+						x-transition
+						class="mt-2 text-gray-700 text-sm"
+					>
+						Go to Account Settings, select “Delete Account,” and follow the
+						instructions. All personal data will be removed.
+						<a href="/delete-account" style="color: blue">Learn more</a>.
+					</div>
+				</div>
+			</div>
+
+			<!-- Vendor-Specific -->
+			<div class="col-12 col-md-4">
+				<strong>For Vendors:</strong>
+
+				<div class="border-b py-2">
+					<button
+						@click="openQuestion === 5 ? openQuestion = null : openQuestion = 5"
+						class="w-full text-left flex justify-between items-center text-sm font-medium"
+					>
+						<span>How do I add a product?</span>
+						<span x-text="openQuestion === 5 ? '-' : '+'"></span>
+					</button>
+					<div
+						x-show="openQuestion === 5"
+						x-transition
+						class="mt-2 text-gray-700 text-sm"
+					>
+						Go to “Products,” click “Create New,” fill in product details including
+						photos, description, and price, then save.
+					</div>
+				</div>
+
+				<div class="border-b py-2">
+					<button
+						@click="openQuestion === 6 ? openQuestion = null : openQuestion = 6"
+						class="w-full text-left flex justify-between items-center text-sm font-medium"
+					>
+						<span>How do I add stock?</span>
+						<span x-text="openQuestion === 6 ? '-' : '+'"></span>
+					</button>
+					<div
+						x-show="openQuestion === 6"
+						x-transition
+						class="mt-2 text-gray-700 text-sm"
+					>
+						Go to “Stock Intake” and click “Create New.” Fill in the product details,
+						quantity, and valuation rate (optional). Use “Add Another Entry” if you
+						need to add multiple products. Once done, save and submit the form to
+						update the stock levels. If stock is not added for products with “Maintain
+						Stock” enabled, buyers will see those items marked as “Out of Stock.”
+					</div>
+				</div>
+
+				<div class="border-b py-2">
+					<button
+						@click="openQuestion === 7 ? openQuestion = null : openQuestion = 7"
+						class="w-full text-left flex justify-between items-center text-sm font-medium"
+					>
+						<span>How do I see my orders?</span>
+						<span x-text="openQuestion === 7 ? '-' : '+'"></span>
+					</button>
+					<div
+						x-show="openQuestion === 7"
+						x-transition
+						class="mt-2 text-gray-700 text-sm"
+					>
+						Go to “Sales Orders” to view all orders from buyers. You can find their
+						contact details and complete the sale outside the app.
+					</div>
+				</div>
+
+				<div class="border-b py-2">
+					<button
+						@click="openQuestion === 8 ? openQuestion = null : openQuestion = 8"
+						class="w-full text-left flex justify-between items-center text-sm font-medium"
+					>
+						<span>How does delivery work?</span>
+						<span x-text="openQuestion === 8 ? '-' : '+'"></span>
+					</button>
+					<div
+						x-show="openQuestion === 8"
+						x-transition
+						class="mt-2 text-gray-700 text-sm"
+					>
+						Click the “Deliver” button on a Sales Order (mobile app) or “Create
+						Delivery Note” on web. This updates stock quantities to reflect the
+						delivery.
+					</div>
+				</div>
+
+				<div class="border-b py-2">
+					<button
+						@click="openQuestion === 9 ? openQuestion = null : openQuestion = 9"
+						class="w-full text-left flex justify-between items-center text-sm font-medium"
+					>
+						<span>How does invoicing work?</span>
+						<span x-text="openQuestion === 9 ? '-' : '+'"></span>
+					</button>
+					<div
+						x-show="openQuestion === 9"
+						x-transition
+						class="mt-2 text-gray-700 text-sm"
+					>
+						After creating a Delivery Note, click the “Bill” button to generate a Sales
+						Invoice. This completes the transaction in the system.
+					</div>
+				</div>
+			</div>
+
+			<!-- Buyer-Specific -->
+			<div class="col-12 col-md-4">
+				<strong>For Buyers:</strong>
+
+				<div class="border-b py-2">
+					<button
+						@click="openQuestion === 10 ? openQuestion = null : openQuestion = 10"
+						class="w-full text-left flex justify-between items-center text-sm font-medium"
+					>
+						<span>How do I place an order?</span>
+						<span x-text="openQuestion === 10 ? '-' : '+'"></span>
+					</button>
+					<div
+						x-show="openQuestion === 10"
+						x-transition
+						class="mt-2 text-gray-700 text-sm"
+					>
+						Browse for the products you want and view their details on the product
+						detail page. From there, you can either contact the vendor directly to
+						place an order, or add the items to your cart, provide your address, and
+						complete the order through checkout.
+					</div>
+				</div>
+
+				<div class="border-b py-2">
+					<button
+						@click="openQuestion === 11 ? openQuestion = null : openQuestion = 11"
+						class="w-full text-left flex justify-between items-center text-sm font-medium"
+					>
+						<span>How do I report a fraudulent product?</span>
+						<span x-text="openQuestion === 11 ? '-' : '+'"></span>
+					</button>
+					<div
+						x-show="openQuestion === 11"
+						x-transition
+						class="mt-2 text-gray-700 text-sm"
+					>
+						On the product detail page, click the “Action” button and select “Report
+						Product.” Choose a reason, add details, and submit. Our team will review
+						it.
+					</div>
+				</div>
+
+				<div class="border-b py-2">
+					<button
+						@click="openQuestion === 12 ? openQuestion = null : openQuestion = 12"
+						class="w-full text-left flex justify-between items-center text-sm font-medium"
+					>
+						<span>How do I review a product?</span>
+						<span x-text="openQuestion === 12 ? '-' : '+'"></span>
+					</button>
+					<div
+						x-show="openQuestion === 12"
+						x-transition
+						class="mt-2 text-gray-700 text-sm"
+					>
+						On the product detail page, click the “Action” button and select “Review
+						Product.” Add a rating and comment, then submit.
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- Contact Information -->
+	<section class="mb-6">
+		<h6 class="text-xl font-semibold mb-2 border-b pb-1">Contact Support</h6>
+		<p class="text-sm mb-2">
+			If you have any questions or need assistance, feel free to reach us at
+			<a href="mailto:kalutudaniel@gmail.com" style="color: blue">kalutudaniel@gmail.com</a>.
+			We welcome your suggestions to help improve the Africa Online Stores experience, your
+			feedback is always appreciated. You can also review our
+			<a href="/privacy" style="color: blue">Privacy Policy</a> and
+			<a href="/tac" style="color: blue">Terms &amp; Conditions</a>.
+		</p>
+	</section>
+
+	<footer class="border-t pt-4 text-sm text-gray-500 text-center">
+		<p>
+			This Support Page applies to the Africa Online Stores application and related services.
+		</p>
+		<p>Last updated: 1st September, 2025.</p>
+	</footer>
+</main>
+
+<script src="//unpkg.com/alpinejs" defer></script>
+{% endblock %}
