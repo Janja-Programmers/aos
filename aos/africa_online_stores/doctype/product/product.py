@@ -71,7 +71,7 @@ class Product(Document):
                 "item_group": self.category,
                 "stock_uom": "Nos",
                 "image": self.image,
-                "is_stock_item": 1,
+                "is_stock_item": self.is_stock_item,
                 "include_item_in_manufacturing": 0,
                 "custom_vendor": vendor,
                 "item_defaults": [{

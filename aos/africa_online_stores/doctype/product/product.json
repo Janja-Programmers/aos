@@ -8,11 +8,12 @@
  "field_order": [
   "naming_series",
   "item_name",
+  "item_code",
   "item_price",
   "column_break_nujt",
-  "item_code",
-  "category",
   "vendor",
+  "category",
+  "is_stock_item",
   "section_break_azps",
   "image",
   "slide_show",
@@ -123,12 +124,18 @@
    "hidden": 1,
    "label": "Series",
    "options": "PROD-."
+  },
+  {
+   "default": "0",
+   "fieldname": "is_stock_item",
+   "fieldtype": "Check",
+   "label": "Maintain Stock"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-12-07 17:12:04.317489",
+ "modified": "2025-12-07 17:38:25.883398",
  "modified_by": "Administrator",
  "module": "Africa Online Stores",
  "name": "Product",
