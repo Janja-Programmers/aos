@@ -151,6 +151,35 @@ class Product(Document):
         return frappe.db.get_single_value("Webshop Settings", "price_list") or "Standard Selling"
 
     # ========== WEBSITE ITEM ==========
+    def create_or_update_slideshow(self):
+        slideshow_items = [row.image for row in self.additional_images]
+
+        if not slideshow_items:
+            return None
+
+        slideshow_name = f"{self.name}-Slideshow"
+        existing = frappe.db.exists("Website Slideshow", slideshow_name)
+
+        if not existing:
+            slideshow = frappe.get_doc({
+                "doctype": "Website Slideshow",
+                "slideshow_name": slideshow_name,
+                "slideshow_items": [
+                    {"image": img, "heading": "", "description": "", "url": ""}
+                    for img in slideshow_items
+                ]
+            })
+            slideshow.insert(ignore_permissions=True)
+        else:
+            slideshow = frappe.get_doc("Website Slideshow", slideshow_name)
+            slideshow.set("slideshow_items", [
+                {"image": img, "heading": "", "description": "", "url": ""}
+                for img in slideshow_items
+            ])
+            slideshow.save(ignore_permissions=True)
+
+        return slideshow_name
+
     def create_website_item(self, item_code):
         try:
             vendor = self.get_current_vendor()
@@ -160,7 +189,7 @@ class Product(Document):
             website_item.web_item_name = self.item_name
             website_item.published = 1
             website_item.website_image = self.image
-            website_item.slideshow = self.slide_show
+            website_item.slideshow = self.create_or_update_slideshow()
             website_item.custom_demo_video = self.demo_video
             website_item.website_warehouse = frappe.db.get_single_value("Stock Settings", "default_warehouse")
             website_item.short_description = self.short_description
@@ -193,7 +222,7 @@ class Product(Document):
                 "web_item_name": self.item_name,
                 "published": 1,
                 "website_image": self.image,
-                "slideshow": self.slide_show,
+                "slideshow": self.create_or_update_slideshow(),
                 "custom_demo_video": self.demo_video,
                 "website_warehouse": frappe.db.get_single_value("Stock Settings", "default_warehouse"),
                 "short_description": self.short_description,
