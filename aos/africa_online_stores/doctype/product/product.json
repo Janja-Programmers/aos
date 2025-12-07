@@ -1,15 +1,16 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "format:PROD-{####}",
+ "autoname": "naming_series:",
  "creation": "2025-06-24 12:46:40.996686",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "naming_series",
   "item_name",
-  "item_code",
   "item_price",
   "column_break_nujt",
+  "item_code",
   "category",
   "vendor",
   "section_break_azps",
@@ -33,9 +34,10 @@
   },
   {
    "fieldname": "item_code",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Item Code",
+   "options": "Item",
    "read_only": 1
   },
   {
@@ -113,16 +115,24 @@
    "fieldtype": "Table",
    "label": "Website Specifications",
    "options": "Product Website Specification"
+  },
+  {
+   "default": "PROD-.",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "options": "PROD-."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-09-17 16:08:58.111495",
+ "modified": "2025-12-07 17:12:04.317489",
  "modified_by": "Administrator",
  "module": "Africa Online Stores",
  "name": "Product",
- "naming_rule": "Expression",
+ "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {

@@ -6,13 +6,13 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "naming_series",
   "website_item",
   "user",
-  "customer",
   "column_break_vxiz",
   "item",
   "published_on",
-  "naming_series",
+  "customer",
   "reports_section",
   "reason",
   "status",
@@ -20,11 +20,11 @@
  ],
  "fields": [
   {
+   "default": "RPD-.YYYY.-",
    "fieldname": "naming_series",
    "fieldtype": "Select",
    "label": "Series",
-   "options": "UGC-.YY.-.MM.-.#####",
-   "reqd": 1
+   "options": "RPD-.YYYY.-"
   },
   {
    "fieldname": "column_break_vxiz",
@@ -97,7 +97,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-09-22 15:47:23.817116",
+ "modified": "2025-12-07 17:23:33.167100",
  "modified_by": "Administrator",
  "module": "Africa Online Stores",
  "name": "Reported Product",

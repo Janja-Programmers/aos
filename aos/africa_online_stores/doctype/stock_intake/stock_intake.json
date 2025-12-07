@@ -1,15 +1,18 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "format:MAT-STE-{YYYY}-{#####}",
+ "autoname": "naming_series:",
  "creation": "2025-06-26 00:41:56.453702",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "items",
+  "naming_series",
   "vendor",
+  "column_break_xowj",
+  "stock_entry",
   "amended_from",
-  "stock_entry"
+  "section_break_uovx",
+  "items"
  ],
  "fields": [
   {
@@ -44,17 +47,33 @@
    "label": "Stock Entry",
    "options": "Stock Entry",
    "read_only": 1
+  },
+  {
+   "default": "MAT-STE-.YYYY.-.",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "options": "MAT-STE-.YYYY.-."
+  },
+  {
+   "fieldname": "column_break_xowj",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_uovx",
+   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-09-17 16:11:25.029135",
+ "modified": "2025-12-07 17:17:23.958234",
  "modified_by": "Administrator",
  "module": "Africa Online Stores",
  "name": "Stock Intake",
- "naming_rule": "Expression",
+ "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {
