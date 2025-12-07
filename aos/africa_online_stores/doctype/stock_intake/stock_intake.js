@@ -12,6 +12,7 @@ frappe.ui.form.on("Stock Intake", {
 
 			return {
 				filters: {
+					is_stock_item: 1,
 					name: ["not in", selected_items],
 				},
 			};
