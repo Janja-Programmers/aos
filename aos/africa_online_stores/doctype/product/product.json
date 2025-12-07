@@ -36,10 +36,9 @@
   },
   {
    "fieldname": "item_code",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Item Code",
-   "options": "Item",
    "read_only": 1
   },
   {
@@ -140,7 +139,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-12-07 17:49:41.556889",
+ "modified": "2025-12-07 18:40:08.090669",
  "modified_by": "Administrator",
  "module": "Africa Online Stores",
  "name": "Product",
