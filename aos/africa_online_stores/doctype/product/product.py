@@ -35,9 +35,26 @@ class Product(Document):
                 if item_price_name:
                     frappe.delete_doc("Item Price", item_price_name, ignore_permissions=True)
 
-                # Delete Item
+                # Delete Slideshow
+                slideshow_name = f"{self.name}-Slideshow"
+                if frappe.db.exists("Website Slideshow", slideshow_name):
+                    frappe.delete_doc("Website Slideshow", slideshow_name, ignore_permissions=True)
+
+                # Delete or Disable Item
                 if frappe.db.exists("Item", self.item_code):
-                    frappe.delete_doc("Item", self.item_code, ignore_permissions=True)
+
+                    # Check if Item has SLE (stock history)
+                    has_sle = frappe.db.exists("Stock Ledger Entry", {"item_code": self.item_code})
+
+                    if has_sle:
+                        # Cannot delete → disable instead
+                        frappe.db.set_value("Item", self.item_code, "disabled", 1)
+                        frappe.msgprint(
+                            f"Item <b>{self.item_code}</b> has stock history and cannot be deleted. "
+                            f"It has been <b>disabled</b> instead."
+                        )
+                    else:
+                        frappe.delete_doc("Item", self.item_code, ignore_permissions=True)
 
         except Exception:
             frappe.log_error(frappe.get_traceback(), f"Failed to delete related records for Product {self.name}")
