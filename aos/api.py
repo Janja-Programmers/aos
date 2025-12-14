@@ -77,7 +77,6 @@ def get_product_detail(item_code):
         }
 
 
-@frappe.whitelist(allow_guest=True)
 def get_item_stock(item_code, warehouse=None):
     if not warehouse:
         warehouse = frappe.db.get_value("Item Default", {"parent": item_code}, "default_warehouse")
@@ -143,3 +142,17 @@ def delete_account():
 def get_default_company():
     company = frappe.db.get_single_value("Global Defaults", "default_company")
     return company or "Africa Online Stores"
+
+
+@frappe.whitelist(allow_guest=True)
+def get_categories():
+    return frappe.db.get_all(
+        "Item Group",
+        filters={
+            "show_in_website": 1,
+        },
+        fields=[
+            "name",
+            "image",
+        ]
+    )
