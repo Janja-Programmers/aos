@@ -9,10 +9,9 @@
   "naming_series",
   "item_name",
   "item_code",
-  "item_price",
-  "column_break_nujt",
-  "vendor",
   "category",
+  "item_price",
+  "vendor",
   "is_stock_item",
   "section_break_azps",
   "image",
@@ -42,15 +41,12 @@
    "read_only": 1
   },
   {
+   "depends_on": "eval: doc.category != \"Services\"",
    "fieldname": "item_price",
    "fieldtype": "Currency",
    "in_list_view": 1,
    "label": "Item Price",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_nujt",
-   "fieldtype": "Column Break"
+   "mandatory_depends_on": "eval: doc.category != \"Services\""
   },
   {
    "fieldname": "category",
@@ -121,9 +117,10 @@
   },
   {
    "default": "0",
+   "depends_on": "eval: doc.category != \"Services\"",
    "fieldname": "is_stock_item",
    "fieldtype": "Check",
-   "label": "Maintain Stock"
+   "label": "Maintain Stock (Optional)"
   },
   {
    "fieldname": "section_break_diid",
@@ -139,7 +136,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-12-07 18:40:08.090669",
+ "modified": "2025-12-16 19:05:15.443043",
  "modified_by": "Administrator",
  "module": "Africa Online Stores",
  "name": "Product",
