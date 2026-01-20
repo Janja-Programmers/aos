@@ -1,22 +1,21 @@
 app_name = "aos"
-app_title = "Africa Online Stores"
-app_publisher = "Kalutu Daniel"
-app_description = "A multi-vendor platform that connects buyers and vendors."
-app_email = "kalutudaniel@gmail.com"
+app_title = "AOS"
+app_publisher = "Africa Online Stores"
+app_description = "A multi-vendor marketplace platform enabling users to buy, sell, go live, and communicate via chat and in-app calls across multiple countries."
+app_email = "info@africaonlinestores.com"
 app_license = "mit"
-app_logo_url = "/files/aos-logo-sm.png"
 
 # Apps
 # ------------------
 
-required_apps = ["webshop"]
+# required_apps = []
 
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
 # 	{
 # 		"name": "aos",
 # 		"logo": "/assets/aos/logo.png",
-# 		"title": "Africa Online Stores",
+# 		"title": "AOS",
 # 		"route": "/aos",
 # 		"has_permission": "aos.api.permission.has_app_permission"
 # 	}
@@ -26,24 +25,12 @@ required_apps = ["webshop"]
 # ------------------
 
 # include js, css files in header of desk.html
-app_include_css = [
-    "/assets/aos/css/theme.css",
-    "/assets/aos/css/navbar.css",
-]
-app_include_js = [
-    "/assets/aos/js/navbar.js",
-]
+# app_include_css = "/assets/aos/css/aos.css"
+# app_include_js = "/assets/aos/js/aos.js"
 
 # include js, css files in header of web template
-web_include_css = [
-    "/assets/aos/css/aos.css",
-]
-
-web_include_js = [
-    "/assets/aos/js/product_ui/views.js",
-    "/assets/aos/js/product_ui/grid.js",
-    "/assets/aos/js/product_ui/list.js",
-]
+# web_include_css = "/assets/aos/css/aos.css"
+# web_include_js = "/assets/aos/js/aos.js"
 
 # include custom scss in every website theme (without file extension ".scss")
 # website_theme_scss = "aos/public/scss/website"
@@ -99,8 +86,7 @@ web_include_js = [
 # ------------
 
 # before_install = "aos.install.before_install"
-after_install = "aos.setup.install.run_all_setup"
-before_migrate = "aos.setup.install.run_all_setup"
+# after_install = "aos.install.after_install"
 
 # Uninstallation
 # ------------
@@ -180,11 +166,16 @@ before_migrate = "aos.setup.install.run_all_setup"
 
 # before_tests = "aos.install.before_tests"
 
+# Extend DocType Class
+# ------------------------------
+#
+# Specify custom mixins to extend the standard doctype controller.
+# extend_doctype_class = {
+# 	"Task": "aos.custom.task.CustomTaskMixin"
+# }
+
 # Overriding Methods
 # ------------------------------
-on_session_creation = [
-    "aos.overrides.portal.update_debtors_account",
-]
 #
 # override_whitelisted_methods = {
 # 	"frappe.desk.doctype.event.event.get_events": "aos.event.get_events"
@@ -254,74 +245,8 @@ on_session_creation = [
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
+# Translation
+# ------------
+# List of apps whose translatable strings should be excluded from this app's translations.
+# ignore_translatable_strings_from = []
 
-fixtures = [
-    {
-        "doctype": "Custom Field",
-        "filters": [
-            [
-                "dt", "in", [
-                    "Website Slideshow",
-                    "Item Price",
-                    "GL Entry",
-                    "Supplier",
-                    "Item",
-                    "Quotation",
-                    "Price List",
-                    "Sales Order",
-                    "Material Request",
-                    "Website Item",
-                    "Purchase Order",
-                    "Sales Invoice",
-                    "Stock Ledger Entry",
-                    "Payment Request",
-                    "Stock Entry",
-                    "Payment Entry",
-                ]
-            ]
-        ],
-    },
-    {
-        "doctype": "Property Setter",
-        "filters": [
-            [
-                "doc_type", "in", [
-                    "Website Slideshow",
-                    "Item Price",
-                    "GL Entry",
-                    "Supplier",
-                    "Item",
-                    "Quotation",
-                    "Price List",
-                    "Sales Order",
-                    "Material Request",
-                    "Website Item",
-                    "Purchase Order",
-                    "Sales Invoice",
-                    "Stock Ledger Entry",
-                    "Payment Request",
-                    "Stock Entry",
-                    "Payment Entry",
-                ]
-            ]
-        ],
-    },
-    {
-        "doctype": "Role Profile",
-        "filters": {
-            "name": ["in", ["Vendor"]],
-        },
-    },
-    {
-        "doctype": "Custom HTML Block",
-        "filters": {
-            "name": ["in", ["Home"]],
-        },
-    },
-    {
-        "doctype": "Workspace",
-        "filters": {
-            "name": ["in", ["Home"]]
-        },
-    },
-]

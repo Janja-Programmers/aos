@@ -1,14 +1,14 @@
 [project]
 name = "aos"
 authors = [
-    { name = "Kalutu Daniel", email = "kalutudaniel@gmail.com"}
+    { name = "Africa Online Stores", email = "info@africaonlinestores.com"}
 ]
-description = "A multi-vendor platform that connects buyers and vendors."
-requires-python = ">=3.10"
+description = "A multi-vendor marketplace platform enabling users to buy, sell, go live, and communicate via chat and in-app calls across multiple countries."
+requires-python = ">=3.14"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [
-    # "frappe~=15.0.0" # Installed and managed by bench.
+    # "frappe~=16.0.0" # Installed and managed by bench.
 ]
 
 [build-system]
@@ -21,7 +21,7 @@ build-backend = "flit_core.buildapi"
 
 [tool.ruff]
 line-length = 110
-target-version = "py310"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = [
@@ -50,6 +50,8 @@ ignore = [
     "UP030", # Use implicit references for positional format fields (translations)
     "UP031", # Use format specifiers instead of percent format
     "UP032", # Use f-string instead of `format` call (translations)
+    "UP037", # quoted annotations
+    "UP040", # Use type aliases instead of type annotations
 ]
 typing-modules = ["frappe.types.DF"]
 
