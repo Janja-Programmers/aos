@@ -1,19 +1,11 @@
 import frappe
-from frappe.utils import now_datetime
 
 from .constants import RESEND_LIMIT_PER_HOUR_PER_EMAIL, VERIFY_LIMIT_PER_HOUR_PER_EMAIL
 from .rate_limit import rate_limit
 from .responses import fail, ok
 from .validators import normalize_email
-from .verification import (
-    MAX_ATTEMPTS,
-    RESEND_COOLDOWN_SECONDS,
-    compute_expiry,
-    generate_otp,
-    get_ver_doc,
-    otp_hash,
-    send_otp_email,
-)
+from .verification import get_ver_doc
+from .otp_service import enforce_resend_cooldown, issue_otp, verify_otp
 
 
 def verify_email_otp_impl(email: str, otp: str):
@@ -37,27 +29,13 @@ def verify_email_otp_impl(email: str, otp: str):
     if not user_name:
         return fail("Account not found.", code="NOT_FOUND")
 
-    ver = get_ver_doc(user_name)
+    ver = get_ver_doc(user_name, purpose="email_verification")
     if not ver:
         return fail("OTP not found. Please request a new OTP.", code="OTP_NOT_FOUND")
 
-    if int(ver.is_used or 0) == 1:
-        return fail("OTP already used. Please request a new OTP.", code="OTP_USED")
-
-    if now_datetime() > ver.expires_at:
-        return fail("OTP expired. Please request a new OTP.", code="OTP_EXPIRED")
-
-    if int(ver.attempts or 0) >= MAX_ATTEMPTS:
-        return fail("Too many attempts. Please request a new OTP.", code="OTP_MAX_ATTEMPTS")
-
-    if otp_hash(otp) != ver.otp_hash:
-        ver.attempts = int(ver.attempts or 0) + 1
-        ver.save(ignore_permissions=True)
-        return fail("Invalid OTP.", code="OTP_INVALID")
-
-    # Mark OTP used
-    ver.is_used = 1
-    ver.save(ignore_permissions=True)
+    err = verify_otp(ver, otp, consume=True)
+    if err:
+        return err
 
     # Enable user
     user = frappe.get_doc("User", user_name)
@@ -90,29 +68,19 @@ def resend_email_otp_impl(email: str):
     if int(user.enabled or 0) == 1:
         return ok("Account already active.")
 
-    ver = get_ver_doc(user_name)
+    ver = get_ver_doc(user_name, purpose="email_verification")
     if not ver:
         return fail("OTP record not found. Please register again.", code="OTP_RECORD_MISSING")
 
-    # cooldown using last_sent_at
-    if getattr(ver, "last_sent_at", None):
-        delta = (now_datetime() - ver.last_sent_at).total_seconds()
-        if delta < RESEND_COOLDOWN_SECONDS:
-            wait = int(RESEND_COOLDOWN_SECONDS - delta)
-            return fail(
-                f"Please wait {wait}s before requesting another OTP.",
-                code="COOLDOWN",
-                data={"wait_seconds": wait},
-            )
+    cooldown = enforce_resend_cooldown(ver)
+    if cooldown:
+        return cooldown
 
-    otp = generate_otp()
-    ver.otp_hash = otp_hash(otp)
-    ver.expires_at = compute_expiry()
-    ver.is_used = 0
-    ver.attempts = 0
-    ver.last_sent_at = now_datetime()
-    ver.save(ignore_permissions=True)
-
-    send_otp_email(email=email, otp=otp, full_name=user.first_name or "")
+    issue_otp(
+        ver,
+        email=email,
+        full_name=user.first_name or "",
+        purpose="email_verification",
+    )
 
     return ok("New OTP sent to email.")

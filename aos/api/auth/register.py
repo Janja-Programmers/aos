@@ -4,7 +4,7 @@ from .constants import REGISTER_LIMIT_PER_HOUR_PER_IP
 from .rate_limit import rate_limit, request_ip
 from .responses import fail, ok
 from .validators import normalize_email, normalize_name, validate_registration_inputs
-from .verification import compute_expiry, generate_otp, get_ver_doc, otp_hash, send_otp_email
+from .verification import compute_expiry, generate_otp, ensure_ver_doc, otp_hash, send_otp_email
 
 
 def register_impl(email: str, password: str, full_name: str):
@@ -48,34 +48,21 @@ def register_impl(email: str, password: str, full_name: str):
         user.flags.ignore_password_policy = True  # remove later if you want strong policy
         user.save(ignore_permissions=True)
 
-        # OTP record (one per user)
+        # OTP record (one per user + purpose)
         otp = generate_otp()
         expires_at = compute_expiry()
 
-        ver = get_ver_doc(user.name)
-        if ver:
-            ver.otp_hash = otp_hash(otp)
-            ver.expires_at = expires_at
-            ver.is_used = 0
-            ver.attempts = 0
-            ver.last_sent_at = frappe.utils.now_datetime()
-            ver.save(ignore_permissions=True)
-        else:
-            doc = frappe.get_doc(
-                {
-                    "doctype": "AOS Email Verification",
-                    "user": user.name,
-                    "email": email,
-                    "otp_hash": otp_hash(otp),
-                    "expires_at": expires_at,
-                    "is_used": 0,
-                    "attempts": 0,
-                    "last_sent_at": frappe.utils.now_datetime(),
-                }
-            )
-            doc.insert(ignore_permissions=True)
+        ver = ensure_ver_doc(user.name, email=email, purpose="email_verification")
+        ver.otp_hash = otp_hash(otp)
+        ver.expires_at = expires_at
+        ver.is_used = 0
+        ver.attempts = 0
+        ver.last_sent_at = frappe.utils.now_datetime()
+        ver.reset_token_hash = ""
+        ver.reset_token_expires_at = None
+        ver.save(ignore_permissions=True)
 
-        send_otp_email(email=email, otp=otp, full_name=full_name)
+        send_otp_email(email=email, otp=otp, full_name=full_name, purpose="email_verification")
 
         return ok("OTP sent to email. Please verify to activate account.")
 

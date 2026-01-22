@@ -9,6 +9,11 @@ import frappe
 from .register import register_impl
 from .otp import verify_email_otp_impl, resend_email_otp_impl
 from .session import login_impl, me_impl, logout_impl
+from .password_reset import (
+    forgot_password_request_impl,
+    forgot_password_verify_otp_impl,
+    forgot_password_reset_impl,
+)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -39,3 +44,27 @@ def me():
 @frappe.whitelist(methods=["POST"])
 def logout():
     return logout_impl()
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def forgot_password_request(email: str):
+    return forgot_password_request_impl(email=email)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def forgot_password_verify_otp(email: str, otp: str):
+    return forgot_password_verify_otp_impl(email=email, otp=otp)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def forgot_password_reset(
+    email: str,
+    reset_token: str,
+    new_password: str,
+    confirm_password: str,
+):
+    return forgot_password_reset_impl(
+        email=email,
+        reset_token=reset_token,
+        new_password=new_password,
+        confirm_password=confirm_password,
+    )

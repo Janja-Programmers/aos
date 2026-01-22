@@ -1,18 +1,20 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "field:user",
  "creation": "2026-01-20 16:50:40.526180",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "user",
   "email",
+  "purpose",
   "otp_hash",
   "expires_at",
+  "last_sent_at",
   "column_break_bfpd",
   "attempts",
-  "last_sent_at",
+  "reset_token_hash",
+  "reset_token_expires_at",
   "is_used"
  ],
  "fields": [
@@ -21,8 +23,7 @@
    "fieldtype": "Link",
    "label": "User",
    "options": "User",
-   "reqd": 1,
-   "unique": 1
+   "reqd": 1
   },
   {
    "fieldname": "column_break_bfpd",
@@ -40,8 +41,7 @@
    "fieldname": "expires_at",
    "fieldtype": "Datetime",
    "in_list_view": 1,
-   "label": "Expires At",
-   "reqd": 1
+   "label": "Expires At"
   },
   {
    "default": "0",
@@ -53,8 +53,7 @@
   {
    "fieldname": "otp_hash",
    "fieldtype": "Data",
-   "label": "OTP Hash",
-   "reqd": 1
+   "label": "OTP Hash"
   },
   {
    "fieldname": "attempts",
@@ -67,16 +66,32 @@
    "fieldtype": "Datetime",
    "in_list_view": 1,
    "label": "Last Sent At"
+  },
+  {
+   "fieldname": "purpose",
+   "fieldtype": "Select",
+   "label": "Purpose",
+   "options": "email_verification\npassword_reset",
+   "reqd": 1
+  },
+  {
+   "fieldname": "reset_token_hash",
+   "fieldtype": "Data",
+   "label": "Reset Token Hash"
+  },
+  {
+   "fieldname": "reset_token_expires_at",
+   "fieldtype": "Datetime",
+   "label": "Reset Token Expires At "
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-20 18:41:09.718813",
+ "modified": "2026-01-22 15:12:44.739715",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Email Verification",
- "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {

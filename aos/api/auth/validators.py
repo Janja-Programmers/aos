@@ -28,3 +28,9 @@ def validate_email(email: str):
     if not email or not EMAIL_REGEX.match(email):
         return fail("A valid email is required.", code="VALIDATION_ERROR")
     return None
+
+
+def validate_password_strength(password: str):
+    if not password or len(password) < 8:
+        return fail("Password must be at least 8 characters long.", code="VALIDATION_ERROR")
+    return None
