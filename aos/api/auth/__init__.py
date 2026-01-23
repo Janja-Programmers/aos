@@ -9,6 +9,8 @@ import frappe
 from .register import register_impl
 from .otp import verify_email_otp_impl, resend_email_otp_impl
 from .session import login_impl, me_impl, logout_impl
+from .password_change import change_password_impl
+
 from .password_reset import (
     forgot_password_request_impl,
     forgot_password_verify_otp_impl,
@@ -68,3 +70,13 @@ def forgot_password_reset(
         new_password=new_password,
         confirm_password=confirm_password,
     )
+
+
+@frappe.whitelist(methods=["POST"])
+def change_password(current_password: str, new_password: str, confirm_password: str):
+    return change_password_impl(
+        current_password=current_password,
+        new_password=new_password,
+        confirm_password=confirm_password,
+    )
+

@@ -20,5 +20,5 @@ def cache_incr(key: str, ttl_seconds: int) -> int:
 
 def rate_limit(key: str, ttl_seconds: int, limit: int, message: str):
     if cache_incr(key, ttl_seconds) > limit:
-        return fail(message, code="RATE_LIMITED")
+        return fail(message, code="RATE_LIMIT")
     return None
