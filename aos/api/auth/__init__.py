@@ -10,6 +10,7 @@ from .register import register_impl
 from .otp import verify_email_otp_impl, resend_email_otp_impl
 from .session import login_impl, me_impl, logout_impl
 from .password_change import change_password_impl
+from .google_login import google_login_impl
 
 from .password_reset import (
     forgot_password_request_impl,
@@ -70,6 +71,11 @@ def forgot_password_reset(
         new_password=new_password,
         confirm_password=confirm_password,
     )
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def google_login(id_token: str):
+    return google_login_impl(id_token=id_token)
 
 
 @frappe.whitelist(methods=["POST"])
