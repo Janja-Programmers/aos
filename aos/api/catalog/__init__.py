@@ -15,7 +15,7 @@ import frappe
 from .categories import get_categories_impl
 
 
-@frappe.whitelist(methods=["GET"])
+@frappe.whitelist(allow_guest=True, methods=["GET"])
 def get_categories(include_inactive: int | None = None):
     """Return AOS categories.
 
