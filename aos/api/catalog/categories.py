@@ -14,8 +14,8 @@ from typing import Any, Dict, List, Optional
 
 import frappe
 
-from aos.api.auth.rate_limit import rate_limit, request_ip
-from aos.api.auth.responses import fail, ok
+from aos.api.shared.rate_limit import rate_limit, request_ip
+from aos.api.shared.responses import fail, ok
 
 from .constants import GET_CATEGORIES_LIMIT_PER_HOUR_PER_IP
 

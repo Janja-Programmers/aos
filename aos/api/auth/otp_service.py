@@ -1,7 +1,7 @@
 import frappe
 from frappe.utils import now_datetime
 
-from .responses import fail
+from aos.api.shared.responses import fail
 from .verification import MAX_ATTEMPTS, RESEND_COOLDOWN_SECONDS, otp_hash, compute_expiry, generate_otp, send_otp_email
 
 

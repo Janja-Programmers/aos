@@ -2,9 +2,9 @@ import frappe
 from frappe.utils.password import check_password, update_password
 from frappe.utils import now_datetime
 
+from aos.api.shared.rate_limit import rate_limit, request_ip
+from aos.api.shared.responses import ok, fail
 from .constants import CHANGE_PASSWORD_LIMIT_PER_HOUR_PER_USER, CHANGE_PASSWORD_LIMIT_PER_HOUR_PER_IP
-from .rate_limit import rate_limit, request_ip
-from .responses import fail, ok
 from .validators import validate_password_strength
 
 

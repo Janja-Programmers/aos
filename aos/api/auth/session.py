@@ -1,8 +1,9 @@
 import frappe
+from frappe.exceptions import AuthenticationError
 
+from aos.api.shared.rate_limit import rate_limit, request_ip
+from aos.api.shared.responses import ok, fail
 from .constants import LOGIN_LIMIT_PER_HOUR_PER_EMAIL, LOGIN_LIMIT_PER_HOUR_PER_IP
-from .rate_limit import rate_limit, request_ip
-from .responses import fail, ok
 from .users import get_user_payload
 from .validators import normalize_email, validate_email
 
@@ -26,7 +27,7 @@ def login_impl(email: str, password: str):
     if rl:
         return rl
 
-    # rate limit by email (only if email present)
+    # rate limit by email
     if email:
         rl2 = rate_limit(
             key=f"aos:login:email:{email}",
@@ -70,11 +71,10 @@ def login_impl(email: str, password: str):
             },
         )
 
-    except Exception as e:
-        msg = (str(e) or "").lower()
-        if "password" in msg or "invalid" in msg or "authentication" in msg:
-            return fail("Invalid email or password.", code="INVALID_CREDENTIALS")
+    except AuthenticationError:
+        return fail("Invalid email or password.", code="INVALID_CREDENTIALS")
 
+    except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Login Failed")
         return fail("Login failed. Please try again.", code="LOGIN_FAILED")
 

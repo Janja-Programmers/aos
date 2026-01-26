@@ -5,16 +5,9 @@ from __future__ import annotations
 import re
 import frappe
 
-from aos.api.auth.responses import fail
+from aos.api.shared.responses import fail
+from aos.api.shared.auth import require_login
 from .constants import FULL_NAME_MIN_LEN, FULL_NAME_MAX_LEN, FILE_URL_ALLOWED_PREFIXES
-
-
-def require_login():
-    """Return current user or a fail(...) dict."""
-    user = getattr(frappe.session, "user", None) or "Guest"
-    if user == "Guest":
-        return None, fail("Please login to continue.", code="UNAUTHORIZED")
-    return user, None
 
 
 def validate_full_name(value: str):

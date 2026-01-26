@@ -1,13 +1,13 @@
 import frappe
 from frappe.utils import now_datetime
 
+from aos.api.shared.rate_limit import rate_limit, request_ip
+from aos.api.shared.responses import ok, fail
 from .constants import (
     FORGOT_REQUEST_LIMIT_PER_HOUR_PER_EMAIL,
     FORGOT_VERIFY_LIMIT_PER_HOUR_PER_EMAIL,
     FORGOT_RESET_LIMIT_PER_HOUR_PER_EMAIL,
 )
-from .rate_limit import rate_limit, request_ip
-from .responses import fail, ok
 from .validators import normalize_email, validate_password_strength
 from .verification import (
     compute_reset_token_expiry,

@@ -8,9 +8,14 @@ from __future__ import annotations
 
 import frappe
 
-from aos.api.auth.responses import ok, fail
+from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.responses import ok, fail
 
 from .constants import EDITABLE_USER_FIELDS
+from .constants import (
+    GET_PROFILE_LIMIT_PER_MINUTE_PER_USER,
+    UPDATE_PROFILE_LIMIT_PER_MINUTE_PER_USER,
+)
 from .serializers import serialize_user
 from .validators import (
     require_login,
@@ -24,6 +29,15 @@ def get_profile_impl():
     current_user, err = require_login()
     if err:
         return err
+
+    rl = rate_limit(
+        key=f"aos:accounts:get_profile:user:{current_user}",
+        ttl_seconds=60,
+        limit=GET_PROFILE_LIMIT_PER_MINUTE_PER_USER,
+        message="Too many requests. Please try again shortly.",
+    )
+    if rl:
+        return rl
 
     try:
         user_doc = frappe.get_doc("User", current_user)
@@ -39,6 +53,15 @@ def update_profile_impl(**kwargs):
     current_user, err = require_login()
     if err:
         return err
+
+    rl = rate_limit(
+        key=f"aos:accounts:update_profile:user:{current_user}",
+        ttl_seconds=60,
+        limit=UPDATE_PROFILE_LIMIT_PER_MINUTE_PER_USER,
+        message="Too many requests. Please try again shortly.",
+    )
+    if rl:
+        return rl
 
     incoming = {k: v for k, v in (kwargs or {}).items() if k in EDITABLE_USER_FIELDS}
     if not incoming:

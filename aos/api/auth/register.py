@@ -1,8 +1,8 @@
 import frappe
 
+from aos.api.shared.rate_limit import rate_limit, request_ip
+from aos.api.shared.responses import ok, fail
 from .constants import REGISTER_LIMIT_PER_HOUR_PER_IP
-from .rate_limit import rate_limit, request_ip
-from .responses import fail, ok
 from .validators import normalize_email, normalize_name, validate_registration_inputs
 from .verification import compute_expiry, generate_otp, ensure_ver_doc, otp_hash, send_otp_email
 

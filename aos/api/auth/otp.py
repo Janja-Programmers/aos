@@ -1,8 +1,8 @@
 import frappe
 
+from aos.api.shared.responses import ok, fail
+from aos.api.shared.rate_limit import rate_limit 
 from .constants import RESEND_LIMIT_PER_HOUR_PER_EMAIL, VERIFY_LIMIT_PER_HOUR_PER_EMAIL
-from .rate_limit import rate_limit
-from .responses import fail, ok
 from .validators import normalize_email
 from .verification import get_ver_doc
 from .otp_service import enforce_resend_cooldown, issue_otp, verify_otp

@@ -1,6 +1,5 @@
 import re
-
-from .responses import fail
+from aos.api.shared.responses import fail
 
 
 EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")

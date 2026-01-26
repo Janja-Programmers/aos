@@ -20,3 +20,7 @@ FILE_URL_ALLOWED_PREFIXES = (
     "/files/",
     "/private/files/",
 )
+
+# Rate limits (defense-in-depth).
+GET_PROFILE_LIMIT_PER_MINUTE_PER_USER = 60
+UPDATE_PROFILE_LIMIT_PER_MINUTE_PER_USER = 20
