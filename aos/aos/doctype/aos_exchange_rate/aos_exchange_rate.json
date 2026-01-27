@@ -1,0 +1,85 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-01-27 15:49:34.380361",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "base_currency",
+  "quote_currency",
+  "rate",
+  "column_break_acac",
+  "fetched_at",
+  "source",
+  "is_active"
+ ],
+ "fields": [
+  {
+   "fieldname": "base_currency",
+   "fieldtype": "Link",
+   "label": "Base Currency",
+   "options": "Currency",
+   "default": "USD"
+  },
+  {
+   "fieldname": "quote_currency",
+   "fieldtype": "Link",
+   "label": "Quote Currency",
+   "options": "Currency",
+   "unique": 1
+  },
+  {
+   "fieldname": "rate",
+   "fieldtype": "Float",
+   "label": "Rate",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_acac",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "fetched_at",
+   "fieldtype": "Datetime",
+   "label": "Fetched At"
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Data",
+   "label": "Source"
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Is Active"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-01-27 15:52:03.684635",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Exchange Rate",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

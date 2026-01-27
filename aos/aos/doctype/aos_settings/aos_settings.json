@@ -5,10 +5,22 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "localization_tab",
+  "base_currency",
+  "default_language",
+  "default_country",
+  "column_break_ohud",
+  "enable_all_countries",
+  "enable_all_languages",
+  "google_auth_tab",
   "google_oauth_client_ids",
   "column_break_fwrk",
   "enable_google_sign_in",
-  "auto_enable_users_created_via_google"
+  "auto_enable_users_created_via_google",
+  "foreign_exchange_tab",
+  "fx_provider",
+  "fx_refresh_hours",
+  "fx_api_key"
  ],
  "fields": [
   {
@@ -31,13 +43,77 @@
    "fieldname": "auto_enable_users_created_via_google",
    "fieldtype": "Check",
    "label": "Auto enable users created via Google"
+  },
+  {
+   "fieldname": "google_auth_tab",
+   "fieldtype": "Tab Break",
+   "label": "Google Auth"
+  },
+  {
+   "fieldname": "localization_tab",
+   "fieldtype": "Tab Break",
+   "label": "Localization"
+  },
+  {
+   "fieldname": "base_currency",
+   "fieldtype": "Link",
+   "label": "Base Currency",
+   "options": "Currency"
+  },
+  {
+   "fieldname": "default_language",
+   "fieldtype": "Link",
+   "label": "Default Language",
+   "options": "Language"
+  },
+  {
+   "fieldname": "default_country",
+   "fieldtype": "Link",
+   "label": "Default Country",
+   "options": "Country"
+  },
+  {
+   "fieldname": "column_break_ohud",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_all_countries",
+   "fieldtype": "Check",
+   "label": "Enable All Countries"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_all_languages",
+   "fieldtype": "Check",
+   "label": "Enable All Languages"
+  },
+  {
+   "fieldname": "foreign_exchange_tab",
+   "fieldtype": "Tab Break",
+   "label": "Foreign Exchange"
+  },
+  {
+   "fieldname": "fx_provider",
+   "fieldtype": "Data",
+   "label": "FX Provider"
+  },
+  {
+   "fieldname": "fx_refresh_hours",
+   "fieldtype": "Int",
+   "label": "FX Refresh Hours"
+  },
+  {
+   "fieldname": "fx_api_key",
+   "fieldtype": "Password",
+   "label": "FX Api Key"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-01-25 18:50:46.685491",
+ "modified": "2026-01-27 16:35:02.322317",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Settings",
