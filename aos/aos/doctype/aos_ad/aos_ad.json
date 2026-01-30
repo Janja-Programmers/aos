@@ -33,14 +33,16 @@
    "fieldname": "title",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Title"
+   "label": "Title",
+   "reqd": 1
   },
   {
    "fieldname": "category",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Category",
-   "options": "AOS Category"
+   "options": "AOS Category",
+   "reqd": 1
   },
   {
    "fieldname": "details_tab",
@@ -117,7 +119,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-30 16:43:17.994343",
+ "modified": "2026-01-30 16:49:57.609236",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad",
