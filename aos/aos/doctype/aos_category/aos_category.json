@@ -8,15 +8,21 @@
  "engine": "InnoDB",
  "field_order": [
   "category_name",
+  "pricing_requirement",
+  "allowed_price_types",
+  "allowed_price_units",
+  "column_break_ucuk",
   "parent_aos_category",
   "old_parent",
-  "lft",
-  "rgt",
-  "column_break_ucuk",
   "sort_order",
   "icon",
   "is_group",
-  "is_active"
+  "is_active",
+  "is_service",
+  "section_break_patt",
+  "attributes",
+  "lft",
+  "rgt"
  ],
  "fields": [
   {
@@ -86,6 +92,41 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Is Active"
+  },
+  {
+   "fieldname": "section_break_patt",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "attributes",
+   "fieldtype": "Table",
+   "label": "Attributes",
+   "options": "Category Attribute Row"
+  },
+  {
+   "default": "Required",
+   "fieldname": "pricing_requirement",
+   "fieldtype": "Select",
+   "label": "Pricing Requirement",
+   "options": "Required\nOptional\nHidden"
+  },
+  {
+   "default": "Fixed\nNegotiable\nContact for price\nFree",
+   "fieldname": "allowed_price_types",
+   "fieldtype": "Small Text",
+   "label": "Allowed Price Types"
+  },
+  {
+   "default": "Per hour\nPer day\nPer job\nPer service\nPer session",
+   "fieldname": "allowed_price_units",
+   "fieldtype": "Small Text",
+   "label": "Allowed Price Units"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_service",
+   "fieldtype": "Check",
+   "label": "Is Service"
   }
  ],
  "grid_page_length": 50,
@@ -93,7 +134,7 @@
  "index_web_pages_for_search": 1,
  "is_tree": 1,
  "links": [],
- "modified": "2026-01-26 16:42:18.738270",
+ "modified": "2026-01-30 13:12:19.243985",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Category",
