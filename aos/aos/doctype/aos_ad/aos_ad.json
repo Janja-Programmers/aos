@@ -21,7 +21,13 @@
   "price_type",
   "currency",
   "price",
-  "price_unit"
+  "price_unit",
+  "review_tab",
+  "status",
+  "reviewed_by",
+  "expires_on",
+  "column_break_uadk",
+  "decline_reason"
  ],
  "fields": [
   {
@@ -114,12 +120,47 @@
    "fieldtype": "Table",
    "label": "Images",
    "options": "AOS Ad Image"
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Draft\nReviewing\nActive\nDeclined\nSold\nExpired"
+  },
+  {
+   "fieldname": "reviewed_by",
+   "fieldtype": "Link",
+   "label": "Reviewed By",
+   "options": "User"
+  },
+  {
+   "fieldname": "expires_on",
+   "fieldtype": "Date",
+   "label": "Expires On"
+  },
+  {
+   "fieldname": "column_break_uadk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval: doc.status == \"Declined\"",
+   "fieldname": "decline_reason",
+   "fieldtype": "Small Text",
+   "label": "Decline Reason",
+   "mandatory_depends_on": "eval: doc.status == \"Declined\""
+  },
+  {
+   "fieldname": "review_tab",
+   "fieldtype": "Tab Break",
+   "label": "Review"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-30 16:49:57.609236",
+ "modified": "2026-01-31 01:48:28.265286",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad",
@@ -143,5 +184,31 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [
+  {
+   "color": "Gray",
+   "title": "Draft"
+  },
+  {
+   "color": "Purple",
+   "title": "Reviewing"
+  },
+  {
+   "color": "Green",
+   "title": "Active"
+  },
+  {
+   "color": "Red",
+   "title": "Declined"
+  },
+  {
+   "color": "Blue",
+   "title": "Sold"
+  },
+  {
+   "color": "Orange",
+   "title": "Expired"
+  }
+ ],
+ "track_changes": 1
 }
