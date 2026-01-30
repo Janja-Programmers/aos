@@ -104,11 +104,10 @@
    "options": "Category Attribute Row"
   },
   {
-   "default": "Required",
    "fieldname": "pricing_requirement",
    "fieldtype": "Select",
    "label": "Pricing Requirement",
-   "options": "Required\nOptional\nHidden"
+   "options": "\nRequired\nOptional\nHidden"
   },
   {
    "default": "Fixed\nNegotiable\nContact for price\nFree",
@@ -134,7 +133,7 @@
  "index_web_pages_for_search": 1,
  "is_tree": 1,
  "links": [],
- "modified": "2026-01-30 13:12:19.243985",
+ "modified": "2026-01-30 18:31:08.791332",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Category",

@@ -301,7 +301,7 @@ class AOSAd(Document):
         file_doc = frappe.db.get_value(
             "File",
             {"file_url": video_url},
-            ["name", "file_size", "file_name", "content_type"],
+            ["name", "file_size", "file_name"],
             as_dict=True,
         )
 
