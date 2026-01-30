@@ -10,6 +10,9 @@
   "naming_series",
   "title",
   "category",
+  "section_break_uqvx",
+  "video",
+  "images",
   "details_tab",
   "details",
   "description_tab",
@@ -93,12 +96,28 @@
    "fieldname": "price_unit",
    "fieldtype": "Select",
    "label": "Price Unit"
+  },
+  {
+   "fieldname": "section_break_uqvx",
+   "fieldtype": "Section Break",
+   "label": "Media"
+  },
+  {
+   "fieldname": "video",
+   "fieldtype": "Attach",
+   "label": "Video"
+  },
+  {
+   "fieldname": "images",
+   "fieldtype": "Table",
+   "label": "Images",
+   "options": "AOS Ad Image"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-30 13:24:29.102314",
+ "modified": "2026-01-30 16:43:17.994343",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad",
