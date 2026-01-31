@@ -59,31 +59,34 @@ def normalize_list_payload(val: Any) -> List[Dict[str, Any]]:
     return []
 
 
-def validate_basic_fields(title: Any, category: Any, description: Any):
+def validate_basic_fields(title: Any, location: Any, category: Any, description: Any):
     title = (str(title or "").strip())
+    location = (str(location or "").strip())
     category = (str(category or "").strip())
     description = (str(description or "").strip())
 
     if not title:
-        return None, None, None, fail("Title is required.", code="VALIDATION_ERROR")
+        return None, None, None, None, fail("Title is required.", code="VALIDATION_ERROR")
+    if not location:
+        return None, None, None, None, fail("Location is required.", code="VALIDATION_ERROR")
     if not category:
-        return None, None, None, fail("Category is required.", code="VALIDATION_ERROR")
+        return None, None, None, None, fail("Category is required.", code="VALIDATION_ERROR")
     if not description:
-        return None, None, None, fail("Description is required.", code="VALIDATION_ERROR")
+        return None, None, None, None, fail("Description is required.", code="VALIDATION_ERROR")
 
     # Ensure category exists
     if not frappe.db.exists("AOS Category", category):
-        return None, None, None, fail("Category not found.", code="NOT_FOUND")
+        return None, None, None, None, fail("Category not found.", code="NOT_FOUND")
 
     # Optional: enforce active category if field exists
     try:
         is_active = frappe.db.get_value("AOS Category", category, "is_active")
         if is_active is not None and int(is_active or 0) != 1:
-            return None, None, None, fail("Category is inactive.", code="VALIDATION_ERROR")
+            return None, None, None, None, fail("Category is inactive.", code="VALIDATION_ERROR")
     except Exception:
         pass
 
-    return title, category, description, None
+    return title, location, category, description, None
 
 
 def sanitize_details(details: Any) -> List[Dict[str, Any]]:

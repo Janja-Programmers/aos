@@ -104,9 +104,89 @@ def _get_detail_value_for_type(row: Any, field_type: str):
 
 class AOSAd(Document):
     def validate(self):
+        self._validate_location()
+        self._validate_media()
         self._validate_details()
         self._validate_pricing()
-        self._validate_media()
+
+    def _validate_location(self) -> None:
+        if not getattr(self, "location", None):
+            return
+
+        location = _norm(getattr(self, "location", None))
+        country = _norm(getattr(self, "country", None))
+
+        loc = frappe.db.get_value(
+            "AOS Location",
+            location,
+            ["name", "country", "is_active", "location_name"],
+            as_dict=True,
+        )
+        if not loc:
+            frappe.throw("Invalid location. Please select a valid location.")
+
+        if int(loc.get("is_active") or 0) != 1:
+            frappe.throw("This location is not available. Please select another one.")
+
+        loc_country = _norm(loc.get("country"))
+        if not country and loc_country:
+            self.country = loc_country
+            country = loc_country
+
+        if country and loc_country and country != loc_country:
+            frappe.throw("Location does not belong to the selected country.")
+    
+    def _validate_media(self) -> None:
+        images = list(getattr(self, "images", []) or [])
+
+        if len(images) < 1:
+            frappe.throw("Please upload at least 1 image.")
+
+        if len(images) > _MAX_IMAGES:
+            frappe.throw(f"You can upload a maximum of {_MAX_IMAGES} images.")
+
+        primary_count = 0
+        seen_urls: Set[str] = set()
+
+        for idx, row in enumerate(images, start=1):
+            img_url = _norm(getattr(row, "image", None))
+            if not img_url:
+                frappe.throw(f"Image is required on row {idx}.")
+
+            if img_url in seen_urls:
+                frappe.throw("You have selected the same image more than once.")
+            seen_urls.add(img_url)
+
+            if int(getattr(row, "is_primary", 0) or 0) == 1:
+                primary_count += 1
+
+        if primary_count != 1:
+            frappe.throw("Please set exactly 1 primary image.")
+
+        video_url = _norm(getattr(self, "video", None))
+        if not video_url:
+            return
+
+        file_doc = frappe.db.get_value(
+            "File",
+            {"file_url": video_url},
+            ["name", "file_size", "file_name"],
+            as_dict=True,
+        )
+
+        if not file_doc:
+            frappe.throw("Invalid video attachment. Please upload the video again.")
+            return
+
+        size_bytes = int(file_doc.file_size or 0)
+        max_bytes = _MAX_VIDEO_MB * 1024 * 1024
+
+        if size_bytes > max_bytes:
+            frappe.throw(f"Video is too large. Maximum allowed is {_MAX_VIDEO_MB}MB.")
+
+        fname = (file_doc.file_name or "").lower()
+        if fname and not fname.endswith(_ALLOWED_VIDEO_EXTS):
+            frappe.throw("Unsupported video format. Please upload MP4/MOV/WebM.")
 
     def _validate_details(self) -> None:
         if not getattr(self, "category", None):
@@ -266,55 +346,3 @@ class AOSAd(Document):
         else:
             if price_type:
                 frappe.throw("Invalid Price Type.")
-
-    def _validate_media(self) -> None:
-        images = list(getattr(self, "images", []) or [])
-
-        if len(images) < 1:
-            frappe.throw("Please upload at least 1 image.")
-
-        if len(images) > _MAX_IMAGES:
-            frappe.throw(f"You can upload a maximum of {_MAX_IMAGES} images.")
-
-        primary_count = 0
-        seen_urls: Set[str] = set()
-
-        for idx, row in enumerate(images, start=1):
-            img_url = _norm(getattr(row, "image", None))
-            if not img_url:
-                frappe.throw(f"Image is required on row {idx}.")
-
-            if img_url in seen_urls:
-                frappe.throw("You have selected the same image more than once.")
-            seen_urls.add(img_url)
-
-            if int(getattr(row, "is_primary", 0) or 0) == 1:
-                primary_count += 1
-
-        if primary_count != 1:
-            frappe.throw("Please set exactly 1 primary image.")
-
-        video_url = _norm(getattr(self, "video", None))
-        if not video_url:
-            return
-
-        file_doc = frappe.db.get_value(
-            "File",
-            {"file_url": video_url},
-            ["name", "file_size", "file_name"],
-            as_dict=True,
-        )
-
-        if not file_doc:
-            frappe.throw("Invalid video attachment. Please upload the video again.")
-            return
-
-        size_bytes = int(file_doc.file_size or 0)
-        max_bytes = _MAX_VIDEO_MB * 1024 * 1024
-
-        if size_bytes > max_bytes:
-            frappe.throw(f"Video is too large. Maximum allowed is {_MAX_VIDEO_MB}MB.")
-
-        fname = (file_doc.file_name or "").lower()
-        if fname and not fname.endswith(_ALLOWED_VIDEO_EXTS):
-            frappe.throw("Unsupported video format. Please upload MP4/MOV/WebM.")

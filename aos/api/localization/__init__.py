@@ -12,6 +12,7 @@ from __future__ import annotations
 import frappe
 
 from .bundle import get_locale_bundle_impl
+from .locations import get_locations_impl
 from .preferences import get_my_preferences_impl, update_preferences_impl
 
 
@@ -51,4 +52,19 @@ def update_preferences(
         timezone=timezone,
         override_language=bool(int(override_language or 0)) if override_language is not None else None,
         override_currency=bool(int(override_currency or 0)) if override_currency is not None else None,
+    )
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+def get_locations(country: str | None = None, include_inactive: int | None = None):
+    """Return AOS locations for a selected country.
+
+    Args:
+        country: Country.name or Country.code.
+        include_inactive: optional flag (0/1). Defaults to 0.
+    """
+
+    return get_locations_impl(
+        country=country,
+        include_inactive=bool(int(include_inactive or 0)),
     )

@@ -54,3 +54,33 @@ def resolve_currency(value: str | None):
         return code, None
 
     return None, fail("Invalid currency.", code="VALIDATION_ERROR", data={"field": "currency"})
+
+
+def resolve_location(location: str | None, *, country: str | None = None):
+    """Resolve a location input to AOS Location.name.
+
+    Args:
+        location: AOS Location.name.
+        country: optional Country.name / code. If provided, enforces match.
+    """
+
+    v = (location or "").strip()
+    if not v:
+        return None, None
+
+    if not frappe.db.exists("AOS Location", v):
+        return None, fail("Invalid location.", code="VALIDATION_ERROR", data={"field": "location"})
+
+    if country:
+        country_name, err = resolve_country(country)
+        if err:
+            return None, err
+        loc_country = frappe.db.get_value("AOS Location", v, "country")
+        if country_name and loc_country and loc_country != country_name:
+            return None, fail(
+                "Location does not belong to the selected country.",
+                code="VALIDATION_ERROR",
+                data={"field": "location"},
+            )
+
+    return v, None

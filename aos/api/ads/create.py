@@ -45,8 +45,8 @@ def create_ad_impl(**kwargs):
     if rl:
         return rl
 
-    title, category, description, e = validate_basic_fields(
-        kwargs.get("title"), kwargs.get("category"), kwargs.get("description")
+    title, location, category, description, e = validate_basic_fields(
+        kwargs.get("title"), kwargs.get("location"), kwargs.get("category"), kwargs.get("description")
     )
     if e:
         return e
@@ -75,6 +75,7 @@ def create_ad_impl(**kwargs):
     try:
         ad = frappe.new_doc("AOS Ad")
         ad.title = title
+        ad.location = location
         ad.category = category
         ad.description = description
 

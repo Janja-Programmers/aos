@@ -10,6 +10,9 @@
   "naming_series",
   "title",
   "category",
+  "column_break_rokk",
+  "country",
+  "location",
   "section_break_uqvx",
   "video",
   "images",
@@ -155,12 +158,29 @@
    "fieldname": "review_tab",
    "fieldtype": "Tab Break",
    "label": "Review"
+  },
+  {
+   "fieldname": "column_break_rokk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "country",
+   "fieldtype": "Link",
+   "label": "Country",
+   "options": "Country"
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Link",
+   "label": "Location",
+   "options": "AOS Location",
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-31 01:48:28.265286",
+ "modified": "2026-01-31 13:15:15.620192",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad",
