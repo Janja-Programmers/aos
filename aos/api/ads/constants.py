@@ -1,4 +1,6 @@
 """Rate limit constants for Ads endpoints."""
 
-# Creating an ad is heavier than reading schema.
 CREATE_AD_LIMIT_PER_MINUTE_PER_USER = 20
+LIST_ADS_LIMIT_PER_MINUTE_PER_IP = 600
+GET_AD_LIMIT_PER_HOUR_PER_IP = 1200
+MY_ADS_LIMIT_PER_MINUTE_PER_USER = 60
