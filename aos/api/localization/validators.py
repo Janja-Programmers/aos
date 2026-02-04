@@ -17,7 +17,7 @@ def resolve_country(value: str | None):
     if frappe.db.exists("Country", v):
         return v, None
 
-    name = frappe.db.get_value("Country", {"code": v.upper()}, "name")
+    name = frappe.db.get_value("Country", {"code": v}, "name")
     if name:
         return name, None
 
@@ -49,7 +49,7 @@ def resolve_currency(value: str | None):
     if not v:
         return None, None
 
-    code = v.upper()
+    code = v
     if frappe.db.exists("Currency", code):
         return code, None
 

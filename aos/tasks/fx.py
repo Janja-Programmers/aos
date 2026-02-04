@@ -56,7 +56,7 @@ def update_fx_rates(force: bool = False) -> None:
     """
 
     settings = get_aos_settings_snapshot(use_cache=False)
-    base = (settings.base_currency or "USD").upper()
+    base = (settings.base_currency or "USD")
     refresh_hours = int(settings.fx_refresh_hours or 12)
 
     if not force and not _should_refresh(base, refresh_hours):
@@ -86,7 +86,7 @@ def update_fx_rates(force: bool = False) -> None:
 
     # Upsert quotes
     for quote, rate in rates.items():
-        quote = (quote or "").upper()
+        quote = (quote or "")
         if not quote or quote == base:
             continue
         try:

@@ -20,7 +20,7 @@ def _get_countries():
     return [
         {
             "name": r["name"],
-            "code": (r.get("code") or "").upper() or None,
+            "code": (r.get("code") or "") or None,
         }
         for r in rows
     ]

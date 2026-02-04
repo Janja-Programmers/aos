@@ -16,7 +16,7 @@ def _serialize_preferences(doc) -> dict:
     if doc.country:
         country_code = frappe.db.get_value("Country", doc.country, "code")
         if country_code:
-            country_code = country_code.upper()
+            country_code = country_code
 
     language_name = None
     if doc.language:

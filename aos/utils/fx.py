@@ -28,8 +28,8 @@ class FXQuote:
 
 
 def get_rate(base_currency: str, quote_currency: str) -> FXQuote | None:
-    base_currency = (base_currency or "").upper()
-    quote_currency = (quote_currency or "").upper()
+    base_currency = (base_currency or "")
+    quote_currency = (quote_currency or "")
 
     if not base_currency or not quote_currency:
         return None
@@ -53,10 +53,10 @@ def convert(amount: float, from_currency: str, to_currency: str) -> tuple[float 
     """
 
     settings = get_aos_settings_snapshot()
-    base = (settings.base_currency or "USD").upper()
+    base = (settings.base_currency or "USD")
 
-    f = (from_currency or "").upper()
-    t = (to_currency or "").upper()
+    f = (from_currency or "")
+    t = (to_currency or "")
 
     meta = {
         "base_currency": base,
