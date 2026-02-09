@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "naming_series:",
  "creation": "2026-01-30 11:08:26.301766",
@@ -180,7 +181,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-02 13:21:47.220922",
+ "modified": "2026-02-09 12:27:06.789110",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad",
