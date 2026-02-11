@@ -1,0 +1,139 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2026-02-11 11:56:41.529221",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "title_hint",
+  "country_hint",
+  "last_step",
+  "column_break_yyuu",
+  "status",
+  "category_hint",
+  "location_hint",
+  "submitted_ad",
+  "section_break_cfuj",
+  "payload_json"
+ ],
+ "fields": [
+  {
+   "default": "DRAFT-.YYYY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "DRAFT-.YYYY.-.#####",
+   "read_only": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Draft\nSubmitted\nAbandoned",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payload_json",
+   "fieldtype": "JSON",
+   "label": "Payload JSON",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "title_hint",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title Hint",
+   "read_only": 1
+  },
+  {
+   "fieldname": "country_hint",
+   "fieldtype": "Link",
+   "label": "Country Hint",
+   "options": "Country",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "last_step",
+   "fieldtype": "Int",
+   "label": "Last Step",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_yyuu",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "category_hint",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Category Hint",
+   "options": "AOS Category",
+   "read_only": 1
+  },
+  {
+   "fieldname": "location_hint",
+   "fieldtype": "Link",
+   "label": "Location Hint",
+   "options": "AOS Location",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval: doc.status == \"Submitted\"",
+   "fieldname": "submitted_ad",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Submitted Ad",
+   "options": "AOS Ad",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_cfuj",
+   "fieldtype": "Section Break"
+  }
+ ],
+ "grid_page_length": 50,
+ "links": [],
+ "modified": "2026-02-11 12:27:00.993337",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Ad Draft",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "color": "Gray",
+   "title": "Draft"
+  },
+  {
+   "color": "Green",
+   "title": "Submitted"
+  },
+  {
+   "color": "Red",
+   "title": "Abandoned"
+  }
+ ]
+}

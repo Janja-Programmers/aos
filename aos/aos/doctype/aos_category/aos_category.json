@@ -9,18 +9,18 @@
  "field_order": [
   "category_name",
   "pricing_requirement",
-  "allowed_price_types",
-  "allowed_price_units",
-  "column_break_ucuk",
   "parent_aos_category",
   "old_parent",
   "sort_order",
-  "icon",
+  "allowed_price_units",
+  "column_break_ucuk",
+  "allowed_price_types",
   "is_group",
   "is_active",
   "is_service",
   "section_break_patt",
   "attributes",
+  "icon",
   "lft",
   "rgt"
  ],
@@ -59,6 +59,7 @@
    "fieldtype": "Link",
    "ignore_user_permissions": 1,
    "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Parent AOS Category",
    "options": "AOS Category"
   },
@@ -106,25 +107,30 @@
   {
    "fieldname": "pricing_requirement",
    "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Pricing Requirement",
    "options": "\nRequired\nOptional\nHidden"
   },
   {
-   "default": "Fixed\nNegotiable\nContact for price\nFree",
+   "depends_on": "eval:doc.pricing_requirement != \"Hidden\"",
    "fieldname": "allowed_price_types",
    "fieldtype": "Small Text",
-   "label": "Allowed Price Types"
+   "label": "Allowed Price Types",
+   "mandatory_depends_on": "eval:doc.pricing_requirement == \"Required\""
   },
   {
-   "default": "Per hour\nPer day\nPer job\nPer service\nPer session",
+   "depends_on": "eval:doc.is_service == 1",
    "fieldname": "allowed_price_units",
    "fieldtype": "Small Text",
-   "label": "Allowed Price Units"
+   "label": "Allowed Price Units",
+   "mandatory_depends_on": "eval:doc.is_service == 1"
   },
   {
    "default": "0",
    "fieldname": "is_service",
    "fieldtype": "Check",
+   "in_list_view": 1,
    "label": "Is Service"
   }
  ],
@@ -133,7 +139,7 @@
  "index_web_pages_for_search": 1,
  "is_tree": 1,
  "links": [],
- "modified": "2026-01-30 18:31:08.791332",
+ "modified": "2026-02-11 18:43:40.772159",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Category",

@@ -12,15 +12,18 @@
   "column_break_ohud",
   "enable_all_countries",
   "enable_all_languages",
+  "foreign_exchange_section",
+  "fx_api_key",
+  "fx_refresh_hours",
+  "fx_provider",
   "google_auth_tab",
+  "google_auth_section",
   "google_oauth_client_ids",
   "column_break_fwrk",
   "enable_google_sign_in",
   "auto_enable_users_created_via_google",
   "foreign_exchange_tab",
-  "fx_provider",
-  "fx_refresh_hours",
-  "fx_api_key"
+  "ad_expiry_days"
  ],
  "fields": [
   {
@@ -47,7 +50,7 @@
   {
    "fieldname": "google_auth_tab",
    "fieldtype": "Tab Break",
-   "label": "Google Auth"
+   "label": "Authentication"
   },
   {
    "fieldname": "localization_tab",
@@ -91,7 +94,7 @@
   {
    "fieldname": "foreign_exchange_tab",
    "fieldtype": "Tab Break",
-   "label": "Foreign Exchange"
+   "label": "Ads"
   },
   {
    "fieldname": "fx_provider",
@@ -107,13 +110,30 @@
    "fieldname": "fx_api_key",
    "fieldtype": "Password",
    "label": "FX Api Key"
+  },
+  {
+   "fieldname": "foreign_exchange_section",
+   "fieldtype": "Section Break",
+   "label": "Foreign Exchange"
+  },
+  {
+   "fieldname": "google_auth_section",
+   "fieldtype": "Section Break",
+   "label": "Google Auth"
+  },
+  {
+   "default": "30",
+   "description": "Number of days before an active ad expires",
+   "fieldname": "ad_expiry_days",
+   "fieldtype": "Int",
+   "label": "Ad Expiry Days"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-01-27 16:35:02.322317",
+ "modified": "2026-02-11 13:07:36.038617",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Settings",

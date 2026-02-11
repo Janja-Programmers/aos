@@ -50,6 +50,7 @@
    "fieldname": "category",
    "fieldtype": "Link",
    "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Category",
    "options": "AOS Category",
    "reqd": 1
@@ -126,12 +127,13 @@
    "options": "AOS Ad Image"
   },
   {
-   "default": "Draft",
+   "default": "Reviewing",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Status",
-   "options": "Draft\nReviewing\nActive\nDeclined\nSold\nExpired"
+   "options": "Reviewing\nActive\nDeclined\nSold\nExpired\nDeleted"
   },
   {
    "fieldname": "reviewed_by",
@@ -167,12 +169,14 @@
   {
    "fieldname": "country",
    "fieldtype": "Link",
+   "in_standard_filter": 1,
    "label": "Country",
    "options": "Country"
   },
   {
    "fieldname": "location",
    "fieldtype": "Link",
+   "in_standard_filter": 1,
    "label": "Location",
    "options": "AOS Location",
    "reqd": 1
@@ -181,7 +185,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-09 12:27:06.789110",
+ "modified": "2026-02-11 18:39:10.286655",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad",
@@ -207,10 +211,6 @@
  "sort_order": "DESC",
  "states": [
   {
-   "color": "Gray",
-   "title": "Draft"
-  },
-  {
    "color": "Purple",
    "title": "Reviewing"
   },
@@ -219,7 +219,7 @@
    "title": "Active"
   },
   {
-   "color": "Red",
+   "color": "Orange",
    "title": "Declined"
   },
   {
@@ -227,8 +227,12 @@
    "title": "Sold"
   },
   {
-   "color": "Orange",
+   "color": "Gray",
    "title": "Expired"
+  },
+  {
+   "color": "Red",
+   "title": "Deleted"
   }
  ],
  "track_changes": 1

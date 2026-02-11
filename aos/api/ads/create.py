@@ -14,10 +14,12 @@ from __future__ import annotations
 from typing import Any, Dict
 
 import frappe
+from frappe.utils import add_days, today
 
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.utils.aos_settings import get_aos_settings_snapshot
 
 from .constants import CREATE_AD_LIMIT_PER_MINUTE_PER_USER
 from .validators import (
@@ -78,6 +80,11 @@ def create_ad_impl(**kwargs):
         ad.location = location
         ad.category = category
         ad.description = description
+        ad.status = "Reviewing"
+
+        # Expiry: configured in AOS Settings (ad_expiry_days)
+        settings = get_aos_settings_snapshot()
+        ad.expires_on = add_days(today(), settings.ad_expiry_days)
 
         # Pricing
         if currency is not None and str(currency).strip() != "":
