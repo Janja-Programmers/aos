@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 import frappe
 
 from aos.api.shared.auth import current_user
+from aos.api.shared.utils import get_active_wishlist_ad_ids
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
 
@@ -40,12 +41,6 @@ def _safe_int(val: Any, default: int) -> int:
 
 
 def _safe_float(val: Any) -> Optional[float]:
-    """Parse float safely.
-
-    Returns:
-        float if value looks numeric, otherwise None.
-    """
-
     if val is None:
         return None
     try:
@@ -58,8 +53,6 @@ def _safe_float(val: Any) -> Optional[float]:
 
 
 def _order_by_for_sort(sort: str) -> str:
-    """Return a safe SQL order_by snippet for the supported sorts."""
-
     sort = (sort or "").strip() or "recent"
     if sort not in ALLOWED_SORTS:
         sort = "recent"
@@ -67,10 +60,6 @@ def _order_by_for_sort(sort: str) -> str:
     if sort == "recent":
         return "creation desc"
 
-    # Price sorts:
-    #  1) Put non-priced ads last (Free / Contact for price / null / <=0)
-    #  2) Then sort by numeric price
-    #  3) Tiebreaker: newest first
     non_priced_case = (
         "CASE WHEN price_type IN ('Free','Contact for price') OR price IS NULL OR price <= 0 "
         "THEN 1 ELSE 0 END"
@@ -81,8 +70,6 @@ def _order_by_for_sort(sort: str) -> str:
 
 
 def _get_country_from_prefs(user: str) -> str:
-    """Return country from preferences, or empty string."""
-
     if not user:
         return ""
     try:
@@ -114,7 +101,6 @@ def list_ads_impl(**kwargs):
     price_min_raw = kwargs.get("price_min")
     price_max_raw = kwargs.get("price_max")
 
-    # If country omitted, try infer from logged-in user's prefs
     user = current_user()
     if not country and user != "Guest":
         country = _get_country_from_prefs(user)
@@ -122,7 +108,7 @@ def list_ads_impl(**kwargs):
     if not country:
         return fail("Country is required.", code="VALIDATION_ERROR")
 
-    # Validate sort / price filters early
+    # Validate filters
     if sort and sort not in ALLOWED_SORTS:
         return fail(
             "Invalid sort.",
@@ -146,10 +132,8 @@ def list_ads_impl(**kwargs):
     if price_min is not None and price_max is not None and price_min > price_max:
         return fail("price_min cannot be greater than price_max.", code="VALIDATION_ERROR")
 
-    limit = _safe_int(kwargs.get("limit"), 20)
-    offset = _safe_int(kwargs.get("offset"), 0)
-    limit = max(1, min(limit, 50))
-    offset = max(0, offset)
+    limit = max(1, min(_safe_int(kwargs.get("limit"), 20), 50))
+    offset = max(0, _safe_int(kwargs.get("offset"), 0))
 
     filters: Dict[str, Any] = {
         "status": status,
@@ -161,7 +145,6 @@ def list_ads_impl(**kwargs):
     if category:
         cats = resolve_category_filter_values(category)
         if not cats:
-            # Unknown/inactive category or a group with no children
             return ok(
                 "Ads fetched.",
                 data={
@@ -171,20 +154,15 @@ def list_ads_impl(**kwargs):
             )
         filters["category"] = ["in", cats]
 
-    # Search (title) - keep it simple and fast for v1
     if q and len(q) >= 2:
         filters["title"] = ["like", f"%{q}%"]
 
-    # Price filters
     if price_type:
         filters["price_type"] = price_type
 
-    # Apply price range only when it makes sense.
-    # If price_type is Fixed/Negotiable (or unspecified), range matches numeric priced ads.
     range_requested = price_min is not None or price_max is not None
     if range_requested:
         if price_type and price_type not in PRICED_TYPES:
-            # Buyer asked for a range but also pinned a non-numeric price_type
             return ok(
                 "Ads fetched.",
                 data={
@@ -203,6 +181,7 @@ def list_ads_impl(**kwargs):
         elif price_max is not None:
             filters["price"] = ["<=", price_max]
 
+    # Fetch ads
     try:
         rows = frappe.get_all(
             "AOS Ad",
@@ -225,7 +204,12 @@ def list_ads_impl(**kwargs):
             page_length=limit,
         )
 
-        # fetch images for those ads (one query)
+        # Fetch wishlist
+        wishlisted_ids = set()
+        if rows:
+            wishlisted_ids = get_active_wishlist_ad_ids(user)
+
+        # Fetch images in one query
         ad_names = [r["name"] for r in rows]
         images_by_ad: Dict[str, List[Dict[str, Any]]] = {n: [] for n in ad_names}
         if ad_names:
@@ -239,17 +223,25 @@ def list_ads_impl(**kwargs):
 
         items: List[Dict[str, Any]] = []
         for r in rows:
-            # create a lightweight doc-like object
             ad_doc = frappe._dict(r)
             ad_doc.name = r["name"]
             ad_doc.images = images_by_ad.get(r["name"], [])
-            items.append(serialize_ad_list_item(ad_doc))
+            items.append(
+                serialize_ad_list_item(
+                    ad_doc,
+                    is_wishlisted=ad_doc.name in wishlisted_ids,
+                )
+            )
 
         return ok(
             "Ads fetched.",
             data={
                 "items": items,
-                "pagination": {"limit": limit, "offset": offset, "returned": len(items)},
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "returned": len(items),
+                },
             },
         )
 

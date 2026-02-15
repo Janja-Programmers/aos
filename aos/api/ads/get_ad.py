@@ -6,6 +6,8 @@ from typing import Any
 
 import frappe
 
+from aos.api.shared.auth import current_user
+from aos.api.shared.utils import get_active_wishlist_ad_ids
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
 
@@ -35,9 +37,17 @@ def get_ad_impl(ad_id: Any):
         frappe.log_error(frappe.get_traceback(), "AOS Get Ad Failed")
         return fail("Failed to fetch ad.", code="INTERNAL_ERROR")
 
-    # Buyers should only see Active ads. If you later need staff to read all,
-    # you can add an admin-only flag.
+    # Only Active ads visible to buyers
     if str(getattr(doc, "status", "") or "").strip() != "Active":
         return fail("Ad not found.", code="NOT_FOUND")
 
-    return ok("Ad fetched.", data={"item": serialize_ad_detail(doc)})
+    # Fetch wishlist
+    user = current_user()
+    wishlisted_ids = get_active_wishlist_ad_ids(user)
+
+    item = serialize_ad_detail(
+        doc,
+        is_wishlisted=doc.name in wishlisted_ids,
+    )
+
+    return ok("Ad fetched.", data={"item": item})

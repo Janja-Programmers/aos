@@ -89,7 +89,7 @@ def serialize_ad_details(ad_doc) -> List[Dict[str, Any]]:
     return items
 
 
-def serialize_ad_list_item(ad_doc) -> Dict[str, Any]:
+def serialize_ad_list_item(ad_doc, is_wishlisted: bool = False) -> Dict[str, Any]:
     images = serialize_ad_images(ad_doc)
 
     return {
@@ -111,10 +111,11 @@ def serialize_ad_list_item(ad_doc) -> Dict[str, Any]:
         "primary_image": _primary_image(images),
         "images_count": len(images),
         "created_at": getattr(ad_doc, "creation", None),
+        "is_wishlisted": bool(is_wishlisted),
     }
 
 
-def serialize_ad_detail(ad_doc) -> Dict[str, Any]:
+def serialize_ad_detail(ad_doc, is_wishlisted: bool = False) -> Dict[str, Any]:
     images = serialize_ad_images(ad_doc)
 
     # enrich a bit (names), but keep it optional
@@ -135,7 +136,7 @@ def serialize_ad_detail(ad_doc) -> Dict[str, Any]:
             location_name = None
 
     return {
-        **serialize_ad_list_item(ad_doc),
+        **serialize_ad_list_item(ad_doc, is_wishlisted=is_wishlisted),
         "description": getattr(ad_doc, "description", None) or "",
         "video": _norm(getattr(ad_doc, "video", None)),
         "images": images,
