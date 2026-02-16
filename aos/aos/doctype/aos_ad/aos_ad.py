@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Set
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import nowdate, getdate
 
 from aos.api.attributes.schema import _get_category_chain, _resolve_attributes, _resolve_pricing
 
@@ -108,6 +109,54 @@ class AOSAd(Document):
         self._validate_media()
         self._validate_details()
         self._validate_pricing()
+        self._validate_offer()
+
+    def _validate_offer(self) -> None:
+        offer_price = _to_float(getattr(self, "offer_price", None))
+        price_val = _to_float(getattr(self, "price", None))
+        price_type = _norm(getattr(self, "price_type", None))
+
+        # No offer provided → reset percent and exit
+        if offer_price in (None, 0.0):
+            self.offer_percent = 0
+            return
+
+        # Offer only allowed for Fixed price
+        if price_type != "Fixed":
+            frappe.throw("Offers are only allowed for Fixed price ads.")
+
+        # Base price must exist
+        if price_val is None or price_val <= 0:
+            frappe.throw("Please set a valid Price before adding an Offer.")
+
+        # Offer must be strictly less than price
+        if offer_price >= price_val:
+            frappe.throw("Offer Price must be less than the normal Price.")
+
+        # Validate dates
+        start = getattr(self, "offer_start_date", None)
+        end = getattr(self, "offer_end_date", None)
+
+        if start:
+            try:
+                start = getdate(start)
+            except Exception:
+                frappe.throw("Offer Start Date is invalid.")
+
+        if end:
+            try:
+                end = getdate(end)
+            except Exception:
+                frappe.throw("Offer End Date is invalid.")
+
+        if start and end and start > end:
+            frappe.throw("Offer Start Date cannot be after Offer End Date.")
+
+        # Calculate percent
+        self.offer_percent = round(
+            ((price_val - offer_price) / price_val) * 100,
+            2,
+        )
 
     def _validate_location(self) -> None:
         if not getattr(self, "location", None):
@@ -176,7 +225,6 @@ class AOSAd(Document):
 
         if not file_doc:
             frappe.throw("Invalid video attachment. Please upload the video again.")
-            return
 
         size_bytes = int(file_doc.file_size or 0)
         max_bytes = _MAX_VIDEO_MB * 1024 * 1024
@@ -196,7 +244,9 @@ class AOSAd(Document):
         allowed_attrs = _resolve_attributes(chain)
 
         allowed_by_id: Dict[str, Dict[str, Any]] = {a["id"]: a for a in allowed_attrs}
-        required_ids: Set[str] = {a["id"] for a in allowed_attrs if int(a.get("required") or 0) == 1}
+        required_ids: Set[str] = {
+            a["id"] for a in allowed_attrs if int(a.get("required") or 0) == 1
+        }
 
         rows = list(getattr(self, "details", []) or [])
 
@@ -231,10 +281,7 @@ class AOSAd(Document):
             if not _has_value(value):
                 continue
 
-            if field_type in ("Text", "Textarea"):
-                pass
-
-            elif field_type == "Select":
+            if field_type == "Select":
                 v = _norm(value)
                 if options and v not in options:
                     frappe.throw(

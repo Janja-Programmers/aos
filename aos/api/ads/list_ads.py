@@ -1,15 +1,19 @@
-"""List Ads for buyers.
+"""
+List Ads for buyers.
 
-Only Active ads should be visible by default.
-Filters:
- - country (required for meaningful browsing; if omitted and user is logged in,
-   we try to infer from user preferences)
- - location (optional)
- - category (optional)
-
-Pagination:
- - limit (default 20, max 50)
- - offset (default 0)
+Rules:
+ - Only Active ads are returned (cannot override)
+ - country is required
+ - Optional filters:
+     location
+     category
+     promotion_type (offer | deal | flash_sale)
+     price_type
+     price_min / price_max (applied on current price)
+     rating_min
+     q (search in title)
+ - Default sort: rating_high
+ - Pagination: limit (1–50), offset
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 import frappe
+from frappe.utils import nowdate, add_days, getdate
 
 from aos.api.shared.auth import current_user
 from aos.api.shared.utils import get_active_wishlist_ad_ids
@@ -28,9 +33,9 @@ from .category_filters import resolve_category_filter_values
 from .serializers import serialize_ad_list_item
 
 
-ALLOWED_SORTS = {"recent", "price_low", "price_high", "rating_high"}
+ALLOWED_SORTS = {"rating_high", "price_low", "price_high", "recent"}
 ALLOWED_PRICE_TYPES = {"Fixed", "Negotiable", "Contact for price", "Free"}
-PRICED_TYPES = {"Fixed", "Negotiable"}
+ALLOWED_PROMOTIONS = {"offer", "deal", "flash_sale"}
 
 
 def _safe_int(val: Any, default: int) -> int:
@@ -50,24 +55,6 @@ def _safe_float(val: Any) -> Optional[float]:
         return float(s)
     except Exception:
         return None
-
-
-def _order_by_for_sort(sort: str) -> str:
-    sort = (sort or "").strip() or "recent"
-
-    if sort == "recent":
-        return "creation desc"
-
-    if sort == "rating_high":
-        return "average_rating desc, total_reviews desc, creation desc"
-
-    non_priced_case = (
-        "CASE WHEN price_type IN ('Free','Contact for price') OR price IS NULL OR price <= 0 "
-        "THEN 1 ELSE 0 END"
-    )
-    if sort == "price_low":
-        return f"{non_priced_case} asc, price asc, creation desc"
-    return f"{non_priced_case} asc, price desc, creation desc"
 
 
 def _get_country_from_prefs(user: str) -> str:
@@ -90,8 +77,7 @@ def list_ads_impl(**kwargs):
     if rl:
         return rl
 
-    # filters
-    status = str(kwargs.get("status") or "Active").strip() or "Active"
+    # Inputs
     country = str(kwargs.get("country") or "").strip()
     location = str(kwargs.get("location") or "").strip()
     category = str(kwargs.get("category") or "").strip()
@@ -99,8 +85,10 @@ def list_ads_impl(**kwargs):
     q = str(kwargs.get("q") or "").strip()
     sort = str(kwargs.get("sort") or "rating_high").strip() or "rating_high"
     price_type = str(kwargs.get("price_type") or "").strip()
-    price_min_raw = kwargs.get("price_min")
-    price_max_raw = kwargs.get("price_max")
+    promotion_type = str(kwargs.get("promotion_type") or "").strip()
+    price_min = _safe_float(kwargs.get("price_min"))
+    price_max = _safe_float(kwargs.get("price_max"))
+    rating_min = _safe_float(kwargs.get("rating_min"))
 
     user = current_user()
     if not country and user != "Guest":
@@ -109,8 +97,8 @@ def list_ads_impl(**kwargs):
     if not country:
         return fail("Country is required.", code="VALIDATION_ERROR")
 
-    # Validate filters
-    if sort and sort not in ALLOWED_SORTS:
+    # Validation
+    if sort not in ALLOWED_SORTS:
         return fail(
             "Invalid sort.",
             code="VALIDATION_ERROR",
@@ -124,95 +112,144 @@ def list_ads_impl(**kwargs):
             data={"allowed": sorted(ALLOWED_PRICE_TYPES)},
         )
 
-    price_min = _safe_float(price_min_raw)
-    price_max = _safe_float(price_max_raw)
-    if price_min_raw is not None and str(price_min_raw).strip() != "" and price_min is None:
-        return fail("price_min must be a number.", code="VALIDATION_ERROR")
-    if price_max_raw is not None and str(price_max_raw).strip() != "" and price_max is None:
-        return fail("price_max must be a number.", code="VALIDATION_ERROR")
+    if promotion_type and promotion_type not in ALLOWED_PROMOTIONS:
+        return fail(
+            "Invalid promotion_type.",
+            code="VALIDATION_ERROR",
+            data={"allowed": sorted(ALLOWED_PROMOTIONS)},
+        )
+
     if price_min is not None and price_max is not None and price_min > price_max:
         return fail("price_min cannot be greater than price_max.", code="VALIDATION_ERROR")
 
     limit = max(1, min(_safe_int(kwargs.get("limit"), 20), 50))
     offset = max(0, _safe_int(kwargs.get("offset"), 0))
 
-    filters: Dict[str, Any] = {
-        "status": status,
-        "country": country,
-    }
+    today = getdate(nowdate())
+    conditions = ["status = 'Active'", "country = %(country)s"]
+    values: Dict[str, Any] = {"country": country}
+
     if location:
-        filters["location"] = location
+        conditions.append("location = %(location)s")
+        values["location"] = location
 
     if category:
         cats = resolve_category_filter_values(category)
         if not cats:
             return ok(
                 "Ads fetched.",
-                data={
-                    "items": [],
-                    "pagination": {"limit": limit, "offset": offset, "returned": 0},
-                },
+                data={"items": [], "pagination": {"limit": limit, "offset": offset, "returned": 0}},
             )
-        filters["category"] = ["in", cats]
+        conditions.append("category in %(categories)s")
+        values["categories"] = tuple(cats)
 
     if q and len(q) >= 2:
-        filters["title"] = ["like", f"%{q}%"]
+        conditions.append("title like %(q)s")
+        values["q"] = f"%{q}%"
 
     if price_type:
-        filters["price_type"] = price_type
+        conditions.append("price_type = %(price_type)s")
+        values["price_type"] = price_type
 
-    range_requested = price_min is not None or price_max is not None
-    if range_requested:
-        if price_type and price_type not in PRICED_TYPES:
-            return ok(
-                "Ads fetched.",
-                data={
-                    "items": [],
-                    "pagination": {"limit": limit, "offset": offset, "returned": 0},
-                },
-            )
+    if rating_min is not None:
+        conditions.append("average_rating >= %(rating_min)s")
+        values["rating_min"] = rating_min
 
-        if not price_type:
-            filters["price_type"] = ["in", list(PRICED_TYPES)]
+    # Promotion conditions
+    offer_active_sql = """
+        offer_price IS NOT NULL
+        AND offer_price > 0
+        AND (offer_start_date IS NULL OR offer_start_date <= %(today)s)
+        AND (offer_end_date IS NULL OR offer_end_date >= %(today)s)
+    """
 
-        if price_min is not None and price_max is not None:
-            filters["price"] = ["between", [price_min, price_max]]
-        elif price_min is not None:
-            filters["price"] = [">=", price_min]
-        elif price_max is not None:
-            filters["price"] = ["<=", price_max]
+    if promotion_type in {"offer", "deal"}:
+        conditions.append(f"({offer_active_sql})")
 
-    # Fetch ads
+    if promotion_type == "flash_sale":
+        conditions.append(f"""
+            ({offer_active_sql})
+            AND offer_end_date IS NOT NULL
+            AND offer_end_date BETWEEN %(today)s AND %(flash_end)s
+        """)
+        values["flash_end"] = add_days(today, 7)
+
+    values["today"] = today
+
+    # Current Price
+    current_price_sql = f"""
+        CASE
+            WHEN {offer_active_sql}
+            THEN offer_price
+            ELSE price
+        END
+    """
+
+    # Price range applied on current_price
+    if price_min is not None:
+        conditions.append(f"{current_price_sql} >= %(price_min)s")
+        values["price_min"] = price_min
+
+    if price_max is not None:
+        conditions.append(f"{current_price_sql} <= %(price_max)s")
+        values["price_max"] = price_max
+
+    where_clause = " AND ".join(conditions)
+
+    # Sorting
+    if sort == "rating_high":
+        order_by = "average_rating desc, total_reviews desc, creation desc"
+
+    elif sort == "recent":
+        order_by = "creation desc"
+
+    elif sort == "price_low":
+        order_by = f"{current_price_sql} asc, creation desc"
+
+    elif sort == "price_high":
+        order_by = f"{current_price_sql} desc, creation desc"
+
+    # Deal override (highest discount first)
+    if promotion_type == "deal":
+        order_by = "offer_percent desc, creation desc"
+
+    # Final SQL
+    sql = f"""
+        SELECT
+            name,
+            title,
+            status,
+            country,
+            location,
+            category,
+            currency,
+            price_type,
+            price,
+            offer_price,
+            offer_start_date,
+            offer_end_date,
+            offer_percent,
+            price_unit,
+            average_rating,
+            total_reviews,
+            creation,
+            {current_price_sql} as current_price
+        FROM `tabAOS Ad`
+        WHERE {where_clause}
+        ORDER BY {order_by}
+        LIMIT %(limit)s OFFSET %(offset)s
+    """
+
+    values["limit"] = limit
+    values["offset"] = offset
+
     try:
-        rows = frappe.get_all(
-            "AOS Ad",
-            filters=filters,
-            fields=[
-                "name",
-                "title",
-                "status",
-                "country",
-                "location",
-                "category",
-                "currency",
-                "price_type",
-                "price",
-                "price_unit",
-                "creation",
-                "average_rating",
-                "total_reviews",
-            ],
-            order_by=_order_by_for_sort(sort),
-            start=offset,
-            page_length=limit,
-        )
-
-        # Fetch wishlist
+        rows = frappe.db.sql(sql, values, as_dict=True)
         wishlisted_ids = set()
         if rows:
             wishlisted_ids = get_active_wishlist_ad_ids(user)
 
-        # Fetch images in one query
+        # Batch image fetch
         ad_names = [r["name"] for r in rows]
         images_by_ad: Dict[str, List[Dict[str, Any]]] = {n: [] for n in ad_names}
         if ad_names:
@@ -224,11 +261,15 @@ def list_ads_impl(**kwargs):
             for img in img_rows:
                 images_by_ad.setdefault(img["parent"], []).append(img)
 
-        items: List[Dict[str, Any]] = []
+        items = []
         for r in rows:
             ad_doc = frappe._dict(r)
-            ad_doc.name = r["name"]
             ad_doc.images = images_by_ad.get(r["name"], [])
+            ad_doc.is_offer_active = bool(
+                r.get("offer_price")
+                and (r.get("offer_start_date") is None or r.get("offer_start_date") <= today)
+                and (r.get("offer_end_date") is None or r.get("offer_end_date") >= today)
+            )
             items.append(
                 serialize_ad_list_item(
                     ad_doc,

@@ -26,6 +26,11 @@
   "currency",
   "price",
   "price_unit",
+  "column_break_xnvd",
+  "offer_price",
+  "offer_start_date",
+  "offer_end_date",
+  "offer_percent",
   "review_tab",
   "average_rating",
   "reviewed_by",
@@ -194,12 +199,41 @@
    "fieldtype": "Int",
    "label": "Total Reviews",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_xnvd",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval: doc.price_type == \"Fixed\"",
+   "fieldname": "offer_price",
+   "fieldtype": "Float",
+   "label": "Offer Price"
+  },
+  {
+   "depends_on": "eval: doc.offer_price && doc.offer_price > 0",
+   "fieldname": "offer_start_date",
+   "fieldtype": "Date",
+   "label": "Offer Start Date"
+  },
+  {
+   "depends_on": "eval: doc.offer_price && doc.offer_price > 0",
+   "fieldname": "offer_end_date",
+   "fieldtype": "Date",
+   "label": "Offer End Date"
+  },
+  {
+   "fieldname": "offer_percent",
+   "fieldtype": "Float",
+   "label": "Offer Percent",
+   "precision": "2",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-16 18:47:56.983859",
+ "modified": "2026-02-16 23:47:36.290123",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad",

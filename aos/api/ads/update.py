@@ -1,29 +1,11 @@
-"""Update/edit an Ad (status-aware).
-
-This endpoint supports two edit modes depending on the Ad's current status:
-
-1) Active ads (published):
-   - Allow editing a SAFE subset of fields only:
-     title, description, price_type, price, price_unit
-   - Status remains Active.
-
-2) Reviewing or Declined ads (not published / needs moderation):
-   - Allow FULL edits (similar to create/submit):
-     title, category, location, description, details, images, video, pricing fields
-   - Review is restarted:
-     status -> Reviewing
-     reviewed_by -> None
-
-Rules:
-- User must be logged in and must own the ad (owner).
-- Sold/Expired/Deleted cannot be edited here.
-"""
+"""Update/edit an Ad (status-aware)."""
 
 from __future__ import annotations
 
 from typing import Any, Dict, List
 
 import frappe
+from frappe.utils import getdate
 
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
@@ -45,9 +27,11 @@ _ACTIVE_EDITABLE_FIELDS = {
     "price_type",
     "price",
     "price_unit",
+    "offer_price",
+    "offer_start_date",
+    "offer_end_date",
 }
 
-# Status buckets
 _BLOCKED_STATUSES = {"Sold", "Expired", "Deleted"}
 _FULL_EDIT_STATUSES = {"Reviewing", "Declined"}
 
@@ -67,9 +51,17 @@ def _to_float_or_none(val: Any):
         return "INVALID"
 
 
+def _to_date_or_none(val: Any):
+    if val in (None, ""):
+        return None
+    try:
+        return getdate(val)
+    except Exception:
+        return "INVALID"
+
+
 def _apply_active_safe_updates(doc, updates: Dict[str, Any]):
-    """Apply safe updates for Active ads only. Keeps status Active."""
-    # Validate/normalize safe fields
+    """Apply safe updates for Active ads only."""
     if "title" in updates:
         title = _clean_str(updates.get("title"))
         if not title:
@@ -80,16 +72,35 @@ def _apply_active_safe_updates(doc, updates: Dict[str, Any]):
         doc.description = _clean_str(updates.get("description"))
 
     if "price_type" in updates:
-        doc.price_type = _clean_str(updates.get("price_type")) if updates.get("price_type") is not None else None
+        doc.price_type = _clean_str(updates.get("price_type"))
 
     if "price_unit" in updates:
-        doc.price_unit = _clean_str(updates.get("price_unit")) if updates.get("price_unit") is not None else None
+        doc.price_unit = _clean_str(updates.get("price_unit"))
 
     if "price" in updates:
         v = _to_float_or_none(updates.get("price"))
         if v == "INVALID":
             return fail("Invalid price.", code="VALIDATION_ERROR")
         doc.price = v
+
+    # Offer
+    if "offer_price" in updates:
+        v = _to_float_or_none(updates.get("offer_price"))
+        if v == "INVALID":
+            return fail("Invalid offer_price.", code="VALIDATION_ERROR")
+        doc.offer_price = v
+
+    if "offer_start_date" in updates:
+        d = _to_date_or_none(updates.get("offer_start_date"))
+        if d == "INVALID":
+            return fail("Invalid offer_start_date.", code="VALIDATION_ERROR")
+        doc.offer_start_date = d
+
+    if "offer_end_date" in updates:
+        d = _to_date_or_none(updates.get("offer_end_date"))
+        if d == "INVALID":
+            return fail("Invalid offer_end_date.", code="VALIDATION_ERROR")
+        doc.offer_end_date = d
 
     return None
 
@@ -141,9 +152,13 @@ def update_ad_impl(**kwargs):
     try:
         doc = frappe.get_doc("AOS Ad", ad_id)
 
-        # MODE A: Active ads -> safe subset only, status remains Active
+        #Active
         if status == "Active":
-            updates: Dict[str, Any] = {k: kwargs.get(k) for k in _ACTIVE_EDITABLE_FIELDS if k in kwargs}
+            updates: Dict[str, Any] = {
+                k: kwargs.get(k)
+                for k in _ACTIVE_EDITABLE_FIELDS
+                if k in kwargs
+            }
             if not updates:
                 return fail("No editable fields provided.", code="VALIDATION_ERROR")
 
@@ -151,17 +166,13 @@ def update_ad_impl(**kwargs):
             if e:
                 return e
 
-            # Keep Active explicitly (defensive)
             doc.status = "Active"
-
             doc.save(ignore_permissions=True)
             frappe.db.commit()
             return ok("Ad updated.", data={"id": doc.name, "status": doc.status})
 
-        # MODE B: Reviewing/Declined -> full edit (like create), restart review
+        # Reviewing/Declined
         if status in _FULL_EDIT_STATUSES:
-            # We expect full payload similar to create.
-            # Required: title, location, category (validate_basic_fields enforces this)
             title, location, category, description, e = validate_basic_fields(
                 kwargs.get("title"),
                 kwargs.get("location"),
@@ -174,7 +185,6 @@ def update_ad_impl(**kwargs):
             details_rows = sanitize_details(kwargs.get("details"))
             images_rows = sanitize_images(kwargs.get("images"))
 
-            # video is optional
             video_url, e = validate_file_reference(
                 kwargs.get("video"),
                 current_user=user,
@@ -183,7 +193,6 @@ def update_ad_impl(**kwargs):
             if e:
                 return e
 
-            # Validate image file references early (nice API errors). Controller validates count/primary too.
             for row_img in images_rows:
                 img_url, e = validate_file_reference(
                     row_img.get("image"),
@@ -194,56 +203,35 @@ def update_ad_impl(**kwargs):
                     return e
                 row_img["image"] = img_url
 
-            # Pricing fields are category-driven; accept what client submits.
-            price_type = kwargs.get("price_type")
-            currency = kwargs.get("currency")
-            price = kwargs.get("price")
-            price_unit = kwargs.get("price_unit")
-
-            # Apply core fields
+            # Core
             doc.title = title
             doc.location = location
             doc.category = category
             doc.description = description
 
             # Pricing
-            if currency is not None and _clean_str(currency) != "":
-                doc.currency = currency
-            if price_type is not None:
-                doc.price_type = price_type
-            if price is not None and _clean_str(price) != "":
-                doc.price = price
-            else:
-                # allow clearing price
-                if "price" in kwargs:
-                    doc.price = None
-            if price_unit is not None:
-                doc.price_unit = price_unit
+            doc.price_type = kwargs.get("price_type")
+            doc.currency = kwargs.get("currency")
+            doc.price = kwargs.get("price")
+            doc.price_unit = kwargs.get("price_unit")
 
-            # Media (video replace/clear)
+            # Offer
+            doc.offer_price = kwargs.get("offer_price")
+            doc.offer_start_date = kwargs.get("offer_start_date")
+            doc.offer_end_date = kwargs.get("offer_end_date")
+
+            # Media
             if "video" in kwargs:
                 doc.video = video_url or None
 
-            # Replace Details child table
             _replace_child_table(doc, "details", details_rows)
+            _replace_child_table(doc, "images", images_rows)
 
-            # Replace Images child table (keep only the fields you use)
-            doc.set("images", [])
-            for r in images_rows:
-                child = doc.append("images", {})
-                child.image = r.get("image")
-                child.is_primary = int(r.get("is_primary") or 0)
-                if "sort_order" in r and r.get("sort_order") not in (None, ""):
-                    child.sort_order = r.get("sort_order")
-
-            # Restart review
             doc.status = "Reviewing"
             doc.reviewed_by = None
 
-            # Save triggers AOSAd.validate() (details/pricing/media/location)
             doc.save(ignore_permissions=True)
 
-            # Attach uploaded files to the Ad so they aren't orphaned
             for r in images_rows:
                 attach_file_to_ad(r.get("image") or "", ad_name=doc.name)
             if video_url:
@@ -252,7 +240,6 @@ def update_ad_impl(**kwargs):
             frappe.db.commit()
             return ok("Ad updated and sent for review.", data={"id": doc.name, "status": doc.status})
 
-        # Fallback (shouldn't happen if statuses are controlled)
         return fail("This ad cannot be edited in its current status.", code="VALIDATION_ERROR")
 
     except frappe.DoesNotExistError:

@@ -1,4 +1,5 @@
-"""Ads serializers.
+"""
+Ads serializers.
 
 The mobile app needs two shapes:
 1) List item (lightweight)
@@ -26,22 +27,23 @@ def _to_float(val: Any) -> Optional[float]:
 
 
 def _money_display(currency: str, price_type: str, price: Any) -> str:
-    """Human display for list views."""
+    """
+    Human display for CURRENT price.
+    """
 
     pt = _norm(price_type)
     cur = _norm(currency)
     amount = _to_float(price)
 
-    if pt in ("Contact for price",):
+    if pt == "Contact for price":
         return "Contact for price"
-    if pt in ("Free",):
+
+    if pt == "Free":
         return "Free"
 
     if amount is None:
-        # Optional pricing categories may have no price.
         return ""
 
-    # Keep it simple: don't do locale formatting here.
     if cur:
         return f"{cur} {amount:g}"
     return f"{amount:g}"
@@ -68,8 +70,9 @@ def serialize_ad_images(ad_doc) -> List[Dict[str, Any]]:
             }
         )
 
-    # Sort: primary first, then sort_order, then stable by url
-    items.sort(key=lambda x: (0 if x["is_primary"] else 1, x["sort_order"], x["image"]))
+    items.sort(
+        key=lambda x: (0 if x["is_primary"] else 1, x["sort_order"], x["image"])
+    )
     return items
 
 
@@ -91,6 +94,11 @@ def serialize_ad_details(ad_doc) -> List[Dict[str, Any]]:
 
 def serialize_ad_list_item(ad_doc, is_wishlisted: bool = False) -> Dict[str, Any]:
     images = serialize_ad_images(ad_doc)
+    base_price = getattr(ad_doc, "price", None)
+    current_price = getattr(ad_doc, "current_price", base_price)
+    offer_price = getattr(ad_doc, "offer_price", None)
+    offer_percent = _to_float(getattr(ad_doc, "offer_percent", None))
+    is_offer_active = bool(getattr(ad_doc, "is_offer_active", False))
 
     return {
         "id": ad_doc.name,
@@ -101,39 +109,47 @@ def serialize_ad_list_item(ad_doc, is_wishlisted: bool = False) -> Dict[str, Any
         "category": _norm(getattr(ad_doc, "category", None)),
         "currency": _norm(getattr(ad_doc, "currency", None)),
         "price_type": _norm(getattr(ad_doc, "price_type", None)),
-        "price": getattr(ad_doc, "price", None),
+        "price": base_price,
         "price_unit": _norm(getattr(ad_doc, "price_unit", None)),
+        "current_price": current_price,
+        "offer_price": offer_price,
+        "offer_percent": offer_percent,
+        "is_offer_active": is_offer_active,
         "price_display": _money_display(
             getattr(ad_doc, "currency", None),
             getattr(ad_doc, "price_type", None),
-            getattr(ad_doc, "price", None),
+            current_price,
         ),
         "primary_image": _primary_image(images),
         "images_count": len(images),
         "created_at": getattr(ad_doc, "creation", None),
         "is_wishlisted": bool(is_wishlisted),
-        "average_rating": _norm(getattr(ad_doc, "average_rating", None)),
-        "total_reviews": _norm(getattr(ad_doc, "total_reviews", None)),
+        "average_rating": _to_float(getattr(ad_doc, "average_rating", None)),
+        "total_reviews": int(getattr(ad_doc, "total_reviews", 0) or 0),
     }
 
 
 def serialize_ad_detail(ad_doc, is_wishlisted: bool = False) -> Dict[str, Any]:
     images = serialize_ad_images(ad_doc)
 
-    # enrich a bit (names), but keep it optional
     category_name = None
     try:
-        category_name = frappe.db.get_value("AOS Category", ad_doc.category, "category_name")
+        category_name = frappe.db.get_value(
+            "AOS Category", ad_doc.category, "category_name"
+        )
     except Exception:
         category_name = None
 
     location_name = None
     try:
-        location_name = frappe.db.get_value("AOS Location", ad_doc.location, "location_name")
+        location_name = frappe.db.get_value(
+            "AOS Location", ad_doc.location, "location_name"
+        )
     except Exception:
-        # some datasets use "location" fieldname
         try:
-            location_name = frappe.db.get_value("AOS Location", ad_doc.location, "location")
+            location_name = frappe.db.get_value(
+                "AOS Location", ad_doc.location, "location"
+            )
         except Exception:
             location_name = None
 
