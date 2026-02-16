@@ -1,0 +1,146 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-02-16 17:48:24.779350",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "ad",
+  "rating",
+  "like_count",
+  "column_break_faua",
+  "reviewer",
+  "title",
+  "status",
+  "dislike_count",
+  "section_break_qehr",
+  "comment",
+  "review_images"
+ ],
+ "fields": [
+  {
+   "default": "RVW-.YYYY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "RVW-.YYYY.-.#####"
+  },
+  {
+   "fieldname": "ad",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Ad",
+   "options": "AOS Ad",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "rating",
+   "fieldtype": "Rating",
+   "in_list_view": 1,
+   "label": "Rating",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "like_count",
+   "fieldtype": "Int",
+   "label": "Like Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_faua",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "reviewer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Reviewer",
+   "options": "User",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "dislike_count",
+   "fieldtype": "Int",
+   "label": "Dislike Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_qehr",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "review_images",
+   "fieldtype": "Table",
+   "label": "Review Images",
+   "options": "AOS Review Image"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Pending\nApproved\nRejected",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "comment",
+   "fieldtype": "Small Text",
+   "label": "Comment",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "links": [],
+ "modified": "2026-02-16 19:45:27.939413",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Review",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "color": "Gray",
+   "title": "Pending"
+  },
+  {
+   "color": "Green",
+   "title": "Approved"
+  },
+  {
+   "color": "Red",
+   "title": "Rejected"
+  }
+ ]
+}

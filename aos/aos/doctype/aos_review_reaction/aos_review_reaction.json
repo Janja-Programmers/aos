@@ -1,0 +1,79 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-02-16 17:59:45.936473",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "review",
+  "column_break_cmir",
+  "user",
+  "reaction"
+ ],
+ "fields": [
+  {
+   "default": "RCT-.YYYY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "RCT-.YYYY.-.#####"
+  },
+  {
+   "fieldname": "review",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Review",
+   "options": "AOS Review",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "reaction",
+   "fieldtype": "Select",
+   "label": "Reaction",
+   "options": "Like\nDislike",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_cmir",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "grid_page_length": 50,
+ "links": [],
+ "modified": "2026-02-16 18:22:22.809955",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Review Reaction",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

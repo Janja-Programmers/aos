@@ -27,11 +27,13 @@
   "price",
   "price_unit",
   "review_tab",
-  "status",
+  "average_rating",
   "reviewed_by",
-  "expires_on",
+  "status",
+  "decline_reason",
   "column_break_uadk",
-  "decline_reason"
+  "total_reviews",
+  "expires_on"
  ],
  "fields": [
   {
@@ -180,12 +182,24 @@
    "label": "Location",
    "options": "AOS Location",
    "reqd": 1
+  },
+  {
+   "fieldname": "average_rating",
+   "fieldtype": "Float",
+   "label": "Average Rating",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_reviews",
+   "fieldtype": "Int",
+   "label": "Total Reviews",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-11 18:39:10.286655",
+ "modified": "2026-02-16 18:47:56.983859",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad",

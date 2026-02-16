@@ -112,6 +112,8 @@ def serialize_ad_list_item(ad_doc, is_wishlisted: bool = False) -> Dict[str, Any
         "images_count": len(images),
         "created_at": getattr(ad_doc, "creation", None),
         "is_wishlisted": bool(is_wishlisted),
+        "average_rating": _norm(getattr(ad_doc, "average_rating", None)),
+        "total_reviews": _norm(getattr(ad_doc, "total_reviews", None)),
     }
 
 

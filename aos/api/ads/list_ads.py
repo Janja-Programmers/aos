@@ -28,7 +28,7 @@ from .category_filters import resolve_category_filter_values
 from .serializers import serialize_ad_list_item
 
 
-ALLOWED_SORTS = {"recent", "price_low", "price_high"}
+ALLOWED_SORTS = {"recent", "price_low", "price_high", "rating_high"}
 ALLOWED_PRICE_TYPES = {"Fixed", "Negotiable", "Contact for price", "Free"}
 PRICED_TYPES = {"Fixed", "Negotiable"}
 
@@ -54,11 +54,12 @@ def _safe_float(val: Any) -> Optional[float]:
 
 def _order_by_for_sort(sort: str) -> str:
     sort = (sort or "").strip() or "recent"
-    if sort not in ALLOWED_SORTS:
-        sort = "recent"
 
     if sort == "recent":
         return "creation desc"
+
+    if sort == "rating_high":
+        return "average_rating desc, total_reviews desc, creation desc"
 
     non_priced_case = (
         "CASE WHEN price_type IN ('Free','Contact for price') OR price IS NULL OR price <= 0 "
@@ -96,7 +97,7 @@ def list_ads_impl(**kwargs):
     category = str(kwargs.get("category") or "").strip()
 
     q = str(kwargs.get("q") or "").strip()
-    sort = str(kwargs.get("sort") or "recent").strip() or "recent"
+    sort = str(kwargs.get("sort") or "rating_high").strip() or "rating_high"
     price_type = str(kwargs.get("price_type") or "").strip()
     price_min_raw = kwargs.get("price_min")
     price_max_raw = kwargs.get("price_max")
@@ -198,6 +199,8 @@ def list_ads_impl(**kwargs):
                 "price",
                 "price_unit",
                 "creation",
+                "average_rating",
+                "total_reviews",
             ],
             order_by=_order_by_for_sort(sort),
             start=offset,
