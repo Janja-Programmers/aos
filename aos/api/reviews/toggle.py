@@ -17,6 +17,7 @@ from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 
 from .constants import TOGGLE_REACTION_LIMIT_PER_MINUTE_PER_USER
+from aos.aos.doctype.aos_review_reaction.aos_review_reaction import update_review_reaction_counts
 
 
 def toggle_reaction_impl(**kwargs):
@@ -77,8 +78,10 @@ def toggle_reaction_impl(**kwargs):
 
         # Same reaction → Remove (Unlike / Undislike)
         if doc.reaction == reaction:
+            review_id = doc.review
             doc.delete(ignore_permissions=True)
             frappe.db.commit()
+            update_review_reaction_counts(review_id)
 
             return ok("Reaction removed.", data={"status": "removed"})
 

@@ -100,13 +100,13 @@ def set_ad_status_impl(**kwargs):
     row = frappe.db.get_value(
         "AOS Ad",
         ad_id,
-        ["name", "owner", "status", "expires_on"],
+        ["name", "user", "status", "expires_on"],
         as_dict=True,
     )
     if not row:
         return fail("Ad not found.", code="NOT_FOUND")
 
-    if _clean_str(row.owner) != user:
+    if _clean_str(row.user) != user:
         return fail("You don't have permission to change this ad.", code="FORBIDDEN")
 
     current_status = _clean_str(row.status)

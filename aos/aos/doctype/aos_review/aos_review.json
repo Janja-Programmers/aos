@@ -9,11 +9,11 @@
   "ad",
   "rating",
   "like_count",
+  "dislike_count",
   "column_break_faua",
   "reviewer",
   "title",
   "status",
-  "dislike_count",
   "section_break_qehr",
   "comment",
   "review_images"
@@ -37,7 +37,7 @@
   },
   {
    "fieldname": "rating",
-   "fieldtype": "Rating",
+   "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Rating",
    "reqd": 1
@@ -105,7 +105,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-02-16 19:45:27.939413",
+ "modified": "2026-02-18 20:24:22.416611",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Review",

@@ -81,6 +81,7 @@ def list_ads_impl(**kwargs):
     country = str(kwargs.get("country") or "").strip()
     location = str(kwargs.get("location") or "").strip()
     category = str(kwargs.get("category") or "").strip()
+    seller = str(kwargs.get("seller") or "").strip()
 
     q = str(kwargs.get("q") or "").strip()
     sort = str(kwargs.get("sort") or "rating_high").strip() or "rating_high"
@@ -96,6 +97,10 @@ def list_ads_impl(**kwargs):
 
     if not country:
         return fail("Country is required.", code="VALIDATION_ERROR")
+
+    # Validate seller
+    if seller and not frappe.db.exists("AOS Seller", seller):
+        return fail("Seller not found.", code="VALIDATION_ERROR")
 
     # Validation
     if sort not in ALLOWED_SORTS:
@@ -126,31 +131,54 @@ def list_ads_impl(**kwargs):
     offset = max(0, _safe_int(kwargs.get("offset"), 0))
 
     today = getdate(nowdate())
-    conditions = ["status = 'Active'", "country = %(country)s"]
-    values: Dict[str, Any] = {"country": country}
 
+    # Base conditions
+    conditions = ["status = 'Active'"]
+    values: Dict[str, Any] = {}
+
+    # Country (required)
+    conditions.append("country = %(country)s")
+    values["country"] = country
+
+    # Seller filter
+    if seller:
+        conditions.append("user = %(seller)s")
+        values["seller"] = seller
+
+    # Location
     if location:
         conditions.append("location = %(location)s")
         values["location"] = location
 
+    # Category
     if category:
         cats = resolve_category_filter_values(category)
         if not cats:
             return ok(
                 "Ads fetched.",
-                data={"items": [], "pagination": {"limit": limit, "offset": offset, "returned": 0}},
+                data={
+                    "items": [],
+                    "pagination": {
+                        "limit": limit,
+                        "offset": offset,
+                        "returned": 0,
+                    },
+                },
             )
         conditions.append("category in %(categories)s")
         values["categories"] = tuple(cats)
 
+    # Search
     if q and len(q) >= 2:
         conditions.append("title like %(q)s")
         values["q"] = f"%{q}%"
 
+    # Price type
     if price_type:
         conditions.append("price_type = %(price_type)s")
         values["price_type"] = price_type
 
+    # Rating
     if rating_min is not None:
         conditions.append("average_rating >= %(rating_min)s")
         values["rating_min"] = rating_min
@@ -176,7 +204,7 @@ def list_ads_impl(**kwargs):
 
     values["today"] = today
 
-    # Current Price
+    # Current Price Expression
     current_price_sql = f"""
         CASE
             WHEN {offer_active_sql}
@@ -185,7 +213,7 @@ def list_ads_impl(**kwargs):
         END
     """
 
-    # Price range applied on current_price
+    # Price range
     if price_min is not None:
         conditions.append(f"{current_price_sql} >= %(price_min)s")
         values["price_min"] = price_min
@@ -209,11 +237,10 @@ def list_ads_impl(**kwargs):
     elif sort == "price_high":
         order_by = f"{current_price_sql} desc, creation desc"
 
-    # Deal override (highest discount first)
+    # Deal override
     if promotion_type == "deal":
         order_by = "offer_percent desc, creation desc"
 
-    # Final SQL
     sql = f"""
         SELECT
             name,

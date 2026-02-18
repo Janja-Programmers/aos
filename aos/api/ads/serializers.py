@@ -161,5 +161,5 @@ def serialize_ad_detail(ad_doc, is_wishlisted: bool = False) -> Dict[str, Any]:
         "details": serialize_ad_details(ad_doc),
         "category_name": _norm(category_name) if category_name else "",
         "location_name": _norm(location_name) if location_name else "",
-        "owner": _norm(getattr(ad_doc, "owner", None)),
+        "seller": _norm(getattr(ad_doc, "user", None)),
     }

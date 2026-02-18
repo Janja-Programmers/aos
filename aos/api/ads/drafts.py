@@ -10,7 +10,7 @@ Key fields used by API:
  - title_hint, category_hint, country_hint, location_hint, last_step (read-only hints)
  - submitted_ad (Link to AOS Ad when submitted)
 
-All endpoints enforce ownership via `owner == current_user`.
+All endpoints enforce ownership via `user == current_user`.
 """
 
 from __future__ import annotations
@@ -152,7 +152,7 @@ def _get_owned_draft(draft_id: str, user: str) -> Optional[frappe.model.document
         doc = frappe.get_doc(_DT, draft_id)
     except Exception:
         return None
-    if (doc.owner or "") != user:
+    if (doc.user or "") != user:
         return None
     return doc
 
@@ -289,7 +289,7 @@ def list_ad_drafts_impl(**kwargs):
     except Exception:
         pass
 
-    filters: Dict[str, Any] = {"owner": user}
+    filters: Dict[str, Any] = {"user": user}
     if status:
         filters["status"] = status
 

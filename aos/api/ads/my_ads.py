@@ -39,7 +39,7 @@ def my_ads_impl(**kwargs):
     offset = max(_safe_int(kwargs.get("offset"), 0), 0)
     status = str(kwargs.get("status" or "") or "").strip()
 
-    filters: Dict[str, Any] = {"owner": user}
+    filters: Dict[str, Any] = {"user": user}
     if status:
         filters["status"] = status
 

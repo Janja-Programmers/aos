@@ -27,9 +27,6 @@ class AOSReviewReaction(Document):
     def on_update(self):
         update_review_reaction_counts(self.review)
 
-    def on_trash(self):
-        update_review_reaction_counts(self.review)
-
 
 def update_review_reaction_counts(review_name):
     likes = frappe.db.count(

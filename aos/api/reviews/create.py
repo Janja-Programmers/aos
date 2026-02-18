@@ -57,7 +57,7 @@ def create_review_impl(**kwargs):
         ad_doc = frappe.get_doc("AOS Ad", ad)
 
         # Prevent reviewing own ad
-        if ad_doc.owner == current_user:
+        if ad_doc.user == current_user:
             return fail("You cannot review your own ad.", code="VALIDATION_ERROR")
 
         # Prevent duplicate review

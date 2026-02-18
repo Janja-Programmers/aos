@@ -126,6 +126,7 @@ def create_ad_impl(**kwargs):
         ad.title = title
         ad.location = location
         ad.category = category
+        ad.user = current_user
         ad.description = description
         ad.status = "Reviewing"
 

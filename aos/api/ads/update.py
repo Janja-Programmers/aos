@@ -136,13 +136,13 @@ def update_ad_impl(**kwargs):
     row = frappe.db.get_value(
         "AOS Ad",
         ad_id,
-        ["name", "owner", "status"],
+        ["name", "user", "status"],
         as_dict=True,
     )
     if not row:
         return fail("Ad not found.", code="NOT_FOUND")
 
-    if _clean_str(row.owner) != user:
+    if _clean_str(row.user) != user:
         return fail("You don't have permission to edit this ad.", code="FORBIDDEN")
 
     status = _clean_str(row.status)

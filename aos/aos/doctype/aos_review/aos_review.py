@@ -31,11 +31,12 @@ class AOSReview(Document):
             frappe.throw("You have already reviewed this ad.")
 
     def on_update(self):
-        # If status changed or rating updated
         update_ad_rating(self.ad)
+        update_seller_rating_from_ad(self.ad)
 
     def on_trash(self):
         update_ad_rating(self.ad)
+        update_seller_rating_from_ad(self.ad)
 
 
 def update_ad_rating(ad_name):
@@ -68,6 +69,34 @@ def update_ad_rating(ad_name):
         {
             "average_rating": round(avg, 2),
             "total_reviews": len(reviews)
+        },
+        update_modified=False
+    )
+
+def update_seller_rating_from_ad(ad_name):
+    # Get seller (user) from ad
+    seller_user = frappe.db.get_value("AOS Ad", ad_name, "user")
+    if not seller_user:
+        return
+
+    result = frappe.db.sql("""
+        SELECT 
+            AVG(r.rating) AS avg_rating,
+            COUNT(r.name) AS total_reviews
+        FROM `tabAOS Review` r
+        INNER JOIN `tabAOS Ad` a ON r.ad = a.name
+        WHERE a.user = %s
+        AND r.status = 'Approved'
+    """, (seller_user,), as_dict=True)
+
+    row = result[0] if result else {}
+
+    frappe.db.set_value(
+        "AOS Seller",
+        seller_user,
+        {
+            "rating": round(row.get("avg_rating") or 0, 2),
+            "total_reviews": row.get("total_reviews") or 0
         },
         update_modified=False
     )

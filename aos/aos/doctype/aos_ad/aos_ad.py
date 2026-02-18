@@ -6,6 +6,7 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import nowdate, getdate
 
+from aos.services.seller_service import get_or_create_seller
 from aos.api.attributes.schema import _get_category_chain, _resolve_attributes, _resolve_pricing
 
 
@@ -110,6 +111,28 @@ class AOSAd(Document):
         self._validate_details()
         self._validate_pricing()
         self._validate_offer()
+
+    def before_insert(self):
+        # Ensure seller exists
+        seller = get_or_create_seller(self.user)
+
+        # Enforce seller status
+        if seller.status != "Active":
+            frappe.throw("Your seller account is currently suspended.")
+    
+    def after_insert(self):
+        frappe.db.sql("""
+            UPDATE `tabAOS Seller`
+            SET total_ads = total_ads + 1
+            WHERE name = %s
+        """, (self.user,))
+    
+    def on_trash(self):
+        frappe.db.sql("""
+            UPDATE `tabAOS Seller`
+            SET total_ads = GREATEST(total_ads - 1, 0)
+            WHERE name = %s
+        """, (self.user,))
 
     def _validate_offer(self) -> None:
         offer_price = _to_float(getattr(self, "offer_price", None))

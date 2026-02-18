@@ -11,6 +11,7 @@
   "naming_series",
   "title",
   "category",
+  "user",
   "column_break_rokk",
   "country",
   "location",
@@ -189,12 +190,14 @@
    "reqd": 1
   },
   {
+   "default": "0",
    "fieldname": "average_rating",
    "fieldtype": "Float",
    "label": "Average Rating",
    "read_only": 1
   },
   {
+   "default": "0",
    "fieldname": "total_reviews",
    "fieldtype": "Int",
    "label": "Total Reviews",
@@ -228,12 +231,19 @@
    "label": "Offer Percent",
    "precision": "2",
    "read_only": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User",
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-16 23:47:36.290123",
+ "modified": "2026-02-18 20:09:45.503012",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad",
