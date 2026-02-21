@@ -13,8 +13,31 @@ def current_user() -> str:
 
 
 def require_login():
-    """Return (user, None) when logged in, else (None, fail...)."""
+    """
+    Return (user, None) when logged in and preference exists,
+    else (None, fail...).
+
+    Enforces system invariant:
+    Every authenticated user must have an AOS User Preference.
+    """
     user = current_user()
+
     if user == "Guest":
-        return None, fail("Please login to continue.", code="UNAUTHORIZED")
+        return None, fail(
+            "Please login to continue.",
+            code="UNAUTHORIZED"
+        )
+
+    # Enforce preference existence
+    pref_exists = frappe.db.exists(
+        "AOS User Preference",
+        {"user": user}
+    )
+
+    if not pref_exists:
+        return None, fail(
+            "User preference not configured.",
+            code="PREFERENCE_MISSING"
+        )
+
     return user, None

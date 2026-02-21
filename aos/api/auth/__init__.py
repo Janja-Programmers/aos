@@ -20,8 +20,15 @@ from .password_reset import (
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def register(email: str, password: str, full_name: str):
-    return register_impl(email=email, password=password, full_name=full_name)
+def register(**kwargs):
+    return register_impl(
+        email=kwargs.get("email"),
+        password=kwargs.get("password"),
+        full_name=kwargs.get("full_name"),
+        country=kwargs.get("country"),
+        language=kwargs.get("language"),
+        currency=kwargs.get("currency"),
+    )
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

@@ -106,6 +106,7 @@ def _get_detail_value_for_type(row: Any, field_type: str):
 
 class AOSAd(Document):
     def validate(self):
+        self._validate_market_integrity()
         self._validate_location()
         self._validate_media()
         self._validate_details()
@@ -133,6 +134,26 @@ class AOSAd(Document):
             SET total_ads = GREATEST(total_ads - 1, 0)
             WHERE name = %s
         """, (self.user,))
+    
+    def _validate_market_integrity(self) -> None:
+        if not getattr(self, "user", None):
+            frappe.throw("Ad must be linked to a user.")
+
+        pref = frappe.db.get_value(
+            "AOS User Preference",
+            {"user": self.user},
+            ["country"],
+            as_dict=True,
+        )
+
+        if not pref:
+            frappe.throw("User preference not configured.")
+
+        pref_country = _norm(pref.get("country"))
+        ad_country = _norm(getattr(self, "country", None))
+
+        if pref_country and ad_country and pref_country != ad_country:
+            frappe.throw("Ad country must match your market preference.")
 
     def _validate_offer(self) -> None:
         offer_price = _to_float(getattr(self, "offer_price", None))

@@ -1,21 +1,13 @@
-"""Create a Review for an Ad.
-
-Client should already:
-  1) Selected an Ad
-  2) Provided rating (1–5)
-  3) Provided comment
-  4) Uploaded images (optional) via /api/method/upload_file
-
-Server-side validations also happen inside AOS Review DocType.
-"""
+"""Create a Review for an Ad (Market-isolated)."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, List
 
 import frappe
 
 from aos.api.shared.auth import require_login
+from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 
@@ -42,7 +34,7 @@ def create_review_impl(**kwargs):
     rating = kwargs.get("rating")
     comment = kwargs.get("comment")
     title = kwargs.get("title")
-    images = kwargs.get("images") or []
+    images: List[str] = kwargs.get("images") or []
 
     if not ad:
         return fail("Ad is required.", code="VALIDATION_ERROR")
@@ -53,39 +45,46 @@ def create_review_impl(**kwargs):
     if not comment:
         return fail("Comment is required.", code="VALIDATION_ERROR")
 
+    # Market enforcement
+    country, error = resolve_market_country(None)
+    if error:
+        return error
+
+    ad_doc = frappe.db.get_value(
+        "AOS Ad",
+        ad,
+        ["name", "user", "status", "country"],
+        as_dict=True,
+    )
+
+    if not ad_doc or ad_doc.status != "Active":
+        return fail("Ad not found.", code="NOT_FOUND")
+
+    if ad_doc.country != country:
+        return fail("Ad not found.", code="NOT_FOUND")
+
+    if ad_doc.user == current_user:
+        return fail("You cannot review your own ad.", code="VALIDATION_ERROR")
+
+    # Prevent duplicate review
+    if frappe.db.exists(
+        "AOS Review",
+        {"ad": ad, "reviewer": current_user}
+    ):
+        return fail("You have already reviewed this ad.", code="VALIDATION_ERROR")
+
     try:
-        ad_doc = frappe.get_doc("AOS Ad", ad)
-
-        # Prevent reviewing own ad
-        if ad_doc.user == current_user:
-            return fail("You cannot review your own ad.", code="VALIDATION_ERROR")
-
-        # Prevent duplicate review
-        existing = frappe.get_all(
-            "AOS Review",
-            filters={
-                "ad": ad,
-                "reviewer": current_user
-            },
-            limit=1
-        )
-
-        if existing:
-            return fail("You have already reviewed this ad.", code="VALIDATION_ERROR")
-
         review = frappe.new_doc("AOS Review")
         review.ad = ad
         review.rating = rating
         review.comment = comment
         review.title = title
 
-        # Append images (if any)
         for img in images:
             child = review.append("review_images", {})
             child.image = img
 
         review.insert(ignore_permissions=True)
-
         frappe.db.commit()
 
         return ok(

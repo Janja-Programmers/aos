@@ -4,7 +4,8 @@ from typing import Any, Dict, List
 
 import frappe
 
-from aos.api.shared.auth import current_user
+from aos.api.shared.auth import require_login
+from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
 
@@ -21,9 +22,13 @@ def list_wishlist_impl(**kwargs):
     if rl:
         return rl
 
-    user = current_user()
-    if user == "Guest":
-        return fail("Authentication required.", code="AUTH_REQUIRED")
+    user, err = require_login()
+    if err:
+        return err
+
+    country, error = resolve_market_country(None)
+    if error:
+        return error
 
     try:
         limit = int(kwargs.get("limit", 20))
@@ -59,7 +64,11 @@ def list_wishlist_impl(**kwargs):
 
     ads = frappe.get_all(
         "AOS Ad",
-        filters={"name": ["in", ad_ids], "status": "Active"},
+        filters={
+            "name": ["in", ad_ids],
+            "status": "Active",
+            "country": country,
+        },
         fields=[
             "name",
             "title",
@@ -92,11 +101,8 @@ def list_wishlist_impl(**kwargs):
 
     for r in ads:
         ad_doc = frappe._dict(r)
-        ad_doc.name = r["name"]
         ad_doc.images = images_by_ad.get(r["name"], [])
-
-        item = serialize_ad_list_item(ad_doc, is_wishlisted=True)
-        items.append(item)
+        items.append(serialize_ad_list_item(ad_doc, is_wishlisted=True))
 
     return ok(
         "Wishlist fetched.",

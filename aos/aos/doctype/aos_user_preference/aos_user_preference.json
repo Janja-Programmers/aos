@@ -1,24 +1,20 @@
 {
  "actions": [],
- "allow_rename": 1,
  "autoname": "field:user",
- "creation": "2026-01-27 15:44:58.789630",
+ "creation": "2026-02-19 17:41:43.826322",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "user",
-  "language",
-  "currency",
-  "column_break_gell",
   "country",
-  "language_overridden",
-  "currency_overridden"
+  "language",
+  "column_break_zqvg",
+  "currency",
+  "user"
  ],
  "fields": [
   {
    "fieldname": "user",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "User",
    "options": "User",
    "reqd": 1,
@@ -27,45 +23,38 @@
   {
    "fieldname": "country",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Country",
-   "options": "Country"
+   "options": "Country",
+   "reqd": 1
   },
   {
    "fieldname": "language",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Language",
-   "options": "Language"
+   "options": "Language",
+   "reqd": 1
   },
   {
    "fieldname": "currency",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Currency",
-   "options": "Currency"
+   "options": "Currency",
+   "reqd": 1
   },
   {
-   "fieldname": "column_break_gell",
+   "fieldname": "column_break_zqvg",
    "fieldtype": "Column Break"
-  },
-  {
-   "default": "0",
-   "fieldname": "language_overridden",
-   "fieldtype": "Check",
-   "label": "Language Overridden"
-  },
-  {
-   "default": "0",
-   "fieldname": "currency_overridden",
-   "fieldtype": "Check",
-   "label": "Currency Overridden"
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-27 15:48:54.910082",
+ "modified": "2026-02-21 19:39:50.909236",
  "modified_by": "Administrator",
  "module": "AOS",
- "name": "AOS User Preferences",
+ "name": "AOS User Preference",
  "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [

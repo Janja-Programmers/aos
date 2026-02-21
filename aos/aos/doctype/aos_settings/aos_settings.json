@@ -6,12 +6,11 @@
  "engine": "InnoDB",
  "field_order": [
   "localization_tab",
-  "base_currency",
-  "default_language",
+  "aos_defaults_section",
   "default_country",
+  "default_language",
   "column_break_ohud",
-  "enable_all_countries",
-  "enable_all_languages",
+  "default_currency",
   "foreign_exchange_section",
   "fx_api_key",
   "fx_refresh_hours",
@@ -58,12 +57,6 @@
    "label": "Localization"
   },
   {
-   "fieldname": "base_currency",
-   "fieldtype": "Link",
-   "label": "Base Currency",
-   "options": "Currency"
-  },
-  {
    "fieldname": "default_language",
    "fieldtype": "Link",
    "label": "Default Language",
@@ -78,18 +71,6 @@
   {
    "fieldname": "column_break_ohud",
    "fieldtype": "Column Break"
-  },
-  {
-   "default": "1",
-   "fieldname": "enable_all_countries",
-   "fieldtype": "Check",
-   "label": "Enable All Countries"
-  },
-  {
-   "default": "1",
-   "fieldname": "enable_all_languages",
-   "fieldtype": "Check",
-   "label": "Enable All Languages"
   },
   {
    "fieldname": "foreign_exchange_tab",
@@ -127,13 +108,24 @@
    "fieldname": "ad_expiry_days",
    "fieldtype": "Int",
    "label": "Ad Expiry Days"
+  },
+  {
+   "fieldname": "aos_defaults_section",
+   "fieldtype": "Section Break",
+   "label": "AOS Defaults"
+  },
+  {
+   "fieldname": "default_currency",
+   "fieldtype": "Link",
+   "label": "Default Currency",
+   "options": "Currency"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-02-11 13:07:36.038617",
+ "modified": "2026-02-21 19:44:20.468955",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Settings",

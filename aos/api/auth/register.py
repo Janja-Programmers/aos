@@ -2,17 +2,18 @@ import frappe
 
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.validators import resolve_country, resolve_language, resolve_currency
 from .constants import REGISTER_LIMIT_PER_HOUR_PER_IP
 from .validators import normalize_email, normalize_name, validate_registration_inputs
 from .verification import compute_expiry, generate_otp, ensure_ver_doc, otp_hash, send_otp_email
 
 
-def register_impl(email: str, password: str, full_name: str):
+def register_impl(email: str, password: str, full_name: str, country: str, language: str, currency: str):
     email = normalize_email(email)
     full_name = normalize_name(full_name)
     password = password or ""
 
-    # rate limit by IP
+    # Rate limit by IP
     rl = rate_limit(
         key=f"aos:reg:ip:{request_ip()}",
         ttl_seconds=60 * 60,
@@ -28,6 +29,19 @@ def register_impl(email: str, password: str, full_name: str):
 
     if frappe.db.exists("User", {"email": email}):
         return fail("An account with this email already exists.", code="ALREADY_EXISTS")
+
+    # Resolve preference values
+    country_name, err = resolve_country(country)
+    if err:
+        return err
+
+    language_name, err = resolve_language(language)
+    if err:
+        return err
+
+    currency_code, err = resolve_currency(currency)
+    if err:
+        return err
 
     try:
         # Create disabled user
@@ -45,10 +59,22 @@ def register_impl(email: str, password: str, full_name: str):
 
         # Set password
         user.new_password = password
-        user.flags.ignore_password_policy = True  # remove later if you want strong policy
+        user.flags.ignore_password_policy = True
         user.save(ignore_permissions=True)
 
-        # OTP record (one per user + purpose)
+        # Create User Preference
+        pref = frappe.get_doc(
+            {
+                "doctype": "AOS User Preference",
+                "user": user.name,
+                "country": country_name,
+                "language": language_name,
+                "currency": currency_code,
+            }
+        )
+        pref.insert(ignore_permissions=True)
+
+        # OTP record
         otp = generate_otp()
         expires_at = compute_expiry()
 
@@ -62,16 +88,18 @@ def register_impl(email: str, password: str, full_name: str):
         ver.reset_token_expires_at = None
         ver.save(ignore_permissions=True)
 
-        send_otp_email(email=email, otp=otp, full_name=full_name, purpose="email_verification")
+        send_otp_email(
+            email=email,
+            otp=otp,
+            full_name=full_name,
+            purpose="email_verification",
+        )
+
+        frappe.db.commit()
 
         return ok("OTP sent to email. Please verify to activate account.")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Register Failed")
-        # If user got created, keep it disabled
-        try:
-            if frappe.db.exists("User", {"email": email}):
-                frappe.db.set_value("User", email, "enabled", 0)
-        except Exception:
-            pass
+        frappe.db.rollback()
         return fail("Registration failed. Please try again.", code="REGISTER_FAILED")

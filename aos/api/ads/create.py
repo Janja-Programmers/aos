@@ -1,12 +1,11 @@
-"""Create/submit an Ad (final submit).
+"""
+Create/submit an Ad (final submit).
 
-This endpoint is intended to be called after the client has already:
-  1) Selected category
-  2) Fetched schema (details + pricing)
-  3) Uploaded images/video via /api/method/upload_file
-  4) Collected form values
-
-Server-side validations happen inside the AOS Ad DocType controller (validate()).
+Strict market enforcement:
+- Country is derived from location.
+- Location must belong to user's market.
+- Currency is enforced from user preference.
+- Client cannot override market.
 """
 
 from __future__ import annotations
@@ -19,6 +18,8 @@ from frappe.utils import add_days, today, getdate
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.market_context import resolve_market_country
+from aos.api.shared.validators import resolve_location
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
 from .constants import CREATE_AD_LIMIT_PER_MINUTE_PER_USER
@@ -41,7 +42,7 @@ def _safe_float(val: Any):
 
 
 def create_ad_impl(**kwargs):
-    """Create an AOS Ad with details, pricing, offers and media."""
+    """Create an AOS Ad with strict market enforcement."""
 
     current_user, err = require_login()
     if err:
@@ -56,6 +57,12 @@ def create_ad_impl(**kwargs):
     if rl:
         return rl
 
+    # Resolve Market Country (Strictly enforced)
+    market_country, err = resolve_market_country(None)
+    if err:
+        return err
+
+    # Validate Basic Fields
     title, location, category, description, e = validate_basic_fields(
         kwargs.get("title"),
         kwargs.get("location"),
@@ -65,10 +72,43 @@ def create_ad_impl(**kwargs):
     if e:
         return e
 
+    # Resolve Location (must belong to market)
+    location_name, e = resolve_location(
+        location,
+        country=market_country,
+    )
+    if e:
+        return e
+
+    location_country = frappe.db.get_value(
+        "AOS Location",
+        location_name,
+        "country",
+    )
+
+    if not location_country or location_country != market_country:
+        return fail(
+            "Invalid location for your market.",
+            code="VALIDATION_ERROR",
+        )
+
+    # Enforce Currency From Preference
+    pref_currency = frappe.db.get_value(
+        "AOS User Preference",
+        {"user": current_user},
+        "currency",
+    )
+
+    if not pref_currency:
+        return fail(
+            "User currency preference not configured.",
+            code="CONFIG_ERROR",
+        )
+
+    # Details & Media
     details_rows = sanitize_details(kwargs.get("details"))
     images_rows = sanitize_images(kwargs.get("images"))
 
-    # Media
     video_url, e = validate_file_reference(
         kwargs.get("video"),
         current_user=current_user,
@@ -89,7 +129,6 @@ def create_ad_impl(**kwargs):
 
     # Pricing
     price_type = kwargs.get("price_type")
-    currency = kwargs.get("currency")
     price = kwargs.get("price")
     price_unit = kwargs.get("price_unit")
 
@@ -110,7 +149,6 @@ def create_ad_impl(**kwargs):
         except Exception:
             return fail("Invalid offer_end_date.", code="VALIDATION_ERROR")
 
-    # Light API-level validation (deep validation happens in DocType)
     if offer_price is not None and offer_price <= 0:
         return fail("offer_price must be greater than 0.", code="VALIDATION_ERROR")
 
@@ -121,10 +159,12 @@ def create_ad_impl(**kwargs):
                 code="VALIDATION_ERROR",
             )
 
+    # Create Ad Document
     try:
         ad = frappe.new_doc("AOS Ad")
         ad.title = title
-        ad.location = location
+        ad.location = location_name
+        ad.country = location_country
         ad.category = category
         ad.user = current_user
         ad.description = description
@@ -135,8 +175,7 @@ def create_ad_impl(**kwargs):
         ad.expires_on = add_days(today(), settings.ad_expiry_days)
 
         # Pricing
-        if currency:
-            ad.currency = currency
+        ad.currency = pref_currency
         if price_type:
             ad.price_type = price_type
         if price not in (None, ""):
@@ -144,7 +183,7 @@ def create_ad_impl(**kwargs):
         if price_unit:
             ad.price_unit = price_unit
 
-        # Offer (optional)
+        # Offers
         if offer_price is not None:
             ad.offer_price = offer_price
 
@@ -154,7 +193,7 @@ def create_ad_impl(**kwargs):
         if offer_end_date:
             ad.offer_end_date = offer_end_date
 
-        # Media
+        # Video
         if video_url:
             ad.video = video_url
 
@@ -172,7 +211,7 @@ def create_ad_impl(**kwargs):
             if row.get("sort_order") not in (None, ""):
                 child.sort_order = row.get("sort_order")
 
-        # Insert → triggers AOSAd.validate()
+        # Insert → triggers DocType validation
         ad.insert(ignore_permissions=True)
 
         # Attach files
@@ -186,7 +225,9 @@ def create_ad_impl(**kwargs):
         return ok("Ad created.", data={"id": ad.name})
 
     except frappe.ValidationError as ex:
+        frappe.db.rollback()
         return fail(str(ex), code="VALIDATION_ERROR")
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Create Ad Failed")
+        frappe.db.rollback()
         return fail("Failed to create ad.", code="INTERNAL_ERROR")

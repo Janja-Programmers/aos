@@ -13,9 +13,9 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
 
-class IntegrationTestAOSUserPreferences(IntegrationTestCase):
+class IntegrationTestAOSUserPreference(IntegrationTestCase):
 	"""
-	Integration tests for AOSUserPreferences.
+	Integration tests for AOSUserPreference.
 	Use this class for testing interactions between multiple components.
 	"""
 

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import frappe
 
-from aos.api.shared.auth import current_user
+from aos.api.shared.auth import require_login
+from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
 
@@ -19,13 +20,33 @@ def toggle_wishlist_impl(ad_id):
     if rl:
         return rl
 
-    user = current_user()
-    if user == "Guest":
-        return fail("Authentication required.", code="AUTH_REQUIRED")
+    user, err = require_login()
+    if err:
+        return err
 
     ad_id = str(ad_id or "").strip()
     if not ad_id:
         return fail("Ad id is required.", code="VALIDATION_ERROR")
+
+    # Enforce market isolation
+    country, error = resolve_market_country(None)
+    if error:
+        return error
+
+    ad_country = frappe.db.get_value(
+        "AOS Ad",
+        ad_id,
+        "country"
+    )
+
+    if not ad_country:
+        return fail("Ad not found.", code="NOT_FOUND")
+
+    if ad_country != country:
+        return fail(
+            "You cannot wishlist an ad from another market.",
+            code="MARKET_MISMATCH"
+        )
 
     docname = f"{user}-{ad_id}"
 

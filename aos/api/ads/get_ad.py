@@ -1,4 +1,7 @@
-"""Get a single Ad by id."""
+"""
+Get a single Ad by id.
+Country isolation and seller enforcement are strictly enforced.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +11,7 @@ import frappe
 from frappe.utils import nowdate, getdate
 
 from aos.api.shared.auth import current_user
+from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.utils import get_active_wishlist_ad_ids
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
@@ -16,7 +20,7 @@ from .constants import GET_AD_LIMIT_PER_HOUR_PER_IP
 from .serializers import serialize_ad_detail
 
 
-def get_ad_impl(ad_id: Any):
+def get_ad_impl(**kwargs):
     rl = rate_limit(
         key=f"aos:ads:get:ip:{request_ip()}",
         ttl_seconds=60 * 60,
@@ -26,40 +30,54 @@ def get_ad_impl(ad_id: Any):
     if rl:
         return rl
 
-    ad_id = str(ad_id or "").strip()
+    ad_id = str(kwargs.get("ad_id") or "").strip()
     if not ad_id:
         return fail("Ad id is required.", code="VALIDATION_ERROR")
 
+    # Market Context (Strictly enforced)
+    country, error = resolve_market_country(kwargs.get("country"))
+    if error:
+        return error
+
     today = getdate(nowdate())
+
     offer_active_sql = """
-        offer_price IS NOT NULL
-        AND offer_price > 0
-        AND (offer_start_date IS NULL OR offer_start_date <= %(today)s)
-        AND (offer_end_date IS NULL OR offer_end_date >= %(today)s)
+        a.offer_price IS NOT NULL
+        AND a.offer_price > 0
+        AND (a.offer_start_date IS NULL OR a.offer_start_date <= %(today)s)
+        AND (a.offer_end_date IS NULL OR a.offer_end_date >= %(today)s)
     """
 
     current_price_sql = f"""
         CASE
             WHEN {offer_active_sql}
-            THEN offer_price
-            ELSE price
+            THEN a.offer_price
+            ELSE a.price
         END
     """
 
+    # Final SQL
     sql = f"""
         SELECT
-            *,
+            a.*,
             {current_price_sql} as current_price
-        FROM `tabAOS Ad`
-        WHERE name = %(ad_id)s
-          AND status = 'Active'
+        FROM `tabAOS Ad` a
+        INNER JOIN `tabAOS Seller` s ON s.name = a.user
+        WHERE a.name = %(ad_id)s
+          AND a.status = 'Active'
+          AND a.country = %(country)s
+          AND s.status = 'Active'
         LIMIT 1
     """
 
     try:
         rows = frappe.db.sql(
             sql,
-            {"ad_id": ad_id, "today": today},
+            {
+                "ad_id": ad_id,
+                "today": today,
+                "country": country,
+            },
             as_dict=True,
         )
 
@@ -76,13 +94,19 @@ def get_ad_impl(ad_id: Any):
     # Load Child Tables
     doc.images = frappe.get_all(
         "AOS Ad Image",
-        filters={"parent": ad_id, "parenttype": "AOS Ad"},
+        filters={
+            "parent": ad_id,
+            "parenttype": "AOS Ad",
+        },
         fields=["image", "is_primary", "sort_order"],
     )
 
     doc.details = frappe.get_all(
         "Ad Attribute Value",
-        filters={"parent": ad_id, "parenttype": "AOS Ad"},
+        filters={
+            "parent": ad_id,
+            "parenttype": "AOS Ad",
+        },
         fields=[
             "attribute",
             "value_text",
@@ -93,11 +117,17 @@ def get_ad_impl(ad_id: Any):
         ],
     )
 
-    # Offer flag
+    # Offer Active Flag
     doc.is_offer_active = bool(
         row.get("offer_price")
-        and (row.get("offer_start_date") is None or row.get("offer_start_date") <= today)
-        and (row.get("offer_end_date") is None or row.get("offer_end_date") >= today)
+        and (
+            row.get("offer_start_date") is None
+            or row.get("offer_start_date") <= today
+        )
+        and (
+            row.get("offer_end_date") is None
+            or row.get("offer_end_date") >= today
+        )
     )
 
     # Wishlist

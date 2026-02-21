@@ -2,18 +2,10 @@
 List Ads for buyers.
 
 Rules:
- - Only Active ads are returned (cannot override)
- - country is required
- - Optional filters:
-     location
-     category
-     promotion_type (offer | deal | flash_sale)
-     price_type
-     price_min / price_max (applied on current price)
-     rating_min
-     q (search in title)
- - Default sort: rating_high
- - Pagination: limit (1–50), offset
+ - Only Active ads are returned
+ - Seller must be Active
+ - Country isolation is strictly enforced
+ - Optional filters supported
 """
 
 from __future__ import annotations
@@ -24,6 +16,7 @@ import frappe
 from frappe.utils import nowdate, add_days, getdate
 
 from aos.api.shared.auth import current_user
+from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.utils import get_active_wishlist_ad_ids
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
@@ -38,33 +31,23 @@ ALLOWED_PRICE_TYPES = {"Fixed", "Negotiable", "Contact for price", "Free"}
 ALLOWED_PROMOTIONS = {"offer", "deal", "flash_sale"}
 
 
-def _safe_int(val: Any, default: int) -> int:
+def _safe_int(value: Any, default: int) -> int:
     try:
-        return int(val)
+        return int(value)
     except Exception:
         return default
 
 
-def _safe_float(val: Any) -> Optional[float]:
-    if val is None:
+def _safe_float(value: Any) -> Optional[float]:
+    if value is None:
         return None
     try:
-        s = str(val).strip()
-        if s == "":
+        string_value = str(value).strip()
+        if string_value == "":
             return None
-        return float(s)
+        return float(string_value)
     except Exception:
         return None
-
-
-def _get_country_from_prefs(user: str) -> str:
-    if not user:
-        return ""
-    try:
-        pref = frappe.db.get_value("AOS User Preference", {"user": user}, "country")
-        return str(pref or "").strip()
-    except Exception:
-        return ""
 
 
 def list_ads_impl(**kwargs):
@@ -77,12 +60,15 @@ def list_ads_impl(**kwargs):
     if rl:
         return rl
 
+    # Market Context
+    country, error = resolve_market_country(kwargs.get("country"))
+    if error:
+        return error
+
     # Inputs
-    country = str(kwargs.get("country") or "").strip()
     location = str(kwargs.get("location") or "").strip()
     category = str(kwargs.get("category") or "").strip()
     seller = str(kwargs.get("seller") or "").strip()
-
     q = str(kwargs.get("q") or "").strip()
     sort = str(kwargs.get("sort") or "rating_high").strip() or "rating_high"
     price_type = str(kwargs.get("price_type") or "").strip()
@@ -92,17 +78,11 @@ def list_ads_impl(**kwargs):
     rating_min = _safe_float(kwargs.get("rating_min"))
 
     user = current_user()
-    if not country and user != "Guest":
-        country = _get_country_from_prefs(user)
 
-    if not country:
-        return fail("Country is required.", code="VALIDATION_ERROR")
-
-    # Validate seller
+    # Validation
     if seller and not frappe.db.exists("AOS Seller", seller):
         return fail("Seller not found.", code="VALIDATION_ERROR")
 
-    # Validation
     if sort not in ALLOWED_SORTS:
         return fail(
             "Invalid sort.",
@@ -125,35 +105,38 @@ def list_ads_impl(**kwargs):
         )
 
     if price_min is not None and price_max is not None and price_min > price_max:
-        return fail("price_min cannot be greater than price_max.", code="VALIDATION_ERROR")
+        return fail(
+            "price_min cannot be greater than price_max.",
+            code="VALIDATION_ERROR",
+        )
 
     limit = max(1, min(_safe_int(kwargs.get("limit"), 20), 50))
     offset = max(0, _safe_int(kwargs.get("offset"), 0))
 
     today = getdate(nowdate())
 
-    # Base conditions
-    conditions = ["status = 'Active'"]
-    values: Dict[str, Any] = {}
+    # Base Conditions
+    conditions = [
+        "a.status = 'Active'",
+        "a.country = %(country)s",
+        "s.status = 'Active'"
+    ]
 
-    # Country (required)
-    conditions.append("country = %(country)s")
-    values["country"] = country
-
-    # Seller filter
+    values: Dict[str, Any] = {"country": country}
+    # Seller
     if seller:
-        conditions.append("user = %(seller)s")
+        conditions.append("a.user = %(seller)s")
         values["seller"] = seller
 
     # Location
     if location:
-        conditions.append("location = %(location)s")
+        conditions.append("a.location = %(location)s")
         values["location"] = location
 
     # Category
     if category:
-        cats = resolve_category_filter_values(category)
-        if not cats:
+        category_ids = resolve_category_filter_values(category)
+        if not category_ids:
             return ok(
                 "Ads fetched.",
                 data={
@@ -165,30 +148,30 @@ def list_ads_impl(**kwargs):
                     },
                 },
             )
-        conditions.append("category in %(categories)s")
-        values["categories"] = tuple(cats)
+        conditions.append("a.category in %(categories)s")
+        values["categories"] = tuple(category_ids)
 
     # Search
     if q and len(q) >= 2:
-        conditions.append("title like %(q)s")
+        conditions.append("a.title like %(q)s")
         values["q"] = f"%{q}%"
 
-    # Price type
+    # Price Type
     if price_type:
-        conditions.append("price_type = %(price_type)s")
+        conditions.append("a.price_type = %(price_type)s")
         values["price_type"] = price_type
 
     # Rating
     if rating_min is not None:
-        conditions.append("average_rating >= %(rating_min)s")
+        conditions.append("a.average_rating >= %(rating_min)s")
         values["rating_min"] = rating_min
 
-    # Promotion conditions
+    # Promotion Logic
     offer_active_sql = """
-        offer_price IS NOT NULL
-        AND offer_price > 0
-        AND (offer_start_date IS NULL OR offer_start_date <= %(today)s)
-        AND (offer_end_date IS NULL OR offer_end_date >= %(today)s)
+        a.offer_price IS NOT NULL
+        AND a.offer_price > 0
+        AND (a.offer_start_date IS NULL OR a.offer_start_date <= %(today)s)
+        AND (a.offer_end_date IS NULL OR a.offer_end_date >= %(today)s)
     """
 
     if promotion_type in {"offer", "deal"}:
@@ -197,8 +180,8 @@ def list_ads_impl(**kwargs):
     if promotion_type == "flash_sale":
         conditions.append(f"""
             ({offer_active_sql})
-            AND offer_end_date IS NOT NULL
-            AND offer_end_date BETWEEN %(today)s AND %(flash_end)s
+            AND a.offer_end_date IS NOT NULL
+            AND a.offer_end_date BETWEEN %(today)s AND %(flash_end)s
         """)
         values["flash_end"] = add_days(today, 7)
 
@@ -208,8 +191,8 @@ def list_ads_impl(**kwargs):
     current_price_sql = f"""
         CASE
             WHEN {offer_active_sql}
-            THEN offer_price
-            ELSE price
+            THEN a.offer_price
+            ELSE a.price
         END
     """
 
@@ -226,42 +209,44 @@ def list_ads_impl(**kwargs):
 
     # Sorting
     if sort == "rating_high":
-        order_by = "average_rating desc, total_reviews desc, creation desc"
+        order_by = "a.average_rating desc, a.total_reviews desc, a.creation desc"
 
     elif sort == "recent":
-        order_by = "creation desc"
+        order_by = "a.creation desc"
 
     elif sort == "price_low":
-        order_by = f"{current_price_sql} asc, creation desc"
+        order_by = f"{current_price_sql} asc, a.creation desc"
 
     elif sort == "price_high":
-        order_by = f"{current_price_sql} desc, creation desc"
+        order_by = f"{current_price_sql} desc, a.creation desc"
 
     # Deal override
     if promotion_type == "deal":
-        order_by = "offer_percent desc, creation desc"
+        order_by = "a.offer_percent desc, a.creation desc"
 
+    # Final SQL
     sql = f"""
         SELECT
-            name,
-            title,
-            status,
-            country,
-            location,
-            category,
-            currency,
-            price_type,
-            price,
-            offer_price,
-            offer_start_date,
-            offer_end_date,
-            offer_percent,
-            price_unit,
-            average_rating,
-            total_reviews,
-            creation,
+            a.name,
+            a.title,
+            a.status,
+            a.country,
+            a.location,
+            a.category,
+            a.currency,
+            a.price_type,
+            a.price,
+            a.offer_price,
+            a.offer_start_date,
+            a.offer_end_date,
+            a.offer_percent,
+            a.price_unit,
+            a.average_rating,
+            a.total_reviews,
+            a.creation,
             {current_price_sql} as current_price
-        FROM `tabAOS Ad`
+        FROM `tabAOS Ad` a
+        INNER JOIN `tabAOS Seller` s ON s.name = a.user
         WHERE {where_clause}
         ORDER BY {order_by}
         LIMIT %(limit)s OFFSET %(offset)s
@@ -277,25 +262,25 @@ def list_ads_impl(**kwargs):
             wishlisted_ids = get_active_wishlist_ad_ids(user)
 
         # Batch image fetch
-        ad_names = [r["name"] for r in rows]
-        images_by_ad: Dict[str, List[Dict[str, Any]]] = {n: [] for n in ad_names}
+        ad_names = [row["name"] for row in rows]
+        images_by_ad: Dict[str, List[Dict[str, Any]]] = {name: [] for name in ad_names}
         if ad_names:
-            img_rows = frappe.get_all(
+            image_rows = frappe.get_all(
                 "AOS Ad Image",
                 filters={"parenttype": "AOS Ad", "parent": ["in", ad_names]},
                 fields=["parent", "image", "is_primary", "sort_order"],
             )
-            for img in img_rows:
-                images_by_ad.setdefault(img["parent"], []).append(img)
+            for image in image_rows:
+                images_by_ad.setdefault(image["parent"], []).append(image)
 
         items = []
-        for r in rows:
-            ad_doc = frappe._dict(r)
-            ad_doc.images = images_by_ad.get(r["name"], [])
+        for row in rows:
+            ad_doc = frappe._dict(row)
+            ad_doc.images = images_by_ad.get(row["name"], [])
             ad_doc.is_offer_active = bool(
-                r.get("offer_price")
-                and (r.get("offer_start_date") is None or r.get("offer_start_date") <= today)
-                and (r.get("offer_end_date") is None or r.get("offer_end_date") >= today)
+                row.get("offer_price")
+                and (row.get("offer_start_date") is None or row.get("offer_start_date") <= today)
+                and (row.get("offer_end_date") is None or row.get("offer_end_date") >= today)
             )
             items.append(
                 serialize_ad_list_item(

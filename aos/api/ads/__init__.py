@@ -35,9 +35,9 @@ def list_ads(**kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
-def get_ad(ad_id: str):
+def get_ad(**kwargs):
     """Fetch a single ad."""
-    return get_ad_impl(ad_id)
+    return get_ad_impl(**kwargs)
 
 
 @frappe.whitelist()

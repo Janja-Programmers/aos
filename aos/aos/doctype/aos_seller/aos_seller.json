@@ -57,7 +57,8 @@
    "in_standard_filter": 1,
    "label": "Status",
    "options": "Active\nSuspended",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "metrics_section",
@@ -102,7 +103,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-02-18 15:38:08.057124",
+ "modified": "2026-02-21 19:25:35.874570",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Seller",

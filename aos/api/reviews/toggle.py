@@ -1,18 +1,11 @@
-"""Toggle Reaction on a Review.
-
-Supports:
-  - Like
-  - Unlike
-  - Dislike
-  - Undislike
-  - Switching between Like/Dislike
-"""
+"""Toggle Reaction on a Review (Market-isolated)."""
 
 from __future__ import annotations
 
 import frappe
 
 from aos.api.shared.auth import require_login
+from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 
@@ -45,21 +38,37 @@ def toggle_reaction_impl(**kwargs):
     if reaction not in ["Like", "Dislike"]:
         return fail("Invalid reaction.", code="VALIDATION_ERROR")
 
+    # Market enforcement
+    country, error = resolve_market_country(None)
+    if error:
+        return error
+
+    review_doc = frappe.db.get_value(
+        "AOS Review",
+        review,
+        ["name", "status", "reviewer", "ad"],
+        as_dict=True
+    )
+
+    if not review_doc or review_doc.status != "Approved":
+        return fail("Review not found.", code="NOT_FOUND")
+
+    ad_country = frappe.db.get_value(
+        "AOS Ad",
+        review_doc.ad,
+        "country"
+    )
+
+    if ad_country != country:
+        return fail("Review not found.", code="NOT_FOUND")
+
+    if review_doc.reviewer == current_user:
+        return fail("You cannot react to your own review.", code="VALIDATION_ERROR")
+
     try:
-        review_doc = frappe.get_doc("AOS Review", review)
-
-        if review_doc.status != "Approved":
-            return fail("You can only react to approved reviews.", code="VALIDATION_ERROR")
-
-        if review_doc.reviewer == current_user:
-            return fail("You cannot react to your own review.", code="VALIDATION_ERROR")
-
         existing = frappe.get_all(
             "AOS Review Reaction",
-            filters={
-                "review": review,
-                "user": current_user
-            },
+            filters={"review": review, "user": current_user},
             fields=["name", "reaction"],
             limit=1
         )
@@ -71,7 +80,6 @@ def toggle_reaction_impl(**kwargs):
             doc.reaction = reaction
             doc.insert(ignore_permissions=True)
             frappe.db.commit()
-
             return ok("Reaction added.", data={"status": "added", "reaction": reaction})
 
         doc = frappe.get_doc("AOS Review Reaction", existing[0].name)
@@ -82,7 +90,6 @@ def toggle_reaction_impl(**kwargs):
             doc.delete(ignore_permissions=True)
             frappe.db.commit()
             update_review_reaction_counts(review_id)
-
             return ok("Reaction removed.", data={"status": "removed"})
 
         # Switch reaction

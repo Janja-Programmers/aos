@@ -10,7 +10,6 @@ from .constants import LOCALE_BUNDLE_LIMIT_PER_MIN_PER_IP
 
 
 def _get_countries():
-    # Country is a core DocType. Keep payload stable for mobile clients.
     rows = frappe.get_all(
         "Country",
         fields=["name", "code"],
@@ -73,14 +72,12 @@ def get_locale_bundle_impl():
 
     data = {
         "settings": {
-            "base_currency": settings.base_currency,
-            "default_language": settings.default_language,
             "default_country": settings.default_country,
-            "enable_all_countries": settings.enable_all_countries,
-            "enable_all_languages": settings.enable_all_languages,
+            "default_language": settings.default_language,
+            "default_currency": settings.default_currency,
         },
-        "countries": _get_countries() if settings.enable_all_countries else [],
-        "languages": _get_languages() if settings.enable_all_languages else [],
+        "countries": _get_countries(),
+        "languages": _get_languages(),
         "currencies": _get_currencies(),
     }
 
