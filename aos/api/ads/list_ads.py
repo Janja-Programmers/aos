@@ -5,7 +5,9 @@ Rules:
  - Only Active ads are returned
  - Seller must be Active
  - Country isolation is strictly enforced
+ - Expired ads are excluded in real-time
  - Optional filters supported
+ - Sorting and filtering operate in display currency
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.utils import get_active_wishlist_ad_ids
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
+from aos.utils.aos_settings import get_aos_settings_snapshot
 
 from .constants import LIST_ADS_LIMIT_PER_MINUTE_PER_IP
 from .category_filters import resolve_category_filter_values
@@ -65,6 +68,26 @@ def list_ads_impl(**kwargs):
     if error:
         return error
 
+    user = current_user()
+    today = getdate(nowdate())
+
+    # Resolve Display Currency
+    display_currency = None
+
+    if user != "Guest":
+        display_currency = frappe.db.get_value(
+            "AOS User Preference",
+            {"user": user},
+            "currency",
+        )
+
+    if not display_currency:
+        snap = get_aos_settings_snapshot()
+        display_currency = snap.default_currency
+
+    if not display_currency:
+        return fail("Display currency not configured.", code="CONFIG_ERROR")
+
     # Inputs
     location = str(kwargs.get("location") or "").strip()
     category = str(kwargs.get("category") or "").strip()
@@ -76,8 +99,6 @@ def list_ads_impl(**kwargs):
     price_min = _safe_float(kwargs.get("price_min"))
     price_max = _safe_float(kwargs.get("price_max"))
     rating_min = _safe_float(kwargs.get("rating_min"))
-
-    user = current_user()
 
     # Validation
     if seller and not frappe.db.exists("AOS Seller", seller):
@@ -113,16 +134,20 @@ def list_ads_impl(**kwargs):
     limit = max(1, min(_safe_int(kwargs.get("limit"), 20), 50))
     offset = max(0, _safe_int(kwargs.get("offset"), 0))
 
-    today = getdate(nowdate())
-
     # Base Conditions
     conditions = [
         "a.status = 'Active'",
         "a.country = %(country)s",
-        "s.status = 'Active'"
+        "s.status = 'Active'",
+        "(a.expires_on IS NULL OR a.expires_on >= %(today)s)"
     ]
 
-    values: Dict[str, Any] = {"country": country}
+    values: Dict[str, Any] = {
+        "country": country,
+        "today": today,
+        "display_currency": display_currency,
+    }
+
     # Seller
     if seller:
         conditions.append("a.user = %(seller)s")
@@ -166,12 +191,32 @@ def list_ads_impl(**kwargs):
         conditions.append("a.average_rating >= %(rating_min)s")
         values["rating_min"] = rating_min
 
-    # Promotion Logic
+    # Offer Logic
     offer_active_sql = """
         a.offer_price IS NOT NULL
         AND a.offer_price > 0
         AND (a.offer_start_date IS NULL OR a.offer_start_date <= %(today)s)
         AND (a.offer_end_date IS NULL OR a.offer_end_date >= %(today)s)
+    """
+
+    conversion_ratio = """
+        (
+            IFNULL(er_target.rate_vs_base, 1)
+            /
+            IFNULL(er_source.rate_vs_base, 1)
+        )
+    """
+
+    # Converted original price
+    original_price_sql = f"(a.price * {conversion_ratio})"
+
+    # Converted current price
+    current_price_sql = f"""
+        CASE
+            WHEN {offer_active_sql}
+            THEN (a.offer_price * {conversion_ratio})
+            ELSE (a.price * {conversion_ratio})
+        END
     """
 
     if promotion_type in {"offer", "deal"}:
@@ -184,17 +229,6 @@ def list_ads_impl(**kwargs):
             AND a.offer_end_date BETWEEN %(today)s AND %(flash_end)s
         """)
         values["flash_end"] = add_days(today, 7)
-
-    values["today"] = today
-
-    # Current Price Expression
-    current_price_sql = f"""
-        CASE
-            WHEN {offer_active_sql}
-            THEN a.offer_price
-            ELSE a.price
-        END
-    """
 
     # Price range
     if price_min is not None:
@@ -234,6 +268,7 @@ def list_ads_impl(**kwargs):
             a.location,
             a.category,
             a.currency,
+            %(display_currency)s as display_currency,
             a.price_type,
             a.price,
             a.offer_price,
@@ -244,9 +279,14 @@ def list_ads_impl(**kwargs):
             a.average_rating,
             a.total_reviews,
             a.creation,
+            {original_price_sql} as original_price_converted,
             {current_price_sql} as current_price
         FROM `tabAOS Ad` a
         INNER JOIN `tabAOS Seller` s ON s.name = a.user
+        LEFT JOIN `tabAOS Exchange Rate` er_source
+            ON er_source.currency = a.currency
+        LEFT JOIN `tabAOS Exchange Rate` er_target
+            ON er_target.currency = %(display_currency)s
         WHERE {where_clause}
         ORDER BY {order_by}
         LIMIT %(limit)s OFFSET %(offset)s
@@ -261,7 +301,7 @@ def list_ads_impl(**kwargs):
         if rows:
             wishlisted_ids = get_active_wishlist_ad_ids(user)
 
-        # Batch image fetch
+        # Fetch images
         ad_names = [row["name"] for row in rows]
         images_by_ad: Dict[str, List[Dict[str, Any]]] = {name: [] for name in ad_names}
         if ad_names:
@@ -302,5 +342,5 @@ def list_ads_impl(**kwargs):
         )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "AOS List Ads Failed")
+        frappe.log_error(frappe.get_traceback(), "AOS List Ads FX Failed")
         return fail("Failed to fetch ads.", code="INTERNAL_ERROR")

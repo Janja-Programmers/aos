@@ -34,18 +34,25 @@ def _to_int(value: Any, default: int = 0) -> int:
         return default
 
 
-def _money_display(currency: str, price: Any) -> str:
+def _money_display(currency: str, price: Any, price_type: str) -> str:
     """
-    Human display for CURRENT price.
+    Format price for display.
+    - If Contact for price → return that text
+    - If no price → return empty
     """
-    currency_code = _norm(currency)
-    amount = _to_float(price)
 
+    price_type = _norm(price_type)
+
+    if price_type == "Contact for price":
+        return "Contact for price"
+
+    amount = _to_float(price)
     if amount is None:
         return ""
 
-    symbol = None
+    currency_code = _norm(currency)
 
+    symbol = None
     if currency_code:
         try:
             symbol = frappe.db.get_value(
@@ -59,12 +66,11 @@ def _money_display(currency: str, price: Any) -> str:
     symbol = _norm(symbol)
 
     if symbol:
-        return f"{symbol}{amount:g}"
+        return f"{symbol}{amount:,.2f}"
 
-    # Fallback to currency code if symbol missing
     if currency_code:
-        return f"{currency_code} {amount:g}"
-    return f"{amount:g}"
+        return f"{currency_code} {amount:,.2f}"
+    return f"{amount:,.2f}"
 
 
 def _primary_image(images: List[Dict[str, Any]]) -> str:
@@ -122,9 +128,24 @@ def serialize_ad_details(ad_doc) -> List[Dict[str, Any]]:
 
 def serialize_ad_list_item(ad_doc, is_wishlisted: bool = False) -> Dict[str, Any]:
     images = serialize_ad_images(ad_doc)
-    base_price = getattr(ad_doc, "price", None)
-    current_price = getattr(ad_doc, "current_price", base_price)
-    offer_price = getattr(ad_doc, "offer_price", None)
+
+    display_currency = _norm(
+        getattr(ad_doc, "display_currency", getattr(ad_doc, "currency", None))
+    )
+
+    original_price = _to_float(getattr(ad_doc, "original_price_converted", None))
+    current_price = _to_float(getattr(ad_doc, "current_price", None))
+
+    price_type = _norm(getattr(ad_doc, "price_type", None))
+    price_unit = _norm(getattr(ad_doc, "price_unit", None))
+    is_offer_active = bool(getattr(ad_doc, "is_offer_active", False))
+
+    original_price = _money_display(display_currency, original_price, price_type)
+    current_price = _money_display(display_currency, current_price, price_type)
+
+    # If not offer active → no strike
+    if not is_offer_active:
+        original_price = ""
 
     return {
         "id": ad_doc.name,
@@ -133,20 +154,13 @@ def serialize_ad_list_item(ad_doc, is_wishlisted: bool = False) -> Dict[str, Any
         "country": _norm(getattr(ad_doc, "country", None)),
         "location": _norm(getattr(ad_doc, "location", None)),
         "category": _norm(getattr(ad_doc, "category", None)),
-        "currency": _norm(getattr(ad_doc, "currency", None)),
-        "price_type": _norm(getattr(ad_doc, "price_type", None)),
-        "price": base_price,
-        "price_unit": _norm(getattr(ad_doc, "price_unit", None)),
         "current_price": current_price,
-        "offer_price": offer_price,
-        "offer_percent": _to_float(getattr(ad_doc, "offer_percent", None)),
-        "is_offer_active": bool(getattr(ad_doc, "is_offer_active", False)),
-        "price_display": _money_display(
-            getattr(ad_doc, "currency", None),
-            current_price,
-        ),
+        "original_price": original_price,
+        "offer_percent": _to_float(getattr(ad_doc, "offer_percent", None)) if is_offer_active else 0,
+        "is_offer_active": is_offer_active,
+        "price_type": price_type,
+        "price_unit": price_unit,
         "primary_image": _primary_image(images),
-        "images_count": len(images),
         "created_at": getattr(ad_doc, "creation", None),
         "is_wishlisted": bool(is_wishlisted),
         "average_rating": _to_float(getattr(ad_doc, "average_rating", None)),
@@ -158,27 +172,21 @@ def serialize_ad_list_item(ad_doc, is_wishlisted: bool = False) -> Dict[str, Any
 def serialize_ad_detail(ad_doc, is_wishlisted: bool = False) -> Dict[str, Any]:
     images = serialize_ad_images(ad_doc)
 
-    # Fetch category_name safely
-    category_name = frappe.db.get_value(
-        "AOS Category",
-        ad_doc.category,
-        "category_name",
-    ) if ad_doc.category else None
+    category_name = (
+        frappe.db.get_value("AOS Category", ad_doc.category, "category_name")
+        if ad_doc.category else None
+    )
 
-    # Fetch location_name safely
-    location_name = frappe.db.get_value(
-        "AOS Location",
-        ad_doc.location,
-        "location_name",
-    ) if ad_doc.location else None
+    location_name = (
+        frappe.db.get_value("AOS Location", ad_doc.location, "location_name")
+        if ad_doc.location else None
+    )
 
     return {
         **serialize_ad_list_item(ad_doc, is_wishlisted=is_wishlisted),
+        "seller": _norm(getattr(ad_doc, "user", None)),
         "description": getattr(ad_doc, "description", None) or "",
         "video": _norm(getattr(ad_doc, "video", None)),
         "images": images,
         "details": serialize_ad_details(ad_doc),
-        "category_name": _norm(category_name),
-        "location_name": _norm(location_name),
-        "seller": _norm(getattr(ad_doc, "user", None)),
     }

@@ -1,11 +1,12 @@
 """
 Get a single Ad by id.
 Country isolation and seller enforcement are strictly enforced.
+Sorting and pricing operate in display currency.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Dict
 
 import frappe
 from frappe.utils import nowdate, getdate
@@ -15,6 +16,7 @@ from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.utils import get_active_wishlist_ad_ids
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
+from aos.utils.aos_settings import get_aos_settings_snapshot
 
 from .constants import GET_AD_LIMIT_PER_HOUR_PER_IP
 from .serializers import serialize_ad_detail
@@ -34,13 +36,32 @@ def get_ad_impl(**kwargs):
     if not ad_id:
         return fail("Ad id is required.", code="VALIDATION_ERROR")
 
-    # Market Context (Strictly enforced)
+    # Market Context
     country, error = resolve_market_country(kwargs.get("country"))
     if error:
         return error
 
+    user = current_user()
     today = getdate(nowdate())
 
+    # Display Currency
+    display_currency = None
+
+    if user != "Guest":
+        display_currency = frappe.db.get_value(
+            "AOS User Preference",
+            {"user": user},
+            "currency",
+        )
+
+    if not display_currency:
+        snap = get_aos_settings_snapshot()
+        display_currency = snap.default_currency
+
+    if not display_currency:
+        return fail("Display currency not configured.", code="CONFIG_ERROR")
+
+    # Offer Logic
     offer_active_sql = """
         a.offer_price IS NOT NULL
         AND a.offer_price > 0
@@ -48,11 +69,23 @@ def get_ad_impl(**kwargs):
         AND (a.offer_end_date IS NULL OR a.offer_end_date >= %(today)s)
     """
 
+    conversion_ratio = """
+        (
+            IFNULL(er_target.rate_vs_base, 1)
+            /
+            IFNULL(er_source.rate_vs_base, 1)
+        )
+    """
+
+    # Converted original price
+    original_price_sql = f"(a.price * {conversion_ratio})"
+
+    # Converted current price
     current_price_sql = f"""
         CASE
             WHEN {offer_active_sql}
-            THEN a.offer_price
-            ELSE a.price
+            THEN (a.offer_price * {conversion_ratio})
+            ELSE (a.price * {conversion_ratio})
         END
     """
 
@@ -60,9 +93,15 @@ def get_ad_impl(**kwargs):
     sql = f"""
         SELECT
             a.*,
+            %(display_currency)s as display_currency,
+            {original_price_sql} as original_price_converted,
             {current_price_sql} as current_price
         FROM `tabAOS Ad` a
         INNER JOIN `tabAOS Seller` s ON s.name = a.user
+        LEFT JOIN `tabAOS Exchange Rate` er_source
+            ON er_source.currency = a.currency
+        LEFT JOIN `tabAOS Exchange Rate` er_target
+            ON er_target.currency = %(display_currency)s
         WHERE a.name = %(ad_id)s
           AND a.status = 'Active'
           AND a.country = %(country)s
@@ -77,6 +116,7 @@ def get_ad_impl(**kwargs):
                 "ad_id": ad_id,
                 "today": today,
                 "country": country,
+                "display_currency": display_currency,
             },
             as_dict=True,
         )
@@ -88,7 +128,7 @@ def get_ad_impl(**kwargs):
         doc = frappe._dict(row)
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "AOS Get Ad Failed")
+        frappe.log_error(frappe.get_traceback(), "AOS Get Ad FX Failed")
         return fail("Failed to fetch ad.", code="INTERNAL_ERROR")
 
     # Load Child Tables
@@ -131,7 +171,6 @@ def get_ad_impl(**kwargs):
     )
 
     # Wishlist
-    user = current_user()
     wishlisted_ids = get_active_wishlist_ad_ids(user)
 
     item = serialize_ad_detail(

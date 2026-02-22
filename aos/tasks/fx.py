@@ -1,123 +1,173 @@
-"""Foreign exchange rate sync job.
+"""
+Foreign Exchange background jobs.
 
-This job is designed to be scheduled (e.g., hourly) and will refresh rates only
-when needed based on AOS Settings.fx_refresh_hours.
+Jobs:
+- update_exchange_rates: Fetch latest FX rates from exchangerate.host
+  and update AOS Exchange Rate table.
 
-We intentionally keep provider implementations small. You can add providers over
-time without changing the calling contract.
+Design:
+- Uses base_currency from AOS Settings
+- Uses fx_api_key (Password field)
+- Filters only currencies present in Currency DocType
+- Upserts by currency (autoname = field:currency)
+- Updates last_updated timestamp
+- Safe logging
 """
 
 from __future__ import annotations
 
-from datetime import timedelta
+import json
+import urllib.request
+import urllib.error
+from datetime import datetime, timedelta
 
 import frappe
+from frappe.utils import now_datetime
 
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
 
-def _now():
-    return frappe.utils.now_datetime()
+API_URL = "https://api.exchangerate.host/live"
 
 
-def _should_refresh(base_currency: str, refresh_hours: int) -> bool:
-    # Find the most recent fetched_at for this base currency
-    last = frappe.db.get_value(
-        "AOS Exchange Rate",
-        {"base_currency": base_currency, "is_active": 1},
-        "fetched_at",
-        order_by="fetched_at desc",
-    )
-    if not last:
-        return True
+def update_exchange_rates() -> None:
+    """Fetch and update exchange rates relative to base currency."""
 
     try:
-        last_dt = frappe.utils.get_datetime(last)
-    except Exception:
-        return True
+        # Load Settings Snapshot
+        snap = get_aos_settings_snapshot(use_cache=False)
 
-    return (_now() - last_dt) >= timedelta(hours=int(refresh_hours or 12))
+        base_currency = snap.base_currency
+        refresh_hours = snap.refresh_hours
 
-
-def _fetch_rates_stub(base_currency: str) -> dict[str, float]:
-    """Placeholder provider implementation.
-
-    You can plug in a real provider later (OpenExchangeRates, Fixer, etc.).
-    This stub intentionally returns an empty dict when no provider is configured.
-    """
-
-    return {}
-
-
-def update_fx_rates(force: bool = False) -> None:
-    """Refresh FX rates into 'AOS Exchange Rate'.
-
-    Safe to run frequently; will no-op when not due.
-    """
-
-    settings = get_aos_settings_snapshot(use_cache=False)
-    base = (settings.base_currency or "USD")
-    refresh_hours = int(settings.fx_refresh_hours or 12)
-
-    if not force and not _should_refresh(base, refresh_hours):
-        return
-
-    provider = (settings.fx_provider or "").strip()
-
-    # For now we only run when a provider is set and an API key exists.
-    api_key = None
-    try:
-        api_key = frappe.get_single("AOS Settings").get_password("fx_api_key")
-    except Exception:
-        api_key = None
-
-    if not provider or not api_key:
-        # Don't error; just log so it can be configured in production.
-        frappe.logger("aos").info("FX sync skipped: provider/api key not configured.")
-        return
-
-    # TODO: Implement provider fetchers.
-    rates = _fetch_rates_stub(base)
-    if not rates:
-        frappe.logger("aos").warning("FX sync produced no rates. Please check provider configuration.")
-        return
-
-    fetched_at = _now()
-
-    # Upsert quotes
-    for quote, rate in rates.items():
-        quote = (quote or "")
-        if not quote or quote == base:
-            continue
-        try:
-            docname = frappe.db.get_value(
-                "AOS Exchange Rate", {"base_currency": base, "quote_currency": quote}, "name"
+        if not base_currency:
+            frappe.logger().warning(
+                "AOS FX: base_currency not configured. Skipping update."
             )
-            if docname:
-                frappe.db.set_value(
-                    "AOS Exchange Rate",
-                    docname,
-                    {
-                        "rate": float(rate),
-                        "fetched_at": fetched_at,
-                        "source": provider,
-                        "is_active": 1,
-                    },
-                )
-            else:
-                doc = frappe.get_doc(
-                    {
-                        "doctype": "AOS Exchange Rate",
-                        "base_currency": base,
-                        "quote_currency": quote,
-                        "rate": float(rate),
-                        "fetched_at": fetched_at,
-                        "source": provider,
-                        "is_active": 1,
-                    }
-                )
-                doc.insert(ignore_permissions=True)
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), "AOS FX Sync Upsert Failed")
+            return
 
-    frappe.db.commit()
+        settings = frappe.get_single("AOS Settings")
+        api_key = settings.get_password("fx_api_key")
+
+        if not api_key:
+            frappe.logger().warning(
+                "AOS FX: fx_api_key not configured. Skipping update."
+            )
+            return
+
+        # Refresh Interval Check
+        last_record = frappe.db.get_value(
+            "AOS Exchange Rate",
+            filters={},
+            fieldname="last_updated",
+            order_by="last_updated desc",
+        )
+
+        if last_record:
+            now = now_datetime()
+            delta = now - last_record
+
+            if delta < timedelta(hours=refresh_hours):
+                # Not time yet
+                return
+
+        # Build API Request
+        url = f"{API_URL}?access_key={api_key}&source={base_currency}"
+
+        try:
+            with urllib.request.urlopen(url, timeout=15) as response:
+                raw = response.read()
+        except urllib.error.URLError as e:
+            frappe.log_error(
+                title="AOS FX API Connection Failed",
+                message=str(e),
+            )
+            return
+
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except Exception:
+            frappe.log_error(
+                title="AOS FX Invalid JSON",
+                message=str(raw),
+            )
+            return
+
+        # Validate API Response
+        if not payload.get("success"):
+            frappe.log_error(
+                title="AOS FX API Returned Error",
+                message=str(payload),
+            )
+            return
+
+        source = payload.get("source")
+        quotes = payload.get("quotes") or {}
+
+        if source != base_currency:
+            frappe.log_error(
+                title="AOS FX Base Currency Mismatch",
+                message=f"Expected {base_currency}, got {source}",
+            )
+            return
+
+        if not quotes:
+            frappe.logger().warning("AOS FX: No quotes returned.")
+            return
+
+        # Load Supported Currencies
+        supported = set(
+            frappe.get_all("Currency", pluck="name")
+        )
+
+        now_ts = now_datetime()
+        updated_count = 0
+
+        # Process Quotes
+        for key, rate in quotes.items():
+            # key format: USDKES
+            if not key.startswith(base_currency):
+                continue
+
+            currency = key[len(base_currency):]
+
+            if currency not in supported:
+                continue
+
+            try:
+                rate = float(rate)
+            except Exception:
+                continue
+
+            if rate <= 0:
+                continue
+
+            # Upsert record
+            if frappe.db.exists("AOS Exchange Rate", currency):
+                doc = frappe.get_doc("AOS Exchange Rate", currency)
+                doc.rate_vs_base = rate
+                doc.last_updated = now_ts
+                doc.save(ignore_permissions=True)
+            else:
+                doc = frappe.get_doc({
+                    "doctype": "AOS Exchange Rate",
+                    "currency": currency,
+                    "rate_vs_base": rate,
+                    "last_updated": now_ts,
+                })
+                doc.insert(ignore_permissions=True)
+
+            updated_count += 1
+
+        frappe.db.commit()
+
+        if updated_count:
+            frappe.logger().info(
+                f"AOS FX: Updated {updated_count} exchange rates (base={base_currency})."
+            )
+
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS FX update_exchange_rates failed",
+        )

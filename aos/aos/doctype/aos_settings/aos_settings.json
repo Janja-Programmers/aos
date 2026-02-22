@@ -12,9 +12,10 @@
   "column_break_ohud",
   "default_currency",
   "foreign_exchange_section",
+  "base_currency",
+  "refresh_hours",
+  "column_break_rtng",
   "fx_api_key",
-  "fx_refresh_hours",
-  "fx_provider",
   "google_auth_tab",
   "google_auth_section",
   "google_oauth_client_ids",
@@ -78,26 +79,6 @@
    "label": "Ads"
   },
   {
-   "fieldname": "fx_provider",
-   "fieldtype": "Data",
-   "label": "FX Provider"
-  },
-  {
-   "fieldname": "fx_refresh_hours",
-   "fieldtype": "Int",
-   "label": "FX Refresh Hours"
-  },
-  {
-   "fieldname": "fx_api_key",
-   "fieldtype": "Password",
-   "label": "FX Api Key"
-  },
-  {
-   "fieldname": "foreign_exchange_section",
-   "fieldtype": "Section Break",
-   "label": "Foreign Exchange"
-  },
-  {
    "fieldname": "google_auth_section",
    "fieldtype": "Section Break",
    "label": "Google Auth"
@@ -119,13 +100,40 @@
    "fieldtype": "Link",
    "label": "Default Currency",
    "options": "Currency"
+  },
+  {
+   "fieldname": "foreign_exchange_section",
+   "fieldtype": "Section Break",
+   "label": "Foreign Exchange"
+  },
+  {
+   "fieldname": "base_currency",
+   "fieldtype": "Link",
+   "label": "Base Currency",
+   "options": "Currency"
+  },
+  {
+   "description": "Number of hours between automatic FX rate refresh",
+   "fieldname": "refresh_hours",
+   "fieldtype": "Int",
+   "label": "Refresh Hours"
+  },
+  {
+   "fieldname": "column_break_rtng",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "ExchangeRate API Access Key",
+   "fieldname": "fx_api_key",
+   "fieldtype": "Password",
+   "label": "FX API Key"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-02-21 19:44:20.468955",
+ "modified": "2026-02-22 00:49:19.404526",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Settings",

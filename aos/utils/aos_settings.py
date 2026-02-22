@@ -13,20 +13,21 @@ import frappe
 
 @dataclass(frozen=True)
 class AOSSettingsSnapshot:
+    # Localization
     default_currency: str | None
     default_language: str | None
     default_country: str | None
-    fx_provider: str | None
-    fx_refresh_hours: int
+
+    # Foreign Exchange
+    base_currency: str | None
+    refresh_hours: int
+
+    # Ads
     ad_expiry_days: int
 
 
 def _clamp_int(val: object, default: int, min_value: int, max_value: int) -> int:
-    """Best-effort int parsing with bounds.
-
-    Settings are admin-controlled; this keeps runtime safe if a value is empty
-    or misconfigured.
-    """
+    """Best-effort int parsing with bounds safety."""
 
     try:
         n = int(val)  # type: ignore[arg-type]
@@ -46,18 +47,33 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
 
     if use_cache:
         cached = cache.get_value(key)
-        if isinstance(cached, dict) and "fx_refresh_hours" in cached and "ad_expiry_days" in cached:
+        if isinstance(cached, dict) and "refresh_hours" in cached:
             return AOSSettingsSnapshot(**cached)
 
     s = frappe.get_single("AOS Settings")
 
     snap = AOSSettingsSnapshot(
+        # Localization
         default_currency=(s.default_currency or None),
         default_language=(s.default_language or None),
         default_country=(s.default_country or None),
-        fx_provider=(getattr(s, "fx_provider", None) or None),
-        fx_refresh_hours=_clamp_int(getattr(s, "fx_refresh_hours", 12), default=12, min_value=1, max_value=24 * 7),
-        ad_expiry_days=_clamp_int(getattr(s, "ad_expiry_days", 30), default=30, min_value=1, max_value=365),
+
+        # Foreign Exchange
+        base_currency=(s.base_currency or None),
+        refresh_hours=_clamp_int(
+            getattr(s, "refresh_hours", 12),
+            default=12,
+            min_value=1,
+            max_value=24 * 7,  # max 1 week
+        ),
+
+        # Ads
+        ad_expiry_days=_clamp_int(
+            getattr(s, "ad_expiry_days", 30),
+            default=30,
+            min_value=1,
+            max_value=365,
+        ),
     )
 
     try:

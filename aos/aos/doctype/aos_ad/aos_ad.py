@@ -106,6 +106,7 @@ def _get_detail_value_for_type(row: Any, field_type: str):
 
 class AOSAd(Document):
     def validate(self):
+        self._validate_currency_immutable()
         self._validate_market_integrity()
         self._validate_location()
         self._validate_media()
@@ -134,6 +135,23 @@ class AOSAd(Document):
             SET total_ads = GREATEST(total_ads - 1, 0)
             WHERE name = %s
         """, (self.user,))
+    
+    def _validate_currency_immutable(self):
+        """
+        Currency must never change after creation.
+        """
+
+        if self.is_new():
+            return
+
+        old_currency = frappe.db.get_value(
+            "AOS Ad",
+            self.name,
+            "currency"
+        )
+
+        if old_currency and old_currency != self.currency:
+            frappe.throw("Currency cannot be changed after ad creation.")
     
     def _validate_market_integrity(self) -> None:
         if not getattr(self, "user", None):

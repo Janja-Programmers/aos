@@ -1,67 +1,53 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "field:currency",
  "creation": "2026-01-27 15:49:34.380361",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "base_currency",
-  "quote_currency",
-  "rate",
-  "column_break_acac",
-  "fetched_at",
-  "source",
-  "is_active"
+  "currency",
+  "last_updated",
+  "column_break_rwhs",
+  "rate_vs_base"
  ],
  "fields": [
   {
-   "fieldname": "base_currency",
+   "fieldname": "currency",
    "fieldtype": "Link",
-   "label": "Base Currency",
+   "label": "Currency",
    "options": "Currency",
-   "default": "USD"
-  },
-  {
-   "fieldname": "quote_currency",
-   "fieldtype": "Link",
-   "label": "Quote Currency",
-   "options": "Currency",
+   "reqd": 1,
    "unique": 1
   },
   {
-   "fieldname": "rate",
+   "fieldname": "rate_vs_base",
    "fieldtype": "Float",
-   "label": "Rate",
+   "in_list_view": 1,
+   "label": "Rate Vs Base",
+   "precision": "9",
    "reqd": 1
   },
   {
-   "fieldname": "column_break_acac",
+   "fieldname": "column_break_rwhs",
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "fetched_at",
+   "fieldname": "last_updated",
    "fieldtype": "Datetime",
-   "label": "Fetched At"
-  },
-  {
-   "fieldname": "source",
-   "fieldtype": "Data",
-   "label": "Source"
-  },
-  {
-   "default": "1",
-   "fieldname": "is_active",
-   "fieldtype": "Check",
-   "label": "Is Active"
+   "in_list_view": 1,
+   "label": "Last Updated",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-27 15:52:03.684635",
+ "modified": "2026-02-22 01:29:50.792722",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Exchange Rate",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {

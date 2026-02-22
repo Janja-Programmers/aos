@@ -143,15 +143,12 @@ app_license = "mit"
 # Scheduled Tasks
 # ---------------
 
-
-# Run FX sync daily; the job internally checks whether it's due based on
-# AOS Settings.fx_refresh_hours.
 scheduler_events = {
 	"hourly": [
 		"aos.tasks.ads.expire_ads",
 	],
 	"daily": [
-		"aos.tasks.fx.update_fx_rates",
+		"aos.tasks.fx.update_exchange_rates",
 	],
 }
 
