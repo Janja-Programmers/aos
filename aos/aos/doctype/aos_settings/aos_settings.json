@@ -19,9 +19,6 @@
   "google_auth_tab",
   "google_auth_section",
   "google_oauth_client_ids",
-  "column_break_fwrk",
-  "enable_google_sign_in",
-  "auto_enable_users_created_via_google",
   "foreign_exchange_tab",
   "ad_expiry_days"
  ],
@@ -30,22 +27,6 @@
    "fieldname": "google_oauth_client_ids",
    "fieldtype": "Small Text",
    "label": "Google OAuth Client IDs"
-  },
-  {
-   "fieldname": "column_break_fwrk",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "1",
-   "fieldname": "enable_google_sign_in",
-   "fieldtype": "Check",
-   "label": "Enable Google Sign-In"
-  },
-  {
-   "default": "1",
-   "fieldname": "auto_enable_users_created_via_google",
-   "fieldtype": "Check",
-   "label": "Auto enable users created via Google"
   },
   {
    "fieldname": "google_auth_tab",
@@ -133,7 +114,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-02-22 00:49:19.404526",
+ "modified": "2026-02-23 19:32:50.728788",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Settings",

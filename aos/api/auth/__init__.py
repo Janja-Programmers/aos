@@ -46,6 +46,11 @@ def login(email: str, password: str):
     return login_impl(email=email, password=password)
 
 
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def google_login(id_token: str):
+    return google_login_impl(id_token=id_token)
+
+
 @frappe.whitelist(methods=["GET"])
 def me():
     return me_impl()
@@ -78,11 +83,6 @@ def forgot_password_reset(
         new_password=new_password,
         confirm_password=confirm_password,
     )
-
-
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-def google_login(id_token: str):
-    return google_login_impl(id_token=id_token)
 
 
 @frappe.whitelist(methods=["POST"])

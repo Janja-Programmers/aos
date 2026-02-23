@@ -2,13 +2,26 @@ import frappe
 
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
-from aos.api.shared.validators import resolve_country, resolve_language, resolve_currency
+from aos.api.shared.market_context import (
+    resolve_market_country,
+    resolve_market_currency,
+)
+from aos.api.shared.validators import resolve_language
+from aos.utils.aos_settings import get_aos_settings_snapshot
+
 from .constants import REGISTER_LIMIT_PER_HOUR_PER_IP
 from .validators import normalize_email, normalize_name, validate_registration_inputs
 from .verification import compute_expiry, generate_otp, ensure_ver_doc, otp_hash, send_otp_email
 
 
-def register_impl(email: str, password: str, full_name: str, country: str, language: str, currency: str):
+def register_impl(
+    email: str,
+    password: str,
+    full_name: str,
+    country: str | None,
+    language: str | None,
+    currency: str | None,
+):
     email = normalize_email(email)
     full_name = normalize_name(full_name)
     password = password or ""
@@ -31,17 +44,26 @@ def register_impl(email: str, password: str, full_name: str, country: str, langu
         return fail("An account with this email already exists.", code="ALREADY_EXISTS")
 
     # Resolve preference values
-    country_name, err = resolve_country(country)
+    country_name, err = resolve_market_country(country)
     if err:
         return err
 
-    language_name, err = resolve_language(language)
+    currency_code, err = resolve_market_currency(currency)
     if err:
         return err
 
-    currency_code, err = resolve_currency(currency)
-    if err:
-        return err
+    if language:
+        language_name, err = resolve_language(language)
+        if err:
+            return err
+    else:
+        settings = get_aos_settings_snapshot()
+        if not settings.default_language:
+            return fail(
+                "Default language not configured.",
+                code="CONFIG_ERROR",
+            )
+        language_name = settings.default_language
 
     try:
         # Create disabled user
