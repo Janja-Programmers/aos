@@ -1,7 +1,7 @@
 """
 Get a single Ad by id.
 Country isolation and seller enforcement are strictly enforced.
-Sorting and pricing operate in display currency.
+Pricing operates in display currency.
 """
 
 from __future__ import annotations
@@ -12,11 +12,13 @@ import frappe
 from frappe.utils import nowdate, getdate
 
 from aos.api.shared.auth import current_user
-from aos.api.shared.market_context import resolve_market_country
+from aos.api.shared.market_context import (
+    resolve_market_country,
+    resolve_market_currency,
+)
 from aos.api.shared.utils import get_active_wishlist_ad_ids
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
-from aos.utils.aos_settings import get_aos_settings_snapshot
 
 from .constants import GET_AD_LIMIT_PER_HOUR_PER_IP
 from .serializers import serialize_ad_detail
@@ -41,25 +43,12 @@ def get_ad_impl(**kwargs):
     if error:
         return error
 
+    display_currency, error = resolve_market_currency(kwargs.get("currency"))
+    if error:
+        return error
+
     user = current_user()
     today = getdate(nowdate())
-
-    # Display Currency
-    display_currency = None
-
-    if user != "Guest":
-        display_currency = frappe.db.get_value(
-            "AOS User Preference",
-            {"user": user},
-            "currency",
-        )
-
-    if not display_currency:
-        snap = get_aos_settings_snapshot()
-        display_currency = snap.default_currency
-
-    if not display_currency:
-        return fail("Display currency not configured.", code="CONFIG_ERROR")
 
     # Offer Logic
     offer_active_sql = """

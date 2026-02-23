@@ -18,11 +18,13 @@ import frappe
 from frappe.utils import nowdate, add_days, getdate
 
 from aos.api.shared.auth import current_user
-from aos.api.shared.market_context import resolve_market_country
+from aos.api.shared.market_context import (
+    resolve_market_country,
+    resolve_market_currency,
+)
 from aos.api.shared.utils import get_active_wishlist_ad_ids
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
-from aos.utils.aos_settings import get_aos_settings_snapshot
 
 from .constants import LIST_ADS_LIMIT_PER_MINUTE_PER_IP
 from .category_filters import resolve_category_filter_values
@@ -68,25 +70,13 @@ def list_ads_impl(**kwargs):
     if error:
         return error
 
+    display_currency, error = resolve_market_currency(kwargs.get("currency"))
+    if error:
+        return error
+
     user = current_user()
     today = getdate(nowdate())
 
-    # Resolve Display Currency
-    display_currency = None
-
-    if user != "Guest":
-        display_currency = frappe.db.get_value(
-            "AOS User Preference",
-            {"user": user},
-            "currency",
-        )
-
-    if not display_currency:
-        snap = get_aos_settings_snapshot()
-        display_currency = snap.default_currency
-
-    if not display_currency:
-        return fail("Display currency not configured.", code="CONFIG_ERROR")
 
     # Inputs
     location = str(kwargs.get("location") or "").strip()

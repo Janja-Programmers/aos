@@ -6,10 +6,12 @@ import frappe
 from frappe.utils import nowdate, getdate
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.market_context import resolve_market_country
+from aos.api.shared.market_context import (
+    resolve_market_country,
+    resolve_market_currency,
+)
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
-from aos.utils.aos_settings import get_aos_settings_snapshot
 
 from aos.api.ads.serializers import serialize_ad_list_item
 from .constants import WISHLIST_LIMIT_PER_MINUTE_PER_IP
@@ -33,21 +35,11 @@ def list_wishlist_impl(**kwargs):
     if error:
         return error
 
+    display_currency, error = resolve_market_currency(kwargs.get("currency"))
+    if error:
+        return error
+
     today = getdate(nowdate())
-
-    # Display Currency
-    display_currency = frappe.db.get_value(
-        "AOS User Preference",
-        {"user": user},
-        "currency",
-    )
-
-    if not display_currency:
-        snap = get_aos_settings_snapshot()
-        display_currency = snap.default_currency
-
-    if not display_currency:
-        return fail("Display currency not configured.", code="CONFIG_ERROR")
 
     try:
         limit = int(kwargs.get("limit", 20))
