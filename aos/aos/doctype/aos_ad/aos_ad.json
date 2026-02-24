@@ -154,7 +154,8 @@
   {
    "fieldname": "expires_on",
    "fieldtype": "Date",
-   "label": "Expires On"
+   "label": "Expires On",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_uadk",
@@ -254,7 +255,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-21 19:25:03.915663",
+ "modified": "2026-02-24 15:55:45.215283",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad",

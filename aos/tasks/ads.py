@@ -31,12 +31,12 @@ def expire_ads() -> None:
             """
         )
 
-        affected = frappe.db.rowcount or 0
+        affected = getattr(frappe.db._cursor, "rowcount", 0) or 0
 
         frappe.db.commit()
 
         if affected:
-            frappe.logger().info(
+            frappe.logger("aos").info(
                 f"[AOS] expire_ads: marked {affected} ads as Expired."
             )
 
