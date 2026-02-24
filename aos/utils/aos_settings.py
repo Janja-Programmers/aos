@@ -24,6 +24,7 @@ class AOSSettingsSnapshot:
 
     # Ads
     ad_expiry_days: int
+    flash_sale_window_days: int
 
 
 def _clamp_int(val: object, default: int, min_value: int, max_value: int) -> int:
@@ -64,7 +65,7 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
             getattr(s, "refresh_hours", 12),
             default=12,
             min_value=1,
-            max_value=24 * 7,  # max 1 week
+            max_value=24 * 7,
         ),
 
         # Ads
@@ -73,6 +74,13 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
             default=30,
             min_value=1,
             max_value=365,
+        ),
+
+        flash_sale_window_days=_clamp_int(
+            getattr(s, "flash_sale_window_days", 7),
+            default=7,
+            min_value=1,
+            max_value=60,
         ),
     )
 

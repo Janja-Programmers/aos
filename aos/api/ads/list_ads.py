@@ -25,6 +25,7 @@ from aos.api.shared.market_context import (
 from aos.api.shared.utils import get_active_wishlist_ad_ids
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
+from aos.utils.aos_settings import get_aos_settings_snapshot
 
 from .constants import LIST_ADS_LIMIT_PER_MINUTE_PER_IP
 from .category_filters import resolve_category_filter_values
@@ -129,7 +130,7 @@ def list_ads_impl(**kwargs):
         "a.status = 'Active'",
         "a.country = %(country)s",
         "s.status = 'Active'",
-        "(a.expires_on IS NULL OR a.expires_on >= %(today)s)"
+        "(a.expires_on IS NULL OR a.expires_on >= %(today)s)",
     ]
 
     values: Dict[str, Any] = {
@@ -181,7 +182,10 @@ def list_ads_impl(**kwargs):
         conditions.append("a.average_rating >= %(rating_min)s")
         values["rating_min"] = rating_min
 
-    # Offer Logic
+    # Promotion Logic
+    settings = get_aos_settings_snapshot()
+    flash_window_days = settings.flash_sale_window_days
+
     offer_active_sql = """
         a.offer_price IS NOT NULL
         AND a.offer_price > 0
@@ -209,18 +213,17 @@ def list_ads_impl(**kwargs):
         END
     """
 
-    if promotion_type in {"offer", "deal"}:
+    if promotion_type in {"offer", "flash_sale", "deal"}:
         conditions.append(f"({offer_active_sql})")
 
     if promotion_type == "flash_sale":
-        conditions.append(f"""
-            ({offer_active_sql})
-            AND a.offer_end_date IS NOT NULL
+        conditions.append("""
+            a.offer_end_date IS NOT NULL
             AND a.offer_end_date BETWEEN %(today)s AND %(flash_end)s
         """)
-        values["flash_end"] = add_days(today, 7)
+        values["flash_end"] = add_days(today, flash_window_days)
 
-    # Price range
+    # Price Range Filtering
     if price_min is not None:
         conditions.append(f"{current_price_sql} >= %(price_min)s")
         values["price_min"] = price_min
@@ -232,7 +235,10 @@ def list_ads_impl(**kwargs):
     where_clause = " AND ".join(conditions)
 
     # Sorting
-    if sort == "rating_high":
+    if promotion_type == "deal":
+        order_by = "IFNULL(a.offer_percent, 0) desc, a.creation desc"
+
+    elif sort == "rating_high":
         order_by = "a.average_rating desc, a.total_reviews desc, a.creation desc"
 
     elif sort == "recent":
@@ -243,10 +249,6 @@ def list_ads_impl(**kwargs):
 
     elif sort == "price_high":
         order_by = f"{current_price_sql} desc, a.creation desc"
-
-    # Deal override
-    if promotion_type == "deal":
-        order_by = "a.offer_percent desc, a.creation desc"
 
     # Final SQL
     sql = f"""

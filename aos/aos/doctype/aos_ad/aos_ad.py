@@ -7,7 +7,7 @@ from frappe.model.document import Document
 from frappe.utils import nowdate, getdate
 
 from aos.services.seller_service import get_or_create_seller
-from aos.api.attributes.schema import _get_category_chain, _resolve_attributes, _resolve_pricing
+from aos.api.catalog.schema import _get_category_chain, _resolve_attributes, _resolve_pricing
 
 
 _PRICE_TYPES_REQUIRING_AMOUNT = {"Fixed", "Negotiable"}

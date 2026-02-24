@@ -20,7 +20,9 @@
   "google_auth_section",
   "google_oauth_client_ids",
   "foreign_exchange_tab",
-  "ad_expiry_days"
+  "ad_expiry_days",
+  "column_break_tyqg",
+  "flash_sale_window_days"
  ],
  "fields": [
   {
@@ -108,13 +110,24 @@
    "fieldname": "fx_api_key",
    "fieldtype": "Password",
    "label": "FX API Key"
+  },
+  {
+   "fieldname": "column_break_tyqg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "7",
+   "description": "Number of days before an offer expires for it to qualify as a Flash Sale.\nFor example, if set to 7, any active offer expiring within 7 days will appear under Flash Sales.",
+   "fieldname": "flash_sale_window_days",
+   "fieldtype": "Int",
+   "label": "Flash Sale Window (Days)"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-02-23 19:32:50.728788",
+ "modified": "2026-02-24 13:39:50.682941",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Settings",
