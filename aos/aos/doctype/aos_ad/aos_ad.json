@@ -83,7 +83,8 @@
   {
    "fieldname": "description",
    "fieldtype": "Small Text",
-   "label": "Description"
+   "label": "Description",
+   "reqd": 1
   },
   {
    "fieldname": "pricing_tab",
@@ -255,7 +256,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-24 15:55:45.215283",
+ "modified": "2026-02-26 14:51:33.923470",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad",
