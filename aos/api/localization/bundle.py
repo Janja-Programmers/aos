@@ -4,7 +4,6 @@ import frappe
 
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok
-from aos.utils.aos_settings import get_aos_settings_snapshot
 
 from .constants import LOCALE_BUNDLE_LIMIT_PER_MIN_PER_IP
 
@@ -58,7 +57,13 @@ def _get_currencies():
 
 
 def get_locale_bundle_impl():
-    # Rate limit by IP (guest-safe)
+    """
+    Returns available countries, languages and currencies.
+
+    Defaults are NOT returned.
+    Backend applies defaults automatically if client does not send values.
+    """
+
     rl = rate_limit(
         key=f"aos:locale:bundle:ip:{request_ip()}",
         ttl_seconds=60,
@@ -68,14 +73,7 @@ def get_locale_bundle_impl():
     if rl:
         return rl
 
-    settings = get_aos_settings_snapshot()
-
     data = {
-        "settings": {
-            "default_country": settings.default_country,
-            "default_language": settings.default_language,
-            "default_currency": settings.default_currency,
-        },
         "countries": _get_countries(),
         "languages": _get_languages(),
         "currencies": _get_currencies(),
