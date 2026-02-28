@@ -194,6 +194,7 @@ def save_ad_draft_impl(**kwargs):
         else:
             doc = frappe.new_doc(_DT)
             doc.status = "Draft"
+            doc.user = user 
 
         doc.payload_json = payload
 

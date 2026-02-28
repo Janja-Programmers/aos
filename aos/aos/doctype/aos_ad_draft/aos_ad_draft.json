@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "naming_series",
+  "user",
   "title_hint",
   "country_hint",
   "last_step",
@@ -94,11 +95,21 @@
   {
    "fieldname": "section_break_cfuj",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-02-11 12:27:00.993337",
+ "modified": "2026-02-28 13:26:41.397415",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad Draft",
