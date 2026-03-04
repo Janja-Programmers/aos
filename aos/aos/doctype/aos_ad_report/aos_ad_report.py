@@ -9,9 +9,11 @@ from frappe.utils import now
 class AOSAdReport(Document):
     def validate(self):
         self.prevent_duplicate_reports()
+        self.validate_admin_action()
 
     def on_update(self):
         self.apply_admin_action()
+        self._stamp_review_metadata()
 
     def prevent_duplicate_reports(self):
         if not self.ad or not self.reported_by:
@@ -29,8 +31,18 @@ class AOSAdReport(Document):
         if exists:
             frappe.throw("You have already reported this ad.")
 
+    def validate_admin_action(self):
+        if self.admin_action and self.status != "Resolved":
+            frappe.throw("Admin action can only be applied when status is Resolved.")
+
     def apply_admin_action(self):
         if not self.admin_action:
+            return
+
+        previous = self.get_doc_before_save()
+
+        # Only run moderation if admin_action changed
+        if previous and previous.admin_action == self.admin_action:
             return
 
         if self.status != "Resolved":
@@ -60,9 +72,16 @@ class AOSAdReport(Document):
         elif self.admin_action == "Seller Warned":
             pass
 
-        # Set review metadata
-        if not self.reviewed_by:
-            self.reviewed_by = frappe.session.user
+    def _stamp_review_metadata(self):
+        """Stamp moderation metadata when report is reviewed."""
+        if frappe.session.user == "Guest":
+            return
 
-        if not self.reviewed_on:
+        previous = self.get_doc_before_save()
+
+        if not previous or (
+            previous.status != self.status
+            or previous.admin_action != self.admin_action
+        ):
+            self.reviewed_by = frappe.session.user
             self.reviewed_on = now()

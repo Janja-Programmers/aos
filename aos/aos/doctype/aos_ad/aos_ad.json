@@ -35,9 +35,9 @@
   "review_tab",
   "average_rating",
   "total_reports",
-  "status",
   "reviewed_by",
   "reviewed_on",
+  "status",
   "column_break_uadk",
   "total_reviews",
   "expires_on",
@@ -152,7 +152,8 @@
    "fieldname": "reviewed_by",
    "fieldtype": "Link",
    "label": "Reviewed By",
-   "options": "User"
+   "options": "User",
+   "read_only": 1
   },
   {
    "fieldname": "expires_on",
@@ -249,13 +250,15 @@
   {
    "fieldname": "reviewed_on",
    "fieldtype": "Datetime",
-   "label": "Reviewed On"
+   "label": "Reviewed On",
+   "read_only": 1
   },
   {
    "fieldname": "seller",
    "fieldtype": "Link",
    "label": "Seller",
    "options": "AOS Seller",
+   "read_only": 1,
    "reqd": 1,
    "search_index": 1
   },
@@ -271,7 +274,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-04 17:05:04.578557",
+ "modified": "2026-03-04 18:50:35.051398",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad",

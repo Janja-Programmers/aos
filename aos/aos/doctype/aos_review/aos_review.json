@@ -17,9 +17,9 @@
   "comment",
   "review_images",
   "review_tab",
+  "status",
   "reviewed_by",
-  "reviewed_on",
-  "status"
+  "reviewed_on"
  ],
  "fields": [
   {
@@ -114,17 +114,19 @@
    "fieldname": "reviewed_by",
    "fieldtype": "Link",
    "label": "Reviewed By",
-   "options": "User"
+   "options": "User",
+   "read_only": 1
   },
   {
    "fieldname": "reviewed_on",
    "fieldtype": "Datetime",
-   "label": "Reviewed On"
+   "label": "Reviewed On",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-03-04 13:40:54.190030",
+ "modified": "2026-03-04 18:31:13.258109",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Review",

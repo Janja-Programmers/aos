@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Set
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import getdate
+from frappe.utils import getdate, now
 
 from aos.api.catalog.schema import (
     _get_category_chain,
@@ -110,6 +110,9 @@ class AOSAd(Document):
         self._validate_pricing()
         self._validate_offer()
 
+    def on_update(self):
+        self._stamp_review_metadata()
+
     def after_insert(self):
         if not self.seller:
             return
@@ -119,7 +122,7 @@ class AOSAd(Document):
             UPDATE `tabAOS Seller`
             SET total_ads = total_ads + 1
             WHERE name = %s
-        """,
+            """,
             (self.seller,),
         )
 
@@ -132,9 +135,29 @@ class AOSAd(Document):
             UPDATE `tabAOS Seller`
             SET total_ads = GREATEST(total_ads - 1, 0)
             WHERE name = %s
-        """,
+            """,
             (self.seller,),
         )
+
+    def _stamp_review_metadata(self):
+        """
+        Update review metadata only when status changes.
+        Ensures seller edits do not overwrite moderation info.
+        """
+
+        if frappe.session.user == "Guest":
+            return
+
+        previous = self.get_doc_before_save()
+
+        if not previous:
+            return
+
+        if previous.status == self.status:
+            return
+
+        self.reviewed_by = frappe.session.user
+        self.reviewed_on = now()
 
     def _validate_currency_immutable(self):
 
