@@ -20,7 +20,6 @@ from .validators import (
     validate_file_reference,
 )
 
-# Safe-only editable fields for Active ads
 _ACTIVE_EDITABLE_FIELDS = {
     "title",
     "description",
@@ -61,7 +60,6 @@ def _to_date_or_none(val: Any):
 
 
 def _apply_active_safe_updates(doc, updates: Dict[str, Any]):
-    """Apply safe updates for Active ads only."""
     if "title" in updates:
         title = _clean_str(updates.get("title"))
         if not title:
@@ -83,7 +81,6 @@ def _apply_active_safe_updates(doc, updates: Dict[str, Any]):
             return fail("Invalid price.", code="VALIDATION_ERROR")
         doc.price = v
 
-    # Offer
     if "offer_price" in updates:
         v = _to_float_or_none(updates.get("offer_price"))
         if v == "INVALID":
@@ -106,7 +103,6 @@ def _apply_active_safe_updates(doc, updates: Dict[str, Any]):
 
 
 def _replace_child_table(doc, fieldname: str, rows: List[Dict[str, Any]]):
-    """Clear and rebuild a child table."""
     doc.set(fieldname, [])
     for r in rows:
         child = doc.append(fieldname, {})
@@ -132,33 +128,43 @@ def update_ad_impl(**kwargs):
     if not ad_id:
         return fail("Ad id is required.", code="VALIDATION_ERROR")
 
-    # Fetch minimal info first for ownership + status checks.
     row = frappe.db.get_value(
         "AOS Ad",
         ad_id,
-        ["name", "user", "status"],
+        ["name", "seller", "status"],
         as_dict=True,
     )
+
     if not row:
         return fail("Ad not found.", code="NOT_FOUND")
 
-    if _clean_str(row.user) != user:
+    seller_user = frappe.db.get_value(
+        "AOS Seller",
+        row.seller,
+        "user",
+    )
+
+    if seller_user != user:
         return fail("You don't have permission to edit this ad.", code="FORBIDDEN")
 
     status = _clean_str(row.status)
+
     if status in _BLOCKED_STATUSES:
-        return fail("This ad cannot be edited in its current status.", code="VALIDATION_ERROR")
+        return fail(
+            "This ad cannot be edited in its current status.",
+            code="VALIDATION_ERROR",
+        )
 
     try:
         doc = frappe.get_doc("AOS Ad", ad_id)
 
-        #Active
         if status == "Active":
             updates: Dict[str, Any] = {
                 k: kwargs.get(k)
                 for k in _ACTIVE_EDITABLE_FIELDS
                 if k in kwargs
             }
+
             if not updates:
                 return fail("No editable fields provided.", code="VALIDATION_ERROR")
 
@@ -167,11 +173,12 @@ def update_ad_impl(**kwargs):
                 return e
 
             doc.status = "Active"
+
             doc.save(ignore_permissions=True)
             frappe.db.commit()
+
             return ok("Ad updated.", data={"id": doc.name, "status": doc.status})
 
-        # Reviewing/Declined
         if status in _FULL_EDIT_STATUSES:
             title, location, category, description, e = validate_basic_fields(
                 kwargs.get("title"),
@@ -179,6 +186,7 @@ def update_ad_impl(**kwargs):
                 kwargs.get("category"),
                 kwargs.get("description"),
             )
+
             if e:
                 return e
 
@@ -190,6 +198,7 @@ def update_ad_impl(**kwargs):
                 current_user=user,
                 kind="Video",
             )
+
             if e:
                 return e
 
@@ -234,18 +243,28 @@ def update_ad_impl(**kwargs):
 
             for r in images_rows:
                 attach_file_to_ad(r.get("image") or "", ad_name=doc.name)
+
             if video_url:
                 attach_file_to_ad(video_url, ad_name=doc.name)
 
             frappe.db.commit()
-            return ok("Ad updated and sent for review.", data={"id": doc.name, "status": doc.status})
 
-        return fail("This ad cannot be edited in its current status.", code="VALIDATION_ERROR")
+            return ok(
+                "Ad updated and sent for review.",
+                data={"id": doc.name, "status": doc.status},
+            )
+
+        return fail(
+            "This ad cannot be edited in its current status.",
+            code="VALIDATION_ERROR",
+        )
 
     except frappe.DoesNotExistError:
         return fail("Ad not found.", code="NOT_FOUND")
+
     except frappe.ValidationError as ex:
         return fail(str(ex), code="VALIDATION_ERROR")
+
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Update Ad Failed")
         return fail("Failed to update ad.", code="INTERNAL_ERROR")
