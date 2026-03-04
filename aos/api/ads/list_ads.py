@@ -304,6 +304,7 @@ def list_ads_impl(**kwargs):
                 "AOS Ad Image",
                 filters={"parenttype": "AOS Ad", "parent": ["in", ad_names]},
                 fields=["parent", "image", "is_primary", "sort_order"],
+                order_by="is_primary desc, sort_order asc",
             )
 
             for image in image_rows:

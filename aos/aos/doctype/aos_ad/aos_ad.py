@@ -256,7 +256,7 @@ class AOSAd(Document):
         loc = frappe.db.get_value(
             "AOS Location",
             location,
-            ["name", "country", "is_active", "location_name"],
+            ["name", "country", "is_active", "location"],
             as_dict=True,
         )
 
@@ -438,7 +438,8 @@ class AOSAd(Document):
         requirement = _norm(pricing.get("pricing_requirement") or "Optional")
         allowed_types = list(pricing.get("allowed_price_types") or [])
         allowed_units = list(pricing.get("allowed_price_units") or [])
-        is_service = int(pricing.get("is_service") or 0)
+        leaf = chain[0]
+        is_service = int(leaf.get("is_service") or 0)
 
         price_type = _norm(getattr(self, "price_type", None))
         price_unit = _norm(getattr(self, "price_unit", None))

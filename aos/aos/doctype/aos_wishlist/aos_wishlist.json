@@ -6,6 +6,7 @@
  "field_order": [
   "ad",
   "user",
+  "column_break_kcsb",
   "status"
  ],
  "fields": [
@@ -38,12 +39,16 @@
    "label": "Status",
    "options": "Active\nRemoved",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_kcsb",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-15 18:29:33.001302",
+ "modified": "2026-03-05 01:20:41.246042",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Wishlist",

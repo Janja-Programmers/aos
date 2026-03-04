@@ -1,0 +1,6060 @@
+[
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Babies & Kids",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": "/files/mediamodifier-PKdcZz-o6bw-unsplash.jpg",
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:34.099318",
+  "name": "Babies & Kids",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 12
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Volume",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Beauty & Personal Care",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": "/files/shamblen-studios-xwM61TPMlYk-unsplash.jpg",
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:34.876255",
+  "name": "Beauty & Personal Care",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 7
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Power Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Commercial Equipment & Tools",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:35.557329",
+  "name": "Commercial Equipment & Tools",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 10
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Warranty",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Electronics",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": "/files/modern-stationary-collection-arrangement.jpg",
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:36.161953",
+  "name": "Electronics",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Women's Fashion",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": "/files/pretty-brunette-girl-stylish-hat-posing-yellow-wall.jpg",
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:37.424608",
+  "name": "Women's Fashion",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 6
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Men's Fashion",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": "/files/handsome-man-putting-his-jacket.jpg",
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:38.110293",
+  "name": "Men's Fashion",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 6
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Weight",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Food, Agriculture & Farming",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:38.721757",
+  "name": "Food, Agriculture & Farming",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 13
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Color",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Home, Furniture & Appliances",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": "/files/home-appliance-sale-display.jpg",
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:38.983222",
+  "name": "Home, Furniture & Appliances",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 5
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:39.659874",
+  "name": "Jobs",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 15
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Activity Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Leisure & Activities",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": "/files/leonie-clough-CP3GMgK-aeU-unsplash.jpg",
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.685351",
+  "name": "Leisure & Activities",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 11
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Vaccinated",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Animals & Pets",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": "/files/helena-lopes-1OdeTTdvK7w-unsplash.jpg",
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:42.123942",
+  "name": "Animals & Pets",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 14
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Screen Size",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 6
+   }
+  ],
+  "category_name": "Mobile Phones & Tablets",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": "/files/ramadan-phones-14-pro-max-front-side.jpg",
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:42.662872",
+  "name": "Mobile Phones & Tablets",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Parking",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Property",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": "/files/office-building-sunset.jpg",
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:43.292731",
+  "name": "Property",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Service Area",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Repair & Construction",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": "/files/high-angle-measuring-tools-still-life.jpg",
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.077886",
+  "name": "Repair & Construction",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 9
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Seeking Work CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.450086",
+  "name": "Seeking Work CVs",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 16
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": "/files/cytonn-photography-n95VMLxqM2I-unsplash.jpg",
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:45.780886",
+  "name": "Services",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Optional",
+  "sort_order": 8
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Fuel Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 7
+   }
+  ],
+  "category_name": "Vehicles",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": "/files/view-3d-car.jpg",
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:47.191803",
+  "name": "Vehicles",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Toys, Games & Bikes",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:34.167195",
+  "name": "Toys, Games & Bikes",
+  "old_parent": "Babies & Kids",
+  "parent_aos_category": "Babies & Kids",
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Children's Furniture",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:34.232167",
+  "name": "Children's Furniture",
+  "old_parent": "Babies & Kids",
+  "parent_aos_category": "Babies & Kids",
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Baby Gear & Equipment",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:34.298429",
+  "name": "Baby Gear & Equipment",
+  "old_parent": "Babies & Kids",
+  "parent_aos_category": "Babies & Kids",
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Care & Feeding",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:34.364890",
+  "name": "Care & Feeding",
+  "old_parent": "Babies & Kids",
+  "parent_aos_category": "Babies & Kids",
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Maternity & Pregnancy",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:34.430089",
+  "name": "Maternity & Pregnancy",
+  "old_parent": "Babies & Kids",
+  "parent_aos_category": "Babies & Kids",
+  "pricing_requirement": "Required",
+  "sort_order": 5
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Transport & Safety",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:34.496671",
+  "name": "Transport & Safety",
+  "old_parent": "Babies & Kids",
+  "parent_aos_category": "Babies & Kids",
+  "pricing_requirement": "Required",
+  "sort_order": 6
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Playground Equipment",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:34.562966",
+  "name": "Playground Equipment",
+  "old_parent": "Babies & Kids",
+  "parent_aos_category": "Babies & Kids",
+  "pricing_requirement": "Required",
+  "sort_order": 7
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Babies & Kids Accessories",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:34.631725",
+  "name": "Babies & Kids Accessories",
+  "old_parent": "Babies & Kids",
+  "parent_aos_category": "Babies & Kids",
+  "pricing_requirement": "Required",
+  "sort_order": 8
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Children's Clothing",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:34.709932",
+  "name": "Children's Clothing",
+  "old_parent": "Babies & Kids",
+  "parent_aos_category": "Babies & Kids",
+  "pricing_requirement": "Required",
+  "sort_order": 9
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Children's Shoes",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:34.782308",
+  "name": "Children's Shoes",
+  "old_parent": "Babies & Kids",
+  "parent_aos_category": "Babies & Kids",
+  "pricing_requirement": "Required",
+  "sort_order": 10
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Volume",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Hair Beauty",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:34.956668",
+  "name": "Hair Beauty",
+  "old_parent": "Beauty & Personal Care",
+  "parent_aos_category": "Beauty & Personal Care",
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Volume",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Face Care",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:35.027355",
+  "name": "Face Care",
+  "old_parent": "Beauty & Personal Care",
+  "parent_aos_category": "Beauty & Personal Care",
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Volume",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Oral Care",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:35.095640",
+  "name": "Oral Care",
+  "old_parent": "Beauty & Personal Care",
+  "parent_aos_category": "Beauty & Personal Care",
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Volume",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Body Care",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:35.162730",
+  "name": "Body Care",
+  "old_parent": "Beauty & Personal Care",
+  "parent_aos_category": "Beauty & Personal Care",
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Volume",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Fragrance",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:35.231243",
+  "name": "Fragrance",
+  "old_parent": "Beauty & Personal Care",
+  "parent_aos_category": "Beauty & Personal Care",
+  "pricing_requirement": "Required",
+  "sort_order": 5
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Volume",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Makeup",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:35.300551",
+  "name": "Makeup",
+  "old_parent": "Beauty & Personal Care",
+  "parent_aos_category": "Beauty & Personal Care",
+  "pricing_requirement": "Required",
+  "sort_order": 6
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Volume",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Tools & Accessories",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:35.367602",
+  "name": "Tools & Accessories",
+  "old_parent": "Beauty & Personal Care",
+  "parent_aos_category": "Beauty & Personal Care",
+  "pricing_requirement": "Required",
+  "sort_order": 7
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Volume",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Vitamins & Supplements",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:35.433891",
+  "name": "Vitamins & Supplements",
+  "old_parent": "Beauty & Personal Care",
+  "parent_aos_category": "Beauty & Personal Care",
+  "pricing_requirement": "Required",
+  "sort_order": 8
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Volume",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Massagers",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:35.505474",
+  "name": "Massagers",
+  "old_parent": "Beauty & Personal Care",
+  "parent_aos_category": "Beauty & Personal Care",
+  "pricing_requirement": "Required",
+  "sort_order": 9
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Power Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Medical Equipment & Supplies",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:35.611831",
+  "name": "Medical Equipment & Supplies",
+  "old_parent": "Commercial Equipment & Tools",
+  "parent_aos_category": "Commercial Equipment & Tools",
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Power Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Safety Equipment & Protective Gear",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:35.663469",
+  "name": "Safety Equipment & Protective Gear",
+  "old_parent": "Commercial Equipment & Tools",
+  "parent_aos_category": "Commercial Equipment & Tools",
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Power Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Manufacturing Equipment",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:35.712337",
+  "name": "Manufacturing Equipment",
+  "old_parent": "Commercial Equipment & Tools",
+  "parent_aos_category": "Commercial Equipment & Tools",
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Power Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Manufacturing Materials & Supplies",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:35.759784",
+  "name": "Manufacturing Materials & Supplies",
+  "old_parent": "Commercial Equipment & Tools",
+  "parent_aos_category": "Commercial Equipment & Tools",
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Power Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Retail & Store Equipment",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:35.813224",
+  "name": "Retail & Store Equipment",
+  "old_parent": "Commercial Equipment & Tools",
+  "parent_aos_category": "Commercial Equipment & Tools",
+  "pricing_requirement": "Required",
+  "sort_order": 5
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Power Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Restaurant & Catering Equipment",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:35.863642",
+  "name": "Restaurant & Catering Equipment",
+  "old_parent": "Commercial Equipment & Tools",
+  "parent_aos_category": "Commercial Equipment & Tools",
+  "pricing_requirement": "Required",
+  "sort_order": 6
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Power Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Stationery & Office Equipment",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:35.913714",
+  "name": "Stationery & Office Equipment",
+  "old_parent": "Commercial Equipment & Tools",
+  "parent_aos_category": "Commercial Equipment & Tools",
+  "pricing_requirement": "Required",
+  "sort_order": 7
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Power Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Salon & Beauty Equipment",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:35.962653",
+  "name": "Salon & Beauty Equipment",
+  "old_parent": "Commercial Equipment & Tools",
+  "parent_aos_category": "Commercial Equipment & Tools",
+  "pricing_requirement": "Required",
+  "sort_order": 8
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Power Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Printing & Graphics Equipment",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:36.011151",
+  "name": "Printing & Graphics Equipment",
+  "old_parent": "Commercial Equipment & Tools",
+  "parent_aos_category": "Commercial Equipment & Tools",
+  "pricing_requirement": "Required",
+  "sort_order": 9
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Power Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Stage & Event Equipment",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:36.058542",
+  "name": "Stage & Event Equipment",
+  "old_parent": "Commercial Equipment & Tools",
+  "parent_aos_category": "Commercial Equipment & Tools",
+  "pricing_requirement": "Required",
+  "sort_order": 10
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Warranty",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "TV & DVD Equipment",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:36.328143",
+  "name": "TV & DVD Equipment",
+  "old_parent": "Electronics",
+  "parent_aos_category": "Electronics",
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Warranty",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Video Game Consoles",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:36.413088",
+  "name": "Video Game Consoles",
+  "old_parent": "Electronics",
+  "parent_aos_category": "Electronics",
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Warranty",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Audio & Music Equipment",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:36.495608",
+  "name": "Audio & Music Equipment",
+  "old_parent": "Electronics",
+  "parent_aos_category": "Electronics",
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Warranty",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Photo & Video Cameras",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:36.572601",
+  "name": "Photo & Video Cameras",
+  "old_parent": "Electronics",
+  "parent_aos_category": "Electronics",
+  "pricing_requirement": "Required",
+  "sort_order": 5
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Warranty",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Security & Surveillance",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:36.654690",
+  "name": "Security & Surveillance",
+  "old_parent": "Electronics",
+  "parent_aos_category": "Electronics",
+  "pricing_requirement": "Required",
+  "sort_order": 6
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Warranty",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Networking Products",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:36.736473",
+  "name": "Networking Products",
+  "old_parent": "Electronics",
+  "parent_aos_category": "Electronics",
+  "pricing_requirement": "Required",
+  "sort_order": 7
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Warranty",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Printers & Scanners",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:36.823127",
+  "name": "Printers & Scanners",
+  "old_parent": "Electronics",
+  "parent_aos_category": "Electronics",
+  "pricing_requirement": "Required",
+  "sort_order": 8
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Warranty",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Computer Monitors",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:36.905186",
+  "name": "Computer Monitors",
+  "old_parent": "Electronics",
+  "parent_aos_category": "Electronics",
+  "pricing_requirement": "Required",
+  "sort_order": 9
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Warranty",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Computer Hardware",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:37.000800",
+  "name": "Computer Hardware",
+  "old_parent": "Electronics",
+  "parent_aos_category": "Electronics",
+  "pricing_requirement": "Required",
+  "sort_order": 10
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Warranty",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Computer Accessories",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:37.080252",
+  "name": "Computer Accessories",
+  "old_parent": "Electronics",
+  "parent_aos_category": "Electronics",
+  "pricing_requirement": "Required",
+  "sort_order": 11
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Warranty",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Accessories & Supplies for Electronics",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:37.153951",
+  "name": "Accessories & Supplies for Electronics",
+  "old_parent": "Electronics",
+  "parent_aos_category": "Electronics",
+  "pricing_requirement": "Required",
+  "sort_order": 12
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Warranty",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Video Games",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:37.231015",
+  "name": "Video Games",
+  "old_parent": "Electronics",
+  "parent_aos_category": "Electronics",
+  "pricing_requirement": "Required",
+  "sort_order": 13
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Warranty",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Software",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:37.310103",
+  "name": "Software",
+  "old_parent": "Electronics",
+  "parent_aos_category": "Electronics",
+  "pricing_requirement": "Required",
+  "sort_order": 14
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Women's Clothing",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:37.509294",
+  "name": "Women's Clothing",
+  "old_parent": "Women's Fashion",
+  "parent_aos_category": "Women's Fashion",
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Women's Shoes",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:37.585760",
+  "name": "Women's Shoes",
+  "old_parent": "Women's Fashion",
+  "parent_aos_category": "Women's Fashion",
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Women's Clothing Accessories",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:37.667256",
+  "name": "Women's Clothing Accessories",
+  "old_parent": "Women's Fashion",
+  "parent_aos_category": "Women's Fashion",
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Women's Bags",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:37.747778",
+  "name": "Women's Bags",
+  "old_parent": "Women's Fashion",
+  "parent_aos_category": "Women's Fashion",
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Women's Jewelry",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:37.828906",
+  "name": "Women's Jewelry",
+  "old_parent": "Women's Fashion",
+  "parent_aos_category": "Women's Fashion",
+  "pricing_requirement": "Required",
+  "sort_order": 5
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Women's Watches",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:37.912710",
+  "name": "Women's Watches",
+  "old_parent": "Women's Fashion",
+  "parent_aos_category": "Women's Fashion",
+  "pricing_requirement": "Required",
+  "sort_order": 6
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Women's Wedding Wear & Accessories",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:37.993575",
+  "name": "Women's Wedding Wear & Accessories",
+  "old_parent": "Women's Fashion",
+  "parent_aos_category": "Women's Fashion",
+  "pricing_requirement": "Required",
+  "sort_order": 7
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Men's Clothing",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:38.203594",
+  "name": "Men's Clothing",
+  "old_parent": "Men's Fashion",
+  "parent_aos_category": "Men's Fashion",
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Men's Shoes",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:38.284964",
+  "name": "Men's Shoes",
+  "old_parent": "Men's Fashion",
+  "parent_aos_category": "Men's Fashion",
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Men's Clothing Accessories",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:38.368594",
+  "name": "Men's Clothing Accessories",
+  "old_parent": "Men's Fashion",
+  "parent_aos_category": "Men's Fashion",
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Men's Bags",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:38.449006",
+  "name": "Men's Bags",
+  "old_parent": "Men's Fashion",
+  "parent_aos_category": "Men's Fashion",
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Men's Jewelry",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:38.530309",
+  "name": "Men's Jewelry",
+  "old_parent": "Men's Fashion",
+  "parent_aos_category": "Men's Fashion",
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Men's Watches",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:38.608214",
+  "name": "Men's Watches",
+  "old_parent": "Men's Fashion",
+  "parent_aos_category": "Men's Fashion",
+  "pricing_requirement": "Required",
+  "sort_order": 6
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Material",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Men's Wedding Wear & Accessories",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:38.691700",
+  "name": "Men's Wedding Wear & Accessories",
+  "old_parent": "Men's Fashion",
+  "parent_aos_category": "Men's Fashion",
+  "pricing_requirement": "Required",
+  "sort_order": 7
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Weight",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Food & Beverages",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:38.753883",
+  "name": "Food & Beverages",
+  "old_parent": "Food, Agriculture & Farming",
+  "parent_aos_category": "Food, Agriculture & Farming",
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Weight",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Farm Animals",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:38.796612",
+  "name": "Farm Animals",
+  "old_parent": "Food, Agriculture & Farming",
+  "parent_aos_category": "Food, Agriculture & Farming",
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Weight",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Seeds & Fertilizers",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:38.835769",
+  "name": "Seeds & Fertilizers",
+  "old_parent": "Food, Agriculture & Farming",
+  "parent_aos_category": "Food, Agriculture & Farming",
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Weight",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Farm Machinery & Equipment",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:38.867673",
+  "name": "Farm Machinery & Equipment",
+  "old_parent": "Food, Agriculture & Farming",
+  "parent_aos_category": "Food, Agriculture & Farming",
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Weight",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Farm Animal Feed & Supplements",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:38.900552",
+  "name": "Farm Animal Feed & Supplements",
+  "old_parent": "Food, Agriculture & Farming",
+  "parent_aos_category": "Food, Agriculture & Farming",
+  "pricing_requirement": "Required",
+  "sort_order": 5
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Color",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Furniture",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:39.052663",
+  "name": "Furniture",
+  "old_parent": "Home, Furniture & Appliances",
+  "parent_aos_category": "Home, Furniture & Appliances",
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Color",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Lighting",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:39.117501",
+  "name": "Lighting",
+  "old_parent": "Home, Furniture & Appliances",
+  "parent_aos_category": "Home, Furniture & Appliances",
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Color",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Storage & Organization",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:39.199211",
+  "name": "Storage & Organization",
+  "old_parent": "Home, Furniture & Appliances",
+  "parent_aos_category": "Home, Furniture & Appliances",
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Color",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Home Accessories",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:39.274438",
+  "name": "Home Accessories",
+  "old_parent": "Home, Furniture & Appliances",
+  "parent_aos_category": "Home, Furniture & Appliances",
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Color",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Home Appliances",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:39.344232",
+  "name": "Home Appliances",
+  "old_parent": "Home, Furniture & Appliances",
+  "parent_aos_category": "Home, Furniture & Appliances",
+  "pricing_requirement": "Required",
+  "sort_order": 5
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Color",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Kitchen Appliances",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:39.408302",
+  "name": "Kitchen Appliances",
+  "old_parent": "Home, Furniture & Appliances",
+  "parent_aos_category": "Home, Furniture & Appliances",
+  "pricing_requirement": "Required",
+  "sort_order": 6
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Color",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Kitchenware & Cookware",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:39.474531",
+  "name": "Kitchenware & Cookware",
+  "old_parent": "Home, Furniture & Appliances",
+  "parent_aos_category": "Home, Furniture & Appliances",
+  "pricing_requirement": "Required",
+  "sort_order": 7
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Color",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Household Chemicals",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:39.537872",
+  "name": "Household Chemicals",
+  "old_parent": "Home, Furniture & Appliances",
+  "parent_aos_category": "Home, Furniture & Appliances",
+  "pricing_requirement": "Required",
+  "sort_order": 8
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Color",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Garden Supplies",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:39.615732",
+  "name": "Garden Supplies",
+  "old_parent": "Home, Furniture & Appliances",
+  "parent_aos_category": "Home, Furniture & Appliances",
+  "pricing_requirement": "Required",
+  "sort_order": 9
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Advertising & Marketing Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:39.705465",
+  "name": "Advertising & Marketing Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Accounting & Finance Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:39.766841",
+  "name": "Accounting & Finance Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Arts & Entertainment Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:39.826916",
+  "name": "Arts & Entertainment Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Childcare & Babysitting Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:39.875456",
+  "name": "Childcare & Babysitting Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Clerical & Administrative Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:39.925303",
+  "name": "Clerical & Administrative Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 5
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Other Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:39.974134",
+  "name": "Other Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 38
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Computing & IT Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.023953",
+  "name": "Computing & IT Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 6
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Travel & Tourism Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.073708",
+  "name": "Travel & Tourism Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 37
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Construction & Skilled Trade Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.123101",
+  "name": "Construction & Skilled Trade Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 7
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Technology Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.171983",
+  "name": "Technology Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 36
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Consulting & Strategy Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.222220",
+  "name": "Consulting & Strategy Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 8
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Teaching Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.273373",
+  "name": "Teaching Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 35
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Customer Services Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.321315",
+  "name": "Customer Services Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 9
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Sports Club Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.377287",
+  "name": "Sports Club Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 34
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Driver Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.433111",
+  "name": "Driver Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 10
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Security Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.484358",
+  "name": "Security Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 33
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Sales & Telemarketing Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.530700",
+  "name": "Sales & Telemarketing Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 32
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Retail Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.577873",
+  "name": "Retail Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 31
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Restaurant & Bar Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.624932",
+  "name": "Restaurant & Bar Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 30
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Engineering & Architecture Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.672844",
+  "name": "Engineering & Architecture Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 11
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Farming & Veterinary Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.721946",
+  "name": "Farming & Veterinary Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 12
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Research & Survey Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.770423",
+  "name": "Research & Survey Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 29
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Gardening & Landscaping Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.818526",
+  "name": "Gardening & Landscaping Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 13
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Quality Control & Assurance Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.866281",
+  "name": "Quality Control & Assurance Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 28
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Health & Beauty Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.916738",
+  "name": "Health & Beauty Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 14
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Part-Time & Weekend Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:40.966876",
+  "name": "Part-Time & Weekend Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 27
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Healthcare & Nursing Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.017660",
+  "name": "Healthcare & Nursing Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 15
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Office Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.065740",
+  "name": "Office Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 26
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Mining Industry Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.117544",
+  "name": "Mining Industry Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 25
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Hotel Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.166845",
+  "name": "Hotel Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 16
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Housekeeping & Cleaning Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.214943",
+  "name": "Housekeeping & Cleaning Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 17
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Manufacturing Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.264810",
+  "name": "Manufacturing Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 24
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Human Resources Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.314814",
+  "name": "Human Resources Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 18
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Manual Labour Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.365443",
+  "name": "Manual Labour Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 23
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Internship Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.414775",
+  "name": "Internship Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 19
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Management Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": "/files/modern-office-space-interior.jpg",
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.479684",
+  "name": "Management Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 22
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Logistics & Transportation Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": "/private/files/supply-chain-representation-still-life.jpg",
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.564181",
+  "name": "Logistics & Transportation Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 21
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Salary Range",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Legal Jobs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.626831",
+  "name": "Legal Jobs",
+  "old_parent": "Jobs",
+  "parent_aos_category": "Jobs",
+  "pricing_requirement": "Required",
+  "sort_order": 20
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Activity Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Sports Equipment",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.741186",
+  "name": "Sports Equipment",
+  "old_parent": "Leisure & Activities",
+  "parent_aos_category": "Leisure & Activities",
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Activity Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Musical Instruments & Gear",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.787850",
+  "name": "Musical Instruments & Gear",
+  "old_parent": "Leisure & Activities",
+  "parent_aos_category": "Leisure & Activities",
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Activity Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Books & Table Games",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.836003",
+  "name": "Books & Table Games",
+  "old_parent": "Leisure & Activities",
+  "parent_aos_category": "Leisure & Activities",
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Activity Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Arts, Crafts & Awards",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.887117",
+  "name": "Arts, Crafts & Awards",
+  "old_parent": "Leisure & Activities",
+  "parent_aos_category": "Leisure & Activities",
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Activity Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Outdoor Gear",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.936612",
+  "name": "Outdoor Gear",
+  "old_parent": "Leisure & Activities",
+  "parent_aos_category": "Leisure & Activities",
+  "pricing_requirement": "Required",
+  "sort_order": 5
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Activity Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Smoking Accessories",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:41.988846",
+  "name": "Smoking Accessories",
+  "old_parent": "Leisure & Activities",
+  "parent_aos_category": "Leisure & Activities",
+  "pricing_requirement": "Required",
+  "sort_order": 6
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Activity Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Music & Video",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:42.038633",
+  "name": "Music & Video",
+  "old_parent": "Leisure & Activities",
+  "parent_aos_category": "Leisure & Activities",
+  "pricing_requirement": "Required",
+  "sort_order": 7
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Vaccinated",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Pet's Accessories",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:42.191061",
+  "name": "Pet's Accessories",
+  "old_parent": "Animals & Pets",
+  "parent_aos_category": "Animals & Pets",
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Vaccinated",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Cats & Kittens",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:42.255459",
+  "name": "Cats & Kittens",
+  "old_parent": "Animals & Pets",
+  "parent_aos_category": "Animals & Pets",
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Vaccinated",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Dogs & Puppies",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:42.321211",
+  "name": "Dogs & Puppies",
+  "old_parent": "Animals & Pets",
+  "parent_aos_category": "Animals & Pets",
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Vaccinated",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Fish",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:42.388541",
+  "name": "Fish",
+  "old_parent": "Animals & Pets",
+  "parent_aos_category": "Animals & Pets",
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Vaccinated",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Birds",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:42.456047",
+  "name": "Birds",
+  "old_parent": "Animals & Pets",
+  "parent_aos_category": "Animals & Pets",
+  "pricing_requirement": "Required",
+  "sort_order": 5
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Vaccinated",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 4
+   }
+  ],
+  "category_name": "Other Animals",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:42.524792",
+  "name": "Other Animals",
+  "old_parent": "Animals & Pets",
+  "parent_aos_category": "Animals & Pets",
+  "pricing_requirement": "Required",
+  "sort_order": 7
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Screen Size",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 6
+   }
+  ],
+  "category_name": "Mobile Phones",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:42.775821",
+  "name": "Mobile Phones",
+  "old_parent": "Mobile Phones & Tablets",
+  "parent_aos_category": "Mobile Phones & Tablets",
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Screen Size",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 6
+   }
+  ],
+  "category_name": "Accessories for Phones & Tablets",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:42.874488",
+  "name": "Accessories for Phones & Tablets",
+  "old_parent": "Mobile Phones & Tablets",
+  "parent_aos_category": "Mobile Phones & Tablets",
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Screen Size",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 6
+   }
+  ],
+  "category_name": "Smart Watches",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:42.974015",
+  "name": "Smart Watches",
+  "old_parent": "Mobile Phones & Tablets",
+  "parent_aos_category": "Mobile Phones & Tablets",
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Screen Size",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 6
+   }
+  ],
+  "category_name": "Tablets",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:43.074730",
+  "name": "Tablets",
+  "old_parent": "Mobile Phones & Tablets",
+  "parent_aos_category": "Mobile Phones & Tablets",
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Screen Size",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 6
+   }
+  ],
+  "category_name": "Headphones",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:43.181061",
+  "name": "Headphones",
+  "old_parent": "Mobile Phones & Tablets",
+  "parent_aos_category": "Mobile Phones & Tablets",
+  "pricing_requirement": "Required",
+  "sort_order": 5
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Parking",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "New Builds",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:43.376344",
+  "name": "New Builds",
+  "old_parent": "Property",
+  "parent_aos_category": "Property",
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Parking",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Houses & Apartments For Rent",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:43.458249",
+  "name": "Houses & Apartments For Rent",
+  "old_parent": "Property",
+  "parent_aos_category": "Property",
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Parking",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Houses & Apartments For Sale",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:43.540753",
+  "name": "Houses & Apartments For Sale",
+  "old_parent": "Property",
+  "parent_aos_category": "Property",
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Parking",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Short Let",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:43.624386",
+  "name": "Short Let",
+  "old_parent": "Property",
+  "parent_aos_category": "Property",
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Parking",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Land & Plots for Rent",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:43.707968",
+  "name": "Land & Plots for Rent",
+  "old_parent": "Property",
+  "parent_aos_category": "Property",
+  "pricing_requirement": "Required",
+  "sort_order": 5
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Parking",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Land & Plots For Sale",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:43.787485",
+  "name": "Land & Plots For Sale",
+  "old_parent": "Property",
+  "parent_aos_category": "Property",
+  "pricing_requirement": "Required",
+  "sort_order": 6
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Parking",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Event Centres, Venues & Workstations",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:43.876746",
+  "name": "Event Centres, Venues & Workstations",
+  "old_parent": "Property",
+  "parent_aos_category": "Property",
+  "pricing_requirement": "Required",
+  "sort_order": 7
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Parking",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Commercial Property for Rent",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:43.959115",
+  "name": "Commercial Property for Rent",
+  "old_parent": "Property",
+  "parent_aos_category": "Property",
+  "pricing_requirement": "Required",
+  "sort_order": 8
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Parking",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Commercial Property for Sale",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.040733",
+  "name": "Commercial Property for Sale",
+  "old_parent": "Property",
+  "parent_aos_category": "Property",
+  "pricing_requirement": "Required",
+  "sort_order": 9
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Service Area",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Electrical Equipment",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.119521",
+  "name": "Electrical Equipment",
+  "old_parent": "Repair & Construction",
+  "parent_aos_category": "Repair & Construction",
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Service Area",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Building Materials & Supplies",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.155078",
+  "name": "Building Materials & Supplies",
+  "old_parent": "Repair & Construction",
+  "parent_aos_category": "Repair & Construction",
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Service Area",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Plumbing & Water Systems",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.186068",
+  "name": "Plumbing & Water Systems",
+  "old_parent": "Repair & Construction",
+  "parent_aos_category": "Repair & Construction",
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Service Area",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Electrical Hand Tools",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.224135",
+  "name": "Electrical Hand Tools",
+  "old_parent": "Repair & Construction",
+  "parent_aos_category": "Repair & Construction",
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Service Area",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Hand Tools",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.257328",
+  "name": "Hand Tools",
+  "old_parent": "Repair & Construction",
+  "parent_aos_category": "Repair & Construction",
+  "pricing_requirement": "Required",
+  "sort_order": 5
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Service Area",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Measuring & Testing Tools",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.290585",
+  "name": "Measuring & Testing Tools",
+  "old_parent": "Repair & Construction",
+  "parent_aos_category": "Repair & Construction",
+  "pricing_requirement": "Required",
+  "sort_order": 6
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Service Area",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Hardware & Fasteners",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.324240",
+  "name": "Hardware & Fasteners",
+  "old_parent": "Repair & Construction",
+  "parent_aos_category": "Repair & Construction",
+  "pricing_requirement": "Required",
+  "sort_order": 7
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Service Area",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Doors & Security",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.357358",
+  "name": "Doors & Security",
+  "old_parent": "Repair & Construction",
+  "parent_aos_category": "Repair & Construction",
+  "pricing_requirement": "Required",
+  "sort_order": 8
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Service Area",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Windows & Glass",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.387875",
+  "name": "Windows & Glass",
+  "old_parent": "Repair & Construction",
+  "parent_aos_category": "Repair & Construction",
+  "pricing_requirement": "Required",
+  "sort_order": 10
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Service Area",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Other Repair & Construction Items",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.418599",
+  "name": "Other Repair & Construction Items",
+  "old_parent": "Repair & Construction",
+  "parent_aos_category": "Repair & Construction",
+  "pricing_requirement": "Required",
+  "sort_order": 9
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Accounting & Finance CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.480230",
+  "name": "Accounting & Finance CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Advertising & Marketing CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.510229",
+  "name": "Advertising & Marketing CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Arts & Entertainment CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.542060",
+  "name": "Arts & Entertainment CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Childcare & Babysitting CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.575378",
+  "name": "Childcare & Babysitting CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Clerical & Administrative CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.608237",
+  "name": "Clerical & Administrative CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 6
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Consulting & Strategy CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.640660",
+  "name": "Consulting & Strategy CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 8
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Computing & IT CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.670881",
+  "name": "Computing & IT CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 7
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Construction & Skilled Trade CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.702082",
+  "name": "Construction & Skilled Trade CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 9
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Hotel CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.735858",
+  "name": "Hotel CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 17
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Customer Services CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.769852",
+  "name": "Customer Services CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 10
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Driver CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.805227",
+  "name": "Driver CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 11
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Housekeeping & Cleaning CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.838270",
+  "name": "Housekeeping & Cleaning CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 18
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Human Resources CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.874586",
+  "name": "Human Resources CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 19
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Engineering & Architecture CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.907515",
+  "name": "Engineering & Architecture CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 12
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Farming & Veterinary CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.939593",
+  "name": "Farming & Veterinary CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 13
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Gardening & Landscaping CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:44.975506",
+  "name": "Gardening & Landscaping CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 14
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Health & Beauty CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.009763",
+  "name": "Health & Beauty CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 15
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Internship CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.047266",
+  "name": "Internship CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 20
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Legal CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.089650",
+  "name": "Legal CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 21
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Logistics & Transportation CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.121359",
+  "name": "Logistics & Transportation CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 22
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Management CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.153883",
+  "name": "Management CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 23
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Manual Labour CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.188372",
+  "name": "Manual Labour CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 24
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Manufacturing CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.223012",
+  "name": "Manufacturing CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 25
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Mining Industry CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.257501",
+  "name": "Mining Industry CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 26
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Office CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.290014",
+  "name": "Office CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 27
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Part-Time & Weekend CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.323371",
+  "name": "Part-Time & Weekend CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 28
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Quality Control & Assurance CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.357453",
+  "name": "Quality Control & Assurance CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 29
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Research & Survey CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.389705",
+  "name": "Research & Survey CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 30
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Restaurant & Bar CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.421329",
+  "name": "Restaurant & Bar CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 31
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Retail CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.455846",
+  "name": "Retail CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 32
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Sales & Telemarketing CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.490536",
+  "name": "Sales & Telemarketing CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 33
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Security CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.523081",
+  "name": "Security CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 34
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Sports Club CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.555326",
+  "name": "Sports Club CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 35
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Teaching CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.590763",
+  "name": "Teaching CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 36
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Technology CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.622788",
+  "name": "Technology CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 5
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Travel & Tourism CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.657218",
+  "name": "Travel & Tourism CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 37
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Other CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.690598",
+  "name": "Other CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 38
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Building & Trades Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:45.835109",
+  "name": "Building & Trades Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Car Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:45.884670",
+  "name": "Car Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Computer & IT Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:45.934593",
+  "name": "Computer & IT Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Repair Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:45.983518",
+  "name": "Repair Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Cleaning Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.031357",
+  "name": "Cleaning Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 5
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Printing Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.086005",
+  "name": "Printing Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 6
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Manufacturing Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.141237",
+  "name": "Manufacturing Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 7
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Logistics Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.193546",
+  "name": "Logistics Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 8
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Legal Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.240371",
+  "name": "Legal Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 9
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Tax & Financial Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.285434",
+  "name": "Tax & Financial Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 10
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Recruitment Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.338864",
+  "name": "Recruitment Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 11
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Rental Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.390481",
+  "name": "Rental Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 12
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Chauffeur & Airport Transfer Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.440703",
+  "name": "Chauffeur & Airport Transfer Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 13
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Travel Agents & Tours",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.490415",
+  "name": "Travel Agents & Tours",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 14
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Classes & Courses",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.538425",
+  "name": "Classes & Courses",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 15
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Child Care & Education Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.587954",
+  "name": "Child Care & Education Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 16
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Health & Beauty Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.635238",
+  "name": "Health & Beauty Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 17
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Fitness & Personal Training Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.687495",
+  "name": "Fitness & Personal Training Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 18
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Party, Catering & Event Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.738108",
+  "name": "Party, Catering & Event Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 19
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "DJ & Entertainment Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.789919",
+  "name": "DJ & Entertainment Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 20
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Wedding Venues & Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.839869",
+  "name": "Wedding Venues & Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 21
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Photography & Video Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.890918",
+  "name": "Photography & Video Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 22
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Landscaping & Gardening Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.940193",
+  "name": "Landscaping & Gardening Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 23
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Pet Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:46.990677",
+  "name": "Pet Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 24
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable\nContact for price",
+  "allowed_price_units": "Per hour\nPer day\nPer job\nPer service\nPer session",
+  "attributes": [
+   {
+    "attribute": "Availability",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 3
+   }
+  ],
+  "category_name": "Other Services",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 1,
+  "modified": "2026-03-05 00:51:47.039573",
+  "name": "Other Services",
+  "old_parent": "Services",
+  "parent_aos_category": "Services",
+  "pricing_requirement": "Optional",
+  "sort_order": 25
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Fuel Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 7
+   }
+  ],
+  "category_name": "Cars",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:47.322788",
+  "name": "Cars",
+  "old_parent": "Vehicles",
+  "parent_aos_category": "Vehicles",
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Fuel Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 7
+   }
+  ],
+  "category_name": "Motorcycles & Scooters",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:47.441080",
+  "name": "Motorcycles & Scooters",
+  "old_parent": "Vehicles",
+  "parent_aos_category": "Vehicles",
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Fuel Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 7
+   }
+  ],
+  "category_name": "Trucks & Trailers",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:47.557346",
+  "name": "Trucks & Trailers",
+  "old_parent": "Vehicles",
+  "parent_aos_category": "Vehicles",
+  "pricing_requirement": "Required",
+  "sort_order": 5
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Fuel Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 7
+   }
+  ],
+  "category_name": "Buses & Microbuses",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:47.673647",
+  "name": "Buses & Microbuses",
+  "old_parent": "Vehicles",
+  "parent_aos_category": "Vehicles",
+  "pricing_requirement": "Required",
+  "sort_order": 4
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Fuel Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 7
+   }
+  ],
+  "category_name": "Watercraft & Boats",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:47.788863",
+  "name": "Watercraft & Boats",
+  "old_parent": "Vehicles",
+  "parent_aos_category": "Vehicles",
+  "pricing_requirement": "Required",
+  "sort_order": 7
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Fuel Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 7
+   }
+  ],
+  "category_name": "Vehicle Parts & Accessories",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:48.014692",
+  "name": "Vehicle Parts & Accessories",
+  "old_parent": "Vehicles",
+  "parent_aos_category": "Vehicles",
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Fuel Type",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 7
+   }
+  ],
+  "category_name": "Construction & Heavy Machinery",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:48.183234",
+  "name": "Construction & Heavy Machinery",
+  "old_parent": "Vehicles",
+  "parent_aos_category": "Vehicles",
+  "pricing_requirement": "Required",
+  "sort_order": 6
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Experience",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Healthcare & Nursing CVs",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:45.722791",
+  "name": "Healthcare & Nursing CVs",
+  "old_parent": "Seeking Work CVs",
+  "parent_aos_category": "Seeking Work CVs",
+  "pricing_requirement": "Required",
+  "sort_order": 16
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Warranty",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 5
+   }
+  ],
+  "category_name": "Laptops & Computers",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 0,
+  "is_service": 0,
+  "modified": "2026-03-05 00:51:36.245695",
+  "name": "Laptops & Computers",
+  "old_parent": "Electronics",
+  "parent_aos_category": "Electronics",
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ }
+]

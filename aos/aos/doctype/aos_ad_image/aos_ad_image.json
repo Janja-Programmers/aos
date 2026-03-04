@@ -7,8 +7,9 @@
  "engine": "InnoDB",
  "field_order": [
   "image",
-  "is_primary",
-  "sort_order"
+  "sort_order",
+  "column_break_rfxe",
+  "is_primary"
  ],
  "fields": [
   {
@@ -30,13 +31,17 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Sort Order"
+  },
+  {
+   "fieldname": "column_break_rfxe",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-01-30 16:42:31.946868",
+ "modified": "2026-03-05 01:09:01.603042",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad Image",

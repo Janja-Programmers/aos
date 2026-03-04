@@ -1,25 +1,19 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
- "autoname": "field:reason",
+ "autoname": "field:title",
  "creation": "2026-03-04 13:26:37.498700",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "reason",
+  "title",
   "icon_key",
   "column_break_fgcq",
   "sort_order",
   "is_active"
  ],
  "fields": [
-  {
-   "fieldname": "reason",
-   "fieldtype": "Data",
-   "label": "Reason",
-   "reqd": 1,
-   "unique": 1
-  },
   {
    "fieldname": "sort_order",
    "fieldtype": "Int",
@@ -40,13 +34,21 @@
   {
    "fieldname": "icon_key",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Icon Key"
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "reqd": 1,
+   "unique": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-04 15:58:32.890923",
+ "modified": "2026-03-05 01:55:57.336643",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Report Reason",

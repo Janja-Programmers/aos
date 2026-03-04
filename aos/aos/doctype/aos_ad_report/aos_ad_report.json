@@ -16,9 +16,9 @@
   "details",
   "review_tab",
   "status",
-  "admin_action",
-  "column_break_qzqe",
   "reviewed_by",
+  "column_break_qzqe",
+  "admin_action",
   "reviewed_on"
  ],
  "fields": [
@@ -33,6 +33,7 @@
    "fieldname": "ad",
    "fieldtype": "Link",
    "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Ad",
    "options": "AOS Ad",
    "reqd": 1,
@@ -51,9 +52,12 @@
    "fetch_from": "ad.seller",
    "fieldname": "seller",
    "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Seller",
    "options": "AOS Seller",
-   "read_only": 1
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "reason",
@@ -63,11 +67,13 @@
    "reqd": 1
   },
   {
-   "default": "Pending",
+   "default": "Reviewing",
    "fieldname": "status",
    "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Status",
-   "options": "Pending\nReviewing\nResolved\nRejected",
+   "options": "Reviewing\nResolved\nRejected",
    "search_index": 1
   },
   {
@@ -84,10 +90,12 @@
    "fieldtype": "Column Break"
   },
   {
+   "depends_on": "eval: doc.status == \"Resolved\"",
    "fieldname": "admin_action",
    "fieldtype": "Select",
    "label": "Admin Action",
-   "options": "None\nAd Suspended\nSeller Warned\nSeller Suspended"
+   "mandatory_depends_on": "eval: doc.status == \"Resolved\"",
+   "options": "\nWarn Seller\nSuspended Ad\nSuspended Seller"
   },
   {
    "fieldname": "column_break_qzqe",
@@ -115,7 +123,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-04 15:28:25.365622",
+ "modified": "2026-03-05 02:24:32.225377",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad Report",
@@ -140,10 +148,6 @@
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [
-  {
-   "color": "Gray",
-   "title": "Pending"
-  },
   {
    "color": "Purple",
    "title": "Reviewing"

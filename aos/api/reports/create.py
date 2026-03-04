@@ -1,5 +1,3 @@
-"""Create an Ad Report (Market-isolated)."""
-
 from __future__ import annotations
 
 import frappe
@@ -51,11 +49,12 @@ def create_report_impl(**kwargs):
     if not ad_doc:
         return fail("Ad not found.", code="NOT_FOUND")
 
+    # Market isolation
     if ad_doc.country != country:
         return fail("Ad not found.", code="NOT_FOUND")
 
-    if ad_doc.status in ("Deleted",):
-        return fail("Ad not found.", code="NOT_FOUND")
+    if ad_doc.status in ("Deleted", "Suspended"):
+        return fail("Ad not available.", code="NOT_FOUND")
 
     # Prevent reporting own ad
     seller_user = frappe.db.get_value("AOS Seller", ad_doc.seller, "user")
@@ -82,7 +81,6 @@ def create_report_impl(**kwargs):
         report.seller = ad_doc.seller
 
         report.insert(ignore_permissions=True)
-        frappe.db.commit()
 
         return ok(
             "Report submitted successfully. Our team will review it.",

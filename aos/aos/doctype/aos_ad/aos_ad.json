@@ -25,22 +25,23 @@
   "pricing_tab",
   "price_type",
   "currency",
+  "offer_percent",
+  "offer_start_date",
+  "column_break_xnvd",
   "price",
   "price_unit",
-  "column_break_xnvd",
   "offer_price",
-  "offer_start_date",
   "offer_end_date",
-  "offer_percent",
   "review_tab",
   "average_rating",
   "total_reports",
   "reviewed_by",
-  "reviewed_on",
   "status",
   "column_break_uadk",
   "total_reviews",
   "expires_on",
+  "reviewed_on",
+  "section_break_jebo",
   "decline_reason"
  ],
  "fields": [
@@ -103,7 +104,8 @@
   {
    "fieldname": "price_type",
    "fieldtype": "Data",
-   "label": "Price Type"
+   "label": "Price Type",
+   "reqd": 1
   },
   {
    "fieldname": "price",
@@ -269,12 +271,16 @@
    "label": "Total Reports",
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "section_break_jebo",
+   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-04 18:50:35.051398",
+ "modified": "2026-03-05 01:08:17.623599",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad",

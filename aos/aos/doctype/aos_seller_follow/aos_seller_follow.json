@@ -6,6 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "seller",
+  "column_break_culo",
   "follower"
  ],
  "fields": [
@@ -22,14 +23,19 @@
    "fieldname": "follower",
    "fieldtype": "Link",
    "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Follower",
    "options": "User",
    "reqd": 1
+  },
+  {
+   "fieldname": "column_break_culo",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-02-18 15:46:23.371418",
+ "modified": "2026-03-05 02:42:06.166854",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Seller Follow",

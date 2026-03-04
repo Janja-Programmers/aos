@@ -132,6 +132,7 @@ def get_ad_impl(**kwargs):
             "parenttype": "AOS Ad",
         },
         fields=["image", "is_primary", "sort_order"],
+        order_by="is_primary desc, sort_order asc",
     )
 
     # Details

@@ -38,12 +38,12 @@ def get_locations_impl(country: str | None = None):
         },
         fields=[
             "name",
-            "location_name",
+            "location",
             "country",
             "sort_order",
             "is_active",
         ],
-        order_by="sort_order asc, location_name asc",
+        order_by="sort_order asc, location asc",
     )
 
     return ok(
@@ -51,7 +51,7 @@ def get_locations_impl(country: str | None = None):
         data=[
             {
                 "id": location.name,
-                "name": location.location_name,
+                "name": location.location,
                 "country": location.country,
                 "sort_order": location.sort_order or 0,
                 "is_active": location.is_active,

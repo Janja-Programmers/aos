@@ -2,13 +2,13 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
- "autoname": "field:location_name",
+ "autoname": "field:location",
  "creation": "2026-01-31 13:08:13.876964",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "country",
-  "location_name",
+  "location",
   "column_break_prci",
   "sort_order",
   "is_active"
@@ -22,14 +22,6 @@
    "label": "Country",
    "options": "Country",
    "reqd": 1
-  },
-  {
-   "fieldname": "location_name",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Location Name",
-   "reqd": 1,
-   "unique": 1
   },
   {
    "fieldname": "column_break_prci",
@@ -47,12 +39,19 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Is Active"
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Data",
+   "label": "Location",
+   "reqd": 1,
+   "unique": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-11 18:37:48.246647",
+ "modified": "2026-03-04 21:15:54.693734",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Location",

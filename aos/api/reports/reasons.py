@@ -13,7 +13,7 @@ def list_report_reasons_impl(**kwargs):
             "AOS Report Reason",
             filters={"is_active": 1},
             fields=[
-                "reason",
+                "title",
                 "icon_key",
                 "sort_order"
             ],
@@ -24,14 +24,14 @@ def list_report_reasons_impl(**kwargs):
 
         for r in reasons:
             items.append({
-                "id": r.reason,
-                "reason": r.reason,
+                "id": r.title,
+                "title": r.title,
                 "icon_key": r.icon_key
             })
 
         return ok(
             "Report reasons fetched.",
-            data={"items": items}
+            data={"reasons": items}
         )
 
     except Exception:

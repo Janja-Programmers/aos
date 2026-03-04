@@ -182,7 +182,7 @@ def list_reviews_impl(**kwargs):
                     "total_reviews": int(ad_doc.total_reviews or 0),
                     "distribution": distribution,
                 },
-                "items": formatted_reviews,
+                "reviews": formatted_reviews,
                 "pagination": {
                     "total": total,
                     "limit": limit,

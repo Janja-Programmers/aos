@@ -29,25 +29,23 @@ class AOSReview(Document):
 
     def prevent_duplicate_review(self):
         """Ensure a user can only review an ad once."""
-        if not self.ad:
+        if not self.ad or not self.reviewer:
             return
 
-        existing = frappe.get_all(
+        exists = frappe.db.exists(
             "AOS Review",
-            filters={
+            {
                 "ad": self.ad,
-                "reviewer": frappe.session.user,
+                "reviewer": self.reviewer,
                 "name": ["!=", self.name],
             },
-            limit=1,
         )
 
-        if existing:
+        if exists:
             frappe.throw("You have already reviewed this ad.")
 
     def _stamp_review_metadata(self):
         """Stamp moderation metadata when status changes."""
-
         if frappe.session.user == "Guest":
             return
 
@@ -60,45 +58,37 @@ class AOSReview(Document):
 
 def update_ad_rating(ad_name):
     """Recalculate rating metrics for an Ad."""
-    reviews = frappe.get_all(
-        "AOS Review",
-        filters={
-            "ad": ad_name,
-            "status": "Approved"
-        },
-        fields=["rating"]
+    result = frappe.db.sql(
+        """
+        SELECT 
+            AVG(rating) AS avg_rating,
+            COUNT(name) AS total_reviews
+        FROM `tabAOS Review`
+        WHERE ad = %s
+        AND status = 'Approved'
+        """,
+        (ad_name,),
+        as_dict=True,
     )
 
-    if not reviews:
-        frappe.db.set_value(
-            "AOS Ad",
-            ad_name,
-            {
-                "average_rating": 0,
-                "total_reviews": 0
-            },
-            update_modified=False
-        )
-        return
-
-    avg = sum(r.rating for r in reviews) / len(reviews)
+    row = result[0] if result else {}
 
     frappe.db.set_value(
         "AOS Ad",
         ad_name,
         {
-            "average_rating": round(avg, 2),
-            "total_reviews": len(reviews)
+            "average_rating": round(row.get("avg_rating") or 0, 2),
+            "total_reviews": row.get("total_reviews") or 0,
         },
-        update_modified=False
+        update_modified=False,
     )
 
 def update_seller_rating_from_ad(ad_name):
     """Aggregate seller rating across all their ads."""
 
-    seller_user = frappe.db.get_value("AOS Ad", ad_name, "user")
+    seller = frappe.db.get_value("AOS Ad", ad_name, "seller")
 
-    if not seller_user:
+    if not seller:
         return
 
     result = frappe.db.sql(
@@ -108,10 +98,10 @@ def update_seller_rating_from_ad(ad_name):
             COUNT(r.name) AS total_reviews
         FROM `tabAOS Review` r
         INNER JOIN `tabAOS Ad` a ON r.ad = a.name
-        WHERE a.user = %s
+        WHERE a.seller = %s
         AND r.status = 'Approved'
         """,
-        (seller_user,),
+        (seller,),
         as_dict=True,
     )
 
@@ -119,7 +109,7 @@ def update_seller_rating_from_ad(ad_name):
 
     frappe.db.set_value(
         "AOS Seller",
-        seller_user,
+        seller,
         {
             "rating": round(row.get("avg_rating") or 0, 2),
             "total_reviews": row.get("total_reviews") or 0,

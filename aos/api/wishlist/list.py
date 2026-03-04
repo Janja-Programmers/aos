@@ -46,7 +46,6 @@ def list_wishlist_impl(**kwargs):
         return err
 
     # Market Context
-
     display_currency, error = resolve_market_currency(kwargs.get("currency"))
     if error:
         return error
@@ -75,7 +74,7 @@ def list_wishlist_impl(**kwargs):
     if promotion_type and promotion_type not in ALLOWED_PROMOTIONS:
         return fail("Invalid promotion_type.", code="VALIDATION_ERROR")
 
-    if price_min and price_max and price_min > price_max:
+    if price_min is not None and price_max is not None and price_min > price_max:
         return fail("price_min cannot be greater than price_max.", code="VALIDATION_ERROR")
 
     # Offer Logic
@@ -104,11 +103,13 @@ def list_wishlist_impl(**kwargs):
         END
     """
 
+    # Base Conditions
     conditions = [
         "w.user = %(user)s",
         "w.status = 'Active'",
         "a.status = 'Active'",
         "s.status = 'Active'",
+        "(a.expires_on IS NULL OR a.expires_on >= %(today)s)",
     ]
 
     values: Dict[str, Any] = {
@@ -117,21 +118,26 @@ def list_wishlist_impl(**kwargs):
         "today": today,
     }
 
+    # Search
     if q and len(q) >= 2:
         conditions.append("a.title LIKE %(q)s")
         values["q"] = f"%{q}%"
 
+    # Category
     if category:
         conditions.append("a.category = %(category)s")
         values["category"] = category
 
+    # Price Type
     if price_type:
         conditions.append("a.price_type = %(price_type)s")
         values["price_type"] = price_type
 
+    # Promotions
     if promotion_type:
         conditions.append(f"({offer_active_sql})")
 
+    # Price Filters
     if price_min is not None:
         conditions.append(f"{current_price_sql} >= %(price_min)s")
         values["price_min"] = price_min
@@ -144,11 +150,11 @@ def list_wishlist_impl(**kwargs):
 
     # Sorting
     if sort == "price_low":
-        order_by = f"{current_price_sql} asc"
+        order_by = f"{current_price_sql} asc, a.creation desc"
     elif sort == "price_high":
-        order_by = f"{current_price_sql} desc"
+        order_by = f"{current_price_sql} desc, a.creation desc"
     elif sort == "rating_high":
-        order_by = "a.average_rating desc, a.total_reviews desc"
+        order_by = "a.average_rating desc, a.total_reviews desc, a.creation desc"
     else:
         order_by = "w.creation desc"
 
@@ -177,7 +183,7 @@ def list_wishlist_impl(**kwargs):
             {current_price_sql} as current_price
         FROM `tabAOS Wishlist` w
         INNER JOIN `tabAOS Ad` a ON a.name = w.ad
-        INNER JOIN `tabAOS Seller` s ON s.name = a.user
+        INNER JOIN `tabAOS Seller` s ON s.name = a.seller
         LEFT JOIN `tabAOS Exchange Rate` er_source
             ON er_source.currency = a.currency
         LEFT JOIN `tabAOS Exchange Rate` er_target
@@ -201,6 +207,7 @@ def list_wishlist_impl(**kwargs):
             "AOS Ad Image",
             filters={"parenttype": "AOS Ad", "parent": ["in", ad_names]},
             fields=["parent", "image", "is_primary", "sort_order"],
+            order_by="is_primary desc, sort_order asc",
         )
 
         for img in img_rows:
@@ -218,7 +225,12 @@ def list_wishlist_impl(**kwargs):
             and (row.get("offer_end_date") is None or row.get("offer_end_date") >= today)
         )
 
-        items.append(serialize_ad_list_item(ad_doc, is_wishlisted=True))
+        items.append(
+            serialize_ad_list_item(
+                ad_doc,
+                is_wishlisted=True,
+            )
+        )
 
     return ok(
         "Wishlist fetched.",

@@ -12,14 +12,15 @@
    "fieldname": "image",
    "fieldtype": "Attach",
    "in_list_view": 1,
-   "label": "Image"
+   "label": "Image",
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-02-16 18:14:21.412727",
+ "modified": "2026-03-05 01:35:42.465744",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Review Image",

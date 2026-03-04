@@ -32,6 +32,7 @@
   {
    "fieldname": "email",
    "fieldtype": "Data",
+   "in_standard_filter": 1,
    "label": "Email",
    "options": "Email",
    "reqd": 1,
@@ -70,6 +71,7 @@
   {
    "fieldname": "purpose",
    "fieldtype": "Select",
+   "in_standard_filter": 1,
    "label": "Purpose",
    "options": "email_verification\npassword_reset",
    "reqd": 1
@@ -88,7 +90,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-22 15:12:44.739715",
+ "modified": "2026-03-04 22:14:03.706609",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Email Verification",

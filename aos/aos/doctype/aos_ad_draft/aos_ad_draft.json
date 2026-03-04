@@ -46,7 +46,6 @@
   {
    "fieldname": "title_hint",
    "fieldtype": "Data",
-   "in_list_view": 1,
    "label": "Title Hint",
    "read_only": 1
   },
@@ -109,7 +108,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-02-28 13:26:41.397415",
+ "modified": "2026-03-05 01:17:57.764336",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad Draft",
