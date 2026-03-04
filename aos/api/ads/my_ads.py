@@ -37,9 +37,26 @@ def my_ads_impl(**kwargs):
 
     limit = min(max(_safe_int(kwargs.get("limit"), 20), 1), 50)
     offset = max(_safe_int(kwargs.get("offset"), 0), 0)
-    status = str(kwargs.get("status" or "") or "").strip()
+    status = str(kwargs.get("status") or "").strip()
 
-    filters: Dict[str, Any] = {"user": user}
+    # Resolve seller from logged-in user
+    seller = frappe.db.get_value(
+        "AOS Seller",
+        {"user": user},
+        "name",
+    )
+
+    if not seller:
+        return ok(
+            "My ads fetched.",
+            data={
+                "items": [],
+                "pagination": {"limit": limit, "offset": offset, "total": 0},
+            },
+        )
+
+    filters: Dict[str, Any] = {"seller": seller}
+
     if status:
         filters["status"] = status
 
@@ -66,20 +83,27 @@ def my_ads_impl(**kwargs):
         )
 
         items = []
-        # Load docs only when needed to get primary image, but keep it light.
+
+        # Load docs only when needed to get images etc.
         for r in rows:
             try:
                 doc = frappe.get_doc("AOS Ad", r.name)
                 items.append(serialize_ad_list_item(doc))
             except Exception:
-                # Fallback to minimal row if doc fetch fails
                 items.append({"id": r.name, "title": r.title})
 
         total = frappe.db.count("AOS Ad", filters=filters)
 
         return ok(
             "My ads fetched.",
-            data={"items": items, "pagination": {"limit": limit, "offset": offset, "total": total}},
+            data={
+                "items": items,
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "total": total,
+                },
+            },
         )
 
     except Exception:

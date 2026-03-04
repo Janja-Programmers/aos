@@ -84,10 +84,11 @@ def _primary_image(images: List[Dict[str, Any]]) -> str:
 
     return ""
 
-# Images
 
+# Images
 def serialize_ad_images(ad_doc) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
+
     for row in (getattr(ad_doc, "images", []) or []):
         items.append(
             {
@@ -107,10 +108,11 @@ def serialize_ad_images(ad_doc) -> List[Dict[str, Any]]:
 
     return items
 
-# Details
 
+# Details
 def serialize_ad_details(ad_doc) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
+
     for row in (getattr(ad_doc, "details", []) or []):
         items.append(
             {
@@ -122,10 +124,11 @@ def serialize_ad_details(ad_doc) -> List[Dict[str, Any]]:
                 "value_json": getattr(row, "value_json", None),
             }
         )
+
     return items
 
-# List Item
 
+# List Item
 def serialize_ad_list_item(ad_doc, is_wishlisted: bool = False) -> Dict[str, Any]:
     images = serialize_ad_images(ad_doc)
 
@@ -167,24 +170,14 @@ def serialize_ad_list_item(ad_doc, is_wishlisted: bool = False) -> Dict[str, Any
         "total_reviews": _to_int(getattr(ad_doc, "total_reviews", 0)),
     }
 
-# Detail View
 
+# Detail View
 def serialize_ad_detail(ad_doc, is_wishlisted: bool = False) -> Dict[str, Any]:
     images = serialize_ad_images(ad_doc)
 
-    category_name = (
-        frappe.db.get_value("AOS Category", ad_doc.category, "category_name")
-        if ad_doc.category else None
-    )
-
-    location_name = (
-        frappe.db.get_value("AOS Location", ad_doc.location, "location_name")
-        if ad_doc.location else None
-    )
-
     return {
         **serialize_ad_list_item(ad_doc, is_wishlisted=is_wishlisted),
-        "seller": _norm(getattr(ad_doc, "user", None)),
+        "seller": _norm(getattr(ad_doc, "seller", None)),
         "description": getattr(ad_doc, "description", None) or "",
         "video": _norm(getattr(ad_doc, "video", None)),
         "images": images,

@@ -28,6 +28,7 @@ from aos.api.shared.responses import fail, ok
 from aos.utils.aos_settings import get_aos_settings_snapshot
 from .constants import SET_AD_STATUS_LIMIT_PER_MINUTE_PER_USER
 
+
 _ACTIONS = {
     "mark_sold",
     "mark_available",
@@ -43,7 +44,6 @@ def _clean_str(val: Any) -> str:
 
 
 def _get_transition(action: str, status: str) -> Tuple[Optional[str], Optional[str]]:
-    """Return (new_status, error_message) for the requested action."""
     action = _clean_str(action).lower()
     status = _clean_str(status)
 
@@ -68,9 +68,9 @@ def _get_transition(action: str, status: str) -> Tuple[Optional[str], Optional[s
             return None, "Only Expired ads can be renewed."
         return "Active", None
 
-    # action == "delete"
     if status not in _DELETABLE_STATUSES:
         return None, "This ad cannot be deleted in its current status."
+
     return "Deleted", None
 
 
@@ -85,47 +85,59 @@ def set_ad_status_impl(**kwargs):
         limit=SET_AD_STATUS_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
     )
+
     if rl:
         return rl
 
     ad_id = _clean_str(kwargs.get("ad_id") or kwargs.get("id"))
+
     if not ad_id:
         return fail("Ad id is required.", code="VALIDATION_ERROR")
 
     action = _clean_str(kwargs.get("action")).lower()
+
     if not action:
         return fail("Action is required.", code="VALIDATION_ERROR")
 
-    # Fetch minimal info first for ownership + status checks.
     row = frappe.db.get_value(
         "AOS Ad",
         ad_id,
-        ["name", "user", "status", "expires_on"],
+        ["name", "seller", "status", "expires_on"],
         as_dict=True,
     )
+
     if not row:
         return fail("Ad not found.", code="NOT_FOUND")
 
-    if _clean_str(row.user) != user:
+    # Verify seller ownership
+    seller_user = frappe.db.get_value(
+        "AOS Seller",
+        row.seller,
+        "user",
+    )
+
+    if seller_user != user:
         return fail("You don't have permission to change this ad.", code="FORBIDDEN")
 
     current_status = _clean_str(row.status)
+
     new_status, msg = _get_transition(action, current_status)
+
     if msg:
         return fail(msg, code="VALIDATION_ERROR")
 
     try:
         doc = frappe.get_doc("AOS Ad", ad_id)
 
-        # Apply transition
         doc.status = new_status
 
         if action == "renew" and new_status == "Active":
-            # Extend expiry window from today using configured AOS Settings.ad_expiry_days.
             settings = get_aos_settings_snapshot()
+
             doc.expires_on = add_days(today(), settings.ad_expiry_days)
 
         doc.save(ignore_permissions=True)
+
         frappe.db.commit()
 
         return ok(
@@ -139,8 +151,10 @@ def set_ad_status_impl(**kwargs):
 
     except frappe.DoesNotExistError:
         return fail("Ad not found.", code="NOT_FOUND")
+
     except frappe.ValidationError as ex:
         return fail(str(ex), code="VALIDATION_ERROR")
+
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Set Ad Status Failed")
         return fail("Failed to update ad status.", code="INTERNAL_ERROR")

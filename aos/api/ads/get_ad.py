@@ -31,19 +31,23 @@ def get_ad_impl(**kwargs):
         limit=GET_AD_LIMIT_PER_HOUR_PER_IP,
         message="Too many requests. Please try again later.",
     )
+
     if rl:
         return rl
 
     ad_id = str(kwargs.get("ad_id") or "").strip()
+
     if not ad_id:
         return fail("Ad id is required.", code="VALIDATION_ERROR")
 
     # Market Context
     country, error = resolve_market_country(kwargs.get("country"))
+
     if error:
         return error
 
     display_currency, error = resolve_market_currency(kwargs.get("currency"))
+
     if error:
         return error
 
@@ -86,7 +90,7 @@ def get_ad_impl(**kwargs):
             {original_price_sql} as original_price_converted,
             {current_price_sql} as current_price
         FROM `tabAOS Ad` a
-        INNER JOIN `tabAOS Seller` s ON s.name = a.user
+        INNER JOIN `tabAOS Seller` s ON s.name = a.seller
         LEFT JOIN `tabAOS Exchange Rate` er_source
             ON er_source.currency = a.currency
         LEFT JOIN `tabAOS Exchange Rate` er_target
@@ -120,7 +124,7 @@ def get_ad_impl(**kwargs):
         frappe.log_error(frappe.get_traceback(), "AOS Get Ad FX Failed")
         return fail("Failed to fetch ad.", code="INTERNAL_ERROR")
 
-    # Load Child Tables
+    # Images
     doc.images = frappe.get_all(
         "AOS Ad Image",
         filters={
@@ -130,6 +134,7 @@ def get_ad_impl(**kwargs):
         fields=["image", "is_primary", "sort_order"],
     )
 
+    # Details
     doc.details = frappe.get_all(
         "Ad Attribute Value",
         filters={
@@ -146,7 +151,7 @@ def get_ad_impl(**kwargs):
         ],
     )
 
-    # Offer Active Flag
+    # Offer active flag
     doc.is_offer_active = bool(
         row.get("offer_price")
         and (

@@ -11,7 +11,7 @@
   "naming_series",
   "title",
   "category",
-  "user",
+  "seller",
   "column_break_rokk",
   "country",
   "location",
@@ -34,12 +34,14 @@
   "offer_percent",
   "review_tab",
   "average_rating",
-  "reviewed_by",
+  "total_reports",
   "status",
-  "decline_reason",
+  "reviewed_by",
+  "reviewed_on",
   "column_break_uadk",
   "total_reviews",
-  "expires_on"
+  "expires_on",
+  "decline_reason"
  ],
  "fields": [
   {
@@ -143,7 +145,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Reviewing\nActive\nDeclined\nSold\nExpired\nDeleted",
+   "options": "Reviewing\nActive\nDeclined\nSold\nExpired\nDeleted\nSuspended",
    "search_index": 1
   },
   {
@@ -245,19 +247,32 @@
    "read_only": 1
   },
   {
-   "fieldname": "user",
+   "fieldname": "reviewed_on",
+   "fieldtype": "Datetime",
+   "label": "Reviewed On"
+  },
+  {
+   "fieldname": "seller",
    "fieldtype": "Link",
-   "label": "User",
-   "options": "User",
+   "label": "Seller",
+   "options": "AOS Seller",
    "read_only": 1,
    "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "total_reports",
+   "fieldtype": "Int",
+   "label": "Total Reports",
+   "read_only": 1,
    "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-28 13:25:57.244617",
+ "modified": "2026-03-04 13:54:12.715041",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad",

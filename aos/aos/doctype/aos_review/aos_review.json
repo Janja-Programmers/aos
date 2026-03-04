@@ -7,16 +7,19 @@
  "field_order": [
   "naming_series",
   "ad",
+  "title",
+  "reviewer",
+  "column_break_faua",
   "rating",
   "like_count",
   "dislike_count",
-  "column_break_faua",
-  "reviewer",
-  "title",
-  "status",
   "section_break_qehr",
   "comment",
-  "review_images"
+  "review_images",
+  "review_tab",
+  "reviewed_by",
+  "reviewed_on",
+  "status"
  ],
  "fields": [
   {
@@ -61,6 +64,7 @@
    "label": "Reviewer",
    "options": "User",
    "read_only": 1,
+   "reqd": 1,
    "search_index": 1
   },
   {
@@ -93,7 +97,6 @@
    "in_list_view": 1,
    "label": "Status",
    "options": "Pending\nApproved\nRejected",
-   "reqd": 1,
    "search_index": 1
   },
   {
@@ -101,11 +104,27 @@
    "fieldtype": "Small Text",
    "label": "Comment",
    "reqd": 1
+  },
+  {
+   "fieldname": "review_tab",
+   "fieldtype": "Tab Break",
+   "label": "Review"
+  },
+  {
+   "fieldname": "reviewed_by",
+   "fieldtype": "Link",
+   "label": "Reviewed By",
+   "options": "User"
+  },
+  {
+   "fieldname": "reviewed_on",
+   "fieldtype": "Datetime",
+   "label": "Reviewed On"
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-02-18 20:24:22.416611",
+ "modified": "2026-03-04 13:40:54.190030",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Review",

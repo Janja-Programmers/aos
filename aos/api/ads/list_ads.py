@@ -78,7 +78,6 @@ def list_ads_impl(**kwargs):
     user = current_user()
     today = getdate(nowdate())
 
-
     # Inputs
     location = str(kwargs.get("location") or "").strip()
     category = str(kwargs.get("category") or "").strip()
@@ -141,7 +140,7 @@ def list_ads_impl(**kwargs):
 
     # Seller
     if seller:
-        conditions.append("a.user = %(seller)s")
+        conditions.append("a.seller = %(seller)s")
         values["seller"] = seller
 
     # Location
@@ -259,6 +258,7 @@ def list_ads_impl(**kwargs):
             a.country,
             a.location,
             a.category,
+            a.seller,
             a.currency,
             %(display_currency)s as display_currency,
             a.price_type,
@@ -274,7 +274,7 @@ def list_ads_impl(**kwargs):
             {original_price_sql} as original_price_converted,
             {current_price_sql} as current_price
         FROM `tabAOS Ad` a
-        INNER JOIN `tabAOS Seller` s ON s.name = a.user
+        INNER JOIN `tabAOS Seller` s ON s.name = a.seller
         LEFT JOIN `tabAOS Exchange Rate` er_source
             ON er_source.currency = a.currency
         LEFT JOIN `tabAOS Exchange Rate` er_target
@@ -289,31 +289,46 @@ def list_ads_impl(**kwargs):
 
     try:
         rows = frappe.db.sql(sql, values, as_dict=True)
+
         wishlisted_ids = set()
         if rows:
             wishlisted_ids = get_active_wishlist_ad_ids(user)
 
         # Fetch images
         ad_names = [row["name"] for row in rows]
+
         images_by_ad: Dict[str, List[Dict[str, Any]]] = {name: [] for name in ad_names}
+
         if ad_names:
             image_rows = frappe.get_all(
                 "AOS Ad Image",
                 filters={"parenttype": "AOS Ad", "parent": ["in", ad_names]},
                 fields=["parent", "image", "is_primary", "sort_order"],
             )
+
             for image in image_rows:
                 images_by_ad.setdefault(image["parent"], []).append(image)
 
         items = []
+
         for row in rows:
+
             ad_doc = frappe._dict(row)
+
             ad_doc.images = images_by_ad.get(row["name"], [])
+
             ad_doc.is_offer_active = bool(
                 row.get("offer_price")
-                and (row.get("offer_start_date") is None or row.get("offer_start_date") <= today)
-                and (row.get("offer_end_date") is None or row.get("offer_end_date") >= today)
+                and (
+                    row.get("offer_start_date") is None
+                    or row.get("offer_start_date") <= today
+                )
+                and (
+                    row.get("offer_end_date") is None
+                    or row.get("offer_end_date") >= today
+                )
             )
+
             items.append(
                 serialize_ad_list_item(
                     ad_doc,

@@ -4,11 +4,13 @@ from typing import Any, Dict, List, Set
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import nowdate, getdate
+from frappe.utils import getdate
 
-from aos.services.seller_service import get_or_create_seller
-from aos.api.catalog.schema import _get_category_chain, _resolve_attributes, _resolve_pricing
-
+from aos.api.catalog.schema import (
+    _get_category_chain,
+    _resolve_attributes,
+    _resolve_pricing,
+)
 
 _PRICE_TYPES_REQUIRING_AMOUNT = {"Fixed", "Negotiable"}
 _PRICE_TYPES_NO_AMOUNT = {"Contact for price", "Free"}
@@ -20,7 +22,7 @@ _ALLOWED_VIDEO_EXTS = (".mp4", ".mov", ".m4v", ".webm")
 
 
 def _norm(val: Any) -> str:
-    return (str(val or "").strip())
+    return str(val or "").strip()
 
 
 def _to_float(val: Any) -> float | None:
@@ -50,7 +52,6 @@ def _has_value(val: Any) -> bool:
 
 
 def _split_multiselect(val: Any) -> List[str]:
-    """Accept JSON list-ish, newline, or comma-separated multiselect values."""
     if val in (None, ""):
         return []
 
@@ -76,11 +77,6 @@ def _split_multiselect(val: Any) -> List[str]:
 
 
 def _get_detail_value_for_type(row: Any, field_type: str):
-    """Pick the correct value_* field from Ad Attribute Value row.
-
-    Child table fields:
-    - value_text, value_number, value_date, value_bool, value_json
-    """
     ft = (field_type or "Text").strip()
 
     if ft in ("Text", "Textarea", "Select"):
@@ -114,32 +110,33 @@ class AOSAd(Document):
         self._validate_pricing()
         self._validate_offer()
 
-    def before_insert(self):
-        # Ensure seller exists
-        seller = get_or_create_seller(self.user)
-
-        # Enforce seller status
-        if seller.status != "Active":
-            frappe.throw("Your seller account is currently suspended.")
-    
     def after_insert(self):
-        frappe.db.sql("""
+        if not self.seller:
+            return
+
+        frappe.db.sql(
+            """
             UPDATE `tabAOS Seller`
             SET total_ads = total_ads + 1
             WHERE name = %s
-        """, (self.user,))
-    
+        """,
+            (self.seller,),
+        )
+
     def on_trash(self):
-        frappe.db.sql("""
+        if not self.seller:
+            return
+
+        frappe.db.sql(
+            """
             UPDATE `tabAOS Seller`
             SET total_ads = GREATEST(total_ads - 1, 0)
             WHERE name = %s
-        """, (self.user,))
-    
+        """,
+            (self.seller,),
+        )
+
     def _validate_currency_immutable(self):
-        """
-        Currency must never change after creation.
-        """
 
         if self.is_new():
             return
@@ -147,19 +144,28 @@ class AOSAd(Document):
         old_currency = frappe.db.get_value(
             "AOS Ad",
             self.name,
-            "currency"
+            "currency",
         )
 
         if old_currency and old_currency != self.currency:
             frappe.throw("Currency cannot be changed after ad creation.")
-    
-    def _validate_market_integrity(self) -> None:
-        if not getattr(self, "user", None):
-            frappe.throw("Ad must be linked to a user.")
+
+    def _validate_market_integrity(self):
+        if not getattr(self, "seller", None):
+            frappe.throw("Ad must be linked to a seller.")
+
+        user = frappe.db.get_value(
+            "AOS Seller",
+            self.seller,
+            "user",
+        )
+
+        if not user:
+            frappe.throw("Invalid seller account.")
 
         pref = frappe.db.get_value(
             "AOS User Preference",
-            {"user": self.user},
+            {"user": user},
             ["country"],
             as_dict=True,
         )
@@ -173,7 +179,7 @@ class AOSAd(Document):
         if pref_country and ad_country and pref_country != ad_country:
             frappe.throw("Ad country must match your market preference.")
 
-    def _validate_offer(self) -> None:
+    def _validate_offer(self):
         offer_price = _to_float(getattr(self, "offer_price", None))
         price_val = _to_float(getattr(self, "price", None))
         price_type = _norm(getattr(self, "price_type", None))
@@ -215,12 +221,9 @@ class AOSAd(Document):
             frappe.throw("Offer Start Date cannot be after Offer End Date.")
 
         # Calculate percent
-        self.offer_percent = round(
-            ((price_val - offer_price) / price_val) * 100,
-            2,
-        )
+        self.offer_percent = round(((price_val - offer_price) / price_val) * 100, 2)
 
-    def _validate_location(self) -> None:
+    def _validate_location(self):
         if not getattr(self, "location", None):
             return
 
@@ -233,21 +236,23 @@ class AOSAd(Document):
             ["name", "country", "is_active", "location_name"],
             as_dict=True,
         )
+
         if not loc:
             frappe.throw("Invalid location. Please select a valid location.")
 
         if int(loc.get("is_active") or 0) != 1:
-            frappe.throw("This location is not available. Please select another one.")
+            frappe.throw("This location is not available.")
 
         loc_country = _norm(loc.get("country"))
+
         if not country and loc_country:
             self.country = loc_country
             country = loc_country
 
         if country and loc_country and country != loc_country:
             frappe.throw("Location does not belong to the selected country.")
-    
-    def _validate_media(self) -> None:
+
+    def _validate_media(self):
         images = list(getattr(self, "images", []) or [])
 
         if len(images) < 1:
@@ -260,12 +265,15 @@ class AOSAd(Document):
         seen_urls: Set[str] = set()
 
         for idx, row in enumerate(images, start=1):
+
             img_url = _norm(getattr(row, "image", None))
+
             if not img_url:
                 frappe.throw(f"Image is required on row {idx}.")
 
             if img_url in seen_urls:
                 frappe.throw("You have selected the same image more than once.")
+
             seen_urls.add(img_url)
 
             if int(getattr(row, "is_primary", 0) or 0) == 1:
@@ -275,6 +283,7 @@ class AOSAd(Document):
             frappe.throw("Please set exactly 1 primary image.")
 
         video_url = _norm(getattr(self, "video", None))
+
         if not video_url:
             return
 
@@ -286,49 +295,53 @@ class AOSAd(Document):
         )
 
         if not file_doc:
-            frappe.throw("Invalid video attachment. Please upload the video again.")
+            frappe.throw("Invalid video attachment.")
 
         size_bytes = int(file_doc.file_size or 0)
         max_bytes = _MAX_VIDEO_MB * 1024 * 1024
 
         if size_bytes > max_bytes:
-            frappe.throw(f"Video is too large. Maximum allowed is {_MAX_VIDEO_MB}MB.")
+            frappe.throw(f"Video exceeds {_MAX_VIDEO_MB}MB limit.")
 
         fname = (file_doc.file_name or "").lower()
-        if fname and not fname.endswith(_ALLOWED_VIDEO_EXTS):
-            frappe.throw("Unsupported video format. Please upload MP4/MOV/WebM.")
 
-    def _validate_details(self) -> None:
+        if fname and not fname.endswith(_ALLOWED_VIDEO_EXTS):
+            frappe.throw("Unsupported video format.")
+
+    def _validate_details(self):
         if not getattr(self, "category", None):
             return
 
         chain = _get_category_chain(self.category)
         allowed_attrs = _resolve_attributes(chain)
 
-        allowed_by_id: Dict[str, Dict[str, Any]] = {a["id"]: a for a in allowed_attrs}
-        required_ids: Set[str] = {
+        allowed_by_id = {a["id"]: a for a in allowed_attrs}
+
+        required_ids = {
             a["id"] for a in allowed_attrs if int(a.get("required") or 0) == 1
         }
 
         rows = list(getattr(self, "details", []) or [])
 
         if required_ids and not rows:
-            frappe.throw("Please fill all required details for the selected category.")
+            frappe.throw("Please fill required details.")
 
-        seen_attr_ids: Set[str] = set()
-        provided_required_ids: Set[str] = set()
+        seen_attr_ids = set()
+        provided_required_ids = set()
 
         for row in rows:
             attr_id = _norm(getattr(row, "attribute", None))
+
             if not attr_id:
-                frappe.throw("Each detail row must have an Attribute selected.")
+                frappe.throw("Each detail row must have an Attribute.")
 
             if attr_id in seen_attr_ids:
-                frappe.throw(f"Duplicate attribute '{attr_id}' in details.")
+                frappe.throw(f"Duplicate attribute '{attr_id}'.")
+
             seen_attr_ids.add(attr_id)
 
             if attr_id not in allowed_by_id:
-                frappe.throw(f"Attribute '{attr_id}' is not allowed for this category.")
+                frappe.throw(f"Attribute '{attr_id}' not allowed.")
 
             schema = allowed_by_id[attr_id]
             label = schema.get("label") or attr_id
@@ -338,7 +351,7 @@ class AOSAd(Document):
             value = _get_detail_value_for_type(row, field_type)
 
             if attr_id in required_ids and not _has_value(value):
-                frappe.throw(f"'{label}' is required.")
+                frappe.throw(f"{label} is required.")
 
             if not _has_value(value):
                 continue
@@ -346,42 +359,38 @@ class AOSAd(Document):
             if field_type == "Select":
                 v = _norm(value)
                 if options and v not in options:
-                    frappe.throw(
-                        f"Invalid value '{v}' for '{label}'. Allowed: {', '.join(options)}"
-                    )
+                    frappe.throw(f"Invalid value '{v}' for {label}")
 
             elif field_type == "Number":
                 if _to_float(value) is None:
-                    frappe.throw(f"'{label}' must be a number.")
+                    frappe.throw(f"{label} must be numeric.")
 
             elif field_type == "Boolean":
                 if int(value or 0) not in (0, 1):
-                    frappe.throw(f"'{label}' must be Yes/No.")
+                    frappe.throw(f"{label} must be Yes/No.")
 
             elif field_type == "Date":
                 try:
-                    frappe.utils.getdate(value)
+                    getdate(value)
                 except Exception:
-                    frappe.throw(f"'{label}' must be a valid date.")
+                    frappe.throw(f"{label} must be a valid date.")
 
             elif field_type == "Year":
-                yr = _to_int(value)
-                if yr is None:
-                    # may come as float in value_number
-                    yr = _to_int(_to_float(value))
+                yr = _to_int(value) or _to_int(_to_float(value))
                 if yr is None or yr < 1900 or yr > 2100:
-                    frappe.throw(f"'{label}' must be a valid year.")
+                    frappe.throw(f"{label} must be a valid year.")
 
             elif field_type == "MultiSelect":
                 vals = _split_multiselect(value)
+
                 if not vals:
-                    frappe.throw(f"'{label}' must have at least one value.")
+                    frappe.throw(f"{label} must have values.")
+
                 if options:
                     invalid = [v for v in vals if v not in options]
                     if invalid:
                         frappe.throw(
-                            f"Invalid value(s) {', '.join(invalid)} for '{label}'. "
-                            f"Allowed: {', '.join(options)}"
+                            f"Invalid values {', '.join(invalid)} for {label}"
                         )
 
             if attr_id in required_ids:
@@ -392,10 +401,11 @@ class AOSAd(Document):
             for aid in required_ids
             if aid not in provided_required_ids
         ]
+
         if missing_required:
             frappe.throw(f"Missing required details: {', '.join(missing_required)}")
 
-    def _validate_pricing(self) -> None:
+    def _validate_pricing(self):
         if not getattr(self, "category", None):
             return
 
@@ -403,8 +413,8 @@ class AOSAd(Document):
         pricing = _resolve_pricing(chain)
 
         requirement = _norm(pricing.get("pricing_requirement") or "Optional")
-        allowed_types: List[str] = list(pricing.get("allowed_price_types") or [])
-        allowed_units: List[str] = list(pricing.get("allowed_price_units") or [])
+        allowed_types = list(pricing.get("allowed_price_types") or [])
+        allowed_units = list(pricing.get("allowed_price_units") or [])
         is_service = int(pricing.get("is_service") or 0)
 
         price_type = _norm(getattr(self, "price_type", None))
@@ -412,45 +422,42 @@ class AOSAd(Document):
         price_val = _to_float(getattr(self, "price", None))
 
         if requirement.lower() == "hidden":
-            if price_type or price_unit or (price_val not in (None, 0.0)):
-                frappe.throw("Pricing is not allowed for this category.")
+            if price_type or price_unit or price_val:
+                frappe.throw("Pricing not allowed for this category.")
             return
 
         if requirement.lower() == "optional" and not price_type:
-            if price_unit or (price_val not in (None, 0.0)):
-                frappe.throw("Please select a Price Type or clear the price fields.")
+            if price_unit or price_val:
+                frappe.throw("Select a Price Type or clear price fields.")
             return
 
         if requirement.lower() == "required" and not price_type:
-            frappe.throw("Price Type is required for this category.")
+            frappe.throw("Price Type is required.")
 
         if price_type and allowed_types and price_type not in allowed_types:
-            frappe.throw(
-                f"Invalid Price Type '{price_type}' for this category. "
-                f"Allowed: {', '.join(allowed_types)}"
-            )
+            frappe.throw(f"Invalid Price Type '{price_type}'.")
 
         if price_type in _PRICE_TYPES_REQUIRING_AMOUNT:
             if price_val is None or price_val <= 0:
-                frappe.throw("Price must be greater than 0 for Fixed/Negotiable.")
+                frappe.throw("Price must be greater than 0.")
 
             if is_service:
                 if not price_unit:
-                    frappe.throw("Price Unit is required for services.")
+                    frappe.throw("Price Unit required for services.")
+
                 if allowed_units and price_unit not in allowed_units:
-                    frappe.throw(
-                        f"Invalid Price Unit '{price_unit}' for this category. "
-                        f"Allowed: {', '.join(allowed_units)}"
-                    )
+                    frappe.throw(f"Invalid Price Unit '{price_unit}'.")
+
             else:
                 if price_unit:
-                    frappe.throw("Price Unit is only applicable for services.")
+                    frappe.throw("Price Unit only allowed for services.")
 
         elif price_type in _PRICE_TYPES_NO_AMOUNT:
             if price_val not in (None, 0.0):
-                frappe.throw("Do not provide a numeric price for this Price Type.")
+                frappe.throw("Do not provide numeric price.")
+
             if price_unit:
-                frappe.throw("Price Unit is not applicable for this Price Type.")
+                frappe.throw("Price Unit not applicable.")
 
         else:
             if price_type:
