@@ -244,12 +244,6 @@ scheduler_events = {
 
 fixtures = [
     {
-        "dt": "AOS Location",
-        "filters": [
-            ["is_active", "=", 1]
-        ]
-    },
-    {
         "dt": "AOS Category",
         "filters": [
             ["is_active", "=", 1]
