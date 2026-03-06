@@ -22,81 +22,60 @@ from .password_reset import (
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def register(**kwargs):
-    return register_impl(
-        email=kwargs.get("email"),
-        password=kwargs.get("password"),
-        full_name=kwargs.get("full_name"),
-        country=kwargs.get("country"),
-        language=kwargs.get("language"),
-        currency=kwargs.get("currency"),
-    )
+    return register_impl(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def verify_email_otp(email: str, otp: str):
-    return verify_email_otp_impl(email=email, otp=otp)
+def verify_email_otp(**kwargs):
+    return verify_email_otp_impl(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def resend_email_otp(email: str):
-    return resend_email_otp_impl(email=email)
+def resend_email_otp(**kwargs):
+    return resend_email_otp_impl(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def login(email: str, password: str):
-    return login_impl(email=email, password=password)
+def login(**kwargs):
+    return login_impl(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def google_login(id_token: str):
-    return google_login_impl(id_token=id_token)
+def google_login(**kwargs):
+    return google_login_impl(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def apple_login(id_token: str):
-    return apple_login_impl(id_token=id_token)
+def apple_login(**kwargs):
+    return apple_login_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["GET"])
-def me():
-    return me_impl()
+def me(**kwargs):
+    return me_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
-def logout():
-    return logout_impl()
+def logout(**kwargs):
+    return logout_impl(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def forgot_password_request(email: str):
-    return forgot_password_request_impl(email=email)
+def forgot_password_request(**kwargs):
+    return forgot_password_request_impl(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def forgot_password_verify_otp(email: str, otp: str):
-    return forgot_password_verify_otp_impl(email=email, otp=otp)
+def forgot_password_verify_otp(**kwargs):
+    return forgot_password_verify_otp_impl(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def forgot_password_reset(
-    email: str,
-    reset_token: str,
-    new_password: str,
-    confirm_password: str,
-):
-    return forgot_password_reset_impl(
-        email=email,
-        reset_token=reset_token,
-        new_password=new_password,
-        confirm_password=confirm_password,
-    )
+def forgot_password_reset(**kwargs):
+    return forgot_password_reset_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
-def change_password(current_password: str, new_password: str, confirm_password: str):
-    return change_password_impl(
-        current_password=current_password,
-        new_password=new_password,
-        confirm_password=confirm_password,
-    )
+def change_password(**kwargs):
+    return change_password_impl(**kwargs)
 

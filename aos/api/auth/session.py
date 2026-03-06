@@ -3,19 +3,21 @@ from frappe.exceptions import AuthenticationError
 
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
+
 from .constants import LOGIN_LIMIT_PER_HOUR_PER_EMAIL, LOGIN_LIMIT_PER_HOUR_PER_IP
 from .users import get_user_payload
 from .validators import normalize_email, validate_email
 
 
-def login_impl(email: str, password: str):
+def login_impl(**kwargs):
     """Mobile-friendly login.
 
     Returns sid so Flutter can store it and send it as:
     Cookie: sid=<sid>
     """
-    email = normalize_email(email)
-    password = password or ""
+
+    email = normalize_email(kwargs.get("email") or "")
+    password = kwargs.get("password") or ""
 
     # rate limit by IP
     rl = rate_limit(
@@ -47,7 +49,7 @@ def login_impl(email: str, password: str):
 
     user_name = frappe.db.get_value("User", {"email": email}, "name")
     if not user_name:
-        # don't leak account existence
+        # Do not leak account existence
         return fail("Invalid email or password.", code="INVALID_CREDENTIALS")
 
     enabled = frappe.db.get_value("User", user_name, "enabled")
@@ -79,17 +81,20 @@ def login_impl(email: str, password: str):
         return fail("Login failed. Please try again.", code="LOGIN_FAILED")
 
 
-def me_impl():
+def me_impl(**_):
     """Session validation + bootstrap user payload.
 
-    Requires Cookie: sid=<sid> header (or an active session).
+    Requires Cookie: sid=<sid> header (or active session).
     """
+
     user_name = getattr(frappe.session, "user", None) or "Guest"
+
     if user_name == "Guest":
         return fail("Session invalid. Please login again.", code="SESSION_INVALID")
 
     try:
         enabled = frappe.db.get_value("User", user_name, "enabled")
+
         if int(enabled or 0) != 1:
             return fail("Account disabled.", code="ACCOUNT_DISABLED")
 
@@ -100,23 +105,27 @@ def me_impl():
                 "user": get_user_payload(user_name),
             },
         )
+
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Me Failed")
         return fail("Session invalid. Please login again.", code="SESSION_INVALID")
 
 
-def logout_impl():
+def logout_impl(**_):
     """Logout current session.
 
     Flutter should also clear stored sid locally.
     """
+
     user_name = getattr(frappe.session, "user", None) or "Guest"
+
     if user_name == "Guest":
         return ok("Already logged out.")
 
     try:
         frappe.local.login_manager.logout()
         return ok("Logged out successfully.")
+
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Logout Failed")
         return fail("Logout failed. Please try again.", code="LOGOUT_FAILED")

@@ -17,7 +17,7 @@ from .apple_jwt import verify_apple_id_token
 def _get_apple_bundle_id():
     """
     Read Apple Bundle ID from AOS Settings.
-    Used as JWT audience validation.
+    Used for JWT audience validation.
     """
     try:
         settings = frappe.get_single("AOS Settings")
@@ -27,7 +27,7 @@ def _get_apple_bundle_id():
     return (getattr(settings, "apple_bundle_id", "") or "").strip()
 
 
-def apple_login_impl(id_token: str, **kwargs):
+def apple_login_impl(**kwargs):
     """
     Login/Register using Apple Sign-In.
 
@@ -36,6 +36,11 @@ def apple_login_impl(id_token: str, **kwargs):
     - Ensures AOS User Preference exists
     - Creates session
     """
+
+    id_token = (kwargs.get("id_token") or "").strip()
+
+    if not id_token:
+        return fail("Apple ID token is required.", code="VALIDATION_ERROR")
 
     # Rate limit by IP
     rl = rate_limit(
@@ -62,6 +67,7 @@ def apple_login_impl(id_token: str, **kwargs):
             id_token=id_token,
             audience=bundle_id,
         )
+
     except ValueError as e:
         code = str(e) or "TOKEN_INVALID"
 
@@ -83,31 +89,33 @@ def apple_login_impl(id_token: str, **kwargs):
     if not email:
         return fail("Email not provided by Apple.", code="EMAIL_MISSING", http_status=401)
 
+    if not apple_sub:
+        return fail("Apple subject missing.", code="TOKEN_INVALID", http_status=401)
+
     # Find or create user
     user_name = frappe.db.get_value("User", {"email": email}, "name")
 
     if user_name:
         enabled = frappe.db.get_value("User", user_name, "enabled")
+
         if int(enabled or 0) != 1:
             frappe.db.set_value("User", user_name, "enabled", 1)
 
     else:
         try:
-            user = frappe.get_doc(
-                {
-                    "doctype": "User",
-                    "email": email,
-                    "first_name": email.split("@")[0],
-                    "enabled": 1,
-                    "user_type": "Website User",
-                    "send_welcome_email": 0,
-                }
-            )
+            user = frappe.new_doc("User")
+            user.email = email
+            user.first_name = email.split("@")[0]
+            user.enabled = 1
+            user.user_type = "Website User"
+            user.send_welcome_email = 0
             user.insert(ignore_permissions=True)
+
             user_name = user.name
 
         except Exception:
             frappe.log_error(frappe.get_traceback(), "AOS Apple User Create Failed")
+
             return fail(
                 "Could not create account.",
                 code="USER_CREATE_FAILED",
@@ -149,18 +157,16 @@ def apple_login_impl(id_token: str, **kwargs):
             language_name = snap.default_language
 
         try:
-            frappe.get_doc(
-                {
-                    "doctype": "AOS User Preference",
-                    "user": user_name,
-                    "country": country_name,
-                    "currency": currency_code,
-                    "language": language_name,
-                }
-            ).insert(ignore_permissions=True)
+            pref = frappe.new_doc("AOS User Preference")
+            pref.user = user_name
+            pref.country = country_name
+            pref.currency = currency_code
+            pref.language = language_name
+            pref.insert(ignore_permissions=True)
 
         except Exception:
             frappe.log_error(frappe.get_traceback(), "AOS Apple Pref Create Failed")
+
             return fail(
                 "Failed to initialize user preference.",
                 code="PREFERENCE_CREATE_FAILED",
@@ -187,4 +193,9 @@ def apple_login_impl(id_token: str, **kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Apple Login Failed")
-        return fail("Login failed.", code="LOGIN_FAILED", http_status=401)
+
+        return fail(
+            "Login failed.",
+            code="LOGIN_FAILED",
+            http_status=401,
+        )

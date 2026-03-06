@@ -8,6 +8,7 @@ from aos.api.shared.market_context import (
 )
 from aos.api.shared.validators import resolve_language
 from aos.utils.aos_settings import get_aos_settings_snapshot
+
 from .constants import GOOGLE_LOGIN_LIMIT_PER_HOUR_PER_IP
 from .users import get_user_payload
 from .google_jwt import verify_google_id_token
@@ -25,6 +26,7 @@ def _get_google_client_ids():
 
     raw = getattr(settings, "google_oauth_client_ids", "") or ""
     text = raw.strip()
+
     client_ids = []
     for line in text.replace(",", "\n").splitlines():
         v = (line or "").strip()
@@ -34,7 +36,7 @@ def _get_google_client_ids():
     return client_ids
 
 
-def google_login_impl(id_token: str, **kwargs):
+def google_login_impl(**kwargs):
     """
     Login/Register using Google Sign-In (ID Token).
 
@@ -43,6 +45,12 @@ def google_login_impl(id_token: str, **kwargs):
     - Country + Currency fallback to AOS defaults
     - Language fallback to AOS default
     """
+
+    id_token = (kwargs.get("id_token") or "").strip()
+
+    if not id_token:
+        return fail("Google ID token is required.", code="VALIDATION_ERROR")
+
     # Rate limit by IP
     rl = rate_limit(
         key=f"aos:google:ip:{request_ip()}",
@@ -68,6 +76,7 @@ def google_login_impl(id_token: str, **kwargs):
             id_token=id_token,
             allowed_audiences=allowed_audiences,
         )
+
     except ValueError as e:
         code = str(e) or "TOKEN_INVALID"
 
@@ -84,6 +93,7 @@ def google_login_impl(id_token: str, **kwargs):
             return fail("Google audience not configured.", code="CONFIG_ERROR", http_status=500)
 
         return fail("Invalid Google token.", code="TOKEN_INVALID", http_status=401)
+
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Google Token Verify Failed")
         return fail("Could not verify Google token.", code="TOKEN_VERIFY_FAILED", http_status=500)
@@ -91,26 +101,29 @@ def google_login_impl(id_token: str, **kwargs):
     email = (claims.get("email") or "").strip().lower()
     full_name = (claims.get("name") or claims.get("given_name") or "").strip()
 
+    if not email:
+        return fail("Google account email missing.", code="TOKEN_INVALID")
+
     # Find or create user
     user_name = frappe.db.get_value("User", {"email": email}, "name")
+
     if user_name:
         enabled = frappe.db.get_value("User", user_name, "enabled")
         if int(enabled or 0) != 1:
             frappe.db.set_value("User", user_name, "enabled", 1)
+
     else:
         try:
-            user = frappe.get_doc(
-                {
-                    "doctype": "User",
-                    "email": email,
-                    "first_name": full_name or email.split("@")[0],
-                    "enabled": 1,
-                    "user_type": "Website User",
-                    "send_welcome_email": 0,
-                }
-            )
+            user = frappe.new_doc("User")
+            user.email = email
+            user.first_name = full_name or email.split("@")[0]
+            user.enabled = 1
+            user.user_type = "Website User"
+            user.send_welcome_email = 0
             user.insert(ignore_permissions=True)
+
             user_name = user.name
+
         except Exception:
             frappe.log_error(frappe.get_traceback(), "AOS Google User Create Failed")
             return fail("Could not create account.", code="USER_CREATE_FAILED", http_status=500)
@@ -147,15 +160,13 @@ def google_login_impl(id_token: str, **kwargs):
             language_name = snap.default_language
 
         try:
-            frappe.get_doc(
-                {
-                    "doctype": "AOS User Preference",
-                    "user": user_name,
-                    "country": country_name,
-                    "currency": currency_code,
-                    "language": language_name,
-                }
-            ).insert(ignore_permissions=True)
+            pref = frappe.new_doc("AOS User Preference")
+            pref.user = user_name
+            pref.country = country_name
+            pref.currency = currency_code
+            pref.language = language_name
+            pref.insert(ignore_permissions=True)
+
         except Exception:
             frappe.log_error(frappe.get_traceback(), "AOS Google Pref Create Failed")
             return fail(
@@ -168,6 +179,7 @@ def google_login_impl(id_token: str, **kwargs):
     try:
         lm = frappe.local.login_manager
         lm.login_as(user_name)
+
         sid = getattr(frappe.session, "sid", None)
         if not sid:
             return fail("Login failed.", code="LOGIN_FAILED", http_status=401)
@@ -179,6 +191,7 @@ def google_login_impl(id_token: str, **kwargs):
                 "user": get_user_payload(user_name),
             },
         )
+
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Google Login Failed")
         return fail("Login failed.", code="LOGIN_FAILED", http_status=401)

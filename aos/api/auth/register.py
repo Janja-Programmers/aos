@@ -11,20 +11,23 @@ from aos.utils.aos_settings import get_aos_settings_snapshot
 
 from .constants import REGISTER_LIMIT_PER_HOUR_PER_IP
 from .validators import normalize_email, normalize_name, validate_registration_inputs
-from .verification import compute_expiry, generate_otp, ensure_ver_doc, otp_hash, send_otp_email
+from .verification import (
+    compute_expiry,
+    generate_otp,
+    ensure_ver_doc,
+    otp_hash,
+    send_otp_email,
+)
 
 
-def register_impl(
-    email: str,
-    password: str,
-    full_name: str,
-    country: str | None,
-    language: str | None,
-    currency: str | None,
-):
-    email = normalize_email(email)
-    full_name = normalize_name(full_name)
-    password = password or ""
+def register_impl(**kwargs):
+    email = normalize_email(kwargs.get("email") or "")
+    full_name = normalize_name(kwargs.get("full_name") or "")
+    password = kwargs.get("password") or ""
+
+    country = kwargs.get("country")
+    language = kwargs.get("language")
+    currency = kwargs.get("currency")
 
     # Rate limit by IP
     rl = rate_limit(
@@ -36,10 +39,12 @@ def register_impl(
     if rl:
         return rl
 
+    # Validate inputs
     err = validate_registration_inputs(email, password, full_name)
     if err:
         return err
 
+    # Prevent duplicate accounts
     if frappe.db.exists("User", {"email": email}):
         return fail("An account with this email already exists.", code="ALREADY_EXISTS")
 
@@ -67,16 +72,12 @@ def register_impl(
 
     try:
         # Create disabled user
-        user = frappe.get_doc(
-            {
-                "doctype": "User",
-                "email": email,
-                "first_name": full_name,
-                "enabled": 0,
-                "user_type": "Website User",
-                "send_welcome_email": 0,
-            }
-        )
+        user = frappe.new_doc("User")
+        user.email = email
+        user.first_name = full_name
+        user.enabled = 0
+        user.user_type = "Website User"
+        user.send_welcome_email = 0
         user.insert(ignore_permissions=True)
 
         # Set password
@@ -85,15 +86,11 @@ def register_impl(
         user.save(ignore_permissions=True)
 
         # Create User Preference
-        pref = frappe.get_doc(
-            {
-                "doctype": "AOS User Preference",
-                "user": user.name,
-                "country": country_name,
-                "language": language_name,
-                "currency": currency_code,
-            }
-        )
+        pref = frappe.new_doc("AOS User Preference")
+        pref.user = user.name
+        pref.country = country_name
+        pref.language = language_name
+        pref.currency = currency_code
         pref.insert(ignore_permissions=True)
 
         # OTP record
@@ -124,4 +121,7 @@ def register_impl(
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Register Failed")
         frappe.db.rollback()
-        return fail("Registration failed. Please try again.", code="REGISTER_FAILED")
+        return fail(
+            "Registration failed. Please try again.",
+            code="REGISTER_FAILED",
+        )

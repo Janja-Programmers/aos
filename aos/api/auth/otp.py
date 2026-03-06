@@ -1,16 +1,21 @@
 import frappe
 
 from aos.api.shared.responses import ok, fail
-from aos.api.shared.rate_limit import rate_limit 
-from .constants import RESEND_LIMIT_PER_HOUR_PER_EMAIL, VERIFY_LIMIT_PER_HOUR_PER_EMAIL
+from aos.api.shared.rate_limit import rate_limit
+
+from .constants import (
+    RESEND_LIMIT_PER_HOUR_PER_EMAIL,
+    VERIFY_LIMIT_PER_HOUR_PER_EMAIL,
+)
+
 from .validators import normalize_email
 from .verification import get_ver_doc
 from .otp_service import enforce_resend_cooldown, issue_otp, verify_otp
 
 
-def verify_email_otp_impl(email: str, otp: str):
-    email = normalize_email(email)
-    otp = (otp or "").strip()
+def verify_email_otp_impl(**kwargs):
+    email = normalize_email(kwargs.get("email") or "")
+    otp = (kwargs.get("otp") or "").strip()
 
     # rate limit per email
     rl = rate_limit(
@@ -31,22 +36,24 @@ def verify_email_otp_impl(email: str, otp: str):
 
     ver = get_ver_doc(user_name, purpose="email_verification")
     if not ver:
-        return fail("OTP not found. Please request a new OTP.", code="OTP_NOT_FOUND")
+        return fail(
+            "OTP not found. Please request a new OTP.",
+            code="OTP_NOT_FOUND",
+        )
 
     err = verify_otp(ver, otp, consume=True)
     if err:
         return err
 
-    # Enable user
-    user = frappe.get_doc("User", user_name)
-    user.enabled = 1
-    user.save(ignore_permissions=True)
+    # Enable user account
+    frappe.db.set_value("User", user_name, "enabled", 1)
 
     return ok("Email verified. Account activated.")
 
 
-def resend_email_otp_impl(email: str):
-    email = normalize_email(email)
+def resend_email_otp_impl(**kwargs):
+    email = normalize_email(kwargs.get("email") or "")
+
     if not email:
         return fail("Email is required.", code="VALIDATION_ERROR")
 
@@ -65,12 +72,16 @@ def resend_email_otp_impl(email: str):
         return fail("Account not found.", code="NOT_FOUND")
 
     user = frappe.get_doc("User", user_name)
+
     if int(user.enabled or 0) == 1:
         return ok("Account already active.")
 
     ver = get_ver_doc(user_name, purpose="email_verification")
     if not ver:
-        return fail("OTP record not found. Please register again.", code="OTP_RECORD_MISSING")
+        return fail(
+            "OTP record not found. Please register again.",
+            code="OTP_RECORD_MISSING",
+        )
 
     cooldown = enforce_resend_cooldown(ver)
     if cooldown:
