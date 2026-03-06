@@ -14,7 +14,7 @@ import frappe
 from .bundle import get_locale_bundle_impl
 from .locations import get_locations_impl
 
-@frappe.whitelist(allow_guest=True, methods=["GET"])
+@frappe.whitelist(allow_guest=True)
 def get_locale_bundle():
     """Return locale bundle used at app startup.
 
@@ -25,7 +25,7 @@ def get_locale_bundle():
     return get_locale_bundle_impl()
 
 
-@frappe.whitelist(allow_guest=True, methods=["GET"])
+@frappe.whitelist(allow_guest=True)
 def get_locations(**kwargs):
     """List active locations for a country."""
     return get_locations_impl(country=kwargs.get("country"))

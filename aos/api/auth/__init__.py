@@ -50,7 +50,7 @@ def apple_login(**kwargs):
     return apple_login_impl(**kwargs)
 
 
-@frappe.whitelist(methods=["GET"])
+@frappe.whitelist()
 def me(**kwargs):
     return me_impl(**kwargs)
 

@@ -71,7 +71,6 @@ def _get_category_chain(category: str) -> List[Dict[str, Any]]:
                 "category_name": getattr(doc, "category_name", None) or doc.name,
                 "parent": getattr(doc, "parent_aos_category", None),
                 "sort_order": _safe_int(getattr(doc, "sort_order", 0)),
-                "is_active": _safe_int(getattr(doc, "is_active", 0)),
                 "is_service": _safe_int(getattr(doc, "is_service", 0)),
                 "pricing_requirement": (
                     getattr(doc, "pricing_requirement", None) or ""
@@ -168,7 +167,7 @@ def _resolve_attributes(chain_leaf_to_root: List[Dict[str, Any]]) -> List[Dict[s
     )
 
 
-def get_category_schema_impl(category: str):
+def get_category_schema_impl(**kwargs):
     """Return resolved Attributes + Pricing schema for a category."""
 
     rl = rate_limit(
@@ -180,6 +179,8 @@ def get_category_schema_impl(category: str):
 
     if rl:
         return rl
+
+    category = kwargs.get("category")
 
     if not category:
         return fail("Category is required.", code="VALIDATION_ERROR")
@@ -212,5 +213,12 @@ def get_category_schema_impl(category: str):
         return fail("Category not found.", code="NOT_FOUND")
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "AOS Get Category Schema Failed")
-        return fail("Failed to fetch category schema.", code="INTERNAL_ERROR")
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Get Category Schema Failed",
+        )
+
+        return fail(
+            "Failed to fetch category schema.",
+            code="INTERNAL_ERROR",
+        )

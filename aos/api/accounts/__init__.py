@@ -11,7 +11,7 @@ from .get_my_preference import get_my_preference_impl
 from .update_my_preference import update_my_preference_impl
 
 
-@frappe.whitelist(methods=["GET"])
+@frappe.whitelist()
 def get_profile(**kwargs):
     return get_profile_impl(**kwargs)
 
@@ -21,7 +21,7 @@ def update_profile(**kwargs):
     return update_profile_impl(**kwargs)
 
 
-@frappe.whitelist(methods=["GET"])
+@frappe.whitelist()
 def get_my_preference(**kwargs):
     return get_my_preference_impl(**kwargs)
 
