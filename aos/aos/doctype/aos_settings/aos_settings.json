@@ -17,6 +17,8 @@
   "column_break_rtng",
   "fx_api_key",
   "google_auth_tab",
+  "apple_auth_section",
+  "apple_bundle_id",
   "google_auth_section",
   "google_oauth_client_ids",
   "foreign_exchange_tab",
@@ -121,13 +123,23 @@
    "fieldname": "flash_sale_window_days",
    "fieldtype": "Int",
    "label": "Flash Sale Window (Days)"
+  },
+  {
+   "fieldname": "apple_auth_section",
+   "fieldtype": "Section Break",
+   "label": "Apple Auth"
+  },
+  {
+   "fieldname": "apple_bundle_id",
+   "fieldtype": "Data",
+   "label": "Apple Bundle Id"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-02-24 13:39:50.682941",
+ "modified": "2026-03-06 18:23:35.988953",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Settings",

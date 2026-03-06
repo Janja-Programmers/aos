@@ -11,6 +11,7 @@ from .otp import verify_email_otp_impl, resend_email_otp_impl
 from .session import login_impl, me_impl, logout_impl
 from .password_change import change_password_impl
 from .google_login import google_login_impl
+from .apple_login import apple_login_impl
 
 from .password_reset import (
     forgot_password_request_impl,
@@ -51,6 +52,11 @@ def google_login(id_token: str):
     return google_login_impl(id_token=id_token)
 
 
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def apple_login(id_token: str):
+    return apple_login_impl(id_token=id_token)
+
+
 @frappe.whitelist(methods=["GET"])
 def me():
     return me_impl()
@@ -59,6 +65,7 @@ def me():
 @frappe.whitelist(methods=["POST"])
 def logout():
     return logout_impl()
+
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def forgot_password_request(email: str):
