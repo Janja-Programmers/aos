@@ -9,7 +9,9 @@ from aos.api.shared.responses import ok, fail
 from .constants import GET_PREF_LIMIT_PER_MINUTE_PER_USER
 
 
-def get_my_preference_impl():
+def get_my_preference_impl(**_):
+    """Fetch current user's market preferences."""
+
     current_user, err = require_login()
     if err:
         return err
@@ -20,38 +22,54 @@ def get_my_preference_impl():
         limit=GET_PREF_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
     )
+
     if rl:
         return rl
 
-    doc = frappe.db.get_value(
-        "AOS User Preference",
-        {"user": current_user},
-        ["country", "language", "currency"],
-        as_dict=True,
-    )
+    try:
+        doc = frappe.db.get_value(
+            "AOS User Preference",
+            {"user": current_user},
+            ["country", "language", "currency"],
+            as_dict=True,
+        )
 
-    if not doc:
-        return fail("Preference not set.", code="NOT_FOUND")
+        if not doc:
+            return fail("Preference not set.", code="NOT_FOUND")
 
-    # Enrich response
-    country = frappe.get_doc("Country", doc.country)
-    language = frappe.get_doc("Language", doc.language)
-    currency = frappe.get_doc("Currency", doc.currency)
+        # Load linked docs
+        country = frappe.get_doc("Country", doc.country)
+        language = frappe.get_doc("Language", doc.language)
+        currency = frappe.get_doc("Currency", doc.currency)
 
-    return ok(
-        "Preferences loaded.",
-        data={
-            "country": {
-                "name": country.country_name,
-                "code": country.code,
+        return ok(
+            "Preferences loaded.",
+            data={
+                "country": {
+                    "name": country.country_name,
+                    "code": country.code,
+                },
+                "language": {
+                    "name": language.language_name,
+                    "code": language.name,
+                },
+                "currency": {
+                    "name": currency.currency_name,
+                    "symbol": currency.symbol,
+                },
             },
-            "language": {
-                "name": language.language_name,
-                "code": language.name,
-            },
-            "currency": {
-                "name": currency.currency_name,
-                "symbol": currency.symbol,
-            }
-        }
-    )
+        )
+
+    except frappe.DoesNotExistError:
+        return fail("Preference data invalid.", code="DATA_ERROR")
+
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Get Preferences Failed",
+        )
+
+        return fail(
+            "Failed to fetch preferences.",
+            code="INTERNAL_ERROR",
+        )

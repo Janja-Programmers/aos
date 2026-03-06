@@ -16,7 +16,9 @@ from .constants import (
     GET_PROFILE_LIMIT_PER_MINUTE_PER_USER,
     UPDATE_PROFILE_LIMIT_PER_MINUTE_PER_USER,
 )
+
 from .serializers import serialize_user
+
 from .validators import (
     require_login,
     validate_full_name,
@@ -25,7 +27,9 @@ from .validators import (
 )
 
 
-def get_profile_impl():
+def get_profile_impl(**_):
+    """Fetch current user's profile."""
+
     current_user, err = require_login()
     if err:
         return err
@@ -36,20 +40,36 @@ def get_profile_impl():
         limit=GET_PROFILE_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
     )
+
     if rl:
         return rl
 
     try:
         user_doc = frappe.get_doc("User", current_user)
-        return ok("Profile fetched.", data=serialize_user(user_doc))
+
+        return ok(
+            "Profile fetched.",
+            data=serialize_user(user_doc),
+        )
+
     except frappe.DoesNotExistError:
         return fail("User not found.", code="NOT_FOUND")
+
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "AOS Get Profile Failed")
-        return fail("Failed to fetch profile.", code="INTERNAL_ERROR")
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Get Profile Failed",
+        )
+
+        return fail(
+            "Failed to fetch profile.",
+            code="INTERNAL_ERROR",
+        )
 
 
 def update_profile_impl(**kwargs):
+    """Update editable user profile fields."""
+
     current_user, err = require_login()
     if err:
         return err
@@ -60,37 +80,67 @@ def update_profile_impl(**kwargs):
         limit=UPDATE_PROFILE_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
     )
+
     if rl:
         return rl
 
-    incoming = {k: v for k, v in (kwargs or {}).items() if k in EDITABLE_USER_FIELDS}
+    incoming = {
+        k: v for k, v in (kwargs or {}).items() if k in EDITABLE_USER_FIELDS
+    }
+
     if not incoming:
-        return fail("No editable fields provided.", code="VALIDATION_ERROR")
+        return fail(
+            "No editable fields provided.",
+            code="VALIDATION_ERROR",
+        )
 
     try:
         user_doc = frappe.get_doc("User", current_user)
 
+        # Update full name
         if "full_name" in incoming:
             full_name, e = validate_full_name(incoming.get("full_name"))
             if e:
                 return e
+
             user_doc.first_name = full_name
 
+        # Update user image
         if "user_image" in incoming:
-            file_url, e = validate_user_image(incoming.get("user_image"), current_user=current_user)
+            file_url, e = validate_user_image(
+                incoming.get("user_image"),
+                current_user=current_user,
+            )
+
             if e:
                 return e
 
-            attach_file_to_user(file_url, current_user=current_user)
+            attach_file_to_user(
+                file_url,
+                current_user=current_user,
+            )
+
             user_doc.user_image = file_url or ""
 
         user_doc.save(ignore_permissions=True)
+
         frappe.db.commit()
 
-        return ok("Profile updated.", data=serialize_user(user_doc))
+        return ok(
+            "Profile updated.",
+            data=serialize_user(user_doc),
+        )
 
     except frappe.DoesNotExistError:
         return fail("User not found.", code="NOT_FOUND")
+
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "AOS Update Profile Failed")
-        return fail("Failed to update profile.", code="INTERNAL_ERROR")
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Update Profile Failed",
+        )
+
+        return fail(
+            "Failed to update profile.",
+            code="INTERNAL_ERROR",
+        )

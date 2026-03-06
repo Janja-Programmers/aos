@@ -5,6 +5,7 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
+
 from aos.api.shared.validators import (
     resolve_country,
     resolve_language,
@@ -15,6 +16,8 @@ from .constants import UPDATE_PREF_LIMIT_PER_MINUTE_PER_USER
 
 
 def update_my_preference_impl(**kwargs):
+    """Update current user's market preferences."""
+
     current_user, err = require_login()
     if err:
         return err
@@ -49,48 +52,43 @@ def update_my_preference_impl(**kwargs):
         if err:
             return err
 
-        pref_name = frappe.db.get_value(
+        # Fetch preference record
+        pref = frappe.db.get_value(
             "AOS User Preference",
             {"user": current_user},
-            "name"
+            ["name", "country"],
+            as_dict=True,
         )
 
-        old_country = None
-        if pref_name:
-            old_country = frappe.db.get_value(
-                "AOS User Preference",
-                pref_name,
-                "country"
-            )
+        old_country = pref.country if pref else None
 
         # MARKET LOCK LOGIC
         if old_country and old_country != country_id:
             has_ads = frappe.db.exists(
                 "AOS Ad",
-                {"user": current_user}
+                {"user": current_user},
             )
 
             if has_ads:
                 return fail(
                     "You cannot change your market after creating ads.",
-                    code="MARKET_LOCKED"
+                    code="MARKET_LOCKED",
                 )
 
         # Save Preference
-        if pref_name:
-            doc = frappe.get_doc("AOS User Preference", pref_name)
+        if pref:
+            doc = frappe.get_doc("AOS User Preference", pref.name)
             doc.country = country_id
             doc.language = language_id
             doc.currency = currency_id
             doc.save(ignore_permissions=True)
+
         else:
-            doc = frappe.get_doc({
-                "doctype": "AOS User Preference",
-                "user": current_user,
-                "country": country_id,
-                "language": language_id,
-                "currency": currency_id,
-            })
+            doc = frappe.new_doc("AOS User Preference")
+            doc.user = current_user
+            doc.country = country_id
+            doc.language = language_id
+            doc.currency = currency_id
             doc.insert(ignore_permissions=True)
 
         frappe.db.commit()
@@ -101,11 +99,19 @@ def update_my_preference_impl(**kwargs):
                 "country": doc.country,
                 "language": doc.language,
                 "currency": doc.currency,
-            }
+            },
         )
 
     except frappe.ValidationError as ex:
         return fail(str(ex), code="VALIDATION_ERROR")
+
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "AOS Update Preference Failed")
-        return fail("Failed to update preference.", code="INTERNAL_ERROR")
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Update Preference Failed",
+        )
+
+        return fail(
+            "Failed to update preference.",
+            code="INTERNAL_ERROR",
+        )
