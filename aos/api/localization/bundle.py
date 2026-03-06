@@ -3,7 +3,7 @@ from __future__ import annotations
 import frappe
 
 from aos.api.shared.rate_limit import rate_limit, request_ip
-from aos.api.shared.responses import ok
+from aos.api.shared.responses import ok, fail
 
 from .constants import LOCALE_BUNDLE_LIMIT_PER_MIN_PER_IP
 
@@ -15,6 +15,7 @@ def _get_countries():
         order_by="name asc",
         limit_page_length=1000,
     )
+
     return [
         {
             "name": r["name"],
@@ -31,6 +32,7 @@ def _get_languages():
         order_by="name asc",
         limit_page_length=1000,
     )
+
     return [
         {
             "name": r["language_name"],
@@ -47,6 +49,7 @@ def _get_currencies():
         order_by="name asc",
         limit_page_length=1000,
     )
+
     return [
         {
             "code": r["name"],
@@ -56,7 +59,7 @@ def _get_currencies():
     ]
 
 
-def get_locale_bundle_impl():
+def get_locale_bundle_impl(**_):
     """
     Returns available countries, languages and currencies.
 
@@ -70,13 +73,29 @@ def get_locale_bundle_impl():
         limit=LOCALE_BUNDLE_LIMIT_PER_MIN_PER_IP,
         message="Too many requests. Please try again later.",
     )
+
     if rl:
         return rl
 
-    data = {
-        "countries": _get_countries(),
-        "languages": _get_languages(),
-        "currencies": _get_currencies(),
-    }
+    try:
+        data = {
+            "countries": _get_countries(),
+            "languages": _get_languages(),
+            "currencies": _get_currencies(),
+        }
 
-    return ok("Locale bundle loaded.", data)
+        return ok(
+            "Locale bundle loaded.",
+            data=data,
+        )
+
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Get Locale Bundle Failed",
+        )
+
+        return fail(
+            "Failed to load locale bundle.",
+            code="INTERNAL_ERROR",
+        )
