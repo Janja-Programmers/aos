@@ -12,9 +12,9 @@ from .list import list_wishlist_impl
 
 
 @frappe.whitelist(methods=["POST"])
-def toggle_wishlist(ad_id: str):
+def toggle_wishlist(**kwargs):
     """Add or remove an Ad from the current user's wishlist."""
-    return toggle_wishlist_impl(ad_id)
+    return toggle_wishlist_impl(**kwargs)
 
 
 @frappe.whitelist()
