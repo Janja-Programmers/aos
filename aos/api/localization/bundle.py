@@ -52,7 +52,7 @@ def _get_currencies():
 
     return [
         {
-            "code": r["name"],
+            "name": r["name"],
             "symbol": r.get("symbol") or None,
         }
         for r in rows
