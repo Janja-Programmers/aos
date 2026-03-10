@@ -1,10 +1,10 @@
 [project]
 name = "aos"
 authors = [
-    { name = "Africa Online Stores", email = "info@africaonlinestores.com"}
+    { name = "Africa Online Stores", email = "info@africaonlinestores.com" }
 ]
 description = "A multi-vendor marketplace platform enabling users to buy, sell, go live, and communicate via chat and in-app calls across multiple countries."
-requires-python = ">=3.14"
+requires-python = ">=3.10,<3.13"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [
@@ -23,7 +23,7 @@ build-backend = "flit_core.buildapi"
 
 [tool.ruff]
 line-length = 110
-target-version = "py314"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = [
@@ -38,22 +38,22 @@ select = [
 ignore = [
     "B017", # assertRaises(Exception) - should be more specific
     "B018", # useless expression, not assigned to anything
-    "B023", # function doesn't bind loop variable - will have last iteration's value
+    "B023", # function doesn't bind loop variable
     "B904", # raise inside except without from
-    "E101", # indentation contains mixed spaces and tabs
-    "E402", # module level import not at top of file
+    "E101", # mixed tabs and spaces
+    "E402", # module level import not at top
     "E501", # line too long
     "E741", # ambiguous variable name
-    "F401", # "unused" imports
+    "F401", # unused imports
     "F403", # can't detect undefined names from * import
     "F405", # can't detect undefined names from * import
     "F722", # syntax error in forward type annotation
-    "W191", # indentation contains tabs
-    "UP030", # Use implicit references for positional format fields (translations)
-    "UP031", # Use format specifiers instead of percent format
-    "UP032", # Use f-string instead of `format` call (translations)
+    "W191", # tabs
+    "UP030", # implicit positional references
+    "UP031", # percent formatting
+    "UP032", # prefer f-string
     "UP037", # quoted annotations
-    "UP040", # Use type aliases instead of type annotations
+    "UP040", # type aliases instead of annotations
 ]
 typing-modules = ["frappe.types.DF"]
 
