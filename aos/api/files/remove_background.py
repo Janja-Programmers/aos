@@ -47,30 +47,36 @@ def remove_background_impl(**kwargs):
         return fail("You cannot edit this file.", code="PERMISSION_DENIED")
 
     try:
-        # get actual file path
-        file_path = frappe.get_site_path(file_doc.file_url.lstrip("/"))
+        filename = os.path.basename(file_doc.file_url)
+
+        # Resolve real file path
+        if file_doc.is_private:
+            file_path = frappe.get_site_path("private", "files", filename)
+        else:
+            file_path = frappe.get_site_path("public", "files", filename)
 
         if not os.path.exists(file_path):
             return fail("File not found on disk.", code="FILE_MISSING")
 
-        # open image
+        # Open image
         input_image = Image.open(file_path).convert("RGBA")
 
-        # remove background
+        # Remove background
         output_image = remove(input_image)
 
-        # optional: crop transparent borders
+        # Auto crop transparent borders
         bbox = output_image.getbbox()
         if bbox:
             output_image = output_image.crop(bbox)
 
-        # save to memory
+        # Save to memory
         buffer = io.BytesIO()
         output_image.save(buffer, format="PNG")
+        buffer.seek(0)
 
         new_filename = f"{os.path.splitext(file_doc.file_name)[0]}_no_bg.png"
 
-        # create new File document
+        # Create new File document
         new_file = frappe.get_doc(
             {
                 "doctype": "File",
