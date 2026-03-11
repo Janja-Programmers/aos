@@ -66,7 +66,7 @@ def _money_display(currency: str, price: Any, price_type: str) -> str:
     symbol = _norm(symbol)
 
     if symbol:
-        return f"{symbol}{amount:,.2f}"
+        return f"{symbol} {amount:,.2f}"
 
     if currency_code:
         return f"{currency_code} {amount:,.2f}"
