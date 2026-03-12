@@ -39,11 +39,24 @@ def create_review_impl(**kwargs):
     if not ad:
         return fail("Ad is required.", code="VALIDATION_ERROR")
 
-    if not rating:
+    if rating is None:
         return fail("Rating is required.", code="VALIDATION_ERROR")
 
     if not comment:
         return fail("Comment is required.", code="VALIDATION_ERROR")
+
+    # Validate rating range
+    try:
+        rating = float(rating)
+    except Exception:
+        return fail("Invalid rating.", code="VALIDATION_ERROR")
+
+    if rating < 1 or rating > 5:
+        return fail("Rating must be between 1 and 5.", code="VALIDATION_ERROR")
+
+    # Optional image limit
+    if len(images) > 5:
+        return fail("Maximum 5 images allowed.", code="VALIDATION_ERROR")
 
     # Market enforcement
     country, error = resolve_market_country(None)
@@ -53,7 +66,7 @@ def create_review_impl(**kwargs):
     ad_doc = frappe.db.get_value(
         "AOS Ad",
         ad,
-        ["name", "user", "status", "country"],
+        ["name", "seller", "status", "country"],
         as_dict=True,
     )
 
@@ -63,19 +76,31 @@ def create_review_impl(**kwargs):
     if ad_doc.country != country:
         return fail("Ad not found.", code="NOT_FOUND")
 
-    if ad_doc.user == current_user:
+    # Prevent reviewing own ad
+    seller_user = frappe.db.get_value(
+        "AOS Seller",
+        ad_doc.seller,
+        "user"
+    )
+
+    if seller_user == current_user:
         return fail("You cannot review your own ad.", code="VALIDATION_ERROR")
 
     # Prevent duplicate review
     if frappe.db.exists(
         "AOS Review",
-        {"ad": ad, "reviewer": current_user}
+        {
+            "ad": ad,
+            "reviewer": current_user
+        }
     ):
         return fail("You have already reviewed this ad.", code="VALIDATION_ERROR")
 
+    # Create review
     try:
         review = frappe.new_doc("AOS Review")
         review.ad = ad
+        review.reviewer = current_user
         review.rating = rating
         review.comment = comment
         review.title = title
