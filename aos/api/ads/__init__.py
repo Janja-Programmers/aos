@@ -9,6 +9,7 @@ import frappe
 
 from .create import create_ad_impl
 from .get_ad import get_ad_impl
+from .get_my_ad import get_my_ad_impl
 from .list_ads import list_ads_impl
 from .my_ads import my_ads_impl
 from .update import update_ad_impl
@@ -36,7 +37,7 @@ def list_ads(**kwargs):
 
 @frappe.whitelist(allow_guest=True)
 def get_ad(**kwargs):
-    """Fetch a single ad."""
+    """Fetch a single ad for buyers."""
     return get_ad_impl(**kwargs)
 
 
@@ -46,9 +47,15 @@ def my_ads(**kwargs):
     return my_ads_impl(**kwargs)
 
 
+@frappe.whitelist()
+def get_my_ad(**kwargs):
+    """Fetch a single ad owned by the current user (seller editing)."""
+    return get_my_ad_impl(**kwargs)
+
+
 @frappe.whitelist(methods=["POST"])
 def update_ad(**kwargs):
-    """Update/edit an ad (limited fields)."""
+    """Update/edit an ad (status-aware editing rules)."""
     return update_ad_impl(**kwargs)
 
 
