@@ -47,6 +47,7 @@ def _safe_int(value: Any, default: int) -> int:
 def _safe_float(value: Any) -> Optional[float]:
     if value is None:
         return None
+
     try:
         string_value = str(value).strip()
         if string_value == "":
@@ -63,6 +64,7 @@ def list_ads_impl(**kwargs):
         limit=LIST_ADS_LIMIT_PER_MINUTE_PER_IP,
         message="Too many requests. Please try again shortly.",
     )
+
     if rl:
         return rl
 
@@ -83,9 +85,12 @@ def list_ads_impl(**kwargs):
     category = str(kwargs.get("category") or "").strip()
     seller = str(kwargs.get("seller") or "").strip()
     q = str(kwargs.get("q") or "").strip()
+
     sort = str(kwargs.get("sort") or "rating_high").strip() or "rating_high"
+
     price_type = str(kwargs.get("price_type") or "").strip()
     promotion_type = str(kwargs.get("promotion_type") or "").strip()
+
     price_min = _safe_float(kwargs.get("price_min"))
     price_max = _safe_float(kwargs.get("price_max"))
     rating_min = _safe_float(kwargs.get("rating_min"))
@@ -138,19 +143,20 @@ def list_ads_impl(**kwargs):
         "display_currency": display_currency,
     }
 
-    # Seller
+    # Seller filter
     if seller:
         conditions.append("a.seller = %(seller)s")
         values["seller"] = seller
 
-    # Location
+    # Location filter
     if location:
         conditions.append("a.location = %(location)s")
         values["location"] = location
 
-    # Category
+    # Category filter
     if category:
         category_ids = resolve_category_filter_values(category)
+
         if not category_ids:
             return ok(
                 "Ads fetched.",
@@ -163,7 +169,9 @@ def list_ads_impl(**kwargs):
                     },
                 },
             )
+
         conditions.append("a.category in %(categories)s")
+
         values["categories"] = tuple(category_ids)
 
     # Search
@@ -171,7 +179,7 @@ def list_ads_impl(**kwargs):
         conditions.append("a.title like %(q)s")
         values["q"] = f"%{q}%"
 
-    # Price Type
+    # Price type
     if price_type:
         conditions.append("a.price_type = %(price_type)s")
         values["price_type"] = price_type
@@ -181,7 +189,7 @@ def list_ads_impl(**kwargs):
         conditions.append("a.average_rating >= %(rating_min)s")
         values["rating_min"] = rating_min
 
-    # Promotion Logic
+    # Promotions
     settings = get_aos_settings_snapshot()
     flash_window_days = settings.flash_sale_window_days
 
@@ -194,16 +202,14 @@ def list_ads_impl(**kwargs):
 
     conversion_ratio = """
         (
-            IFNULL(er_target.rate_vs_base, 1)
+            IFNULL(er_target.rate_vs_base,1)
             /
-            IFNULL(er_source.rate_vs_base, 1)
+            IFNULL(er_source.rate_vs_base,1)
         )
     """
 
-    # Converted original price
     original_price_sql = f"(a.price * {conversion_ratio})"
 
-    # Converted current price
     current_price_sql = f"""
         CASE
             WHEN {offer_active_sql}
@@ -216,13 +222,16 @@ def list_ads_impl(**kwargs):
         conditions.append(f"({offer_active_sql})")
 
     if promotion_type == "flash_sale":
-        conditions.append("""
+        conditions.append(
+            """
             a.offer_end_date IS NOT NULL
             AND a.offer_end_date BETWEEN %(today)s AND %(flash_end)s
-        """)
+            """
+        )
+
         values["flash_end"] = add_days(today, flash_window_days)
 
-    # Price Range Filtering
+    # Price range filters
     if price_min is not None:
         conditions.append(f"{current_price_sql} >= %(price_min)s")
         values["price_min"] = price_min
@@ -235,7 +244,7 @@ def list_ads_impl(**kwargs):
 
     # Sorting
     if promotion_type == "deal":
-        order_by = "IFNULL(a.offer_percent, 0) desc, a.creation desc"
+        order_by = "IFNULL(a.offer_percent,0) desc, a.creation desc"
 
     elif sort == "rating_high":
         order_by = "a.average_rating desc, a.total_reviews desc, a.creation desc"
@@ -249,7 +258,7 @@ def list_ads_impl(**kwargs):
     elif sort == "price_high":
         order_by = f"{current_price_sql} desc, a.creation desc"
 
-    # Final SQL
+    # SQL Query
     sql = f"""
         SELECT
             a.name,
@@ -290,11 +299,13 @@ def list_ads_impl(**kwargs):
     try:
         rows = frappe.db.sql(sql, values, as_dict=True)
 
+        # Wishlist
         wishlisted_ids = set()
-        if rows:
+
+        if rows and user != "Guest":
             wishlisted_ids = get_active_wishlist_ad_ids(user)
 
-        # Fetch images
+        # Images
         ad_names = [row["name"] for row in rows]
 
         images_by_ad: Dict[str, List[Dict[str, Any]]] = {name: [] for name in ad_names}
@@ -350,5 +361,12 @@ def list_ads_impl(**kwargs):
         )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "AOS List Ads FX Failed")
-        return fail("Failed to fetch ads.", code="INTERNAL_ERROR")
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS List Ads FX Failed",
+        )
+
+        return fail(
+            "Failed to fetch ads.",
+            code="INTERNAL_ERROR",
+        )

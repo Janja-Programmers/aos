@@ -42,12 +42,10 @@ def get_ad_impl(**kwargs):
 
     # Market Context
     country, error = resolve_market_country(kwargs.get("country"))
-
     if error:
         return error
 
     display_currency, error = resolve_market_currency(kwargs.get("currency"))
-
     if error:
         return error
 
@@ -70,10 +68,8 @@ def get_ad_impl(**kwargs):
         )
     """
 
-    # Converted original price
     original_price_sql = f"(a.price * {conversion_ratio})"
 
-    # Converted current price
     current_price_sql = f"""
         CASE
             WHEN {offer_active_sql}
@@ -82,7 +78,7 @@ def get_ad_impl(**kwargs):
         END
     """
 
-    # Final SQL
+    # SQL Query
     sql = f"""
         SELECT
             a.*,
@@ -99,6 +95,7 @@ def get_ad_impl(**kwargs):
           AND a.status = 'Active'
           AND a.country = %(country)s
           AND s.status = 'Active'
+          AND (a.expires_on IS NULL OR a.expires_on >= %(today)s)
         LIMIT 1
     """
 
@@ -118,11 +115,19 @@ def get_ad_impl(**kwargs):
             return fail("Ad not found.", code="NOT_FOUND")
 
         row = rows[0]
+
         doc = frappe._dict(row)
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "AOS Get Ad FX Failed")
-        return fail("Failed to fetch ad.", code="INTERNAL_ERROR")
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Get Ad FX Failed",
+        )
+
+        return fail(
+            "Failed to fetch ad.",
+            code="INTERNAL_ERROR",
+        )
 
     # Images
     doc.images = frappe.get_all(
@@ -152,7 +157,7 @@ def get_ad_impl(**kwargs):
         ],
     )
 
-    # Offer active flag
+    # Offer flag
     doc.is_offer_active = bool(
         row.get("offer_price")
         and (
@@ -166,11 +171,17 @@ def get_ad_impl(**kwargs):
     )
 
     # Wishlist
-    wishlisted_ids = get_active_wishlist_ad_ids(user)
+    wishlisted_ids = set()
+
+    if user != "Guest":
+        wishlisted_ids = get_active_wishlist_ad_ids(user)
 
     item = serialize_ad_detail(
         doc,
         is_wishlisted=ad_id in wishlisted_ids,
     )
 
-    return ok("Ad fetched.", data={"item": item})
+    return ok(
+        "Ad fetched.",
+        data={"item": item},
+    )

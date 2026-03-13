@@ -32,6 +32,8 @@ from .validators import (
     validate_file_reference,
 )
 
+_MAX_IMAGES = 4
+
 
 def _safe_float(val: Any):
     if val in (None, ""):
@@ -131,6 +133,12 @@ def create_ad_impl(**kwargs):
     # Sanitize images
     images_rows = sanitize_images(kwargs.get("images"))
 
+    if len(images_rows) > _MAX_IMAGES:
+        return fail(
+            f"Maximum {_MAX_IMAGES} images allowed.",
+            code="VALIDATION_ERROR",
+        )
+
     # Validate video
     video_url, e = validate_file_reference(
         kwargs.get("video"),
@@ -154,9 +162,18 @@ def create_ad_impl(**kwargs):
 
         row["image"] = img_url
 
+        # Normalize values
+        row["is_primary"] = int(row.get("is_primary") or 0)
+
+        if row.get("sort_order") not in (None, ""):
+            try:
+                row["sort_order"] = int(row["sort_order"])
+            except Exception:
+                row["sort_order"] = None
+
     # Pricing
     price_type = kwargs.get("price_type")
-    price = kwargs.get("price")
+    price = _safe_float(kwargs.get("price"))
     price_unit = kwargs.get("price_unit")
 
     # Offer fields
@@ -220,7 +237,7 @@ def create_ad_impl(**kwargs):
         if price_type:
             ad.price_type = price_type
 
-        if price not in (None, ""):
+        if price is not None:
             ad.price = price
 
         if price_unit:
@@ -252,10 +269,9 @@ def create_ad_impl(**kwargs):
             child = ad.append("images", {})
 
             child.image = row.get("image")
+            child.is_primary = row.get("is_primary")
 
-            child.is_primary = int(row.get("is_primary") or 0)
-
-            if row.get("sort_order") not in (None, ""):
+            if row.get("sort_order") is not None:
                 child.sort_order = row.get("sort_order")
 
         # Insert
@@ -273,8 +289,6 @@ def create_ad_impl(**kwargs):
                 video_url,
                 ad_name=ad.name,
             )
-
-        frappe.db.commit()
 
         return ok(
             "Ad created.",

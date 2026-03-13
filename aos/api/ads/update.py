@@ -20,6 +20,8 @@ from .validators import (
     validate_file_reference,
 )
 
+_MAX_IMAGES = 4
+
 _ACTIVE_EDITABLE_FIELDS = {
     "title",
     "description",
@@ -40,9 +42,7 @@ def _clean_str(val: Any) -> str:
 
 
 def _to_float_or_none(val: Any):
-    if val is None:
-        return None
-    if isinstance(val, str) and not val.strip():
+    if val in (None, ""):
         return None
     try:
         return float(val)
@@ -67,7 +67,10 @@ def _apply_active_safe_updates(doc, updates: Dict[str, Any]):
         doc.title = title
 
     if "description" in updates:
-        doc.description = _clean_str(updates.get("description"))
+        desc = _clean_str(updates.get("description"))
+        if not desc:
+            return fail("Description cannot be empty.", code="VALIDATION_ERROR")
+        doc.description = desc
 
     if "price_type" in updates:
         doc.price_type = _clean_str(updates.get("price_type"))
@@ -121,10 +124,12 @@ def update_ad_impl(**kwargs):
         limit=UPDATE_AD_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
     )
+
     if rl:
         return rl
 
     ad_id = _clean_str(kwargs.get("ad_id") or kwargs.get("id"))
+
     if not ad_id:
         return fail("Ad id is required.", code="VALIDATION_ERROR")
 
@@ -175,9 +180,11 @@ def update_ad_impl(**kwargs):
             doc.status = "Active"
 
             doc.save(ignore_permissions=True)
-            frappe.db.commit()
 
-            return ok("Ad updated.", data={"id": doc.name, "status": doc.status})
+            return ok(
+                "Ad updated.",
+                data={"id": doc.name, "status": doc.status},
+            )
 
         if status in _FULL_EDIT_STATUSES:
             title, location, category, description, e = validate_basic_fields(
@@ -192,6 +199,12 @@ def update_ad_impl(**kwargs):
 
             details_rows = sanitize_details(kwargs.get("details"))
             images_rows = sanitize_images(kwargs.get("images"))
+
+            if len(images_rows) > _MAX_IMAGES:
+                return fail(
+                    f"Maximum {_MAX_IMAGES} images allowed.",
+                    code="VALIDATION_ERROR",
+                )
 
             video_url, e = validate_file_reference(
                 kwargs.get("video"),
@@ -208,11 +221,20 @@ def update_ad_impl(**kwargs):
                     current_user=user,
                     kind="Image",
                 )
+
                 if e:
                     return e
-                row_img["image"] = img_url
 
-            # Core
+                row_img["image"] = img_url
+                row_img["is_primary"] = int(row_img.get("is_primary") or 0)
+
+                if row_img.get("sort_order") not in (None, ""):
+                    try:
+                        row_img["sort_order"] = int(row_img["sort_order"])
+                    except Exception:
+                        row_img["sort_order"] = None
+
+            # Core fields
             doc.title = title
             doc.location = location
             doc.category = category
@@ -220,19 +242,19 @@ def update_ad_impl(**kwargs):
 
             # Pricing
             doc.price_type = kwargs.get("price_type")
-            doc.currency = kwargs.get("currency")
-            doc.price = kwargs.get("price")
+            doc.price = _to_float_or_none(kwargs.get("price"))
             doc.price_unit = kwargs.get("price_unit")
 
-            # Offer
-            doc.offer_price = kwargs.get("offer_price")
-            doc.offer_start_date = kwargs.get("offer_start_date")
-            doc.offer_end_date = kwargs.get("offer_end_date")
+            # Offers
+            doc.offer_price = _to_float_or_none(kwargs.get("offer_price"))
+            doc.offer_start_date = _to_date_or_none(kwargs.get("offer_start_date"))
+            doc.offer_end_date = _to_date_or_none(kwargs.get("offer_end_date"))
 
-            # Media
+            # Video
             if "video" in kwargs:
                 doc.video = video_url or None
 
+            # Replace child tables
             _replace_child_table(doc, "details", details_rows)
             _replace_child_table(doc, "images", images_rows)
 
@@ -241,13 +263,12 @@ def update_ad_impl(**kwargs):
 
             doc.save(ignore_permissions=True)
 
+            # Attach media
             for r in images_rows:
                 attach_file_to_ad(r.get("image") or "", ad_name=doc.name)
 
             if video_url:
                 attach_file_to_ad(video_url, ad_name=doc.name)
-
-            frappe.db.commit()
 
             return ok(
                 "Ad updated and sent for review.",
@@ -266,5 +287,12 @@ def update_ad_impl(**kwargs):
         return fail(str(ex), code="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "AOS Update Ad Failed")
-        return fail("Failed to update ad.", code="INTERNAL_ERROR")
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Update Ad Failed",
+        )
+
+        return fail(
+            "Failed to update ad.",
+            code="INTERNAL_ERROR",
+        )
