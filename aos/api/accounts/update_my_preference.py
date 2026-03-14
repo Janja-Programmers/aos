@@ -62,12 +62,24 @@ def update_my_preference_impl(**kwargs):
 
         old_country = pref.country if pref else None
 
+        # Resolve seller for market lock check
+        seller = frappe.db.get_value(
+            "AOS Seller",
+            {"user": current_user},
+            "name",
+        )
+
         # MARKET LOCK LOGIC
         if old_country and old_country != country_id:
-            has_ads = frappe.db.exists(
-                "AOS Ad",
-                {"user": current_user},
-            )
+            has_ads = False
+
+            if seller:
+                has_ads = bool(
+                    frappe.db.exists(
+                        "AOS Ad",
+                        {"seller": seller},
+                    )
+                )
 
             if has_ads:
                 return fail(
