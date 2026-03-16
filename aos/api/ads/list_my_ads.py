@@ -22,7 +22,7 @@ def _safe_int(val: Any, default: int) -> int:
         return default
 
 
-def my_ads_impl(**kwargs):
+def list_my_ads_impl(**kwargs):
     user, err = require_login()
     if err:
         return err

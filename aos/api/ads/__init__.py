@@ -11,18 +11,19 @@ from .create import create_ad_impl
 from .get_ad import get_ad_impl
 from .get_my_ad import get_my_ad_impl
 from .list_ads import list_ads_impl
-from .my_ads import my_ads_impl
+from .list_my_ads import list_my_ads_impl
 from .update import update_ad_impl
 from .status import set_ad_status_impl
+
 from .drafts import (
+    upsert_ad_draft_impl,
+    get_my_ad_draft_impl,
+    list_my_ad_drafts_impl,
     abandon_ad_draft_impl,
-    get_ad_draft_impl,
-    list_ad_drafts_impl,
-    save_ad_draft_impl,
     submit_ad_draft_impl,
 )
 
-
+# Ads (Buyer + Seller)
 @frappe.whitelist(methods=["POST"])
 def create_ad(**kwargs):
     """Create/submit an Ad (final submit)."""
@@ -42,9 +43,9 @@ def get_ad(**kwargs):
 
 
 @frappe.whitelist()
-def my_ads(**kwargs):
+def list_my_ads(**kwargs):
     """List current user's ads."""
-    return my_ads_impl(**kwargs)
+    return list_my_ads_impl(**kwargs)
 
 
 @frappe.whitelist()
@@ -55,7 +56,7 @@ def get_my_ad(**kwargs):
 
 @frappe.whitelist(methods=["POST"])
 def update_ad(**kwargs):
-    """Update/edit an ad (status-aware editing rules)."""
+    """Update/edit an ad."""
     return update_ad_impl(**kwargs)
 
 
@@ -65,31 +66,32 @@ def set_ad_status(**kwargs):
     return set_ad_status_impl(**kwargs)
 
 
+# Drafts
 @frappe.whitelist(methods=["POST"])
-def save_ad_draft(**kwargs):
-    """Create/update an Ad Draft (autosave)."""
-    return save_ad_draft_impl(**kwargs)
+def upsert_ad_draft(**kwargs):
+    """Create or update an Ad Draft (autosave)."""
+    return upsert_ad_draft_impl(**kwargs)
 
 
 @frappe.whitelist()
-def get_ad_draft(**kwargs):
-    """Fetch a single Ad Draft by id."""
-    return get_ad_draft_impl(**kwargs)
+def list_my_ad_drafts(**kwargs):
+    """List current user's ad drafts."""
+    return list_my_ad_drafts_impl(**kwargs)
 
 
 @frappe.whitelist()
-def list_ad_drafts(**kwargs):
-    """List current user's Ad Drafts."""
-    return list_ad_drafts_impl(**kwargs)
+def get_my_ad_draft(**kwargs):
+    """Fetch a single draft for editing."""
+    return get_my_ad_draft_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def abandon_ad_draft(**kwargs):
-    """Soft-delete (abandon) a Draft."""
+    """Soft-delete (abandon) a draft."""
     return abandon_ad_draft_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def submit_ad_draft(**kwargs):
-    """Submit a Draft -> create real Ad (Reviewing) and mark Draft Submitted."""
+    """Submit a draft and create a real Ad."""
     return submit_ad_draft_impl(**kwargs)
