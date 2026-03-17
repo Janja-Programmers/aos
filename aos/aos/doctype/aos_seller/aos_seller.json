@@ -7,16 +7,24 @@
  "field_order": [
   "user",
   "shop_name",
-  "shop_banner",
-  "column_break_gwmy",
+  "seller_type",
   "status",
+  "column_break_gwmy",
+  "shop_banner",
   "avatar",
-  "metrics_section",
+  "section_break_rvlv",
+  "about_shop",
+  "metrics_tab",
+  "section_break_xlao",
   "total_ads",
   "total_followers",
   "column_break_pnga",
   "rating",
-  "total_reviews"
+  "total_reviews",
+  "verification_tab",
+  "is_verified",
+  "verified_by",
+  "verified_on"
  ],
  "fields": [
   {
@@ -61,11 +69,6 @@
    "search_index": 1
   },
   {
-   "fieldname": "metrics_section",
-   "fieldtype": "Section Break",
-   "label": "Metrics"
-  },
-  {
    "default": "0",
    "fieldname": "total_ads",
    "fieldtype": "Int",
@@ -99,11 +102,65 @@
    "fieldtype": "Int",
    "label": "Total Reviews",
    "read_only": 1
+  },
+  {
+   "default": "Individual",
+   "fieldname": "seller_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Seller Type",
+   "options": "Individual\nBusiness",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_rvlv",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "about_shop",
+   "fieldtype": "Small Text",
+   "label": "About Shop"
+  },
+  {
+   "fieldname": "metrics_tab",
+   "fieldtype": "Tab Break",
+   "label": "Metrics"
+  },
+  {
+   "fieldname": "section_break_xlao",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_verified",
+   "fieldtype": "Check",
+   "label": "Is Verified",
+   "read_only": 1
+  },
+  {
+   "fieldname": "verification_tab",
+   "fieldtype": "Tab Break",
+   "label": "Verification"
+  },
+  {
+   "fieldname": "verified_on",
+   "fieldtype": "Datetime",
+   "label": "Verified On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "verified_by",
+   "fieldtype": "Link",
+   "label": "Verified By",
+   "options": "User",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-03-05 02:29:36.236209",
+ "modified": "2026-03-17 13:30:10.657651",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Seller",

@@ -9,6 +9,9 @@ import frappe
 
 from .get_seller import get_seller_impl
 from .toggle_follow import toggle_follow_impl
+from .submit_verification import submit_verification_impl
+from .get_my_verification import get_my_verification_impl
+from .update_my_seller import update_my_seller_impl
 
 
 @frappe.whitelist(allow_guest=True)
@@ -21,3 +24,21 @@ def get_seller(**kwargs):
 def toggle_follow(**kwargs):
     """Follow / Unfollow a seller."""
     return toggle_follow_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def update_my_seller(**kwargs):
+    """Update logged-in seller profile."""
+    return update_my_seller_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def submit_verification(**kwargs):
+    """Submit or resubmit seller verification request."""
+    return submit_verification_impl(**kwargs)
+
+
+@frappe.whitelist()
+def get_my_verification(**kwargs):
+    """Get logged-in seller verification status."""
+    return get_my_verification_impl(**kwargs)

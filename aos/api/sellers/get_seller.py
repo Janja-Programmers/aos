@@ -12,7 +12,10 @@ import frappe
 from frappe.utils import formatdate
 
 from aos.api.shared.auth import current_user
+from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+
+from .constants import GET_SELLER_LIMIT_PER_MINUTE_PER_IP
 
 
 def get_seller_impl(**kwargs):
@@ -22,6 +25,16 @@ def get_seller_impl(**kwargs):
 
     if not seller:
         return fail("Seller is required.", code="VALIDATION_ERROR")
+
+    # Rate limit (IP based because endpoint allows guests)
+    rl = rate_limit(
+        key="aos:sellers:get_seller:ip",
+        ttl_seconds=60,
+        limit=GET_SELLER_LIMIT_PER_MINUTE_PER_IP,
+        message="Too many requests. Please try again shortly.",
+    )
+    if rl:
+        return rl
 
     try:
         if not frappe.db.exists("AOS Seller", seller):
@@ -57,6 +70,9 @@ def get_seller_impl(**kwargs):
                 "shop_name": seller_doc.shop_name,
                 "avatar": avatar,
                 "shop_banner": seller_doc.shop_banner,
+                "about_shop": seller_doc.about_shop,
+                "seller_type": seller_doc.seller_type,
+                "is_verified": seller_doc.is_verified,
                 "rating": seller_doc.rating,
                 "total_reviews": seller_doc.total_reviews,
                 "total_followers": seller_doc.total_followers,
