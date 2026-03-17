@@ -158,6 +158,11 @@ class AOSAd(Document):
         if frappe.session.user == "Guest":
             return
 
+        roles = frappe.get_roles(frappe.session.user)
+
+        if "System Manager" in roles or "AOS Moderator" in roles:
+            return
+
         seller_user = frappe.db.get_value(
             "AOS Seller",
             self.seller,
