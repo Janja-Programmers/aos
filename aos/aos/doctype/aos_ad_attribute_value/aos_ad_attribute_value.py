@@ -5,5 +5,5 @@
 from frappe.model.document import Document
 
 
-class AdAttributeValue(Document):
+class AOSAdAttributeValue(Document):
 	pass

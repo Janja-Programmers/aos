@@ -142,7 +142,7 @@ def get_ad_impl(**kwargs):
 
     # Details
     doc.details = frappe.get_all(
-        "Ad Attribute Value",
+        "AOS Ad Attribute Value",
         filters={
             "parent": ad_id,
             "parenttype": "AOS Ad",

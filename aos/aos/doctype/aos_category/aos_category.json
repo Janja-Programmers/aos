@@ -102,7 +102,7 @@
    "fieldname": "attributes",
    "fieldtype": "Table",
    "label": "Attributes",
-   "options": "Category Attribute Row"
+   "options": "AOS Category Attribute Row"
   },
   {
    "fieldname": "pricing_requirement",
@@ -139,7 +139,7 @@
  "index_web_pages_for_search": 1,
  "is_tree": 1,
  "links": [],
- "modified": "2026-03-04 22:28:38.679546",
+ "modified": "2026-03-19 01:13:19.290110",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Category",

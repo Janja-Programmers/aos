@@ -5,5 +5,5 @@
 from frappe.model.document import Document
 
 
-class CategoryAttributeRow(Document):
+class AOSCategoryAttributeRow(Document):
 	pass

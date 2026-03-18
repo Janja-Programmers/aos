@@ -76,7 +76,7 @@
    "fieldname": "details",
    "fieldtype": "Table",
    "label": "Details",
-   "options": "Ad Attribute Value"
+   "options": "AOS Ad Attribute Value"
   },
   {
    "fieldname": "description_tab",
@@ -280,7 +280,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-05 01:08:17.623599",
+ "modified": "2026-03-19 01:21:44.083400",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad",

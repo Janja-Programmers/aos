@@ -3,7 +3,7 @@
 This endpoint provides the dynamic form schema for a selected category.
 
 Attributes:
-  - attributes are linked to categories via the Category Attribute Row child table
+  - attributes are linked to categories via the AOS Category Attribute Row child table
   - child categories inherit parent attributes
   - child categories may override select options via `options_override`
 
