@@ -94,6 +94,7 @@ def list_ads_impl(**kwargs):
     price_min = _safe_float(kwargs.get("price_min"))
     price_max = _safe_float(kwargs.get("price_max"))
     rating_min = _safe_float(kwargs.get("rating_min"))
+    verified_seller = int(kwargs.get("verified_seller") or 0)
 
     # Validation
     if seller and not frappe.db.exists("AOS Seller", seller):
@@ -189,6 +190,10 @@ def list_ads_impl(**kwargs):
         conditions.append("a.average_rating >= %(rating_min)s")
         values["rating_min"] = rating_min
 
+    # Verified seller
+    if verified_seller:
+        conditions.append("s.is_verified = 1")
+
     # Promotions
     settings = get_aos_settings_snapshot()
     flash_window_days = settings.flash_sale_window_days
@@ -243,20 +248,22 @@ def list_ads_impl(**kwargs):
     where_clause = " AND ".join(conditions)
 
     # Sorting
+    verified_boost = "(s.is_verified = 1) desc"
+
     if promotion_type == "deal":
-        order_by = "IFNULL(a.offer_percent,0) desc, a.creation desc"
+        order_by = f"{verified_boost}, IFNULL(a.offer_percent,0) desc, a.creation desc"
 
     elif sort == "rating_high":
-        order_by = "a.average_rating desc, a.total_reviews desc, a.creation desc"
+        order_by = f"{verified_boost}, a.average_rating desc, a.total_reviews desc, a.creation desc"
 
     elif sort == "recent":
-        order_by = "a.creation desc"
+        order_by = f"{verified_boost}, a.creation desc"
 
     elif sort == "price_low":
-        order_by = f"{current_price_sql} asc, a.creation desc"
+        order_by = f"{verified_boost}, {current_price_sql} asc, a.creation desc"
 
     elif sort == "price_high":
-        order_by = f"{current_price_sql} desc, a.creation desc"
+        order_by = f"{verified_boost}, {current_price_sql} desc, a.creation desc"
 
     # SQL Query
     sql = f"""
@@ -280,6 +287,7 @@ def list_ads_impl(**kwargs):
             a.average_rating,
             a.total_reviews,
             a.creation,
+            s.is_verified,
             {original_price_sql} as original_price_converted,
             {current_price_sql} as current_price
         FROM `tabAOS Ad` a
@@ -324,7 +332,6 @@ def list_ads_impl(**kwargs):
         items = []
 
         for row in rows:
-
             ad_doc = frappe._dict(row)
 
             ad_doc.images = images_by_ad.get(row["name"], [])

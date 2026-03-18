@@ -21,7 +21,6 @@ class AOSSellerVerification(Document):
         previous = self.get_doc_before_save()
 
         if not previous or previous.status != self.status:
-
             if self.status == "Approved":
                 self.verified_by = frappe.session.user
                 self.verified_on = now()
