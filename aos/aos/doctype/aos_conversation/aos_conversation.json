@@ -1,0 +1,127 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-03-18 19:37:27.697030",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "participant_1",
+  "participant_2",
+  "last_message",
+  "last_message_at",
+  "column_break_iclu",
+  "last_sender",
+  "unread_count_1",
+  "unread_count_2",
+  "is_active_1",
+  "is_active_2"
+ ],
+ "fields": [
+  {
+   "default": "CONV-.YYYY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "CONV-.YYYY.-.#####"
+  },
+  {
+   "fieldname": "participant_1",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Participant 1",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "participant_2",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Participant 2",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "last_message",
+   "fieldtype": "Small Text",
+   "label": "Last Message",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_message_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Last Message At",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_iclu",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "last_sender",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Last Sender",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "unread_count_1",
+   "fieldtype": "Int",
+   "label": "Unread Count (Participant 1)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "unread_count_2",
+   "fieldtype": "Int",
+   "label": "Unread Count (Participant 2)",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active_1",
+   "fieldtype": "Check",
+   "label": "Active for Participant 1"
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active_2",
+   "fieldtype": "Check",
+   "label": "Active for Participant 2"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-03-18 20:21:19.984580",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Conversation",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "last_message_at",
+ "sort_order": "DESC",
+ "states": []
+}

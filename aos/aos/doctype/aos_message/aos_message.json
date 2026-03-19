@@ -1,0 +1,121 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-03-19 00:07:39.968747",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "conversation",
+  "sender",
+  "message_type",
+  "content",
+  "column_break_bgvu",
+  "ad",
+  "delivered_to_receiver_at",
+  "read_by_receiver_at",
+  "has_attachments"
+ ],
+ "fields": [
+  {
+   "default": "MSG-.YYYY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "MSG-.YYYY.-.#####"
+  },
+  {
+   "fieldname": "conversation",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Conversation",
+   "options": "AOS Conversation",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "sender",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Sender",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "message_type",
+   "fieldtype": "Select",
+   "label": "Message Type",
+   "options": "text\nmedia\nmixed\nsystem",
+   "reqd": 1
+  },
+  {
+   "fieldname": "content",
+   "fieldtype": "Small Text",
+   "label": "Content"
+  },
+  {
+   "fieldname": "ad",
+   "fieldtype": "Link",
+   "label": "Ad",
+   "options": "AOS Ad"
+  },
+  {
+   "fieldname": "column_break_bgvu",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "has_attachments",
+   "fieldtype": "Check",
+   "label": "Has Attachments",
+   "read_only": 1
+  },
+  {
+   "fieldname": "delivered_to_receiver_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Delivered To Receiver At",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "read_by_receiver_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Read By Receiver At",
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-03-19 15:56:57.499950",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Message",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
