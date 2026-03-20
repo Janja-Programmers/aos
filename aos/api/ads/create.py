@@ -128,7 +128,7 @@ def create_ad_impl(**kwargs):
         )
 
     # Sanitize details
-    details_rows = sanitize_details(kwargs.get("details"))
+    details_rows = sanitize_details(kwargs.get("details"), category=category,)
 
     # Sanitize images
     images_rows = sanitize_images(kwargs.get("images"))

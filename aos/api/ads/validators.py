@@ -59,6 +59,23 @@ def normalize_list_payload(val: Any) -> List[Dict[str, Any]]:
     return []
 
 
+def _build_attribute_key_map(category: str) -> Dict[str, str]:
+    """Build key -> DocType name map (fuel_type -> Fuel Type)."""
+
+    try:
+        from aos.api.catalog.schema import _get_category_chain, _resolve_attributes
+
+        chain = _get_category_chain(category)
+        attrs = _resolve_attributes(chain)
+
+        return {
+            attr["key"]: attr["id"]
+            for attr in attrs
+        }
+    except Exception:
+        return {}
+
+
 def validate_basic_fields(title: Any, location: Any, category: Any, description: Any):
     title = (str(title or "").strip())
     location = (str(location or "").strip())
@@ -89,13 +106,38 @@ def validate_basic_fields(title: Any, location: Any, category: Any, description:
     return title, location, category, description, None
 
 
-def sanitize_details(details: Any) -> List[Dict[str, Any]]:
+def sanitize_details(details: Any, category: str | None = None) -> List[Dict[str, Any]]:
     items = normalize_list_payload(details)
     out: List[Dict[str, Any]] = []
+
+    key_map: Dict[str, str] = {}
+    reverse_map: Dict[str, str] = {}
+
+    if category:
+        key_map = _build_attribute_key_map(category)
+        reverse_map = {v: v for v in key_map.values()}  # allow "Fuel Type"
+
     for item in items:
         row = {k: v for k, v in item.items() if k in ALLOWED_DETAILS_KEYS}
-        if row.get("attribute"):
-            out.append(row)
+
+        attr = (row.get("attribute") or "").strip()
+
+        if not attr:
+            continue
+
+        # KEY → ID conversion
+        if key_map and attr in key_map:
+            row["attribute"] = key_map[attr]
+
+        # Allow already-correct values (Fuel Type)
+        elif reverse_map and attr in reverse_map:
+            row["attribute"] = attr
+
+        # Invalid attribute
+        elif key_map:
+            frappe.throw(f"Invalid attribute: {attr}")
+
+        out.append(row)
     return out
 
 
