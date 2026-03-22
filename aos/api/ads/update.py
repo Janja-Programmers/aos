@@ -197,7 +197,7 @@ def update_ad_impl(**kwargs):
             if e:
                 return e
 
-            details_rows = sanitize_details(kwargs.get("details"))
+            details_rows = sanitize_details(kwargs.get("details"), category=category,)
             images_rows = sanitize_images(kwargs.get("images"))
 
             if len(images_rows) > _MAX_IMAGES:
