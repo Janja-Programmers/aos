@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 import frappe
-
+from aos.api.catalog.schema import _attribute_key
 
 # Currency symbol cache
 _currency_symbol_cache: Dict[str, str] = {}
@@ -250,7 +250,7 @@ def serialize_ad_for_edit(ad_doc) -> Dict[str, Any]:
     for row in (getattr(ad_doc, "details", []) or []):
         details.append(
             {
-                "attribute": row.attribute,
+                "attribute": _attribute_key(row.attribute),
                 "value_text": row.value_text,
                 "value_number": row.value_number,
                 "value_date": row.value_date,
