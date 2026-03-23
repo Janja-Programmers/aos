@@ -117,8 +117,27 @@ def list_reviews_impl(**kwargs):
 
         total = frappe.db.count("AOS Review", filters)
 
-        # Batch Fetch Review Images
+        # Prepare review IDs
         review_names = [r["name"] for r in reviews]
+
+        # User Reaction
+        current_user = frappe.session.user if frappe.session.user != "Guest" else None
+        user_reactions_map: Dict[str, str] = {}
+
+        if current_user and review_names:
+            reactions = frappe.get_all(
+                "AOS Review Reaction",
+                filters={
+                    "review": ["in", review_names],
+                    "user": current_user
+                },
+                fields=["review", "reaction"]
+            )
+
+            for r in reactions:
+                user_reactions_map[r["review"]] = r["reaction"]
+
+        # Images
         images_map: Dict[str, List[str]] = {name: [] for name in review_names}
 
         if review_names:
@@ -136,7 +155,7 @@ def list_reviews_impl(**kwargs):
                     row["image"]
                 )
 
-        # Batch Fetch Reviewer Info
+        # Reviewer Info
         reviewer_emails = list({r["reviewer"] for r in reviews})
         user_map: Dict[str, Dict[str, Any]] = {}
 
@@ -153,7 +172,7 @@ def list_reviews_impl(**kwargs):
                     "avatar": u["user_image"] or ""
                 }
 
-        # Attach Images + Reviewer Info
+        # Format Response
         formatted_reviews = []
 
         for r in reviews:
@@ -167,6 +186,7 @@ def list_reviews_impl(**kwargs):
                 "created_at": r["creation"],
                 "like_count": r["like_count"],
                 "dislike_count": r["dislike_count"],
+                "user_reaction": user_reactions_map.get(r["name"]),
                 "reviewer": {
                     "full_name": reviewer_info.get("full_name", ""),
                     "avatar": reviewer_info.get("avatar", "")
