@@ -7,7 +7,8 @@ Structure:
 
 import frappe
 
-from .get_seller import get_seller_impl
+from .get_seller_profile import get_seller_profile_impl
+from .get_my_seller_status import get_my_seller_status_impl
 from .toggle_follow import toggle_follow_impl
 from .submit_verification import submit_verification_impl
 from .get_my_verification import get_my_verification_impl
@@ -15,9 +16,15 @@ from .update_my_seller import update_my_seller_impl
 
 
 @frappe.whitelist(allow_guest=True)
-def get_seller(**kwargs):
+def get_seller_profile(**kwargs):
     """Get seller profile (used in storefront and ad detail)."""
-    return get_seller_impl(**kwargs)
+    return get_seller_profile_impl(**kwargs)
+
+
+@frappe.whitelist()
+def get_my_seller_status(**kwargs):
+    """Get current user's seller status (for UI decisions)."""
+    return get_my_seller_status_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])

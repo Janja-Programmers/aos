@@ -15,10 +15,10 @@ from aos.api.shared.auth import current_user
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 
-from .constants import GET_SELLER_LIMIT_PER_MINUTE_PER_IP
+from .constants import GET_SELLER_PROFILE_LIMIT_PER_MINUTE_PER_IP
 
 
-def get_seller_impl(**kwargs):
+def get_seller_profile_impl(**kwargs):
     """Fetch seller profile."""
 
     seller = kwargs.get("seller")
@@ -28,9 +28,9 @@ def get_seller_impl(**kwargs):
 
     # Rate limit (IP based because endpoint allows guests)
     rl = rate_limit(
-        key="aos:sellers:get_seller:ip",
+        key="aos:sellers:get_seller_profile:ip",
         ttl_seconds=60,
-        limit=GET_SELLER_LIMIT_PER_MINUTE_PER_IP,
+        limit=GET_SELLER_PROFILE_LIMIT_PER_MINUTE_PER_IP,
         message="Too many requests. Please try again shortly.",
     )
     if rl:
