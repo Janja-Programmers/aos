@@ -290,6 +290,20 @@ def create_ad_impl(**kwargs):
                 ad_name=ad.name,
             )
 
+        try:
+            frappe.enqueue(
+                "aos.services.image_search_service.index_ad_images",
+                queue="short",
+                timeout=300,
+                ad_id=ad.name,
+                images=images_rows,
+            )
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                f"Failed to enqueue image indexing for {ad.name}",
+            )
+
         return ok(
             "Ad created.",
             data={"id": ad.name},

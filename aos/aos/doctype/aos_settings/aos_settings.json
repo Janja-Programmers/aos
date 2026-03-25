@@ -24,7 +24,16 @@
   "foreign_exchange_tab",
   "ad_expiry_days",
   "column_break_tyqg",
-  "flash_sale_window_days"
+  "flash_sale_window_days",
+  "image_search_qdrant_section",
+  "qdrant_host",
+  "qdrant_port",
+  "qdrant_collection",
+  "image_search_limit",
+  "column_break_ebhh",
+  "score_threshold",
+  "qdrant_api_key",
+  "qdrant_https"
  ],
  "fields": [
   {
@@ -133,13 +142,63 @@
    "fieldname": "apple_bundle_id",
    "fieldtype": "Data",
    "label": "Apple Bundle Id"
+  },
+  {
+   "fieldname": "image_search_qdrant_section",
+   "fieldtype": "Section Break",
+   "label": "Image Search (Qdrant)"
+  },
+  {
+   "default": "localhost",
+   "fieldname": "qdrant_host",
+   "fieldtype": "Data",
+   "label": "Qdrant Host"
+  },
+  {
+   "default": "6333",
+   "fieldname": "qdrant_port",
+   "fieldtype": "Int",
+   "label": "Qdrant Port"
+  },
+  {
+   "default": "ads",
+   "fieldname": "qdrant_collection",
+   "fieldtype": "Data",
+   "label": "Qdrant Collection"
+  },
+  {
+   "fieldname": "column_break_ebhh",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "qdrant_api_key",
+   "fieldtype": "Password",
+   "label": "Qdrant API Key"
+  },
+  {
+   "default": "0",
+   "fieldname": "score_threshold",
+   "fieldtype": "Float",
+   "label": "Score Threshold"
+  },
+  {
+   "default": "0",
+   "fieldname": "qdrant_https",
+   "fieldtype": "Check",
+   "label": "Use HTTPS"
+  },
+  {
+   "default": "50",
+   "fieldname": "image_search_limit",
+   "fieldtype": "Int",
+   "label": "Image Search Limit"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-03-06 18:23:35.988953",
+ "modified": "2026-03-24 20:25:16.479449",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Settings",

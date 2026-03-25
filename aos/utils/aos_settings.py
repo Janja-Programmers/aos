@@ -26,10 +26,19 @@ class AOSSettingsSnapshot:
     ad_expiry_days: int
     flash_sale_window_days: int
 
+    # Image Search (Qdrant)
+    qdrant_host: str | None
+    qdrant_port: int
+    qdrant_collection: str | None
+    qdrant_api_key: str | None
+    qdrant_https: int
+
+    image_search_limit: int
+    score_threshold: float
+
 
 def _clamp_int(val: object, default: int, min_value: int, max_value: int) -> int:
     """Best-effort int parsing with bounds safety."""
-
     try:
         n = int(val)  # type: ignore[arg-type]
     except Exception:
@@ -40,6 +49,20 @@ def _clamp_int(val: object, default: int, min_value: int, max_value: int) -> int
     if n > max_value:
         return int(max_value)
     return int(n)
+
+
+def _clamp_float(val: object, default: float, min_value: float, max_value: float) -> float:
+    """Best-effort float parsing with bounds safety."""
+    try:
+        n = float(val)  # type: ignore[arg-type]
+    except Exception:
+        n = float(default)
+
+    if n < min_value:
+        return float(min_value)
+    if n > max_value:
+        return float(max_value)
+    return float(n)
 
 
 def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
@@ -81,6 +104,37 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
             default=7,
             min_value=1,
             max_value=60,
+        ),
+
+        # Image Search (Qdrant)
+        qdrant_host=(getattr(s, "qdrant_host", None) or "localhost"),
+        qdrant_port=_clamp_int(
+            getattr(s, "qdrant_port", 6333),
+            default=6333,
+            min_value=1,
+            max_value=65535,
+        ),
+        qdrant_collection=(getattr(s, "qdrant_collection", None) or "ads"),
+        qdrant_api_key=(getattr(s, "qdrant_api_key", None) or None),
+        qdrant_https=_clamp_int(
+            getattr(s, "qdrant_https", 0),
+            default=0,
+            min_value=0,
+            max_value=1,
+        ),
+
+        image_search_limit=_clamp_int(
+            getattr(s, "image_search_limit", 50),
+            default=50,
+            min_value=1,
+            max_value=200,
+        ),
+
+        score_threshold=_clamp_float(
+            getattr(s, "score_threshold", 0.0),
+            default=0.0,
+            min_value=0.0,
+            max_value=1.0,
         ),
     )
 

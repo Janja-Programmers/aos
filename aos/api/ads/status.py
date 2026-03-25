@@ -26,6 +26,8 @@ from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 
 from aos.utils.aos_settings import get_aos_settings_snapshot
+from aos.services.image_search_service import delete_ad_images
+
 from .constants import SET_AD_STATUS_LIMIT_PER_MINUTE_PER_USER
 
 
@@ -137,6 +139,30 @@ def set_ad_status_impl(**kwargs):
             doc.expires_on = add_days(today(), settings.ad_expiry_days)
 
         doc.save(ignore_permissions=True)
+
+        # Clean embeddings on soft delete
+        if new_status == "Deleted":
+            try:
+                image_urls = [
+                    row.image
+                    for row in (doc.images or [])
+                    if row.image
+                ]
+
+                if image_urls:
+                    frappe.enqueue(
+                        "aos.services.image_search_service.delete_ad_images",
+                        queue="short",
+                        timeout=300,
+                        ad_id=doc.name,
+                        image_urls=image_urls,
+                    )
+
+            except Exception:
+                frappe.log_error(
+                    frappe.get_traceback(),
+                    f"Failed to enqueue image delete for {doc.name}",
+                )
 
         frappe.db.commit()
 

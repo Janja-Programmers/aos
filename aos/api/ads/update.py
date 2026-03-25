@@ -187,6 +187,12 @@ def update_ad_impl(**kwargs):
             )
 
         if status in _FULL_EDIT_STATUSES:
+            old_images = [
+                row.image
+                for row in (doc.images or [])
+                if row.image
+            ]
+
             title, location, category, description, e = validate_basic_fields(
                 kwargs.get("title"),
                 kwargs.get("location"),
@@ -269,6 +275,21 @@ def update_ad_impl(**kwargs):
 
             if video_url:
                 attach_file_to_ad(video_url, ad_name=doc.name)
+
+            try:
+                frappe.enqueue(
+                    "aos.services.image_search_service.sync_ad_images",
+                    queue="short",
+                    timeout=300,
+                    ad_id=doc.name,
+                    old_images=old_images,
+                    new_images=images_rows,
+                )
+            except Exception:
+                frappe.log_error(
+                    frappe.get_traceback(),
+                    f"Failed to enqueue image sync for {doc.name}",
+                )
 
             return ok(
                 "Ad updated and sent for review.",

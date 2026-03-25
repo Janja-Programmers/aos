@@ -22,6 +22,7 @@ from .drafts import (
     abandon_ad_draft_impl,
     submit_ad_draft_impl,
 )
+from .image_search import search_ads_by_image_impl
 
 # Ads (Buyer + Seller)
 @frappe.whitelist(methods=["POST"])
@@ -34,6 +35,11 @@ def create_ad(**kwargs):
 def list_ads(**kwargs):
     """Browse ads (buyers)."""
     return list_ads_impl(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def search_ads_by_image(**kwargs):
+    return search_ads_by_image_impl(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
