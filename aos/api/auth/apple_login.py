@@ -2,10 +2,7 @@ import frappe
 
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
-from aos.api.shared.market_context import (
-    resolve_market_country,
-    resolve_market_currency,
-)
+from aos.api.shared.market_context import resolve_market_context
 from aos.api.shared.validators import resolve_language
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
@@ -130,13 +127,11 @@ def apple_login_impl(**kwargs):
 
     if not pref_exists:
 
-        # Country
-        country_name, err = resolve_market_country(kwargs.get("country"))
-        if err:
-            return err
-
-        # Currency
-        currency_code, err = resolve_market_currency(kwargs.get("currency"))
+        # Market Context
+        country_name, currency_code, err = resolve_market_context(
+            country=kwargs.get("country"),
+            currency=kwargs.get("currency"),
+        )
         if err:
             return err
 

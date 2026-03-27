@@ -8,6 +8,32 @@ from aos.api.shared.validators import resolve_country
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
 
+# INTERNAL HELPERS
+def _get_user_preference(user: str):
+    """
+    Fetch user preference with light caching.
+    """
+    cache = frappe.cache()
+    cache_key = f"aos:user_pref:{user}"
+
+    cached = cache.get_value(cache_key)
+    if cached:
+        return cached
+
+    pref = frappe.db.get_value(
+        "AOS User Preference",
+        {"user": user},
+        ["country", "currency"],
+        as_dict=True,
+    )
+
+    if pref:
+        cache.set_value(cache_key, pref, expires_in_sec=300)  # 5 min cache
+
+    return pref
+
+
+# COUNTRY
 def resolve_market_country(country: str | None = None):
     """
     Resolve and enforce market country.
@@ -23,19 +49,15 @@ def resolve_market_country(country: str | None = None):
 
     # Logged-in users → always use preference
     if user and user != "Guest":
-        pref_country = frappe.db.get_value(
-            "AOS User Preference",
-            {"user": user},
-            "country",
-        )
+        pref = _get_user_preference(user)
 
-        if not pref_country:
+        if not pref or not pref.get("country"):
             return None, fail(
                 "User preference not configured.",
                 code="CONFIG_ERROR",
             )
 
-        return pref_country, None
+        return pref["country"], None
 
     # Guest → use request param if provided
     if country:
@@ -63,6 +85,7 @@ def resolve_market_country(country: str | None = None):
 
     return country_name, None
 
+# CURRENCY
 def resolve_market_currency(currency: str | None = None):
     """
     Resolve and enforce market currency.
@@ -78,19 +101,15 @@ def resolve_market_currency(currency: str | None = None):
 
     # Logged-in users → always use preference
     if user and user != "Guest":
-        pref_currency = frappe.db.get_value(
-            "AOS User Preference",
-            {"user": user},
-            "currency",
-        )
+        pref = _get_user_preference(user)
 
-        if not pref_currency:
+        if not pref or not pref.get("currency"):
             return None, fail(
                 "User currency preference not configured.",
                 code="CONFIG_ERROR",
             )
 
-        return pref_currency, None
+        return pref["currency"], None
 
     # Guest → use request param if provided
     if currency:
@@ -120,3 +139,25 @@ def resolve_market_currency(currency: str | None = None):
         )
 
     return settings.default_currency, None
+
+# COMBINED
+def resolve_market_context(
+    country: str | None = None,
+    currency: str | None = None,
+):
+    """
+    Resolve both country and currency in one call.
+
+    Returns:
+        (country, currency, error)
+    """
+
+    country, error = resolve_market_country(country)
+    if error:
+        return None, None, error
+
+    currency, error = resolve_market_currency(currency)
+    if error:
+        return None, None, error
+
+    return country, currency, None

@@ -2,10 +2,7 @@ import frappe
 
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
-from aos.api.shared.market_context import (
-    resolve_market_country,
-    resolve_market_currency,
-)
+from aos.api.shared.market_context import resolve_market_context
 from aos.api.shared.validators import resolve_language
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
@@ -49,11 +46,7 @@ def register_impl(**kwargs):
         return fail("An account with this email already exists.", code="ALREADY_EXISTS")
 
     # Resolve preference values
-    country_name, err = resolve_market_country(country)
-    if err:
-        return err
-
-    currency_code, err = resolve_market_currency(currency)
+    country_name, currency_code, err = resolve_market_context(country=country, currency=currency)
     if err:
         return err
 

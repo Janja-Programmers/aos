@@ -12,10 +12,7 @@ import frappe
 from frappe.utils import nowdate, getdate
 
 from aos.api.shared.auth import current_user
-from aos.api.shared.market_context import (
-    resolve_market_country,
-    resolve_market_currency,
-)
+from aos.api.shared.market_context import resolve_market_context
 from aos.api.shared.utils import get_active_wishlist_ad_ids
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
@@ -41,11 +38,10 @@ def get_ad_impl(**kwargs):
         return fail("Ad id is required.", code="VALIDATION_ERROR")
 
     # Market Context
-    country, error = resolve_market_country(kwargs.get("country"))
-    if error:
-        return error
-
-    display_currency, error = resolve_market_currency(kwargs.get("currency"))
+    country, display_currency, error = resolve_market_context(
+        country=kwargs.get("country"),
+        currency=kwargs.get("currency"),
+    )
     if error:
         return error
 
