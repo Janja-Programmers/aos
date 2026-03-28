@@ -4,12 +4,23 @@ authors = [
     { name = "Africa Online Stores", email = "info@africaonlinestores.com"}
 ]
 description = "A multi-vendor marketplace platform enabling users to buy, sell, go live, and communicate via chat and in-app calls across multiple countries."
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [
-    "rembg==2.0.56",
-    "Pillow>=10.3.0"
+    # Core
+    "Pillow>=10.3.0",
+
+    # Storage
+    "minio>=7.2.0",
+]
+
+[project.optional-dependencies]
+ai = [
+    # AI / Media (optional due to Python 3.14 compatibility issues)
+    "numpy>=1.26.0",
+    "onnxruntime==1.18.0",
+    "rembg==2.0.60",
 ]
 
 [build-system]
@@ -22,7 +33,7 @@ build-backend = "flit_core.buildapi"
 
 [tool.ruff]
 line-length = 110
-target-version = "py314"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = [
