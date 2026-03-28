@@ -3,8 +3,10 @@ from __future__ import annotations
 import frappe
 
 from aos.api.shared.responses import fail
+from aos.api.shared.auth import current_user
 
 
+# COUNTRY / LANGUAGE / CURRENCY
 def resolve_country(value: str | None):
     """Resolve a country input to Country.name.
 
@@ -34,22 +36,15 @@ def resolve_country(value: str | None):
 
 
 def resolve_language(value: str | None):
-    """Resolve a language input to Language.name.
-
-    Accepts either:
-        - Language.name (e.g. "en")
-        - Language.language_name (e.g. "English")
-    """
+    """Resolve a language input to Language.name."""
 
     value = (value or "").strip()
     if not value:
         return None, None
 
-    # Direct match (Language.name = language_code)
     if frappe.db.exists("Language", value):
         return value, None
 
-    # Match by language_name
     language_name = frappe.db.get_value(
         "Language",
         {"language_name": value},
@@ -66,22 +61,15 @@ def resolve_language(value: str | None):
 
 
 def resolve_currency(value: str | None):
-    """Resolve a currency input to Currency.name (currency code).
-
-    Accepts:
-        - Currency.name (e.g. "KES")
-        - Currency.symbol (e.g. "KSh")
-    """
+    """Resolve a currency input to Currency.name."""
 
     value = (value or "").strip()
     if not value:
         return None, None
 
-    # Direct match (Currency.name)
     if frappe.db.exists("Currency", value):
         return value, None
 
-    # Match by symbol
     currency_name = frappe.db.get_value(
         "Currency",
         {"symbol": value},
@@ -97,14 +85,9 @@ def resolve_currency(value: str | None):
     )
 
 
+# LOCATION
 def resolve_location(location: str | None, *, country: str | None = None):
-    """Resolve a location input to AOS Location.name.
-
-    Args:
-        location: AOS Location.name.
-        country: Optional Country.name or ISO code.
-                 If provided, enforces that the location belongs to that country.
-    """
+    """Resolve a location input to AOS Location.name."""
 
     location = (location or "").strip()
     if not location:
@@ -144,3 +127,66 @@ def resolve_location(location: str | None, *, country: str | None = None):
             )
 
     return location, None
+
+
+# GENERIC VALIDATORS
+def require_id(value: str | None, field: str):
+    """Ensure a required ID field is provided."""
+    value = (value or "").strip()
+
+    if not value:
+        return None, fail(
+            f"{field} is required",
+            code="VALIDATION_ERROR",
+            data={"field": field},
+        )
+
+    return value, None
+
+
+# SESSION VALIDATION
+def require_session_for_guest(session_id: str | None):
+    """
+    Enforce session_id for guest users.
+    Logged-in users do not require session_id.
+    """
+    user = current_user()
+
+    if user == "Guest" and not session_id:
+        return None, fail(
+            "Session ID required for guest users",
+            code="VALIDATION_ERROR",
+            data={"field": "session_id"},
+        )
+
+    return session_id, None
+
+
+# TRACKING / ANALYTICS
+def normalize_watch_ms(watch_ms):
+    """
+    Normalize watch time (ms):
+    - Converts to int
+    - Prevents negative values
+    """
+    try:
+        watch_ms = int(watch_ms)
+    except Exception:
+        return None, fail(
+            "Invalid watch time",
+            code="VALIDATION_ERROR",
+            data={"field": "watch_ms"},
+        )
+
+    return max(watch_ms, 0), None
+
+
+# OPTIONAL HELPER
+def unwrap(result):
+    """
+    Utility to unwrap (value, error) pattern.
+    """
+    value, error = result
+    if error:
+        return None, error
+    return value, None

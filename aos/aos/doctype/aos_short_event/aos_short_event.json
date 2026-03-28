@@ -1,0 +1,123 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-03-26 15:27:50.527355",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "short",
+  "event_type",
+  "user",
+  "progress_ms",
+  "watch_ms",
+  "ad",
+  "seller",
+  "country",
+  "column_break_xftn",
+  "session_id",
+  "source",
+  "metadata"
+ ],
+ "fields": [
+  {
+   "fieldname": "short",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Short",
+   "options": "AOS Short",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User",
+   "search_index": 1
+  },
+  {
+   "fieldname": "progress_ms",
+   "fieldtype": "Int",
+   "label": "Progress (ms)"
+  },
+  {
+   "fieldname": "column_break_xftn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "session_id",
+   "fieldtype": "Data",
+   "label": "Session ID",
+   "search_index": 1
+  },
+  {
+   "fieldname": "event_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Event Type",
+   "options": "impression\nplay\npause\nprogress\ncomplete\nlike\ncomment\nopen_ad\nopen_seller\nfollow_click",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "watch_ms",
+   "fieldtype": "Int",
+   "label": "Watch Time (ms)"
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Data",
+   "label": "Source"
+  },
+  {
+   "fieldname": "metadata",
+   "fieldtype": "JSON",
+   "label": "Metadata"
+  },
+  {
+   "fieldname": "ad",
+   "fieldtype": "Link",
+   "label": "Ad",
+   "options": "AOS Ad"
+  },
+  {
+   "fieldname": "seller",
+   "fieldtype": "Link",
+   "label": "Seller",
+   "options": "AOS Seller"
+  },
+  {
+   "fieldname": "country",
+   "fieldtype": "Link",
+   "label": "Country",
+   "options": "Country"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-03-26 15:40:03.692843",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Short Event",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

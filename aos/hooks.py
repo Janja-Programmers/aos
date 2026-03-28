@@ -146,6 +146,8 @@ app_license = "mit"
 scheduler_events = {
 	"hourly": [
 		"aos.tasks.ads.expire_ads",
+        "aos.tasks.shorts.aggregate_short_metrics",
+        "aos.tasks.shorts.update_short_ranking",
 	],
 	"daily": [
 		"aos.tasks.fx.update_exchange_rates",

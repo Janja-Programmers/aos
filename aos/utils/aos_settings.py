@@ -36,6 +36,15 @@ class AOSSettingsSnapshot:
     image_search_limit: int
     score_threshold: float
 
+    # Storage (MinIO)
+    minio_endpoint: str | None
+    minio_access_key: str | None
+    minio_bucket: str
+    minio_public_base_url: str
+    minio_secure: int
+    minio_upload_expiry_minutes: int
+    minio_base_path: str
+
 
 def _clamp_int(val: object, default: int, min_value: int, max_value: int) -> int:
     """Best-effort int parsing with bounds safety."""
@@ -67,7 +76,7 @@ def _clamp_float(val: object, default: float, min_value: float, max_value: float
 
 def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
     cache = frappe.cache()
-    key = "aos:settings:snapshot:v2"
+    key = "aos:settings:snapshot:v1"
 
     if use_cache:
         cached = cache.get_value(key)
@@ -136,6 +145,34 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
             min_value=0.0,
             max_value=1.0,
         ),
+
+        # Storage (MinIO)
+        minio_endpoint=(getattr(s, "minio_endpoint", None) or "localhost:9100"),
+
+        minio_access_key=(getattr(s, "minio_access_key", None) or "minio"),
+
+        minio_bucket=(getattr(s, "minio_bucket", None) or "shorts"),
+
+        minio_public_base_url=(
+            getattr(s, "minio_public_base_url", None)
+            or "http://localhost:9100/shorts"
+        ),
+
+        minio_secure=_clamp_int(
+            getattr(s, "minio_secure", 0),
+            default=0,
+            min_value=0,
+            max_value=1,
+        ),
+
+        minio_upload_expiry_minutes=_clamp_int(
+            getattr(s, "minio_upload_expiry_minutes", 10),
+            default=10,
+            min_value=1,
+            max_value=60,
+        ),
+
+        minio_base_path=(getattr(s, "minio_base_path", None) or "shorts"),
     )
 
     try:

@@ -1,0 +1,104 @@
+"""
+Constants for Shorts API.
+
+All limits, thresholds, and tunable parameters live here.
+Avoid hardcoding values anywhere else.
+"""
+
+# FEED
+
+# Pagination
+FEED_DEFAULT_LIMIT = 10
+FEED_MAX_LIMIT = 50
+
+# Ranking weights (for feed scoring)
+RANKING_WEIGHT_VIEWS = 1.0
+RANKING_WEIGHT_LIKES = 2.0
+RANKING_WEIGHT_COMMENTS = 2.5
+RANKING_WEIGHT_SHARES = 3.0
+RANKING_WEIGHT_RECENCY = 1.5
+RANKING_WEIGHT_COMPLETION = 2.0
+
+# Recency decay (hours)
+RECENCY_HALF_LIFE_HOURS = 24
+
+
+# TRACKING (VIEWS / IMPRESSIONS)
+
+# Minimum watch time to qualify as a view (ms)
+MIN_VIEW_MS = 2000  # 2 seconds
+
+# Minimum percentage watched (fallback rule)
+MIN_VIEW_PERCENT = 0.3  # 30%
+
+# Throttling
+IMPRESSION_THROTTLE_SECONDS = 2
+VIEW_UPDATE_THROTTLE_MS = 500
+
+
+# COMMENTS
+COMMENT_MAX_LENGTH = 500
+COMMENT_DEFAULT_LIMIT = 20
+COMMENT_MAX_LIMIT = 100
+
+REPLY_MAX_LENGTH = 500
+REPLY_DEFAULT_LIMIT = 20
+REPLY_MAX_LIMIT = 100
+
+# Optional depth control (future-proof)
+MAX_COMMENT_DEPTH = 3
+
+
+# LIKES
+LIKE_TOGGLE_RATE_LIMIT_PER_MINUTE = 60
+
+
+# SHORTS (CONTENT RULES)
+
+# Duration limits (seconds)
+MAX_SHORT_DURATION_SECONDS = 60
+
+# Caption
+CAPTION_MAX_LENGTH = 1000
+
+# Hashtags
+MAX_HASHTAGS = 10
+
+
+# UPLOAD / PROCESSING
+
+# Allowed video types
+ALLOWED_VIDEO_EXTENSIONS = {"mp4", "mov", "m4v", "webm"}
+
+# Max upload size (bytes) – optional enforcement
+MAX_VIDEO_FILE_SIZE_BYTES = 200 * 1024 * 1024  # 200MB
+
+# Processing timeout (seconds)
+VIDEO_PROCESSING_TIMEOUT = 1800  # 30 minutes
+
+
+# MANAGEMENT
+MY_SHORTS_DEFAULT_LIMIT = 20
+MY_SHORTS_MAX_LIMIT = 50
+
+
+# RATE LIMITS (API LEVEL)
+
+INIT_UPLOAD_LIMIT_PER_MINUTE_PER_USER = 30
+CONFIRM_UPLOAD_LIMIT_PER_MINUTE_PER_USER = 30
+
+FEED_LIMIT_PER_MINUTE_PER_IP = 120
+
+TRACK_VIEW_LIMIT_PER_MINUTE_PER_IP = 600
+TRACK_IMPRESSION_LIMIT_PER_MINUTE_PER_IP = 600
+
+COMMENT_LIMIT_PER_MINUTE_PER_USER = 60
+
+
+# ANALYTICS
+
+# Batch size for aggregation
+ANALYTICS_BATCH_SIZE = 1000
+
+# Default aggregation window (days)
+ANALYTICS_DEFAULT_WINDOW_DAYS = 1

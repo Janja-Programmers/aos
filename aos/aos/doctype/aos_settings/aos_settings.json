@@ -33,7 +33,17 @@
   "column_break_ebhh",
   "score_threshold",
   "qdrant_api_key",
-  "qdrant_https"
+  "qdrant_https",
+  "shorts_tab",
+  "minio_endpoint",
+  "minio_access_key",
+  "minio_secret_key",
+  "minio_upload_expiry_minutes",
+  "column_break_yvkd",
+  "minio_bucket",
+  "minio_base_path",
+  "minio_public_base_url",
+  "minio_secure"
  ],
  "fields": [
   {
@@ -192,13 +202,65 @@
    "fieldname": "image_search_limit",
    "fieldtype": "Int",
    "label": "Image Search Limit"
+  },
+  {
+   "fieldname": "shorts_tab",
+   "fieldtype": "Tab Break",
+   "label": "Shorts"
+  },
+  {
+   "fieldname": "minio_endpoint",
+   "fieldtype": "Data",
+   "label": "MinIO Endpoint"
+  },
+  {
+   "fieldname": "minio_access_key",
+   "fieldtype": "Data",
+   "label": "MinIO Access Key"
+  },
+  {
+   "fieldname": "minio_secret_key",
+   "fieldtype": "Password",
+   "label": "MinIO Secret Key"
+  },
+  {
+   "fieldname": "column_break_yvkd",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "minio_bucket",
+   "fieldtype": "Data",
+   "label": "MinIO Bucket"
+  },
+  {
+   "fieldname": "minio_public_base_url",
+   "fieldtype": "Data",
+   "label": "MinIO Public Base URL"
+  },
+  {
+   "default": "0",
+   "fieldname": "minio_secure",
+   "fieldtype": "Check",
+   "label": "Use HTTPS"
+  },
+  {
+   "default": "10",
+   "description": "Expiry time for presigned upload URLs",
+   "fieldname": "minio_upload_expiry_minutes",
+   "fieldtype": "Int",
+   "label": "Upload URL Expiry (Minutes)"
+  },
+  {
+   "fieldname": "minio_base_path",
+   "fieldtype": "Data",
+   "label": "Base Path Prefix"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-03-24 20:25:16.479449",
+ "modified": "2026-03-26 21:48:50.071718",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Settings",

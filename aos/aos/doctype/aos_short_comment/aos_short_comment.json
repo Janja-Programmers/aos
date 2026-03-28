@@ -1,0 +1,120 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-03-26 14:07:14.648759",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "short",
+  "user",
+  "comment",
+  "seller",
+  "column_break_ldrd",
+  "parent_comment",
+  "root_comment",
+  "reply_count",
+  "like_count",
+  "status"
+ ],
+ "fields": [
+  {
+   "fieldname": "short",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Short",
+   "options": "AOS Short",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "seller",
+   "fieldtype": "Link",
+   "label": "Seller",
+   "options": "AOS Seller",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_ldrd",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "parent_comment",
+   "fieldtype": "Link",
+   "label": "Parent Comment",
+   "options": "AOS Short Comment",
+   "search_index": 1
+  },
+  {
+   "fieldname": "root_comment",
+   "fieldtype": "Link",
+   "label": "Root Comment",
+   "options": "AOS Short Comment",
+   "search_index": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "reply_count",
+   "fieldtype": "Int",
+   "label": "Reply Count",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "like_count",
+   "fieldtype": "Int",
+   "label": "Like Count",
+   "read_only": 1
+  },
+  {
+   "default": "active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "active\nhidden\ndeleted"
+  },
+  {
+   "fieldname": "comment",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Comment",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-03-28 13:54:58.366127",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Short Comment",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

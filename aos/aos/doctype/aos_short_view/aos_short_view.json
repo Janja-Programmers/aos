@@ -1,0 +1,97 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-03-26 14:42:41.960060",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "short",
+  "view_date",
+  "watch_ms",
+  "last_seen_at",
+  "column_break_pscb",
+  "user",
+  "session_id",
+  "qualified"
+ ],
+ "fields": [
+  {
+   "fieldname": "short",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Short",
+   "options": "AOS Short",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "view_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "View Date",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_pscb",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User",
+   "search_index": 1
+  },
+  {
+   "fieldname": "session_id",
+   "fieldtype": "Data",
+   "label": "Session ID",
+   "search_index": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "qualified",
+   "fieldtype": "Check",
+   "label": "Qualified View"
+  },
+  {
+   "default": "0",
+   "fieldname": "watch_ms",
+   "fieldtype": "Int",
+   "label": "Max Watch Time (ms)"
+  },
+  {
+   "fieldname": "last_seen_at",
+   "fieldtype": "Datetime",
+   "label": "Last Seen At"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-03-26 14:47:02.679171",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Short View",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
