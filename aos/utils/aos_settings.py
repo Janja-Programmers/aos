@@ -45,6 +45,10 @@ class AOSSettingsSnapshot:
     minio_upload_expiry_minutes: int
     minio_base_path: str
 
+    # Connect (LiveKit)
+    livekit_endpoint: str | None
+    livekit_token_ttl_minutes: int
+
 
 def _clamp_int(val: object, default: int, min_value: int, max_value: int) -> int:
     """Best-effort int parsing with bounds safety."""
@@ -76,7 +80,7 @@ def _clamp_float(val: object, default: float, min_value: float, max_value: float
 
 def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
     cache = frappe.cache()
-    key = "aos:settings:snapshot:v1"
+    key = "aos:settings:snapshot:v2"
 
     if use_cache:
         cached = cache.get_value(key)
@@ -173,6 +177,17 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
         ),
 
         minio_base_path=(getattr(s, "minio_base_path", None) or "shorts"),
+
+        # Connect (LiveKit)
+        livekit_endpoint=(getattr(s, "livekit_endpoint", None) or None),
+
+        livekit_token_ttl_minutes=_clamp_int(
+            getattr(s, "livekit_token_ttl_minutes", 60),
+            default=60,
+            min_value=1,
+            max_value=1440,
+        ),
+
     )
 
     try:

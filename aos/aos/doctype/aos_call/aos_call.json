@@ -1,0 +1,175 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-03-29 15:58:00.629446",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "conversation",
+  "room_name",
+  "caller",
+  "started_at",
+  "ended_by",
+  "duration",
+  "column_break_vdfj",
+  "status",
+  "call_type",
+  "receiver",
+  "ended_at",
+  "is_active"
+ ],
+ "fields": [
+  {
+   "fieldname": "conversation",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Conversation",
+   "options": "AOS Conversation",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "CALL-.YYYY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "CALL-.YYYY.-.#####"
+  },
+  {
+   "fieldname": "caller",
+   "fieldtype": "Link",
+   "label": "Caller",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "receiver",
+   "fieldtype": "Link",
+   "label": "Receiver",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "audio",
+   "fieldname": "call_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Call Type",
+   "options": "audio\nvideo"
+  },
+  {
+   "fieldname": "column_break_vdfj",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "initiated",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "initiated\nringing\nongoing\nended\nmissed\nrejected\nfailed",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "room_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Room Name",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At"
+  },
+  {
+   "fieldname": "ended_at",
+   "fieldtype": "Datetime",
+   "label": "Ended At"
+  },
+  {
+   "fieldname": "duration",
+   "fieldtype": "Int",
+   "label": "Duration (seconds)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ended_by",
+   "fieldtype": "Link",
+   "label": "Ended By",
+   "options": "User"
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Is Active",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "links": [],
+ "modified": "2026-03-30 01:03:05.461182",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Call",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "color": "Gray",
+   "title": "initiated"
+  },
+  {
+   "color": "Purple",
+   "title": "ringing"
+  },
+  {
+   "color": "Green",
+   "title": "ongoing"
+  },
+  {
+   "color": "Blue",
+   "title": "ended"
+  },
+  {
+   "color": "Orange",
+   "title": "missed"
+  },
+  {
+   "color": "Red",
+   "title": "rejected"
+  },
+  {
+   "color": "Red",
+   "title": "failed"
+  }
+ ]
+}

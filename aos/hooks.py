@@ -144,6 +144,9 @@ app_license = "mit"
 # ---------------
 
 scheduler_events = {
+    "all": [
+        "aos.tasks.calls.handle_missed_calls",
+    ],
 	"hourly": [
 		"aos.tasks.ads.expire_ads",
         "aos.tasks.shorts.aggregate_short_metrics",

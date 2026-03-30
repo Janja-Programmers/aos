@@ -43,7 +43,13 @@
   "minio_bucket",
   "minio_base_path",
   "minio_public_base_url",
-  "minio_secure"
+  "minio_secure",
+  "connect_tab",
+  "livekit_endpoint",
+  "livekit_api_secret",
+  "column_break_zsze",
+  "livekit_api_key",
+  "livekit_token_ttl_minutes"
  ],
  "fields": [
   {
@@ -254,13 +260,43 @@
    "fieldname": "minio_base_path",
    "fieldtype": "Data",
    "label": "Base Path Prefix"
+  },
+  {
+   "fieldname": "connect_tab",
+   "fieldtype": "Tab Break",
+   "label": "Connect"
+  },
+  {
+   "fieldname": "livekit_endpoint",
+   "fieldtype": "Data",
+   "label": "LiveKit Endpoint"
+  },
+  {
+   "fieldname": "column_break_zsze",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "livekit_api_key",
+   "fieldtype": "Data",
+   "label": "LiveKit API Key"
+  },
+  {
+   "default": "60",
+   "fieldname": "livekit_token_ttl_minutes",
+   "fieldtype": "Int",
+   "label": "Token Expiry (Minutes)"
+  },
+  {
+   "fieldname": "livekit_api_secret",
+   "fieldtype": "Password",
+   "label": "LiveKit API Secret"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-03-26 21:48:50.071718",
+ "modified": "2026-03-29 17:22:28.571499",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Settings",

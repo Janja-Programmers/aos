@@ -19,6 +19,9 @@ class AOSMessage(Document):
         if not self.sender:
             frappe.throw("Sender is required")
 
+        if self.message_type == "system":
+            return
+
         convo = frappe.db.get_value(
             "AOS Conversation",
             self.conversation,
