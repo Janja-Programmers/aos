@@ -1,0 +1,114 @@
+{
+ "actions": [],
+ "creation": "2026-03-31 00:32:11.210291",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "live_stream",
+  "joined_at",
+  "left_at",
+  "last_seen_at",
+  "column_break_sldo",
+  "user",
+  "session_id",
+  "watch_duration_seconds",
+  "qualified",
+  "is_active"
+ ],
+ "fields": [
+  {
+   "fieldname": "live_stream",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Live Stream",
+   "options": "AOS Live Stream",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "search_index": 1
+  },
+  {
+   "fieldname": "joined_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Joined At",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "left_at",
+   "fieldtype": "Datetime",
+   "label": "Left At"
+  },
+  {
+   "fieldname": "last_seen_at",
+   "fieldtype": "Datetime",
+   "label": "Last Seen At"
+  },
+  {
+   "fieldname": "column_break_sldo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "session_id",
+   "fieldtype": "Data",
+   "label": "Session Id",
+   "search_index": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "watch_duration_seconds",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Watch Duration (seconds)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "qualified",
+   "fieldtype": "Check",
+   "label": "Qualified View",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Is Active",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "links": [],
+ "modified": "2026-03-31 15:52:30.809681",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Live Stream View",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

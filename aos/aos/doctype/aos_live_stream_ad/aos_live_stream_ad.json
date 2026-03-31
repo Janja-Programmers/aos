@@ -1,0 +1,79 @@
+{
+ "actions": [],
+ "creation": "2026-03-31 01:38:31.605974",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "live_stream",
+  "ad",
+  "column_break_otwz",
+  "sort_order",
+  "is_pinned"
+ ],
+ "fields": [
+  {
+   "fieldname": "live_stream",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Live Stream",
+   "options": "AOS Live Stream",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "ad",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Ad",
+   "options": "AOS Ad",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_otwz",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "sort_order",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Sort Order"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_pinned",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Pinned"
+  }
+ ],
+ "grid_page_length": 50,
+ "links": [],
+ "modified": "2026-03-31 15:50:32.640620",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Live Stream Ad",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

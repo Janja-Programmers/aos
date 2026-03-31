@@ -1,0 +1,210 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-03-30 14:44:50.073104",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "title",
+  "status",
+  "room_name",
+  "started_at",
+  "ended_at",
+  "column_break_rlwv",
+  "seller",
+  "cover_image",
+  "duration_seconds",
+  "country",
+  "is_active",
+  "metrics_tab",
+  "viewer_count",
+  "total_views",
+  "comment_count",
+  "total_watch_time_seconds",
+  "column_break_rnds",
+  "peak_viewers",
+  "like_count",
+  "reaction_count"
+ ],
+ "fields": [
+  {
+   "default": "LIVE-.YYYY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "LIVE-.YYYY.-.#####"
+  },
+  {
+   "fieldname": "seller",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Seller",
+   "options": "AOS Seller",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "room_name",
+   "fieldtype": "Data",
+   "label": "Room Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_rlwv",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "cover_image",
+   "fieldtype": "Attach Image",
+   "label": "Cover Image"
+  },
+  {
+   "default": "live",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "scheduled\nlive\nended",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At"
+  },
+  {
+   "fieldname": "ended_at",
+   "fieldtype": "Datetime",
+   "label": "Ended At"
+  },
+  {
+   "fieldname": "duration_seconds",
+   "fieldtype": "Int",
+   "label": "Duration (seconds)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "country",
+   "fieldtype": "Link",
+   "label": "Country",
+   "options": "Country",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "metrics_tab",
+   "fieldtype": "Tab Break",
+   "label": "Metrics"
+  },
+  {
+   "default": "0",
+   "fieldname": "viewer_count",
+   "fieldtype": "Int",
+   "label": "Current Viewers",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "total_views",
+   "fieldtype": "Int",
+   "label": "Total Views",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "comment_count",
+   "fieldtype": "Int",
+   "label": "Comments",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_rnds",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "peak_viewers",
+   "fieldtype": "Int",
+   "label": "Peak Viewers",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "like_count",
+   "fieldtype": "Int",
+   "label": "Likes",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "reaction_count",
+   "fieldtype": "Int",
+   "label": "Reactions",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Is Active",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "total_watch_time_seconds",
+   "fieldtype": "Int",
+   "label": "Total Watch Time (seconds)",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "links": [],
+ "modified": "2026-03-31 15:49:39.799070",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Live Stream",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "color": "Gray",
+   "title": "scheduled"
+  },
+  {
+   "color": "Green",
+   "title": "live"
+  },
+  {
+   "color": "Red",
+   "title": "ended"
+  }
+ ]
+}
