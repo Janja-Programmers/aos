@@ -15,26 +15,56 @@ import frappe
 
 # CHANNEL HELPERS
 def _live_channel(live_id: str) -> str:
-    return f"aos_live:{live_id}"
+    return f"live:{live_id}"
 
 
-def _seller_channel(user: str) -> str:
-    return f"user:{user}"
+# FOLLOWERS HELPER
+def _get_followers(user: str) -> list[str]:
+    """
+    Return list of followers for a seller.
+    """
+    return frappe.get_all(
+        "AOS Seller Follow",
+        filters={"seller": user},
+        pluck="follower",
+    ) or []
 
 
 # INTERNAL CACHE (THROTTLING)
 _VIEWER_CACHE = {}
 _REACTION_CACHE = {}
 
+
 # LIFECYCLE EVENTS
 def publish_live_started(live):
+    """
+    Notify ONLY followers + seller.
+    """
+    payload = {
+        "live_id": live.name,
+        "seller": live.seller,
+        "title": live.title,
+    }
+
+    followers = _get_followers(live.seller)
+
+    # Notify followers
+    for user in followers:
+        if not user or user == live.seller:
+            continue
+
+        frappe.publish_realtime(
+            event="aos_live_started",
+            message=payload,
+            user=user,
+            after_commit=True,
+        )
+
+    # Notify seller (multi-device sync)
     frappe.publish_realtime(
         event="aos_live_started",
-        message={
-            "live_id": live.name,
-            "seller": live.seller,
-            "title": live.title,
-        },
+        message=payload,
+        user=live.seller,
         after_commit=True,
     )
 
@@ -57,7 +87,6 @@ def publish_viewer_count(live_id: str, viewer_count: int):
 
     last_sent = _VIEWER_CACHE.get(live_id)
 
-    # send only if 1 second passed
     if last_sent and (now - last_sent) < 1:
         return
 
@@ -104,14 +133,16 @@ def publish_reaction(live_id: str, reaction_type: str):
     """
     now = time.time()
 
-    cache = _REACTION_CACHE.setdefault(live_id, {
-        "last_flush": now,
-        "items": []
-    })
+    cache = _REACTION_CACHE.setdefault(
+        live_id,
+        {
+            "last_flush": now,
+            "items": [],
+        },
+    )
 
     cache["items"].append(reaction_type)
 
-    # flush every 0.5 sec OR if too many
     if (now - cache["last_flush"] < 0.5) and len(cache["items"]) < 20:
         return
 
