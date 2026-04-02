@@ -206,6 +206,7 @@ class AOSAd(Document):
         """
         Update review metadata only when status changes.
         Ensures seller edits do not overwrite moderation info.
+        Also triggers notifications for moderation actions.
         """
 
         if frappe.session.user == "Guest":
@@ -221,6 +222,31 @@ class AOSAd(Document):
 
         self.reviewed_by = frappe.session.user
         self.reviewed_on = now()
+
+        try:
+            from aos.services.notification_service import NotificationService
+
+            if self.status == "Active":
+                NotificationService.notify_ad_approved(
+                    user=self.seller,
+                    actor=frappe.session.user,
+                    ad_id=self.name,
+                    title=self.title,
+                )
+
+            elif self.status == "Rejected":
+                NotificationService.notify_ad_rejected(
+                    user=self.seller,
+                    actor=frappe.session.user,
+                    ad_id=self.name,
+                    title=self.title,
+                )
+
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                "AOS Ad Notification Failed",
+            )
 
     def _validate_market_integrity(self):
 
@@ -301,9 +327,6 @@ class AOSAd(Document):
 
         if start and end and start > end:
             frappe.throw("Offer start date cannot be after end date.")
-
-        if end and end < getdate():
-            frappe.throw("Offer end date cannot be in the past.")
 
         self.offer_percent = round(
             ((price_val - offer_price) / price_val) * 100,

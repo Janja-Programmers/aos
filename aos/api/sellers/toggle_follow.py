@@ -14,6 +14,8 @@ from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 
+from aos.services.notification_service import NotificationService
+
 from .constants import TOGGLE_FOLLOW_LIMIT_PER_MINUTE_PER_USER
 
 
@@ -58,13 +60,20 @@ def toggle_follow_impl(**kwargs):
             limit=1
         )
 
-        # Not following yet → Create follow
+        # FOLLOW
         if not existing:
             doc = frappe.new_doc("AOS Seller Follow")
             doc.seller = seller
             doc.follower = current_user
             doc.insert(ignore_permissions=True)
             frappe.db.commit()
+
+            # NOTIFY SELLER
+            if seller != current_user:
+                NotificationService.notify_follow(
+                    user=seller,
+                    actor=current_user,
+                )
 
             return ok(
                 "Followed successfully.",
@@ -74,7 +83,7 @@ def toggle_follow_impl(**kwargs):
                 }
             )
 
-        # Already following → Remove follow
+        # UNFOLLOW
         frappe.delete_doc(
             "AOS Seller Follow",
             existing[0].name,

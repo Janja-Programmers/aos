@@ -14,6 +14,8 @@ from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.validators import require_id
 
+from aos.services.notification_service import NotificationService
+
 from aos.api.shorts.constants import (
     LIKE_TOGGLE_RATE_LIMIT_PER_MINUTE,
 )
@@ -41,6 +43,17 @@ def toggle_like_impl(**kwargs):
     try:
         should_update_ranking = False
 
+        # FETCH SHORT
+        short = frappe.db.get_value(
+            "AOS Short",
+            short_id,
+            ["name", "seller"],
+            as_dict=True,
+        )
+
+        if not short:
+            return fail("Short not found.", code="NOT_FOUND")
+
         # CHECK EXISTING LIKE
         existing = frappe.get_all(
             "AOS Short Like",
@@ -60,6 +73,14 @@ def toggle_like_impl(**kwargs):
             liked = True
             message = "Liked."
             should_update_ranking = True
+
+            # NOTIFICATION
+            if short.seller and short.seller != user:
+                NotificationService.notify_short_like(
+                    user=short.seller,
+                    actor=user,
+                    short_id=short_id,
+                )
 
         # UNLIKE
         else:

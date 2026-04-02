@@ -4,6 +4,7 @@ import frappe
 
 from aos.services.video_service import VideoService
 from aos.services.ranking_service import RankingService
+from aos.services.notification_service import NotificationService
 
 
 def process_short_task(short_id: str):
@@ -12,7 +13,22 @@ def process_short_task(short_id: str):
         return
 
     try:
+        # Get doc BEFORE processing
+        doc = frappe.get_doc("AOS Short", short_id)
+        previous_status = doc.status
+
         VideoService.process_short(short_id)
+
+        # Reload doc AFTER processing
+        doc.reload()
+
+        # TRIGGER NOTIFICATION ONLY ON FIRST READY
+        if previous_status != "ready" and doc.status == "ready":
+            if doc.seller:
+                NotificationService.notify_new_short(
+                    actor=doc.seller,
+                    short_id=doc.name,
+                )
 
     except Exception:
         frappe.log_error(

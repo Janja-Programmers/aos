@@ -5,6 +5,8 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import now
 
+from aos.services.notification_service import NotificationService
+
 
 class AOSSellerVerification(Document):
     def validate(self):
@@ -14,20 +16,43 @@ class AOSSellerVerification(Document):
         self._sync_seller()
 
     def _stamp_verification_metadata(self):
-        """Stamp verification metadata when status changes."""
+        """
+        Stamp verification metadata when status changes.
+        Also trigger notifications.
+        """
         if frappe.session.user == "Guest":
             return
 
         previous = self.get_doc_before_save()
 
-        if not previous or previous.status != self.status:
+        if not previous:
+            return
+
+        # No change
+        if previous.status == self.status:
+            return
+
+        # Stamp metadata
+        self.verified_by = frappe.session.user
+        self.verified_on = now()
+
+        # NOTIFICATIONS
+        try:
             if self.status == "Approved":
-                self.verified_by = frappe.session.user
-                self.verified_on = now()
+                NotificationService.notify_verification_approved(
+                    user=self.seller
+                )
 
             elif self.status == "Rejected":
-                self.verified_by = frappe.session.user
-                self.verified_on = now()
+                NotificationService.notify_verification_rejected(
+                    user=self.seller
+                )
+
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                "AOS Verification Notification Failed",
+            )
 
     def _sync_seller(self):
         """Sync verification result with seller profile."""

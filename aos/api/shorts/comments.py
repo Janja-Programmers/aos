@@ -18,6 +18,8 @@ from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.validators import require_id
 
+from aos.services.notification_service import NotificationService
+
 from aos.api.shorts.validators import (
     validate_comment_text,
     validate_limit,
@@ -71,6 +73,22 @@ def add_comment_impl(**kwargs):
             "status": "active",
         })
         doc.insert(ignore_permissions=True)
+
+        # NOTIFY SELLER
+        short = frappe.db.get_value(
+            "AOS Short",
+            short_id,
+            ["seller"],
+            as_dict=True,
+        )
+
+        if short and short.seller and short.seller != user:
+            NotificationService.notify_short_comment(
+                user=short.seller,
+                actor=user,
+                short_id=short_id,
+                content=comment,
+            )
 
         frappe.enqueue(
             RANKING_TASK,
@@ -128,6 +146,16 @@ def reply_comment_impl(**kwargs):
             "status": "active",
         })
         doc.insert(ignore_permissions=True)
+
+        # NOTIFY COMMENT OWNER
+        if parent.user and parent.user != user:
+            NotificationService.notify_comment_reply(
+                user=parent.user,
+                actor=user,
+                short_id=parent.short,
+                comment_id=parent.name,
+                content=comment,
+            )
 
         frappe.enqueue(
             RANKING_TASK,

@@ -20,6 +20,7 @@ from aos.api.shared.responses import ok, fail
 from aos.api.shared.validators import require_id
 
 from aos.services.livekit_service import LiveKitService
+from aos.services.notification_service import NotificationService
 
 from .constants import (
     START_LIVE_LIMIT_PER_MINUTE_PER_USER,
@@ -40,6 +41,15 @@ from .realtime import (
     publish_live_started,
     publish_live_ended,
 )
+
+
+# HELPERS
+def _get_followers(user: str) -> list[str]:
+    return frappe.get_all(
+        "AOS Seller Follow",
+        filters={"seller": user},
+        pluck="follower",
+    )
 
 
 # START LIVE
@@ -86,6 +96,20 @@ def start_live_impl(**kwargs):
         )
 
         publish_live_started(live)
+
+        # Notify followers
+        followers = _get_followers(user)
+
+        for follower in followers:
+            if not follower:
+                continue
+
+            NotificationService.notify_live_started(
+                user=follower,
+                seller=user,
+                live_id=live.name,
+                title=live.title,
+            )
 
         return ok(
             "Live started.",

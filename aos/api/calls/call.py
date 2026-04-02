@@ -18,6 +18,7 @@ from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
 
 from aos.services.livekit_service import LiveKitService
+from aos.services.notification_service import NotificationService
 
 from .constants import (
     INITIATE_CALL_LIMIT_PER_MINUTE_PER_USER,
@@ -113,8 +114,16 @@ def initiate_call_impl(**kwargs):
             content="📞 Calling...",
         )
 
-        # Notify receiver
+        # Realtime
         publish_incoming_call(call, receiver)
+
+        # Notification
+        NotificationService.notify_incoming_call(
+            user=receiver,
+            caller=current_user,
+            call_id=call.name,
+            call_type=call.call_type,
+        )
 
         # Generate token
         token = LiveKitService.generate_call_token(
@@ -293,6 +302,13 @@ def reject_call_impl(**kwargs):
 
         # Notify caller
         publish_call_rejected(call)
+
+        # Missed call notification
+        NotificationService.notify_missed_call(
+            user=call.caller,
+            caller=current_user,
+            call_id=call.name,
+        )
 
         return ok("Call rejected.")
 

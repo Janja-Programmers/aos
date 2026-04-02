@@ -11,34 +11,58 @@ from __future__ import annotations
 
 import frappe
 
+from aos.services.notification_service import NotificationService
+
 
 def expire_ads() -> None:
     """
     Mark Active ads as Expired when their expires_on date has passed.
 
     Runs hourly via scheduler.
-    Uses single SQL update for performance.
+    Sends notifications to sellers.
     """
 
     try:
+        # Fetch ads that will expire
+        ads = frappe.get_all(
+            "AOS Ad",
+            filters={
+                "status": "Active",
+                "expires_on": ["<", frappe.utils.today()],
+            },
+            fields=["name", "seller"],
+        )
+
+        if not ads:
+            return
+
+        ad_ids = [a.name for a in ads]
+
+        # Bulk update
         frappe.db.sql(
             """
             UPDATE `tabAOS Ad`
             SET status = 'Expired'
-            WHERE status = 'Active'
-              AND expires_on IS NOT NULL
-              AND expires_on < CURDATE()
-            """
+            WHERE name IN %s
+            """,
+            (tuple(ad_ids),),
         )
-
-        affected = getattr(frappe.db._cursor, "rowcount", 0) or 0
 
         frappe.db.commit()
 
-        if affected:
-            frappe.logger("aos").info(
-                f"[AOS] expire_ads: marked {affected} ads as Expired."
+        # Notify sellers
+        for ad in ads:
+            if not ad.seller:
+                continue
+
+            NotificationService.notify_ad_expired(
+                user=ad.seller,
+                ad_id=ad.name,
             )
+
+        frappe.logger("aos").info(
+            f"[AOS] expire_ads: marked {len(ad_ids)} ads as Expired."
+        )
 
     except Exception:
         frappe.log_error(

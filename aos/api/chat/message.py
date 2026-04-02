@@ -17,6 +17,8 @@ from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
 
+from aos.services.notification_service import NotificationService
+
 from .constants import (
     SEND_MESSAGE_LIMIT_PER_MINUTE_PER_USER,
     LIST_MESSAGES_LIMIT_PER_MINUTE_PER_USER,
@@ -202,22 +204,32 @@ def send_message_impl(**kwargs):
         )
 
         # Realtime
+        realtime_payload = {
+            "conversation_id": conv_id,
+            "message": {
+                "id": msg.name,
+                "sender": current_user,
+                "content": msg.content,
+                "message_type": msg.message_type,
+                "ad": msg.ad,
+                "has_attachments": has_attachments,
+                "attachments": _serialize_attachments_bulk([msg.name]).get(msg.name, []),
+                "created_at": msg.creation,
+            },
+        }
+
         frappe.publish_realtime(
             event="aos_new_message",
-            message={
-                "conversation_id": conv_id,
-                "message": {
-                    "id": msg.name,
-                    "sender": current_user,
-                    "content": msg.content,
-                    "message_type": msg.message_type,
-                    "ad": msg.ad,
-                    "has_attachments": has_attachments,
-                    "attachments": _serialize_attachments_bulk([msg.name]).get(msg.name, []),
-                    "created_at": msg.creation,
-                },
-            },
+            message=realtime_payload,
             user=receiver,
+        )
+
+        # Notification
+        NotificationService.notify_new_message(
+            user=receiver,
+            sender=current_user,
+            conversation_id=conv_id,
+            preview=msg.content or "[Attachment]",
         )
 
         # Presence trigger
