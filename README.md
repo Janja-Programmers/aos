@@ -79,8 +79,8 @@ docker compose up -d
 ### Object Storage (Shorts)
 
 - MinIO
-- API: http://localhost:9000
-- Console: http://localhost:9001
+- API: http://localhost:9100
+- Console: http://localhost:9101
 
 ---
 
@@ -137,24 +137,24 @@ After installing the app, configure **AOS Settings** in Frappe:
 
 ---
 
-## MinIO
-
-```text
-endpoint: 127.0.0.1:9000
-access_key: from .env
-secret_key: from .env
-public_base_url: http://127.0.0.1:9000
-secure: 0
-```
-
----
-
 ## Qdrant
 
 ```text
 host: 127.0.0.1
 port: 6333
 collection: ads
+```
+
+---
+
+## MinIO
+
+```text
+endpoint: 127.0.0.1:9100
+access_key: from .env
+secret_key: from .env
+public_base_url: http://127.0.0.1:9100
+secure: 0
 ```
 
 ---
