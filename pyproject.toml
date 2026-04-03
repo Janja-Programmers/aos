@@ -8,19 +8,34 @@ requires-python = ">=3.12"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [
-    # Core
+    # IMAGE PROCESSING
     "Pillow>=10.3.0",
 
-    # Storage
-    "minio>=7.2.0",
-]
+    # HTTP
+    "requests>=2.31.0",
 
-[project.optional-dependencies]
-ai = [
-    # AI / Media (optional due to Python 3.14 compatibility issues)
+    # STORAGE
+    "minio>=7.2.0",
+
+    # VECTOR SEARCH
+    "qdrant-client>=1.9.0",
+
+    # REALTIME
+    "livekit-api>=0.3.0",
+
+    # NOTIFICATIONS
+    "firebase-admin>=6.5.0",
+
+    # NUMERICAL
     "numpy>=1.26.0",
-    "onnxruntime==1.18.0",
+
+    # BACKGROUND REMOVAL
+    "onnxruntime>=1.18.0",
     "rembg==2.0.60",
+
+    # IMAGE SEARCH
+    "torch>=2.2.0",
+    "open-clip-torch>=2.24.0",
 ]
 
 [build-system]
