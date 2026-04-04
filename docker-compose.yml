@@ -1,6 +1,6 @@
 services:
   qdrant:
-    image: qdrant/qdrant:v1.9.5
+    image: qdrant/qdrant:v1.17.1
     container_name: aos-qdrant
     restart: unless-stopped
     ports:
@@ -45,13 +45,13 @@ services:
       - aos_net
 
   livekit:
-    image: livekit/livekit-server:v1.8.3
+    image: livekit/livekit-server:v1.9.12
     container_name: aos-livekit
     restart: unless-stopped
     command: --config /etc/livekit/livekit.yaml
     ports:
       - "${LIVEKIT_PORT:-7880}:7880"
-      - "${LIVEKIT_UDP_PORT_START:-50000}-${LIVEKIT_UDP_PORT_END:-50100}:${LIVEKIT_UDP_PORT_START:-50000}-${LIVEKIT_UDP_PORT_END:-50100}/udp"
+      - "${LIVEKIT_UDP_PORT_START:-50000}-${LIVEKIT_UDP_PORT_END:-50010}:${LIVEKIT_UDP_PORT_START:-50000}-${LIVEKIT_UDP_PORT_END:-50010}/udp"
     volumes:
       - ./infra/livekit/livekit.yaml:/etc/livekit/livekit.yaml:ro
     healthcheck:
