@@ -229,7 +229,6 @@ class AOSAd(Document):
             if self.status == "Active":
                 NotificationService.notify_ad_approved(
                     user=self.seller,
-                    actor=frappe.session.user,
                     ad_id=self.name,
                     title=self.title,
                 )
@@ -237,7 +236,6 @@ class AOSAd(Document):
             elif self.status == "Rejected":
                 NotificationService.notify_ad_rejected(
                     user=self.seller,
-                    actor=frappe.session.user,
                     ad_id=self.name,
                     title=self.title,
                 )

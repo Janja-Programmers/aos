@@ -195,34 +195,34 @@ class NotificationService:
 
     # ADS
     @classmethod
-    def notify_ad_approved(cls, *, user: str, ad_id: str):
+    def notify_ad_approved(cls, *, user: str, ad_id: str, title: str | None = None):
         cls.notify(
             user=user,
             type="ad_approved",
             title="Ad Approved",
-            body="Your ad has been approved",
+            body=f"Your ad '{title}' has been approved" if title else "Your ad has been approved",
             payload={"ad_id": ad_id},
             event="aos_ad_approved",
         )
 
     @classmethod
-    def notify_ad_rejected(cls, *, user: str, ad_id: str):
+    def notify_ad_rejected(cls, *, user: str, ad_id: str, title: str | None = None):
         cls.notify(
             user=user,
             type="ad_rejected",
             title="Ad Rejected",
-            body="Your ad was rejected",
+            body=f"Your ad '{title}' was rejected" if title else "Your ad was rejected",
             payload={"ad_id": ad_id},
             event="aos_ad_rejected",
         )
 
     @classmethod
-    def notify_ad_expired(cls, *, user: str, ad_id: str):
+    def notify_ad_expired(cls, *, user: str, ad_id: str, title: str | None = None):
         cls.notify(
             user=user,
             type="ad_expired",
             title="Ad Expired",
-            body="Your ad has expired",
+            body=f"Your ad '{title}' has expired" if title else "Your ad has expired",
             payload={"ad_id": ad_id},
             event="aos_ad_expired",
         )

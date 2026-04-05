@@ -30,7 +30,7 @@ def expire_ads() -> None:
                 "status": "Active",
                 "expires_on": ["<", frappe.utils.today()],
             },
-            fields=["name", "seller"],
+            fields=["name", "seller", "title"],
         )
 
         if not ads:
@@ -58,6 +58,7 @@ def expire_ads() -> None:
             NotificationService.notify_ad_expired(
                 user=ad.seller,
                 ad_id=ad.name,
+                title=ad.title,
             )
 
         frappe.logger("aos").info(
