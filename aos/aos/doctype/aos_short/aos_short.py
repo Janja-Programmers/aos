@@ -59,8 +59,7 @@ class AOSShort(Document):
             if len(self.caption) > CAPTION_MAX_LENGTH:
                 frappe.throw(f"Caption cannot exceed {CAPTION_MAX_LENGTH} characters")
 
-        if self.hashtags:
-            # Convert if string
+        if self.hashtags is not None:
             if isinstance(self.hashtags, str):
                 try:
                     self.hashtags = json.loads(self.hashtags)

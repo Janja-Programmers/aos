@@ -9,6 +9,7 @@ Handles:
 
 from __future__ import annotations
 
+import json
 import frappe
 
 from aos.services.minio_service import MinioService
@@ -200,7 +201,7 @@ def update_short_metadata_impl(**kwargs):
         doc.seller = ad.seller
         doc.country = getattr(ad, "country", None)
         doc.caption = caption
-        doc.hashtags = hashtags
+        doc.hashtags = json.dumps(hashtags or [])
         doc.posted_on = frappe.utils.now_datetime()
         doc.save(ignore_permissions=True)
 
