@@ -47,10 +47,21 @@ def get_short_impl(**kwargs):
         return err
 
     try:
+        # Fetch doc first (for access control)
+        doc = frappe.get_doc("AOS Short", short_id)
+
+        user = frappe.session.user if frappe.session.user != "Guest" else None
+
+        # Access control: only owner can see non-ready shorts
+        if doc.status != "ready":
+            if not user or doc.owner != user:
+                return fail("Short not available.", code="NOT_FOUND")
+
         rows = frappe.db.sql(
             """
             SELECT
                 s.name,
+                s.status,
                 s.caption,
                 s.hashtags,
                 s.playback_url,
@@ -129,6 +140,7 @@ def my_shorts_impl(**kwargs):
             f"""
             SELECT
                 s.name,
+                s.status,
                 s.caption,
                 s.hashtags,
                 s.playback_url,

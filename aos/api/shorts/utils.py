@@ -111,8 +111,14 @@ def build_cursor_where_clause(
 
 # SHORT SERIALIZATION HELPERS
 def serialize_short_row(row: dict[str, Any], *, viewer_state: dict[str, Any] | None = None) -> dict[str, Any]:
+    status = row.get("status")
+
     return {
         "id": row.get("name"),
+        "status": status,
+        "is_ready": status == "ready",
+        "is_processing": status in ("initialized", "uploaded", "processing"),
+        "is_failed": status == "failed",
         "caption": row.get("caption") or "",
         "hashtags": parse_json_if_needed(row.get("hashtags"), default=[]),
         "playback_url": row.get("playback_url"),
