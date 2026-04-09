@@ -5,10 +5,6 @@ Responsibilities:
 - Generate secure join tokens
 - Centralize LiveKit config access
 - Keep secrets out of snapshot usage
-
-NOTE:
-- Uses snapshot for safe values
-- Uses get_single for secrets
 """
 
 from __future__ import annotations
@@ -73,9 +69,6 @@ class LiveKitService:
     ) -> str:
         """
         Generate token for live streaming.
-
-        host   → publish + subscribe
-        viewer → subscribe only
         """
         if role == "host":
             can_publish = True
@@ -106,6 +99,7 @@ class LiveKitService:
         role: str,
         conversation: str | None = None,
         call_id: str | None = None,
+        call_type: str | None = None,
     ) -> str:
         """
         Build JSON metadata string for token.
@@ -120,6 +114,9 @@ class LiveKitService:
 
         if call_id:
             payload["call_id"] = call_id
+
+        if call_type:
+            payload["call_type"] = call_type
 
         return frappe.as_json(payload)
 

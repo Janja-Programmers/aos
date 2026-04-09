@@ -134,6 +134,7 @@ def initiate_call_impl(**kwargs):
                 role="caller",
                 conversation=conv_id,
                 call_id=call.name,
+                call_type=call.call_type,
             ),
         )
 
@@ -145,6 +146,7 @@ def initiate_call_impl(**kwargs):
                 "token": token,
                 "ws_url": LiveKitService.get_ws_url(),
                 "receiver": receiver,
+                "call_type": call.call_type,
             },
         )
 
@@ -224,6 +226,7 @@ def accept_call_impl(**kwargs):
                 role="receiver",
                 conversation=call.conversation,
                 call_id=call.name,
+                call_type=call.call_type,
             ),
         )
 
@@ -235,6 +238,7 @@ def accept_call_impl(**kwargs):
                 "token": token,
                 "ws_url": LiveKitService.get_ws_url(),
                 "caller": call.caller,
+                "call_type": call.call_type,
             },
         )
 
