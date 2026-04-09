@@ -47,6 +47,7 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Status",
    "options": "initialized\nuploaded\nprocessing\nready\nfailed\ndeleted",
    "reqd": 1
@@ -121,9 +122,11 @@
    "label": "Hashtags"
   },
   {
-   "default": "visible",
+   "default": "hidden",
    "fieldname": "visibility_status",
    "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Visibility Status",
    "options": "visible\nhidden\ndeleted",
    "search_index": 1
@@ -219,7 +222,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-03-28 04:38:58.437591",
+ "modified": "2026-04-09 12:09:11.020350",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Short",

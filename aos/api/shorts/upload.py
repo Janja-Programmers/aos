@@ -175,9 +175,10 @@ def update_short_metadata_impl(**kwargs):
         if doc.owner != user:
             return fail("Not allowed.", code="FORBIDDEN")
 
-        if doc.status not in ("ready", "failed"):
+        # Only allow publishing when processing is complete
+        if doc.status != "ready":
             return fail(
-                "Short not ready for editing.",
+                "Short not ready for publishing.",
                 code="VALIDATION_ERROR",
             )
 
@@ -196,17 +197,17 @@ def update_short_metadata_impl(**kwargs):
                 code="FORBIDDEN",
             )
 
-        # Attach ad and inherit fields
+        # Attach metadata
         doc.ad = ad.name
         doc.seller = ad.seller
         doc.country = getattr(ad, "country", None)
         doc.caption = caption
         doc.hashtags = json.dumps(hashtags or [])
-        doc.posted_on = frappe.utils.now_datetime()
+        doc.visibility_status = "visible"
         doc.save(ignore_permissions=True)
 
         return ok(
-            "Short updated.",
+            "Short published successfully.",
             data={"short_id": doc.name},
         )
 

@@ -23,7 +23,7 @@ class AOSShort(Document):
         self._set_defaults()
 
     def on_update(self):
-        self._handle_ready_transition()
+        self._handle_visibility_transition()
 
 
     # PRIVATE METHODS
@@ -38,19 +38,21 @@ class AOSShort(Document):
 
         # Ensure ownership
         if hasattr(ad, "seller") and ad.seller != self.seller:
-            # seller may not yet be set at this stage
             if self.is_new():
                 return
             frappe.throw("Invalid seller for this ad")
+
+
     def _set_defaults(self):
         if not self.status:
             self.status = "initialized"
 
         if not self.visibility_status:
-            self.visibility_status = "visible"
+            self.visibility_status = "hidden"
 
         if not self.approval_status:
             self.approval_status = "auto_approved"
+
 
     def _validate_content(self):
         if self.caption:
@@ -84,6 +86,7 @@ class AOSShort(Document):
 
             self.hashtags = json.dumps(cleaned)
 
+
     def _validate_duration(self):
         if self.duration_seconds:
             if self.duration_seconds > MAX_SHORT_DURATION_SECONDS:
@@ -91,26 +94,42 @@ class AOSShort(Document):
                     f"Short duration cannot exceed {MAX_SHORT_DURATION_SECONDS} seconds"
                 )
 
-    def _handle_ready_transition(self):
-        """Handle logic when processing completes"""
-        if self.status != "ready":
+
+    def _handle_visibility_transition(self):
+        """Handles publishing logic based on visibility_status"""
+        previous = self.get_doc_before_save()
+        if not previous:
             return
 
-        # Set posted_on once
-        if not self.posted_on:
-            self.posted_on = now_datetime()
-
-        # Ensure visibility rules
-        if self.visibility_status != "visible":
+        # Detect visibility change
+        if previous.visibility_status == self.visibility_status:
             return
 
-        # Ensure ad is still active
-        try:
-            ad = frappe.get_doc("AOS Ad", self.ad)
-            if ad.status != "Active":
+        # CASE: becoming visible (publishing)
+        if self.visibility_status == "visible":
+
+            # Must be fully processed
+            if self.status != "ready":
+                frappe.throw("Short must be ready before publishing")
+
+            # Must have ad
+            if not self.ad:
+                frappe.throw("Short must be attached to an ad before publishing")
+
+            # Set posted_on once
+            if not self.posted_on:
+                self.posted_on = now_datetime()
+
+            # Ensure ad is still valid
+            try:
+                ad = frappe.get_doc("AOS Ad", self.ad)
+                if ad.status != "Active":
+                    self.visibility_status = "hidden"
+                    self.hidden_reason = "Ad is no longer active"
+            except Exception:
                 self.visibility_status = "hidden"
-                self.hidden_reason = "Ad is no longer active"
-        except Exception:
-            # fail-safe
-            self.visibility_status = "hidden"
-            self.hidden_reason = "Ad not found"
+                self.hidden_reason = "Ad not found"
+
+        # CASE: becoming hidden
+        if self.visibility_status == "hidden":
+            self.hidden_reason = self.hidden_reason or "Manually hidden"

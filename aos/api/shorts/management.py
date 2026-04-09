@@ -52,8 +52,8 @@ def get_short_impl(**kwargs):
 
         user = frappe.session.user if frappe.session.user != "Guest" else None
 
-        # Access control: only owner can see non-ready shorts
-        if doc.status != "ready":
+        # ACCESS CONTROL (visibility-based)
+        if doc.visibility_status != "visible":
             if not user or doc.owner != user:
                 return fail("Short not available.", code="NOT_FOUND")
 
@@ -62,6 +62,7 @@ def get_short_impl(**kwargs):
             SELECT
                 s.name,
                 s.status,
+                s.visibility_status,
                 s.caption,
                 s.hashtags,
                 s.playback_url,
