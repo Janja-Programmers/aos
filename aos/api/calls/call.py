@@ -39,7 +39,7 @@ from .validators import (
     validate_can_end,
 )
 
-from .utils import insert_call_system_message
+from .utils import upsert_call_system_message
 
 from .realtime import (
     publish_incoming_call,
@@ -109,7 +109,8 @@ def initiate_call_impl(**kwargs):
         call.insert(ignore_permissions=True)
 
         # System message
-        insert_call_system_message(
+        upsert_call_system_message(
+            call_id=call.name,
             conversation_id=conv_id,
             content="📞 Calling...",
         )
@@ -210,7 +211,8 @@ def accept_call_impl(**kwargs):
         )
 
         # System message
-        insert_call_system_message(
+        upsert_call_system_message(
+            call_id=call.name,
             conversation_id=call.conversation,
             content="📞 Call started",
         )
@@ -299,7 +301,8 @@ def reject_call_impl(**kwargs):
         )
 
         # System message
-        insert_call_system_message(
+        upsert_call_system_message(
+            call_id=call.name,
             conversation_id=call.conversation,
             content="📞 Call declined",
         )
@@ -378,7 +381,8 @@ def end_call_impl(**kwargs):
         )
 
         # System message
-        insert_call_system_message(
+        upsert_call_system_message(
+            call_id=call.name,
             conversation_id=call.conversation,
             content=f"📞 Call ended ({_format_duration(duration)})",
         )

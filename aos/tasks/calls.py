@@ -10,7 +10,7 @@ from __future__ import annotations
 import frappe
 from frappe.utils import now_datetime, add_to_date
 
-from aos.api.calls.utils import insert_call_system_message
+from aos.api.calls.utils import upsert_call_system_message
 
 
 # CONSTANTS
@@ -56,7 +56,8 @@ def handle_missed_calls():
                 )
 
                 # Insert system message
-                insert_call_system_message(
+                upsert_call_system_message(
+                    call_id=c.name,
                     conversation_id=c.conversation,
                     content="📞 Missed call",
                 )

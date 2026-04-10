@@ -12,6 +12,7 @@
   "content",
   "column_break_bgvu",
   "ad",
+  "call_id",
   "delivered_to_receiver_at",
   "read_by_receiver_at",
   "has_attachments"
@@ -88,12 +89,20 @@
    "label": "Read By Receiver At",
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "call_id",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Call",
+   "options": "AOS Call",
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-19 15:56:57.499950",
+ "modified": "2026-04-10 20:23:06.054389",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Message",
