@@ -11,6 +11,8 @@ import frappe
 from frappe.utils import now_datetime, add_to_date
 
 from aos.api.calls.utils import upsert_call_system_message
+from aos.api.calls.realtime import publish_call_not_answered
+from aos.services.notification_service import NotificationService
 
 
 # CONSTANTS
@@ -35,7 +37,7 @@ def handle_missed_calls():
                     "is_active": 1,
                     "creation": ["<", cutoff],
                 },
-                fields=["name", "conversation"],
+                fields=["name", "conversation", "caller", "receiver"],
                 limit=BATCH_SIZE,
             )
 
@@ -60,6 +62,16 @@ def handle_missed_calls():
                     call_id=c.name,
                     conversation_id=c.conversation,
                     content="📞 Missed call",
+                )
+
+                # Realtime event
+                publish_call_not_answered(c)
+
+                # Notify receiver
+                NotificationService.notify_missed_call(
+                    user=c.receiver,
+                    caller=c.caller,
+                    call_id=c.name,
                 )
 
         frappe.db.commit()

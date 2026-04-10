@@ -310,13 +310,6 @@ def reject_call_impl(**kwargs):
         # Notify caller
         publish_call_rejected(call)
 
-        # Missed call notification
-        NotificationService.notify_missed_call(
-            user=call.caller,
-            caller=current_user,
-            call_id=call.name,
-        )
-
         return ok("Call rejected.")
 
     except Exception:

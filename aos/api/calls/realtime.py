@@ -54,3 +54,16 @@ def publish_call_ended(call):
             },
             user=user,
         )
+
+
+def publish_call_not_answered(call):
+    users = [call.caller, call.receiver]
+
+    for user in users:
+        frappe.publish_realtime(
+            event="aos_call_not_answered",
+            message={
+                "call_id": call.name,
+            },
+            user=user,
+        )
