@@ -46,16 +46,22 @@ def handle_missed_calls():
 
             for c in calls:
                 # Update call
-                frappe.db.set_value(
-                    "AOS Call",
-                    c.name,
-                    {
-                        "status": "missed",
-                        "ended_at": now,
-                        "is_active": 0,
-                    },
-                    update_modified=False,
+                updated = frappe.db.sql(
+                    """
+                    UPDATE `tabAOS Call`
+                    SET status = 'missed',
+                        ended_at = %s,
+                        is_active = 0
+                    WHERE name = %s
+                      AND status IN ('initiated', 'ringing')
+                      AND is_active = 1
+                    """,
+                    (now, c.name),
                 )
+
+                # If no rows affected → call already accepted/rejected/ended
+                if not updated:
+                    continue
 
                 # Insert system message
                 upsert_call_system_message(
