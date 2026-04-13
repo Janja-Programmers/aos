@@ -6,6 +6,19 @@ from __future__ import annotations
 
 import frappe
 
+# HELPERS
+def _publish(event: str, message: dict, users: list[str]):
+    """
+    Safe publish helper.
+    Avoid duplicate sends if same user appears twice.
+    """
+    for user in set(users):
+        frappe.publish_realtime(
+            event=event,
+            message=message,
+            user=user,
+        )
+
 
 # EVENTS
 def publish_incoming_call(call, receiver: str):
@@ -43,27 +56,31 @@ def publish_call_rejected(call):
     )
 
 
-def publish_call_ended(call):
-    users = [call.caller, call.receiver]
+def publish_call_cancelled(call):
+    frappe.publish_realtime(
+        event="aos_call_cancelled",
+        message={
+            "call_id": call.name,
+        },
+        user=call.receiver,
+    )
 
-    for user in users:
-        frappe.publish_realtime(
-            event="aos_call_ended",
-            message={
-                "call_id": call.name,
-            },
-            user=user,
-        )
+
+def publish_call_ended(call):
+    _publish(
+        event="aos_call_ended",
+        message={
+            "call_id": call.name,
+        },
+        users=[call.caller, call.receiver],
+    )
 
 
 def publish_call_not_answered(call):
-    users = [call.caller, call.receiver]
-
-    for user in users:
-        frappe.publish_realtime(
-            event="aos_call_not_answered",
-            message={
-                "call_id": call.name,
-            },
-            user=user,
-        )
+    _publish(
+        event="aos_call_not_answered",
+        message={
+            "call_id": call.name,
+        },
+        users=[call.caller, call.receiver],
+    )

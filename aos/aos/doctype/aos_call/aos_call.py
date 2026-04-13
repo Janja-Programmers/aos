@@ -9,7 +9,7 @@ from frappe.utils import now_datetime, get_datetime
 
 
 ACTIVE_STATUSES = {"initiated", "ringing", "ongoing"}
-TERMINAL_STATUSES = {"ended", "missed", "rejected", "failed"}
+TERMINAL_STATUSES = {"ended", "missed", "rejected", "failed", "cancelled"}
 
 
 class AOSCall(Document):
@@ -62,13 +62,14 @@ class AOSCall(Document):
             return
 
         valid_transitions = {
-            "initiated": {"ringing", "missed", "failed"},
-            "ringing": {"ongoing", "rejected", "missed", "failed"},
+            "initiated": {"ringing", "missed", "failed", "cancelled"},
+            "ringing": {"ongoing", "rejected", "missed", "failed", "cancelled"},
             "ongoing": {"ended", "failed"},
             "ended": set(),
             "missed": set(),
             "rejected": set(),
             "failed": set(),
+            "cancelled": set(),
         }
 
         allowed = valid_transitions.get(old_status, set())
@@ -104,6 +105,10 @@ class AOSCall(Document):
 
     def _handle_status_side_effects(self):
         now = now_datetime()
+
+        # Ringing
+        if self.status == "ringing" and not self.ringing_at:
+            self.ringing_at = now
 
         # Started
         if self.status == "ongoing" and not self.started_at:

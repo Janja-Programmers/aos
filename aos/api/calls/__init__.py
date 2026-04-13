@@ -11,8 +11,10 @@ import frappe
 # Call lifecycle
 from .call import (
     initiate_call_impl,
+    mark_call_ringing_impl,
     accept_call_impl,
     reject_call_impl,
+    cancel_call_impl,
     end_call_impl,
 )
 
@@ -34,6 +36,11 @@ def initiate_call(**kwargs):
 
 
 @frappe.whitelist(methods=["POST"])
+def mark_call_ringing(**kwargs):
+    return mark_call_ringing_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
 def accept_call(**kwargs):
     return accept_call_impl(**kwargs)
 
@@ -41,6 +48,11 @@ def accept_call(**kwargs):
 @frappe.whitelist(methods=["POST"])
 def reject_call(**kwargs):
     return reject_call_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def cancel_call(**kwargs):
+    return cancel_call_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])

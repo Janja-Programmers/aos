@@ -29,6 +29,7 @@ def _mark_call_as_missed(call_name: str, ended_at) -> bool:
     Atomically mark call as missed.
 
     Returns True only if this task actually changed the row.
+    Prevents race with accept/reject/cancel.
     """
     frappe.db.sql(
         """
@@ -80,10 +81,11 @@ def handle_missed_calls():
     Mark calls as missed if not answered within timeout.
 
     Production guarantees:
-    - Atomic DB transition prevents accept/timeout race issues
-    - Side effects run only if the call was actually marked missed
-    - Side effects are isolated so one failure does not block others
-    - Commits happen per successfully processed call for durability
+    - Uses correct timestamps per state (creation vs ringing_at)
+    - Atomic DB transition prevents race conditions
+    - Side effects only run if state actually changed
+    - Side effects isolated for resilience
+    - Per-call commit for durability
     """
     try:
         now = now_datetime()
@@ -95,9 +97,16 @@ def handle_missed_calls():
                 filters={
                     "status": ["in", ["initiated", "ringing"]],
                     "is_active": 1,
-                    "creation": ["<", cutoff],
                 },
-                fields=["name", "conversation", "caller", "receiver"],
+                fields=[
+                    "name",
+                    "conversation",
+                    "caller",
+                    "receiver",
+                    "status",
+                    "creation",
+                    "ringing_at",
+                ],
                 limit=BATCH_SIZE,
             )
 
@@ -106,9 +115,26 @@ def handle_missed_calls():
 
             for call in calls:
                 try:
+                    should_mark = False
+
+                    # INITIATED → MISSED
+                    # (never delivered / no response)
+                    if call.status == "initiated":
+                        if call.creation and call.creation < cutoff:
+                            should_mark = True
+
+                    # RINGING → MISSED
+                    # (delivered but not answered)
+                    elif call.status == "ringing":
+                        if call.ringing_at and call.ringing_at < cutoff:
+                            should_mark = True
+
+                    if not should_mark:
+                        continue
+
                     updated = _mark_call_as_missed(call.name, now)
 
-                    # Already accepted / rejected / ended by another flow
+                    # Already handled by another flow
                     if not updated:
                         continue
 

@@ -93,22 +93,36 @@ def validate_call_active(call):
     return None
 
 
-def validate_can_accept(call):
+def validate_can_mark_ringing(call):
     if call.status not in ("initiated", "ringing"):
+        return fail("Call cannot be marked as ringing.", code="INVALID_STATE")
+
+    return None
+
+
+def validate_can_accept(call):
+    if call.status != "ringing":
         return fail("Call cannot be accepted.", code="INVALID_STATE")
 
     return None
 
 
 def validate_can_reject(call):
-    if call.status not in ("initiated", "ringing"):
+    if call.status != "ringing":
         return fail("Call cannot be rejected.", code="INVALID_STATE")
 
     return None
 
 
+def validate_can_cancel(call):
+    if call.status not in ("initiated", "ringing"):
+        return fail("Call cannot be cancelled.", code="INVALID_STATE")
+
+    return None
+
+
 def validate_can_end(call):
-    if call.status not in ("ongoing", "ringing"):
+    if call.status != "ongoing":
         return fail("Call cannot be ended.", code="INVALID_STATE")
 
     return None

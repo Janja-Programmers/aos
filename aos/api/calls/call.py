@@ -3,8 +3,10 @@ Call APIs (implementation).
 
 Handles:
 - initiate_call
+- mark_call_ringing
 - accept_call
 - reject_call
+- cancel_call
 - end_call
 """
 
@@ -34,9 +36,12 @@ from .validators import (
     validate_call_exists,
     validate_user_in_call,
     validate_is_receiver,
+    validate_is_caller,
     validate_can_accept,
     validate_can_reject,
     validate_can_end,
+    validate_can_cancel,
+    validate_can_mark_ringing,
 )
 
 from .utils import upsert_call_system_message
@@ -45,6 +50,7 @@ from .realtime import (
     publish_incoming_call,
     publish_call_accepted,
     publish_call_rejected,
+    publish_call_cancelled,
     publish_call_ended,
 )
 
@@ -53,10 +59,7 @@ from .realtime import (
 def _format_duration(seconds: int) -> str:
     mins = seconds // 60
     secs = seconds % 60
-
-    if mins > 0:
-        return f"{mins}m {secs}s"
-    return f"{secs}s"
+    return f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
 
 
 # INITIATE CALL
@@ -160,6 +163,51 @@ def initiate_call_impl(**kwargs):
         return fail("Failed to initiate call.", code="INTERNAL_ERROR")
 
 
+# MARK CALL RINGING
+def mark_call_ringing_impl(**kwargs):
+    current_user, err = require_login()
+    if err:
+        return err
+
+    call_id = kwargs.get("call_id")
+
+    if not call_id:
+        return fail("call_id is required.", code="VALIDATION_ERROR")
+
+    try:
+        call, err = validate_call_exists(call_id)
+        if err:
+            return err
+
+        err = validate_is_receiver(call, current_user)
+        if err:
+            return err
+
+        err = validate_can_mark_ringing(call)
+        if err:
+            return err
+
+        now = now_datetime()
+
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Call`
+            SET status = 'ringing',
+                ringing_at = %s
+            WHERE name = %s
+              AND status = 'initiated'
+            """,
+            (now, call_id),
+        )
+
+        return ok("Call marked as ringing.")
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "AOS Mark Ringing Failed")
+        frappe.db.rollback()
+        return fail("Failed to mark call as ringing.", code="INTERNAL_ERROR")
+
+
 # ACCEPT CALL
 def accept_call_impl(**kwargs):
     current_user, err = require_login()
@@ -200,15 +248,19 @@ def accept_call_impl(**kwargs):
         now = now_datetime()
 
         # Update call
-        frappe.db.set_value(
-            "AOS Call",
-            call_id,
-            {
-                "status": "ongoing",
-                "started_at": now,
-            },
-            update_modified=False,
+        updated = frappe.db.sql(
+            """
+            UPDATE `tabAOS Call`
+            SET status = 'ongoing',
+                started_at = %s
+            WHERE name = %s
+              AND status = 'ringing'
+            """,
+            (now, call_id),
         )
+
+        if frappe.db._cursor.rowcount == 0:
+            return fail("Call cannot be accepted.", code="INVALID_STATE")
 
         # System message
         upsert_call_system_message(
@@ -321,6 +373,65 @@ def reject_call_impl(**kwargs):
         return fail("Failed to reject call.", code="INTERNAL_ERROR")
 
 
+# CANCEL CALL
+def cancel_call_impl(**kwargs):
+    current_user, err = require_login()
+    if err:
+        return err
+
+    call_id = kwargs.get("call_id")
+
+    if not call_id:
+        return fail("call_id is required.", code="VALIDATION_ERROR")
+
+    try:
+        call, err = validate_call_exists(call_id)
+        if err:
+            return err
+
+        err = validate_is_caller(call, current_user)
+        if err:
+            return err
+
+        err = validate_can_cancel(call)
+        if err:
+            return err
+
+        now = now_datetime()
+
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Call`
+            SET status = 'cancelled',
+                ended_by = %s,
+                ended_at = %s,
+                is_active = 0
+            WHERE name = %s
+              AND caller = %s
+              AND status IN ('initiated', 'ringing')
+            """,
+            (current_user, now, call_id, current_user),
+        )
+
+        if frappe.db._cursor.rowcount == 0:
+            return fail("Call cannot be cancelled.", code="INVALID_STATE")
+
+        upsert_call_system_message(
+            call_id=call.name,
+            conversation_id=call.conversation,
+            content="📞 Call cancelled",
+        )
+
+        publish_call_cancelled(call)
+
+        return ok("Call cancelled.")
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "AOS Cancel Call Failed")
+        frappe.db.rollback()
+        return fail("Failed to cancel call.", code="INTERNAL_ERROR")
+
+
 # END CALL
 def end_call_impl(**kwargs):
     current_user, err = require_login()
@@ -356,9 +467,11 @@ def end_call_impl(**kwargs):
 
         now = now_datetime()
 
-        duration = 0
-        if call.started_at:
-            duration = int((now - call.started_at).total_seconds())
+        duration = (
+            int((now - call.started_at).total_seconds())
+            if call.started_at
+            else 0
+        )
 
         frappe.db.set_value(
             "AOS Call",
