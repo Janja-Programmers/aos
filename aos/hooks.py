@@ -144,17 +144,19 @@ app_license = "mit"
 # ---------------
 
 scheduler_events = {
-    "all": [
-        "aos.tasks.calls.handle_missed_calls",
-    ],
-	"hourly": [
-		"aos.tasks.ads.expire_ads",
+    "cron": {
+        "*/1 * * * *": [
+            "aos.tasks.calls.handle_missed_calls",
+        ],
+    },
+    "hourly": [
+        "aos.tasks.ads.expire_ads",
         "aos.tasks.shorts.aggregate_short_metrics",
         "aos.tasks.shorts.update_short_ranking",
-	],
-	"daily": [
-		"aos.tasks.fx.update_exchange_rates",
-	],
+    ],
+    "daily": [
+        "aos.tasks.fx.update_exchange_rates",
+    ],
 }
 
 # Testing
