@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import frappe
+from frappe.utils import now_datetime
 
 try:
     import firebase_admin
@@ -9,30 +11,35 @@ except ImportError:
     firebase_admin = None
 
 
+def get_token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def chunk_records(records: list[dict], size=500):
+    """
+    Chunk list of token records.
+    Each record contains: {token, token_hash}
+    """
+    for i in range(0, len(records), size):
+        yield records[i:i + size]
+
+
 class PushService:
     """
     Firebase Cloud Messaging (FCM) push service.
-
-    Responsibilities:
-    - Initialize Firebase Admin SDK
-    - Fetch active tokens for user
-    - Send push notifications
     """
 
     _initialized = False
 
     # INIT
     @classmethod
-    def _init(cls):
-        """
-        Initialize Firebase Admin SDK (lazy).
-        """
+    def _init(cls) -> bool:
         if cls._initialized:
-            return
+            return True
 
         if not firebase_admin:
             frappe.log_error("firebase_admin not installed", "PushService Init Failed")
-            return
+            return False
 
         try:
             if not firebase_admin._apps:
@@ -43,29 +50,31 @@ class PushService:
                         "Missing firebase_service_account in site config",
                         "PushService Init Failed",
                     )
-                    return
+                    return False
 
                 cred = credentials.Certificate(cred_path)
                 firebase_admin.initialize_app(cred)
 
             cls._initialized = True
+            return True
 
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), "PushService Init Error")
+        except Exception as e:
+            frappe.log_error(
+                frappe.get_traceback(),
+                f"PushService Init Error: {e}",
+            )
+            return False
 
     # TOKEN FETCH
     @staticmethod
-    def _get_active_tokens(user: str) -> list[str]:
-        """
-        Fetch active tokens for a user.
-        """
+    def _get_active_tokens(user: str) -> list[dict]:
         if not user:
             return []
 
         return frappe.get_all(
             "AOS Push Token",
             filters={"user": user, "is_active": 1},
-            pluck="token",
+            fields=["token", "token_hash"],
         )
 
     # SEND
@@ -78,60 +87,60 @@ class PushService:
         body: str,
         data: dict | None = None,
     ):
-        """
-        Send push notification to all active devices of a user.
-        """
-
         if not user:
             return
 
-        cls._init()
-
-        if not firebase_admin or not cls._initialized:
+        if not cls._init():
             return
 
-        tokens = cls._get_active_tokens(user)
+        token_records = cls._get_active_tokens(user)
 
-        if not tokens:
+        if not token_records:
             return
 
-        # FCM requires string values in data payload
-        data_payload = {
-            str(k): str(v) for k, v in (data or {}).items()
-        }
+        # Deduplicate using token_hash
+        unique = {r["token_hash"]: r for r in token_records}
+        records = list(unique.values())
+
+        data_payload = {str(k): str(v) for k, v in (data or {}).items()}
 
         try:
-            message = messaging.MulticastMessage(
-                notification=messaging.Notification(
-                    title=title,
-                    body=body,
-                ),
-                data=data_payload,
-                tokens=tokens,
+            for chunk in chunk_records(records, 500):
+                tokens = [r["token"] for r in chunk]
+
+                message = messaging.MulticastMessage(
+                    notification=messaging.Notification(
+                        title=title,
+                        body=body,
+                    ),
+                    data=data_payload,
+                    tokens=tokens,
+                )
+
+                response = messaging.send_multicast(message)
+
+                # Handle failures
+                if response.failure_count:
+                    cls._handle_failures(chunk, response)
+
+                # Update success timestamps
+                cls._update_last_used(chunk, response)
+
+        except Exception as e:
+            frappe.log_error(
+                frappe.get_traceback(),
+                f"PushService Send Error: {e}",
             )
 
-            response = messaging.send_multicast(message)
-
-            # Handle invalid tokens
-            if response.failure_count:
-                cls._handle_failures(tokens, response)
-
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), "PushService Send Error")
-
-    # CLEANUP
+    # CLEANUP FAILURES
     @staticmethod
-    def _handle_failures(tokens: list[str], response):
-        """
-        Deactivate invalid tokens.
-        """
+    def _handle_failures(chunk: list[dict], response):
         for idx, resp in enumerate(response.responses):
             if resp.success:
                 continue
 
             error = str(resp.exception)
 
-            # Common invalid token errors
             if any(
                 err in error
                 for err in [
@@ -139,12 +148,31 @@ class PushService:
                     "invalid-registration-token",
                 ]
             ):
-                token = tokens[idx]
+                record = chunk[idx]
 
                 frappe.db.set_value(
                     "AOS Push Token",
-                    {"token": token},
+                    {"token_hash": record["token_hash"]},
                     "is_active",
                     0,
                     update_modified=False,
                 )
+
+    # UPDATE LAST USED
+    @staticmethod
+    def _update_last_used(chunk: list[dict], response):
+        now = now_datetime()
+
+        for idx, resp in enumerate(response.responses):
+            if not resp.success:
+                continue
+
+            record = chunk[idx]
+
+            frappe.db.set_value(
+                "AOS Push Token",
+                {"token_hash": record["token_hash"]},
+                "last_used_at",
+                now,
+                update_modified=False,
+            )

@@ -3,15 +3,20 @@
 
 from __future__ import annotations
 
+import hashlib
 import frappe
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 
 
+def get_token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 class AOSPushToken(Document):
     def before_insert(self):
         """
-        Ensure clean insert and prevent duplicates.
+        Validate and normalize before insert.
         """
 
         if not self.user:
@@ -23,43 +28,23 @@ class AOSPushToken(Document):
         if not self.device_type:
             frappe.throw("Device type is required.")
 
-        # Normalize
+        # Generate token hash
+        self.token_hash = get_token_hash(self.token)
+
+        # Normalize defaults
         if self.is_active is None:
             self.is_active = 1
 
         if not self.last_used_at:
             self.last_used_at = now_datetime()
 
-        # Deduplicate: if token already exists, update instead of insert
-        existing = frappe.db.get_value(
-            "AOS Push Token",
-            {"token": self.token},
-            ["name", "user"],
-            as_dict=True,
-        )
-
-        if existing:
-            # Update existing record instead of inserting duplicate
-            frappe.db.set_value(
-                "AOS Push Token",
-                existing.name,
-                {
-                    "user": self.user,
-                    "device_type": self.device_type,
-                    "device_id": self.device_id,
-                    "is_active": 1,
-                    "last_used_at": self.last_used_at,
-                },
-                update_modified=False,
-            )
-
-            # Prevent new insert
-            frappe.throw("Token already exists. Updated existing record.")
-
     def before_save(self):
         """
-        Update usage timestamp on every save.
+        Ensure hash consistency + update timestamp.
         """
+        if self.token:
+            self.token_hash = get_token_hash(self.token)
+
         self.last_used_at = now_datetime()
 
     def deactivate(self):
