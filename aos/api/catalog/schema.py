@@ -115,9 +115,11 @@ def _resolve_attributes(chain_leaf_to_root: List[Dict[str, Any]]) -> List[Dict[s
 
     Parent attributes are inherited.
     Child category rows override parent rows.
+    Child can explicitly disable inherited attributes.
     """
 
     by_attr: Dict[str, Dict[str, Any]] = {}
+    disabled: set[str] = set()
 
     # iterate root -> leaf so leaf overrides
     for cat in reversed(chain_leaf_to_root):
@@ -127,6 +129,15 @@ def _resolve_attributes(chain_leaf_to_root: List[Dict[str, Any]]) -> List[Dict[s
                 continue
 
             if not int(getattr(row, "is_active", 0) or 0):
+                disabled.add(attr_name)
+
+                # if already inherited, remove it
+                if attr_name in by_attr:
+                    del by_attr[attr_name]
+                continue
+
+            # if previously disabled, skip completely
+            if attr_name in disabled:
                 continue
 
             try:
