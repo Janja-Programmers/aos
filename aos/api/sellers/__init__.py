@@ -7,7 +7,8 @@ Structure:
 
 import frappe
 
-from .get_seller_profile import get_seller_profile_impl
+from .list_sellers import list_sellers_impl
+from .get_seller import get_seller_impl
 from .get_my_seller_status import get_my_seller_status_impl
 from .toggle_follow import toggle_follow_impl
 from .submit_verification import submit_verification_impl
@@ -16,9 +17,15 @@ from .update_my_seller import update_my_seller_impl
 
 
 @frappe.whitelist(allow_guest=True)
-def get_seller_profile(**kwargs):
+def list_sellers(**kwargs):
+    """List marketplace sellers."""
+    return list_sellers_impl(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_seller(**kwargs):
     """Get seller profile (used in storefront and ad detail)."""
-    return get_seller_profile_impl(**kwargs)
+    return get_seller_impl(**kwargs)
 
 
 @frappe.whitelist()

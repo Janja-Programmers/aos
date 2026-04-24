@@ -77,6 +77,7 @@ class AOSSellerVerification(Document):
             seller.is_verified = 1
             seller.seller_type = "Business"
             seller.shop_name = self.business_name
+            seller.category = self.business_category
             seller.physical_address = self.physical_address
             seller.verified_on = self.verified_on
             seller.verified_by = self.verified_by

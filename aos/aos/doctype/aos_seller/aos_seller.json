@@ -8,8 +8,9 @@
   "user",
   "shop_name",
   "seller_type",
-  "status",
+  "category",
   "column_break_gwmy",
+  "status",
   "shop_banner",
   "avatar",
   "section_break_rvlv",
@@ -169,11 +170,16 @@
    "fieldtype": "Table",
    "label": "Operating Hours",
    "options": "AOS Seller Operating Hours"
+  },
+  {
+   "fieldname": "category",
+   "fieldtype": "Data",
+   "label": "Category"
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-04-24 16:44:50.520589",
+ "modified": "2026-04-24 17:55:22.466761",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Seller",

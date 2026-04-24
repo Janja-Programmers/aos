@@ -76,6 +76,13 @@ def update_my_seller_impl(**kwargs):
                 seller_doc.shop_name = new_name
                 identity_changed = True
 
+        if "category" in kwargs:
+            new_category = kwargs.get("category")
+
+            if new_category and new_category != seller_doc.category:
+                seller_doc.category = new_category
+                identity_changed = True
+
         if "about_shop" in kwargs:
             seller_doc.about_shop = kwargs.get("about_shop")
 
@@ -108,7 +115,6 @@ def update_my_seller_impl(**kwargs):
 
             seller_doc.shop_banner = banner
 
-        # UPDATE OPERATING HOURS
         if "operating_hours" in kwargs:
             seller_doc.set("operating_hours", kwargs.get("operating_hours"))
 
@@ -124,6 +130,7 @@ def update_my_seller_impl(**kwargs):
             "Seller profile updated successfully.",
             data={
                 "shop_name": seller_doc.shop_name,
+                "category": seller_doc.category,
                 "about_shop": seller_doc.about_shop,
                 "physical_address": seller_doc.physical_address,
                 "avatar": seller_doc.avatar,
