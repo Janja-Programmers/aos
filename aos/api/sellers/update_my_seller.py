@@ -66,12 +66,25 @@ def update_my_seller_impl(**kwargs):
                 code="VALIDATION_ERROR"
             )
 
+        identity_changed = False
+
         # Update fields
         if "shop_name" in kwargs:
-            seller_doc.shop_name = kwargs.get("shop_name")
+            new_name = kwargs.get("shop_name")
+
+            if new_name and new_name != seller_doc.shop_name:
+                seller_doc.shop_name = new_name
+                identity_changed = True
 
         if "about_shop" in kwargs:
             seller_doc.about_shop = kwargs.get("about_shop")
+
+        if "physical_address" in kwargs:
+            new_address = kwargs.get("physical_address")
+
+            if new_address and new_address != seller_doc.physical_address:
+                seller_doc.physical_address = new_address
+                identity_changed = True
 
         if "avatar" in kwargs:
             avatar = kwargs.get("avatar")
@@ -95,6 +108,15 @@ def update_my_seller_impl(**kwargs):
 
             seller_doc.shop_banner = banner
 
+        # UPDATE OPERATING HOURS
+        if "operating_hours" in kwargs:
+            seller_doc.set("operating_hours", kwargs.get("operating_hours"))
+
+        # REVOKE VERIFICATION IF IDENTITY CHANGED
+        if identity_changed and seller_doc.is_verified:
+            seller_doc.is_verified = 0
+            seller_doc.seller_type = "Individual"
+
         seller_doc.save(ignore_permissions=True)
         frappe.db.commit()
 
@@ -103,8 +125,11 @@ def update_my_seller_impl(**kwargs):
             data={
                 "shop_name": seller_doc.shop_name,
                 "about_shop": seller_doc.about_shop,
+                "physical_address": seller_doc.physical_address,
                 "avatar": seller_doc.avatar,
-                "shop_banner": seller_doc.shop_banner
+                "shop_banner": seller_doc.shop_banner,
+                "is_verified": seller_doc.is_verified,
+                "seller_type": seller_doc.seller_type,
             }
         )
 

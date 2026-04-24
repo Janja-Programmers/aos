@@ -14,6 +14,8 @@
   "avatar",
   "section_break_rvlv",
   "about_shop",
+  "physical_address",
+  "operating_hours",
   "metrics_tab",
   "section_break_xlao",
   "total_ads",
@@ -156,11 +158,22 @@
    "label": "Verified By",
    "options": "User",
    "read_only": 1
+  },
+  {
+   "fieldname": "physical_address",
+   "fieldtype": "Small Text",
+   "label": "Physical Address"
+  },
+  {
+   "fieldname": "operating_hours",
+   "fieldtype": "Table",
+   "label": "Operating Hours",
+   "options": "AOS Seller Operating Hours"
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-03-17 13:30:10.657651",
+ "modified": "2026-04-24 16:44:50.520589",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Seller",

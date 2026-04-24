@@ -33,19 +33,25 @@ class AOSSellerVerification(Document):
             return
 
         # Stamp metadata
+        if self.status not in ["Approved", "Rejected"]:
+            return
+
         self.verified_by = frappe.session.user
         self.verified_on = now()
 
         # NOTIFICATIONS
         try:
+            seller_doc = frappe.get_doc("AOS Seller", self.seller)
+            seller_user = seller_doc.user
+
             if self.status == "Approved":
                 NotificationService.notify_verification_approved(
-                    user=self.seller
+                    user=seller_user
                 )
 
             elif self.status == "Rejected":
                 NotificationService.notify_verification_rejected(
-                    user=self.seller
+                    user=seller_user
                 )
 
         except Exception:
@@ -59,18 +65,24 @@ class AOSSellerVerification(Document):
         if not self.seller:
             return
 
+        previous = self.get_doc_before_save()
+
+        # Skip if no status change
+        if previous and previous.status == self.status:
+            return
+
         seller = frappe.get_doc("AOS Seller", self.seller)
 
         if self.status == "Approved":
             seller.is_verified = 1
             seller.seller_type = "Business"
+            seller.shop_name = self.business_name
+            seller.physical_address = self.physical_address
             seller.verified_on = self.verified_on
             seller.verified_by = self.verified_by
 
         elif self.status == "Rejected":
             seller.is_verified = 0
             seller.seller_type = "Individual"
-            seller.verified_on = None
-            seller.verified_by = None
 
         seller.save(ignore_permissions=True)
