@@ -192,7 +192,8 @@
    "label": "Qdrant API Key"
   },
   {
-   "default": "0",
+   "default": "0.75",
+   "description": "Minimum similarity score required for an image match to be considered relevant. Based on cosine similarity between CLIP embeddings (range 0.0 - 1.0). Higher values return stricter, more accurate matches. Lower values increase recall but may introduce irrelevant results.",
    "fieldname": "score_threshold",
    "fieldtype": "Float",
    "label": "Score Threshold"
@@ -205,6 +206,7 @@
   },
   {
    "default": "50",
+   "description": "Controls how many candidate image matches are retrieved from Qdrant before filtering and grouping into ads. Higher values improve match coverage but increase latency and noise in results. Lower values improve speed but may miss relevant matches.",
    "fieldname": "image_search_limit",
    "fieldtype": "Int",
    "label": "Image Search Limit"
@@ -296,7 +298,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-03-29 17:22:28.571499",
+ "modified": "2026-04-24 19:06:22.455562",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Settings",
