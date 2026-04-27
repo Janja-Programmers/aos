@@ -72,7 +72,7 @@ def toggle_follow_impl(**kwargs):
             if seller != current_user:
                 NotificationService.notify_follow(
                     user=seller,
-                    actor=current_user,
+                    follower=current_user,
                 )
 
             return ok(
