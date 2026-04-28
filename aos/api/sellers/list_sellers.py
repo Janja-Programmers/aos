@@ -37,11 +37,18 @@ def list_sellers_impl(**kwargs):
         is_verified = kwargs.get("is_verified")
         seller_type = kwargs.get("seller_type")
         category = kwargs.get("category")
+        follow_filter = kwargs.get("follow_filter")
+
+        user = current_user()
 
         # BASE FILTERS
         filters = {
-            "status": "Active"
+            "status": "Active",
         }
+
+        # Do not show logged-in seller their own seller profile in discovery.
+        if user and user != "Guest":
+            filters["user"] = ["!=", user]
 
         if is_verified is not None:
             filters["is_verified"] = int(is_verified)
@@ -52,12 +59,43 @@ def list_sellers_impl(**kwargs):
         if category:
             filters["category"] = category
 
+        # FOLLOW FILTER
+        following_ids = set()
+
+        if user and user != "Guest":
+            follows = frappe.get_all(
+                "AOS Seller Follow",
+                filters={
+                    "follower": user,
+                },
+                fields=["seller"],
+            )
+            following_ids = {f["seller"] for f in follows}
+
+            if follow_filter == "following":
+                if not following_ids:
+                    return ok(
+                        "Sellers fetched successfully.",
+                        data={
+                            "items": [],
+                            "limit": limit,
+                            "offset": offset,
+                            "count": 0,
+                        },
+                    )
+
+                filters["name"] = ["in", list(following_ids)]
+
+            elif follow_filter == "not_following":
+                if following_ids:
+                    filters["name"] = ["not in", list(following_ids)]
+
         # SEARCH
         or_filters = None
 
         if search:
             or_filters = [
-                ["shop_name", "like", f"%{search}%"]
+                ["shop_name", "like", f"%{search}%"],
             ]
 
         # FETCH SELLERS
@@ -76,48 +114,38 @@ def list_sellers_impl(**kwargs):
                 "total_reviews",
                 "total_followers",
                 "is_verified",
-                "seller_type"
+                "seller_type",
             ],
             limit=limit,
             start=offset,
-            order_by="is_verified desc, rating desc, total_followers desc, creation desc"
+            order_by=(
+                "is_verified desc, "
+                "rating desc, "
+                "total_followers desc, "
+                "creation desc"
+            ),
         )
-
-        # FOLLOW STATE (batch query)
-        user = current_user()
-        following_map = set()
-
-        if user and user != "Guest" and sellers:
-            seller_ids = [s["name"] for s in sellers]
-
-            follows = frappe.get_all(
-                "AOS Seller Follow",
-                filters={
-                    "follower": user,
-                    "seller": ["in", seller_ids]
-                },
-                fields=["seller"]
-            )
-
-            following_map = {f["seller"] for f in follows}
 
         # FORMAT RESPONSE
         items = []
 
         for s in sellers:
-            items.append({
-                "seller": s["name"],
-                "user": s["user"],
-                "shop_name": s["shop_name"],
-                "category": s.get("category"),
-                "avatar": s.get("avatar"),
-                "physical_address": s.get("physical_address"),
-                "is_verified": s.get("is_verified"),
-                "rating": s.get("rating"),
-                "total_reviews": s.get("total_reviews"),
-                "total_followers": s.get("total_followers"),
-                "is_following": s["name"] in following_map
-            })
+            items.append(
+                {
+                    "seller": s["name"],
+                    "user": s["user"],
+                    "shop_name": s["shop_name"],
+                    "category": s.get("category"),
+                    "avatar": s.get("avatar"),
+                    "physical_address": s.get("physical_address"),
+                    "is_verified": s.get("is_verified"),
+                    "seller_type": s.get("seller_type"),
+                    "rating": s.get("rating"),
+                    "total_reviews": s.get("total_reviews"),
+                    "total_followers": s.get("total_followers"),
+                    "is_following": s["name"] in following_ids,
+                }
+            )
 
         return ok(
             "Sellers fetched successfully.",
@@ -125,16 +153,16 @@ def list_sellers_impl(**kwargs):
                 "items": items,
                 "limit": limit,
                 "offset": offset,
-                "count": len(items)
-            }
+                "count": len(items),
+            },
         )
 
     except Exception:
         frappe.log_error(
             frappe.get_traceback(),
-            "AOS List Sellers Failed"
+            "AOS List Sellers Failed",
         )
         return fail(
             "Failed to fetch sellers.",
-            code="INTERNAL_ERROR"
+            code="INTERNAL_ERROR",
         )
