@@ -72,18 +72,18 @@ def decode_cursor(cursor: str | None) -> dict[str, Any] | None:
     try:
         raw = base64.urlsafe_b64decode(cursor.encode("utf-8"))
         data = json.loads(raw.decode("utf-8"))
-        if isinstance(data, dict):
-            return data
-        return None
+        return data if isinstance(data, dict) else None
     except Exception:
         return None
 
 
 def build_time_id_cursor(*, created_on: Any, name: str) -> str:
-    return encode_cursor({
-        "created_on": _normalize_datetime_string(created_on),
-        "name": name,
-    })
+    return encode_cursor(
+        {
+            "created_on": _normalize_datetime_string(created_on),
+            "name": name,
+        }
+    )
 
 
 def parse_time_id_cursor(cursor: str | None) -> tuple[str | None, str | None]:
@@ -109,8 +109,86 @@ def build_cursor_where_clause(
     return clause, (created_on, created_on, name)
 
 
+def build_ranked_cursor(
+    *,
+    ranking_score: Any,
+    created_on: Any,
+    name: str,
+) -> str:
+    """
+    Cursor for feeds ordered by:
+    ranking_score DESC, creation DESC, name DESC
+    """
+    return encode_cursor(
+        {
+            "ranking_score": flt(ranking_score or 0),
+            "created_on": _normalize_datetime_string(created_on),
+            "name": name,
+        }
+    )
+
+
+def parse_ranked_cursor(
+    cursor: str | None,
+) -> tuple[float | None, str | None, str | None]:
+    data = decode_cursor(cursor) or {}
+
+    ranking_score = data.get("ranking_score")
+    created_on = data.get("created_on")
+    name = data.get("name")
+
+    if ranking_score is None or not created_on or not name:
+        return None, None, None
+
+    return flt(ranking_score), created_on, name
+
+
+def build_ranked_cursor_where_clause(
+    score_field: str,
+    created_field: str,
+    name_field: str,
+    cursor: str | None,
+) -> tuple[str, tuple]:
+    """
+    Keyset WHERE clause for feeds ordered by:
+    score_field DESC, created_field DESC, name_field DESC
+    """
+    ranking_score, created_on, name = parse_ranked_cursor(cursor)
+
+    if ranking_score is None or not created_on or not name:
+        return "", ()
+
+    clause = f"""
+        AND (
+            {score_field} < %s
+            OR (
+                {score_field} = %s
+                AND {created_field} < %s
+            )
+            OR (
+                {score_field} = %s
+                AND {created_field} = %s
+                AND {name_field} < %s
+            )
+        )
+    """
+
+    return clause, (
+        ranking_score,
+        ranking_score,
+        created_on,
+        ranking_score,
+        created_on,
+        name,
+    )
+
+
 # SHORT SERIALIZATION HELPERS
-def serialize_short_row(row: dict[str, Any], *, viewer_state: dict[str, Any] | None = None) -> dict[str, Any]:
+def serialize_short_row(
+    row: dict[str, Any],
+    *,
+    viewer_state: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     status = row.get("status")
 
     return {
@@ -147,7 +225,11 @@ def serialize_short_row(row: dict[str, Any], *, viewer_state: dict[str, Any] | N
     }
 
 
-def serialize_comment_row(row: dict[str, Any], *, viewer_state: dict[str, Any] | None = None) -> dict[str, Any]:
+def serialize_comment_row(
+    row: dict[str, Any],
+    *,
+    viewer_state: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     return {
         "id": row.get("name"),
         "short": row.get("short"),

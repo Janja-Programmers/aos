@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import frappe
 
-from aos.api.shared.auth import require_login, current_user
+from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.validators import require_id
@@ -23,8 +23,8 @@ from aos.api.shorts.constants import (
 )
 
 from aos.api.shorts.utils import (
-    build_cursor_where_clause,
-    build_time_id_cursor,
+    build_ranked_cursor,
+    build_ranked_cursor_where_clause,
     serialize_short_row,
 )
 
@@ -35,25 +35,72 @@ def _get_limit(kwargs):
     return validate_limit(limit_input, FEED_DEFAULT_LIMIT, FEED_MAX_LIMIT)
 
 
-def _build_response(rows):
+def _build_response(rows, limit: int):
     if not rows:
-        return ok("Feed fetched.", data={"items": [], "next_cursor": None})
+        return ok(
+            "Feed fetched.",
+            data={
+                "items": [],
+                "next_cursor": None,
+                "has_more": False,
+            },
+        )
 
-    items = [serialize_short_row(r) for r in rows]
+    has_more = len(rows) > limit
+    visible_rows = rows[:limit]
 
-    last = rows[-1]
-    next_cursor = build_time_id_cursor(
-        created_on=last.get("creation"),
-        name=last.get("name"),
-    )
+    items = [serialize_short_row(r) for r in visible_rows]
+
+    next_cursor = None
+    if has_more:
+        last = visible_rows[-1]
+        next_cursor = build_ranked_cursor(
+            ranking_score=last.get("ranking_score"),
+            created_on=last.get("creation"),
+            name=last.get("name"),
+        )
 
     return ok(
         "Feed fetched.",
         data={
             "items": items,
             "next_cursor": next_cursor,
+            "has_more": has_more,
         },
     )
+
+
+def _select_short_rows_sql() -> str:
+    return """
+        SELECT
+            s.name,
+            s.caption,
+            s.hashtags,
+            s.playback_url,
+            s.thumbnail_url,
+            s.duration_seconds,
+            s.view_count,
+            s.like_count,
+            s.comment_count,
+            s.share_count,
+            s.impression_count,
+            s.ranking_score,
+            s.posted_on,
+            s.creation,
+            s.seller,
+            s.ad,
+
+            sel.shop_name,
+            sel.avatar AS seller_avatar,
+
+            ad.title AS ad_title,
+            ad.price AS ad_price,
+            ad.currency AS ad_currency
+
+        FROM `tabAOS Short` s
+        LEFT JOIN `tabAOS Seller` sel ON sel.name = s.seller
+        LEFT JOIN `tabAOS Ad` ad ON ad.name = s.ad
+    """
 
 
 # FEED: FOR YOU
@@ -71,7 +118,8 @@ def feed_for_you_impl(**kwargs):
         limit = _get_limit(kwargs)
         cursor = kwargs.get("cursor")
 
-        where_cursor, params_cursor = build_cursor_where_clause(
+        where_cursor, params_cursor = build_ranked_cursor_where_clause(
+            score_field="s.ranking_score",
             created_field="s.creation",
             name_field="s.name",
             cursor=cursor,
@@ -79,33 +127,7 @@ def feed_for_you_impl(**kwargs):
 
         rows = frappe.db.sql(
             f"""
-            SELECT
-                s.name,
-                s.caption,
-                s.hashtags,
-                s.playback_url,
-                s.thumbnail_url,
-                s.duration_seconds,
-                s.view_count,
-                s.like_count,
-                s.comment_count,
-                s.share_count,
-                s.impression_count,
-                s.ranking_score,
-                s.posted_on,
-                s.seller,
-                s.ad,
-
-                sel.shop_name,
-                sel.avatar AS seller_avatar,
-
-                ad.title AS ad_title,
-                ad.price AS ad_price,
-                ad.currency AS ad_currency
-
-            FROM `tabAOS Short` s
-            LEFT JOIN `tabAOS Seller` sel ON sel.name = s.seller
-            LEFT JOIN `tabAOS Ad` ad ON ad.name = s.ad
+            {_select_short_rows_sql()}
 
             WHERE
                 s.status = 'ready'
@@ -119,11 +141,11 @@ def feed_for_you_impl(**kwargs):
 
             LIMIT %s
             """,
-            (*params_cursor, limit),
+            (*params_cursor, limit + 1),
             as_dict=True,
         )
 
-        return _build_response(rows)
+        return _build_response(rows, limit)
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "feed_for_you failed")
@@ -149,7 +171,8 @@ def feed_following_impl(**kwargs):
         limit = _get_limit(kwargs)
         cursor = kwargs.get("cursor")
 
-        where_cursor, params_cursor = build_cursor_where_clause(
+        where_cursor, params_cursor = build_ranked_cursor_where_clause(
+            score_field="s.ranking_score",
             created_field="s.creation",
             name_field="s.name",
             cursor=cursor,
@@ -171,6 +194,7 @@ def feed_following_impl(**kwargs):
                 s.impression_count,
                 s.ranking_score,
                 s.posted_on,
+                s.creation,
                 s.seller,
                 s.ad,
 
@@ -193,16 +217,17 @@ def feed_following_impl(**kwargs):
                 {where_cursor}
 
             ORDER BY
+                s.ranking_score DESC,
                 s.creation DESC,
                 s.name DESC
 
             LIMIT %s
             """,
-            (user, *params_cursor, limit),
+            (user, *params_cursor, limit + 1),
             as_dict=True,
         )
 
-        return _build_response(rows)
+        return _build_response(rows, limit)
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "feed_following failed")
@@ -228,7 +253,8 @@ def feed_by_ad_impl(**kwargs):
         limit = _get_limit(kwargs)
         cursor = kwargs.get("cursor")
 
-        where_cursor, params_cursor = build_cursor_where_clause(
+        where_cursor, params_cursor = build_ranked_cursor_where_clause(
+            score_field="s.ranking_score",
             created_field="s.creation",
             name_field="s.name",
             cursor=cursor,
@@ -236,33 +262,7 @@ def feed_by_ad_impl(**kwargs):
 
         rows = frappe.db.sql(
             f"""
-            SELECT
-                s.name,
-                s.caption,
-                s.hashtags,
-                s.playback_url,
-                s.thumbnail_url,
-                s.duration_seconds,
-                s.view_count,
-                s.like_count,
-                s.comment_count,
-                s.share_count,
-                s.impression_count,
-                s.ranking_score,
-                s.posted_on,
-                s.seller,
-                s.ad,
-
-                sel.shop_name,
-                sel.avatar AS seller_avatar,
-
-                ad.title AS ad_title,
-                ad.price AS ad_price,
-                ad.currency AS ad_currency
-
-            FROM `tabAOS Short` s
-            LEFT JOIN `tabAOS Seller` sel ON sel.name = s.seller
-            LEFT JOIN `tabAOS Ad` ad ON ad.name = s.ad
+            {_select_short_rows_sql()}
 
             WHERE
                 s.ad = %s
@@ -271,16 +271,17 @@ def feed_by_ad_impl(**kwargs):
                 {where_cursor}
 
             ORDER BY
+                s.ranking_score DESC,
                 s.creation DESC,
                 s.name DESC
 
             LIMIT %s
             """,
-            (ad_id, *params_cursor, limit),
+            (ad_id, *params_cursor, limit + 1),
             as_dict=True,
         )
 
-        return _build_response(rows)
+        return _build_response(rows, limit)
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "feed_by_ad failed")
