@@ -29,7 +29,7 @@ def _mark_call_as_missed(call_name: str, ended_at) -> bool:
     Atomically mark call as missed.
 
     Returns True only if this task actually changed the row.
-    Prevents race with accept/reject/cancel.
+    Prevents race with accept/reject/cancel/end.
     """
     frappe.db.sql(
         """
@@ -75,13 +75,60 @@ def _handle_missed_call_side_effects(call):
         _log_error(f"AOS Missed Call Notification Failed: {call.name}")
 
 
+def _get_expired_initiated_calls(cutoff):
+    return frappe.get_all(
+        "AOS Call",
+        filters={
+            "status": "initiated",
+            "is_active": 1,
+            "creation": ["<=", cutoff],
+        },
+        fields=[
+            "name",
+            "conversation",
+            "caller",
+            "receiver",
+            "status",
+            "creation",
+            "ringing_at",
+        ],
+        order_by="creation asc",
+        limit=BATCH_SIZE,
+    )
+
+
+def _get_expired_ringing_calls(cutoff):
+    return frappe.get_all(
+        "AOS Call",
+        filters={
+            "status": "ringing",
+            "is_active": 1,
+            "ringing_at": ["<=", cutoff],
+        },
+        fields=[
+            "name",
+            "conversation",
+            "caller",
+            "receiver",
+            "status",
+            "creation",
+            "ringing_at",
+        ],
+        order_by="ringing_at asc",
+        limit=BATCH_SIZE,
+    )
+
+
 # TASK: HANDLE MISSED CALLS
 def handle_missed_calls():
     """
     Mark calls as missed if not answered within timeout.
 
     Production guarantees:
-    - Uses correct timestamps per state (creation vs ringing_at)
+    - DB fetches only expired candidates
+    - Avoids infinite scheduler loop
+    - Uses creation for initiated calls
+    - Uses ringing_at for ringing calls
     - Atomic DB transition prevents race conditions
     - Side effects only run if state actually changed
     - Side effects isolated for resilience
@@ -91,59 +138,26 @@ def handle_missed_calls():
         now = now_datetime()
         cutoff = add_to_date(now, seconds=-MISSED_CALL_TIMEOUT_SECONDS)
 
-        while True:
-            calls = frappe.get_all(
-                "AOS Call",
-                filters={
-                    "status": ["in", ["initiated", "ringing"]],
-                    "is_active": 1,
-                },
-                fields=[
-                    "name",
-                    "conversation",
-                    "caller",
-                    "receiver",
-                    "status",
-                    "creation",
-                    "ringing_at",
-                ],
-                limit=BATCH_SIZE,
-            )
+        calls = []
+        calls.extend(_get_expired_initiated_calls(cutoff))
+        calls.extend(_get_expired_ringing_calls(cutoff))
 
-            if not calls:
-                break
+        if not calls:
+            return
 
-            for call in calls:
-                try:
-                    should_mark = False
+        for call in calls:
+            try:
+                updated = _mark_call_as_missed(call.name, now)
 
-                    # INITIATED → MISSED
-                    # (never delivered / no response)
-                    if call.status == "initiated":
-                        if call.creation and call.creation < cutoff:
-                            should_mark = True
+                if not updated:
+                    continue
 
-                    # RINGING → MISSED
-                    # (delivered but not answered)
-                    elif call.status == "ringing":
-                        if call.ringing_at and call.ringing_at < cutoff:
-                            should_mark = True
+                _handle_missed_call_side_effects(call)
+                frappe.db.commit()
 
-                    if not should_mark:
-                        continue
-
-                    updated = _mark_call_as_missed(call.name, now)
-
-                    # Already handled by another flow
-                    if not updated:
-                        continue
-
-                    _handle_missed_call_side_effects(call)
-                    frappe.db.commit()
-
-                except Exception:
-                    frappe.db.rollback()
-                    _log_error(f"AOS Missed Call Processing Failed: {call.name}")
+            except Exception:
+                frappe.db.rollback()
+                _log_error(f"AOS Missed Call Processing Failed: {call.name}")
 
     except Exception:
         frappe.db.rollback()
