@@ -63,6 +63,7 @@ def get_short_impl(**kwargs):
                 s.name,
                 s.status,
                 s.visibility_status,
+                s.content_mode,
                 s.caption,
                 s.hashtags,
                 s.playback_url,
@@ -142,6 +143,7 @@ def my_shorts_impl(**kwargs):
             SELECT
                 s.name,
                 s.status,
+                s.content_mode,
                 s.caption,
                 s.hashtags,
                 s.playback_url,
@@ -184,7 +186,13 @@ def my_shorts_impl(**kwargs):
         )
 
         if not rows:
-            return ok("My shorts fetched.", data={"items": [], "next_cursor": None})
+            return ok(
+                "My shorts fetched.",
+                data={
+                    "items": [],
+                    "next_cursor": None,
+                },
+            )
 
         items = [serialize_short_row(r) for r in rows]
 
@@ -196,7 +204,10 @@ def my_shorts_impl(**kwargs):
 
         return ok(
             "My shorts fetched.",
-            data={"items": items, "next_cursor": next_cursor},
+            data={
+                "items": items,
+                "next_cursor": next_cursor,
+            },
         )
 
     except Exception:

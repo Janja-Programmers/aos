@@ -12,9 +12,17 @@ from aos.api.shorts.constants import (
     MAX_HASHTAGS,
 )
 
+VALID_CONTENT_MODES = {
+    "shop",
+    "places",
+    "vibes",
+    "learn",
+}
+
 
 class AOSShort(Document):
     def validate(self):
+        self._validate_content_mode()
         self._validate_ad()
         self._validate_content()
         self._validate_duration()
@@ -27,7 +35,22 @@ class AOSShort(Document):
 
 
     # PRIVATE METHODS
+    def _validate_content_mode(self):
+        if not self.content_mode:
+            return
+        
+        self.content_mode = self.content_mode.strip().lower()
+
+        if self.content_mode not in VALID_CONTENT_MODES:
+            frappe.throw("Invalid short content mode")
+
     def _validate_ad(self):
+        """
+        Ad rules:
+        - Shop shorts are commerce shorts and require an ad before publishing.
+        - Non-shop shorts may exist without an ad.
+        - If an ad is provided for any mode, it must be valid and active.
+        """
         if not self.ad:
             return
 
@@ -37,7 +60,7 @@ class AOSShort(Document):
             frappe.throw("Shorts can only be created for active ads")
 
         # Ensure ownership
-        if hasattr(ad, "seller") and ad.seller != self.seller:
+        if self.seller and hasattr(ad, "seller") and ad.seller != self.seller:
             if self.is_new():
                 return
             frappe.throw("Invalid seller for this ad")
@@ -96,7 +119,14 @@ class AOSShort(Document):
 
 
     def _handle_visibility_transition(self):
-        """Handles publishing logic based on visibility_status"""
+        """
+        Handles publishing logic based on visibility_status.
+
+        Publishing rules:
+        - Short must be ready before becoming visible.
+        - Shop shorts must have an active ad.
+        - Places/Vibes/Learn shorts do not require an ad.
+        """
         previous = self.get_doc_before_save()
         if not previous:
             return
@@ -112,23 +142,24 @@ class AOSShort(Document):
             if self.status != "ready":
                 frappe.throw("Short must be ready before publishing")
 
-            # Must have ad
-            if not self.ad:
-                frappe.throw("Short must be attached to an ad before publishing")
+            # Shop shorts must have ad
+            if self.content_mode == "shop" and not self.ad:
+                frappe.throw("Shop shorts must be attached to an ad before publishing")
 
             # Set posted_on once
             if not self.posted_on:
                 self.posted_on = now_datetime()
 
             # Ensure ad is still valid
-            try:
-                ad = frappe.get_doc("AOS Ad", self.ad)
-                if ad.status != "Active":
+            if self.ad:
+                try:
+                    ad = frappe.get_doc("AOS Ad", self.ad)
+                    if ad.status != "Active":
+                        self.visibility_status = "hidden"
+                        self.hidden_reason = "Ad is no longer active"
+                except Exception:
                     self.visibility_status = "hidden"
-                    self.hidden_reason = "Ad is no longer active"
-            except Exception:
-                self.visibility_status = "hidden"
-                self.hidden_reason = "Ad not found"
+                    self.hidden_reason = "Ad not found"
 
         # CASE: becoming hidden
         if self.visibility_status == "hidden":

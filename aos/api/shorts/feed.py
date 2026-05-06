@@ -16,10 +16,11 @@ from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.validators import require_id
 
-from aos.api.shorts.validators import validate_limit
+from aos.api.shorts.validators import validate_limit, validate_content_mode
 from aos.api.shorts.constants import (
     FEED_DEFAULT_LIMIT,
     FEED_MAX_LIMIT,
+    SHORT_CONTENT_MODE_SHOP,
 )
 
 from aos.api.shorts.utils import (
@@ -31,8 +32,22 @@ from aos.api.shorts.utils import (
 
 # COMMON
 def _get_limit(kwargs):
-    limit_input = kwargs.get("limit")
-    return validate_limit(limit_input, FEED_DEFAULT_LIMIT, FEED_MAX_LIMIT)
+    return validate_limit(
+        kwargs.get("limit"),
+        FEED_DEFAULT_LIMIT,
+        FEED_MAX_LIMIT,
+    )
+
+
+def _build_content_mode_filter(content_mode):
+    if not content_mode or str(content_mode).strip().lower() == "all":
+        return "", (), None
+
+    mode, err = validate_content_mode(content_mode)
+    if err:
+        return "", (), err
+
+    return "AND s.content_mode = %s", (mode,), None
 
 
 def _build_response(rows, limit: int):
@@ -74,6 +89,8 @@ def _select_short_rows_sql() -> str:
     return """
         SELECT
             s.name,
+            s.status,
+            s.content_mode,
             s.caption,
             s.hashtags,
             s.playback_url,
@@ -118,6 +135,12 @@ def feed_for_you_impl(**kwargs):
         limit = _get_limit(kwargs)
         cursor = kwargs.get("cursor")
 
+        mode_clause, mode_params, mode_err = _build_content_mode_filter(
+            kwargs.get("content_mode") or kwargs.get("mode")
+        )
+        if mode_err:
+            return mode_err
+
         where_cursor, params_cursor = build_ranked_cursor_where_clause(
             score_field="s.ranking_score",
             created_field="s.creation",
@@ -132,6 +155,7 @@ def feed_for_you_impl(**kwargs):
             WHERE
                 s.status = 'ready'
                 AND s.visibility_status = 'visible'
+                {mode_clause}
                 {where_cursor}
 
             ORDER BY
@@ -141,7 +165,7 @@ def feed_for_you_impl(**kwargs):
 
             LIMIT %s
             """,
-            (*params_cursor, limit + 1),
+            (*mode_params, *params_cursor, limit + 1),
             as_dict=True,
         )
 
@@ -171,6 +195,12 @@ def feed_following_impl(**kwargs):
         limit = _get_limit(kwargs)
         cursor = kwargs.get("cursor")
 
+        mode_clause, mode_params, mode_err = _build_content_mode_filter(
+            kwargs.get("content_mode") or kwargs.get("mode")
+        )
+        if mode_err:
+            return mode_err
+
         where_cursor, params_cursor = build_ranked_cursor_where_clause(
             score_field="s.ranking_score",
             created_field="s.creation",
@@ -180,40 +210,14 @@ def feed_following_impl(**kwargs):
 
         rows = frappe.db.sql(
             f"""
-            SELECT
-                s.name,
-                s.caption,
-                s.hashtags,
-                s.playback_url,
-                s.thumbnail_url,
-                s.duration_seconds,
-                s.view_count,
-                s.like_count,
-                s.comment_count,
-                s.share_count,
-                s.impression_count,
-                s.ranking_score,
-                s.posted_on,
-                s.creation,
-                s.seller,
-                s.ad,
-
-                sel.shop_name,
-                sel.avatar AS seller_avatar,
-
-                ad.title AS ad_title,
-                ad.price AS ad_price,
-                ad.currency AS ad_currency
-
-            FROM `tabAOS Short` s
+            {_select_short_rows_sql()}
             INNER JOIN `tabAOS Seller Follow` f ON f.seller = s.seller
-            LEFT JOIN `tabAOS Seller` sel ON sel.name = s.seller
-            LEFT JOIN `tabAOS Ad` ad ON ad.name = s.ad
 
             WHERE
                 f.follower = %s
                 AND s.status = 'ready'
                 AND s.visibility_status = 'visible'
+                {mode_clause}
                 {where_cursor}
 
             ORDER BY
@@ -223,7 +227,7 @@ def feed_following_impl(**kwargs):
 
             LIMIT %s
             """,
-            (user, *params_cursor, limit + 1),
+            (user, *mode_params, *params_cursor, limit + 1),
             as_dict=True,
         )
 
@@ -266,6 +270,7 @@ def feed_by_ad_impl(**kwargs):
 
             WHERE
                 s.ad = %s
+                AND s.content_mode = %s
                 AND s.status = 'ready'
                 AND s.visibility_status = 'visible'
                 {where_cursor}
@@ -277,7 +282,7 @@ def feed_by_ad_impl(**kwargs):
 
             LIMIT %s
             """,
-            (ad_id, *params_cursor, limit + 1),
+            (ad_id, SHORT_CONTENT_MODE_SHOP, *params_cursor, limit + 1),
             as_dict=True,
         )
 

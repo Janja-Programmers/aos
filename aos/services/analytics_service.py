@@ -3,8 +3,6 @@ from __future__ import annotations
 import frappe
 from frappe.utils import getdate
 
-from aos.services.ranking_service import RankingService
-
 
 class AnalyticsService:
     @classmethod
@@ -18,7 +16,7 @@ class AnalyticsService:
         try:
             # Daily metrics
             impressions = cls._get_event_count(short_id, date, "impression")
-            shares = cls._get_event_count(short_id, date, "open_ad")
+            shares = cls._get_event_count(short_id, date, "share")
             completed_views = cls._get_event_count(short_id, date, "complete")
 
             views = cls._get_view_count(short_id, date)
@@ -96,7 +94,7 @@ class AnalyticsService:
         """Refresh denormalized totals stored on AOS Short."""
         try:
             impression_count = cls._get_total_event_count(short_id, "impression")
-            share_count = cls._get_total_event_count(short_id, "open_ad")
+            share_count = cls._get_total_event_count(short_id, "share")
             like_count = cls._get_total_like_count(short_id)
             comment_count = cls._get_total_comment_count(short_id)
             view_count = cls._get_total_view_count(short_id)

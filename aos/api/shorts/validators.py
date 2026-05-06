@@ -11,8 +11,6 @@ Do NOT include business logic here.
 
 from __future__ import annotations
 
-import frappe
-
 from aos.api.shared.responses import fail
 
 from aos.api.shorts.constants import (
@@ -22,6 +20,8 @@ from aos.api.shorts.constants import (
     COMMENT_MAX_LENGTH,
     ALLOWED_VIDEO_EXTENSIONS,
     MAX_VIDEO_FILE_SIZE_BYTES,
+    DEFAULT_SHORT_CONTENT_MODE,
+    VALID_SHORT_CONTENT_MODES,
 )
 
 
@@ -48,6 +48,22 @@ def validate_file_size(size_bytes: int):
 
 
 # SHORT METADATA
+def validate_content_mode(content_mode: str | None):
+    if not content_mode:
+        return DEFAULT_SHORT_CONTENT_MODE, None
+
+    content_mode = str(content_mode).strip().lower()
+
+    if content_mode not in VALID_SHORT_CONTENT_MODES:
+        return None, fail(
+            "Invalid content mode",
+            code="VALIDATION_ERROR",
+            data={"field": "content_mode"},
+        )
+
+    return content_mode, None
+
+
 def validate_caption(caption: str | None):
     if not caption:
         return "", None

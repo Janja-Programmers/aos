@@ -13,6 +13,7 @@
   "duration_seconds",
   "column_break_odah",
   "status",
+  "content_mode",
   "ad",
   "seller",
   "country",
@@ -78,7 +79,6 @@
   {
    "fieldname": "seller",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Seller",
    "options": "AOS Seller",
    "read_only": 1,
@@ -87,7 +87,6 @@
   {
    "fieldname": "ad",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Ad",
    "options": "AOS Ad",
    "read_only": 1,
@@ -218,11 +217,20 @@
    "fieldtype": "Small Text",
    "label": "Processing Error",
    "read_only": 1
+  },
+  {
+   "fieldname": "content_mode",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Content Mode",
+   "options": "shop\nplaces\nvibes\nlearn",
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-04-09 12:09:11.020350",
+ "modified": "2026-05-07 01:52:22.985924",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Short",

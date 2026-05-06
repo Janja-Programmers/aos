@@ -4,7 +4,7 @@ Upload APIs for Shorts.
 Handles:
 - init upload (presigned URL)
 - confirm upload (trigger processing)
-- update metadata (caption, hashtags)
+- update metadata (caption, hashtags, content mode)
 """
 
 from __future__ import annotations
@@ -23,12 +23,31 @@ from aos.api.shorts.validators import (
     validate_filename,
     validate_caption,
     normalize_hashtags,
+    validate_content_mode,
 )
 
 from aos.api.shorts.constants import (
     INIT_UPLOAD_LIMIT_PER_MINUTE_PER_USER,
     CONFIRM_UPLOAD_LIMIT_PER_MINUTE_PER_USER,
+    SHORT_CONTENT_MODE_SHOP,
 )
+
+
+def _get_seller_for_user(user: str) -> str | None:
+    """
+    Resolve seller profile for current phase.
+
+    Current product rule:
+    - Only sellers can access create-short UI.
+    - Backend still resolves seller defensively.
+    """
+    if not user:
+        return None
+
+    if frappe.db.exists("AOS Seller", user):
+        return user
+
+    return frappe.db.get_value("AOS Seller", {"user": user}, "name")
 
 
 # INIT UPLOAD
@@ -156,18 +175,15 @@ def update_short_metadata_impl(**kwargs):
     if err:
         return err
 
-    ad_id, err = require_id(kwargs.get("ad_id"), "ad_id")
+    content_mode, err = validate_content_mode(kwargs.get("content_mode"))
     if err:
         return err
 
-    caption_input = kwargs.get("caption")
-    hashtags_input = kwargs.get("hashtags")
-
-    caption, err = validate_caption(caption_input)
+    caption, err = validate_caption(kwargs.get("caption"))
     if err:
         return err
 
-    hashtags = normalize_hashtags(hashtags_input)
+    hashtags = normalize_hashtags(kwargs.get("hashtags"))
 
     try:
         doc = frappe.get_doc("AOS Short", short_id)
@@ -182,33 +198,53 @@ def update_short_metadata_impl(**kwargs):
                 code="VALIDATION_ERROR",
             )
 
-        # Fetch and validate ad
-        ad = frappe.get_doc("AOS Ad", ad_id)
-
-        if ad.status != "Active":
+        seller = _get_seller_for_user(user)
+        if not seller:
             return fail(
-                "Shorts can only be attached to active ads.",
-                code="VALIDATION_ERROR",
+                "Seller profile is required to publish shorts.",
+                code="SELLER_REQUIRED",
             )
 
-        if ad.seller != user:
-            return fail(
-                "Not allowed to attach to this ad.",
-                code="FORBIDDEN",
-            )
-
-        # Attach metadata
-        doc.ad = ad.name
-        doc.seller = ad.seller
-        doc.country = getattr(ad, "country", None)
+        doc.content_mode = content_mode
+        doc.seller = seller
         doc.caption = caption
         doc.hashtags = json.dumps(hashtags or [])
+
+        if content_mode == SHORT_CONTENT_MODE_SHOP:
+            ad_id, err = require_id(kwargs.get("ad_id"), "ad_id")
+            if err:
+                return err
+
+            ad = frappe.get_doc("AOS Ad", ad_id)
+
+            if ad.status != "Active":
+                return fail(
+                    "Shorts can only be attached to active ads.",
+                    code="VALIDATION_ERROR",
+                )
+
+            if ad.seller != seller:
+                return fail(
+                    "Not allowed to attach to this ad.",
+                    code="FORBIDDEN",
+                )
+
+            doc.ad = ad.name
+            doc.country = getattr(ad, "country", None)
+
+        else:
+            doc.ad = None
+
         doc.visibility_status = "visible"
         doc.save(ignore_permissions=True)
+        frappe.db.commit()
 
         return ok(
             "Short published successfully.",
-            data={"short_id": doc.name},
+            data={
+                "short_id": doc.name,
+                "content_mode": doc.content_mode,
+            },
         )
 
     except Exception:
