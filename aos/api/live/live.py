@@ -49,7 +49,39 @@ def _get_followers(user: str) -> list[str]:
         "AOS Seller Follow",
         filters={"seller": user},
         pluck="follower",
+    ) or []
+
+
+def _get_active_live_for_seller(user: str):
+    return frappe.db.get_value(
+        "AOS Live Stream",
+        {
+            "seller": user,
+            "status": "live",
+        },
+        ["name", "room_name", "title"],
+        as_dict=True,
     )
+
+
+def _build_host_live_payload(live, user: str) -> dict:
+    token = LiveKitService.generate_live_token(
+        user=user,
+        room_name=live.room_name,
+        role="host",
+        metadata=LiveKitService.build_metadata(
+            user=user,
+            role="host",
+        ),
+    )
+
+    return {
+        "live_id": live.name,
+        "room_name": live.room_name,
+        "token": token,
+        "ws_url": LiveKitService.get_ws_url(),
+        "role": "host",
+    }
 
 
 # START LIVE
@@ -78,6 +110,14 @@ def start_live_impl(**kwargs):
         return err
 
     try:
+        existing_live = _get_active_live_for_seller(user)
+
+        if existing_live:
+            return ok(
+                "Seller already has an active live stream.",
+                data=_build_host_live_payload(existing_live, user),
+            )
+
         live = frappe.new_doc("AOS Live Stream")
         live.seller = user
         live.title = title
@@ -85,19 +125,8 @@ def start_live_impl(**kwargs):
         live.status = "live"
         live.insert(ignore_permissions=True)
 
-        token = LiveKitService.generate_live_token(
-            user=user,
-            room_name=live.room_name,
-            role="host",
-            metadata=LiveKitService.build_metadata(
-                user=user,
-                role="host",
-            ),
-        )
-
         publish_live_started(live)
 
-        # Notify followers
         followers = _get_followers(user)
 
         for follower in followers:
@@ -113,13 +142,12 @@ def start_live_impl(**kwargs):
 
         return ok(
             "Live started.",
-            data={
-                "live_id": live.name,
-                "room_name": live.room_name,
-                "token": token,
-                "ws_url": LiveKitService.get_ws_url(),
-            },
+            data=_build_host_live_payload(live, user),
         )
+
+    except frappe.ValidationError as ex:
+        frappe.db.rollback()
+        return fail(str(ex), code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Start Live Failed")
@@ -129,7 +157,7 @@ def start_live_impl(**kwargs):
 
 # JOIN LIVE
 def join_live_impl(**kwargs):
-    user = current_user()  # may be guest
+    user = current_user()
 
     rl = rate_limit(
         key=f"aos:live:join:user:{user or request_ip()}",
