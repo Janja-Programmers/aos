@@ -195,41 +195,75 @@ class NotificationService:
 
     # ADS
     @classmethod
-    def notify_ad_approved(cls, *, user: str, ad_id: str, title: str | None = None):
+    def notify_ad_approved(
+        cls,
+        *,
+        user: str,
+        ad_id: str,
+        title: str | None = None,
+    ):
         cls.notify(
             user=user,
             type="ad_approved",
             title="Ad Approved",
-            body=f"Your ad '{title}' has been approved" if title else "Your ad has been approved",
+            body=(
+                f"Your ad '{title}' has been approved"
+                if title
+                else "Your ad has been approved"
+            ),
             payload={"ad_id": ad_id},
             event="aos_ad_approved",
         )
 
     @classmethod
-    def notify_ad_rejected(cls, *, user: str, ad_id: str, title: str | None = None):
+    def notify_ad_rejected(
+        cls,
+        *,
+        user: str,
+        ad_id: str,
+        title: str | None = None,
+    ):
         cls.notify(
             user=user,
             type="ad_rejected",
             title="Ad Rejected",
-            body=f"Your ad '{title}' was rejected" if title else "Your ad was rejected",
+            body=(
+                f"Your ad '{title}' was rejected"
+                if title
+                else "Your ad was rejected"
+            ),
             payload={"ad_id": ad_id},
             event="aos_ad_rejected",
         )
 
     @classmethod
-    def notify_ad_expired(cls, *, user: str, ad_id: str, title: str | None = None):
+    def notify_ad_expired(
+        cls,
+        *,
+        user: str,
+        ad_id: str,
+        title: str | None = None,
+    ):
         cls.notify(
             user=user,
             type="ad_expired",
             title="Ad Expired",
-            body=f"Your ad '{title}' has expired" if title else "Your ad has expired",
+            body=(
+                f"Your ad '{title}' has expired"
+                if title
+                else "Your ad has expired"
+            ),
             payload={"ad_id": ad_id},
             event="aos_ad_expired",
         )
 
     # SELLER VERIFICATION
     @classmethod
-    def notify_verification_approved(cls, *, user: str):
+    def notify_verification_approved(
+        cls,
+        *,
+        user: str,
+    ):
         cls.notify(
             user=user,
             type="verification_approved",
@@ -240,7 +274,11 @@ class NotificationService:
         )
 
     @classmethod
-    def notify_verification_rejected(cls, *, user: str):
+    def notify_verification_rejected(
+        cls,
+        *,
+        user: str,
+    ):
         cls.notify(
             user=user,
             type="verification_rejected",
@@ -252,7 +290,12 @@ class NotificationService:
 
     # SHORTS
     @classmethod
-    def notify_new_short(cls, *, actor: str, short_id: str):
+    def notify_new_short(
+        cls,
+        *,
+        actor: str,
+        short_id: str,
+    ):
         followers = frappe.get_all(
             "AOS Seller Follow",
             filters={"seller": actor},
@@ -275,43 +318,91 @@ class NotificationService:
                 title=title,
                 body=body,
                 actor=actor,
-                payload={"short_id": short_id},
+                payload={
+                    "short_id": short_id,
+                },
                 event="aos_new_short",
             )
 
     @classmethod
-    def notify_short_like(cls, *, user: str, actor: str, short_id: str):
+    def notify_short_like(
+        cls,
+        *,
+        user: str,
+        actor: str,
+        short_id: str,
+    ):
         cls.notify(
             user=user,
             type="short_like",
             title="New Like ❤️",
             body=f"{actor} liked your short",
             actor=actor,
-            payload={"short_id": short_id},
+            payload={
+                "short_id": short_id,
+            },
             event="aos_short_like",
         )
 
     @classmethod
-    def notify_short_comment(cls, *, user: str, actor: str, short_id: str):
+    def notify_short_comment(
+        cls,
+        *,
+        user: str,
+        actor: str,
+        short_id: str,
+        content: str | None = None,
+    ):
+        preview = (content or "").strip()
+
         cls.notify(
             user=user,
             type="short_comment",
             title="New Comment",
-            body=f"{actor} commented on your short",
+            body=(
+                f"{actor} commented: {preview[:80]}"
+                if preview
+                else f"{actor} commented on your short"
+            ),
             actor=actor,
-            payload={"short_id": short_id},
+            payload={
+                "short_id": short_id,
+                "content": preview,
+            },
             event="aos_short_comment",
         )
 
     @classmethod
-    def notify_comment_reply(cls, *, user: str, actor: str, comment_id: str):
+    def notify_comment_reply(
+        cls,
+        *,
+        user: str,
+        actor: str,
+        comment_id: str,
+        short_id: str | None = None,
+        content: str | None = None,
+    ):
+        preview = (content or "").strip()
+
+        payload = {
+            "comment_id": comment_id,
+            "content": preview,
+        }
+
+        if short_id:
+            payload["short_id"] = short_id
+
         cls.notify(
             user=user,
             type="comment_reply",
             title="New Reply",
-            body=f"{actor} replied to your comment",
+            body=(
+                f"{actor} replied: {preview[:80]}"
+                if preview
+                else f"{actor} replied to your comment"
+            ),
             actor=actor,
-            payload={"comment_id": comment_id},
+            payload=payload,
             event="aos_comment_reply",
         )
 
