@@ -9,9 +9,11 @@ Handles:
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Tuple
 
 import frappe
+from frappe.utils import get_datetime
 
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
@@ -29,6 +31,32 @@ from .presence import publish_presence_update_to_peers
 # Helpers
 def _sort_participants(u1: str, u2: str) -> Tuple[str, str]:
     return tuple(sorted([u1, u2]))
+
+
+def _last_message_sort_key(conv):
+    """
+    Normalize last_message_at into a datetime object.
+
+    Frappe/MySQL may return:
+    - datetime
+    - string
+    - None
+
+    Python cannot compare datetime with string,
+    so we normalize everything safely.
+    """
+    value = conv.get("last_message_at")
+
+    if not value:
+        return datetime.min
+
+    if isinstance(value, datetime):
+        return value
+
+    try:
+        return get_datetime(value)
+    except Exception:
+        return datetime.min
 
 
 # get_or_create_conversation
@@ -52,7 +80,10 @@ def get_or_create_conversation_impl(**kwargs):
         return fail("User is required.", code="VALIDATION_ERROR")
 
     if other_user == current_user:
-        return fail("Cannot start conversation with yourself.", code="VALIDATION_ERROR")
+        return fail(
+            "Cannot start conversation with yourself.",
+            code="VALIDATION_ERROR",
+        )
 
     try:
         if not frappe.db.exists("User", other_user):
@@ -90,7 +121,10 @@ def get_or_create_conversation_impl(**kwargs):
 
             publish_presence_update_to_peers(current_user)
 
-            return ok("Conversation fetched.", data={"id": existing.name})
+            return ok(
+                "Conversation fetched.",
+                data={"id": existing.name},
+            )
 
         # Create new conversation
         conv = frappe.new_doc("AOS Conversation")
@@ -100,7 +134,10 @@ def get_or_create_conversation_impl(**kwargs):
 
         publish_presence_update_to_peers(current_user)
 
-        return ok("Conversation created.", data={"id": conv.name})
+        return ok(
+            "Conversation created.",
+            data={"id": conv.name},
+        )
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
@@ -112,7 +149,10 @@ def get_or_create_conversation_impl(**kwargs):
             "AOS Get/Create Conversation Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to create conversation.", code="INTERNAL_ERROR")
+        return fail(
+            "Failed to create conversation.",
+            code="INTERNAL_ERROR",
+        )
 
 
 # list_conversations
@@ -178,9 +218,9 @@ def list_conversations_impl(**kwargs):
         if not conversations:
             return ok("Conversations fetched.", data=[])
 
-        # Sort in Python (safe fallback)
+        # Safe Python sorting
         conversations.sort(
-            key=lambda x: x["last_message_at"] or "",
+            key=_last_message_sort_key,
             reverse=True,
         )
 
@@ -217,8 +257,11 @@ def list_conversations_impl(**kwargs):
 
         for conv in conversations:
             is_p1 = conv["participant_1"] == current_user
+
             other_user = (
-                conv["participant_2"] if is_p1 else conv["participant_1"]
+                conv["participant_2"]
+                if is_p1
+                else conv["participant_1"]
             )
 
             seller = seller_map.get(other_user)
@@ -228,8 +271,18 @@ def list_conversations_impl(**kwargs):
                 avatar = seller.avatar
             else:
                 user = user_map.get(other_user)
-                display_name = user.full_name if user else other_user
-                avatar = user.user_image if user else None
+
+                display_name = (
+                    user.full_name
+                    if user
+                    else other_user
+                )
+
+                avatar = (
+                    user.user_image
+                    if user
+                    else None
+                )
 
             unread = (
                 conv["unread_count_1"]
@@ -251,14 +304,21 @@ def list_conversations_impl(**kwargs):
 
         publish_presence_update_to_peers(current_user)
 
-        return ok("Conversations fetched.", data=results)
+        return ok(
+            "Conversations fetched.",
+            data=results,
+        )
 
     except Exception:
         frappe.log_error(
             frappe.get_traceback(),
             "AOS List Conversations Failed",
         )
-        return fail("Failed to fetch conversations.", code="INTERNAL_ERROR")
+
+        return fail(
+            "Failed to fetch conversations.",
+            code="INTERNAL_ERROR",
+        )
 
 
 # delete_conversation
@@ -279,7 +339,10 @@ def delete_conversation_impl(**kwargs):
     conv_id = kwargs.get("conversation_id")
 
     if not conv_id:
-        return fail("conversation_id is required.", code="VALIDATION_ERROR")
+        return fail(
+            "conversation_id is required.",
+            code="VALIDATION_ERROR",
+        )
 
     try:
         conv = frappe.db.get_value(
@@ -290,10 +353,19 @@ def delete_conversation_impl(**kwargs):
         )
 
         if not conv:
-            return fail("Conversation not found.", code="NOT_FOUND")
+            return fail(
+                "Conversation not found.",
+                code="NOT_FOUND",
+            )
 
-        if current_user not in (conv.participant_1, conv.participant_2):
-            return fail("Not allowed.", code="PERMISSION_DENIED")
+        if current_user not in (
+            conv.participant_1,
+            conv.participant_2,
+        ):
+            return fail(
+                "Not allowed.",
+                code="PERMISSION_DENIED",
+            )
 
         field = (
             "is_active_1"
@@ -316,5 +388,10 @@ def delete_conversation_impl(**kwargs):
             frappe.get_traceback(),
             "AOS Delete Conversation Failed",
         )
+
         frappe.db.rollback()
-        return fail("Failed to delete conversation.", code="INTERNAL_ERROR")
+
+        return fail(
+            "Failed to delete conversation.",
+            code="INTERNAL_ERROR",
+        )
