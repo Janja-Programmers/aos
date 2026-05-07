@@ -1,5 +1,5 @@
 """
-Toggle Follow on a Seller.
+Toggle Follow on a User.
 
 Supports:
   - Follow
@@ -14,20 +14,21 @@ from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 
+from aos.services.account_service import get_or_create_profile
 from aos.services.notification_service import NotificationService
 
 from .constants import TOGGLE_FOLLOW_LIMIT_PER_MINUTE_PER_USER
 
 
 def toggle_follow_impl(**kwargs):
-    """Toggle Follow / Unfollow on a Seller."""
+    """Toggle Follow / Unfollow on a user profile."""
 
     current_user, err = require_login()
     if err:
         return err
 
     rl = rate_limit(
-        key=f"aos:sellers:toggle_follow:user:{current_user}",
+        key=f"aos:follow:toggle:user:{current_user}",
         ttl_seconds=60,
         limit=TOGGLE_FOLLOW_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
@@ -35,43 +36,41 @@ def toggle_follow_impl(**kwargs):
     if rl:
         return rl
 
-    seller = kwargs.get("seller")
+    following_user = kwargs.get("following_user") or kwargs.get("user")
 
-    if not seller:
-        return fail("Seller is required.", code="VALIDATION_ERROR")
+    if not following_user:
+        return fail("Following user is required.", code="VALIDATION_ERROR")
 
-    # Prevent self-follow
-    if seller == current_user:
+    if following_user == current_user:
         return fail("You cannot follow yourself.", code="VALIDATION_ERROR")
 
     try:
-        seller_doc = frappe.get_doc("AOS Seller", seller)
+        if not frappe.db.exists("User", following_user):
+            return fail("User not found.", code="NOT_FOUND")
 
-        if seller_doc.status != "Active":
-            return fail("Seller is not available.", code="VALIDATION_ERROR")
+        get_or_create_profile(current_user)
+        get_or_create_profile(following_user)
 
         existing = frappe.get_all(
-            "AOS Seller Follow",
+            "AOS Follow",
             filters={
-                "seller": seller,
-                "follower": current_user
+                "following_user": following_user,
+                "follower_user": current_user,
             },
             fields=["name"],
-            limit=1
+            limit=1,
         )
 
-        # FOLLOW
         if not existing:
-            doc = frappe.new_doc("AOS Seller Follow")
-            doc.seller = seller
-            doc.follower = current_user
+            doc = frappe.new_doc("AOS Follow")
+            doc.following_user = following_user
+            doc.follower_user = current_user
             doc.insert(ignore_permissions=True)
             frappe.db.commit()
 
-            # NOTIFY SELLER
-            if seller != current_user:
+            if following_user != current_user:
                 NotificationService.notify_follow(
-                    user=seller,
+                    user=following_user,
                     follower=current_user,
                 )
 
@@ -79,15 +78,15 @@ def toggle_follow_impl(**kwargs):
                 "Followed successfully.",
                 data={
                     "status": "followed",
-                    "is_following": True
-                }
+                    "is_following": True,
+                    "following_user": following_user,
+                },
             )
 
-        # UNFOLLOW
         frappe.delete_doc(
-            "AOS Seller Follow",
+            "AOS Follow",
             existing[0].name,
-            ignore_permissions=True
+            ignore_permissions=True,
         )
         frappe.db.commit()
 
@@ -95,16 +94,15 @@ def toggle_follow_impl(**kwargs):
             "Unfollowed successfully.",
             data={
                 "status": "unfollowed",
-                "is_following": False
-            }
+                "is_following": False,
+                "following_user": following_user,
+            },
         )
-
-    except frappe.DoesNotExistError:
-        return fail("Seller not found.", code="NOT_FOUND")
 
     except frappe.ValidationError as ex:
         return fail(str(ex), code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Toggle Follow Failed")
+        frappe.db.rollback()
         return fail("Failed to toggle follow.", code="INTERNAL_ERROR")

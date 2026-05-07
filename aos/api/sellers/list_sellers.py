@@ -29,7 +29,6 @@ def list_sellers_impl(**kwargs):
         if rl:
             return rl
 
-        # INPUTS
         limit = int(kwargs.get("limit", 20))
         offset = int(kwargs.get("offset", 0))
 
@@ -41,39 +40,41 @@ def list_sellers_impl(**kwargs):
 
         user = current_user()
 
-        # BASE FILTERS
-        filters = {
-            "status": "Active",
-        }
+        conditions = ["s.status = 'Active'"]
+        params = []
 
-        # Do not show logged-in seller their own seller profile in discovery.
         if user and user != "Guest":
-            filters["user"] = ["!=", user]
+            conditions.append("s.user != %s")
+            params.append(user)
 
         if is_verified is not None:
-            filters["is_verified"] = int(is_verified)
+            conditions.append("s.is_verified = %s")
+            params.append(int(is_verified))
 
         if seller_type:
-            filters["seller_type"] = seller_type
+            conditions.append("s.seller_type = %s")
+            params.append(seller_type)
 
         if category:
-            filters["category"] = category
+            conditions.append("s.category = %s")
+            params.append(category)
 
-        # FOLLOW FILTER
-        following_ids = set()
+        if search:
+            conditions.append("s.shop_name LIKE %s")
+            params.append(f"%{search}%")
+
+        following_users = set()
 
         if user and user != "Guest":
             follows = frappe.get_all(
-                "AOS Seller Follow",
-                filters={
-                    "follower": user,
-                },
-                fields=["seller"],
+                "AOS Follow",
+                filters={"follower_user": user},
+                fields=["following_user"],
             )
-            following_ids = {f["seller"] for f in follows}
+            following_users = {f["following_user"] for f in follows}
 
             if follow_filter == "following":
-                if not following_ids:
+                if not following_users:
                     return ok(
                         "Sellers fetched successfully.",
                         data={
@@ -84,49 +85,48 @@ def list_sellers_impl(**kwargs):
                         },
                     )
 
-                filters["name"] = ["in", list(following_ids)]
+                conditions.append("s.user IN %s")
+                params.append(tuple(following_users))
 
             elif follow_filter == "not_following":
-                if following_ids:
-                    filters["name"] = ["not in", list(following_ids)]
+                if following_users:
+                    conditions.append("s.user NOT IN %s")
+                    params.append(tuple(following_users))
 
-        # SEARCH
-        or_filters = None
+        where_clause = " AND ".join(conditions)
 
-        if search:
-            or_filters = [
-                ["shop_name", "like", f"%{search}%"],
-            ]
+        sellers = frappe.db.sql(
+            f"""
+            SELECT
+                s.name,
+                s.user,
+                s.shop_name,
+                s.category,
+                s.avatar,
+                s.physical_address,
+                s.rating,
+                s.total_reviews,
+                s.is_verified,
+                s.seller_type,
+                COALESCE(p.total_followers, 0) AS total_followers
 
-        # FETCH SELLERS
-        sellers = frappe.get_all(
-            "AOS Seller",
-            filters=filters,
-            or_filters=or_filters,
-            fields=[
-                "name",
-                "user",
-                "shop_name",
-                "category",
-                "avatar",
-                "physical_address",
-                "rating",
-                "total_reviews",
-                "total_followers",
-                "is_verified",
-                "seller_type",
-            ],
-            limit=limit,
-            start=offset,
-            order_by=(
-                "is_verified desc, "
-                "rating desc, "
-                "total_followers desc, "
-                "creation desc"
-            ),
+            FROM `tabAOS Seller` s
+            LEFT JOIN `tabAOS Profile` p ON p.user = s.user
+
+            WHERE {where_clause}
+
+            ORDER BY
+                s.is_verified DESC,
+                s.rating DESC,
+                COALESCE(p.total_followers, 0) DESC,
+                s.creation DESC
+
+            LIMIT %s OFFSET %s
+            """,
+            (*params, limit, offset),
+            as_dict=True,
         )
 
-        # FORMAT RESPONSE
         items = []
 
         for s in sellers:
@@ -142,8 +142,8 @@ def list_sellers_impl(**kwargs):
                     "seller_type": s.get("seller_type"),
                     "rating": s.get("rating"),
                     "total_reviews": s.get("total_reviews"),
-                    "total_followers": s.get("total_followers"),
-                    "is_following": s["name"] in following_ids,
+                    "total_followers": s.get("total_followers") or 0,
+                    "is_following": s["user"] in following_users,
                 }
             )
 

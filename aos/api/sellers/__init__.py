@@ -10,7 +10,6 @@ import frappe
 from .list_sellers import list_sellers_impl
 from .get_seller import get_seller_impl
 from .get_my_seller_status import get_my_seller_status_impl
-from .toggle_follow import toggle_follow_impl
 from .submit_verification import submit_verification_impl
 from .get_my_verification import get_my_verification_impl
 from .update_my_seller import update_my_seller_impl
@@ -32,12 +31,6 @@ def get_seller(**kwargs):
 def get_my_seller_status(**kwargs):
     """Get current user's seller status (for UI decisions)."""
     return get_my_seller_status_impl(**kwargs)
-
-
-@frappe.whitelist(methods=["POST"])
-def toggle_follow(**kwargs):
-    """Follow / Unfollow a seller."""
-    return toggle_follow_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])

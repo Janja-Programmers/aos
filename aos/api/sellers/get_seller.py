@@ -47,35 +47,44 @@ def get_seller_impl(**kwargs):
         avatar = seller_doc.avatar or frappe.db.get_value(
             "User",
             seller_doc.user,
-            "user_image"
+            "user_image",
         )
 
         joined = formatdate(seller_doc.creation, "MMM yyyy")
 
-        # FOLLOW STATE
+        profile_followers = (
+            frappe.db.get_value(
+                "AOS Profile",
+                seller_doc.user,
+                "total_followers",
+            )
+            or 0
+        )
+
         user = current_user()
         is_following = False
 
         if user and user != "Guest":
             is_following = frappe.db.exists(
-                "AOS Seller Follow",
+                "AOS Follow",
                 {
-                    "seller": seller,
-                    "follower": user
-                }
+                    "following_user": seller_doc.user,
+                    "follower_user": user,
+                },
             )
 
-        # OPERATING HOURS
         operating_hours = []
 
         if seller_doc.operating_hours:
             for row in seller_doc.operating_hours:
-                operating_hours.append({
-                    "day_of_week": row.day_of_week,
-                    "is_open": bool(row.is_open),
-                    "open_time": row.open_time,
-                    "close_time": row.close_time
-                })
+                operating_hours.append(
+                    {
+                        "day_of_week": row.day_of_week,
+                        "is_open": bool(row.is_open),
+                        "open_time": row.open_time,
+                        "close_time": row.close_time,
+                    }
+                )
 
         return ok(
             "Seller fetched.",
@@ -92,20 +101,20 @@ def get_seller_impl(**kwargs):
                 "is_verified": seller_doc.is_verified,
                 "rating": seller_doc.rating,
                 "total_reviews": seller_doc.total_reviews,
-                "total_followers": seller_doc.total_followers,
+                "total_followers": profile_followers,
                 "total_ads": seller_doc.total_ads,
                 "joined": joined,
                 "is_following": bool(is_following),
-                "operating_hours": operating_hours
-            }
+                "operating_hours": operating_hours,
+            },
         )
 
     except Exception:
         frappe.log_error(
             frappe.get_traceback(),
-            "AOS Get Seller Failed"
+            "AOS Get Seller Failed",
         )
         return fail(
             "Failed to fetch seller.",
-            code="INTERNAL_ERROR"
+            code="INTERNAL_ERROR",
         )

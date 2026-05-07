@@ -75,7 +75,7 @@ def validate_seller_can_go_live(seller_id: str):
     seller = frappe.db.get_value(
         "AOS Seller",
         seller_id,
-        ["status", "is_verified", "total_followers"],
+        ["status", "is_verified", "user"],
         as_dict=True,
     )
 
@@ -85,11 +85,22 @@ def validate_seller_can_go_live(seller_id: str):
     if seller.status != "Active":
         return None, fail("Seller account is not active.", code="INVALID_STATE")
 
-    if not seller.get("is_verified") and (seller.get("total_followers") or 0) < 1000:
+    total_followers = (
+        frappe.db.get_value(
+            "AOS Profile",
+            seller.user,
+            "total_followers",
+        )
+        or 0
+    )
+
+    if not seller.get("is_verified") and total_followers < 1000:
         return None, fail(
             "You must be verified or have at least 1,000 followers to go live.",
             code="NOT_ELIGIBLE",
         )
+
+    seller["total_followers"] = total_followers
 
     return seller, None
 

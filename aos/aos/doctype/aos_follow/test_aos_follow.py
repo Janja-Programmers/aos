@@ -13,9 +13,9 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
 
-class IntegrationTestAOSSellerFollow(IntegrationTestCase):
+class IntegrationTestAOSFollow(IntegrationTestCase):
 	"""
-	Integration tests for AOSSellerFollow.
+	Integration tests for AOSFollow.
 	Use this class for testing interactions between multiple components.
 	"""
 

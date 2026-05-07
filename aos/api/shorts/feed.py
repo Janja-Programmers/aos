@@ -89,6 +89,7 @@ def _select_short_rows_sql() -> str:
     return """
         SELECT
             s.name,
+            s.owner,
             s.status,
             s.content_mode,
             s.caption,
@@ -211,10 +212,10 @@ def feed_following_impl(**kwargs):
         rows = frappe.db.sql(
             f"""
             {_select_short_rows_sql()}
-            INNER JOIN `tabAOS Seller Follow` f ON f.seller = s.seller
+            INNER JOIN `tabAOS Follow` f ON f.following_user = s.owner
 
             WHERE
-                f.follower = %s
+                f.follower_user = %s
                 AND s.status = 'ready'
                 AND s.visibility_status = 'visible'
                 {mode_clause}

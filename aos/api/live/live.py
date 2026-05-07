@@ -46,9 +46,9 @@ from .realtime import (
 # HELPERS
 def _get_followers(user: str) -> list[str]:
     return frappe.get_all(
-        "AOS Seller Follow",
-        filters={"seller": user},
-        pluck="follower",
+        "AOS Follow",
+        filters={"following_user": user},
+        pluck="follower_user",
     ) or []
 
 

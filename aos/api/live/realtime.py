@@ -21,12 +21,12 @@ def _live_channel(live_id: str) -> str:
 # FOLLOWERS HELPER
 def _get_followers(user: str) -> list[str]:
     """
-    Return list of followers for a seller.
+    Return list of users following this user.
     """
     return frappe.get_all(
-        "AOS Seller Follow",
-        filters={"seller": user},
-        pluck="follower",
+        "AOS Follow",
+        filters={"following_user": user},
+        pluck="follower_user",
     ) or []
 
 

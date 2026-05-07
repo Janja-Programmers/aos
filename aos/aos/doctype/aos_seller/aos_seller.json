@@ -20,8 +20,6 @@
   "metrics_tab",
   "section_break_xlao",
   "total_ads",
-  "total_followers",
-  "column_break_pnga",
   "rating",
   "total_reviews",
   "verification_tab",
@@ -78,18 +76,6 @@
    "in_list_view": 1,
    "label": "Total Ads",
    "read_only": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "total_followers",
-   "fieldtype": "Int",
-   "in_list_view": 1,
-   "label": "Total Followers",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_pnga",
-   "fieldtype": "Column Break"
   },
   {
    "default": "0",
@@ -179,7 +165,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-04-24 17:55:22.466761",
+ "modified": "2026-05-07 12:28:12.106493",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Seller",

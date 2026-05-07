@@ -297,9 +297,9 @@ class NotificationService:
         short_id: str,
     ):
         followers = frappe.get_all(
-            "AOS Seller Follow",
-            filters={"seller": actor},
-            pluck="follower",
+            "AOS Follow",
+            filters={"following_user": actor},
+            pluck="follower_user",
         )
 
         if not followers:

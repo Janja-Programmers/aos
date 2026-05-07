@@ -5,40 +5,37 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "seller",
-  "column_break_culo",
-  "follower"
+  "following_user",
+  "follower_user"
  ],
  "fields": [
   {
-   "fieldname": "seller",
+   "fieldname": "following_user",
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Seller",
-   "options": "AOS Seller",
-   "reqd": 1
-  },
-  {
-   "fieldname": "follower",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Follower",
+   "label": "Following User",
    "options": "User",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
-   "fieldname": "column_break_culo",
-   "fieldtype": "Column Break"
+   "fieldname": "follower_user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Follower User",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-03-05 02:42:06.166854",
+ "modified": "2026-05-07 12:59:55.045431",
  "modified_by": "Administrator",
  "module": "AOS",
- "name": "AOS Seller Follow",
+ "name": "AOS Follow",
  "naming_rule": "Random",
  "owner": "Administrator",
  "permissions": [

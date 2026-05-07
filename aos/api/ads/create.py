@@ -21,7 +21,7 @@ from aos.api.shared.responses import fail, ok
 from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.validators import resolve_location
 from aos.utils.aos_settings import get_aos_settings_snapshot
-from aos.services.seller_service import get_or_create_seller
+from aos.services.account_service import get_or_create_seller
 
 from .constants import CREATE_AD_LIMIT_PER_MINUTE_PER_USER
 from .validators import (
