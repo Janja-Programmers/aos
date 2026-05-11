@@ -14,8 +14,8 @@ from aos.api.shorts.constants import (
 
 VALID_CONTENT_MODES = {
     "shop",
-    "places",
-    "vibes",
+    "geo",
+    "talent",
     "learn",
 }
 
@@ -125,7 +125,7 @@ class AOSShort(Document):
         Publishing rules:
         - Short must be ready before becoming visible.
         - Shop shorts must have an active ad.
-        - Places/Vibes/Learn shorts do not require an ad.
+        - Geo/Talent/Learn shorts do not require an ad.
         """
         previous = self.get_doc_before_save()
         if not previous:
