@@ -14,7 +14,6 @@ from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 
-from aos.services.account_service import get_or_create_profile
 from aos.services.notification_service import NotificationService
 
 from .constants import TOGGLE_FOLLOW_LIMIT_PER_MINUTE_PER_USER
@@ -48,8 +47,11 @@ def toggle_follow_impl(**kwargs):
         if not frappe.db.exists("User", following_user):
             return fail("User not found.", code="NOT_FOUND")
 
-        get_or_create_profile(current_user)
-        get_or_create_profile(following_user)
+        if not frappe.db.exists("AOS Profile", current_user):
+            return fail("Current user profile not found.", code="PROFILE_NOT_FOUND")
+
+        if not frappe.db.exists("AOS Profile", following_user):
+            return fail("User profile not found.", code="PROFILE_NOT_FOUND")
 
         existing = frappe.get_all(
             "AOS Follow",
@@ -68,11 +70,10 @@ def toggle_follow_impl(**kwargs):
             doc.insert(ignore_permissions=True)
             frappe.db.commit()
 
-            if following_user != current_user:
-                NotificationService.notify_follow(
-                    user=following_user,
-                    follower=current_user,
-                )
+            NotificationService.notify_follow(
+                user=following_user,
+                follower=current_user,
+            )
 
             return ok(
                 "Followed successfully.",

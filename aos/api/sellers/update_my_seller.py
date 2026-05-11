@@ -1,7 +1,7 @@
 """
 Update Seller Profile.
 
-Allows sellers to update their shop information.
+Allows sellers to update their business information.
 """
 
 from __future__ import annotations
@@ -23,13 +23,13 @@ def _file_exists(file_url: str) -> bool:
     return bool(
         frappe.db.exists(
             "File",
-            {"file_url": file_url}
+            {"file_url": file_url},
         )
     )
 
 
 def update_my_seller_impl(**kwargs):
-    """Update seller profile."""
+    """Update seller business profile."""
 
     current_user, err = require_login()
     if err:
@@ -45,17 +45,16 @@ def update_my_seller_impl(**kwargs):
         return rl
 
     try:
-
         seller = frappe.db.get_value(
             "AOS Seller",
             {"user": current_user},
-            "name"
+            "name",
         )
 
         if not seller:
             return fail(
                 "Seller profile not found.",
-                code="NOT_FOUND"
+                code="NOT_FOUND",
             )
 
         seller_doc = frappe.get_doc("AOS Seller", seller)
@@ -63,46 +62,17 @@ def update_my_seller_impl(**kwargs):
         if seller_doc.status != "Active":
             return fail(
                 "Seller profile is not available.",
-                code="VALIDATION_ERROR"
+                code="VALIDATION_ERROR",
             )
 
-        identity_changed = False
+        if "business_category" in kwargs:
+            seller_doc.business_category = kwargs.get("business_category")
 
-        # Update fields
-        if "shop_name" in kwargs:
-            new_name = kwargs.get("shop_name")
+        if "about_business" in kwargs:
+            seller_doc.about_business = kwargs.get("about_business")
 
-            if new_name and new_name != seller_doc.shop_name:
-                seller_doc.shop_name = new_name
-                identity_changed = True
-
-        if "category" in kwargs:
-            new_category = kwargs.get("category")
-
-            if new_category and new_category != seller_doc.category:
-                seller_doc.category = new_category
-                identity_changed = True
-
-        if "about_shop" in kwargs:
-            seller_doc.about_shop = kwargs.get("about_shop")
-
-        if "physical_address" in kwargs:
-            new_address = kwargs.get("physical_address")
-
-            if new_address and new_address != seller_doc.physical_address:
-                seller_doc.physical_address = new_address
-                identity_changed = True
-
-        if "avatar" in kwargs:
-            avatar = kwargs.get("avatar")
-
-            if avatar and not _file_exists(avatar):
-                return fail(
-                    "Avatar file does not exist.",
-                    code="VALIDATION_ERROR"
-                )
-
-            seller_doc.avatar = avatar
+        if "business_address" in kwargs:
+            seller_doc.business_address = kwargs.get("business_address")
 
         if "shop_banner" in kwargs:
             banner = kwargs.get("shop_banner")
@@ -110,7 +80,7 @@ def update_my_seller_impl(**kwargs):
             if banner and not _file_exists(banner):
                 return fail(
                     "Shop banner file does not exist.",
-                    code="VALIDATION_ERROR"
+                    code="VALIDATION_ERROR",
                 )
 
             seller_doc.shop_banner = banner
@@ -118,26 +88,18 @@ def update_my_seller_impl(**kwargs):
         if "operating_hours" in kwargs:
             seller_doc.set("operating_hours", kwargs.get("operating_hours"))
 
-        # REVOKE VERIFICATION IF IDENTITY CHANGED
-        if identity_changed and seller_doc.is_verified:
-            seller_doc.is_verified = 0
-            seller_doc.seller_type = "Individual"
-
         seller_doc.save(ignore_permissions=True)
         frappe.db.commit()
 
         return ok(
             "Seller profile updated successfully.",
             data={
-                "shop_name": seller_doc.shop_name,
-                "category": seller_doc.category,
-                "about_shop": seller_doc.about_shop,
-                "physical_address": seller_doc.physical_address,
-                "avatar": seller_doc.avatar,
+                "business_category": seller_doc.business_category,
+                "about_business": seller_doc.about_business,
+                "business_address": seller_doc.business_address,
                 "shop_banner": seller_doc.shop_banner,
-                "is_verified": seller_doc.is_verified,
                 "seller_type": seller_doc.seller_type,
-            }
+            },
         )
 
     except frappe.ValidationError as ex:
@@ -146,9 +108,9 @@ def update_my_seller_impl(**kwargs):
     except Exception:
         frappe.log_error(
             frappe.get_traceback(),
-            "AOS Update Seller Failed"
+            "AOS Update Seller Failed",
         )
         return fail(
             "Failed to update seller profile.",
-            code="INTERNAL_ERROR"
+            code="INTERNAL_ERROR",
         )

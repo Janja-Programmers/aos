@@ -44,28 +44,18 @@ def _serialize_call_row(call, current_user: str):
 
 def _fetch_users(users: list[str]):
     """
-    Fetch user details in bulk.
+    Fetch user identity details in bulk.
     """
     if not users:
-        return {}, {}
+        return {}
 
-    # Sellers
-    sellers = frappe.get_all(
-        "AOS Seller",
-        filters={"user": ["in", users]},
-        fields=["user", "shop_name", "avatar"],
-    )
-    seller_map = {s.user: s for s in sellers}
-
-    # Users
     user_rows = frappe.get_all(
         "User",
         filters={"name": ["in", users]},
         fields=["name", "full_name", "user_image"],
     )
-    user_map = {u.name: u for u in user_rows}
 
-    return seller_map, user_map
+    return {u.name: u for u in user_rows}
 
 
 # LIST CALLS
@@ -142,12 +132,9 @@ def list_calls_impl(**kwargs):
         other_users = set()
 
         for c in calls:
-            if c.caller == current_user:
-                other_users.add(c.receiver)
-            else:
-                other_users.add(c.caller)
+            other_users.add(c.receiver if c.caller == current_user else c.caller)
 
-        seller_map, user_map = _fetch_users(list(other_users))
+        user_map = _fetch_users(list(other_users))
 
         results = []
 
@@ -155,21 +142,14 @@ def list_calls_impl(**kwargs):
             item = _serialize_call_row(c, current_user)
 
             other = item["user"]
+            user = user_map.get(other)
 
-            seller = seller_map.get(other)
-
-            if seller:
-                display_name = seller.shop_name
-                avatar = seller.avatar
-            else:
-                user = user_map.get(other)
-                display_name = user.full_name if user else other
-                avatar = user.user_image if user else None
-
-            item.update({
-                "display_name": display_name,
-                "avatar": avatar,
-            })
+            item.update(
+                {
+                    "display_name": user.full_name if user else other,
+                    "avatar": user.user_image if user else None,
+                }
+            )
 
             results.append(item)
 

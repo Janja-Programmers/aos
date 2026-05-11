@@ -108,15 +108,17 @@ def _select_short_rows_sql() -> str:
             s.seller,
             s.ad,
 
-            sel.shop_name,
-            sel.avatar AS seller_avatar,
+            u.full_name AS creator_name,
+            u.user_image AS creator_avatar,
+            COALESCE(p.is_verified, 0) AS creator_is_verified,
 
             ad.title AS ad_title,
             ad.price AS ad_price,
             ad.currency AS ad_currency
 
         FROM `tabAOS Short` s
-        LEFT JOIN `tabAOS Seller` sel ON sel.name = s.seller
+        LEFT JOIN `tabUser` u ON u.name = s.owner
+        LEFT JOIN `tabAOS Profile` p ON p.user = s.owner
         LEFT JOIN `tabAOS Ad` ad ON ad.name = s.ad
     """
 

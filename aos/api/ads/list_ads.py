@@ -188,7 +188,7 @@ def list_ads_impl(**kwargs):
 
     # Verified seller
     if verified_seller:
-        conditions.append("s.is_verified = 1")
+        conditions.append("COALESCE(p.is_verified, 0) = 1")
 
     # Promotions
     settings = get_aos_settings_snapshot()
@@ -244,22 +244,22 @@ def list_ads_impl(**kwargs):
     where_clause = " AND ".join(conditions)
 
     # Sorting
-    verified_boost = "(s.is_verified = 1) desc"
+    verified_boost = "COALESCE(p.is_verified, 0) DESC"
 
     if promotion_type == "deal":
-        order_by = f"{verified_boost}, IFNULL(a.offer_percent,0) desc, a.creation desc"
+        order_by = f"{verified_boost}, IFNULL(a.offer_percent,0) DESC, a.creation DESC"
 
     elif sort == "rating_high":
-        order_by = f"{verified_boost}, a.average_rating desc, a.total_reviews desc, a.creation desc"
+        order_by = f"{verified_boost}, a.average_rating DESC, a.total_reviews DESC, a.creation DESC"
 
     elif sort == "recent":
-        order_by = f"{verified_boost}, a.creation desc"
+        order_by = f"{verified_boost}, a.creation DESC"
 
     elif sort == "price_low":
-        order_by = f"{verified_boost}, {current_price_sql} asc, a.creation desc"
+        order_by = f"{verified_boost}, {current_price_sql} ASC, a.creation DESC"
 
     elif sort == "price_high":
-        order_by = f"{verified_boost}, {current_price_sql} desc, a.creation desc"
+        order_by = f"{verified_boost}, {current_price_sql} DESC, a.creation DESC"
 
     # SQL Query
     sql = f"""
@@ -283,11 +283,12 @@ def list_ads_impl(**kwargs):
             a.average_rating,
             a.total_reviews,
             a.creation,
-            s.is_verified,
+            COALESCE(p.is_verified, 0) AS is_verified,
             {original_price_sql} as original_price_converted,
             {current_price_sql} as current_price
         FROM `tabAOS Ad` a
         INNER JOIN `tabAOS Seller` s ON s.name = a.seller
+        INNER JOIN `tabAOS Profile` p ON p.user = s.user
         LEFT JOIN `tabAOS Exchange Rate` er_source
             ON er_source.currency = a.currency
         LEFT JOIN `tabAOS Exchange Rate` er_target

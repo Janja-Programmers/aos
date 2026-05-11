@@ -78,6 +78,11 @@ def register_impl(**kwargs):
         user.flags.ignore_password_policy = True
         user.save(ignore_permissions=True)
 
+        # Create User Profile
+        profile = frappe.new_doc("AOS Profile")
+        profile.user = user.name
+        profile.insert(ignore_permissions=True)
+
         # Create User Preference
         pref = frappe.new_doc("AOS User Preference")
         pref.user = user.name

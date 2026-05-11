@@ -71,11 +71,12 @@ def validate_user_is_seller(live, user: str):
 
     return None
 
+
 def validate_seller_can_go_live(seller_id: str):
     seller = frappe.db.get_value(
         "AOS Seller",
         seller_id,
-        ["status", "is_verified", "user"],
+        ["status", "user"],
         as_dict=True,
     )
 
@@ -85,24 +86,30 @@ def validate_seller_can_go_live(seller_id: str):
     if seller.status != "Active":
         return None, fail("Seller account is not active.", code="INVALID_STATE")
 
-    total_followers = (
-        frappe.db.get_value(
-            "AOS Profile",
-            seller.user,
-            "total_followers",
-        )
-        or 0
+    profile = frappe.db.get_value(
+        "AOS Profile",
+        seller.user,
+        ["is_verified", "total_followers"],
+        as_dict=True,
     )
 
-    if not seller.get("is_verified") and total_followers < 1000:
+    if not profile:
+        return None, fail("Profile not found.", code="PROFILE_NOT_FOUND")
+
+    is_verified = bool(profile.is_verified)
+    total_followers = profile.total_followers or 0
+
+    if not is_verified and total_followers < 1000:
         return None, fail(
             "You must be verified or have at least 1,000 followers to go live.",
             code="NOT_ELIGIBLE",
         )
 
+    seller["is_verified"] = is_verified
     seller["total_followers"] = total_followers
 
     return seller, None
+
 
 # VIEW VALIDATION
 def validate_view_identity(user: str | None, session_id: str | None):

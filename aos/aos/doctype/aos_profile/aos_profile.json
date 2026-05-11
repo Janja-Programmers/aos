@@ -7,7 +7,13 @@
  "field_order": [
   "user",
   "total_followers",
-  "total_following"
+  "column_break_vodm",
+  "total_following",
+  "verification_tab",
+  "is_verified",
+  "verified_by",
+  "column_break_stqy",
+  "verified_on"
  ],
  "fields": [
   {
@@ -37,11 +43,46 @@
    "label": "Total Following",
    "non_negative": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_vodm",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "verification_tab",
+   "fieldtype": "Tab Break",
+   "label": "Verification"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_verified",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Is Verified",
+   "read_only": 1
+  },
+  {
+   "fieldname": "verified_by",
+   "fieldtype": "Link",
+   "label": "Verified By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_stqy",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "verified_on",
+   "fieldtype": "Datetime",
+   "label": "Verified On",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-05-07 12:42:52.291116",
+ "modified": "2026-05-11 18:57:39.058637",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Profile",

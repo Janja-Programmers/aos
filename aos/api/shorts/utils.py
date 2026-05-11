@@ -209,11 +209,15 @@ def serialize_short_row(
         "impression_count": cint(row.get("impression_count") or 0),
         "ranking_score": flt(row.get("ranking_score") or 0),
         "posted_on": row.get("posted_on"),
+        "creator": {
+            "user": row.get("owner"),
+            "display_name": row.get("creator_name") or row.get("owner"),
+            "avatar": row.get("creator_avatar"),
+            "is_verified": bool(row.get("creator_is_verified")),
+        },
         "seller": (
             {
                 "id": row.get("seller"),
-                "shop_name": row.get("shop_name"),
-                "avatar": row.get("seller_avatar"),
             }
             if row.get("seller")
             else None

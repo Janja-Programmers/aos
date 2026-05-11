@@ -13,9 +13,9 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
 
-class IntegrationTestAOSSellerVerification(IntegrationTestCase):
+class IntegrationTestAOSVerificationRequest(IntegrationTestCase):
 	"""
-	Integration tests for AOSSellerVerification.
+	Integration tests for AOSVerificationRequest.
 	Use this class for testing interactions between multiple components.
 	"""
 

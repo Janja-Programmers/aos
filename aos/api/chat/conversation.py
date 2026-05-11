@@ -34,17 +34,6 @@ def _sort_participants(u1: str, u2: str) -> Tuple[str, str]:
 
 
 def _last_message_sort_key(conv):
-    """
-    Normalize last_message_at into a datetime object.
-
-    Frappe/MySQL may return:
-    - datetime
-    - string
-    - None
-
-    Python cannot compare datetime with string,
-    so we normalize everything safely.
-    """
     value = conv.get("last_message_at")
 
     if not value:
@@ -155,6 +144,19 @@ def get_or_create_conversation_impl(**kwargs):
         )
 
 
+def _fetch_users(users: list[str]):
+    if not users:
+        return {}
+
+    rows = frappe.get_all(
+        "User",
+        filters={"name": ["in", users]},
+        fields=["name", "full_name", "user_image"],
+    )
+
+    return {row.name: row for row in rows}
+
+
 # list_conversations
 def list_conversations_impl(**kwargs):
     current_user, err = require_login()
@@ -235,23 +237,7 @@ def list_conversations_impl(**kwargs):
             )
             other_users.add(other)
 
-        other_users = list(other_users)
-
-        # Sellers
-        sellers = frappe.get_all(
-            "AOS Seller",
-            filters={"user": ["in", other_users]},
-            fields=["user", "shop_name", "avatar"],
-        )
-        seller_map = {s.user: s for s in sellers}
-
-        # Users
-        users = frappe.get_all(
-            "User",
-            filters={"name": ["in", other_users]},
-            fields=["name", "full_name", "user_image"],
-        )
-        user_map = {u.name: u for u in users}
+        user_map = _fetch_users(list(other_users))
 
         results = []
 
@@ -264,25 +250,10 @@ def list_conversations_impl(**kwargs):
                 else conv["participant_1"]
             )
 
-            seller = seller_map.get(other_user)
+            user = user_map.get(other_user)
 
-            if seller:
-                display_name = seller.shop_name
-                avatar = seller.avatar
-            else:
-                user = user_map.get(other_user)
-
-                display_name = (
-                    user.full_name
-                    if user
-                    else other_user
-                )
-
-                avatar = (
-                    user.user_image
-                    if user
-                    else None
-                )
+            display_name = user.full_name if user else other_user
+            avatar = user.user_image if user else None
 
             unread = (
                 conv["unread_count_1"]

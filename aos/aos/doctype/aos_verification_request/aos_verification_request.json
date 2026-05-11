@@ -1,42 +1,35 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "field:seller",
+ "autoname": "naming_series:",
  "creation": "2026-03-16 19:55:18.425506",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "naming_series",
+  "user",
+  "verification_type",
+  "verified_by",
+  "column_break_kpfg",
+  "status",
+  "verified_on",
+  "section_break_epny",
+  "rejection_reason",
+  "individual_details_tab",
+  "legal_name",
+  "phone_number",
   "business_details_tab",
-  "seller",
   "business_name",
   "business_category",
   "business_email",
-  "business_website",
+  "business_phone_number",
   "column_break_wwvt",
   "business_type",
-  "business_phone_number",
-  "physical_address",
-  "section_break_efvk",
-  "verification_documents",
-  "verification_tab",
-  "status",
-  "verified_by",
-  "column_break_jskh",
-  "verified_on",
-  "section_break_suit",
-  "rejection_reason"
+  "business_address",
+  "documents_tab",
+  "verification_documents"
  ],
  "fields": [
-  {
-   "fieldname": "seller",
-   "fieldtype": "Link",
-   "in_standard_filter": 1,
-   "label": "Seller",
-   "options": "AOS Seller",
-   "read_only": 1,
-   "reqd": 1,
-   "unique": 1
-  },
   {
    "default": "Pending",
    "fieldname": "status",
@@ -44,7 +37,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Pending\nReviewing\nApproved\nRejected",
+   "options": "Pending\nReviewing\nApproved\nRejected\nRevoked",
    "reqd": 1
   },
   {
@@ -54,10 +47,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "column_break_jskh",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "verified_by",
    "fieldtype": "Link",
    "label": "Verified By",
@@ -65,6 +54,7 @@
    "read_only": 1
   },
   {
+   "depends_on": "eval: doc.verification_type == 'Business'",
    "fieldname": "business_details_tab",
    "fieldtype": "Tab Break",
    "label": "Business Details"
@@ -72,38 +62,25 @@
   {
    "fieldname": "business_name",
    "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Business Name",
-   "reqd": 1
+   "label": "Business Name"
   },
   {
    "fieldname": "business_type",
    "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
    "label": "Business Type",
-   "options": "Sole Proprietorship\nPartnership\nLimited Company\nCorporation",
-   "reqd": 1
+   "options": "\nSole Proprietorship\nPartnership\nLimited Company\nCorporation"
   },
   {
    "fieldname": "business_category",
    "fieldtype": "Data",
    "label": "Business Category",
-   "link_filters": "[]",
-   "reqd": 1
+   "link_filters": "[]"
   },
   {
    "fieldname": "business_phone_number",
    "fieldtype": "Data",
    "label": "Business Phone Number",
-   "options": "Phone",
-   "reqd": 1
-  },
-  {
-   "fieldname": "business_website",
-   "fieldtype": "Data",
-   "label": "Business Website",
-   "options": "URL"
+   "options": "Phone"
   },
   {
    "fieldname": "column_break_wwvt",
@@ -112,14 +89,7 @@
   {
    "fieldname": "business_email",
    "fieldtype": "Data",
-   "label": "Business Email",
-   "reqd": 1
-  },
-  {
-   "fieldname": "physical_address",
-   "fieldtype": "Small Text",
-   "label": "Physical Address",
-   "reqd": 1
+   "label": "Business Email"
   },
   {
    "depends_on": "eval: doc.status == \"Rejected\"",
@@ -129,34 +99,80 @@
    "mandatory_depends_on": "eval: doc.status == \"Rejected\""
   },
   {
-   "fieldname": "verification_tab",
-   "fieldtype": "Tab Break",
-   "label": "Verification"
-  },
-  {
-   "fieldname": "section_break_suit",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "section_break_efvk",
-   "fieldtype": "Section Break"
-  },
-  {
    "fieldname": "verification_documents",
    "fieldtype": "Table",
    "label": "Verification Documents",
-   "options": "AOS Seller Verification Document",
+   "options": "AOS Verification Document",
    "reqd": 1
+  },
+  {
+   "fieldname": "business_address",
+   "fieldtype": "Small Text",
+   "label": "Business Address"
+  },
+  {
+   "fieldname": "documents_tab",
+   "fieldtype": "Tab Break",
+   "label": "Documents"
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_kpfg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_epny",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "verification_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Verification Type",
+   "options": "Business\nIndividual",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval: doc.verification_type == 'Individual'",
+   "fieldname": "individual_details_tab",
+   "fieldtype": "Tab Break",
+   "label": "Individual Details"
+  },
+  {
+   "fieldname": "legal_name",
+   "fieldtype": "Data",
+   "label": "Legal Name"
+  },
+  {
+   "fieldname": "phone_number",
+   "fieldtype": "Data",
+   "label": "Phone Number"
+  },
+  {
+   "default": "VER-.YYYY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "VER-.YYYY.-.#####"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-17 17:41:10.584838",
+ "modified": "2026-05-11 18:58:46.216686",
  "modified_by": "Administrator",
  "module": "AOS",
- "name": "AOS Seller Verification",
- "naming_rule": "By fieldname",
+ "name": "AOS Verification Request",
+ "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {
@@ -192,6 +208,10 @@
   {
    "color": "Red",
    "title": "Rejected"
+  },
+  {
+   "color": "Red",
+   "title": "Revoked"
   }
  ]
 }

@@ -3,13 +3,11 @@
 
 import frappe
 from frappe.model.document import Document
-from aos.services.account_service import get_or_create_profile
 
 
 class AOSFollow(Document):
     def validate(self):
         self._validate_users()
-        self._ensure_profiles()
 
     def after_insert(self):
         self._increment_follow_counts()
@@ -33,9 +31,11 @@ class AOSFollow(Document):
         if not frappe.db.exists("User", self.follower_user):
             frappe.throw("Follower user does not exist.")
 
-    def _ensure_profiles(self):
-        get_or_create_profile(self.following_user)
-        get_or_create_profile(self.follower_user)
+        if not frappe.db.exists("AOS Profile", self.following_user):
+            frappe.throw("Following user profile does not exist.")
+
+        if not frappe.db.exists("AOS Profile", self.follower_user):
+            frappe.throw("Follower user profile does not exist.")
 
     def _increment_follow_counts(self):
         frappe.db.sql(

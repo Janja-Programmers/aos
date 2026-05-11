@@ -44,22 +44,16 @@ def get_seller_impl(**kwargs):
         if seller_doc.status != "Active":
             return fail("Seller not available.", code="NOT_FOUND")
 
-        avatar = seller_doc.avatar or frappe.db.get_value(
-            "User",
+        user_doc = frappe.get_doc("User", seller_doc.user)
+
+        profile = frappe.db.get_value(
+            "AOS Profile",
             seller_doc.user,
-            "user_image",
+            ["total_followers", "is_verified"],
+            as_dict=True,
         )
 
         joined = formatdate(seller_doc.creation, "MMM yyyy")
-
-        profile_followers = (
-            frappe.db.get_value(
-                "AOS Profile",
-                seller_doc.user,
-                "total_followers",
-            )
-            or 0
-        )
 
         user = current_user()
         is_following = False
@@ -91,17 +85,17 @@ def get_seller_impl(**kwargs):
             data={
                 "seller": seller_doc.name,
                 "user": seller_doc.user,
-                "shop_name": seller_doc.shop_name,
-                "category": seller_doc.category,
+                "display_name": user_doc.full_name or seller_doc.user,
+                "avatar": user_doc.user_image,
+                "business_category": seller_doc.business_category,
                 "seller_type": seller_doc.seller_type,
-                "avatar": avatar,
                 "shop_banner": seller_doc.shop_banner,
-                "about_shop": seller_doc.about_shop,
-                "physical_address": seller_doc.physical_address,
-                "is_verified": seller_doc.is_verified,
+                "about_business": seller_doc.about_business,
+                "business_address": seller_doc.business_address,
+                "is_verified": bool(profile.is_verified) if profile else False,
                 "rating": seller_doc.rating,
                 "total_reviews": seller_doc.total_reviews,
-                "total_followers": profile_followers,
+                "total_followers": profile.total_followers if profile else 0,
                 "total_ads": seller_doc.total_ads,
                 "joined": joined,
                 "is_following": bool(is_following),

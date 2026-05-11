@@ -6,52 +6,35 @@
  "engine": "InnoDB",
  "field_order": [
   "user",
-  "shop_name",
   "seller_type",
-  "category",
+  "business_category",
   "column_break_gwmy",
   "status",
   "shop_banner",
-  "avatar",
   "section_break_rvlv",
-  "about_shop",
-  "physical_address",
+  "about_business",
+  "business_address",
   "operating_hours",
   "metrics_tab",
   "section_break_xlao",
   "total_ads",
   "rating",
-  "total_reviews",
-  "verification_tab",
-  "is_verified",
-  "verified_by",
-  "verified_on"
+  "total_reviews"
  ],
  "fields": [
   {
    "fieldname": "user",
    "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "User",
    "options": "User",
    "reqd": 1,
    "unique": 1
   },
   {
-   "fieldname": "shop_name",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Shop Name",
-   "reqd": 1
-  },
-  {
    "fieldname": "column_break_gwmy",
    "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "avatar",
-   "fieldtype": "Attach Image",
-   "label": "Avatar"
   },
   {
    "fieldname": "shop_banner",
@@ -108,11 +91,6 @@
    "fieldtype": "Section Break"
   },
   {
-   "fieldname": "about_shop",
-   "fieldtype": "Small Text",
-   "label": "About Shop"
-  },
-  {
    "fieldname": "metrics_tab",
    "fieldtype": "Tab Break",
    "label": "Metrics"
@@ -122,50 +100,31 @@
    "fieldtype": "Section Break"
   },
   {
-   "default": "0",
-   "fieldname": "is_verified",
-   "fieldtype": "Check",
-   "label": "Is Verified",
-   "read_only": 1
-  },
-  {
-   "fieldname": "verification_tab",
-   "fieldtype": "Tab Break",
-   "label": "Verification"
-  },
-  {
-   "fieldname": "verified_on",
-   "fieldtype": "Datetime",
-   "label": "Verified On",
-   "read_only": 1
-  },
-  {
-   "fieldname": "verified_by",
-   "fieldtype": "Link",
-   "label": "Verified By",
-   "options": "User",
-   "read_only": 1
-  },
-  {
-   "fieldname": "physical_address",
-   "fieldtype": "Small Text",
-   "label": "Physical Address"
-  },
-  {
    "fieldname": "operating_hours",
    "fieldtype": "Table",
    "label": "Operating Hours",
    "options": "AOS Seller Operating Hours"
   },
   {
-   "fieldname": "category",
+   "fieldname": "business_category",
    "fieldtype": "Data",
-   "label": "Category"
+   "in_list_view": 1,
+   "label": "Business Category"
+  },
+  {
+   "fieldname": "about_business",
+   "fieldtype": "Small Text",
+   "label": "About Business"
+  },
+  {
+   "fieldname": "business_address",
+   "fieldtype": "Small Text",
+   "label": "Business Address"
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-05-07 12:28:12.106493",
+ "modified": "2026-05-11 13:09:32.844875",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Seller",

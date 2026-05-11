@@ -35,7 +35,7 @@ def list_sellers_impl(**kwargs):
         search = kwargs.get("search")
         is_verified = kwargs.get("is_verified")
         seller_type = kwargs.get("seller_type")
-        category = kwargs.get("category")
+        business_category = kwargs.get("business_category") or kwargs.get("category")
         follow_filter = kwargs.get("follow_filter")
 
         user = current_user()
@@ -48,19 +48,19 @@ def list_sellers_impl(**kwargs):
             params.append(user)
 
         if is_verified is not None:
-            conditions.append("s.is_verified = %s")
+            conditions.append("p.is_verified = %s")
             params.append(int(is_verified))
 
         if seller_type:
             conditions.append("s.seller_type = %s")
             params.append(seller_type)
 
-        if category:
-            conditions.append("s.category = %s")
-            params.append(category)
+        if business_category:
+            conditions.append("s.business_category = %s")
+            params.append(business_category)
 
         if search:
-            conditions.append("s.shop_name LIKE %s")
+            conditions.append("u.full_name LIKE %s")
             params.append(f"%{search}%")
 
         following_users = set()
@@ -100,23 +100,26 @@ def list_sellers_impl(**kwargs):
             SELECT
                 s.name,
                 s.user,
-                s.shop_name,
-                s.category,
-                s.avatar,
-                s.physical_address,
+                s.business_category,
+                s.business_address,
                 s.rating,
                 s.total_reviews,
-                s.is_verified,
                 s.seller_type,
-                COALESCE(p.total_followers, 0) AS total_followers
+
+                u.full_name,
+                u.user_image,
+
+                COALESCE(p.total_followers, 0) AS total_followers,
+                COALESCE(p.is_verified, 0) AS is_verified
 
             FROM `tabAOS Seller` s
-            LEFT JOIN `tabAOS Profile` p ON p.user = s.user
+            INNER JOIN `tabUser` u ON u.name = s.user
+            INNER JOIN `tabAOS Profile` p ON p.user = s.user
 
             WHERE {where_clause}
 
             ORDER BY
-                s.is_verified DESC,
+                COALESCE(p.is_verified, 0) DESC,
                 s.rating DESC,
                 COALESCE(p.total_followers, 0) DESC,
                 s.creation DESC
@@ -134,11 +137,11 @@ def list_sellers_impl(**kwargs):
                 {
                     "seller": s["name"],
                     "user": s["user"],
-                    "shop_name": s["shop_name"],
-                    "category": s.get("category"),
-                    "avatar": s.get("avatar"),
-                    "physical_address": s.get("physical_address"),
-                    "is_verified": s.get("is_verified"),
+                    "display_name": s.get("full_name") or s["user"],
+                    "avatar": s.get("user_image"),
+                    "business_category": s.get("business_category"),
+                    "business_address": s.get("business_address"),
+                    "is_verified": bool(s.get("is_verified")),
                     "seller_type": s.get("seller_type"),
                     "rating": s.get("rating"),
                     "total_reviews": s.get("total_reviews"),

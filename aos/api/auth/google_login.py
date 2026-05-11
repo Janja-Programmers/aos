@@ -38,6 +38,7 @@ def google_login_impl(**kwargs):
     Login/Register using Google Sign-In (ID Token).
 
     - Validates audience using settings client IDs
+    - Creates AOS Profile for new users
     - Creates AOS User Preference if missing
     - Country + Currency fallback to AOS defaults
     - Language fallback to AOS default
@@ -120,6 +121,10 @@ def google_login_impl(**kwargs):
             user.insert(ignore_permissions=True)
 
             user_name = user.name
+
+            profile = frappe.new_doc("AOS Profile")
+            profile.user = user_name
+            profile.insert(ignore_permissions=True)
 
         except Exception:
             frappe.log_error(frappe.get_traceback(), "AOS Google User Create Failed")

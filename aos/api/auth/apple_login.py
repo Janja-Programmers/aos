@@ -30,6 +30,7 @@ def apple_login_impl(**kwargs):
 
     - Verifies Apple identity token
     - Creates user if not exists
+    - Creates AOS Profile for new users
     - Ensures AOS User Preference exists
     - Creates session
     """
@@ -109,6 +110,10 @@ def apple_login_impl(**kwargs):
             user.insert(ignore_permissions=True)
 
             user_name = user.name
+
+            profile = frappe.new_doc("AOS Profile")
+            profile.user = user_name
+            profile.insert(ignore_permissions=True)
 
         except Exception:
             frappe.log_error(frappe.get_traceback(), "AOS Apple User Create Failed")
