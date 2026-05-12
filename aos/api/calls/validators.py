@@ -11,8 +11,16 @@ import frappe
 from aos.api.shared.responses import fail
 
 
+# Constants
+ACTIVE_CALL_STATUSES = {"initiated", "ringing", "ongoing"}
+TERMINAL_CALL_STATUSES = {"ended", "missed", "rejected", "failed", "cancelled"}
+
+
 # FETCH HELPERS
 def get_call_row(call_id: str):
+    if not call_id:
+        return None
+
     try:
         return frappe.get_doc("AOS Call", call_id)
     except frappe.DoesNotExistError:
@@ -20,6 +28,9 @@ def get_call_row(call_id: str):
 
 
 def get_conversation_row(conv_id: str):
+    if not conv_id:
+        return None
+
     return frappe.db.get_value(
         "AOS Conversation",
         conv_id,
@@ -49,80 +60,94 @@ def validate_conversation_exists(conv_id: str):
 
 # USER VALIDATION
 def validate_user_in_call(call, user: str):
-    if user not in (call.caller, call.receiver):
+    if not call or user not in (call.caller, call.receiver):
         return fail("Not allowed.", code="PERMISSION_DENIED")
 
     return None
 
 
 def validate_user_in_conversation(conv, user: str):
-    if user not in (conv.participant_1, conv.participant_2):
+    if not conv or user not in (conv.participant_1, conv.participant_2):
         return fail("Not allowed.", code="PERMISSION_DENIED")
 
     return None
 
 
-def get_other_user(call, current_user: str) -> str:
-    return (
-        call.receiver
-        if call.caller == current_user
-        else call.caller
-    )
+def get_other_user(call, current_user: str) -> str | None:
+    if not call:
+        return None
+
+    if call.caller == current_user:
+        return call.receiver
+
+    if call.receiver == current_user:
+        return call.caller
+
+    return None
 
 
 # ROLE VALIDATION
 def validate_is_caller(call, user: str):
-    if call.caller != user:
-        return fail("Only caller can perform this action.", code="PERMISSION_DENIED")
+    if not call or call.caller != user:
+        return fail(
+            "Only caller can perform this action.",
+            code="PERMISSION_DENIED",
+        )
 
     return None
 
 
 def validate_is_receiver(call, user: str):
-    if call.receiver != user:
-        return fail("Only receiver can perform this action.", code="PERMISSION_DENIED")
+    if not call or call.receiver != user:
+        return fail(
+            "Only receiver can perform this action.",
+            code="PERMISSION_DENIED",
+        )
 
     return None
 
 
 # STATE VALIDATION
 def validate_call_active(call):
-    if not call.is_active:
+    if not call or not call.is_active:
+        return fail("Call is no longer active.", code="INVALID_STATE")
+
+    if call.status in TERMINAL_CALL_STATUSES:
         return fail("Call is no longer active.", code="INVALID_STATE")
 
     return None
 
 
 def validate_can_mark_ringing(call):
-    if call.status not in ("initiated", "ringing"):
+    if not call or call.status not in ("initiated", "ringing"):
         return fail("Call cannot be marked as ringing.", code="INVALID_STATE")
 
     return None
 
 
 def validate_can_accept(call):
-    if call.status != "ringing":
+    if not call or call.status not in ("initiated", "ringing"):
         return fail("Call cannot be accepted.", code="INVALID_STATE")
 
     return None
 
 
 def validate_can_reject(call):
-    if call.status != "ringing":
+    if not call or call.status not in ("initiated", "ringing"):
         return fail("Call cannot be rejected.", code="INVALID_STATE")
 
     return None
 
 
 def validate_can_cancel(call):
-    if call.status not in ("initiated", "ringing"):
+    if not call or call.status not in ("initiated", "ringing"):
         return fail("Call cannot be cancelled.", code="INVALID_STATE")
 
     return None
 
 
 def validate_can_end(call):
-    if call.status != "ongoing":
+    if not call or call.status != "ongoing":
         return fail("Call cannot be ended.", code="INVALID_STATE")
 
     return None

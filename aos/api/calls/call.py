@@ -13,7 +13,7 @@ Handles:
 from __future__ import annotations
 
 import frappe
-from frappe.utils import now_datetime
+from frappe.utils import now_datetime, get_datetime
 
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
@@ -24,8 +24,10 @@ from aos.services.notification_service import NotificationService
 
 from .constants import (
     INITIATE_CALL_LIMIT_PER_MINUTE_PER_USER,
+    MARK_RINGING_LIMIT_PER_MINUTE_PER_USER,
     ACCEPT_CALL_LIMIT_PER_MINUTE_PER_USER,
     REJECT_CALL_LIMIT_PER_MINUTE_PER_USER,
+    CANCEL_CALL_LIMIT_PER_MINUTE_PER_USER,
     END_CALL_LIMIT_PER_MINUTE_PER_USER,
 )
 
@@ -47,6 +49,7 @@ from .validators import (
 from .utils import upsert_call_system_message
 
 from .realtime import (
+    serialize_call_for_realtime,
     publish_incoming_call,
     publish_call_accepted,
     publish_call_rejected,
@@ -57,9 +60,58 @@ from .realtime import (
 
 # HELPERS
 def _format_duration(seconds: int) -> str:
+    seconds = max(0, int(seconds or 0))
+
     mins = seconds // 60
     secs = seconds % 60
+
     return f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
+
+
+def _validate_call_type(call_type: str):
+    if call_type not in ("audio", "video"):
+        return fail("Invalid call_type.", code="VALIDATION_ERROR")
+
+    return None
+
+
+def _build_call_response(
+    *,
+    call,
+    current_user: str,
+    token: str | None = None,
+) -> dict:
+    """
+    Build API response payload.
+
+    AOS Call stores stable User IDs/emails in caller/receiver.
+    This response adds display-ready user fields through the shared serializer.
+    """
+
+    data = serialize_call_for_realtime(
+        call,
+        current_user=current_user,
+    )
+
+    if token:
+        data["token"] = token
+        data["ws_url"] = LiveKitService.get_ws_url()
+
+    return data
+
+
+def _reload_call(call_id: str):
+    return frappe.get_doc("AOS Call", call_id)
+
+
+def _safe_duration_seconds(started_at, ended_at) -> int:
+    if not started_at or not ended_at:
+        return 0
+
+    started = get_datetime(started_at)
+    ended = get_datetime(ended_at)
+
+    return max(0, int((ended - started).total_seconds()))
 
 
 # INITIATE CALL
@@ -78,10 +130,14 @@ def initiate_call_impl(**kwargs):
         return rl
 
     conv_id = kwargs.get("conversation_id")
-    call_type = (kwargs.get("call_type") or "audio").strip()
+    call_type = (kwargs.get("call_type") or "audio").strip().lower()
 
     if not conv_id:
         return fail("conversation_id is required.", code="VALIDATION_ERROR")
+
+    call_type_error = _validate_call_type(call_type)
+    if call_type_error:
+        return call_type_error
 
     try:
         conv, err = validate_conversation_exists(conv_id)
@@ -102,7 +158,7 @@ def initiate_call_impl(**kwargs):
             else conv.participant_1
         )
 
-        # Create call
+        # Create call.
         call = frappe.new_doc("AOS Call")
         call.conversation = conv_id
         call.caller = current_user
@@ -111,17 +167,17 @@ def initiate_call_impl(**kwargs):
         call.status = "initiated"
         call.insert(ignore_permissions=True)
 
-        # System message
+        # System message.
         upsert_call_system_message(
             call_id=call.name,
             conversation_id=conv_id,
             content="📞 Calling...",
         )
 
-        # Realtime
+        # Realtime incoming call event.
         publish_incoming_call(call, receiver)
 
-        # Notification
+        # Notification.
         NotificationService.notify_incoming_call(
             user=receiver,
             caller=current_user,
@@ -129,7 +185,7 @@ def initiate_call_impl(**kwargs):
             call_type=call.call_type,
         )
 
-        # Generate token
+        # Generate caller token.
         token = LiveKitService.generate_call_token(
             user=current_user,
             room_name=call.room_name,
@@ -144,15 +200,16 @@ def initiate_call_impl(**kwargs):
 
         return ok(
             "Call initiated.",
-            data={
-                "call_id": call.name,
-                "room_name": call.room_name,
-                "token": token,
-                "ws_url": LiveKitService.get_ws_url(),
-                "receiver": receiver,
-                "call_type": call.call_type,
-            },
+            data=_build_call_response(
+                call=call,
+                current_user=current_user,
+                token=token,
+            ),
         )
+
+    except frappe.ValidationError as ex:
+        frappe.db.rollback()
+        return fail(str(ex), code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -168,6 +225,15 @@ def mark_call_ringing_impl(**kwargs):
     current_user, err = require_login()
     if err:
         return err
+
+    rl = rate_limit(
+        key=f"aos:calls:ringing:user:{current_user}",
+        ttl_seconds=60,
+        limit=MARK_RINGING_LIMIT_PER_MINUTE_PER_USER,
+        message="Too many requests. Please try again shortly.",
+    )
+    if rl:
+        return rl
 
     call_id = kwargs.get("call_id")
 
@@ -192,18 +258,34 @@ def mark_call_ringing_impl(**kwargs):
         frappe.db.sql(
             """
             UPDATE `tabAOS Call`
-            SET status = 'ringing',
+            SET
+                status = 'ringing',
                 ringing_at = %s
             WHERE name = %s
+              AND receiver = %s
               AND status = 'initiated'
             """,
-            (now, call_id),
+            (now, call_id, current_user),
         )
 
-        return ok("Call marked as ringing.")
+        if frappe.db._cursor.rowcount == 0:
+            return fail("Call cannot be marked as ringing.", code="INVALID_STATE")
+
+        call = _reload_call(call_id)
+
+        return ok(
+            "Call marked as ringing.",
+            data=_build_call_response(
+                call=call,
+                current_user=current_user,
+            ),
+        )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "AOS Mark Ringing Failed")
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Mark Ringing Failed",
+        )
         frappe.db.rollback()
         return fail("Failed to mark call as ringing.", code="INTERNAL_ERROR")
 
@@ -247,31 +329,36 @@ def accept_call_impl(**kwargs):
 
         now = now_datetime()
 
-        # Update call
-        updated = frappe.db.sql(
+        frappe.db.sql(
             """
             UPDATE `tabAOS Call`
-            SET status = 'ongoing',
-                started_at = %s
+            SET
+                status = 'ongoing',
+                started_at = %s,
+                ringing_at = COALESCE(ringing_at, %s)
             WHERE name = %s
-              AND status = 'ringing'
+              AND receiver = %s
+              AND status IN ('initiated', 'ringing')
             """,
-            (now, call_id),
+            (now, now, call_id, current_user),
         )
 
         if frappe.db._cursor.rowcount == 0:
             return fail("Call cannot be accepted.", code="INVALID_STATE")
 
-        # System message
+        call = _reload_call(call_id)
+
+        # System message.
         upsert_call_system_message(
             call_id=call.name,
             conversation_id=call.conversation,
             content="📞 Call started",
         )
 
-        # Notify caller
+        # Notify caller with fresh call state.
         publish_call_accepted(call)
 
+        # Generate receiver token.
         token = LiveKitService.generate_call_token(
             user=current_user,
             room_name=call.room_name,
@@ -286,14 +373,11 @@ def accept_call_impl(**kwargs):
 
         return ok(
             "Call accepted.",
-            data={
-                "call_id": call.name,
-                "room_name": call.room_name,
-                "token": token,
-                "ws_url": LiveKitService.get_ws_url(),
-                "caller": call.caller,
-                "call_type": call.call_type,
-            },
+            data=_build_call_response(
+                call=call,
+                current_user=current_user,
+                token=token,
+            ),
         )
 
     except Exception:
@@ -334,35 +418,53 @@ def reject_call_impl(**kwargs):
         if err:
             return err
 
+        err = validate_is_receiver(call, current_user)
+        if err:
+            return err
+
         err = validate_can_reject(call)
         if err:
             return err
 
         now = now_datetime()
 
-        frappe.db.set_value(
-            "AOS Call",
-            call_id,
-            {
-                "status": "rejected",
-                "ended_by": current_user,
-                "ended_at": now,
-                "is_active": 0,
-            },
-            update_modified=False,
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Call`
+            SET
+                status = 'rejected',
+                ended_by = %s,
+                ended_at = %s,
+                is_active = 0
+            WHERE name = %s
+              AND receiver = %s
+              AND status IN ('initiated', 'ringing')
+            """,
+            (current_user, now, call_id, current_user),
         )
 
-        # System message
+        if frappe.db._cursor.rowcount == 0:
+            return fail("Call cannot be rejected.", code="INVALID_STATE")
+
+        call = _reload_call(call_id)
+
+        # System message.
         upsert_call_system_message(
             call_id=call.name,
             conversation_id=call.conversation,
             content="📞 Call declined",
         )
 
-        # Notify caller
+        # Notify caller.
         publish_call_rejected(call)
 
-        return ok("Call rejected.")
+        return ok(
+            "Call rejected.",
+            data=_build_call_response(
+                call=call,
+                current_user=current_user,
+            ),
+        )
 
     except Exception:
         frappe.log_error(
@@ -378,6 +480,15 @@ def cancel_call_impl(**kwargs):
     current_user, err = require_login()
     if err:
         return err
+
+    rl = rate_limit(
+        key=f"aos:calls:cancel:user:{current_user}",
+        ttl_seconds=60,
+        limit=CANCEL_CALL_LIMIT_PER_MINUTE_PER_USER,
+        message="Too many requests. Please try again shortly.",
+    )
+    if rl:
+        return rl
 
     call_id = kwargs.get("call_id")
 
@@ -402,7 +513,8 @@ def cancel_call_impl(**kwargs):
         frappe.db.sql(
             """
             UPDATE `tabAOS Call`
-            SET status = 'cancelled',
+            SET
+                status = 'cancelled',
                 ended_by = %s,
                 ended_at = %s,
                 is_active = 0
@@ -416,6 +528,8 @@ def cancel_call_impl(**kwargs):
         if frappe.db._cursor.rowcount == 0:
             return fail("Call cannot be cancelled.", code="INVALID_STATE")
 
+        call = _reload_call(call_id)
+
         upsert_call_system_message(
             call_id=call.name,
             conversation_id=call.conversation,
@@ -424,10 +538,19 @@ def cancel_call_impl(**kwargs):
 
         publish_call_cancelled(call)
 
-        return ok("Call cancelled.")
+        return ok(
+            "Call cancelled.",
+            data=_build_call_response(
+                call=call,
+                current_user=current_user,
+            ),
+        )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "AOS Cancel Call Failed")
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Cancel Call Failed",
+        )
         frappe.db.rollback()
         return fail("Failed to cancel call.", code="INTERNAL_ERROR")
 
@@ -467,36 +590,48 @@ def end_call_impl(**kwargs):
 
         now = now_datetime()
 
-        duration = (
-            int((now - call.started_at).total_seconds())
-            if call.started_at
-            else 0
+        duration = _safe_duration_seconds(
+            call.started_at,
+            now,
         )
 
-        frappe.db.set_value(
-            "AOS Call",
-            call_id,
-            {
-                "status": "ended",
-                "ended_by": current_user,
-                "ended_at": now,
-                "duration": duration,
-                "is_active": 0,
-            },
-            update_modified=False,
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Call`
+            SET
+                status = 'ended',
+                ended_by = %s,
+                ended_at = %s,
+                duration = %s,
+                is_active = 0
+            WHERE name = %s
+              AND status = 'ongoing'
+            """,
+            (current_user, now, duration, call_id),
         )
 
-        # System message
+        if frappe.db._cursor.rowcount == 0:
+            return fail("Call cannot be ended.", code="INVALID_STATE")
+
+        call = _reload_call(call_id)
+
+        # System message.
         upsert_call_system_message(
             call_id=call.name,
             conversation_id=call.conversation,
             content=f"📞 Call ended ({_format_duration(duration)})",
         )
 
-        # Notify both users
+        # Notify both users.
         publish_call_ended(call)
 
-        return ok("Call ended.")
+        return ok(
+            "Call ended.",
+            data=_build_call_response(
+                call=call,
+                current_user=current_user,
+            ),
+        )
 
     except Exception:
         frappe.log_error(

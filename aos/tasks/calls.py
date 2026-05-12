@@ -34,7 +34,8 @@ def _mark_call_as_missed(call_name: str, ended_at) -> bool:
     frappe.db.sql(
         """
         UPDATE `tabAOS Call`
-        SET status = 'missed',
+        SET
+            status = 'missed',
             ended_at = %s,
             is_active = 0
         WHERE name = %s
@@ -43,13 +44,21 @@ def _mark_call_as_missed(call_name: str, ended_at) -> bool:
         """,
         (ended_at, call_name),
     )
+
     return frappe.db._cursor.rowcount > 0
+
+
+def _reload_call(call_name: str):
+    return frappe.get_doc("AOS Call", call_name)
 
 
 def _handle_missed_call_side_effects(call):
     """
     Run missed-call side effects independently so one failure
     does not block the others.
+
+    Expects a fresh call document after status has already been updated
+    to missed.
     """
     try:
         upsert_call_system_message(
@@ -76,6 +85,9 @@ def _handle_missed_call_side_effects(call):
 
 
 def _get_expired_initiated_calls(cutoff):
+    """
+    Calls that were created but never reached ringing before timeout.
+    """
     return frappe.get_all(
         "AOS Call",
         filters={
@@ -85,12 +97,7 @@ def _get_expired_initiated_calls(cutoff):
         },
         fields=[
             "name",
-            "conversation",
-            "caller",
-            "receiver",
-            "status",
             "creation",
-            "ringing_at",
         ],
         order_by="creation asc",
         limit=BATCH_SIZE,
@@ -98,6 +105,10 @@ def _get_expired_initiated_calls(cutoff):
 
 
 def _get_expired_ringing_calls(cutoff):
+    """
+    Calls that reached ringing but were not answered/rejected/cancelled
+    before timeout.
+    """
     return frappe.get_all(
         "AOS Call",
         filters={
@@ -107,11 +118,6 @@ def _get_expired_ringing_calls(cutoff):
         },
         fields=[
             "name",
-            "conversation",
-            "caller",
-            "receiver",
-            "status",
-            "creation",
             "ringing_at",
         ],
         order_by="ringing_at asc",
@@ -119,28 +125,52 @@ def _get_expired_ringing_calls(cutoff):
     )
 
 
+def _get_expired_calls(cutoff):
+    """
+    Fetch expired initiated and ringing calls.
+
+    Dedupe by name defensively, even though the two statuses are mutually
+    exclusive.
+    """
+
+    rows = []
+    rows.extend(_get_expired_initiated_calls(cutoff))
+    rows.extend(_get_expired_ringing_calls(cutoff))
+
+    seen = set()
+    result = []
+
+    for row in rows:
+        if row.name in seen:
+            continue
+
+        seen.add(row.name)
+        result.append(row)
+
+    return result
+
+
 # TASK: HANDLE MISSED CALLS
 def handle_missed_calls():
     """
     Mark calls as missed if not answered within timeout.
 
-    Production guarantees:
-    - DB fetches only expired candidates
-    - Avoids infinite scheduler loop
-    - Uses creation for initiated calls
-    - Uses ringing_at for ringing calls
-    - Atomic DB transition prevents race conditions
-    - Side effects only run if state actually changed
-    - Side effects isolated for resilience
-    - Per-call commit for durability
+    Guarantees:
+    - DB fetches only expired candidates.
+    - Avoids infinite scheduler loop.
+    - Uses creation for initiated calls.
+    - Uses ringing_at for ringing calls.
+    - Atomic DB transition prevents race conditions.
+    - Side effects only run if state actually changed.
+    - Side effects receive fresh call state after update.
+    - Side effects are isolated for resilience.
+    - Per-call commit for durability.
     """
     try:
         now = now_datetime()
         cutoff = add_to_date(now, seconds=-MISSED_CALL_TIMEOUT_SECONDS)
 
-        calls = []
-        calls.extend(_get_expired_initiated_calls(cutoff))
-        calls.extend(_get_expired_ringing_calls(cutoff))
+        calls = _get_expired_calls(cutoff)
 
         if not calls:
             return
@@ -152,7 +182,10 @@ def handle_missed_calls():
                 if not updated:
                     continue
 
-                _handle_missed_call_side_effects(call)
+                fresh_call = _reload_call(call.name)
+
+                _handle_missed_call_side_effects(fresh_call)
+
                 frappe.db.commit()
 
             except Exception:

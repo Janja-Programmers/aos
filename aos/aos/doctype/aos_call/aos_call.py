@@ -11,12 +11,24 @@ from frappe.utils import now_datetime, get_datetime
 ACTIVE_STATUSES = {"initiated", "ringing", "ongoing"}
 TERMINAL_STATUSES = {"ended", "missed", "rejected", "failed", "cancelled"}
 
+VALID_STATUS_TRANSITIONS = {
+    "initiated": {"ringing", "missed", "failed", "cancelled"},
+    "ringing": {"ongoing", "rejected", "missed", "failed", "cancelled"},
+    "ongoing": {"ended", "failed"},
+    "ended": set(),
+    "missed": set(),
+    "rejected": set(),
+    "failed": set(),
+    "cancelled": set(),
+}
+
 
 class AOSCall(Document):
     def validate(self):
+        self._validate_required_fields()
         self._validate_users()
-        self._validate_conversation_participants()
         self._prevent_self_call()
+        self._validate_conversation_participants()
         self._validate_status_transition()
         self._validate_single_active_call_per_conversation()
 
@@ -28,9 +40,26 @@ class AOSCall(Document):
         self._handle_status_side_effects()
         self._compute_duration()
 
+    # Validation
+    def _validate_required_fields(self):
+        if not self.conversation:
+            frappe.throw("Conversation is required")
+
+        if not self.call_type:
+            self.call_type = "audio"
+
+        if self.call_type not in ("audio", "video"):
+            frappe.throw("Invalid call type")
+
     def _validate_users(self):
         if not self.caller or not self.receiver:
             frappe.throw("Caller and Receiver are required")
+
+        if not frappe.db.exists("User", self.caller):
+            frappe.throw("Caller does not exist")
+
+        if not frappe.db.exists("User", self.receiver):
+            frappe.throw("Receiver does not exist")
 
     def _prevent_self_call(self):
         if self.caller == self.receiver:
@@ -61,18 +90,7 @@ class AOSCall(Document):
         if old_status == self.status:
             return
 
-        valid_transitions = {
-            "initiated": {"ringing", "missed", "failed", "cancelled"},
-            "ringing": {"ongoing", "rejected", "missed", "failed", "cancelled"},
-            "ongoing": {"ended", "failed"},
-            "ended": set(),
-            "missed": set(),
-            "rejected": set(),
-            "failed": set(),
-            "cancelled": set(),
-        }
-
-        allowed = valid_transitions.get(old_status, set())
+        allowed = VALID_STATUS_TRANSITIONS.get(old_status, set())
 
         if self.status not in allowed:
             frappe.throw(f"Invalid status transition: {old_status} → {self.status}")
@@ -93,15 +111,19 @@ class AOSCall(Document):
         if existing:
             frappe.throw("There is already an active call for this conversation")
 
+    # State setup / side effects
     def _set_initial_state(self):
         if not self.status:
             self.status = "initiated"
 
-        self.is_active = 1
+        if self.status in ACTIVE_STATUSES:
+            self.is_active = 1
 
     def _set_room_name(self):
         if not self.room_name:
-            self.room_name = f"call:{self.conversation}"
+            self.room_name = (
+                f"call:{self.conversation}:{frappe.generate_hash(length=12)}"
+            )
 
     def _handle_status_side_effects(self):
         now = now_datetime()
@@ -129,4 +151,4 @@ class AOSCall(Document):
         ended_at = get_datetime(self.ended_at)
 
         delta = ended_at - started_at
-        self.duration = int(delta.total_seconds())
+        self.duration = max(0, int(delta.total_seconds()))

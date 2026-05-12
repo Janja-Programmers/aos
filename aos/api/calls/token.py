@@ -2,7 +2,12 @@
 Call Token APIs (implementation).
 
 Handles:
-- get_call_token (reconnect / retry)
+- get_call_token
+
+Used for:
+- reconnect
+- retry join
+- recovering from LiveKit disconnects
 """
 
 from __future__ import annotations
@@ -23,8 +28,46 @@ from .validators import (
     validate_call_active,
 )
 
+from .realtime import serialize_call_for_realtime
 
-# GET CALL TOKEN (RECONNECT)
+
+# Helpers
+def _get_call_role(call, current_user: str) -> str:
+    if current_user == call.caller:
+        return "caller"
+
+    return "receiver"
+
+
+def _build_token_response(
+    *,
+    call,
+    current_user: str,
+    token: str,
+) -> dict:
+    """
+    Build reconnect token response.
+
+    Includes the same rich call payload shape used by the rest of call APIs,
+    then adds LiveKit connection data.
+    """
+
+    data = serialize_call_for_realtime(
+        call,
+        current_user=current_user,
+    )
+
+    data.update(
+        {
+            "token": token,
+            "ws_url": LiveKitService.get_ws_url(),
+        }
+    )
+
+    return data
+
+
+# GET CALL TOKEN
 def get_call_token_impl(**kwargs):
     current_user, err = require_login()
     if err:
@@ -57,13 +100,8 @@ def get_call_token_impl(**kwargs):
         if err:
             return err
 
-        # Determine role
-        if current_user == call.caller:
-            role = "caller"
-        else:
-            role = "receiver"
+        role = _get_call_role(call, current_user)
 
-        # Generate token
         token = LiveKitService.generate_call_token(
             user=current_user,
             room_name=call.room_name,
@@ -72,18 +110,17 @@ def get_call_token_impl(**kwargs):
                 role=role,
                 conversation=call.conversation,
                 call_id=call.name,
+                call_type=call.call_type,
             ),
         )
 
         return ok(
             "Token generated.",
-            data={
-                "call_id": call.name,
-                "room_name": call.room_name,
-                "token": token,
-                "ws_url": LiveKitService.get_ws_url(),
-                "status": call.status,
-            },
+            data=_build_token_response(
+                call=call,
+                current_user=current_user,
+                token=token,
+            ),
         )
 
     except Exception:

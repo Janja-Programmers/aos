@@ -6,6 +6,7 @@ Structure:
 - Business logic in sibling modules
 """
 
+from __future__ import annotations
 import frappe
 
 # Call lifecycle
@@ -29,44 +30,52 @@ from .history import (
 )
 
 
-# Call APIs
+# Call lifecycle APIs
 @frappe.whitelist(methods=["POST"])
 def initiate_call(**kwargs):
+    """Start an audio/video call for a conversation."""
     return initiate_call_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def mark_call_ringing(**kwargs):
+    """Mark an incoming call as ringing on the receiver side."""
     return mark_call_ringing_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def accept_call(**kwargs):
+    """Accept an incoming call."""
     return accept_call_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def reject_call(**kwargs):
+    """Reject an incoming call."""
     return reject_call_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def cancel_call(**kwargs):
+    """Cancel an outgoing call before it is accepted."""
     return cancel_call_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def end_call(**kwargs):
+    """End an ongoing call."""
     return end_call_impl(**kwargs)
 
 
-# Token
+# Token API
 @frappe.whitelist(methods=["POST"])
 def get_call_token(**kwargs):
+    """Generate a LiveKit token for reconnect/retry."""
     return get_call_token_impl(**kwargs)
 
 
-# History
-@frappe.whitelist()
+# History API
+@frappe.whitelist(methods=["GET", "POST"])
 def list_calls(**kwargs):
+    """List current user's call history."""
     return list_calls_impl(**kwargs)
