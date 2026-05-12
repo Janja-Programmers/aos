@@ -44,15 +44,28 @@ def toggle_like_impl(**kwargs):
         should_update_ranking = False
 
         # FETCH SHORT
+        # owner is the creator/poster user.
+        # seller is optional shop context and should not be used as notification recipient.
         short = frappe.db.get_value(
             "AOS Short",
             short_id,
-            ["name", "seller"],
+            [
+                "name",
+                "owner",
+                "status",
+                "visibility_status",
+            ],
             as_dict=True,
         )
 
         if not short:
             return fail("Short not found.", code="NOT_FOUND")
+
+        if short.status != "ready" or short.visibility_status != "visible":
+            return fail(
+                "Short is not available for likes.",
+                code="VALIDATION_ERROR",
+            )
 
         # CHECK EXISTING LIKE
         existing = frappe.get_all(
@@ -64,20 +77,22 @@ def toggle_like_impl(**kwargs):
 
         # LIKE
         if not existing:
-            frappe.get_doc({
-                "doctype": "AOS Short Like",
-                "short": short_id,
-                "user": user,
-            }).insert(ignore_permissions=True)
+            frappe.get_doc(
+                {
+                    "doctype": "AOS Short Like",
+                    "short": short_id,
+                    "user": user,
+                }
+            ).insert(ignore_permissions=True)
 
             liked = True
             message = "Liked."
             should_update_ranking = True
 
             # NOTIFICATION
-            if short.seller and short.seller != user:
+            if short.owner and short.owner != user:
                 NotificationService.notify_short_like(
-                    user=short.seller,
+                    user=short.owner,
                     actor=user,
                     short_id=short_id,
                 )
@@ -94,6 +109,11 @@ def toggle_like_impl(**kwargs):
             message = "Unliked."
             should_update_ranking = True
 
+        frappe.db.commit()
+
+        # Read canonical count after AOS Short Like hooks update the metric.
+        like_count = frappe.db.get_value("AOS Short", short_id, "like_count") or 0
+
         # TRIGGER RANKING (ASYNC)
         if should_update_ranking:
             frappe.enqueue(
@@ -106,11 +126,22 @@ def toggle_like_impl(**kwargs):
             message,
             data={
                 "short_id": short_id,
+
+                # Backward-compatible field.
+                # Frontend should eventually prefer viewer_state.is_liked.
                 "liked": liked,
+
+                "viewer_state": {
+                    "is_liked": liked,
+                },
+                "metrics": {
+                    "like_count": int(like_count),
+                },
             },
         )
 
     except frappe.ValidationError as ex:
+        frappe.db.rollback()
         return fail(str(ex), code="VALIDATION_ERROR")
 
     except Exception:

@@ -8,10 +8,11 @@ Handles:
 """
 
 from __future__ import annotations
+from typing import Any
 
 import frappe
 
-from aos.api.shared.auth import require_login
+from aos.api.shared.auth import require_login, current_user
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.validators import require_id
@@ -20,6 +21,7 @@ from aos.api.shorts.validators import validate_limit, validate_content_mode
 from aos.api.shorts.constants import (
     FEED_DEFAULT_LIMIT,
     FEED_MAX_LIMIT,
+    FEED_LIMIT_PER_MINUTE_PER_IP,
     SHORT_CONTENT_MODE_SHOP,
 )
 
@@ -39,6 +41,21 @@ def _get_limit(kwargs):
     )
 
 
+def _get_optional_viewer() -> str | None:
+    """
+    Resolve viewer for public feed endpoints.
+
+    Public endpoints may be called by guests or logged-in users.
+    Logged-in users should receive viewer_state.
+    Guests receive stable false/default viewer_state.
+    """
+    user = current_user()
+    if not user or user == "Guest":
+        return None
+
+    return user
+
+
 def _build_content_mode_filter(content_mode):
     if not content_mode or str(content_mode).strip().lower() == "all":
         return "", (), None
@@ -50,7 +67,90 @@ def _build_content_mode_filter(content_mode):
     return "AND s.content_mode = %s", (mode,), None
 
 
-def _build_response(rows, limit: int):
+def _load_liked_short_ids(viewer: str | None, short_ids: list[str]) -> set[str]:
+    """
+    Batch-load short IDs liked by the current viewer.
+
+    Avoids N+1 queries during feed serialization.
+    """
+    if not viewer or not short_ids:
+        return set()
+
+    rows = frappe.get_all(
+        "AOS Short Like",
+        filters={
+            "user": viewer,
+            "short": ["in", short_ids],
+        },
+        pluck="short",
+    )
+
+    return set(rows or [])
+
+
+def _load_followed_user_ids(
+    viewer: str | None,
+    target_users: list[str],
+) -> set[str]:
+    """
+    Batch-load users followed by the current viewer.
+
+    AOS Follow is user-to-user:
+    - follower_user = current viewer
+    - following_user = short.owner
+    """
+    if not viewer or not target_users:
+        return set()
+
+    rows = frappe.get_all(
+        "AOS Follow",
+        filters={
+            "follower_user": viewer,
+            "following_user": ["in", target_users],
+        },
+        pluck="following_user",
+    )
+
+    return set(rows or [])
+
+
+def _build_viewer_state(
+    row: dict[str, Any],
+    *,
+    viewer: str | None,
+    liked_short_ids: set[str],
+    followed_user_ids: set[str],
+) -> dict[str, bool]:
+    """
+    Build viewer_state for one short from preloaded sets.
+
+    Important:
+    - owner is the creator/poster user.
+    - following is based on AOS Follow.following_user = short.owner.
+    - seller is only optional shop context and is not used for viewer state.
+    """
+    short_id = row.get("name")
+    owner = row.get("owner")
+
+    is_logged_in = bool(viewer)
+    is_owner = bool(viewer and owner and viewer == owner)
+
+    return {
+        "is_liked": bool(short_id and short_id in liked_short_ids),
+        "is_following": bool(
+            is_logged_in
+            and not is_owner
+            and owner
+            and owner in followed_user_ids
+        ),
+        "is_owner": is_owner,
+        "can_edit": is_owner,
+        "can_delete": is_owner,
+        "can_report": bool(is_logged_in and not is_owner),
+    }
+
+
+def _build_response(rows, limit: int, *, viewer: str | None = None):
     if not rows:
         return ok(
             "Feed fetched.",
@@ -64,7 +164,35 @@ def _build_response(rows, limit: int):
     has_more = len(rows) > limit
     visible_rows = rows[:limit]
 
-    items = [serialize_short_row(r) for r in visible_rows]
+    short_ids = [
+        row.get("name")
+        for row in visible_rows
+        if row.get("name")
+    ]
+
+    owner_users = list(
+        {
+            row.get("owner")
+            for row in visible_rows
+            if row.get("owner")
+        }
+    )
+
+    liked_short_ids = _load_liked_short_ids(viewer, short_ids)
+    followed_user_ids = _load_followed_user_ids(viewer, owner_users)
+
+    items = [
+        serialize_short_row(
+            row,
+            viewer_state=_build_viewer_state(
+                row,
+                viewer=viewer,
+                liked_short_ids=liked_short_ids,
+                followed_user_ids=followed_user_ids,
+            ),
+        )
+        for row in visible_rows
+    ]
 
     next_cursor = None
     if has_more:
@@ -114,7 +242,16 @@ def _select_short_rows_sql() -> str:
 
             ad.title AS ad_title,
             ad.price AS ad_price,
-            ad.currency AS ad_currency
+            ad.currency AS ad_currency,
+            (
+                SELECT adi.image
+                FROM `tabAOS Ad Image` adi
+                WHERE adi.parent = ad.name
+                AND adi.parenttype = 'AOS Ad'
+                AND adi.parentfield = 'images'
+                ORDER BY adi.is_primary DESC, adi.sort_order ASC, adi.idx ASC
+                LIMIT 1
+            ) AS ad_thumbnail
 
         FROM `tabAOS Short` s
         LEFT JOIN `tabUser` u ON u.name = s.owner
@@ -128,13 +265,14 @@ def feed_for_you_impl(**kwargs):
     rl = rate_limit(
         key=f"aos:shorts:feed:ip:{request_ip()}",
         ttl_seconds=60,
-        limit=120,
+        limit=FEED_LIMIT_PER_MINUTE_PER_IP,
         message="Too many requests. Please try again shortly.",
     )
     if rl:
         return rl
 
     try:
+        viewer = _get_optional_viewer()
         limit = _get_limit(kwargs)
         cursor = kwargs.get("cursor")
 
@@ -172,7 +310,7 @@ def feed_for_you_impl(**kwargs):
             as_dict=True,
         )
 
-        return _build_response(rows, limit)
+        return _build_response(rows, limit, viewer=viewer)
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "feed_for_you failed")
@@ -188,7 +326,7 @@ def feed_following_impl(**kwargs):
     rl = rate_limit(
         key=f"aos:shorts:following:user:{user}",
         ttl_seconds=60,
-        limit=120,
+        limit=FEED_LIMIT_PER_MINUTE_PER_IP,
         message="Too many requests. Please try again shortly.",
     )
     if rl:
@@ -234,7 +372,7 @@ def feed_following_impl(**kwargs):
             as_dict=True,
         )
 
-        return _build_response(rows, limit)
+        return _build_response(rows, limit, viewer=user)
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "feed_following failed")
@@ -246,7 +384,7 @@ def feed_by_ad_impl(**kwargs):
     rl = rate_limit(
         key=f"aos:shorts:by_ad:ip:{request_ip()}",
         ttl_seconds=60,
-        limit=120,
+        limit=FEED_LIMIT_PER_MINUTE_PER_IP,
         message="Too many requests. Please try again shortly.",
     )
     if rl:
@@ -257,6 +395,7 @@ def feed_by_ad_impl(**kwargs):
         return err
 
     try:
+        viewer = _get_optional_viewer()
         limit = _get_limit(kwargs)
         cursor = kwargs.get("cursor")
 
@@ -289,7 +428,7 @@ def feed_by_ad_impl(**kwargs):
             as_dict=True,
         )
 
-        return _build_response(rows, limit)
+        return _build_response(rows, limit, viewer=viewer)
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "feed_by_ad failed")

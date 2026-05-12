@@ -7,13 +7,15 @@ Handles:
 - list comments
 - list replies
 - delete (soft)
+- like / unlike comment
 """
 
 from __future__ import annotations
+from typing import Any
 
 import frappe
 
-from aos.api.shared.auth import require_login
+from aos.api.shared.auth import require_login, current_user
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.validators import require_id
@@ -30,6 +32,8 @@ from aos.api.shorts.constants import (
     COMMENT_MAX_LIMIT,
     REPLY_DEFAULT_LIMIT,
     REPLY_MAX_LIMIT,
+    COMMENT_LIMIT_PER_MINUTE_PER_USER,
+    LIKE_TOGGLE_RATE_LIMIT_PER_MINUTE,
 )
 
 from aos.api.shorts.utils import (
@@ -41,6 +45,183 @@ from aos.api.shorts.utils import (
 RANKING_TASK = "aos.api.shorts.tasks.update_short_score_task"
 
 
+# COMMON
+def _get_optional_viewer() -> str | None:
+    user = current_user()
+    if not user or user == "Guest":
+        return None
+
+    return user
+
+
+def _get_short_owner(short_id: str) -> str | None:
+    if not short_id:
+        return None
+
+    return frappe.db.get_value("AOS Short", short_id, "owner")
+
+
+def _ensure_commentable_short(short_id: str):
+    """
+    Ensure comments are only added to public/available shorts.
+    """
+    short = frappe.db.get_value(
+        "AOS Short",
+        short_id,
+        ["name", "status", "visibility_status", "owner"],
+        as_dict=True,
+    )
+
+    if not short:
+        return None, fail("Short not found.", code="NOT_FOUND")
+
+    if short.status != "ready" or short.visibility_status != "visible":
+        return None, fail(
+            "Short is not available for comments.",
+            code="VALIDATION_ERROR",
+        )
+
+    return short, None
+
+
+def _ensure_active_comment(comment_id: str):
+    """
+    Ensure comment exists, is active, and belongs to an available short.
+    """
+    comment = frappe.db.get_value(
+        "AOS Short Comment",
+        comment_id,
+        ["name", "short", "user", "status"],
+        as_dict=True,
+    )
+
+    if not comment:
+        return None, None, fail("Comment not found.", code="NOT_FOUND")
+
+    if comment.status != "active":
+        return None, None, fail("Comment not available.", code="NOT_FOUND")
+
+    short, err = _ensure_commentable_short(comment.short)
+    if err:
+        return None, None, err
+
+    return comment, short, None
+
+
+def _load_liked_comment_ids(
+    viewer: str | None,
+    comment_ids: list[str],
+) -> set[str]:
+    """
+    Batch-load comments liked by the current viewer.
+    """
+    if not viewer or not comment_ids:
+        return set()
+
+    rows = frappe.get_all(
+        "AOS Short Comment Like",
+        filters={
+            "user": viewer,
+            "comment": ["in", comment_ids],
+        },
+        pluck="comment",
+    )
+
+    return set(rows or [])
+
+
+def _build_comment_viewer_state(
+    row: dict[str, Any],
+    *,
+    viewer: str | None,
+    short_owner: str | None,
+    liked_comment_ids: set[str],
+) -> dict[str, bool]:
+    comment_id = row.get("name")
+    comment_user = row.get("user")
+
+    is_logged_in = bool(viewer)
+    is_owner = bool(viewer and comment_user and viewer == comment_user)
+    is_short_owner = bool(viewer and short_owner and viewer == short_owner)
+
+    can_delete = bool(is_owner or is_short_owner)
+
+    return {
+        "is_liked": bool(comment_id and comment_id in liked_comment_ids),
+        "is_owner": is_owner,
+        "can_delete": can_delete,
+        "can_report": bool(is_logged_in and not is_owner),
+    }
+
+
+def _serialize_comments_with_viewer_state(
+    rows: list[dict[str, Any]],
+    *,
+    viewer: str | None,
+    short_owner: str | None,
+) -> list[dict[str, Any]]:
+    if not rows:
+        return []
+
+    comment_ids = [
+        row.get("name")
+        for row in rows
+        if row.get("name")
+    ]
+
+    liked_comment_ids = _load_liked_comment_ids(viewer, comment_ids)
+
+    return [
+        serialize_comment_row(
+            row,
+            viewer_state=_build_comment_viewer_state(
+                row,
+                viewer=viewer,
+                short_owner=short_owner,
+                liked_comment_ids=liked_comment_ids,
+            ),
+        )
+        for row in rows
+    ]
+
+
+def _fetch_comment_row(comment_id: str) -> dict[str, Any] | None:
+    rows = frappe.db.sql(
+        """
+        SELECT
+            c.name,
+            c.short,
+            c.user,
+            c.seller,
+            c.comment,
+            c.parent_comment,
+            c.root_comment,
+            c.reply_count,
+            c.like_count,
+            c.status,
+            c.creation
+        FROM `tabAOS Short Comment` c
+        WHERE c.name = %s
+        LIMIT 1
+        """,
+        (comment_id,),
+        as_dict=True,
+    )
+
+    return rows[0] if rows else None
+
+
+def _get_comment_like_count(comment_id: str) -> int:
+    return int(
+        frappe.db.get_value(
+            "AOS Short Comment",
+            comment_id,
+            "like_count",
+        )
+        or 0
+    )
+
+
 # ADD COMMENT (TOP LEVEL)
 def add_comment_impl(**kwargs):
     user, err = require_login()
@@ -50,7 +231,7 @@ def add_comment_impl(**kwargs):
     rl = rate_limit(
         key=f"aos:shorts:comment:user:{user}",
         ttl_seconds=60,
-        limit=120,
+        limit=COMMENT_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
     )
     if rl:
@@ -65,30 +246,31 @@ def add_comment_impl(**kwargs):
         return err
 
     try:
-        doc = frappe.get_doc({
-            "doctype": "AOS Short Comment",
-            "short": short_id,
-            "user": user,
-            "comment": comment,
-            "status": "active",
-        })
+        short, err = _ensure_commentable_short(short_id)
+        if err:
+            return err
+
+        doc = frappe.get_doc(
+            {
+                "doctype": "AOS Short Comment",
+                "short": short_id,
+                "user": user,
+                "comment": comment,
+                "status": "active",
+            }
+        )
         doc.insert(ignore_permissions=True)
 
-        # NOTIFY SELLER
-        short = frappe.db.get_value(
-            "AOS Short",
-            short_id,
-            ["seller"],
-            as_dict=True,
-        )
-
-        if short and short.seller and short.seller != user:
+        # Notify short creator/poster, not seller.
+        if short.owner and short.owner != user:
             NotificationService.notify_short_comment(
-                user=short.seller,
+                user=short.owner,
                 actor=user,
                 short_id=short_id,
                 content=comment,
             )
+
+        frappe.db.commit()
 
         frappe.enqueue(
             RANKING_TASK,
@@ -96,10 +278,27 @@ def add_comment_impl(**kwargs):
             queue="short",
         )
 
+        row = _fetch_comment_row(doc.name)
+        item = None
+
+        if row:
+            item = _serialize_comments_with_viewer_state(
+                [row],
+                viewer=user,
+                short_owner=short.owner,
+            )[0]
+
         return ok(
             "Comment added.",
-            data={"comment_id": doc.name},
+            data={
+                "comment_id": doc.name,
+                "item": item,
+            },
         )
+
+    except frappe.ValidationError as ex:
+        frappe.db.rollback()
+        return fail(str(ex), code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "add_comment failed")
@@ -116,7 +315,7 @@ def reply_comment_impl(**kwargs):
     rl = rate_limit(
         key=f"aos:shorts:reply:user:{user}",
         ttl_seconds=60,
-        limit=120,
+        limit=COMMENT_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
     )
     if rl:
@@ -136,18 +335,27 @@ def reply_comment_impl(**kwargs):
     try:
         parent = frappe.get_doc("AOS Short Comment", parent_comment_id)
 
-        doc = frappe.get_doc({
-            "doctype": "AOS Short Comment",
-            "short": parent.short,
-            "user": user,
-            "comment": comment,
-            "parent_comment": parent.name,
-            "root_comment": parent.root_comment or parent.name,
-            "status": "active",
-        })
+        if parent.status != "active":
+            return fail("Comment not available.", code="NOT_FOUND")
+
+        short, err = _ensure_commentable_short(parent.short)
+        if err:
+            return err
+
+        doc = frappe.get_doc(
+            {
+                "doctype": "AOS Short Comment",
+                "short": parent.short,
+                "user": user,
+                "comment": comment,
+                "parent_comment": parent.name,
+                "root_comment": parent.root_comment or parent.name,
+                "status": "active",
+            }
+        )
         doc.insert(ignore_permissions=True)
 
-        # NOTIFY COMMENT OWNER
+        # Notify comment owner.
         if parent.user and parent.user != user:
             NotificationService.notify_comment_reply(
                 user=parent.user,
@@ -157,21 +365,137 @@ def reply_comment_impl(**kwargs):
                 content=comment,
             )
 
+        frappe.db.commit()
+
         frappe.enqueue(
             RANKING_TASK,
             short_id=parent.short,
             queue="short",
         )
 
+        row = _fetch_comment_row(doc.name)
+        item = None
+
+        if row:
+            item = _serialize_comments_with_viewer_state(
+                [row],
+                viewer=user,
+                short_owner=short.owner,
+            )[0]
+
         return ok(
             "Reply added.",
-            data={"comment_id": doc.name},
+            data={
+                "comment_id": doc.name,
+                "item": item,
+            },
         )
+
+    except frappe.DoesNotExistError:
+        return fail("Comment not found.", code="NOT_FOUND")
+
+    except frappe.ValidationError as ex:
+        frappe.db.rollback()
+        return fail(str(ex), code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "reply_comment failed")
         frappe.db.rollback()
         return fail("Failed to reply", code="INTERNAL_ERROR")
+
+
+# TOGGLE COMMENT LIKE
+def toggle_comment_like_impl(**kwargs):
+    user, err = require_login()
+    if err:
+        return err
+
+    rl = rate_limit(
+        key=f"aos:shorts:comment_like:user:{user}",
+        ttl_seconds=60,
+        limit=LIKE_TOGGLE_RATE_LIMIT_PER_MINUTE,
+        message="Too many requests. Please try again shortly.",
+    )
+    if rl:
+        return rl
+
+    comment_id, err = require_id(kwargs.get("comment_id"), "comment_id")
+    if err:
+        return err
+
+    try:
+        comment, short, err = _ensure_active_comment(comment_id)
+        if err:
+            return err
+
+        existing = frappe.get_all(
+            "AOS Short Comment Like",
+            filters={
+                "comment": comment_id,
+                "user": user,
+            },
+            fields=["name"],
+            limit=1,
+        )
+
+        if not existing:
+            frappe.get_doc(
+                {
+                    "doctype": "AOS Short Comment Like",
+                    "comment": comment_id,
+                    "user": user,
+                }
+            ).insert(ignore_permissions=True)
+
+            liked = True
+            message = "Comment liked."
+
+        else:
+            frappe.delete_doc(
+                "AOS Short Comment Like",
+                existing[0].name,
+                ignore_permissions=True,
+            )
+
+            liked = False
+            message = "Comment unliked."
+
+        frappe.db.commit()
+
+        like_count = _get_comment_like_count(comment_id)
+
+        frappe.enqueue(
+            RANKING_TASK,
+            short_id=comment.short,
+            queue="short",
+        )
+
+        return ok(
+            message,
+            data={
+                "comment_id": comment_id,
+
+                # Backward-compatible convenience field.
+                # Frontend should prefer viewer_state.is_liked.
+                "liked": liked,
+
+                "viewer_state": {
+                    "is_liked": liked,
+                },
+                "metrics": {
+                    "like_count": like_count,
+                },
+            },
+        )
+
+    except frappe.ValidationError as ex:
+        frappe.db.rollback()
+        return fail(str(ex), code="VALIDATION_ERROR")
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "toggle_comment_like failed")
+        frappe.db.rollback()
+        return fail("Failed to toggle comment like", code="INTERNAL_ERROR")
 
 
 # LIST COMMENTS (TOP LEVEL)
@@ -197,6 +521,12 @@ def list_comments_impl(**kwargs):
     cursor = kwargs.get("cursor")
 
     try:
+        short_owner = _get_short_owner(short_id)
+        if not short_owner:
+            return fail("Short not found.", code="NOT_FOUND")
+
+        viewer = _get_optional_viewer()
+
         where_cursor, params_cursor = build_cursor_where_clause(
             created_field="c.creation",
             name_field="c.name",
@@ -228,24 +558,44 @@ def list_comments_impl(**kwargs):
                 c.name DESC
             LIMIT %s
             """,
-            (short_id, *params_cursor, limit),
+            (short_id, *params_cursor, limit + 1),
             as_dict=True,
         )
 
         if not rows:
-            return ok("Comments fetched.", data={"items": [], "next_cursor": None})
+            return ok(
+                "Comments fetched.",
+                data={
+                    "items": [],
+                    "next_cursor": None,
+                    "has_more": False,
+                },
+            )
 
-        items = [serialize_comment_row(r) for r in rows]
+        has_more = len(rows) > limit
+        visible_rows = rows[:limit]
 
-        last = rows[-1]
-        next_cursor = build_time_id_cursor(
-            created_on=last["creation"],
-            name=last["name"],
+        items = _serialize_comments_with_viewer_state(
+            visible_rows,
+            viewer=viewer,
+            short_owner=short_owner,
         )
+
+        next_cursor = None
+        if has_more:
+            last = visible_rows[-1]
+            next_cursor = build_time_id_cursor(
+                created_on=last["creation"],
+                name=last["name"],
+            )
 
         return ok(
             "Comments fetched.",
-            data={"items": items, "next_cursor": next_cursor},
+            data={
+                "items": items,
+                "next_cursor": next_cursor,
+                "has_more": has_more,
+            },
         )
 
     except Exception:
@@ -279,6 +629,22 @@ def list_replies_impl(**kwargs):
     cursor = kwargs.get("cursor")
 
     try:
+        root = frappe.db.get_value(
+            "AOS Short Comment",
+            root_comment_id,
+            ["name", "short", "status"],
+            as_dict=True,
+        )
+
+        if not root or root.status != "active":
+            return fail("Comment not found.", code="NOT_FOUND")
+
+        short_owner = _get_short_owner(root.short)
+        if not short_owner:
+            return fail("Short not found.", code="NOT_FOUND")
+
+        viewer = _get_optional_viewer()
+
         where_cursor, params_cursor = build_cursor_where_clause(
             created_field="c.creation",
             name_field="c.name",
@@ -310,24 +676,44 @@ def list_replies_impl(**kwargs):
                 c.name ASC
             LIMIT %s
             """,
-            (root_comment_id, *params_cursor, limit),
+            (root_comment_id, *params_cursor, limit + 1),
             as_dict=True,
         )
 
         if not rows:
-            return ok("Replies fetched.", data={"items": [], "next_cursor": None})
+            return ok(
+                "Replies fetched.",
+                data={
+                    "items": [],
+                    "next_cursor": None,
+                    "has_more": False,
+                },
+            )
 
-        items = [serialize_comment_row(r) for r in rows]
+        has_more = len(rows) > limit
+        visible_rows = rows[:limit]
 
-        last = rows[-1]
-        next_cursor = build_time_id_cursor(
-            created_on=last["creation"],
-            name=last["name"],
+        items = _serialize_comments_with_viewer_state(
+            visible_rows,
+            viewer=viewer,
+            short_owner=short_owner,
         )
+
+        next_cursor = None
+        if has_more:
+            last = visible_rows[-1]
+            next_cursor = build_time_id_cursor(
+                created_on=last["creation"],
+                name=last["name"],
+            )
 
         return ok(
             "Replies fetched.",
-            data={"items": items, "next_cursor": next_cursor},
+            data={
+                "items": items,
+                "next_cursor": next_cursor,
+                "has_more": has_more,
+            },
         )
 
     except Exception:
@@ -348,24 +734,33 @@ def delete_comment_impl(**kwargs):
     try:
         doc = frappe.get_doc("AOS Short Comment", comment_id)
 
-        if doc.user != user:
+        if doc.status != "active":
+            return fail("Comment not found.", code="NOT_FOUND")
+
+        short_owner = _get_short_owner(doc.short)
+
+        # Comment owner OR short owner can delete.
+        if doc.user != user and short_owner != user:
             return fail("Not allowed.", code="FORBIDDEN")
 
         short_id = doc.short
 
-        # CASCADE DELETE (only for top-level comments)
+        # CASCADE DELETE replies if deleting a top-level comment.
         if not doc.parent_comment:
             frappe.db.sql(
                 """
                 UPDATE `tabAOS Short Comment`
                 SET status = 'deleted'
                 WHERE root_comment = %s
+                  AND status != 'deleted'
                 """,
                 (doc.name,),
             )
 
         # DELETE THIS COMMENT
         doc.soft_delete()
+
+        frappe.db.commit()
 
         frappe.enqueue(
             RANKING_TASK,
@@ -377,6 +772,9 @@ def delete_comment_impl(**kwargs):
             "Comment deleted.",
             data={"comment_id": comment_id},
         )
+
+    except frappe.DoesNotExistError:
+        return fail("Comment not found.", code="NOT_FOUND")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "delete_comment failed")

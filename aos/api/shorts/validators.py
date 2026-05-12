@@ -41,7 +41,15 @@ def validate_filename(filename: str):
     return ext, None
 
 
-def validate_file_size(size_bytes: int):
+def validate_file_size(size_bytes: int | str | None):
+    if size_bytes is None:
+        return None
+
+    try:
+        size_bytes = int(size_bytes)
+    except Exception:
+        return fail("Invalid file size", code="VALIDATION_ERROR")
+
     if size_bytes > MAX_VIDEO_FILE_SIZE_BYTES:
         return fail("File too large", code="VALIDATION_ERROR")
     return None

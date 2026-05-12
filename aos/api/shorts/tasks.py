@@ -4,31 +4,29 @@ import frappe
 
 from aos.services.video_service import VideoService
 from aos.services.ranking_service import RankingService
-from aos.services.notification_service import NotificationService
 
 
 def process_short_task(short_id: str):
-    """Process uploaded short (transcoding, thumbnail, etc.)"""
+    """
+    Process uploaded short.
+
+    Responsibilities:
+    - Transcoding
+    - Thumbnail generation
+    - Playback URL generation
+    - Duration extraction
+    - Marking the short ready/failed through VideoService
+
+    Important:
+    - Do not notify followers here.
+    - At processing time, the short is usually still hidden and metadata may not exist yet.
+    - New-short notifications should happen when the short is published/visible.
+    """
     if not short_id:
         return
 
     try:
-        # Get doc BEFORE processing
-        doc = frappe.get_doc("AOS Short", short_id)
-        previous_status = doc.status
-
         VideoService.process_short(short_id)
-
-        # Reload doc AFTER processing
-        doc.reload()
-
-        # TRIGGER NOTIFICATION ONLY ON FIRST READY
-        if previous_status != "ready" and doc.status == "ready":
-            if doc.seller:
-                NotificationService.notify_new_short(
-                    actor=doc.seller,
-                    short_id=doc.name,
-                )
 
     except Exception:
         frappe.log_error(
@@ -38,7 +36,7 @@ def process_short_task(short_id: str):
 
 
 def update_short_score_task(short_id: str):
-    """Update ranking score"""
+    """Update ranking score."""
     if not short_id:
         return
 

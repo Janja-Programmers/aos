@@ -19,6 +19,7 @@ from typing import Any
 from frappe.utils import cint, flt
 
 from aos.api.shared.auth import current_user
+from aos.api.shorts.constants import DEFAULT_SHORT_CONTENT_MODE
 
 
 # JSON HELPERS
@@ -56,6 +57,35 @@ def dump_json(value: Any, default: str = "[]") -> str:
         return json.dumps(value or [])
     except Exception:
         return default
+
+
+# VIEWER STATE DEFAULTS
+def default_short_viewer_state() -> dict[str, bool]:
+    """
+    Stable default viewer state for shorts.
+
+    Used for guests or when a caller did not provide preloaded viewer state.
+    """
+    return {
+        "is_liked": False,
+        "is_following": False,
+        "is_owner": False,
+        "can_edit": False,
+        "can_delete": False,
+        "can_report": False,
+    }
+
+
+def default_comment_viewer_state() -> dict[str, bool]:
+    """
+    Stable default viewer state for comments.
+    """
+    return {
+        "is_liked": False,
+        "is_owner": False,
+        "can_delete": False,
+        "can_report": False,
+    }
 
 
 # CURSOR HELPERS
@@ -188,12 +218,21 @@ def serialize_short_row(
     *,
     viewer_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """
+    Serialize a short row into the public API shape.
+
+    Notes:
+    - owner is the creator/poster user.
+    - seller is optional shop/seller context and is nested under creator.
+    - ad is optional product/ad context.
+    - viewer_state should be precomputed by API/service layer to avoid N+1 queries.
+    """
     status = row.get("status")
 
     return {
         "id": row.get("name"),
         "status": status,
-        "content_mode": row.get("content_mode") or "shop",
+        "content_mode": row.get("content_mode") or DEFAULT_SHORT_CONTENT_MODE,
         "is_ready": status == "ready",
         "is_processing": status in ("initialized", "uploaded", "processing"),
         "is_failed": status == "failed",
@@ -214,14 +253,14 @@ def serialize_short_row(
             "display_name": row.get("creator_name") or row.get("owner"),
             "avatar": row.get("creator_avatar"),
             "is_verified": bool(row.get("creator_is_verified")),
+            "seller": (
+                {
+                    "id": row.get("seller"),
+                }
+                if row.get("seller")
+                else None
+            ),
         },
-        "seller": (
-            {
-                "id": row.get("seller"),
-            }
-            if row.get("seller")
-            else None
-        ),
         "ad": (
             {
                 "id": row.get("ad"),
@@ -233,7 +272,7 @@ def serialize_short_row(
             if row.get("ad")
             else None
         ),
-        "viewer_state": viewer_state or {},
+        "viewer_state": viewer_state or default_short_viewer_state(),
     }
 
 
@@ -254,7 +293,7 @@ def serialize_comment_row(
         "like_count": cint(row.get("like_count") or 0),
         "status": row.get("status"),
         "created_at": row.get("creation"),
-        "viewer_state": viewer_state or {},
+        "viewer_state": viewer_state or default_comment_viewer_state(),
     }
 
 

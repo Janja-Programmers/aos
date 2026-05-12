@@ -33,6 +33,7 @@ from .comments import (
     list_comments_impl,
     list_replies_impl,
     delete_comment_impl,
+    toggle_comment_like_impl,
 )
 
 # TRACKING
@@ -112,6 +113,11 @@ def list_replies(**kwargs):
 @frappe.whitelist(methods=["POST"])
 def delete_comment(**kwargs):
     return delete_comment_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def toggle_comment_like(**kwargs):
+    return toggle_comment_like_impl(**kwargs)
 
 
 # TRACKING

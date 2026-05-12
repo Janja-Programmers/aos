@@ -13,6 +13,7 @@ import json
 import frappe
 
 from aos.services.minio_service import MinioService
+from aos.services.notification_service import NotificationService
 
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
@@ -35,15 +36,16 @@ from aos.api.shorts.constants import (
 
 def _get_seller_for_user(user: str) -> str | None:
     """
-    Resolve seller profile for current phase.
+    Resolve seller profile for the given user.
 
-    Current product rule:
-    - Only sellers can access create-short UI.
-    - Backend still resolves seller defensively.
+    Product rule:
+    - Any logged-in user can publish non-shop shorts.
+    - Shop shorts require a seller profile and an active ad.
     """
     if not user:
         return None
 
+    # Some installs may use seller docname == user.
     if frappe.db.exists("AOS Seller", user):
         return user
 
@@ -78,12 +80,14 @@ def init_upload_impl(**kwargs):
         upload_url = service.get_presigned_upload_url(file_key)
         public_url = service.get_public_url(file_key)
 
-        doc = frappe.get_doc({
-            "doctype": "AOS Short",
-            "file_key": file_key,
-            "status": "initialized",
-            "owner": user,
-        })
+        doc = frappe.get_doc(
+            {
+                "doctype": "AOS Short",
+                "file_key": file_key,
+                "status": "initialized",
+                "owner": user,
+            }
+        )
         doc.insert(ignore_permissions=True)
 
         return ok(
@@ -146,7 +150,7 @@ def confirm_upload_impl(**kwargs):
         doc.save(ignore_permissions=True)
         frappe.db.commit()
 
-        # enqueue processing
+        # Enqueue processing
         frappe.enqueue(
             "aos.api.shorts.tasks.process_short_task",
             short_id=doc.name,
@@ -198,19 +202,20 @@ def update_short_metadata_impl(**kwargs):
                 code="VALIDATION_ERROR",
             )
 
-        seller = _get_seller_for_user(user)
-        if not seller:
-            return fail(
-                "Seller profile is required to publish shorts.",
-                code="SELLER_REQUIRED",
-            )
+        was_visible = doc.visibility_status == "visible"
 
         doc.content_mode = content_mode
-        doc.seller = seller
         doc.caption = caption
         doc.hashtags = json.dumps(hashtags or [])
 
         if content_mode == SHORT_CONTENT_MODE_SHOP:
+            seller = _get_seller_for_user(user)
+            if not seller:
+                return fail(
+                    "Seller profile is required to publish shop shorts.",
+                    code="SELLER_REQUIRED",
+                )
+
             ad_id, err = require_id(kwargs.get("ad_id"), "ad_id")
             if err:
                 return err
@@ -229,23 +234,41 @@ def update_short_metadata_impl(**kwargs):
                     code="FORBIDDEN",
                 )
 
+            doc.seller = seller
             doc.ad = ad.name
             doc.country = getattr(ad, "country", None)
 
         else:
+            # Non-shop shorts can be posted by any logged-in user.
+            # They are creator/user content, not commerce/ad content.
+            doc.seller = None
             doc.ad = None
+            doc.country = None
 
         doc.visibility_status = "visible"
+        doc.hidden_reason = None
         doc.save(ignore_permissions=True)
         frappe.db.commit()
+
+        # Notify followers only on first publish, not on later metadata edits.
+        if not was_visible:
+            NotificationService.notify_new_short(
+                actor=doc.owner,
+                short_id=doc.name,
+            )
 
         return ok(
             "Short published successfully.",
             data={
                 "short_id": doc.name,
                 "content_mode": doc.content_mode,
+                "visibility_status": doc.visibility_status,
             },
         )
+
+    except frappe.ValidationError as ex:
+        frappe.db.rollback()
+        return fail(str(ex), code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "update_short_metadata failed")

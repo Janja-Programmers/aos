@@ -9,10 +9,11 @@ Handles:
 """
 
 from __future__ import annotations
+from typing import Any
 
 import frappe
 
-from aos.api.shared.auth import require_login
+from aos.api.shared.auth import require_login, current_user
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.validators import require_id
@@ -31,6 +32,172 @@ from aos.api.shorts.utils import (
 )
 
 
+# COMMON
+def _get_optional_viewer() -> str | None:
+    """
+    Resolve viewer for public detail endpoint.
+
+    get_short can be called by guests or logged-in users.
+    Logged-in users receive real viewer_state.
+    Guests receive default false viewer_state.
+    """
+    user = current_user()
+    if not user or user == "Guest":
+        return None
+
+    return user
+
+
+def _load_liked_short_ids(viewer: str | None, short_ids: list[str]) -> set[str]:
+    if not viewer or not short_ids:
+        return set()
+
+    rows = frappe.get_all(
+        "AOS Short Like",
+        filters={
+            "user": viewer,
+            "short": ["in", short_ids],
+        },
+        pluck="short",
+    )
+
+    return set(rows or [])
+
+
+def _load_followed_user_ids(
+    viewer: str | None,
+    target_users: list[str],
+) -> set[str]:
+    if not viewer or not target_users:
+        return set()
+
+    rows = frappe.get_all(
+        "AOS Follow",
+        filters={
+            "follower_user": viewer,
+            "following_user": ["in", target_users],
+        },
+        pluck="following_user",
+    )
+
+    return set(rows or [])
+
+
+def _build_viewer_state(
+    row: dict[str, Any],
+    *,
+    viewer: str | None,
+    liked_short_ids: set[str],
+    followed_user_ids: set[str],
+) -> dict[str, bool]:
+    short_id = row.get("name")
+    owner = row.get("owner")
+
+    is_logged_in = bool(viewer)
+    is_owner = bool(viewer and owner and viewer == owner)
+
+    return {
+        "is_liked": bool(short_id and short_id in liked_short_ids),
+        "is_following": bool(
+            is_logged_in
+            and not is_owner
+            and owner
+            and owner in followed_user_ids
+        ),
+        "is_owner": is_owner,
+        "can_edit": is_owner,
+        "can_delete": is_owner,
+        "can_report": bool(is_logged_in and not is_owner),
+    }
+
+
+def _serialize_rows_with_viewer_state(
+    rows: list[dict[str, Any]],
+    *,
+    viewer: str | None,
+) -> list[dict[str, Any]]:
+    if not rows:
+        return []
+
+    short_ids = [
+        row.get("name")
+        for row in rows
+        if row.get("name")
+    ]
+
+    owner_users = list(
+        {
+            row.get("owner")
+            for row in rows
+            if row.get("owner")
+        }
+    )
+
+    liked_short_ids = _load_liked_short_ids(viewer, short_ids)
+    followed_user_ids = _load_followed_user_ids(viewer, owner_users)
+
+    return [
+        serialize_short_row(
+            row,
+            viewer_state=_build_viewer_state(
+                row,
+                viewer=viewer,
+                liked_short_ids=liked_short_ids,
+                followed_user_ids=followed_user_ids,
+            ),
+        )
+        for row in rows
+    ]
+
+
+def _select_short_rows_sql() -> str:
+    return """
+        SELECT
+            s.name,
+            s.owner,
+            s.status,
+            s.visibility_status,
+            s.content_mode,
+            s.caption,
+            s.hashtags,
+            s.playback_url,
+            s.thumbnail_url,
+            s.duration_seconds,
+            s.view_count,
+            s.like_count,
+            s.comment_count,
+            s.share_count,
+            s.impression_count,
+            s.ranking_score,
+            s.posted_on,
+            s.creation,
+            s.seller,
+            s.ad,
+
+            u.full_name AS creator_name,
+            u.user_image AS creator_avatar,
+            COALESCE(p.is_verified, 0) AS creator_is_verified,
+
+            ad.title AS ad_title,
+            ad.price AS ad_price,
+            ad.currency AS ad_currency,
+            (
+                SELECT adi.image
+                FROM `tabAOS Ad Image` adi
+                WHERE adi.parent = ad.name
+                AND adi.parenttype = 'AOS Ad'
+                AND adi.parentfield = 'images'
+                ORDER BY adi.is_primary DESC, adi.sort_order ASC, adi.idx ASC
+                LIMIT 1
+            ) AS ad_thumbnail
+
+        FROM `tabAOS Short` s
+        LEFT JOIN `tabUser` u ON u.name = s.owner
+        LEFT JOIN `tabAOS Profile` p ON p.user = s.owner
+        LEFT JOIN `tabAOS Ad` ad ON ad.name = s.ad
+    """
+
+
 # GET SHORT
 def get_short_impl(**kwargs):
     rl = rate_limit(
@@ -47,50 +214,23 @@ def get_short_impl(**kwargs):
         return err
 
     try:
-        # Fetch doc first (for access control)
+        viewer = _get_optional_viewer()
+
+        # Fetch doc first for access control.
         doc = frappe.get_doc("AOS Short", short_id)
 
-        user = frappe.session.user if frappe.session.user != "Guest" else None
+        # ACCESS CONTROL
+        # Public can only access visible + ready shorts.
+        # Owner can access own draft/hidden/failed/processing short.
+        is_owner = bool(viewer and doc.owner == viewer)
 
-        # ACCESS CONTROL (visibility-based)
-        if doc.visibility_status != "visible":
-            if not user or doc.owner != user:
+        if not is_owner:
+            if doc.status != "ready" or doc.visibility_status != "visible":
                 return fail("Short not available.", code="NOT_FOUND")
 
         rows = frappe.db.sql(
-            """
-            SELECT
-                s.name,
-                s.status,
-                s.visibility_status,
-                s.content_mode,
-                s.caption,
-                s.hashtags,
-                s.playback_url,
-                s.thumbnail_url,
-                s.duration_seconds,
-                s.view_count,
-                s.like_count,
-                s.comment_count,
-                s.share_count,
-                s.impression_count,
-                s.ranking_score,
-                s.posted_on,
-                s.seller,
-                s.ad,
-
-                u.full_name AS creator_name,
-                u.user_image AS creator_avatar,
-                COALESCE(p.is_verified, 0) AS creator_is_verified,
-
-                ad.title AS ad_title,
-                ad.price AS ad_price,
-                ad.currency AS ad_currency
-
-            FROM `tabAOS Short` s
-            LEFT JOIN `tabUser` u ON u.name = s.owner
-            LEFT JOIN `tabAOS Profile` p ON p.user = s.owner
-            LEFT JOIN `tabAOS Ad` ad ON ad.name = s.ad
+            f"""
+            {_select_short_rows_sql()}
 
             WHERE s.name = %s
             """,
@@ -101,10 +241,15 @@ def get_short_impl(**kwargs):
         if not rows:
             return fail("Short not found.", code="NOT_FOUND")
 
+        item = _serialize_rows_with_viewer_state(rows[:1], viewer=viewer)[0]
+
         return ok(
             "Short fetched.",
-            data={"item": serialize_short_row(rows[0])},
+            data={"item": item},
         )
+
+    except frappe.DoesNotExistError:
+        return fail("Short not found.", code="NOT_FOUND")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "get_short failed")
@@ -142,38 +287,7 @@ def my_shorts_impl(**kwargs):
 
         rows = frappe.db.sql(
             f"""
-            SELECT
-                s.name,
-                s.status,
-                s.content_mode,
-                s.caption,
-                s.hashtags,
-                s.playback_url,
-                s.thumbnail_url,
-                s.duration_seconds,
-                s.view_count,
-                s.like_count,
-                s.comment_count,
-                s.share_count,
-                s.impression_count,
-                s.ranking_score,
-                s.posted_on,
-                s.creation,
-                s.seller,
-                s.ad,
-
-                u.full_name AS creator_name,
-                u.user_image AS creator_avatar,
-                COALESCE(p.is_verified, 0) AS creator_is_verified,
-
-                ad.title AS ad_title,
-                ad.price AS ad_price,
-                ad.currency AS ad_currency
-
-            FROM `tabAOS Short` s
-            LEFT JOIN `tabUser` u ON u.name = s.owner
-            LEFT JOIN `tabAOS Profile` p ON p.user = s.owner
-            LEFT JOIN `tabAOS Ad` ad ON ad.name = s.ad
+            {_select_short_rows_sql()}
 
             WHERE
                 s.owner = %s
@@ -185,7 +299,7 @@ def my_shorts_impl(**kwargs):
 
             LIMIT %s
             """,
-            (user, *params_cursor, limit),
+            (user, *params_cursor, limit + 1),
             as_dict=True,
         )
 
@@ -195,22 +309,29 @@ def my_shorts_impl(**kwargs):
                 data={
                     "items": [],
                     "next_cursor": None,
+                    "has_more": False,
                 },
             )
 
-        items = [serialize_short_row(r) for r in rows]
+        has_more = len(rows) > limit
+        visible_rows = rows[:limit]
 
-        last = rows[-1]
-        next_cursor = build_time_id_cursor(
-            created_on=last["creation"],
-            name=last["name"],
-        )
+        items = _serialize_rows_with_viewer_state(visible_rows, viewer=user)
+
+        next_cursor = None
+        if has_more:
+            last = visible_rows[-1]
+            next_cursor = build_time_id_cursor(
+                created_on=last["creation"],
+                name=last["name"],
+            )
 
         return ok(
             "My shorts fetched.",
             data={
                 "items": items,
                 "next_cursor": next_cursor,
+                "has_more": has_more,
             },
         )
 
@@ -238,11 +359,15 @@ def delete_short_impl(**kwargs):
         doc.visibility_status = "deleted"
         doc.status = "deleted"
         doc.save(ignore_permissions=True)
+        frappe.db.commit()
 
         return ok(
             "Short deleted.",
             data={"short_id": short_id},
         )
+
+    except frappe.DoesNotExistError:
+        return fail("Short not found.", code="NOT_FOUND")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "delete_short failed")
@@ -274,10 +399,11 @@ def retry_processing_impl(**kwargs):
 
         # Reset state
         doc.status = "uploaded"
+        doc.processing_error = None
         doc.save(ignore_permissions=True)
         frappe.db.commit()
 
-        # enqueue via tasks layer
+        # Enqueue via tasks layer
         frappe.enqueue(
             "aos.api.shorts.tasks.process_short_task",
             short_id=doc.name,
@@ -289,6 +415,9 @@ def retry_processing_impl(**kwargs):
             "Processing restarted.",
             data={"short_id": short_id},
         )
+
+    except frappe.DoesNotExistError:
+        return fail("Short not found.", code="NOT_FOUND")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "retry_processing failed")

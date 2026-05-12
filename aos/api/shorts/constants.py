@@ -61,13 +61,20 @@ SHORT_CONTENT_MODE_GEO = "geo"
 SHORT_CONTENT_MODE_TALENT = "talent"
 SHORT_CONTENT_MODE_LEARN = "learn"
 
-DEFAULT_SHORT_CONTENT_MODE = SHORT_CONTENT_MODE_SHOP
+# Default mode should not require seller/ad.
+# Shop shorts are commerce shorts and require seller + active ad.
+DEFAULT_SHORT_CONTENT_MODE = SHORT_CONTENT_MODE_GEO
 
 VALID_SHORT_CONTENT_MODES = {
     SHORT_CONTENT_MODE_SHOP,
     SHORT_CONTENT_MODE_GEO,
     SHORT_CONTENT_MODE_TALENT,
     SHORT_CONTENT_MODE_LEARN,
+}
+
+# Modes requiring seller/shop context
+SHORT_CONTENT_MODES_REQUIRING_SELLER = {
+    SHORT_CONTENT_MODE_SHOP,
 }
 
 # Modes requiring ad attachment

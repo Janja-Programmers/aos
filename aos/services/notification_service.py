@@ -12,9 +12,30 @@ class NotificationService:
     Responsibilities:
     - Create AOS Notification record
     - Send push notification (FCM)
+
+    Notes:
+    - `user` should always be a real User ID/email recipient.
+    - `actor` should also be a real User ID/email when available.
+    - Seller docnames should not be passed as notification users/actors unless
+      that seller docname is intentionally the same as the User ID.
     """
 
     # CORE
+    @staticmethod
+    def _display_name(user: str | None) -> str:
+        """
+        Resolve a user-facing display name.
+
+        Falls back to the user ID/email if User.full_name is unavailable.
+        """
+        if not user:
+            return ""
+
+        try:
+            return frappe.db.get_value("User", user, "full_name") or user
+        except Exception:
+            return user
+
     @staticmethod
     def _create_notification(
         *,
@@ -28,13 +49,12 @@ class NotificationService:
         """
         Create notification record.
         """
-
         if not user:
-            return
+            return None
 
-        # Prevent self-notifications
+        # Prevent self-notifications.
         if actor and actor == user:
-            return
+            return None
 
         doc = frappe.get_doc(
             {
@@ -84,12 +104,16 @@ class NotificationService:
         event: str | None = None,
     ):
         if not user:
-            return
+            return None
 
         payload = payload or {}
 
-        # 1. Save notification
-        cls._create_notification(
+        # Prevent self-notifications before both DB + push.
+        if actor and actor == user:
+            return None
+
+        # 1. Save notification.
+        doc = cls._create_notification(
             user=user,
             type=type,
             title=title,
@@ -98,7 +122,7 @@ class NotificationService:
             payload=payload,
         )
 
-        # 2. Push notification
+        # 2. Push notification.
         cls._deliver(
             user=user,
             event=event or type,
@@ -106,6 +130,8 @@ class NotificationService:
             body=body,
             payload=payload,
         )
+
+        return doc
 
     # CHAT
     @classmethod
@@ -117,11 +143,13 @@ class NotificationService:
         conversation_id: str,
         preview: str,
     ):
+        sender_name = cls._display_name(sender)
+
         cls.notify(
             user=user,
             type="message",
             title="New Message",
-            body=f"{sender}: {preview}",
+            body=f"{sender_name}: {preview}",
             actor=sender,
             payload={
                 "conversation_id": conversation_id,
@@ -140,11 +168,13 @@ class NotificationService:
         call_id: str,
         call_type: str,
     ):
+        caller_name = cls._display_name(caller)
+
         cls.notify(
             user=user,
             type="call",
             title="Incoming Call",
-            body=f"{caller} is calling you",
+            body=f"{caller_name} is calling you",
             actor=caller,
             payload={
                 "call_id": call_id,
@@ -162,11 +192,13 @@ class NotificationService:
         caller: str,
         call_id: str,
     ):
+        caller_name = cls._display_name(caller)
+
         cls.notify(
             user=user,
             type="missed_call",
             title="Missed Call",
-            body=f"You missed a call from {caller}",
+            body=f"You missed a call from {caller_name}",
             actor=caller,
             payload={
                 "call_id": call_id,
@@ -183,11 +215,13 @@ class NotificationService:
         user: str,
         follower: str,
     ):
+        follower_name = cls._display_name(follower)
+
         cls.notify(
             user=user,
             type="follow",
             title="New Follower",
-            body=f"{follower} started following you",
+            body=f"{follower_name} started following you",
             actor=follower,
             payload={"follower": follower},
             event="aos_follow",
@@ -296,6 +330,15 @@ class NotificationService:
         actor: str,
         short_id: str,
     ):
+        """
+        Notify followers when a creator publishes a visible short.
+
+        `actor` must be the short creator/poster User ID, usually AOS Short.owner.
+        Do not pass AOS Short.seller here because seller is optional shop context.
+        """
+        if not actor or not short_id:
+            return
+
         followers = frappe.get_all(
             "AOS Follow",
             filters={"following_user": actor},
@@ -305,8 +348,10 @@ class NotificationService:
         if not followers:
             return
 
+        actor_name = cls._display_name(actor)
+
         title = "New Short 🎬"
-        body = f"{actor} posted a new short"
+        body = f"{actor_name} posted a new short"
 
         for user in followers:
             if not user:
@@ -320,6 +365,7 @@ class NotificationService:
                 actor=actor,
                 payload={
                     "short_id": short_id,
+                    "actor": actor,
                 },
                 event="aos_new_short",
             )
@@ -332,14 +378,23 @@ class NotificationService:
         actor: str,
         short_id: str,
     ):
+        """
+        Notify a short owner that their short was liked.
+
+        `user` should be AOS Short.owner.
+        `actor` should be the user who liked the short.
+        """
+        actor_name = cls._display_name(actor)
+
         cls.notify(
             user=user,
             type="short_like",
             title="New Like ❤️",
-            body=f"{actor} liked your short",
+            body=f"{actor_name} liked your short",
             actor=actor,
             payload={
                 "short_id": short_id,
+                "actor": actor,
             },
             event="aos_short_like",
         )
@@ -353,20 +408,28 @@ class NotificationService:
         short_id: str,
         content: str | None = None,
     ):
+        """
+        Notify a short owner that their short received a comment.
+
+        `user` should be AOS Short.owner.
+        `actor` should be the user who commented.
+        """
         preview = (content or "").strip()
+        actor_name = cls._display_name(actor)
 
         cls.notify(
             user=user,
             type="short_comment",
             title="New Comment",
             body=(
-                f"{actor} commented: {preview[:80]}"
+                f"{actor_name} commented: {preview[:80]}"
                 if preview
-                else f"{actor} commented on your short"
+                else f"{actor_name} commented on your short"
             ),
             actor=actor,
             payload={
                 "short_id": short_id,
+                "actor": actor,
                 "content": preview,
             },
             event="aos_short_comment",
@@ -382,10 +445,18 @@ class NotificationService:
         short_id: str | None = None,
         content: str | None = None,
     ):
+        """
+        Notify a comment owner that someone replied.
+
+        `user` should be AOS Short Comment.user.
+        `actor` should be the user who replied.
+        """
         preview = (content or "").strip()
+        actor_name = cls._display_name(actor)
 
         payload = {
             "comment_id": comment_id,
+            "actor": actor,
             "content": preview,
         }
 
@@ -397,9 +468,9 @@ class NotificationService:
             type="comment_reply",
             title="New Reply",
             body=(
-                f"{actor} replied: {preview[:80]}"
+                f"{actor_name} replied: {preview[:80]}"
                 if preview
-                else f"{actor} replied to your comment"
+                else f"{actor_name} replied to your comment"
             ),
             actor=actor,
             payload=payload,
@@ -416,11 +487,21 @@ class NotificationService:
         live_id: str,
         title: str,
     ):
+        """
+        Existing live notification path.
+
+        Note:
+        - This still uses `seller` as actor because the current live feature
+          may still be seller-oriented.
+        - If live later becomes user/creator-based, switch actor to owner/user.
+        """
+        seller_name = cls._display_name(seller)
+
         cls.notify(
             user=user,
             type="live_started",
             title="Live Started",
-            body=f"{seller} is now live: {title}",
+            body=f"{seller_name} is now live: {title}",
             actor=seller,
             payload={
                 "live_id": live_id,
