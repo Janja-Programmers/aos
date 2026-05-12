@@ -7,6 +7,7 @@ Handles:
 """
 
 from __future__ import annotations
+from typing import List
 
 import frappe
 from frappe.utils import now_datetime
@@ -36,21 +37,158 @@ def _get_conversation_row(conv_id: str):
 def _validate_participant(conv, user: str) -> bool:
     if not conv:
         return False
+
     return user in (conv.participant_1, conv.participant_2)
 
 
 def _get_other_user(conv, user: str) -> str | None:
     if not conv:
         return None
+
     if conv.participant_1 == user:
         return conv.participant_2
+
     if conv.participant_2 == user:
         return conv.participant_1
+
     return None
 
 
 def _get_unread_field_for_reader(conv, reader: str) -> str:
+    """
+    unread_count_1 belongs to participant_1.
+    unread_count_2 belongs to participant_2.
+    """
+
     return "unread_count_1" if conv.participant_1 == reader else "unread_count_2"
+
+
+def _get_undelivered_incoming_message_ids(
+    *,
+    conversation_id: str,
+    sender: str,
+) -> List[str]:
+    """
+    Get messages sent by `sender` into this conversation that have not
+    yet been marked delivered by the receiver.
+    """
+
+    return frappe.get_all(
+        "AOS Message",
+        filters={
+            "conversation": conversation_id,
+            "sender": sender,
+            "delivered_to_receiver_at": ["is", "not set"],
+        },
+        pluck="name",
+        order_by="creation asc",
+    )
+
+
+def _get_unread_incoming_message_ids(
+    *,
+    conversation_id: str,
+    sender: str,
+) -> List[str]:
+    """
+    Get messages sent by `sender` into this conversation that have not
+    yet been marked read by the receiver.
+    """
+
+    return frappe.get_all(
+        "AOS Message",
+        filters={
+            "conversation": conversation_id,
+            "sender": sender,
+            "read_by_receiver_at": ["is", "not set"],
+        },
+        pluck="name",
+        order_by="creation asc",
+    )
+
+
+def _mark_messages_delivered(
+    *,
+    message_ids: List[str],
+    delivered_at,
+) -> int:
+    if not message_ids:
+        return 0
+
+    frappe.db.sql(
+        """
+        UPDATE `tabAOS Message`
+        SET delivered_to_receiver_at = %(delivered_at)s
+        WHERE name IN %(message_ids)s
+          AND delivered_to_receiver_at IS NULL
+        """,
+        {
+            "message_ids": tuple(message_ids),
+            "delivered_at": delivered_at,
+        },
+    )
+
+    row = frappe.db.sql(
+        "SELECT ROW_COUNT() AS count",
+        as_dict=True,
+    )
+
+    return row[0].count or 0
+
+
+def _mark_messages_read(
+    *,
+    message_ids: List[str],
+    read_at,
+) -> int:
+    if not message_ids:
+        return 0
+
+    frappe.db.sql(
+        """
+        UPDATE `tabAOS Message`
+        SET
+            read_by_receiver_at = %(read_at)s,
+            delivered_to_receiver_at = COALESCE(
+                delivered_to_receiver_at,
+                %(read_at)s
+            )
+        WHERE name IN %(message_ids)s
+          AND read_by_receiver_at IS NULL
+        """,
+        {
+            "message_ids": tuple(message_ids),
+            "read_at": read_at,
+        },
+    )
+
+    row = frappe.db.sql(
+        "SELECT ROW_COUNT() AS count",
+        as_dict=True,
+    )
+
+    return row[0].count or 0
+
+
+def _reset_unread_counter(
+    *,
+    conversation_id: str,
+    unread_field: str,
+) -> None:
+    """
+    Reset unread count for the current reader.
+
+    unread_field is controlled internally, not user input.
+    """
+
+    frappe.db.sql(
+        f"""
+        UPDATE `tabAOS Conversation`
+        SET {unread_field} = 0
+        WHERE name = %s
+        """,
+        (conversation_id,),
+    )
 
 
 # mark_delivered
@@ -69,6 +207,7 @@ def mark_delivered_impl(**kwargs):
         return rl
 
     conv_id = kwargs.get("conversation_id")
+
     if not conv_id:
         return fail("conversation_id is required.", code="VALIDATION_ERROR")
 
@@ -86,27 +225,28 @@ def mark_delivered_impl(**kwargs):
 
         now = now_datetime()
 
-        # Mark only messages sent TO current_user and not yet delivered
-        frappe.db.sql(
-            """
-            UPDATE `tabAOS Message`
-            SET delivered_to_receiver_at = %s
-            WHERE conversation = %s
-              AND sender = %s
-              AND delivered_to_receiver_at IS NULL
-            """,
-            (now, conv_id, other_user),
+        # Only messages sent by the other user can be marked as delivered
+        # by the current user.
+        message_ids = _get_undelivered_incoming_message_ids(
+            conversation_id=conv_id,
+            sender=other_user,
         )
 
-        updated_count = frappe.db.sql("SELECT ROW_COUNT() AS count", as_dict=True)[0].count or 0
+        updated_count = _mark_messages_delivered(
+            message_ids=message_ids,
+            delivered_at=now,
+        )
 
-        # Notify sender that receiver has now received messages in this conversation
+        changed_message_ids = message_ids if updated_count > 0 else []
+
         if updated_count > 0:
             frappe.publish_realtime(
                 event="aos_message_status",
                 message={
                     "conversation_id": conv_id,
                     "status": "delivered",
+                    "receiver": current_user,
+                    "message_ids": changed_message_ids,
                     "delivered_at": now,
                 },
                 user=other_user,
@@ -116,7 +256,11 @@ def mark_delivered_impl(**kwargs):
 
         return ok(
             "Messages marked as delivered.",
-            data={"updated_count": updated_count},
+            data={
+                "updated_count": updated_count,
+                "message_ids": changed_message_ids,
+                "delivered_at": now if updated_count > 0 else None,
+            },
         )
 
     except Exception:
@@ -144,6 +288,7 @@ def mark_read_impl(**kwargs):
         return rl
 
     conv_id = kwargs.get("conversation_id")
+
     if not conv_id:
         return fail("conversation_id is required.", code="VALIDATION_ERROR")
 
@@ -162,37 +307,35 @@ def mark_read_impl(**kwargs):
         unread_field = _get_unread_field_for_reader(conv, current_user)
         now = now_datetime()
 
-        # Mark unread incoming messages as read
-        frappe.db.sql(
-            """
-            UPDATE `tabAOS Message`
-            SET read_by_receiver_at = %s
-            WHERE conversation = %s
-              AND sender = %s
-              AND read_by_receiver_at IS NULL
-            """,
-            (now, conv_id, other_user),
+        # Only messages sent by the other user can be marked as read
+        # by the current user.
+        message_ids = _get_unread_incoming_message_ids(
+            conversation_id=conv_id,
+            sender=other_user,
         )
 
-        updated_count = frappe.db.sql("SELECT ROW_COUNT() AS count", as_dict=True)[0].count or 0
-
-        # Reset unread counter for the current reader at DB level
-        frappe.db.sql(
-            f"""
-            UPDATE `tabAOS Conversation`
-            SET {unread_field} = 0
-            WHERE name = %s
-            """,
-            (conv_id,),
+        updated_count = _mark_messages_read(
+            message_ids=message_ids,
+            read_at=now,
         )
 
-        # Notify sender that their messages were read
+        # Reset unread counter even if no message row changed.
+        # This also repairs stale counters.
+        _reset_unread_counter(
+            conversation_id=conv_id,
+            unread_field=unread_field,
+        )
+
+        changed_message_ids = message_ids if updated_count > 0 else []
+
         if updated_count > 0:
             frappe.publish_realtime(
                 event="aos_message_status",
                 message={
                     "conversation_id": conv_id,
                     "status": "read",
+                    "reader": current_user,
+                    "message_ids": changed_message_ids,
                     "read_at": now,
                 },
                 user=other_user,
@@ -202,7 +345,11 @@ def mark_read_impl(**kwargs):
 
         return ok(
             "Messages marked as read.",
-            data={"updated_count": updated_count},
+            data={
+                "updated_count": updated_count,
+                "message_ids": changed_message_ids,
+                "read_at": now if updated_count > 0 else None,
+            },
         )
 
     except Exception:

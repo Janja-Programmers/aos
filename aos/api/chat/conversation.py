@@ -9,11 +9,7 @@ Handles:
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Tuple
-
 import frappe
-from frappe.utils import get_datetime
 
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
@@ -29,23 +25,95 @@ from .presence import publish_presence_update_to_peers
 
 
 # Helpers
-def _sort_participants(u1: str, u2: str) -> Tuple[str, str]:
+def _sort_participants(u1: str, u2: str) -> tuple[str, str]:
     return tuple(sorted([u1, u2]))
 
 
-def _last_message_sort_key(conv):
-    value = conv.get("last_message_at")
-
-    if not value:
-        return datetime.min
-
-    if isinstance(value, datetime):
-        return value
+def _clean_int(value, default: int, *, min_value: int, max_value: int) -> int:
+    """
+    Safely parse pagination values.
+    """
 
     try:
-        return get_datetime(value)
+        parsed = int(value)
     except Exception:
-        return datetime.min
+        parsed = default
+
+    if parsed < min_value:
+        return min_value
+
+    if parsed > max_value:
+        return max_value
+
+    return parsed
+
+
+def _fetch_users(users: list[str]) -> dict[str, frappe._dict]:
+    """
+    Fetch lightweight user profile info for display.
+
+    User.name remains the stable ID.
+    User.full_name is used for UI display.
+    """
+
+    if not users:
+        return {}
+
+    rows = frappe.get_all(
+        "User",
+        filters={"name": ["in", users]},
+        fields=["name", "full_name", "user_image"],
+    )
+
+    return {row.name: row for row in rows}
+
+
+def _get_user_summary(user_id: str) -> dict:
+    """
+    Return a normalized user summary.
+
+    This ensures the frontend can always render display_name
+    and never needs to show the email/user id unless full_name is missing.
+    """
+
+    user = frappe.db.get_value(
+        "User",
+        user_id,
+        ["name", "full_name", "user_image"],
+        as_dict=True,
+    )
+
+    if not user:
+        return {
+            "user": user_id,
+            "display_name": user_id,
+            "avatar": None,
+        }
+
+    return {
+        "user": user.name,
+        "display_name": user.full_name or user.name,
+        "avatar": user.user_image,
+    }
+
+
+def _build_conversation_response(
+    *,
+    conversation_id: str,
+    other_user: str,
+) -> dict:
+    """
+    Build the common response payload returned when opening/creating a chat.
+    """
+
+    other = _get_user_summary(other_user)
+
+    return {
+        "id": conversation_id,
+        "user": other["user"],
+        "display_name": other["display_name"],
+        "avatar": other["avatar"],
+    }
 
 
 # get_or_create_conversation
@@ -91,7 +159,7 @@ def get_or_create_conversation_impl(**kwargs):
         )
 
         if existing:
-            # Reactivate if soft-deleted
+            # Reactivate if soft-deleted for the current user.
             updates = {}
 
             if existing.is_active_1 == 0 and current_user == p1:
@@ -112,10 +180,13 @@ def get_or_create_conversation_impl(**kwargs):
 
             return ok(
                 "Conversation fetched.",
-                data={"id": existing.name},
+                data=_build_conversation_response(
+                    conversation_id=existing.name,
+                    other_user=other_user,
+                ),
             )
 
-        # Create new conversation
+        # Create new conversation.
         conv = frappe.new_doc("AOS Conversation")
         conv.participant_1 = p1
         conv.participant_2 = p2
@@ -125,7 +196,10 @@ def get_or_create_conversation_impl(**kwargs):
 
         return ok(
             "Conversation created.",
-            data={"id": conv.name},
+            data=_build_conversation_response(
+                conversation_id=conv.name,
+                other_user=other_user,
+            ),
         )
 
     except frappe.ValidationError as ex:
@@ -144,19 +218,6 @@ def get_or_create_conversation_impl(**kwargs):
         )
 
 
-def _fetch_users(users: list[str]):
-    if not users:
-        return {}
-
-    rows = frappe.get_all(
-        "User",
-        filters={"name": ["in", users]},
-        fields=["name", "full_name", "user_image"],
-    )
-
-    return {row.name: row for row in rows}
-
-
 # list_conversations
 def list_conversations_impl(**kwargs):
     current_user, err = require_login()
@@ -172,61 +233,63 @@ def list_conversations_impl(**kwargs):
     if rl:
         return rl
 
-    limit = int(kwargs.get("limit") or 20)
-    offset = int(kwargs.get("offset") or 0)
+    limit = _clean_int(
+        kwargs.get("limit"),
+        default=20,
+        min_value=1,
+        max_value=50,
+    )
+
+    offset = _clean_int(
+        kwargs.get("offset"),
+        default=0,
+        min_value=0,
+        max_value=100000,
+    )
 
     try:
-        # Fetch conversations
-        convs_1 = frappe.get_all(
-            "AOS Conversation",
-            filters={
-                "participant_1": current_user,
-                "is_active_1": 1,
+        conversations = frappe.db.sql(
+            """
+            SELECT
+                name,
+                participant_1,
+                participant_2,
+                last_message,
+                last_message_at,
+                unread_count_1,
+                unread_count_2
+            FROM `tabAOS Conversation`
+            WHERE
+                (
+                    participant_1 = %(current_user)s
+                    AND IFNULL(is_active_1, 1) = 1
+                )
+                OR
+                (
+                    participant_2 = %(current_user)s
+                    AND IFNULL(is_active_2, 1) = 1
+                )
+            ORDER BY
+                CASE
+                    WHEN last_message_at IS NULL THEN creation
+                    ELSE last_message_at
+                END DESC,
+                modified DESC
+            LIMIT %(limit)s OFFSET %(offset)s
+            """,
+            {
+                "current_user": current_user,
+                "limit": limit,
+                "offset": offset,
             },
-            fields=[
-                "name",
-                "participant_1",
-                "participant_2",
-                "last_message",
-                "last_message_at",
-                "unread_count_1",
-                "unread_count_2",
-            ],
-            limit_page_length=limit,
-            limit_start=offset,
+            as_dict=True,
         )
-
-        convs_2 = frappe.get_all(
-            "AOS Conversation",
-            filters={
-                "participant_2": current_user,
-                "is_active_2": 1,
-            },
-            fields=[
-                "name",
-                "participant_1",
-                "participant_2",
-                "last_message",
-                "last_message_at",
-                "unread_count_1",
-                "unread_count_2",
-            ],
-            limit_page_length=limit,
-            limit_start=offset,
-        )
-
-        conversations = convs_1 + convs_2
 
         if not conversations:
+            publish_presence_update_to_peers(current_user)
             return ok("Conversations fetched.", data=[])
 
-        # Safe Python sorting
-        conversations.sort(
-            key=_last_message_sort_key,
-            reverse=True,
-        )
-
-        # Collect other users
+        # Collect other users.
         other_users = set()
 
         for conv in conversations:
@@ -252,7 +315,12 @@ def list_conversations_impl(**kwargs):
 
             user = user_map.get(other_user)
 
-            display_name = user.full_name if user else other_user
+            display_name = (
+                user.full_name
+                if user and user.full_name
+                else other_user
+            )
+
             avatar = user.user_image if user else None
 
             unread = (
@@ -269,7 +337,7 @@ def list_conversations_impl(**kwargs):
                     "avatar": avatar,
                     "last_message": conv["last_message"],
                     "last_message_at": conv["last_message_at"],
-                    "unread_count": unread,
+                    "unread_count": unread or 0,
                 }
             )
 
@@ -351,6 +419,8 @@ def delete_conversation_impl(**kwargs):
             0,
             update_modified=False,
         )
+
+        publish_presence_update_to_peers(current_user)
 
         return ok("Conversation deleted.")
 

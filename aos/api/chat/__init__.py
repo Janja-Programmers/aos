@@ -5,6 +5,8 @@ Structure:
 - Business logic in sibling modules
 """
 
+from __future__ import annotations
+
 import frappe
 
 # Conversation
@@ -39,15 +41,15 @@ def open_conversation(**kwargs):
     return get_or_create_conversation_impl(**kwargs)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET", "POST"])
 def list_conversations(**kwargs):
-    """List current user's conversations (chat list)."""
+    """List current user's conversations."""
     return list_conversations_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def delete_conversation(**kwargs):
-    """Soft delete (hide) a conversation for current user."""
+    """Soft delete/hide a conversation for the current user."""
     return delete_conversation_impl(**kwargs)
 
 
@@ -58,27 +60,27 @@ def send_message(**kwargs):
     return send_message_impl(**kwargs)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET", "POST"])
 def list_messages(**kwargs):
-    """List messages for a conversation (paginated)."""
+    """List messages for a conversation."""
     return list_messages_impl(**kwargs)
 
 
 # Status APIs
 @frappe.whitelist(methods=["POST"])
 def mark_delivered(**kwargs):
-    """Mark messages as delivered."""
+    """Mark incoming messages in a conversation as delivered."""
     return mark_delivered_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def mark_read(**kwargs):
-    """Mark messages as read and reset unread count."""
+    """Mark incoming messages in a conversation as read."""
     return mark_read_impl(**kwargs)
 
 
-# Realtime APIs
+# Realtime / Presence APIs
 @frappe.whitelist(methods=["POST"])
-def typing(**kwargs):
-    """Send typing indicator for a conversation (realtime)."""
+def send_typing_event(**kwargs):
+    """Send typing indicator for a conversation."""
     return send_typing_event_impl(**kwargs)

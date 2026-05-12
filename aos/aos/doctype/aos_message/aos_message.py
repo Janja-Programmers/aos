@@ -5,20 +5,47 @@ import frappe
 from frappe.model.document import Document
 
 
+VALID_MESSAGE_TYPES = {
+    "text",
+    "media",
+    "ad",
+    "mixed",
+    "system",
+}
+
+
 class AOSMessage(Document):
     def validate(self):
         self._validate_conversation()
+        self._validate_message_type()
         self._validate_sender()
         self._validate_message_content()
+        self._validate_ad_reference()
 
+    def before_insert(self):
+        self._sync_attachment_flag()
+
+    def before_save(self):
+        self._protect_status_fields()
+
+    # Validation
     def _validate_conversation(self):
         if not self.conversation:
             frappe.throw("Conversation is required")
+
+    def _validate_message_type(self):
+        if not self.message_type:
+            frappe.throw("Message Type is required")
+
+        if self.message_type not in VALID_MESSAGE_TYPES:
+            frappe.throw(f"Invalid message type: {self.message_type}")
 
     def _validate_sender(self):
         if not self.sender:
             frappe.throw("Sender is required")
 
+        # System messages may be created by backend jobs/services.
+        # They do not have to follow participant validation.
         if self.message_type == "system":
             return
 
@@ -37,19 +64,65 @@ class AOSMessage(Document):
 
     def _validate_message_content(self):
         content = (self.content or "").strip()
+        has_ad = bool(self.ad)
+        has_attachments = bool(self.has_attachments)
 
-        if self.message_type in ("text", "mixed") and not content:
-            frappe.throw("Content is required for text and mixed messages")
+        if self.message_type == "text":
+            if not content:
+                frappe.throw("Content is required for text messages")
 
-        if self.message_type == "media" and content:
-            self.content = None
+            self.content = content
+            return
 
-    def before_insert(self):
-        self._sync_attachment_flag()
+        if self.message_type == "media":
+            # Media-only messages should not store accidental text content.
+            if content:
+                self.content = None
+            return
 
-    def before_save(self):
-        self._protect_status_fields()
+        if self.message_type == "ad":
+            if not has_ad:
+                frappe.throw("Ad is required for ad messages")
 
+            # Ad-only messages may optionally have no text.
+            if content:
+                self.content = content
+            else:
+                self.content = None
+            return
+
+        if self.message_type == "mixed":
+            # Mixed can be:
+            # - text + media
+            # - text + ad
+            # - ad + media
+            # - text + ad + media
+            #
+            # Attachments are inserted after the message row in the API,
+            # so has_attachments may still be 0 during initial validation.
+            # Therefore, content OR ad is enough here.
+            if not content and not has_ad and not has_attachments:
+                frappe.throw("Mixed messages require content, an ad, or attachments")
+
+            self.content = content or None
+            return
+
+        if self.message_type == "system":
+            # System messages usually need readable content for chat history.
+            if not content:
+                frappe.throw("Content is required for system messages")
+
+            self.content = content
+            return
+
+    def _validate_ad_reference(self):
+        if not self.ad:
+            return
+
+        if not frappe.db.exists("AOS Ad", self.ad):
+            frappe.throw("Invalid ad reference")
+
+    # Internal helpers
     def _sync_attachment_flag(self):
         if not self.has_attachments:
             self.has_attachments = 0
