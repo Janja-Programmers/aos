@@ -8,6 +8,7 @@ from frappe.model.document import Document
 class AOSFollow(Document):
     def validate(self):
         self._validate_users()
+        self._validate_unique_follow()
 
     def after_insert(self):
         self._increment_follow_counts()
@@ -15,6 +16,7 @@ class AOSFollow(Document):
     def on_trash(self):
         self._decrement_follow_counts()
 
+    # VALIDATION
     def _validate_users(self):
         if not self.following_user:
             frappe.throw("Following user is required.")
@@ -37,6 +39,26 @@ class AOSFollow(Document):
         if not frappe.db.exists("AOS Profile", self.follower_user):
             frappe.throw("Follower user profile does not exist.")
 
+    def _validate_unique_follow(self):
+        """
+        Prevent duplicate follow rows for the same follower/following pair.
+
+        The database unique constraint should also exist for race-condition safety:
+        (follower_user, following_user)
+        """
+
+        existing = frappe.db.exists(
+            "AOS Follow",
+            {
+                "follower_user": self.follower_user,
+                "following_user": self.following_user,
+            },
+        )
+
+        if existing and existing != self.name:
+            frappe.throw("You are already following this user.")
+
+    # COUNTS
     def _increment_follow_counts(self):
         frappe.db.sql(
             """
