@@ -17,6 +17,7 @@ from aos.api.shared.responses import fail, ok
 from aos.services.notification_service import NotificationService
 
 from .constants import TOGGLE_FOLLOW_LIMIT_PER_MINUTE_PER_USER
+from .relationship import build_relationship_status
 
 
 def toggle_follow_impl(**kwargs):
@@ -35,75 +36,121 @@ def toggle_follow_impl(**kwargs):
     if rl:
         return rl
 
-    following_user = kwargs.get("following_user") or kwargs.get("user")
+    target_user = kwargs.get("target_user")
 
-    if not following_user:
-        return fail("Following user is required.", code="VALIDATION_ERROR")
+    if not target_user:
+        return fail("Target user is required.", code="VALIDATION_ERROR")
 
-    if following_user == current_user:
+    if target_user == current_user:
         return fail("You cannot follow yourself.", code="VALIDATION_ERROR")
 
     try:
-        if not frappe.db.exists("User", following_user):
+        if not frappe.db.exists("User", target_user):
             return fail("User not found.", code="NOT_FOUND")
 
         if not frappe.db.exists("AOS Profile", current_user):
             return fail("Current user profile not found.", code="PROFILE_NOT_FOUND")
 
-        if not frappe.db.exists("AOS Profile", following_user):
+        if not frappe.db.exists("AOS Profile", target_user):
             return fail("User profile not found.", code="PROFILE_NOT_FOUND")
 
-        existing = frappe.get_all(
+        existing_follow = frappe.db.get_value(
             "AOS Follow",
-            filters={
-                "following_user": following_user,
+            {
                 "follower_user": current_user,
+                "following_user": target_user,
             },
-            fields=["name"],
-            limit=1,
+            "name",
         )
 
-        if not existing:
-            doc = frappe.new_doc("AOS Follow")
-            doc.following_user = following_user
-            doc.follower_user = current_user
-            doc.insert(ignore_permissions=True)
+        if existing_follow:
+            frappe.delete_doc(
+                "AOS Follow",
+                existing_follow,
+                ignore_permissions=True,
+            )
             frappe.db.commit()
 
-            NotificationService.notify_follow(
-                user=following_user,
-                follower=current_user,
+            relationship = build_relationship_status(
+                current_user=current_user,
+                target_user=target_user,
             )
 
             return ok(
-                "Followed successfully.",
+                "Unfollowed successfully.",
                 data={
-                    "status": "followed",
-                    "is_following": True,
-                    "following_user": following_user,
+                    "status": "unfollowed",
+                    **relationship,
+                    **_get_profile_totals(
+                        current_user=current_user,
+                        target_user=target_user,
+                    ),
                 },
             )
 
-        frappe.delete_doc(
-            "AOS Follow",
-            existing[0].name,
-            ignore_permissions=True,
-        )
+        doc = frappe.new_doc("AOS Follow")
+        doc.follower_user = current_user
+        doc.following_user = target_user
+        doc.insert(ignore_permissions=True)
         frappe.db.commit()
 
+        NotificationService.notify_follow(
+            user=target_user,
+            follower=current_user,
+        )
+
+        relationship = build_relationship_status(
+            current_user=current_user,
+            target_user=target_user,
+        )
+
         return ok(
-            "Unfollowed successfully.",
+            "Followed successfully.",
             data={
-                "status": "unfollowed",
-                "is_following": False,
-                "following_user": following_user,
+                "status": "followed",
+                **relationship,
+                **_get_profile_totals(
+                    current_user=current_user,
+                    target_user=target_user,
+                ),
             },
         )
 
     except frappe.ValidationError as ex:
+        frappe.db.rollback()
         return fail(str(ex), code="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "AOS Toggle Follow Failed")
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Toggle Follow Failed",
+        )
         frappe.db.rollback()
         return fail("Failed to toggle follow.", code="INTERNAL_ERROR")
+
+
+def _get_profile_totals(*, current_user: str, target_user: str) -> dict:
+    """
+    Return updated totals after follow/unfollow.
+
+    Meaning:
+      - target_total_followers: followers count of the user being followed/unfollowed
+      - current_total_following: following count of the current logged-in user
+    """
+
+    target_total_followers = frappe.db.get_value(
+        "AOS Profile",
+        target_user,
+        "total_followers",
+    )
+
+    current_total_following = frappe.db.get_value(
+        "AOS Profile",
+        current_user,
+        "total_following",
+    )
+
+    return {
+        "target_total_followers": int(target_total_followers or 0),
+        "current_total_following": int(current_total_following or 0),
+    }

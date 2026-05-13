@@ -27,8 +27,14 @@ from .validators import (
 )
 
 
-def get_profile_impl(**_):
-    """Fetch current user's profile."""
+def get_profile_impl(**kwargs):
+    """
+    Fetch a user profile.
+
+    Behavior:
+      - If no target user is provided, fetch current logged-in user's profile.
+      - If target_user/user is provided, fetch that user's public profile.
+    """
 
     current_user, err = require_login()
     if err:
@@ -44,12 +50,23 @@ def get_profile_impl(**_):
     if rl:
         return rl
 
+    target_user = kwargs.get("target_user") or current_user
+
     try:
-        user_doc = frappe.get_doc("User", current_user)
+        if not frappe.db.exists("User", target_user):
+            return fail("User not found.", code="NOT_FOUND")
+
+        if not frappe.db.exists("AOS Profile", target_user):
+            return fail("User profile not found.", code="PROFILE_NOT_FOUND")
+
+        user_doc = frappe.get_doc("User", target_user)
 
         return ok(
             "Profile fetched.",
-            data=serialize_user(user_doc),
+            data=serialize_user(
+                user_doc,
+                current_user=current_user,
+            ),
         )
 
     except frappe.DoesNotExistError:
@@ -68,7 +85,7 @@ def get_profile_impl(**_):
 
 
 def update_profile_impl(**kwargs):
-    """Update editable user profile fields."""
+    """Update editable user profile fields for the current logged-in user only."""
 
     current_user, err = require_login()
     if err:
@@ -128,7 +145,10 @@ def update_profile_impl(**kwargs):
 
         return ok(
             "Profile updated.",
-            data=serialize_user(user_doc),
+            data=serialize_user(
+                user_doc,
+                current_user=current_user,
+            ),
         )
 
     except frappe.DoesNotExistError:

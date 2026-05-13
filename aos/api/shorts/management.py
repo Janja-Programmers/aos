@@ -68,6 +68,13 @@ def _load_followed_user_ids(
     viewer: str | None,
     target_users: list[str],
 ) -> set[str]:
+    """
+    Batch-load users followed by the current viewer.
+
+    AOS Follow is user-to-user:
+    - follower_user = current viewer
+    - following_user = short.owner
+    """
     if not viewer or not target_users:
         return set()
 
@@ -83,31 +90,133 @@ def _load_followed_user_ids(
     return set(rows or [])
 
 
+def _load_followed_by_user_ids(
+    viewer: str | None,
+    target_users: list[str],
+) -> set[str]:
+    """
+    Batch-load users who follow the current viewer.
+
+    AOS Follow is user-to-user:
+    - follower_user = short.owner
+    - following_user = current viewer
+    """
+    if not viewer or not target_users:
+        return set()
+
+    rows = frappe.get_all(
+        "AOS Follow",
+        filters={
+            "follower_user": ["in", target_users],
+            "following_user": viewer,
+        },
+        pluck="follower_user",
+    )
+
+    return set(rows or [])
+
+
+def _build_relationship_payload(
+    *,
+    viewer: str | None,
+    target_user: str | None,
+    followed_user_ids: set[str],
+    followed_by_user_ids: set[str],
+) -> dict[str, Any]:
+    """
+    Build relationship state for a short creator.
+
+    Meaning:
+      - is_following: viewer follows creator
+      - is_followed_by: creator follows viewer
+      - is_friend: both follow each other
+    """
+
+    if not target_user:
+        return _guest_relationship_payload(target_user=None)
+
+    if not viewer:
+        return _guest_relationship_payload(target_user=target_user)
+
+    if viewer == target_user:
+        return {
+            "target_user": target_user,
+            "is_self": True,
+            "is_following": False,
+            "is_followed_by": False,
+            "is_friend": False,
+            "relationship_status": "none",
+            "action_label": "You",
+        }
+
+    is_following = target_user in followed_user_ids
+    is_followed_by = target_user in followed_by_user_ids
+    is_friend = is_following and is_followed_by
+
+    if is_friend:
+        relationship_status = "friends"
+        action_label = "Friends"
+    elif is_following:
+        relationship_status = "following"
+        action_label = "Following"
+    elif is_followed_by:
+        relationship_status = "followed_by"
+        action_label = "Follow Back"
+    else:
+        relationship_status = "none"
+        action_label = "Follow"
+
+    return {
+        "target_user": target_user,
+        "is_self": False,
+        "is_following": is_following,
+        "is_followed_by": is_followed_by,
+        "is_friend": is_friend,
+        "relationship_status": relationship_status,
+        "action_label": action_label,
+    }
+
+
+def _guest_relationship_payload(*, target_user: str | None) -> dict[str, Any]:
+    return {
+        "target_user": target_user,
+        "is_self": False,
+        "is_following": False,
+        "is_followed_by": False,
+        "is_friend": False,
+        "relationship_status": "none",
+        "action_label": "Follow",
+    }
+
+
 def _build_viewer_state(
     row: dict[str, Any],
     *,
     viewer: str | None,
     liked_short_ids: set[str],
     followed_user_ids: set[str],
-) -> dict[str, bool]:
+    followed_by_user_ids: set[str],
+) -> dict[str, Any]:
     short_id = row.get("name")
     owner = row.get("owner")
 
     is_logged_in = bool(viewer)
     is_owner = bool(viewer and owner and viewer == owner)
 
+    relationship = _build_relationship_payload(
+        viewer=viewer,
+        target_user=owner,
+        followed_user_ids=followed_user_ids,
+        followed_by_user_ids=followed_by_user_ids,
+    )
+
     return {
         "is_liked": bool(short_id and short_id in liked_short_ids),
-        "is_following": bool(
-            is_logged_in
-            and not is_owner
-            and owner
-            and owner in followed_user_ids
-        ),
         "is_owner": is_owner,
         "can_edit": is_owner,
         "can_delete": is_owner,
         "can_report": bool(is_logged_in and not is_owner),
+        **relationship,
     }
 
 
@@ -135,6 +244,7 @@ def _serialize_rows_with_viewer_state(
 
     liked_short_ids = _load_liked_short_ids(viewer, short_ids)
     followed_user_ids = _load_followed_user_ids(viewer, owner_users)
+    followed_by_user_ids = _load_followed_by_user_ids(viewer, owner_users)
 
     return [
         serialize_short_row(
@@ -144,6 +254,7 @@ def _serialize_rows_with_viewer_state(
                 viewer=viewer,
                 liked_short_ids=liked_short_ids,
                 followed_user_ids=followed_user_ids,
+                followed_by_user_ids=followed_by_user_ids,
             ),
         )
         for row in rows

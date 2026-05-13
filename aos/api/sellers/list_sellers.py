@@ -12,6 +12,7 @@ import frappe
 from aos.api.shared.auth import current_user
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.social.relationship import build_relationship_status
 
 from .constants import LIST_SELLERS_LIMIT_PER_MINUTE_PER_IP
 
@@ -29,8 +30,8 @@ def list_sellers_impl(**kwargs):
         if rl:
             return rl
 
-        limit = int(kwargs.get("limit", 20))
-        offset = int(kwargs.get("offset", 0))
+        limit = _get_limit(kwargs)
+        offset = _get_offset(kwargs)
 
         search = kwargs.get("search")
         is_verified = kwargs.get("is_verified")
@@ -38,14 +39,16 @@ def list_sellers_impl(**kwargs):
         business_category = kwargs.get("business_category") or kwargs.get("category")
         follow_filter = kwargs.get("follow_filter")
 
-        user = current_user()
+        viewer = current_user()
+        is_logged_in = bool(viewer and viewer != "Guest")
 
         conditions = ["s.status = 'Active'"]
         params = []
 
-        if user and user != "Guest":
+        # Do not show the current user's own seller profile in discovery.
+        if is_logged_in:
             conditions.append("s.user != %s")
-            params.append(user)
+            params.append(viewer)
 
         if is_verified is not None:
             conditions.append("p.is_verified = %s")
@@ -60,15 +63,24 @@ def list_sellers_impl(**kwargs):
             params.append(business_category)
 
         if search:
-            conditions.append("u.full_name LIKE %s")
-            params.append(f"%{search}%")
+            conditions.append(
+                """
+                (
+                    u.full_name LIKE %s
+                    OR s.business_category LIKE %s
+                    OR s.business_address LIKE %s
+                )
+                """
+            )
+            search_value = f"%{search}%"
+            params.extend([search_value, search_value, search_value])
 
         following_users = set()
 
-        if user and user != "Guest":
+        if is_logged_in:
             follows = frappe.get_all(
                 "AOS Follow",
-                filters={"follower_user": user},
+                filters={"follower_user": viewer},
                 fields=["following_user"],
             )
             following_users = {f["following_user"] for f in follows}
@@ -110,11 +122,14 @@ def list_sellers_impl(**kwargs):
                 u.user_image,
 
                 COALESCE(p.total_followers, 0) AS total_followers,
+                COALESCE(p.total_following, 0) AS total_following,
                 COALESCE(p.is_verified, 0) AS is_verified
 
             FROM `tabAOS Seller` s
-            INNER JOIN `tabUser` u ON u.name = s.user
-            INNER JOIN `tabAOS Profile` p ON p.user = s.user
+            INNER JOIN `tabUser` u
+                ON u.name = s.user
+            INNER JOIN `tabAOS Profile` p
+                ON p.user = s.user
 
             WHERE {where_clause}
 
@@ -132,23 +147,33 @@ def list_sellers_impl(**kwargs):
 
         items = []
 
-        for s in sellers:
-            items.append(
-                {
-                    "seller": s["name"],
-                    "user": s["user"],
-                    "display_name": s.get("full_name") or s["user"],
-                    "avatar": s.get("user_image"),
-                    "business_category": s.get("business_category"),
-                    "business_address": s.get("business_address"),
-                    "is_verified": bool(s.get("is_verified")),
-                    "seller_type": s.get("seller_type"),
-                    "rating": s.get("rating"),
-                    "total_reviews": s.get("total_reviews"),
-                    "total_followers": s.get("total_followers") or 0,
-                    "is_following": s["user"] in following_users,
-                }
+        for seller in sellers:
+            seller_user = seller.get("user")
+
+            item = {
+                "seller": seller.get("name"),
+                "user": seller_user,
+                "display_name": seller.get("full_name") or seller_user,
+                "avatar": seller.get("user_image"),
+                "business_category": seller.get("business_category"),
+                "business_address": seller.get("business_address"),
+                "is_verified": bool(seller.get("is_verified")),
+                "seller_type": seller.get("seller_type"),
+                "rating": seller.get("rating"),
+                "total_reviews": seller.get("total_reviews") or 0,
+                "total_followers": int(seller.get("total_followers") or 0),
+                "total_following": int(seller.get("total_following") or 0),
+            }
+
+            item.update(
+                _build_seller_relationship_payload(
+                    current_user_value=viewer,
+                    target_user=seller_user,
+                    is_logged_in=is_logged_in,
+                )
             )
+
+            items.append(item)
 
         return ok(
             "Sellers fetched successfully.",
@@ -169,3 +194,58 @@ def list_sellers_impl(**kwargs):
             "Failed to fetch sellers.",
             code="INTERNAL_ERROR",
         )
+
+
+def _build_seller_relationship_payload(
+    *,
+    current_user_value: str | None,
+    target_user: str,
+    is_logged_in: bool,
+) -> dict:
+    """
+    Build viewer-specific relationship fields for a seller user.
+
+    Follow is user-to-user:
+      current_user follows seller.user
+    """
+
+    if not is_logged_in:
+        return _guest_relationship_payload(target_user=target_user)
+
+    return build_relationship_status(
+        current_user=current_user_value,
+        target_user=target_user,
+    )
+
+
+def _guest_relationship_payload(*, target_user: str) -> dict:
+    return {
+        "target_user": target_user,
+        "is_self": False,
+        "is_following": False,
+        "is_followed_by": False,
+        "is_friend": False,
+        "relationship_status": "none",
+        "action_label": "Follow",
+    }
+
+
+def _get_limit(kwargs) -> int:
+    try:
+        limit = int(kwargs.get("limit") or 20)
+    except (TypeError, ValueError):
+        limit = 20
+
+    if limit <= 0:
+        return 20
+
+    return min(limit, 50)
+
+
+def _get_offset(kwargs) -> int:
+    try:
+        offset = int(kwargs.get("offset") or 0)
+    except (TypeError, ValueError):
+        offset = 0
+
+    return max(offset, 0)

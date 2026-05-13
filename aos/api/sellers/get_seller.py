@@ -14,6 +14,7 @@ from frappe.utils import formatdate
 from aos.api.shared.auth import current_user
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.social.relationship import build_relationship_status
 
 from .constants import GET_SELLER_LIMIT_PER_MINUTE_PER_IP
 
@@ -49,23 +50,21 @@ def get_seller_impl(**kwargs):
         profile = frappe.db.get_value(
             "AOS Profile",
             seller_doc.user,
-            ["total_followers", "is_verified"],
+            ["total_followers", "total_following", "is_verified"],
             as_dict=True,
         )
 
         joined = formatdate(seller_doc.creation, "MMM yyyy")
 
-        user = current_user()
-        is_following = False
+        viewer = current_user()
+        is_logged_in = bool(viewer and viewer != "Guest")
+        can_edit = is_logged_in and viewer == seller_doc.user
 
-        if user and user != "Guest":
-            is_following = frappe.db.exists(
-                "AOS Follow",
-                {
-                    "following_user": seller_doc.user,
-                    "follower_user": user,
-                },
-            )
+        relationship = _build_seller_relationship_payload(
+            current_user_value=viewer,
+            target_user=seller_doc.user,
+            is_logged_in=is_logged_in,
+        )
 
         operating_hours = []
 
@@ -94,11 +93,13 @@ def get_seller_impl(**kwargs):
                 "business_address": seller_doc.business_address,
                 "is_verified": bool(profile.is_verified) if profile else False,
                 "rating": seller_doc.rating,
-                "total_reviews": seller_doc.total_reviews,
-                "total_followers": profile.total_followers if profile else 0,
-                "total_ads": seller_doc.total_ads,
+                "total_reviews": seller_doc.total_reviews or 0,
+                "total_followers": int(profile.total_followers or 0) if profile else 0,
+                "total_following": int(profile.total_following or 0) if profile else 0,
+                "total_ads": seller_doc.total_ads or 0,
                 "joined": joined,
-                "is_following": bool(is_following),
+                "can_edit": can_edit,
+                **relationship,
                 "operating_hours": operating_hours,
             },
         )
@@ -112,3 +113,37 @@ def get_seller_impl(**kwargs):
             "Failed to fetch seller.",
             code="INTERNAL_ERROR",
         )
+
+
+def _build_seller_relationship_payload(
+    *,
+    current_user_value: str | None,
+    target_user: str,
+    is_logged_in: bool,
+) -> dict:
+    """
+    Build viewer-specific relationship fields for a seller user.
+
+    Follow is user-to-user:
+      current_user follows seller.user
+    """
+
+    if not is_logged_in:
+        return _guest_relationship_payload(target_user=target_user)
+
+    return build_relationship_status(
+        current_user=current_user_value,
+        target_user=target_user,
+    )
+
+
+def _guest_relationship_payload(*, target_user: str) -> dict:
+    return {
+        "target_user": target_user,
+        "is_self": False,
+        "is_following": False,
+        "is_followed_by": False,
+        "is_friend": False,
+        "relationship_status": "none",
+        "action_label": "Follow",
+    }

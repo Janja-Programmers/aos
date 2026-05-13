@@ -60,15 +60,33 @@ def dump_json(value: Any, default: str = "[]") -> str:
 
 
 # VIEWER STATE DEFAULTS
-def default_short_viewer_state() -> dict[str, bool]:
+def default_short_viewer_state(
+    *,
+    target_user: str | None = None,
+) -> dict[str, Any]:
     """
     Stable default viewer state for shorts.
 
     Used for guests or when a caller did not provide preloaded viewer state.
+
+    Relationship meaning:
+      - is_following: current viewer follows target_user
+      - is_followed_by: target_user follows current viewer
+      - is_friend: both users follow each other
     """
     return {
         "is_liked": False,
+
+        # Relationship state
+        "target_user": target_user,
+        "is_self": False,
         "is_following": False,
+        "is_followed_by": False,
+        "is_friend": False,
+        "relationship_status": "none",
+        "action_label": "Follow",
+
+        # Ownership/actions
         "is_owner": False,
         "can_edit": False,
         "can_delete": False,
@@ -228,6 +246,7 @@ def serialize_short_row(
     - viewer_state should be precomputed by API/service layer to avoid N+1 queries.
     """
     status = row.get("status")
+    owner = row.get("owner")
 
     return {
         "id": row.get("name"),
@@ -249,8 +268,8 @@ def serialize_short_row(
         "ranking_score": flt(row.get("ranking_score") or 0),
         "posted_on": row.get("posted_on"),
         "creator": {
-            "user": row.get("owner"),
-            "display_name": row.get("creator_name") or row.get("owner"),
+            "user": owner,
+            "display_name": row.get("creator_name") or owner,
             "avatar": row.get("creator_avatar"),
             "is_verified": bool(row.get("creator_is_verified")),
             "seller": (
@@ -272,7 +291,8 @@ def serialize_short_row(
             if row.get("ad")
             else None
         ),
-        "viewer_state": viewer_state or default_short_viewer_state(),
+        "viewer_state": viewer_state
+        or default_short_viewer_state(target_user=owner),
     }
 
 
