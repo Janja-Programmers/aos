@@ -6,7 +6,6 @@
  "field_order": [
   "live_stream",
   "user",
-  "seller",
   "content",
   "column_break_ngos",
   "status",
@@ -29,16 +28,10 @@
    "fieldname": "user",
    "fieldtype": "Link",
    "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "User",
    "options": "User",
    "reqd": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "seller",
-   "fieldtype": "Link",
-   "label": "Seller",
-   "options": "AOS Seller",
    "search_index": 1
   },
   {
@@ -86,7 +79,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-03-31 15:48:56.455184",
+ "modified": "2026-05-14 12:22:04.206696",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Live Stream Comment",

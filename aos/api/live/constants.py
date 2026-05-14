@@ -1,77 +1,66 @@
 """
-Rate limit constants for Live Stream endpoints.
+Rate limit and business constants for Live Stream endpoints.
 
 Designed for:
-- High concurrency (live streams)
-- Burst interactions (reactions, comments)
+- Social/user-owned live streams
+- Guest watching
+- Logged-in interactions
+- High concurrency
+- Burst interactions such as reactions/comments
 - Abuse prevention without hurting UX
 """
 
 
 # LIFECYCLE
 
-# Starting live is rare
+# Starting live is rare.
 START_LIVE_LIMIT_PER_MINUTE_PER_USER = 5
 
-# Joining live (token + setup)
+# Joining live interactively / token setup.
 JOIN_LIVE_LIMIT_PER_MINUTE_PER_USER = 30
 
-# Ending live
+# Ending live.
 END_LIVE_LIMIT_PER_MINUTE_PER_USER = 20
 
-# Fetching live details / feeds
+# Fetching live details / feeds.
 GET_LIVE_LIMIT_PER_MINUTE_PER_IP = 120
 LIST_LIVE_STREAMS_LIMIT_PER_MINUTE_PER_IP = 120
 
 
 # TOKEN
 
-# Token generation (should be controlled)
+# Token generation should be controlled.
 GET_LIVE_TOKEN_LIMIT_PER_MINUTE_PER_USER = 60
 
 
-# TRACKING (VERY FREQUENT)
+# TRACKING
 
-# Join tracking (viewer enters)
+# Guest and logged-in viewer tracking.
 TRACK_JOIN_LIMIT_PER_MINUTE_PER_IP = 120
-
-# Leave tracking
 TRACK_LEAVE_LIMIT_PER_MINUTE_PER_IP = 120
 
 
 # COMMENTS
 
-# Sending messages in live chat
+# Live chat requires login.
 ADD_COMMENT_LIMIT_PER_MINUTE_PER_USER = 60
-
-# Replying
 REPLY_COMMENT_LIMIT_PER_MINUTE_PER_USER = 60
 
-# Fetch comments
+# Fetch comments/replies can be guest-accessible.
 LIST_COMMENTS_LIMIT_PER_MINUTE_PER_IP = 120
 LIST_REPLIES_LIMIT_PER_MINUTE_PER_IP = 120
 
-# Delete comment
+# Delete comment requires login.
 DELETE_COMMENT_LIMIT_PER_MINUTE_PER_USER = 30
 
 
-# REACTIONS (HIGH BURST)
+# REACTIONS
 
-# Allow rapid taps but still prevent spam bots
-SEND_REACTION_LIMIT_PER_MINUTE_PER_IP = 300
-
-
-# LIVE ADS
-ATTACH_AD_LIMIT_PER_MINUTE_PER_USER = 30
-REMOVE_AD_LIMIT_PER_MINUTE_PER_USER = 30
-PIN_AD_LIMIT_PER_MINUTE_PER_USER = 60
-LIST_LIVE_ADS_LIMIT_PER_MINUTE_PER_IP = 120
+# Reactions require login, but allow fast taps.
+SEND_REACTION_LIMIT_PER_MINUTE_PER_USER = 300
 
 
 # BUSINESS LOGIC CONSTANTS
 
-# Minimum seconds to count as a qualified view
+# Minimum seconds to count as a qualified view.
 LIVE_VIEW_QUALIFICATION_SECONDS = 5
-
-# Optional: max ads per live (UI/business constraint)
-MAX_ADS_PER_LIVE = 50

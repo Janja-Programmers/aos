@@ -1,15 +1,17 @@
 """
-LiveKit Service for AOS
+LiveKit Service for AOS.
 
 Responsibilities:
 - Generate secure join tokens
 - Centralize LiveKit config access
 - Keep secrets out of snapshot usage
+- Keep LiveKit identity stable while allowing display metadata
 """
 
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import Any
 
 import frappe
 from frappe import _
@@ -46,6 +48,7 @@ class LiveKitService:
         Both users:
         - can publish
         - can subscribe
+        - can publish data
         """
         return cls._generate_token(
             identity=user,
@@ -69,6 +72,16 @@ class LiveKitService:
     ) -> str:
         """
         Generate token for live streaming.
+
+        Host:
+        - can publish
+        - can subscribe
+        - can publish data
+
+        Viewer:
+        - cannot publish media
+        - can subscribe
+        - cannot publish data by default
         """
         if role == "host":
             can_publish = True
@@ -100,11 +113,21 @@ class LiveKitService:
         conversation: str | None = None,
         call_id: str | None = None,
         call_type: str | None = None,
+        display_name: str | None = None,
+        avatar: str | None = None,
+        is_guest: bool | None = None,
+        session_id: str | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> str:
         """
-        Build JSON metadata string for token.
+        Build JSON metadata string for LiveKit tokens.
+
+        Important:
+        - `user` should match the stable participant identity where possible.
+        - For guest Live viewers, `user` may be a generated guest identity.
+        - Display fields are metadata only and should not be treated as identity.
         """
-        payload = {
+        payload: dict[str, Any] = {
             "user": user,
             "role": role,
         }
@@ -117,6 +140,21 @@ class LiveKitService:
 
         if call_type:
             payload["call_type"] = call_type
+
+        if display_name:
+            payload["display_name"] = display_name
+
+        if avatar:
+            payload["avatar"] = avatar
+
+        if is_guest is not None:
+            payload["is_guest"] = bool(is_guest)
+
+        if session_id:
+            payload["session_id"] = session_id
+
+        if extra:
+            payload.update(extra)
 
         return frappe.as_json(payload)
 

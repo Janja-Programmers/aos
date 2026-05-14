@@ -42,14 +42,6 @@ from .reactions import (
     send_reaction_impl,
 )
 
-# ADS
-from .ads import (
-    attach_ad_impl,
-    remove_ad_impl,
-    pin_ad_impl,
-    list_live_ads_impl,
-)
-
 
 # LIFECYCLE
 @frappe.whitelist(methods=["POST"])
@@ -57,7 +49,7 @@ def start_live(**kwargs):
     return start_live_impl(**kwargs)
 
 
-@frappe.whitelist(methods=["POST"])
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def join_live(**kwargs):
     return join_live_impl(**kwargs)
 
@@ -121,27 +113,6 @@ def delete_comment(**kwargs):
 
 
 # REACTIONS
-@frappe.whitelist(allow_guest=True, methods=["POST"])
+@frappe.whitelist(methods=["POST"])
 def send_reaction(**kwargs):
     return send_reaction_impl(**kwargs)
-
-
-# ADS
-@frappe.whitelist(methods=["POST"])
-def attach_ad(**kwargs):
-    return attach_ad_impl(**kwargs)
-
-
-@frappe.whitelist(methods=["POST"])
-def remove_ad(**kwargs):
-    return remove_ad_impl(**kwargs)
-
-
-@frappe.whitelist(methods=["POST"])
-def pin_ad(**kwargs):
-    return pin_ad_impl(**kwargs)
-
-
-@frappe.whitelist(allow_guest=True)
-def list_live_ads(**kwargs):
-    return list_live_ads_impl(**kwargs)

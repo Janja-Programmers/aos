@@ -1,7 +1,7 @@
 """
 Live Stream validators.
 
-Reusable validation helpers for live feature.
+Reusable validation helpers for the social Live feature.
 """
 
 from __future__ import annotations
@@ -13,6 +13,9 @@ from aos.api.shared.responses import fail
 
 # FETCH HELPERS
 def get_live_row(live_id: str):
+    if not live_id:
+        return None
+
     try:
         return frappe.get_doc("AOS Live Stream", live_id)
     except frappe.DoesNotExistError:
@@ -20,20 +23,19 @@ def get_live_row(live_id: str):
 
 
 def get_live_view_row(view_id: str):
+    if not view_id:
+        return None
+
     try:
         return frappe.get_doc("AOS Live Stream View", view_id)
     except frappe.DoesNotExistError:
         return None
 
 
-def get_ad_row(ad_id: str):
-    try:
-        return frappe.get_doc("AOS Ad", ad_id)
-    except frappe.DoesNotExistError:
+def get_comment_row(comment_id: str):
+    if not comment_id:
         return None
 
-
-def get_comment_row(comment_id: str):
     try:
         return frappe.get_doc("AOS Live Stream Comment", comment_id)
     except frappe.DoesNotExistError:
@@ -51,7 +53,7 @@ def validate_live_exists(live_id: str):
 
 
 def validate_live_active(live):
-    if live.status != "live":
+    if live.status != "live" or not live.is_active:
         return fail("Live stream is not active.", code="INVALID_STATE")
 
     return None
@@ -64,73 +66,69 @@ def validate_live_not_ended(live):
     return None
 
 
-# USER / SELLER VALIDATION
-def validate_user_is_seller(live, user: str):
-    if live.seller != user:
-        return fail("Only seller can perform this action.", code="PERMISSION_DENIED")
+def validate_user_is_host(live, user: str):
+    if not user:
+        return fail("Login required.", code="AUTH_REQUIRED")
+
+    if live.host_user != user:
+        return fail("Only the host can perform this action.", code="PERMISSION_DENIED")
 
     return None
 
 
-def validate_seller_can_go_live(seller_id: str):
-    seller = frappe.db.get_value(
-        "AOS Seller",
-        seller_id,
-        ["status", "user"],
+def validate_user_can_go_live(user: str):
+    """
+    Social Live eligibility.
+
+    For now, any enabled logged-in user can go live.
+    Keep this helper separate so future rules can be added without touching
+    start_live implementation code.
+    """
+    if not user:
+        return None, fail("Login required.", code="AUTH_REQUIRED")
+
+    user_row = frappe.db.get_value(
+        "User",
+        user,
+        ["name", "enabled"],
         as_dict=True,
     )
 
-    if not seller:
-        return None, fail("Seller not found.", code="NOT_FOUND")
+    if not user_row:
+        return None, fail("User not found.", code="NOT_FOUND")
 
-    if seller.status != "Active":
-        return None, fail("Seller account is not active.", code="INVALID_STATE")
+    if not user_row.enabled:
+        return None, fail("User account is disabled.", code="INVALID_STATE")
 
-    profile = frappe.db.get_value(
-        "AOS Profile",
-        seller.user,
-        ["is_verified", "total_followers"],
-        as_dict=True,
-    )
-
-    if not profile:
-        return None, fail("Profile not found.", code="PROFILE_NOT_FOUND")
-
-    is_verified = bool(profile.is_verified)
-    total_followers = profile.total_followers or 0
-
-    if not is_verified and total_followers < 1000:
-        return None, fail(
-            "You must be verified or have at least 1,000 followers to go live.",
-            code="NOT_ELIGIBLE",
-        )
-
-    seller["is_verified"] = is_verified
-    seller["total_followers"] = total_followers
-
-    return seller, None
+    return user_row, None
 
 
 # VIEW VALIDATION
 def validate_view_identity(user: str | None, session_id: str | None):
-    if not user and not session_id:
-        return fail("Either user or session_id is required.", code="VALIDATION_ERROR")
+    """
+    View tracking supports guests.
+
+    session_id is required for both guests and logged-in viewers.
+    user is optional and only present for authenticated viewers.
+    """
+    if not session_id:
+        return fail("Session id is required.", code="VALIDATION_ERROR")
 
     return None
 
 
 def validate_no_active_view_session(live_id: str, user: str | None, session_id: str | None):
-    filters = {
-        "live_stream": live_id,
-        "is_active": 1,
-    }
+    if not session_id:
+        return fail("Session id is required.", code="VALIDATION_ERROR")
 
-    if user:
-        filters["user"] = user
-    else:
-        filters["session_id"] = session_id
-
-    exists = frappe.db.exists("AOS Live Stream View", filters)
+    exists = frappe.db.exists(
+        "AOS Live Stream View",
+        {
+            "live_stream": live_id,
+            "session_id": session_id,
+            "is_active": 1,
+        },
+    )
 
     if exists:
         return fail("Active view session already exists.", code="INVALID_STATE")
@@ -139,15 +137,14 @@ def validate_no_active_view_session(live_id: str, user: str | None, session_id: 
 
 
 def validate_active_view_session(live_id: str, user: str | None, session_id: str | None):
+    if not session_id:
+        return None, fail("Session id is required.", code="VALIDATION_ERROR")
+
     filters = {
         "live_stream": live_id,
+        "session_id": session_id,
         "is_active": 1,
     }
-
-    if user:
-        filters["user"] = user
-    else:
-        filters["session_id"] = session_id
 
     view = frappe.db.get_value(
         "AOS Live Stream View",
@@ -179,47 +176,23 @@ def validate_comment_belongs_to_live(comment, live_id: str):
     return None
 
 
-# AD VALIDATION
-def validate_ad_exists(ad_id: str):
-    ad = get_ad_row(ad_id)
-
-    if not ad:
-        return None, fail("Ad not found.", code="NOT_FOUND")
-
-    return ad, None
-
-
-def validate_ad_active(ad):
-    if ad.status != "Active":
-        return fail("Ad is not active.", code="INVALID_STATE")
+def validate_comment_active(comment):
+    if comment.status != "active":
+        return fail("Comment is not active.", code="INVALID_STATE")
 
     return None
 
 
-def validate_ad_belongs_to_seller(ad, live):
-    if ad.seller != live.seller:
-        return fail("Ad must belong to the seller.", code="PERMISSION_DENIED")
+def validate_user_can_delete_comment(comment, user: str):
+    if not user:
+        return fail("Login required.", code="AUTH_REQUIRED")
 
-    return None
+    if comment.user == user:
+        return None
 
+    live = get_live_row(comment.live_stream)
 
-def validate_ad_same_country(ad, live):
-    if ad.country != live.country:
-        return fail("Ad must match live stream country.", code="INVALID_STATE")
+    if live and live.host_user == user:
+        return None
 
-    return None
-
-
-def validate_ad_not_already_attached(live_id: str, ad_id: str):
-    exists = frappe.db.exists(
-        "AOS Live Stream Ad",
-        {
-            "live_stream": live_id,
-            "ad": ad_id,
-        },
-    )
-
-    if exists:
-        return fail("Ad already attached to this live stream.", code="INVALID_STATE")
-
-    return None
+    return fail("You cannot delete this comment.", code="PERMISSION_DENIED")

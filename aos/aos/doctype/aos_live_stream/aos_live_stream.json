@@ -7,15 +7,14 @@
  "field_order": [
   "naming_series",
   "title",
-  "status",
-  "room_name",
+  "host_user",
   "started_at",
   "ended_at",
   "column_break_rlwv",
-  "seller",
-  "cover_image",
+  "status",
+  "room_name",
   "duration_seconds",
-  "country",
+  "cover_image",
   "is_active",
   "metrics_tab",
   "viewer_count",
@@ -34,16 +33,6 @@
    "fieldtype": "Select",
    "label": "Series",
    "options": "LIVE-.YYYY.-.#####"
-  },
-  {
-   "fieldname": "seller",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Seller",
-   "options": "AOS Seller",
-   "reqd": 1,
-   "search_index": 1
   },
   {
    "fieldname": "title",
@@ -92,14 +81,6 @@
    "fieldtype": "Int",
    "label": "Duration (seconds)",
    "read_only": 1
-  },
-  {
-   "fieldname": "country",
-   "fieldtype": "Link",
-   "label": "Country",
-   "options": "Country",
-   "reqd": 1,
-   "search_index": 1
   },
   {
    "fieldname": "metrics_tab",
@@ -165,11 +146,21 @@
    "fieldtype": "Int",
    "label": "Total Watch Time (seconds)",
    "read_only": 1
+  },
+  {
+   "fieldname": "host_user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Host User",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-03-31 15:49:39.799070",
+ "modified": "2026-05-14 12:12:18.811653",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Live Stream",

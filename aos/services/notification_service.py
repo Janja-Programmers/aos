@@ -483,29 +483,32 @@ class NotificationService:
         cls,
         *,
         user: str,
-        seller: str,
+        host_user: str,
         live_id: str,
         title: str,
     ):
         """
-        Existing live notification path.
+        Notify a follower that a creator/host started a live stream.
 
-        Note:
-        - This still uses `seller` as actor because the current live feature
-          may still be seller-oriented.
-        - If live later becomes user/creator-based, switch actor to owner/user.
+        `user` is the recipient.
+        `host_user` is the live host / creator User ID.
         """
-        seller_name = cls._display_name(seller)
+        host_name = cls._display_name(host_user)
+        live_title = (title or "").strip()
 
         cls.notify(
             user=user,
             type="live_started",
             title="Live Started",
-            body=f"{seller_name} is now live: {title}",
-            actor=seller,
+            body=(
+                f"{host_name} is now live: {live_title}"
+                if live_title
+                else f"{host_name} is now live"
+            ),
+            actor=host_user,
             payload={
                 "live_id": live_id,
-                "seller": seller,
+                "host_user": host_user,
             },
             event="aos_live_started",
         )

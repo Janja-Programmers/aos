@@ -75,6 +75,65 @@ def _validate_call_type(call_type: str):
     return None
 
 
+def _get_user_display(user: str | None) -> dict:
+    """
+    Resolve display-ready user metadata for LiveKit.
+
+    Stable identity remains the User ID/email. Display fields are metadata only.
+    """
+    if not user:
+        return {
+            "display_name": None,
+            "avatar": None,
+        }
+
+    row = frappe.db.get_value(
+        "User",
+        user,
+        ["full_name", "user_image"],
+        as_dict=True,
+    )
+
+    if not row:
+        return {
+            "display_name": user,
+            "avatar": None,
+        }
+
+    return {
+        "display_name": row.full_name or user,
+        "avatar": row.user_image,
+    }
+
+
+def _build_call_metadata(
+    *,
+    user: str,
+    role: str,
+    conversation: str,
+    call_id: str,
+    call_type: str,
+) -> str:
+    """
+    Build LiveKit metadata for call participants.
+
+    Identity remains stable User ID/email. Display name/avatar are metadata
+    for clients to render participant UI without guessing from raw emails.
+    """
+    display = _get_user_display(user)
+
+    return LiveKitService.build_metadata(
+        user=user,
+        role=role,
+        conversation=conversation,
+        call_id=call_id,
+        call_type=call_type,
+        display_name=display.get("display_name"),
+        avatar=display.get("avatar"),
+        is_guest=False,
+    )
+
+
 def _build_call_response(
     *,
     call,
@@ -189,7 +248,7 @@ def initiate_call_impl(**kwargs):
         token = LiveKitService.generate_call_token(
             user=current_user,
             room_name=call.room_name,
-            metadata=LiveKitService.build_metadata(
+            metadata=_build_call_metadata(
                 user=current_user,
                 role="caller",
                 conversation=conv_id,
@@ -362,7 +421,7 @@ def accept_call_impl(**kwargs):
         token = LiveKitService.generate_call_token(
             user=current_user,
             room_name=call.room_name,
-            metadata=LiveKitService.build_metadata(
+            metadata=_build_call_metadata(
                 user=current_user,
                 role="receiver",
                 conversation=call.conversation,

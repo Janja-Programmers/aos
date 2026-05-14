@@ -3,6 +3,10 @@ Live Token APIs (implementation).
 
 Handles:
 - get_live_token
+
+Notes:
+- Requires login.
+- Guests should use join_live with session_id if guest watching is allowed.
 """
 
 from __future__ import annotations
@@ -23,6 +27,11 @@ from .constants import (
 from .validators import (
     validate_live_exists,
     validate_live_active,
+)
+
+from .serializers import (
+    get_user_display,
+    serialize_live,
 )
 
 
@@ -54,16 +63,24 @@ def get_live_token_impl(**kwargs):
         if err:
             return err
 
-        role = "host" if live.seller == user else "viewer"
+        role = "host" if live.host_user == user else "viewer"
+        display = get_user_display(user)
+        session_id = kwargs.get("session_id")
+
+        metadata = LiveKitService.build_metadata(
+            user=user,
+            role=role,
+            display_name=display.get("display_name"),
+            avatar=display.get("avatar"),
+            is_guest=False,
+            session_id=session_id,
+        )
 
         token = LiveKitService.generate_live_token(
             user=user,
             room_name=live.room_name,
             role=role,
-            metadata=LiveKitService.build_metadata(
-                user=user,
-                role=role,
-            ),
+            metadata=metadata,
         )
 
         return ok(
@@ -74,6 +91,13 @@ def get_live_token_impl(**kwargs):
                 "token": token,
                 "ws_url": LiveKitService.get_ws_url(),
                 "role": role,
+                "identity": user,
+                "is_guest": False,
+                "live": serialize_live(
+                    live,
+                    viewer=user,
+                    session_id=session_id,
+                ),
             },
         )
 
