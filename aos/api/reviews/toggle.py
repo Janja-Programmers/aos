@@ -1,20 +1,21 @@
-"""Toggle Reaction on a Review (Market-isolated)."""
+"""Toggle Reaction on a Review."""
 
 from __future__ import annotations
 
 import frappe
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 
 from .constants import TOGGLE_REACTION_LIMIT_PER_MINUTE_PER_USER
-from aos.aos.doctype.aos_review_reaction.aos_review_reaction import update_review_reaction_counts
+from aos.aos.doctype.aos_review_reaction.aos_review_reaction import (
+    update_review_reaction_counts,
+)
 
 
 def toggle_reaction_impl(**kwargs):
-    """Toggle Like / Dislike on a Review."""
+    """Toggle Like / Dislike on an approved Review."""
 
     current_user, err = require_login()
     if err:
@@ -29,37 +30,29 @@ def toggle_reaction_impl(**kwargs):
     if rl:
         return rl
 
-    review = kwargs.get("review")
-    reaction = kwargs.get("reaction")
+    review = str(kwargs.get("review") or "").strip()
+    reaction = str(kwargs.get("reaction") or "").strip()
 
     if not review:
         return fail("Review is required.", code="VALIDATION_ERROR")
 
-    if reaction not in ["Like", "Dislike"]:
+    if reaction not in {"Like", "Dislike"}:
         return fail("Invalid reaction.", code="VALIDATION_ERROR")
-
-    # Market enforcement
-    country, error = resolve_market_country(None)
-    if error:
-        return error
 
     review_doc = frappe.db.get_value(
         "AOS Review",
         review,
         ["name", "status", "reviewer", "ad"],
-        as_dict=True
+        as_dict=True,
     )
 
     if not review_doc or review_doc.status != "Approved":
         return fail("Review not found.", code="NOT_FOUND")
 
-    ad_country = frappe.db.get_value(
-        "AOS Ad",
-        review_doc.ad,
-        "country"
-    )
+    # Make sure the reviewed ad still exists and is visible.
+    ad_status = frappe.db.get_value("AOS Ad", review_doc.ad, "status")
 
-    if ad_country != country:
+    if ad_status != "Active":
         return fail("Review not found.", code="NOT_FOUND")
 
     if review_doc.reviewer == current_user:
@@ -68,39 +61,57 @@ def toggle_reaction_impl(**kwargs):
     try:
         existing = frappe.get_all(
             "AOS Review Reaction",
-            filters={"review": review, "user": current_user},
+            filters={
+                "review": review,
+                "user": current_user,
+            },
             fields=["name", "reaction"],
-            limit=1
+            limit=1,
         )
 
-        # No reaction yet → Create
+        # No reaction yet: create reaction.
         if not existing:
             doc = frappe.new_doc("AOS Review Reaction")
             doc.review = review
             doc.reaction = reaction
             doc.insert(ignore_permissions=True)
-            frappe.db.commit()
-            return ok("Reaction added.", data={"status": "added", "reaction": reaction})
+            return ok(
+                "Reaction added.",
+                data={
+                    "status": "added",
+                    "reaction": reaction,
+                },
+            )
 
         doc = frappe.get_doc("AOS Review Reaction", existing[0].name)
 
-        # Same reaction → Remove (Unlike / Undislike)
+        # Same reaction: remove reaction.
         if doc.reaction == reaction:
             review_id = doc.review
             doc.delete(ignore_permissions=True)
-            frappe.db.commit()
             update_review_reaction_counts(review_id)
-            return ok("Reaction removed.", data={"status": "removed"})
+            return ok(
+                "Reaction removed.",
+                data={
+                    "status": "removed",
+                },
+            )
 
-        # Switch reaction
+        # Different reaction: switch reaction.
         doc.reaction = reaction
         doc.save(ignore_permissions=True)
-        frappe.db.commit()
 
-        return ok("Reaction updated.", data={"status": "switched", "reaction": reaction})
+        return ok(
+            "Reaction updated.",
+            data={
+                "status": "switched",
+                "reaction": reaction,
+            },
+        )
 
     except frappe.ValidationError as ex:
         return fail(str(ex), code="VALIDATION_ERROR")
+
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Toggle Reaction Failed")
         return fail("Failed to toggle reaction.", code="INTERNAL_ERROR")

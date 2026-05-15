@@ -4,7 +4,6 @@ import frappe
 from frappe.utils import nowdate, getdate
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
 
@@ -26,17 +25,13 @@ def toggle_wishlist_impl(**kwargs):
         return err
 
     ad_id = str(kwargs.get("ad_id") or "").strip()
+
     if not ad_id:
         return fail("Ad id is required.", code="VALIDATION_ERROR")
 
     today = getdate(nowdate())
 
     try:
-        # Market Context
-        country, error = resolve_market_country(None)
-        if error:
-            return error
-
         # Fetch Ad
         ad = frappe.db.get_value(
             "AOS Ad",
@@ -44,7 +39,6 @@ def toggle_wishlist_impl(**kwargs):
             [
                 "name",
                 "status",
-                "country",
                 "seller",
                 "expires_on",
             ],
@@ -53,13 +47,6 @@ def toggle_wishlist_impl(**kwargs):
 
         if not ad:
             return fail("Ad not found.", code="NOT_FOUND")
-
-        # Market isolation
-        if ad.country != country:
-            return fail(
-                "You cannot wishlist an ad from another market.",
-                code="MARKET_MISMATCH",
-            )
 
         # Ad must be active
         if ad.status != "Active":

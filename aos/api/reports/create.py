@@ -3,7 +3,6 @@ from __future__ import annotations
 import frappe
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 
@@ -24,8 +23,8 @@ def create_report_impl(**kwargs):
     if rl:
         return rl
 
-    ad = kwargs.get("ad")
-    reason = kwargs.get("reason")
+    ad = str(kwargs.get("ad") or "").strip()
+    reason = str(kwargs.get("reason") or "").strip()
     details = kwargs.get("details")
 
     if not ad:
@@ -34,23 +33,14 @@ def create_report_impl(**kwargs):
     if not reason:
         return fail("Reason is required.", code="VALIDATION_ERROR")
 
-    # Market enforcement
-    country, error = resolve_market_country(None)
-    if error:
-        return error
-
     ad_doc = frappe.db.get_value(
         "AOS Ad",
         ad,
-        ["name", "seller", "status", "country"],
-        as_dict=True
+        ["name", "seller", "status"],
+        as_dict=True,
     )
 
     if not ad_doc:
-        return fail("Ad not found.", code="NOT_FOUND")
-
-    # Market isolation
-    if ad_doc.country != country:
         return fail("Ad not found.", code="NOT_FOUND")
 
     if ad_doc.status in ("Deleted", "Suspended"):
@@ -67,8 +57,8 @@ def create_report_impl(**kwargs):
         "AOS Ad Report",
         {
             "ad": ad,
-            "reported_by": current_user
-        }
+            "reported_by": current_user,
+        },
     ):
         return fail("You have already reported this ad.", code="VALIDATION_ERROR")
 
@@ -84,7 +74,7 @@ def create_report_impl(**kwargs):
 
         return ok(
             "Report submitted successfully. Our team will review it.",
-            data={"id": report.name}
+            data={"id": report.name},
         )
 
     except frappe.ValidationError as ex:

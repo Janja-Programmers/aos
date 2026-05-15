@@ -1,13 +1,12 @@
-"""Create a Review for an Ad (Market-isolated)."""
+"""Create a Review for an Ad."""
 
 from __future__ import annotations
 
-from typing import Any, List
+from typing import List
 
 import frappe
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 
@@ -30,10 +29,10 @@ def create_review_impl(**kwargs):
     if rl:
         return rl
 
-    ad = kwargs.get("ad")
+    ad = str(kwargs.get("ad") or "").strip()
     rating = kwargs.get("rating")
-    comment = kwargs.get("comment")
-    title = kwargs.get("title")
+    comment = str(kwargs.get("comment") or "").strip()
+    title = str(kwargs.get("title") or "").strip()
     images: List[str] = kwargs.get("images") or []
 
     if not ad:
@@ -58,29 +57,21 @@ def create_review_impl(**kwargs):
     if len(images) > 5:
         return fail("Maximum 5 images allowed.", code="VALIDATION_ERROR")
 
-    # Market enforcement
-    country, error = resolve_market_country(None)
-    if error:
-        return error
-
     ad_doc = frappe.db.get_value(
         "AOS Ad",
         ad,
-        ["name", "seller", "status", "country"],
+        ["name", "seller", "status"],
         as_dict=True,
     )
 
     if not ad_doc or ad_doc.status != "Active":
         return fail("Ad not found.", code="NOT_FOUND")
 
-    if ad_doc.country != country:
-        return fail("Ad not found.", code="NOT_FOUND")
-
     # Prevent reviewing own ad
     seller_user = frappe.db.get_value(
         "AOS Seller",
         ad_doc.seller,
-        "user"
+        "user",
     )
 
     if seller_user == current_user:
@@ -91,8 +82,8 @@ def create_review_impl(**kwargs):
         "AOS Review",
         {
             "ad": ad,
-            "reviewer": current_user
-        }
+            "reviewer": current_user,
+        },
     ):
         return fail("You have already reviewed this ad.", code="VALIDATION_ERROR")
 
@@ -110,15 +101,15 @@ def create_review_impl(**kwargs):
             child.image = img
 
         review.insert(ignore_permissions=True)
-        frappe.db.commit()
 
         return ok(
             "Review submitted and pending approval.",
-            data={"id": review.name}
+            data={"id": review.name},
         )
 
     except frappe.ValidationError as ex:
         return fail(str(ex), code="VALIDATION_ERROR")
+
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Create Review Failed")
         return fail("Failed to create review.", code="INTERNAL_ERROR")

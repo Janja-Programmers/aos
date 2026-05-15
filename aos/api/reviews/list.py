@@ -1,4 +1,4 @@
-"""List Approved Reviews for an Ad (Market-isolated)."""
+"""List Approved Reviews for an Ad."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ from typing import Any, Dict, List
 
 import frappe
 
-from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.responses import fail, ok
 
 
@@ -16,8 +15,8 @@ ALLOWED_SORTS = {"newest", "helpful", "rating_high", "rating_low"}
 def list_reviews_impl(**kwargs):
     """List approved reviews for a specific Ad with summary & distribution."""
 
-    ad = kwargs.get("ad")
-    sort = (kwargs.get("sort") or "newest").strip()
+    ad = str(kwargs.get("ad") or "").strip()
+    sort = str(kwargs.get("sort") or "newest").strip()
     rating_filter = kwargs.get("rating")
 
     try:
@@ -40,24 +39,21 @@ def list_reviews_impl(**kwargs):
     if rating_filter is not None:
         try:
             rating_filter = int(rating_filter)
+
             if rating_filter not in (1, 2, 3, 4, 5):
                 raise ValueError
+
         except Exception:
             return fail("Invalid rating filter.", code="VALIDATION_ERROR")
-
-    # Market enforcement
-    country, error = resolve_market_country(kwargs.get("country"))
-    if error:
-        return error
 
     ad_doc = frappe.db.get_value(
         "AOS Ad",
         ad,
-        ["country", "average_rating", "total_reviews"],
-        as_dict=True
+        ["name", "status", "average_rating", "total_reviews"],
+        as_dict=True,
     )
 
-    if not ad_doc or ad_doc.country != country:
+    if not ad_doc or ad_doc.status != "Active":
         return fail("Ad not found.", code="NOT_FOUND")
 
     try:
@@ -74,13 +70,14 @@ def list_reviews_impl(**kwargs):
         )
 
         distribution: Dict[str, int] = {str(i): 0 for i in range(1, 6)}
+
         for row in distribution_rows:
             distribution[str(int(row["rating"]))] = int(row["count"])
 
         # Filters
         filters: Dict[str, Any] = {
             "ad": ad,
-            "status": "Approved"
+            "status": "Approved",
         }
 
         if rating_filter is not None:
@@ -108,11 +105,11 @@ def list_reviews_impl(**kwargs):
                 "reviewer",
                 "creation",
                 "like_count",
-                "dislike_count"
+                "dislike_count",
             ],
             order_by=order_by,
             limit=limit,
-            start=offset
+            start=offset,
         )
 
         total = frappe.db.count("AOS Review", filters)
@@ -129,9 +126,9 @@ def list_reviews_impl(**kwargs):
                 "AOS Review Reaction",
                 filters={
                     "review": ["in", review_names],
-                    "user": current_user
+                    "user": current_user,
                 },
-                fields=["review", "reaction"]
+                fields=["review", "reaction"],
             )
 
             for r in reactions:
@@ -145,15 +142,13 @@ def list_reviews_impl(**kwargs):
                 "AOS Review Image",
                 filters={
                     "parenttype": "AOS Review",
-                    "parent": ["in", review_names]
+                    "parent": ["in", review_names],
                 },
                 fields=["parent", "image"],
             )
 
             for row in image_rows:
-                images_map.setdefault(row["parent"], []).append(
-                    row["image"]
-                )
+                images_map.setdefault(row["parent"], []).append(row["image"])
 
         # Reviewer Info
         reviewer_emails = list({r["reviewer"] for r in reviews})
@@ -163,13 +158,13 @@ def list_reviews_impl(**kwargs):
             users = frappe.get_all(
                 "User",
                 filters={"name": ["in", reviewer_emails]},
-                fields=["name", "first_name", "user_image"]
+                fields=["name", "first_name", "user_image"],
             )
 
             for u in users:
                 user_map[u["name"]] = {
                     "full_name": u["first_name"] or "",
-                    "avatar": u["user_image"] or ""
+                    "avatar": u["user_image"] or "",
                 }
 
         # Format Response
@@ -178,21 +173,23 @@ def list_reviews_impl(**kwargs):
         for r in reviews:
             reviewer_info = user_map.get(r["reviewer"], {})
 
-            formatted_reviews.append({
-                "id": r["name"],
-                "rating": r["rating"],
-                "title": r["title"],
-                "comment": r["comment"],
-                "created_at": r["creation"],
-                "like_count": r["like_count"],
-                "dislike_count": r["dislike_count"],
-                "user_reaction": user_reactions_map.get(r["name"]),
-                "reviewer": {
-                    "full_name": reviewer_info.get("full_name", ""),
-                    "avatar": reviewer_info.get("avatar", "")
-                },
-                "images": images_map.get(r["name"], [])
-            })
+            formatted_reviews.append(
+                {
+                    "id": r["name"],
+                    "rating": r["rating"],
+                    "title": r["title"],
+                    "comment": r["comment"],
+                    "created_at": r["creation"],
+                    "like_count": r["like_count"],
+                    "dislike_count": r["dislike_count"],
+                    "user_reaction": user_reactions_map.get(r["name"]),
+                    "reviewer": {
+                        "full_name": reviewer_info.get("full_name", ""),
+                        "avatar": reviewer_info.get("avatar", ""),
+                    },
+                    "images": images_map.get(r["name"], []),
+                }
+            )
 
         return ok(
             "Reviews fetched.",
