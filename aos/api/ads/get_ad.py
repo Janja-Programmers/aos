@@ -1,12 +1,9 @@
 """
 Get a single Ad by id.
-Country isolation and seller enforcement are strictly enforced.
 Pricing operates in display currency.
 """
 
 from __future__ import annotations
-
-from typing import Any, Dict
 
 import frappe
 from frappe.utils import nowdate, getdate
@@ -38,7 +35,7 @@ def get_ad_impl(**kwargs):
         return fail("Ad id is required.", code="VALIDATION_ERROR")
 
     # Market Context
-    country, display_currency, error = resolve_market_context(
+    _country, display_currency, error = resolve_market_context(
         country=kwargs.get("country"),
         currency=kwargs.get("currency"),
     )
@@ -89,7 +86,6 @@ def get_ad_impl(**kwargs):
             ON er_target.currency = %(display_currency)s
         WHERE a.name = %(ad_id)s
           AND a.status = 'Active'
-          AND a.country = %(country)s
           AND s.status = 'Active'
           AND (a.expires_on IS NULL OR a.expires_on >= %(today)s)
         LIMIT 1
@@ -101,7 +97,6 @@ def get_ad_impl(**kwargs):
             {
                 "ad_id": ad_id,
                 "today": today,
-                "country": country,
                 "display_currency": display_currency,
             },
             as_dict=True,

@@ -4,7 +4,7 @@ List Ads for buyers.
 Rules:
  - Only Active ads are returned
  - Seller must be Active
- - Country isolation is strictly enforced
+ - Preferred country and location are ranked first
  - Expired ads are excluded in real-time
  - Optional filters supported
  - Sorting and filtering operate in display currency
@@ -129,7 +129,6 @@ def list_ads_impl(**kwargs):
     # Base Conditions
     conditions = [
         "a.status = 'Active'",
-        "a.country = %(country)s",
         "s.status = 'Active'",
         "(a.expires_on IS NULL OR a.expires_on >= %(today)s)",
     ]
@@ -144,11 +143,6 @@ def list_ads_impl(**kwargs):
     if seller:
         conditions.append("a.seller = %(seller)s")
         values["seller"] = seller
-
-    # Location filter
-    if location:
-        conditions.append("a.location = %(location)s")
-        values["location"] = location
 
     # Category filter
     if category:
@@ -245,21 +239,59 @@ def list_ads_impl(**kwargs):
 
     # Sorting
     verified_boost = "COALESCE(p.is_verified, 0) DESC"
+    country_boost = "CASE WHEN a.country = %(country)s THEN 0 ELSE 1 END"
+    location_boost = ""
+
+    if location:
+        values["location"] = location
+        location_boost = "CASE WHEN a.location = %(location)s THEN 0 ELSE 1 END"
+
+    geo_boost_parts = [country_boost]
+
+    if location_boost:
+        geo_boost_parts.append(location_boost)
+
+    geo_boost = ", ".join(geo_boost_parts)
 
     if promotion_type == "deal":
-        order_by = f"{verified_boost}, IFNULL(a.offer_percent,0) DESC, a.creation DESC"
+        order_by = (
+            f"{geo_boost}, "
+            f"{verified_boost}, "
+            "IFNULL(a.offer_percent,0) DESC, "
+            "a.creation DESC"
+        )
 
     elif sort == "rating_high":
-        order_by = f"{verified_boost}, a.average_rating DESC, a.total_reviews DESC, a.creation DESC"
+        order_by = (
+            f"{geo_boost}, "
+            f"{verified_boost}, "
+            "a.average_rating DESC, "
+            "a.total_reviews DESC, "
+            "a.creation DESC"
+        )
 
     elif sort == "recent":
-        order_by = f"{verified_boost}, a.creation DESC"
+        order_by = (
+            f"{geo_boost}, "
+            f"{verified_boost}, "
+            "a.creation DESC"
+        )
 
     elif sort == "price_low":
-        order_by = f"{verified_boost}, {current_price_sql} ASC, a.creation DESC"
+        order_by = (
+            f"{geo_boost}, "
+            f"{verified_boost}, "
+            f"{current_price_sql} ASC, "
+            "a.creation DESC"
+        )
 
     elif sort == "price_high":
-        order_by = f"{verified_boost}, {current_price_sql} DESC, a.creation DESC"
+        order_by = (
+            f"{geo_boost}, "
+            f"{verified_boost}, "
+            f"{current_price_sql} DESC, "
+            "a.creation DESC"
+        )
 
     # SQL Query
     sql = f"""
@@ -313,7 +345,9 @@ def list_ads_impl(**kwargs):
         # Images
         ad_names = [row["name"] for row in rows]
 
-        images_by_ad: Dict[str, List[Dict[str, Any]]] = {name: [] for name in ad_names}
+        images_by_ad: Dict[str, List[Dict[str, Any]]] = {
+            name: [] for name in ad_names
+        }
 
         if ad_names:
             image_rows = frappe.get_all(
