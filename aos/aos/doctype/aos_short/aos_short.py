@@ -21,6 +21,11 @@ class AOSShort(Document):
 
     def validate(self):
         self._validate_content_mode()
+
+        # Deleted shorts must not be blocked by old ad/content validation.
+        if self.status == "deleted" or self.visibility_status == "deleted":
+            return
+
         self._validate_ad()
         self._validate_content()
         self._validate_duration()
