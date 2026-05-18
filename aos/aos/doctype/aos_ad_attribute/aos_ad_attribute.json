@@ -13,7 +13,6 @@
   "help_text",
   "column_break_xthm",
   "options",
-  "sort_order",
   "is_active"
  ],
  "fields": [
@@ -55,12 +54,6 @@
    "label": "Options"
   },
   {
-   "fieldname": "sort_order",
-   "fieldtype": "Int",
-   "in_list_view": 1,
-   "label": "Sort Order"
-  },
-  {
    "default": "1",
    "fieldname": "is_active",
    "fieldtype": "Check",
@@ -71,7 +64,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-22 17:51:10.016587",
+ "modified": "2026-05-18 14:34:09.720205",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad Attribute",
