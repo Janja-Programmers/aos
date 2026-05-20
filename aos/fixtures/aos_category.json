@@ -4,6 +4,91 @@
   "allowed_price_units": null,
   "attributes": [
    {
+    "attribute": "Condition",
+    "is_active": 1,
+    "is_required": 1,
+    "options_override": null,
+    "sort_order": 10
+   }
+  ],
+  "category_name": "Babies & Kids",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-05-18 14:44:28.601239",
+  "name": "Babies & Kids",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 1
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Type",
+    "is_active": 1,
+    "is_required": 1,
+    "options_override": null,
+    "sort_order": 1
+   },
+   {
+    "attribute": "Brand",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 2
+   }
+  ],
+  "category_name": "Beauty & Personal Care",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-05-18 15:53:16.796073",
+  "name": "Beauty & Personal Care",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 2
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
+    "attribute": "Condition",
+    "is_active": 1,
+    "is_required": 0,
+    "options_override": null,
+    "sort_order": 10
+   }
+  ],
+  "category_name": "Commercial Equipment & Tools",
+  "docstatus": 0,
+  "doctype": "AOS Category",
+  "icon": null,
+  "is_active": 1,
+  "is_group": 1,
+  "is_service": 0,
+  "modified": "2026-05-18 19:02:59.979582",
+  "name": "Commercial Equipment & Tools",
+  "old_parent": "",
+  "parent_aos_category": null,
+  "pricing_requirement": "Required",
+  "sort_order": 3
+ },
+ {
+  "allowed_price_types": "Fixed\nNegotiable",
+  "allowed_price_units": null,
+  "attributes": [
+   {
     "attribute": "Type",
     "is_active": 1,
     "is_required": 1,
@@ -801,31 +886,20 @@
   "allowed_price_units": null,
   "attributes": [
    {
-    "attribute": "Condition",
+    "attribute": "Type",
+    "is_active": 1,
+    "is_required": 1,
+    "options_override": "Containers\nHoists\nSealing Machines\nPackaging Machines\nFilling Machines\nMixing Machines\nGrinding Machines\nCutting Machines\nWelding Machines\nCompressors\nGenerators\nConveyor Systems\nIndustrial Ovens\nPumps\nProcessing Machines\nOther",
+    "sort_order": 1
+   },
+   {
+    "attribute": "Weight",
     "is_active": 1,
     "is_required": 0,
     "options_override": null,
-    "sort_order": 10
+    "sort_order": 2
    }
   ],
-  "category_name": "Commercial Equipment & Tools",
-  "docstatus": 0,
-  "doctype": "AOS Category",
-  "icon": null,
-  "is_active": 1,
-  "is_group": 1,
-  "is_service": 0,
-  "modified": "2026-05-18 19:02:59.979582",
-  "name": "Commercial Equipment & Tools",
-  "old_parent": "",
-  "parent_aos_category": null,
-  "pricing_requirement": "Required",
-  "sort_order": 3
- },
- {
-  "allowed_price_types": "Fixed\nNegotiable",
-  "allowed_price_units": null,
-  "attributes": [],
   "category_name": "Manufacturing Equipment",
   "docstatus": 0,
   "doctype": "AOS Category",
@@ -833,70 +907,11 @@
   "is_active": 1,
   "is_group": 0,
   "is_service": 0,
-  "modified": "2026-05-18 19:03:56.483800",
+  "modified": "2026-05-18 22:55:55.515061",
   "name": "Manufacturing Equipment",
   "old_parent": "Commercial Equipment & Tools",
   "parent_aos_category": "Commercial Equipment & Tools",
   "pricing_requirement": "Required",
   "sort_order": 1
- },
- {
-  "allowed_price_types": "Fixed\nNegotiable",
-  "allowed_price_units": null,
-  "attributes": [
-   {
-    "attribute": "Condition",
-    "is_active": 1,
-    "is_required": 1,
-    "options_override": null,
-    "sort_order": 10
-   }
-  ],
-  "category_name": "Babies & Kids",
-  "docstatus": 0,
-  "doctype": "AOS Category",
-  "icon": null,
-  "is_active": 1,
-  "is_group": 1,
-  "is_service": 0,
-  "modified": "2026-05-18 14:44:28.601239",
-  "name": "Babies & Kids",
-  "old_parent": "",
-  "parent_aos_category": null,
-  "pricing_requirement": "Required",
-  "sort_order": 1
- },
- {
-  "allowed_price_types": "Fixed\nNegotiable",
-  "allowed_price_units": null,
-  "attributes": [
-   {
-    "attribute": "Type",
-    "is_active": 1,
-    "is_required": 1,
-    "options_override": null,
-    "sort_order": 1
-   },
-   {
-    "attribute": "Brand",
-    "is_active": 1,
-    "is_required": 0,
-    "options_override": null,
-    "sort_order": 2
-   }
-  ],
-  "category_name": "Beauty & Personal Care",
-  "docstatus": 0,
-  "doctype": "AOS Category",
-  "icon": null,
-  "is_active": 1,
-  "is_group": 1,
-  "is_service": 0,
-  "modified": "2026-05-18 15:53:16.796073",
-  "name": "Beauty & Personal Care",
-  "old_parent": "",
-  "parent_aos_category": null,
-  "pricing_requirement": "Required",
-  "sort_order": 2
  }
 ]

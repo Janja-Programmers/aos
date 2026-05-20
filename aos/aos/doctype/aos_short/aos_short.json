@@ -224,13 +224,13 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Content Mode",
-   "options": "shop\ngeo\ntalent\nlearn",
+   "options": "shop\ngeo\nvibes\nlearn",
    "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-05-12 09:15:45.279654",
+ "modified": "2026-05-20 16:08:14.554670",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Short",
