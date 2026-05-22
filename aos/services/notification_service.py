@@ -83,11 +83,16 @@ class NotificationService:
         """
         Deliver notification via push.
         """
+        push_payload = dict(payload or {})
+
+        if event:
+            push_payload["event"] = event
+
         PushService.send_to_user(
             user=user,
             title=title,
             body=body,
-            data=payload,
+            data=push_payload,
         )
 
     # GENERIC ENTRY POINT
