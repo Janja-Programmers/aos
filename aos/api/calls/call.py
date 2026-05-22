@@ -159,6 +159,33 @@ def _build_call_response(
     return data
 
 
+def _build_incoming_call_push_payload(
+    *,
+    call,
+    receiver: str,
+) -> dict:
+    """
+    Build canonical incoming-call payload for FCM push reconstruction.
+    """
+
+    payload = serialize_call_for_realtime(
+        call,
+        current_user=receiver,
+        event_status="incoming",
+        actor=call.caller,
+    )
+
+    payload.update(
+        {
+            "event": "aos_incoming_call",
+            "type": "incoming_call",
+            "notification_type": "incoming_call",
+        }
+    )
+
+    return payload
+
+
 def _reload_call(call_id: str):
     return frappe.get_doc("AOS Call", call_id)
 
@@ -237,11 +264,17 @@ def initiate_call_impl(**kwargs):
         publish_incoming_call(call, receiver)
 
         # Notification.
+        incoming_payload = _build_incoming_call_push_payload(
+            call=call,
+            receiver=receiver,
+        )
+
         NotificationService.notify_incoming_call(
             user=receiver,
             caller=current_user,
             call_id=call.name,
             call_type=call.call_type,
+            payload=incoming_payload,
         )
 
         # Generate caller token.

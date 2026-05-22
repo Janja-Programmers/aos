@@ -2,6 +2,12 @@ from __future__ import annotations
 
 import frappe
 
+from aos.api.calls.constants import (
+    INCOMING_CALL_ANDROID_CHANNEL_ID,
+    INCOMING_CALL_ANDROID_NOTIFICATION_PRIORITY,
+    INCOMING_CALL_FCM_PRIORITY,
+    INCOMING_CALL_FCM_TTL_SECONDS,
+)
 from aos.services.push_service import PushService
 
 
@@ -79,9 +85,16 @@ class NotificationService:
         title: str,
         body: str,
         payload: dict,
+        priority: str | None = None,
+        ttl_seconds: int | None = None,
+        android_channel_id: str | None = None,
+        android_notification_priority: str | None = None,
     ):
         """
         Deliver notification via push.
+
+        Optional push options are mainly used by incoming calls.
+        PushService translates these into Firebase Admin SDK platform configs.
         """
         push_payload = dict(payload or {})
 
@@ -93,6 +106,10 @@ class NotificationService:
             title=title,
             body=body,
             data=push_payload,
+            priority=priority,
+            ttl_seconds=ttl_seconds,
+            android_channel_id=android_channel_id,
+            android_notification_priority=android_notification_priority,
         )
 
     # GENERIC ENTRY POINT
@@ -107,6 +124,10 @@ class NotificationService:
         actor: str | None = None,
         payload: dict | None = None,
         event: str | None = None,
+        priority: str | None = None,
+        ttl_seconds: int | None = None,
+        android_channel_id: str | None = None,
+        android_notification_priority: str | None = None,
     ):
         if not user:
             return None
@@ -134,6 +155,10 @@ class NotificationService:
             title=title,
             body=body,
             payload=payload,
+            priority=priority,
+            ttl_seconds=ttl_seconds,
+            android_channel_id=android_channel_id,
+            android_notification_priority=android_notification_priority,
         )
 
         return doc
@@ -172,8 +197,21 @@ class NotificationService:
         caller: str,
         call_id: str,
         call_type: str,
+        payload: dict | None = None,
     ):
         caller_name = cls._display_name(caller)
+
+        call_payload = dict(payload or {})
+
+        # Minimal fallback only. Do not overwrite rich payload from call.py.
+        call_payload.setdefault("event", "aos_incoming_call")
+        call_payload.setdefault("type", "incoming_call")
+        call_payload.setdefault("notification_type", "incoming_call")
+        call_payload.setdefault("call_id", call_id)
+        call_payload.setdefault("id", call_id)
+        call_payload.setdefault("caller", caller)
+        call_payload.setdefault("call_type", call_type)
+        call_payload.setdefault("caller_display_name", caller_name)
 
         cls.notify(
             user=user,
@@ -181,12 +219,12 @@ class NotificationService:
             title="Incoming Call",
             body=f"{caller_name} is calling you",
             actor=caller,
-            payload={
-                "call_id": call_id,
-                "caller": caller,
-                "call_type": call_type,
-            },
+            payload=call_payload,
             event="aos_incoming_call",
+            priority=INCOMING_CALL_FCM_PRIORITY,
+            ttl_seconds=INCOMING_CALL_FCM_TTL_SECONDS,
+            android_channel_id=INCOMING_CALL_ANDROID_CHANNEL_ID,
+            android_notification_priority=INCOMING_CALL_ANDROID_NOTIFICATION_PRIORITY,
         )
 
     @classmethod
@@ -208,6 +246,8 @@ class NotificationService:
             payload={
                 "call_id": call_id,
                 "caller": caller,
+                "type": "missed_call",
+                "notification_type": "missed_call",
             },
             event="aos_missed_call",
         )

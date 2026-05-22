@@ -19,6 +19,11 @@ from .call import (
     end_call_impl,
 )
 
+# Status
+from .status import (
+    get_call_status_impl,
+)
+
 # Token
 from .token import (
     get_call_token_impl,
@@ -65,6 +70,13 @@ def cancel_call(**kwargs):
 def end_call(**kwargs):
     """End an ongoing call."""
     return end_call_impl(**kwargs)
+
+
+# Status API
+@frappe.whitelist(methods=["GET", "POST"])
+def get_call_status(**kwargs):
+    """Get current call state."""
+    return get_call_status_impl(**kwargs)
 
 
 # Token API
