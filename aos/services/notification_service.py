@@ -1,13 +1,6 @@
 from __future__ import annotations
 
 import frappe
-
-from aos.api.calls.constants import (
-    INCOMING_CALL_ANDROID_CHANNEL_ID,
-    INCOMING_CALL_ANDROID_NOTIFICATION_PRIORITY,
-    INCOMING_CALL_FCM_PRIORITY,
-    INCOMING_CALL_FCM_TTL_SECONDS,
-)
 from aos.services.push_service import PushService
 
 
@@ -25,6 +18,12 @@ class NotificationService:
     - Seller docnames should not be passed as notification users/actors unless
       that seller docname is intentionally the same as the User ID.
     """
+
+    # CALL PUSH CONFIG
+    INCOMING_CALL_FCM_PRIORITY = "high"
+    INCOMING_CALL_FCM_TTL_SECONDS = 30
+    INCOMING_CALL_ANDROID_CHANNEL_ID = "aos_calls"
+    INCOMING_CALL_ANDROID_NOTIFICATION_PRIORITY = "max"
 
     # CORE
     @staticmethod
@@ -221,10 +220,10 @@ class NotificationService:
             actor=caller,
             payload=call_payload,
             event="aos_incoming_call",
-            priority=INCOMING_CALL_FCM_PRIORITY,
-            ttl_seconds=INCOMING_CALL_FCM_TTL_SECONDS,
-            android_channel_id=INCOMING_CALL_ANDROID_CHANNEL_ID,
-            android_notification_priority=INCOMING_CALL_ANDROID_NOTIFICATION_PRIORITY,
+            priority=cls.INCOMING_CALL_FCM_PRIORITY,
+            ttl_seconds=cls.INCOMING_CALL_FCM_TTL_SECONDS,
+            android_channel_id=cls.INCOMING_CALL_ANDROID_CHANNEL_ID,
+            android_notification_priority=cls.INCOMING_CALL_ANDROID_NOTIFICATION_PRIORITY,
         )
 
     @classmethod
