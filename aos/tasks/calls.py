@@ -2,10 +2,12 @@
 Call background tasks.
 
 Handles:
-- missed call detection
+- per-call missed call timeout
+- missed call cleanup detection
 """
 
 from __future__ import annotations
+import time
 
 import frappe
 from frappe.utils import add_to_date, now_datetime
@@ -16,12 +18,28 @@ from aos.services.notification_service import NotificationService
 
 
 # CONSTANTS
-MISSED_CALL_TIMEOUT_SECONDS = 30
+CALL_TIMEOUT_SECONDS = 30
+CALL_CLEANUP_TIMEOUT_SECONDS = 90
 BATCH_SIZE = 100
 
 
 def _log_error(title: str):
     frappe.log_error(frappe.get_traceback(), title)
+
+
+def _safe_delay_seconds(delay_seconds=None) -> int:
+    """
+    Normalize timeout delay.
+
+    The timeout job receives delay_seconds from call.py.
+    If missing or invalid, fall back to CALL_TIMEOUT_SECONDS.
+    """
+    try:
+        value = int(delay_seconds if delay_seconds is not None else CALL_TIMEOUT_SECONDS)
+    except Exception:
+        value = CALL_TIMEOUT_SECONDS
+
+    return max(0, value)
 
 
 def _mark_call_as_missed(call_name: str, ended_at) -> bool:
@@ -84,9 +102,34 @@ def _handle_missed_call_side_effects(call):
         _log_error(f"AOS Missed Call Notification Failed: {call.name}")
 
 
+def _mark_missed_and_run_side_effects(call_name: str, ended_at=None) -> bool:
+    """
+    Shared missed-call finalizer.
+
+    Used by:
+    - per-call timeout job
+    - cron cleanup job
+
+    Returns True only if the call was actually transitioned to missed.
+    Safe to run multiple times.
+    """
+    ended_at = ended_at or now_datetime()
+
+    updated = _mark_call_as_missed(call_name, ended_at)
+
+    if not updated:
+        return False
+
+    fresh_call = _reload_call(call_name)
+
+    _handle_missed_call_side_effects(fresh_call)
+
+    return True
+
+
 def _get_expired_initiated_calls(cutoff):
     """
-    Calls that were created but never reached ringing before timeout.
+    Calls that were created but never reached ringing before cleanup timeout.
     """
     return frappe.get_all(
         "AOS Call",
@@ -107,7 +150,7 @@ def _get_expired_initiated_calls(cutoff):
 def _get_expired_ringing_calls(cutoff):
     """
     Calls that reached ringing but were not answered/rejected/cancelled
-    before timeout.
+    before cleanup timeout.
     """
     return frappe.get_all(
         "AOS Call",
@@ -150,10 +193,52 @@ def _get_expired_calls(cutoff):
     return result
 
 
+# TASK: HANDLE SINGLE CALL TIMEOUT
+def handle_call_timeout(call_id: str, delay_seconds: int | None = None):
+    """
+    Per-call timeout job.
+
+    This job is enqueued immediately when a call is initiated using
+    frappe.enqueue().
+
+    Behavior:
+    - Sleep for delay_seconds.
+    - If the call is still initiated/ringing, mark it as missed.
+    - If the call was accepted/rejected/cancelled/ended already, do nothing.
+    - Atomic DB update prevents race conditions.
+    - Side effects run only if this job actually changed the call state.
+
+    This is the primary missed-call mechanism for predictable call timeout.
+    The cron job remains as a fallback cleanup.
+    """
+    if not call_id:
+        return
+
+    try:
+        delay = _safe_delay_seconds(delay_seconds)
+
+        if delay > 0:
+            time.sleep(delay)
+
+        changed = _mark_missed_and_run_side_effects(
+            call_name=call_id,
+            ended_at=now_datetime(),
+        )
+
+        if changed:
+            frappe.db.commit()
+
+    except Exception:
+        frappe.db.rollback()
+        _log_error(f"AOS Call Timeout Failed: {call_id}")
+
+
 # TASK: HANDLE MISSED CALLS
 def handle_missed_calls():
     """
-    Mark calls as missed if not answered within timeout.
+    Cleanup fallback.
+
+    Mark calls as missed if not answered within cleanup timeout.
 
     Guarantees:
     - DB fetches only expired candidates.
@@ -165,10 +250,14 @@ def handle_missed_calls():
     - Side effects receive fresh call state after update.
     - Side effects are isolated for resilience.
     - Per-call commit for durability.
+
+    The per-call timeout job should handle normal missed calls.
+    This cron job catches abandoned/stuck calls if a timeout job fails,
+    is delayed, or is not enqueued.
     """
     try:
         now = now_datetime()
-        cutoff = add_to_date(now, seconds=-MISSED_CALL_TIMEOUT_SECONDS)
+        cutoff = add_to_date(now, seconds=-CALL_CLEANUP_TIMEOUT_SECONDS)
 
         calls = _get_expired_calls(cutoff)
 
@@ -177,16 +266,13 @@ def handle_missed_calls():
 
         for call in calls:
             try:
-                updated = _mark_call_as_missed(call.name, now)
+                changed = _mark_missed_and_run_side_effects(
+                    call_name=call.name,
+                    ended_at=now,
+                )
 
-                if not updated:
-                    continue
-
-                fresh_call = _reload_call(call.name)
-
-                _handle_missed_call_side_effects(fresh_call)
-
-                frappe.db.commit()
+                if changed:
+                    frappe.db.commit()
 
             except Exception:
                 frappe.db.rollback()

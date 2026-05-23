@@ -29,6 +29,10 @@ from .constants import (
     REJECT_CALL_LIMIT_PER_MINUTE_PER_USER,
     CANCEL_CALL_LIMIT_PER_MINUTE_PER_USER,
     END_CALL_LIMIT_PER_MINUTE_PER_USER,
+    CALL_TIMEOUT_SECONDS,
+    CALL_TIMEOUT_JOB_PATH,
+    CALL_TIMEOUT_JOB_QUEUE,
+    CALL_TIMEOUT_JOB_EXTRA_BUFFER_SECONDS,
 )
 
 from .validators import (
@@ -51,6 +55,7 @@ from .utils import upsert_call_system_message
 from .realtime import (
     serialize_call_for_realtime,
     publish_incoming_call,
+    publish_call_ringing,
     publish_call_accepted,
     publish_call_rejected,
     publish_call_cancelled,
@@ -200,6 +205,38 @@ def _safe_duration_seconds(started_at, ended_at) -> int:
     return max(0, int((ended - started).total_seconds()))
 
 
+def _enqueue_call_timeout(call_id: str):
+    """
+    Enqueue a per-call timeout job.
+
+    The queued task sleeps for CALL_TIMEOUT_SECONDS inside the background
+    worker, then atomically checks whether the call is still initiated/ringing.
+    If yes, it marks the call as missed.
+
+    The API request is not blocked. The cron cleanup remains as fallback.
+    """
+    if not call_id:
+        return
+
+    try:
+        frappe.enqueue(
+            CALL_TIMEOUT_JOB_PATH,
+            queue=CALL_TIMEOUT_JOB_QUEUE,
+            timeout=CALL_TIMEOUT_SECONDS + CALL_TIMEOUT_JOB_EXTRA_BUFFER_SECONDS,
+            job_name=f"aos_call_timeout:{call_id}",
+            enqueue_after_commit=True,
+            call_id=call_id,
+            delay_seconds=CALL_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        # Do not fail call initiation if timeout scheduling fails.
+        # The cron cleanup task remains as a fallback.
+        frappe.log_error(
+            frappe.get_traceback(),
+            f"AOS Call Timeout Enqueue Failed: {call_id}",
+        )
+
+
 # INITIATE CALL
 def initiate_call_impl(**kwargs):
     current_user, err = require_login()
@@ -252,6 +289,10 @@ def initiate_call_impl(**kwargs):
         call.call_type = call_type
         call.status = "initiated"
         call.insert(ignore_permissions=True)
+
+        # Schedule per-call missed timeout.
+        # This makes missed-call timing more predictable than relying only on cron.
+        _enqueue_call_timeout(call.name)
 
         # System message.
         upsert_call_system_message(
@@ -341,6 +382,18 @@ def mark_call_ringing_impl(**kwargs):
         if err:
             return err
 
+        # Idempotent success:
+        # If the receiver app retries after the call is already ringing,
+        # return success without rewriting ringing_at or publishing duplicate events.
+        if call.status == "ringing":
+            return ok(
+                "Call is already ringing.",
+                data=_build_call_response(
+                    call=call,
+                    current_user=current_user,
+                ),
+            )
+
         err = validate_can_mark_ringing(call)
         if err:
             return err
@@ -352,7 +405,7 @@ def mark_call_ringing_impl(**kwargs):
             UPDATE `tabAOS Call`
             SET
                 status = 'ringing',
-                ringing_at = %s
+                ringing_at = COALESCE(ringing_at, %s)
             WHERE name = %s
               AND receiver = %s
               AND status = 'initiated'
@@ -364,6 +417,9 @@ def mark_call_ringing_impl(**kwargs):
             return fail("Call cannot be marked as ringing.", code="INVALID_STATE")
 
         call = _reload_call(call_id)
+
+        # Notify caller that receiver's device/app is now ringing.
+        publish_call_ringing(call)
 
         return ok(
             "Call marked as ringing.",

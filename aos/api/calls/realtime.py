@@ -55,6 +55,8 @@ def serialize_call_for_realtime(
     - other_avatar
 
     actor is optional and represents the user who performed the event:
+    - incoming
+    - ringing
     - accepted
     - rejected
     - cancelled
@@ -141,6 +143,28 @@ def publish_incoming_call(call, receiver: str):
         event="aos_incoming_call",
         message=message,
         user=receiver,
+    )
+
+
+def publish_call_ringing(call):
+    """
+    Notify caller that receiver's device/app is ringing.
+
+    Sent to:
+    - caller only
+    """
+
+    message = serialize_call_for_realtime(
+        call,
+        current_user=call.caller,
+        event_status="ringing",
+        actor=call.receiver,
+    )
+
+    frappe.publish_realtime(
+        event="aos_call_ringing",
+        message=message,
+        user=call.caller,
     )
 
 
