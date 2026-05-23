@@ -3,9 +3,11 @@ Call History APIs (implementation).
 
 Handles:
 - list_calls
+- get_call_group_details
 """
 
 from __future__ import annotations
+from typing import Any
 
 import frappe
 
@@ -13,8 +15,16 @@ from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
 
-from .constants import LIST_CALLS_LIMIT_PER_MINUTE_PER_USER
+from .constants import (
+    LIST_CALLS_LIMIT_PER_MINUTE_PER_USER,
+    GET_CALL_GROUP_DETAILS_LIMIT_PER_MINUTE_PER_USER,
+)
 from .realtime import serialize_call_for_realtime
+
+
+# CONSTANTS
+RAW_FETCH_BATCH_SIZE = 100
+MAX_GROUP_FETCH_LOOPS = 50
 
 
 # HELPERS
@@ -31,6 +41,14 @@ def _clean_int(value, default: int, *, min_value: int, max_value: int) -> int:
         return max_value
 
     return parsed
+
+
+def _clean_str(value) -> str | None:
+    if value is None:
+        return None
+
+    value = str(value).strip()
+    return value or None
 
 
 def _validate_conversation_membership(
@@ -58,17 +76,123 @@ def _validate_conversation_membership(
     return None
 
 
+def _get_call_row(call_id: str):
+    return frappe.db.sql(
+        """
+        SELECT
+            name,
+            conversation,
+            room_name,
+            caller,
+            receiver,
+            status,
+            call_type,
+            is_active,
+            ringing_at,
+            started_at,
+            ended_at,
+            ended_by,
+            duration,
+            creation
+        FROM `tabAOS Call`
+        WHERE name = %(call_id)s
+        LIMIT 1
+        """,
+        {"call_id": call_id},
+        as_dict=True,
+    )
+
+
+def _fetch_call_by_id(call_id: str):
+    rows = _get_call_row(call_id)
+    return rows[0] if rows else None
+
+
+def _user_in_call(call, current_user: str) -> bool:
+    return current_user in (call.caller, call.receiver)
+
+
+def _get_direction(call, current_user: str) -> str:
+    return "outgoing" if call.caller == current_user else "incoming"
+
+
+def _get_other_user(call, current_user: str) -> str | None:
+    if call.caller == current_user:
+        return call.receiver
+
+    if call.receiver == current_user:
+        return call.caller
+
+    return None
+
+
+def _get_history_category(call, current_user: str) -> str:
+    """
+    Convert raw call status into a user-facing history category.
+
+    Important:
+    - Receiver sees cancelled incoming calls as missed.
+    - Caller sees cancelled calls as cancelled.
+    - Caller sees missed timeout as not_answered.
+    """
+
+    direction = _get_direction(call, current_user)
+    status = call.status
+
+    if direction == "incoming":
+        if status in ("missed", "cancelled"):
+            return "missed"
+
+        if status == "rejected":
+            return "declined"
+
+        if status == "ended":
+            return "completed"
+
+        if status in ("initiated", "ringing", "ongoing"):
+            return "active"
+
+        if status == "failed":
+            return "failed"
+
+        return status or "unknown"
+
+    # outgoing
+    if status == "missed":
+        return "not_answered"
+
+    if status == "cancelled":
+        return "cancelled"
+
+    if status == "rejected":
+        return "declined"
+
+    if status == "ended":
+        return "completed"
+
+    if status in ("initiated", "ringing", "ongoing"):
+        return "active"
+
+    if status == "failed":
+        return "failed"
+
+    return status or "unknown"
+
+
 def _serialize_call_row(call, current_user: str) -> dict:
     """
-    Serialize call history row.
+    Serialize one raw call row.
 
     Returns the same rich call shape used by call realtime/API responses,
-    plus history-specific direction helpers.
+    plus history-specific direction/category helpers.
     """
 
-    is_outgoing = call.caller == current_user
-    is_incoming = not is_outgoing
-    is_missed = call.status == "missed" and is_incoming
+    direction = _get_direction(call, current_user)
+    is_outgoing = direction == "outgoing"
+    is_incoming = direction == "incoming"
+    history_category = _get_history_category(call, current_user)
+
+    is_missed = is_incoming and history_category == "missed"
 
     item = serialize_call_for_realtime(
         call,
@@ -77,7 +201,8 @@ def _serialize_call_row(call, current_user: str) -> dict:
 
     item.update(
         {
-            "direction": "outgoing" if is_outgoing else "incoming",
+            "direction": direction,
+            "history_category": history_category,
             "is_outgoing": is_outgoing,
             "is_incoming": is_incoming,
             "is_missed": is_missed,
@@ -86,6 +211,328 @@ def _serialize_call_row(call, current_user: str) -> dict:
     )
 
     return item
+
+
+def _group_compare_key(serialized_call: dict) -> tuple:
+    """
+    Consecutive calls belong to the same group only if this key matches.
+
+    No time-window grouping is used.
+    """
+
+    return (
+        serialized_call.get("other_user"),
+        serialized_call.get("direction"),
+        serialized_call.get("call_type"),
+        serialized_call.get("history_category"),
+    )
+
+
+def _new_group(serialized_call: dict) -> dict[str, Any]:
+    key = _group_compare_key(serialized_call)
+
+    return {
+        "_compare_key": key,
+        "group_count": 1,
+        "direction": serialized_call.get("direction"),
+        "history_category": serialized_call.get("history_category"),
+        "call_type": serialized_call.get("call_type"),
+        "other_user": serialized_call.get("other_user"),
+        "other_display_name": serialized_call.get("other_display_name"),
+        "other_avatar": serialized_call.get("other_avatar"),
+        "latest_call_id": serialized_call.get("call_id"),
+        "oldest_call_id": serialized_call.get("call_id"),
+        "created_at": serialized_call.get("created_at"),
+        "latest_call": serialized_call,
+        "_oldest_call": serialized_call,
+    }
+
+
+def _add_to_group(group: dict, serialized_call: dict):
+    group["group_count"] += 1
+    group["oldest_call_id"] = serialized_call.get("call_id")
+    group["_oldest_call"] = serialized_call
+
+
+def _finalize_group(group: dict) -> dict:
+    group.pop("_compare_key", None)
+    oldest_call = group.pop("_oldest_call", None)
+
+    group["group_key"] = (
+        f"{group.get('direction')}:"
+        f"{group.get('history_category')}:"
+        f"{group.get('call_type')}:"
+        f"{group.get('other_user')}:"
+        f"{group.get('latest_call_id')}:"
+        f"{group.get('oldest_call_id')}"
+    )
+
+    group["cursor"] = {
+        "created_at": oldest_call.get("created_at") if oldest_call else None,
+        "name": oldest_call.get("call_id") if oldest_call else None,
+    }
+
+    return group
+
+
+def _build_base_conditions_and_values(
+    *,
+    current_user: str,
+    conversation_id: str | None,
+    filter_type: str,
+):
+    conditions = [
+        "(caller = %(current_user)s OR receiver = %(current_user)s)"
+    ]
+
+    values = {
+        "current_user": current_user,
+    }
+
+    if conversation_id:
+        conditions.append("conversation = %(conversation_id)s")
+        values["conversation_id"] = conversation_id
+
+    # TYPE FILTERING
+    if filter_type == "incoming":
+        # Incoming tab should show received calls that were actively handled.
+        # Missed/cancelled unanswered incoming calls belong in the missed tab.
+        conditions.append("receiver = %(current_user)s")
+        conditions.append("status NOT IN ('missed', 'cancelled')")
+
+    elif filter_type == "outgoing":
+        conditions.append("caller = %(current_user)s")
+
+    elif filter_type == "missed":
+        # From the receiver's perspective, both missed and caller-cancelled
+        # calls are unanswered incoming call attempts.
+        conditions.append("receiver = %(current_user)s")
+        conditions.append("status IN ('missed', 'cancelled')")
+
+    return conditions, values
+
+
+def _fetch_call_rows(
+    *,
+    conditions: list[str],
+    values: dict,
+    cursor_created_at=None,
+    cursor_name: str | None = None,
+    limit: int = RAW_FETCH_BATCH_SIZE,
+):
+    local_conditions = list(conditions)
+    local_values = dict(values)
+
+    if cursor_created_at and cursor_name:
+        local_conditions.append(
+            """
+            (
+                creation < %(cursor_created_at)s
+                OR (
+                    creation = %(cursor_created_at)s
+                    AND name < %(cursor_name)s
+                )
+            )
+            """
+        )
+        local_values["cursor_created_at"] = cursor_created_at
+        local_values["cursor_name"] = cursor_name
+
+    local_values["limit"] = limit
+
+    where_clause = " AND ".join(local_conditions)
+
+    return frappe.db.sql(
+        f"""
+        SELECT
+            name,
+            conversation,
+            room_name,
+            caller,
+            receiver,
+            status,
+            call_type,
+            is_active,
+            ringing_at,
+            started_at,
+            ended_at,
+            ended_by,
+            duration,
+            creation
+        FROM `tabAOS Call`
+        WHERE {where_clause}
+        ORDER BY creation DESC, name DESC
+        LIMIT %(limit)s
+        """,
+        local_values,
+        as_dict=True,
+    )
+
+
+def _build_grouped_history(
+    *,
+    current_user: str,
+    conditions: list[str],
+    values: dict,
+    limit: int,
+    cursor_created_at=None,
+    cursor_name: str | None = None,
+):
+    """
+    Build grouped call-history rows.
+
+    Production rule:
+    - Consecutive similar rows are grouped.
+    - Groups are not split across pages.
+    - next_cursor points to the oldest raw call inside the last returned group.
+    """
+
+    groups: list[dict] = []
+    current_group = None
+
+    batch_cursor_created_at = cursor_created_at
+    batch_cursor_name = cursor_name
+
+    reached_page_limit = False
+    exhausted = False
+
+    for _ in range(MAX_GROUP_FETCH_LOOPS):
+        rows = _fetch_call_rows(
+            conditions=conditions,
+            values=values,
+            cursor_created_at=batch_cursor_created_at,
+            cursor_name=batch_cursor_name,
+            limit=RAW_FETCH_BATCH_SIZE,
+        )
+
+        if not rows:
+            exhausted = True
+            break
+
+        for call in rows:
+            serialized = _serialize_call_row(call, current_user)
+            key = _group_compare_key(serialized)
+
+            if current_group is None:
+                current_group = _new_group(serialized)
+
+            elif key == current_group.get("_compare_key"):
+                _add_to_group(current_group, serialized)
+
+            else:
+                finalized = _finalize_group(current_group)
+                groups.append(finalized)
+
+                # We have completed the Nth group only because we saw the
+                # first row of the next group. That means the Nth group is not
+                # split across pages.
+                if len(groups) >= limit:
+                    reached_page_limit = True
+                    break
+
+                current_group = _new_group(serialized)
+
+        if reached_page_limit:
+            break
+
+        last_row = rows[-1]
+        batch_cursor_created_at = last_row.creation
+        batch_cursor_name = last_row.name
+
+        if len(rows) < RAW_FETCH_BATCH_SIZE:
+            exhausted = True
+            break
+
+    if not reached_page_limit and current_group is not None:
+        groups.append(_finalize_group(current_group))
+
+    groups = groups[:limit]
+
+    next_cursor = None
+    if groups and not exhausted:
+        next_cursor = groups[-1].get("cursor")
+
+    return {
+        "items": groups,
+        "next_cursor": next_cursor,
+        "has_more": bool(next_cursor),
+    }
+
+
+def _validate_group_boundary_call(
+    *,
+    call_id: str,
+    current_user: str,
+    label: str,
+):
+    call = _fetch_call_by_id(call_id)
+
+    if not call:
+        return None, fail(f"{label} call not found.", code="NOT_FOUND")
+
+    if not _user_in_call(call, current_user):
+        return None, fail("Not allowed.", code="PERMISSION_DENIED")
+
+    return call, None
+
+
+def _fetch_calls_between_boundaries(
+    *,
+    current_user: str,
+    latest_call,
+    oldest_call,
+):
+    """
+    Fetch calls between latest and oldest boundary calls, inclusive.
+
+    Ordering is DESC by creation/name.
+    """
+
+    return frappe.db.sql(
+        """
+        SELECT
+            name,
+            conversation,
+            room_name,
+            caller,
+            receiver,
+            status,
+            call_type,
+            is_active,
+            ringing_at,
+            started_at,
+            ended_at,
+            ended_by,
+            duration,
+            creation
+        FROM `tabAOS Call`
+        WHERE
+            (caller = %(current_user)s OR receiver = %(current_user)s)
+            AND (
+                creation < %(latest_creation)s
+                OR (
+                    creation = %(latest_creation)s
+                    AND name <= %(latest_name)s
+                )
+            )
+            AND (
+                creation > %(oldest_creation)s
+                OR (
+                    creation = %(oldest_creation)s
+                    AND name >= %(oldest_name)s
+                )
+            )
+        ORDER BY creation DESC, name DESC
+        """,
+        {
+            "current_user": current_user,
+            "latest_creation": latest_call.creation,
+            "latest_name": latest_call.name,
+            "oldest_creation": oldest_call.creation,
+            "oldest_name": oldest_call.name,
+        },
+        as_dict=True,
+    )
 
 
 # LIST CALLS
@@ -110,19 +557,21 @@ def list_calls_impl(**kwargs):
         max_value=100,
     )
 
-    offset = _clean_int(
-        kwargs.get("offset"),
-        default=0,
-        min_value=0,
-        max_value=100000,
-    )
-
-    conversation_id = kwargs.get("conversation_id")
+    conversation_id = _clean_str(kwargs.get("conversation_id"))
     filter_type = (kwargs.get("type") or "all").strip().lower()
+
+    cursor_created_at = _clean_str(kwargs.get("cursor_created_at"))
+    cursor_name = _clean_str(kwargs.get("cursor_name"))
 
     # Validate filter type
     if filter_type not in ("all", "incoming", "outgoing", "missed"):
         return fail("Invalid type.", code="VALIDATION_ERROR")
+
+    if bool(cursor_created_at) != bool(cursor_name):
+        return fail(
+            "cursor_created_at and cursor_name must be provided together.",
+            code="VALIDATION_ERROR",
+        )
 
     try:
         if conversation_id:
@@ -133,69 +582,22 @@ def list_calls_impl(**kwargs):
             if membership_error:
                 return membership_error
 
-        conditions = [
-            "(caller = %(current_user)s OR receiver = %(current_user)s)"
-        ]
-
-        values = {
-            "current_user": current_user,
-            "limit": limit,
-            "offset": offset,
-        }
-
-        if conversation_id:
-            conditions.append("conversation = %(conversation_id)s")
-            values["conversation_id"] = conversation_id
-
-        # TYPE FILTERING
-        if filter_type == "incoming":
-            conditions.append("receiver = %(current_user)s")
-
-        elif filter_type == "outgoing":
-            conditions.append("caller = %(current_user)s")
-
-        elif filter_type == "missed":
-            conditions.append("receiver = %(current_user)s")
-            conditions.append("status = 'missed'")
-
-        where_clause = " AND ".join(conditions)
-
-        # Fetch calls
-        calls = frappe.db.sql(
-            f"""
-            SELECT
-                name,
-                conversation,
-                room_name,
-                caller,
-                receiver,
-                status,
-                call_type,
-                is_active,
-                ringing_at,
-                started_at,
-                ended_at,
-                ended_by,
-                duration,
-                creation
-            FROM `tabAOS Call`
-            WHERE {where_clause}
-            ORDER BY creation DESC
-            LIMIT %(limit)s OFFSET %(offset)s
-            """,
-            values,
-            as_dict=True,
+        conditions, values = _build_base_conditions_and_values(
+            current_user=current_user,
+            conversation_id=conversation_id,
+            filter_type=filter_type,
         )
 
-        if not calls:
-            return ok("Calls fetched.", data=[])
+        result = _build_grouped_history(
+            current_user=current_user,
+            conditions=conditions,
+            values=values,
+            limit=limit,
+            cursor_created_at=cursor_created_at,
+            cursor_name=cursor_name,
+        )
 
-        results = [
-            _serialize_call_row(call, current_user)
-            for call in calls
-        ]
-
-        return ok("Calls fetched.", data=results)
+        return ok("Calls fetched.", data=result)
 
     except Exception:
         frappe.log_error(
@@ -203,3 +605,115 @@ def list_calls_impl(**kwargs):
             "AOS List Calls Failed",
         )
         return fail("Failed to fetch calls.", code="INTERNAL_ERROR")
+
+
+# GET CALL GROUP DETAILS
+def get_call_group_details_impl(**kwargs):
+    current_user, err = require_login()
+    if err:
+        return err
+
+    rl = rate_limit(
+        key=f"aos:calls:group-details:user:{current_user}",
+        ttl_seconds=60,
+        limit=GET_CALL_GROUP_DETAILS_LIMIT_PER_MINUTE_PER_USER,
+        message="Too many requests. Please try again shortly.",
+    )
+    if rl:
+        return rl
+
+    latest_call_id = _clean_str(kwargs.get("latest_call_id"))
+    oldest_call_id = _clean_str(kwargs.get("oldest_call_id"))
+
+    if not latest_call_id:
+        return fail("latest_call_id is required.", code="VALIDATION_ERROR")
+
+    if not oldest_call_id:
+        return fail("oldest_call_id is required.", code="VALIDATION_ERROR")
+
+    try:
+        latest_call, err = _validate_group_boundary_call(
+            call_id=latest_call_id,
+            current_user=current_user,
+            label="Latest",
+        )
+        if err:
+            return err
+
+        oldest_call, err = _validate_group_boundary_call(
+            call_id=oldest_call_id,
+            current_user=current_user,
+            label="Oldest",
+        )
+        if err:
+            return err
+
+        latest_serialized = _serialize_call_row(latest_call, current_user)
+        oldest_serialized = _serialize_call_row(oldest_call, current_user)
+
+        expected_key = _group_compare_key(latest_serialized)
+
+        if expected_key != _group_compare_key(oldest_serialized):
+            return fail("Invalid call group.", code="VALIDATION_ERROR")
+
+        rows = _fetch_calls_between_boundaries(
+            current_user=current_user,
+            latest_call=latest_call,
+            oldest_call=oldest_call,
+        )
+
+        calls = []
+
+        for row in rows:
+            serialized = _serialize_call_row(row, current_user)
+
+            if _group_compare_key(serialized) != expected_key:
+                break
+
+            calls.append(serialized)
+
+            if row.name == oldest_call_id:
+                break
+
+        if not calls:
+            return fail("Invalid call group.", code="VALIDATION_ERROR")
+
+        if calls[0].get("call_id") != latest_call_id:
+            return fail("Invalid call group boundary.", code="VALIDATION_ERROR")
+
+        if calls[-1].get("call_id") != oldest_call_id:
+            return fail("Invalid call group boundary.", code="VALIDATION_ERROR")
+
+        latest = calls[0]
+        oldest = calls[-1]
+
+        data = {
+            "group_key": (
+                f"{latest.get('direction')}:"
+                f"{latest.get('history_category')}:"
+                f"{latest.get('call_type')}:"
+                f"{latest.get('other_user')}:"
+                f"{latest_call_id}:"
+                f"{oldest_call_id}"
+            ),
+            "group_count": len(calls),
+            "direction": latest.get("direction"),
+            "history_category": latest.get("history_category"),
+            "call_type": latest.get("call_type"),
+            "other_user": latest.get("other_user"),
+            "other_display_name": latest.get("other_display_name"),
+            "other_avatar": latest.get("other_avatar"),
+            "latest_call_id": latest_call_id,
+            "oldest_call_id": oldest_call_id,
+            "created_at": latest.get("created_at"),
+            "calls": calls,
+        }
+
+        return ok("Call group fetched.", data=data)
+
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Get Call Group Details Failed",
+        )
+        return fail("Failed to fetch call group.", code="INTERNAL_ERROR")

@@ -32,6 +32,7 @@ from .token import (
 # History
 from .history import (
     list_calls_impl,
+    get_call_group_details_impl,
 )
 
 
@@ -86,8 +87,14 @@ def get_call_token(**kwargs):
     return get_call_token_impl(**kwargs)
 
 
-# History API
+# History APIs
 @frappe.whitelist(methods=["GET", "POST"])
 def list_calls(**kwargs):
-    """List current user's call history."""
+    """List current user's grouped call history."""
     return list_calls_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["GET", "POST"])
+def get_call_group_details(**kwargs):
+    """Get individual call logs inside a grouped call-history row."""
+    return get_call_group_details_impl(**kwargs)

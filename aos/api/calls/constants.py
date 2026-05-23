@@ -11,6 +11,9 @@ Design notes:
   screen is shown, so it can be a little higher but still bounded.
 - get_call_token is higher because reconnect/retry flows may request it
   more often.
+- list_calls returns grouped call-history summaries by default.
+- get_call_group_details returns the individual call records inside one
+  grouped call-history row.
 - get_call_status is used by Flutter to validate call state before restoring
   incoming call UI from background/terminated push payloads.
 - CALL_TIMEOUT_SECONDS is used by initiate_call to pass the timeout delay
@@ -38,6 +41,7 @@ GET_TOKEN_LIMIT_PER_MINUTE_PER_USER = 120
 
 # History rate limits
 LIST_CALLS_LIMIT_PER_MINUTE_PER_USER = 120
+GET_CALL_GROUP_DETAILS_LIMIT_PER_MINUTE_PER_USER = 120
 
 
 # Status/recovery rate limits
