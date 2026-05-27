@@ -64,11 +64,16 @@ def toggle_follow_impl(**kwargs):
         )
 
         if existing_follow:
-            frappe.delete_doc(
-                "AOS Follow",
-                existing_follow,
-                ignore_permissions=True,
+            _delete_follow_direct(
+                current_user=current_user,
+                target_user=target_user,
             )
+
+            _sync_profile_totals(
+                current_user=current_user,
+                target_user=target_user,
+            )
+
             frappe.db.commit()
 
             relationship = build_relationship_status(
@@ -92,6 +97,12 @@ def toggle_follow_impl(**kwargs):
         doc.follower_user = current_user
         doc.following_user = target_user
         doc.insert(ignore_permissions=True)
+
+        _sync_profile_totals(
+            current_user=current_user,
+            target_user=target_user,
+        )
+
         frappe.db.commit()
 
         NotificationService.notify_follow(
@@ -116,6 +127,32 @@ def toggle_follow_impl(**kwargs):
             },
         )
 
+    except frappe.UniqueValidationError:
+        frappe.db.rollback()
+
+        _sync_profile_totals(
+            current_user=current_user,
+            target_user=target_user,
+        )
+        frappe.db.commit()
+
+        relationship = build_relationship_status(
+            current_user=current_user,
+            target_user=target_user,
+        )
+
+        return ok(
+            "Already followed.",
+            data={
+                "status": "followed",
+                **relationship,
+                **_get_profile_totals(
+                    current_user=current_user,
+                    target_user=target_user,
+                ),
+            },
+        )
+
     except frappe.ValidationError as ex:
         frappe.db.rollback()
         return fail(str(ex), code="VALIDATION_ERROR")
@@ -129,15 +166,66 @@ def toggle_follow_impl(**kwargs):
         return fail("Failed to toggle follow.", code="INTERNAL_ERROR")
 
 
+def _delete_follow_direct(*, current_user: str, target_user: str):
+    """
+    Delete follow row directly.
+
+    Avoids frappe.delete_doc(), which can lock the document and timeout under
+    rapid follow/unfollow or concurrent relationship checks.
+    """
+
+    frappe.db.sql(
+        """
+        DELETE FROM `tabAOS Follow`
+        WHERE follower_user = %s
+          AND following_user = %s
+        LIMIT 1
+        """,
+        (current_user, target_user),
+    )
+
+
+def _sync_profile_totals(*, current_user: str, target_user: str):
+    """
+    Recalculate profile counters after follow/unfollow.
+
+    Since unfollow uses direct SQL delete, do not rely only on DocType hooks.
+    """
+
+    target_total_followers = frappe.db.count(
+        "AOS Follow",
+        {
+            "following_user": target_user,
+        },
+    )
+
+    current_total_following = frappe.db.count(
+        "AOS Follow",
+        {
+            "follower_user": current_user,
+        },
+    )
+
+    frappe.db.set_value(
+        "AOS Profile",
+        target_user,
+        {
+            "total_followers": target_total_followers,
+        },
+        update_modified=False,
+    )
+
+    frappe.db.set_value(
+        "AOS Profile",
+        current_user,
+        {
+            "total_following": current_total_following,
+        },
+        update_modified=False,
+    )
+
+
 def _get_profile_totals(*, current_user: str, target_user: str) -> dict:
-    """
-    Return updated totals after follow/unfollow.
-
-    Meaning:
-      - target_total_followers: followers count of the user being followed/unfollowed
-      - current_total_following: following count of the current logged-in user
-    """
-
     target_total_followers = frappe.db.get_value(
         "AOS Profile",
         target_user,
