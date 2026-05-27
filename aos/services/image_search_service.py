@@ -15,19 +15,27 @@ from io import BytesIO
 import os
 import uuid
 
+import frappe
 import requests
 from PIL import Image
 
-import frappe
-
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    FilterSelector,
+    MatchAny,
+    MatchValue,
+    PointStruct,
+    VectorParams,
+)
 
 from aos.services.embedding_service import generate_image_embedding
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
 
-# CLIENT (singleton-style)
+# CLIENT
 _qdrant_client: QdrantClient | None = None
 _cached_cfg: dict | None = None
 
@@ -55,7 +63,6 @@ def _get_qdrant_client() -> QdrantClient:
 
     if _qdrant_client is None or _cached_cfg != cfg:
         _cached_cfg = cfg
-
         _qdrant_client = QdrantClient(
             host=cfg["host"],
             port=cfg["port"],
@@ -71,11 +78,11 @@ def _get_collection_name() -> str:
 
 
 def _get_search_limit() -> int:
-    return _get_settings()["limit"]
+    return int(_get_settings()["limit"] or 50)
 
 
 def _get_score_threshold() -> float:
-    return _get_settings()["threshold"]
+    return float(_get_settings()["threshold"] or 0.0)
 
 
 # COLLECTION SETUP
@@ -89,12 +96,10 @@ def _ensure_collection_exists():
         if collection in existing:
             return
 
-        VECTOR_SIZE = 512
-
         client.create_collection(
             collection_name=collection,
             vectors_config=VectorParams(
-                size=VECTOR_SIZE,
+                size=512,
                 distance=Distance.COSINE,
             ),
         )
@@ -126,15 +131,16 @@ def _load_image(source) -> Image.Image:
     if source.startswith("/files/") or source.startswith("/private/files/"):
         site_path = frappe.get_site_path()
 
-        file_path = os.path.join(site_path, "public", source.lstrip("/"))
+        candidate_paths = [
+            os.path.join(site_path, "public", source.lstrip("/")),
+            os.path.join(site_path, source.lstrip("/")),
+        ]
 
-        if not os.path.exists(file_path):
-            file_path = os.path.join(site_path, source.lstrip("/"))
+        for file_path in candidate_paths:
+            if os.path.exists(file_path):
+                return Image.open(file_path).convert("RGB")
 
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {source}")
-
-        return Image.open(file_path).convert("RGB")
+        raise FileNotFoundError(f"File not found: {source}")
 
     raise ValueError(f"Unsupported image source: {source}")
 
@@ -206,14 +212,12 @@ def _group_and_rank(results: List[Any]) -> List[str]:
 def search_similar_ads(image_file) -> List[str]:
     try:
         image = _load_image(image_file)
-
         vector = generate_image_embedding(image)
 
         if not vector:
             return []
 
         vector = _normalize_vector(vector)
-
         results = _search_qdrant(vector)
 
         if not results:
@@ -237,7 +241,7 @@ def index_ad_images(ad_id: str, images: List[Dict[str, Any]]):
 
     points: List[PointStruct] = []
 
-    for img in images:
+    for img in images or []:
         image_url = img.get("image")
 
         if not image_url:
@@ -245,7 +249,6 @@ def index_ad_images(ad_id: str, images: List[Dict[str, Any]]):
 
         try:
             image = _load_image(image_url)
-
             vector = generate_image_embedding(image)
 
             if not vector:
@@ -271,27 +274,46 @@ def index_ad_images(ad_id: str, images: List[Dict[str, Any]]):
                 f"Index image failed: {image_url}",
             )
 
-    if points:
-        client.upsert(
-            collection_name=collection,
-            points=points,
-        )
+    if not points:
+        return
+
+    client.upsert(
+        collection_name=collection,
+        points=points,
+    )
 
 
-def delete_ad_images(ad_id: str, image_urls: List[str]):
+def delete_ad_images(ad_id: str, image_urls: List[str] | None = None):
+    _ensure_collection_exists()
     client = _get_qdrant_client()
     collection = _get_collection_name()
 
     try:
+        must = [
+            FieldCondition(
+                key="ad_id",
+                match=MatchValue(value=ad_id),
+            )
+        ]
+
+        clean_urls = [
+            url for url in (image_urls or [])
+            if url
+        ]
+
+        if clean_urls:
+            must.append(
+                FieldCondition(
+                    key="image_url",
+                    match=MatchAny(any=clean_urls),
+                )
+            )
+
         client.delete(
             collection_name=collection,
-            points_selector={
-                "filter": {
-                    "must": [
-                        {"key": "ad_id", "match": {"value": ad_id}}
-                    ]
-                }
-            },
+            points_selector=FilterSelector(
+                filter=Filter(must=must),
+            ),
         )
     except Exception:
         frappe.log_error(
@@ -305,10 +327,14 @@ def sync_ad_images(
     old_images: List[str],
     new_images: List[Dict[str, Any]],
 ):
-    old_set = set(old_images)
+    old_set = {
+        url for url in (old_images or [])
+        if url
+    }
+
     new_set = {
         img.get("image")
-        for img in new_images
+        for img in (new_images or [])
         if img.get("image")
     }
 
@@ -318,8 +344,17 @@ def sync_ad_images(
     if to_add:
         index_ad_images(
             ad_id,
-            [{"image": url, "is_primary": 0} for url in to_add],
+            [
+                {
+                    "image": url,
+                    "is_primary": 0,
+                }
+                for url in to_add
+            ],
         )
 
     if to_remove:
-        delete_ad_images(ad_id, list(to_remove))
+        delete_ad_images(
+            ad_id,
+            list(to_remove),
+        )
