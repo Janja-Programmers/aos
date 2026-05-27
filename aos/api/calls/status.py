@@ -34,6 +34,14 @@ def _is_truthy(value) -> bool:
     return bool(int(value or 0))
 
 
+def _video_upgrade_status(call) -> str:
+    return (getattr(call, "video_upgrade_status", None) or "none").strip().lower()
+
+
+def _is_call_participant(*, call, current_user: str) -> bool:
+    return current_user in (call.caller, call.receiver)
+
+
 def _can_show_incoming_ui(*, call, current_user: str) -> bool:
     """
     Whether the receiver should still show native incoming call UI.
@@ -67,9 +75,56 @@ def _can_join_call(*, call, current_user: str) -> bool:
     reports state.
     """
     return (
-        current_user in (call.caller, call.receiver)
+        _is_call_participant(call=call, current_user=current_user)
         and call.status == "ongoing"
         and _is_truthy(call.is_active)
+    )
+
+
+def _has_pending_video_upgrade_request(*, call) -> bool:
+    return _video_upgrade_status(call) == "requested"
+
+
+def _is_video_upgrade_requester(*, call, current_user: str) -> bool:
+    return (
+        _has_pending_video_upgrade_request(call=call)
+        and call.video_upgrade_requested_by == current_user
+    )
+
+
+def _can_request_video_upgrade(*, call, current_user: str) -> bool:
+    """
+    Whether current user can request audio -> video upgrade.
+
+    Rules:
+    - user must be a call participant
+    - call must be ongoing
+    - call must still be audio
+    - no pending video upgrade request exists
+    """
+    return (
+        _is_call_participant(call=call, current_user=current_user)
+        and call.status == "ongoing"
+        and _is_truthy(call.is_active)
+        and call.call_type == "audio"
+        and not _has_pending_video_upgrade_request(call=call)
+    )
+
+
+def _can_respond_video_upgrade(*, call, current_user: str) -> bool:
+    """
+    Whether current user can accept/decline pending video upgrade.
+
+    The requester cannot respond to their own request.
+    """
+    return (
+        _is_call_participant(call=call, current_user=current_user)
+        and call.status == "ongoing"
+        and _is_truthy(call.is_active)
+        and call.call_type == "audio"
+        and _has_pending_video_upgrade_request(call=call)
+        and call.video_upgrade_requested_by
+        and call.video_upgrade_requested_by != current_user
     )
 
 
@@ -83,6 +138,10 @@ def _build_call_status_response(*, call, current_user: str) -> dict:
     - initiate/accept responses
     - FCM reconstruction validation
     """
+    has_pending_video_upgrade_request = _has_pending_video_upgrade_request(
+        call=call,
+    )
+
     data = serialize_call_for_realtime(
         call,
         current_user=current_user,
@@ -104,6 +163,19 @@ def _build_call_status_response(*, call, current_user: str) -> dict:
             ),
             "is_receiver": current_user == call.receiver,
             "is_caller": current_user == call.caller,
+            "has_pending_video_upgrade_request": has_pending_video_upgrade_request,
+            "is_video_upgrade_requester": _is_video_upgrade_requester(
+                call=call,
+                current_user=current_user,
+            ),
+            "can_request_video_upgrade": _can_request_video_upgrade(
+                call=call,
+                current_user=current_user,
+            ),
+            "can_respond_video_upgrade": _can_respond_video_upgrade(
+                call=call,
+                current_user=current_user,
+            ),
         }
     )
 

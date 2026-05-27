@@ -9,6 +9,10 @@ Design notes:
 - accept/reject/cancel/end are normal call actions.
 - mark_call_ringing can be called by the receiver UI when incoming call
   screen is shown, so it can be a little higher but still bounded.
+- request_video_upgrade is used during an ongoing audio call to ask the
+  other participant to switch to video.
+- respond_video_upgrade is used by the other participant to accept or decline
+  a pending video upgrade request.
 - get_call_token is higher because reconnect/retry flows may request it
   more often.
 - list_calls returns grouped call-history summaries by default.
@@ -35,6 +39,11 @@ ACCEPT_CALL_LIMIT_PER_MINUTE_PER_USER = 60
 REJECT_CALL_LIMIT_PER_MINUTE_PER_USER = 60
 CANCEL_CALL_LIMIT_PER_MINUTE_PER_USER = 60
 END_CALL_LIMIT_PER_MINUTE_PER_USER = 60
+
+
+# Video upgrade rate limits
+REQUEST_VIDEO_UPGRADE_LIMIT_PER_MINUTE_PER_USER = 30
+RESPOND_VIDEO_UPGRADE_LIMIT_PER_MINUTE_PER_USER = 60
 
 
 # LiveKit token rate limits

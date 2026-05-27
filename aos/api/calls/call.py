@@ -8,6 +8,8 @@ Handles:
 - reject_call
 - cancel_call
 - end_call
+- request_video_upgrade
+- respond_video_upgrade
 """
 
 from __future__ import annotations
@@ -29,6 +31,8 @@ from .constants import (
     REJECT_CALL_LIMIT_PER_MINUTE_PER_USER,
     CANCEL_CALL_LIMIT_PER_MINUTE_PER_USER,
     END_CALL_LIMIT_PER_MINUTE_PER_USER,
+    REQUEST_VIDEO_UPGRADE_LIMIT_PER_MINUTE_PER_USER,
+    RESPOND_VIDEO_UPGRADE_LIMIT_PER_MINUTE_PER_USER,
     CALL_TIMEOUT_SECONDS,
     CALL_TIMEOUT_JOB_PATH,
     CALL_TIMEOUT_JOB_QUEUE,
@@ -60,6 +64,9 @@ from .realtime import (
     publish_call_rejected,
     publish_call_cancelled,
     publish_call_ended,
+    publish_video_upgrade_requested,
+    publish_video_upgrade_accepted,
+    publish_video_upgrade_declined,
 )
 
 
@@ -205,6 +212,18 @@ def _safe_duration_seconds(started_at, ended_at) -> int:
     return max(0, int((ended - started).total_seconds()))
 
 
+def _normalize_video_upgrade_action(action: str | None) -> str:
+    action = (action or "").strip().lower()
+
+    if action in ("accept", "accepted"):
+        return "accepted"
+
+    if action in ("decline", "declined", "reject", "rejected"):
+        return "declined"
+
+    return action
+
+
 def _enqueue_call_timeout(call_id: str):
     """
     Enqueue a per-call timeout job.
@@ -288,6 +307,7 @@ def initiate_call_impl(**kwargs):
         call.receiver = receiver
         call.call_type = call_type
         call.status = "initiated"
+        call.video_upgrade_status = "none"
         call.insert(ignore_permissions=True)
 
         # Schedule per-call missed timeout.
@@ -788,3 +808,243 @@ def end_call_impl(**kwargs):
         )
         frappe.db.rollback()
         return fail("Failed to end call.", code="INTERNAL_ERROR")
+
+
+# REQUEST VIDEO UPGRADE
+def request_video_upgrade_impl(**kwargs):
+    current_user, err = require_login()
+    if err:
+        return err
+
+    rl = rate_limit(
+        key=f"aos:calls:request-video:user:{current_user}",
+        ttl_seconds=60,
+        limit=REQUEST_VIDEO_UPGRADE_LIMIT_PER_MINUTE_PER_USER,
+        message="Too many video upgrade requests. Please try again shortly.",
+    )
+    if rl:
+        return rl
+
+    call_id = kwargs.get("call_id")
+
+    if not call_id:
+        return fail("call_id is required.", code="VALIDATION_ERROR")
+
+    try:
+        call, err = validate_call_exists(call_id)
+        if err:
+            return err
+
+        err = validate_user_in_call(call, current_user)
+        if err:
+            return err
+
+        if call.status != "ongoing":
+            return fail(
+                "Video upgrade can only be requested during an ongoing call.",
+                code="INVALID_STATE",
+            )
+
+        if call.call_type != "audio":
+            return fail(
+                "Only audio calls can be upgraded to video.",
+                code="INVALID_STATE",
+            )
+
+        if (call.video_upgrade_status or "none") == "requested":
+            return fail(
+                "A video upgrade request is already pending.",
+                code="INVALID_STATE",
+            )
+
+        now = now_datetime()
+
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Call`
+            SET
+                video_upgrade_status = 'requested',
+                video_upgrade_requested_by = %s,
+                video_upgrade_requested_at = %s,
+                video_upgrade_responded_at = NULL
+            WHERE name = %s
+              AND status = 'ongoing'
+              AND call_type = 'audio'
+              AND (caller = %s OR receiver = %s)
+              AND IFNULL(video_upgrade_status, 'none') != 'requested'
+            """,
+            (current_user, now, call_id, current_user, current_user),
+        )
+
+        if frappe.db._cursor.rowcount == 0:
+            return fail(
+                "Video upgrade cannot be requested.",
+                code="INVALID_STATE",
+            )
+
+        call = _reload_call(call_id)
+
+        publish_video_upgrade_requested(call)
+
+        return ok(
+            "Video upgrade requested.",
+            data=_build_call_response(
+                call=call,
+                current_user=current_user,
+            ),
+        )
+
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Request Video Upgrade Failed",
+        )
+        frappe.db.rollback()
+        return fail("Failed to request video upgrade.", code="INTERNAL_ERROR")
+
+
+# RESPOND VIDEO UPGRADE
+def respond_video_upgrade_impl(**kwargs):
+    current_user, err = require_login()
+    if err:
+        return err
+
+    rl = rate_limit(
+        key=f"aos:calls:respond-video:user:{current_user}",
+        ttl_seconds=60,
+        limit=RESPOND_VIDEO_UPGRADE_LIMIT_PER_MINUTE_PER_USER,
+        message="Too many video upgrade responses. Please try again shortly.",
+    )
+    if rl:
+        return rl
+
+    call_id = kwargs.get("call_id")
+    action = _normalize_video_upgrade_action(kwargs.get("action"))
+
+    if not call_id:
+        return fail("call_id is required.", code="VALIDATION_ERROR")
+
+    if action not in ("accepted", "declined"):
+        return fail(
+            "action must be accepted or declined.",
+            code="VALIDATION_ERROR",
+        )
+
+    try:
+        call, err = validate_call_exists(call_id)
+        if err:
+            return err
+
+        err = validate_user_in_call(call, current_user)
+        if err:
+            return err
+
+        if call.status != "ongoing":
+            return fail(
+                "Video upgrade can only be answered during an ongoing call.",
+                code="INVALID_STATE",
+            )
+
+        if call.call_type != "audio":
+            return fail(
+                "This call is not awaiting an audio-to-video upgrade.",
+                code="INVALID_STATE",
+            )
+
+        if (call.video_upgrade_status or "none") != "requested":
+            return fail(
+                "No video upgrade request is pending.",
+                code="INVALID_STATE",
+            )
+
+        if not call.video_upgrade_requested_by:
+            return fail(
+                "Invalid video upgrade request.",
+                code="INVALID_STATE",
+            )
+
+        if call.video_upgrade_requested_by == current_user:
+            return fail(
+                "You cannot respond to your own video upgrade request.",
+                code="PERMISSION_DENIED",
+            )
+
+        now = now_datetime()
+
+        if action == "accepted":
+            frappe.db.sql(
+                """
+                UPDATE `tabAOS Call`
+                SET
+                    call_type = 'video',
+                    video_upgrade_status = 'accepted',
+                    video_upgrade_responded_at = %s
+                WHERE name = %s
+                  AND status = 'ongoing'
+                  AND call_type = 'audio'
+                  AND video_upgrade_status = 'requested'
+                  AND video_upgrade_requested_by != %s
+                  AND (caller = %s OR receiver = %s)
+                """,
+                (now, call_id, current_user, current_user, current_user),
+            )
+
+            if frappe.db._cursor.rowcount == 0:
+                return fail(
+                    "Video upgrade cannot be accepted.",
+                    code="INVALID_STATE",
+                )
+
+            call = _reload_call(call_id)
+
+            publish_video_upgrade_accepted(call)
+
+            return ok(
+                "Video upgrade accepted.",
+                data=_build_call_response(
+                    call=call,
+                    current_user=current_user,
+                ),
+            )
+
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Call`
+            SET
+                video_upgrade_status = 'declined',
+                video_upgrade_responded_at = %s
+            WHERE name = %s
+              AND status = 'ongoing'
+              AND call_type = 'audio'
+              AND video_upgrade_status = 'requested'
+              AND video_upgrade_requested_by != %s
+              AND (caller = %s OR receiver = %s)
+            """,
+            (now, call_id, current_user, current_user, current_user),
+        )
+
+        if frappe.db._cursor.rowcount == 0:
+            return fail(
+                "Video upgrade cannot be declined.",
+                code="INVALID_STATE",
+            )
+
+        call = _reload_call(call_id)
+
+        publish_video_upgrade_declined(call)
+
+        return ok(
+            "Video upgrade declined.",
+            data=_build_call_response(
+                call=call,
+                current_user=current_user,
+            ),
+        )
+
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Respond Video Upgrade Failed",
+        )
+        frappe.db.rollback()
+        return fail("Failed to respond to video upgrade.", code="INTERNAL_ERROR")

@@ -17,6 +17,8 @@ from .call import (
     reject_call_impl,
     cancel_call_impl,
     end_call_impl,
+    request_video_upgrade_impl,
+    respond_video_upgrade_impl,
 )
 
 # Status
@@ -73,6 +75,19 @@ def cancel_call(**kwargs):
 def end_call(**kwargs):
     """End an ongoing call."""
     return end_call_impl(**kwargs)
+
+
+# Video upgrade APIs
+@frappe.whitelist(methods=["POST"])
+def request_video_upgrade(**kwargs):
+    """Request upgrading an ongoing audio call to video."""
+    return request_video_upgrade_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def respond_video_upgrade(**kwargs):
+    """Accept or decline a pending audio-to-video upgrade request."""
+    return respond_video_upgrade_impl(**kwargs)
 
 
 # Status API

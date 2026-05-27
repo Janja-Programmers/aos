@@ -61,6 +61,10 @@ def serialize_call_for_realtime(
     - rejected
     - cancelled
     - ended
+    - video_upgrade_requested
+    - video_upgrade_accepted
+    - video_upgrade_declined
+    - video_upgrade_cancelled
     """
 
     caller = _get_user_summary(call.caller)
@@ -99,6 +103,22 @@ def serialize_call_for_realtime(
             actor_summary["display_name"] if actor_summary else actor
         ),
         "actor_avatar": actor_summary["avatar"] if actor_summary else None,
+        "video_upgrade_status": getattr(call, "video_upgrade_status", None) or "none",
+        "video_upgrade_requested_by": getattr(
+            call,
+            "video_upgrade_requested_by",
+            None,
+        ),
+        "video_upgrade_requested_at": getattr(
+            call,
+            "video_upgrade_requested_at",
+            None,
+        ),
+        "video_upgrade_responded_at": getattr(
+            call,
+            "video_upgrade_responded_at",
+            None,
+        ),
         "ringing_at": call.ringing_at,
         "started_at": call.started_at,
         "ended_at": call.ended_at,
@@ -306,3 +326,134 @@ def publish_call_not_answered(call):
             message=receiver_message,
             user=call.receiver,
         )
+
+
+# VIDEO UPGRADE EVENTS
+def publish_video_upgrade_requested(call):
+    """
+    Notify the other participant that video upgrade was requested.
+
+    Sent to:
+    - non-requesting participant only
+    """
+
+    requester = call.video_upgrade_requested_by
+
+    if not requester:
+        return
+
+    target = call.receiver if requester == call.caller else call.caller
+
+    message = serialize_call_for_realtime(
+        call,
+        current_user=target,
+        event_status="video_upgrade_requested",
+        actor=requester,
+    )
+
+    frappe.publish_realtime(
+        event="aos_call_video_upgrade_requested",
+        message=message,
+        user=target,
+    )
+
+
+def publish_video_upgrade_accepted(call):
+    """
+    Notify both participants that video upgrade was accepted.
+
+    Sent to:
+    - caller
+    - receiver
+    """
+
+    actor = (
+        call.receiver
+        if call.video_upgrade_requested_by == call.caller
+        else call.caller
+    )
+
+    caller_message = serialize_call_for_realtime(
+        call,
+        current_user=call.caller,
+        event_status="video_upgrade_accepted",
+        actor=actor,
+    )
+
+    receiver_message = serialize_call_for_realtime(
+        call,
+        current_user=call.receiver,
+        event_status="video_upgrade_accepted",
+        actor=actor,
+    )
+
+    _publish(
+        "aos_call_video_upgrade_accepted",
+        caller_message,
+        [call.caller],
+    )
+
+    if call.receiver != call.caller:
+        _publish(
+            "aos_call_video_upgrade_accepted",
+            receiver_message,
+            [call.receiver],
+        )
+
+
+def publish_video_upgrade_declined(call):
+    """
+    Notify requester that video upgrade was declined.
+
+    Sent to:
+    - requester only
+    """
+
+    requester = call.video_upgrade_requested_by
+
+    if not requester:
+        return
+
+    actor = call.receiver if requester == call.caller else call.caller
+
+    message = serialize_call_for_realtime(
+        call,
+        current_user=requester,
+        event_status="video_upgrade_declined",
+        actor=actor,
+    )
+
+    frappe.publish_realtime(
+        event="aos_call_video_upgrade_declined",
+        message=message,
+        user=requester,
+    )
+
+
+def publish_video_upgrade_cancelled(call):
+    """
+    Notify the other participant that pending video upgrade was cancelled.
+
+    Sent to:
+    - non-cancelling participant only
+    """
+
+    requester = call.video_upgrade_requested_by
+
+    if not requester:
+        return
+
+    target = call.receiver if requester == call.caller else call.caller
+
+    message = serialize_call_for_realtime(
+        call,
+        current_user=target,
+        event_status="video_upgrade_cancelled",
+        actor=requester,
+    )
+
+    frappe.publish_realtime(
+        event="aos_call_video_upgrade_cancelled",
+        message=message,
+        user=target,
+    )

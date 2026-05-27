@@ -11,13 +11,17 @@
   "caller",
   "receiver",
   "ringing_at",
+  "started_at",
+  "ended_at",
   "ended_by",
   "duration",
   "column_break_vdfj",
   "status",
   "call_type",
-  "started_at",
-  "ended_at",
+  "video_upgrade_status",
+  "video_upgrade_requested_by",
+  "video_upgrade_requested_at",
+  "video_upgrade_responded_at",
   "is_active",
   "visible_to_caller",
   "visible_to_receiver"
@@ -140,11 +144,40 @@
    "fieldtype": "Check",
    "label": "Visible To Receiver",
    "read_only": 1
+  },
+  {
+   "default": "none",
+   "fieldname": "video_upgrade_status",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Video Upgrade Status",
+   "options": "none\nrequested\naccepted\ndeclined\ncancelled",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "video_upgrade_requested_by",
+   "fieldtype": "Link",
+   "label": "Video Upgrade Requested By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "video_upgrade_requested_at",
+   "fieldtype": "Datetime",
+   "label": "Video Upgrade Requested At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "video_upgrade_responded_at",
+   "fieldtype": "Datetime",
+   "label": "Video Upgrade Responded At",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-05-27 17:25:45.341074",
+ "modified": "2026-05-27 17:48:18.868598",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Call",

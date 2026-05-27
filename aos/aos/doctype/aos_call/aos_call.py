@@ -22,6 +22,14 @@ VALID_STATUS_TRANSITIONS = {
     "cancelled": set(),
 }
 
+VALID_VIDEO_UPGRADE_STATUSES = {
+    "none",
+    "requested",
+    "accepted",
+    "declined",
+    "cancelled",
+}
+
 
 IMMUTABLE_FIELDS_AFTER_INSERT = {
     "conversation",
@@ -38,12 +46,14 @@ class AOSCall(Document):
         self._prevent_self_call()
         self._validate_conversation_participants()
         self._validate_status_transition()
+        self._validate_video_upgrade_fields()
         self._validate_single_active_call_per_conversation()
 
     def before_insert(self):
         self._set_room_name()
         self._set_initial_state()
         self._set_visibility_defaults()
+        self._set_video_upgrade_defaults()
 
     def before_save(self):
         self._prevent_identity_modification()
@@ -105,6 +115,51 @@ class AOSCall(Document):
         if self.status not in allowed:
             frappe.throw(f"Invalid status transition: {old_status} → {self.status}")
 
+    def _validate_video_upgrade_fields(self):
+        if not self.video_upgrade_status:
+            self.video_upgrade_status = "none"
+
+        if self.video_upgrade_status not in VALID_VIDEO_UPGRADE_STATUSES:
+            frappe.throw("Invalid video upgrade status")
+
+        if (
+            self.video_upgrade_requested_by
+            and self.video_upgrade_requested_by not in (self.caller, self.receiver)
+        ):
+            frappe.throw("Video upgrade requester must be a call participant")
+
+        if self.video_upgrade_status == "requested":
+            if self.call_type != "audio":
+                frappe.throw("Video upgrade can only be requested for audio calls")
+
+            if not self.video_upgrade_requested_by:
+                frappe.throw("Video upgrade requester is required")
+
+            if not self.video_upgrade_requested_at:
+                frappe.throw("Video upgrade request time is required")
+
+            if self.video_upgrade_responded_at:
+                frappe.throw("Pending video upgrade cannot have response time")
+
+        elif self.video_upgrade_status == "none":
+            # Clean stale metadata when there is no active upgrade request/history.
+            self.video_upgrade_requested_by = None
+            self.video_upgrade_requested_at = None
+            self.video_upgrade_responded_at = None
+
+        elif self.video_upgrade_status in {"accepted", "declined", "cancelled"}:
+            if not self.video_upgrade_requested_by:
+                frappe.throw("Video upgrade requester is required")
+
+            if not self.video_upgrade_requested_at:
+                frappe.throw("Video upgrade request time is required")
+
+            if not self.video_upgrade_responded_at:
+                frappe.throw("Video upgrade response time is required")
+
+        if self.call_type == "video" and self.video_upgrade_status == "requested":
+            frappe.throw("Video call cannot have a pending upgrade request")
+
     def _validate_single_active_call_per_conversation(self):
         if self.status not in ACTIVE_STATUSES:
             return
@@ -157,6 +212,13 @@ class AOSCall(Document):
 
         if self.visible_to_receiver is None:
             self.visible_to_receiver = 1
+
+    def _set_video_upgrade_defaults(self):
+        """
+        New calls should not have a video upgrade request by default.
+        """
+        if not self.video_upgrade_status:
+            self.video_upgrade_status = "none"
 
     def _set_room_name(self):
         if not self.room_name:
