@@ -14,11 +14,92 @@ from .constants import (
 )
 
 
+VALID_DEVICE_TYPES = {"android", "ios", "web"}
+
+
 def get_token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-VALID_DEVICE_TYPES = {"android", "ios", "web"}
+def _update_push_token(
+    *,
+    name: str,
+    user: str,
+    token: str,
+    token_hash: str,
+    device_type: str,
+    device_id: str,
+):
+    frappe.db.set_value(
+        "AOS Push Token",
+        name,
+        {
+            "user": user,
+            "token": token,
+            "token_hash": token_hash,
+            "device_type": device_type,
+            "device_id": device_id,
+            "is_active": 1,
+            "last_used_at": now_datetime(),
+        },
+        update_modified=False,
+    )
+
+
+def _find_existing_token(
+    *,
+    token: str,
+    token_hash: str,
+):
+    """
+    Token field is unique in DB, so check both token and token_hash.
+
+    token_hash is preferred for lookup, but token protects us from older
+    rows or partial legacy data where token_hash may be missing/stale.
+    """
+    existing = frappe.db.get_value(
+        "AOS Push Token",
+        {"token_hash": token_hash},
+        "name",
+    )
+
+    if existing:
+        return existing
+
+    return frappe.db.get_value(
+        "AOS Push Token",
+        {"token": token},
+        "name",
+    )
+
+
+def _deactivate_other_tokens_for_device(
+    *,
+    user: str,
+    device_id: str,
+    keep_name: str,
+):
+    if not device_id:
+        return
+
+    frappe.db.sql(
+        """
+        UPDATE `tabAOS Push Token`
+        SET
+            is_active = 0,
+            last_used_at = %s
+        WHERE
+            user = %s
+            AND device_id = %s
+            AND name != %s
+        """,
+        (
+            now_datetime(),
+            user,
+            device_id,
+            keep_name,
+        ),
+    )
 
 
 # REGISTER TOKEN
@@ -51,10 +132,44 @@ def register_push_token_impl(**kwargs):
         return fail("Invalid device_type.", code="VALIDATION_ERROR")
 
     try:
-        now = now_datetime()
         token_hash = get_token_hash(token)
 
-        # Device-level deduplication
+        # Token-level upsert first.
+        # This prevents duplicate unique-token insert errors when the same FCM
+        # token is re-registered with a new device_id/user session.
+        existing_token = _find_existing_token(
+            token=token,
+            token_hash=token_hash,
+        )
+
+        if existing_token:
+            _update_push_token(
+                name=existing_token,
+                user=current_user,
+                token=token,
+                token_hash=token_hash,
+                device_type=device_type,
+                device_id=device_id,
+            )
+
+            _deactivate_other_tokens_for_device(
+                user=current_user,
+                device_id=device_id,
+                keep_name=existing_token,
+            )
+
+            frappe.db.commit()
+
+            return ok(
+                "Push token updated.",
+                data={"id": existing_token},
+            )
+
+        # Device-level upsert.
+        # A device may receive a refreshed token. Update the device row instead
+        # of creating many active tokens for one device.
+        existing_device = None
+
         if device_id:
             existing_device = frappe.db.get_value(
                 "AOS Push Token",
@@ -62,45 +177,25 @@ def register_push_token_impl(**kwargs):
                     "user": current_user,
                     "device_id": device_id,
                 },
-                ["name"],
+                "name",
             )
 
-            if existing_device:
-                frappe.db.set_value(
-                    "AOS Push Token",
-                    existing_device,
-                    {
-                        "token": token,
-                        "token_hash": token_hash,
-                        "device_type": device_type,
-                        "is_active": 1,
-                        "last_used_at": now,
-                    },
-                    update_modified=False,
-                )
-                return ok("Push token updated.")
-
-        # Token-level deduplication (fallback)
-        existing = frappe.db.get_value(
-            "AOS Push Token",
-            {"token_hash": token_hash},
-            ["name"],
-        )
-
-        if existing:
-            frappe.db.set_value(
-                "AOS Push Token",
-                existing,
-                {
-                    "user": current_user,
-                    "device_type": device_type,
-                    "device_id": device_id,
-                    "is_active": 1,
-                    "last_used_at": now,
-                },
-                update_modified=False,
+        if existing_device:
+            _update_push_token(
+                name=existing_device,
+                user=current_user,
+                token=token,
+                token_hash=token_hash,
+                device_type=device_type,
+                device_id=device_id,
             )
-            return ok("Push token updated.")
+
+            frappe.db.commit()
+
+            return ok(
+                "Push token updated.",
+                data={"id": existing_device},
+            )
 
         # Create new token
         doc = frappe.get_doc(
@@ -112,20 +207,74 @@ def register_push_token_impl(**kwargs):
                 "device_type": device_type,
                 "device_id": device_id,
                 "is_active": 1,
-                "last_used_at": now,
+                "last_used_at": now_datetime(),
             }
         )
 
         doc.insert(ignore_permissions=True)
+        frappe.db.commit()
 
-        return ok("Push token registered.")
+        return ok(
+            "Push token registered.",
+            data={"id": doc.name},
+        )
+
+    except frappe.UniqueValidationError:
+        frappe.db.rollback()
+
+        try:
+            token_hash = get_token_hash(token)
+
+            existing_token = _find_existing_token(
+                token=token,
+                token_hash=token_hash,
+            )
+
+            if existing_token:
+                _update_push_token(
+                    name=existing_token,
+                    user=current_user,
+                    token=token,
+                    token_hash=token_hash,
+                    device_type=device_type,
+                    device_id=device_id,
+                )
+
+                _deactivate_other_tokens_for_device(
+                    user=current_user,
+                    device_id=device_id,
+                    keep_name=existing_token,
+                )
+
+                frappe.db.commit()
+
+                return ok(
+                    "Push token updated.",
+                    data={"id": existing_token},
+                )
+
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                "AOS Push Token Duplicate Recovery Failed",
+            )
+
+        return fail(
+            "Failed to register push token.",
+            code="INTERNAL_ERROR",
+        )
 
     except Exception as e:
         frappe.log_error(
             frappe.get_traceback(),
             f"AOS Register Push Token Failed: {e}",
         )
-        return fail("Failed to register push token.", code="INTERNAL_ERROR")
+        frappe.db.rollback()
+
+        return fail(
+            "Failed to register push token.",
+            code="INTERNAL_ERROR",
+        )
 
 
 # DEACTIVATE TOKEN
@@ -151,23 +300,34 @@ def deactivate_push_token_impl(**kwargs):
     try:
         token_hash = get_token_hash(token)
 
-        exists = frappe.db.exists(
-            "AOS Push Token",
-            {"token_hash": token_hash, "user": current_user},
+        existing = _find_existing_token(
+            token=token,
+            token_hash=token_hash,
         )
 
-        if not exists:
+        if not existing:
+            return ok("Token not found or already inactive.")
+
+        owner = frappe.db.get_value(
+            "AOS Push Token",
+            existing,
+            "user",
+        )
+
+        if owner != current_user:
             return ok("Token not found or already inactive.")
 
         frappe.db.set_value(
             "AOS Push Token",
-            {"token_hash": token_hash},
+            existing,
             {
                 "is_active": 0,
                 "last_used_at": now_datetime(),
             },
             update_modified=False,
         )
+
+        frappe.db.commit()
 
         return ok("Push token deactivated.")
 
@@ -176,4 +336,9 @@ def deactivate_push_token_impl(**kwargs):
             frappe.get_traceback(),
             f"AOS Deactivate Push Token Failed: {e}",
         )
-        return fail("Failed to deactivate push token.", code="INTERNAL_ERROR")
+        frappe.db.rollback()
+
+        return fail(
+            "Failed to deactivate push token.",
+            code="INTERNAL_ERROR",
+        )
