@@ -14,6 +14,8 @@ Design notes:
 - list_calls returns grouped call-history summaries by default.
 - get_call_group_details returns the individual call records inside one
   grouped call-history row.
+- delete_call_logs hides selected call logs for the current user only.
+- clear_call_history hides all visible call logs for the current user only.
 - get_call_status is used by Flutter to validate call state before restoring
   incoming call UI from background/terminated push payloads.
 - CALL_TIMEOUT_SECONDS is used by initiate_call to pass the timeout delay
@@ -42,6 +44,8 @@ GET_TOKEN_LIMIT_PER_MINUTE_PER_USER = 120
 # History rate limits
 LIST_CALLS_LIMIT_PER_MINUTE_PER_USER = 120
 GET_CALL_GROUP_DETAILS_LIMIT_PER_MINUTE_PER_USER = 120
+DELETE_CALL_LOGS_LIMIT_PER_MINUTE_PER_USER = 60
+CLEAR_CALL_HISTORY_LIMIT_PER_MINUTE_PER_USER = 20
 
 
 # Status/recovery rate limits

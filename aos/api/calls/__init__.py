@@ -33,6 +33,8 @@ from .token import (
 from .history import (
     list_calls_impl,
     get_call_group_details_impl,
+    delete_call_logs_impl,
+    clear_call_history_impl,
 )
 
 
@@ -98,3 +100,15 @@ def list_calls(**kwargs):
 def get_call_group_details(**kwargs):
     """Get individual call logs inside a grouped call-history row."""
     return get_call_group_details_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def delete_call_logs(**kwargs):
+    """Delete one or more call logs for the current user only."""
+    return delete_call_logs_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def clear_call_history(**kwargs):
+    """Clear current user's visible call history only."""
+    return clear_call_history_impl(**kwargs)

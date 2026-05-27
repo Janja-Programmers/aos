@@ -4,12 +4,16 @@ Call History APIs (implementation).
 Handles:
 - list_calls
 - get_call_group_details
+- delete_call_logs
+- clear_call_history
 """
 
 from __future__ import annotations
 from typing import Any
 
+import json
 import frappe
+from frappe.utils import now_datetime
 
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
@@ -18,6 +22,8 @@ from aos.api.shared.responses import ok, fail
 from .constants import (
     LIST_CALLS_LIMIT_PER_MINUTE_PER_USER,
     GET_CALL_GROUP_DETAILS_LIMIT_PER_MINUTE_PER_USER,
+    DELETE_CALL_LOGS_LIMIT_PER_MINUTE_PER_USER,
+    CLEAR_CALL_HISTORY_LIMIT_PER_MINUTE_PER_USER,
 )
 from .realtime import serialize_call_for_realtime
 
@@ -25,6 +31,7 @@ from .realtime import serialize_call_for_realtime
 # CONSTANTS
 RAW_FETCH_BATCH_SIZE = 100
 MAX_GROUP_FETCH_LOOPS = 50
+MAX_DELETE_CALL_LOGS_BATCH_SIZE = 100
 
 
 # HELPERS
@@ -49,6 +56,52 @@ def _clean_str(value) -> str | None:
 
     value = str(value).strip()
     return value or None
+
+
+def _normalize_call_ids(value) -> list[str]:
+    """
+    Normalize call_ids from JSON/list/string input.
+
+    Accepts:
+    - ["CALL-1", "CALL-2"]
+    - '["CALL-1", "CALL-2"]'
+    - "CALL-1"
+    """
+
+    if value is None:
+        return []
+
+    if isinstance(value, str):
+        value = value.strip()
+
+        if not value:
+            return []
+
+        try:
+            parsed = json.loads(value)
+            value = parsed
+        except Exception:
+            value = [value]
+
+    if not isinstance(value, (list, tuple, set)):
+        value = [value]
+
+    result = []
+    seen = set()
+
+    for item in value:
+        call_id = _clean_str(item)
+
+        if not call_id:
+            continue
+
+        if call_id in seen:
+            continue
+
+        seen.add(call_id)
+        result.append(call_id)
+
+    return result
 
 
 def _validate_conversation_membership(
@@ -76,6 +129,30 @@ def _validate_conversation_membership(
     return None
 
 
+def _visible_call_condition() -> str:
+    """
+    Per-user call-log visibility condition.
+
+    Mirrors AOS Conversation soft-delete behavior:
+    - caller deletion hides only from caller
+    - receiver deletion hides only from receiver
+    """
+
+    return """
+    (
+        (
+            caller = %(current_user)s
+            AND IFNULL(visible_to_caller, 1) = 1
+        )
+        OR
+        (
+            receiver = %(current_user)s
+            AND IFNULL(visible_to_receiver, 1) = 1
+        )
+    )
+    """
+
+
 def _get_call_row(call_id: str):
     return frappe.db.sql(
         """
@@ -88,6 +165,8 @@ def _get_call_row(call_id: str):
             status,
             call_type,
             is_active,
+            visible_to_caller,
+            visible_to_receiver,
             ringing_at,
             started_at,
             ended_at,
@@ -110,6 +189,16 @@ def _fetch_call_by_id(call_id: str):
 
 def _user_in_call(call, current_user: str) -> bool:
     return current_user in (call.caller, call.receiver)
+
+
+def _user_can_see_call(call, current_user: str) -> bool:
+    if call.caller == current_user:
+        return int(call.visible_to_caller or 0) == 1
+
+    if call.receiver == current_user:
+        return int(call.visible_to_receiver or 0) == 1
+
+    return False
 
 
 def _get_direction(call, current_user: str) -> str:
@@ -282,7 +371,7 @@ def _build_base_conditions_and_values(
     filter_type: str,
 ):
     conditions = [
-        "(caller = %(current_user)s OR receiver = %(current_user)s)"
+        _visible_call_condition(),
     ]
 
     values = {
@@ -353,6 +442,8 @@ def _fetch_call_rows(
             status,
             call_type,
             is_active,
+            visible_to_caller,
+            visible_to_receiver,
             ringing_at,
             started_at,
             ended_at,
@@ -473,6 +564,9 @@ def _validate_group_boundary_call(
     if not _user_in_call(call, current_user):
         return None, fail("Not allowed.", code="PERMISSION_DENIED")
 
+    if not _user_can_see_call(call, current_user):
+        return None, fail(f"{label} call not found.", code="NOT_FOUND")
+
     return call, None
 
 
@@ -483,13 +577,13 @@ def _fetch_calls_between_boundaries(
     oldest_call,
 ):
     """
-    Fetch calls between latest and oldest boundary calls, inclusive.
+    Fetch visible calls between latest and oldest boundary calls, inclusive.
 
     Ordering is DESC by creation/name.
     """
 
     return frappe.db.sql(
-        """
+        f"""
         SELECT
             name,
             conversation,
@@ -499,6 +593,8 @@ def _fetch_calls_between_boundaries(
             status,
             call_type,
             is_active,
+            visible_to_caller,
+            visible_to_receiver,
             ringing_at,
             started_at,
             ended_at,
@@ -507,7 +603,7 @@ def _fetch_calls_between_boundaries(
             creation
         FROM `tabAOS Call`
         WHERE
-            (caller = %(current_user)s OR receiver = %(current_user)s)
+            {_visible_call_condition()}
             AND (
                 creation < %(latest_creation)s
                 OR (
@@ -533,6 +629,90 @@ def _fetch_calls_between_boundaries(
         },
         as_dict=True,
     )
+
+
+def _delete_selected_call_logs(*, current_user: str, call_ids: list[str]) -> int:
+    """
+    Hide selected call logs for current user only.
+
+    Does not delete AOS Call records.
+    Does not affect the other participant.
+    """
+
+    if not call_ids:
+        return 0
+
+    now = now_datetime()
+    deleted_count = 0
+
+    placeholders = ", ".join(["%s"] * len(call_ids))
+
+    # Hide logs where current user is caller.
+    caller_query = f"""
+        UPDATE `tabAOS Call`
+        SET visible_to_caller = 0
+        WHERE caller = %s
+          AND IFNULL(visible_to_caller, 1) = 1
+          AND name IN ({placeholders})
+    """
+
+    frappe.db.sql(
+        caller_query,
+        tuple([current_user] + call_ids),
+    )
+    deleted_count += frappe.db._cursor.rowcount or 0
+
+    # Hide logs where current user is receiver.
+    receiver_query = f"""
+        UPDATE `tabAOS Call`
+        SET visible_to_receiver = 0
+        WHERE receiver = %s
+          AND IFNULL(visible_to_receiver, 1) = 1
+          AND name IN ({placeholders})
+    """
+
+    frappe.db.sql(
+        receiver_query,
+        tuple([current_user] + call_ids),
+    )
+    deleted_count += frappe.db._cursor.rowcount or 0
+
+    return deleted_count
+
+
+def _clear_all_call_history(*, current_user: str) -> int:
+    """
+    Hide all visible call logs for current user only.
+
+    Does not delete AOS Call records.
+    Does not affect the other participant.
+    """
+
+    deleted_count = 0
+
+    frappe.db.sql(
+        """
+        UPDATE `tabAOS Call`
+        SET visible_to_caller = 0
+        WHERE caller = %s
+          AND IFNULL(visible_to_caller, 1) = 1
+        """,
+        (current_user,),
+    )
+    deleted_count += frappe.db._cursor.rowcount or 0
+
+    frappe.db.sql(
+        """
+        UPDATE `tabAOS Call`
+        SET visible_to_receiver = 0
+        WHERE receiver = %s
+          AND IFNULL(visible_to_receiver, 1) = 1
+        """,
+        (current_user,),
+    )
+    deleted_count += frappe.db._cursor.rowcount or 0
+
+    return deleted_count
 
 
 # LIST CALLS
@@ -685,7 +865,6 @@ def get_call_group_details_impl(**kwargs):
             return fail("Invalid call group boundary.", code="VALIDATION_ERROR")
 
         latest = calls[0]
-        oldest = calls[-1]
 
         data = {
             "group_key": (
@@ -717,3 +896,91 @@ def get_call_group_details_impl(**kwargs):
             "AOS Get Call Group Details Failed",
         )
         return fail("Failed to fetch call group.", code="INTERNAL_ERROR")
+
+
+# DELETE CALL LOGS
+def delete_call_logs_impl(**kwargs):
+    current_user, err = require_login()
+    if err:
+        return err
+
+    rl = rate_limit(
+        key=f"aos:calls:delete-logs:user:{current_user}",
+        ttl_seconds=60,
+        limit=DELETE_CALL_LOGS_LIMIT_PER_MINUTE_PER_USER,
+        message="Too many requests. Please try again shortly.",
+    )
+    if rl:
+        return rl
+
+    call_ids = _normalize_call_ids(kwargs.get("call_ids"))
+
+    if not call_ids:
+        return fail("call_ids is required.", code="VALIDATION_ERROR")
+
+    if len(call_ids) > MAX_DELETE_CALL_LOGS_BATCH_SIZE:
+        return fail(
+            f"You can delete at most {MAX_DELETE_CALL_LOGS_BATCH_SIZE} call logs at once.",
+            code="VALIDATION_ERROR",
+        )
+
+    try:
+        deleted_count = _delete_selected_call_logs(
+            current_user=current_user,
+            call_ids=call_ids,
+        )
+
+        frappe.db.commit()
+
+        return ok(
+            "Call logs deleted.",
+            data={
+                "deleted_count": deleted_count,
+            },
+        )
+
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Delete Call Logs Failed",
+        )
+        frappe.db.rollback()
+        return fail("Failed to delete call logs.", code="INTERNAL_ERROR")
+
+
+# CLEAR CALL HISTORY
+def clear_call_history_impl(**kwargs):
+    current_user, err = require_login()
+    if err:
+        return err
+
+    rl = rate_limit(
+        key=f"aos:calls:clear-history:user:{current_user}",
+        ttl_seconds=60,
+        limit=CLEAR_CALL_HISTORY_LIMIT_PER_MINUTE_PER_USER,
+        message="Too many requests. Please try again shortly.",
+    )
+    if rl:
+        return rl
+
+    try:
+        deleted_count = _clear_all_call_history(
+            current_user=current_user,
+        )
+
+        frappe.db.commit()
+
+        return ok(
+            "Call history cleared.",
+            data={
+                "deleted_count": deleted_count,
+            },
+        )
+
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Clear Call History Failed",
+        )
+        frappe.db.rollback()
+        return fail("Failed to clear call history.", code="INTERNAL_ERROR")

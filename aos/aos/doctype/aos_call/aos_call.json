@@ -9,16 +9,18 @@
   "conversation",
   "room_name",
   "caller",
+  "receiver",
   "ringing_at",
-  "started_at",
   "ended_by",
   "duration",
   "column_break_vdfj",
   "status",
   "call_type",
-  "receiver",
+  "started_at",
   "ended_at",
-  "is_active"
+  "is_active",
+  "visible_to_caller",
+  "visible_to_receiver"
  ],
  "fields": [
   {
@@ -124,11 +126,25 @@
    "fieldtype": "Datetime",
    "label": "Ringing At",
    "read_only": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "visible_to_caller",
+   "fieldtype": "Check",
+   "label": "Visible To Caller",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "visible_to_receiver",
+   "fieldtype": "Check",
+   "label": "Visible To Receiver",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-04-13 17:12:45.164992",
+ "modified": "2026-05-27 17:25:45.341074",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Call",

@@ -23,6 +23,14 @@ VALID_STATUS_TRANSITIONS = {
 }
 
 
+IMMUTABLE_FIELDS_AFTER_INSERT = {
+    "conversation",
+    "caller",
+    "receiver",
+    "room_name",
+}
+
+
 class AOSCall(Document):
     def validate(self):
         self._validate_required_fields()
@@ -35,8 +43,10 @@ class AOSCall(Document):
     def before_insert(self):
         self._set_room_name()
         self._set_initial_state()
+        self._set_visibility_defaults()
 
     def before_save(self):
+        self._prevent_identity_modification()
         self._handle_status_side_effects()
         self._compute_duration()
 
@@ -111,13 +121,42 @@ class AOSCall(Document):
         if existing:
             frappe.throw("There is already an active call for this conversation")
 
+    def _prevent_identity_modification(self):
+        if self.is_new():
+            return
+
+        original = frappe.db.get_value(
+            self.doctype,
+            self.name,
+            list(IMMUTABLE_FIELDS_AFTER_INSERT),
+            as_dict=True,
+        )
+
+        if not original:
+            return
+
+        for fieldname in IMMUTABLE_FIELDS_AFTER_INSERT:
+            if self.get(fieldname) != original.get(fieldname):
+                frappe.throw(
+                    f"{frappe.unscrub(fieldname)} cannot be modified once the call is created"
+                )
+
     # State setup / side effects
     def _set_initial_state(self):
         if not self.status:
             self.status = "initiated"
 
-        if self.status in ACTIVE_STATUSES:
-            self.is_active = 1
+        self.is_active = 1 if self.status in ACTIVE_STATUSES else 0
+
+    def _set_visibility_defaults(self):
+        """
+        New calls should be visible to both participants by default.
+        """
+        if self.visible_to_caller is None:
+            self.visible_to_caller = 1
+
+        if self.visible_to_receiver is None:
+            self.visible_to_receiver = 1
 
     def _set_room_name(self):
         if not self.room_name:
@@ -142,6 +181,9 @@ class AOSCall(Document):
                 self.ended_at = now
 
             self.is_active = 0
+
+        elif self.status in ACTIVE_STATUSES:
+            self.is_active = 1
 
     def _compute_duration(self):
         if not self.started_at or not self.ended_at:
