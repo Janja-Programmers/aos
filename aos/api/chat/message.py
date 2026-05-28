@@ -25,6 +25,8 @@ from .constants import (
 )
 
 from .presence import publish_presence_update_to_peers
+from .preview import set_conversation_preview_for_new_message
+from .visibility import DELETED_MESSAGE_TEXT, get_user_delete_sql_condition
 
 
 # Helpers
@@ -51,7 +53,7 @@ def _get_conversation_row(conv_id: str):
     return frappe.db.get_value(
         "AOS Conversation",
         conv_id,
-        ["participant_1", "participant_2"],
+        ["name", "participant_1", "participant_2"],
         as_dict=True,
     )
 
@@ -343,6 +345,12 @@ def _fetch_reply_messages_bulk(
             "has_attachments",
             "is_edited",
             "edited_at",
+            "deleted_for_everyone",
+            "deleted_for_everyone_at",
+            "deleted_for_1",
+            "deleted_for_1_at",
+            "deleted_for_2",
+            "deleted_for_2_at",
             "creation",
         ],
     )
@@ -460,6 +468,45 @@ def _message_preview(
     return "[Message]"
 
 
+def _is_deleted_for_everyone(msg) -> bool:
+    return bool(getattr(msg, "deleted_for_everyone", 0))
+
+
+def _build_deleted_message_payload(msg, user_payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Serialize a globally deleted message as a safe placeholder.
+
+    Important:
+    - Do not expose original content.
+    - Do not expose ad preview.
+    - Do not expose attachments.
+    """
+
+    return {
+        "id": msg.name,
+        "sender": user_payload["sender"],
+        "sender_display_name": user_payload["sender_display_name"],
+        "sender_avatar": user_payload["sender_avatar"],
+        "content": None,
+        "message_type": "deleted",
+        "original_message_type": msg.message_type,
+        "ad": None,
+        "ad_preview": None,
+        "reply_to_message": getattr(msg, "reply_to_message", None),
+        "reply_to": None,
+        "has_attachments": 0,
+        "attachments": [],
+        "is_edited": msg.is_edited or 0,
+        "edited_at": getattr(msg, "edited_at", None),
+        "is_deleted_for_everyone": 1,
+        "deleted_for_everyone_at": getattr(msg, "deleted_for_everyone_at", None),
+        "display_text": DELETED_MESSAGE_TEXT,
+        "delivered_at": getattr(msg, "delivered_to_receiver_at", None),
+        "read_at": getattr(msg, "read_by_receiver_at", None),
+        "created_at": msg.creation,
+    }
+
+
 def _build_reply_payload(
     *,
     reply_to_message: str | None,
@@ -480,6 +527,30 @@ def _build_reply_payload(
 
     replied_user = _serialize_user(replied.sender, user_map)
 
+    if _is_deleted_for_everyone(replied):
+        return {
+            "id": replied.name,
+            "sender": replied_user["sender"],
+            "sender_display_name": replied_user["sender_display_name"],
+            "sender_avatar": replied_user["sender_avatar"],
+            "content": None,
+            "message_type": "deleted",
+            "original_message_type": replied.message_type,
+            "ad": None,
+            "ad_preview": None,
+            "has_attachments": 0,
+            "is_edited": replied.is_edited or 0,
+            "edited_at": getattr(replied, "edited_at", None),
+            "is_deleted_for_everyone": 1,
+            "deleted_for_everyone_at": getattr(
+                replied,
+                "deleted_for_everyone_at",
+                None,
+            ),
+            "display_text": DELETED_MESSAGE_TEXT,
+            "created_at": replied.creation,
+        }
+
     return {
         "id": replied.name,
         "sender": replied_user["sender"],
@@ -492,6 +563,9 @@ def _build_reply_payload(
         "has_attachments": replied.has_attachments or 0,
         "is_edited": replied.is_edited or 0,
         "edited_at": getattr(replied, "edited_at", None),
+        "is_deleted_for_everyone": 0,
+        "deleted_for_everyone_at": None,
+        "display_text": None,
         "created_at": replied.creation,
     }
 
@@ -509,6 +583,10 @@ def _serialize_message(
     """
 
     user_payload = _serialize_user(msg.sender, user_map)
+
+    if _is_deleted_for_everyone(msg):
+        return _build_deleted_message_payload(msg, user_payload)
+
     reply_to_message = getattr(msg, "reply_to_message", None)
 
     reply_to = _build_reply_payload(
@@ -533,6 +611,9 @@ def _serialize_message(
         "attachments": attachments_map.get(msg.name, []),
         "is_edited": msg.is_edited or 0,
         "edited_at": getattr(msg, "edited_at", None),
+        "is_deleted_for_everyone": 0,
+        "deleted_for_everyone_at": None,
+        "display_text": None,
         "delivered_at": getattr(msg, "delivered_to_receiver_at", None),
         "read_at": getattr(msg, "read_by_receiver_at", None),
         "created_at": msg.creation,
@@ -681,7 +762,7 @@ def send_message_impl(**kwargs):
             ad_ids.append(ad)
 
         for replied in reply_map.values():
-            if replied.ad:
+            if replied.ad and not _is_deleted_for_everyone(replied):
                 ad_ids.append(replied.ad)
 
         user_map = _fetch_users(user_ids)
@@ -703,6 +784,15 @@ def send_message_impl(**kwargs):
         )
 
         # Update conversation.
+        # New messages are visible to both participants, so update both
+        # participant-specific previews.
+        set_conversation_preview_for_new_message(
+            conversation_id=conv_id,
+            sender=current_user,
+            preview=preview,
+            sent_at=now,
+        )
+
         if current_user == conv.participant_1:
             unread_field = "unread_count_2"
         else:
@@ -712,18 +802,10 @@ def send_message_impl(**kwargs):
             f"""
             UPDATE `tabAOS Conversation`
             SET
-                last_message = %s,
-                last_message_at = %s,
-                last_sender = %s,
                 {unread_field} = COALESCE({unread_field}, 0) + 1
             WHERE name = %s
             """,
-            (
-                preview,
-                now,
-                current_user,
-                conv_id,
-            ),
+            (conv_id,),
         )
 
         # Realtime.
@@ -801,7 +883,14 @@ def list_messages_impl(**kwargs):
         if current_user not in (conv.participant_1, conv.participant_2):
             return fail("Not allowed.", code="PERMISSION_DENIED")
 
-        filters: Dict[str, Any] = {"conversation": conv_id}
+        delete_condition = get_user_delete_sql_condition(conv, current_user)
+
+        params: Dict[str, Any] = {
+            "conversation_id": conv_id,
+            "limit": limit,
+        }
+
+        before_condition = ""
 
         if before:
             before_creation = frappe.db.get_value(
@@ -813,38 +902,53 @@ def list_messages_impl(**kwargs):
             if not before_creation:
                 return fail("Invalid 'before' message.", code="VALIDATION_ERROR")
 
-            filters["creation"] = ("<", before_creation)
+            before_condition = "AND creation < %(before_creation)s"
+            params["before_creation"] = before_creation
 
-        messages = frappe.get_all(
-            "AOS Message",
-            filters=filters,
-            fields=[
-                "name",
-                "sender",
-                "content",
-                "message_type",
-                "ad",
-                "reply_to_message",
-                "has_attachments",
-                "is_edited",
-                "edited_at",
-                "delivered_to_receiver_at",
-                "read_by_receiver_at",
-                "creation",
-            ],
-            order_by="creation desc",
-            limit_page_length=limit,
+        messages = frappe.db.sql(
+            f"""
+            SELECT
+                name,
+                sender,
+                content,
+                message_type,
+                ad,
+                reply_to_message,
+                has_attachments,
+                is_edited,
+                edited_at,
+                deleted_for_everyone,
+                deleted_for_everyone_at,
+                deleted_for_1,
+                deleted_for_1_at,
+                deleted_for_2,
+                deleted_for_2_at,
+                delivered_to_receiver_at,
+                read_by_receiver_at,
+                creation
+            FROM `tabAOS Message`
+            WHERE
+                conversation = %(conversation_id)s
+                AND {delete_condition}
+                {before_condition}
+            ORDER BY creation DESC
+            LIMIT %(limit)s
+            """,
+            params,
+            as_dict=True,
         )
 
         if not messages:
             return ok("Messages fetched.", data=[])
 
-        message_ids = [m.name for m in messages]
+        message_ids = [m.name for m in messages if not _is_deleted_for_everyone(m)]
+
         reply_message_ids = list(
             {
                 m.reply_to_message
                 for m in messages
                 if getattr(m, "reply_to_message", None)
+                and not _is_deleted_for_everyone(m)
             }
         )
 
@@ -858,10 +962,16 @@ def list_messages_impl(**kwargs):
 
         sender_ids = list(set(sender_ids))
 
-        ad_ids = list({m.ad for m in messages if m.ad})
+        ad_ids = list(
+            {
+                m.ad
+                for m in messages
+                if m.ad and not _is_deleted_for_everyone(m)
+            }
+        )
 
         for replied in reply_map.values():
-            if replied.ad:
+            if replied.ad and not _is_deleted_for_everyone(replied):
                 ad_ids.append(replied.ad)
 
         ad_ids = list(set(ad_ids))

@@ -26,6 +26,14 @@ from .edit_message import (
     edit_message_impl,
 )
 
+from .delete_messages import (
+    delete_messages_impl,
+)
+
+from .clear_chat import (
+    clear_chat_impl,
+)
+
 # Status
 from .status import (
     mark_delivered_impl,
@@ -74,6 +82,18 @@ def list_messages(**kwargs):
 def edit_message(**kwargs):
     """Edit a sent message."""
     return edit_message_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def delete_messages(**kwargs):
+    """Delete one or more messages for the current user or everyone."""
+    return delete_messages_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def clear_chat(**kwargs):
+    """Clear all visible messages in a conversation for the current user."""
+    return clear_chat_impl(**kwargs)
 
 
 # Status APIs

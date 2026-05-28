@@ -9,9 +9,11 @@ Rules:
 - System messages cannot be edited.
 - Media-only messages cannot be edited.
 - Text, mixed, and ad messages can be edited.
+- Deleted-for-everyone messages cannot be edited.
+- Messages deleted for the current sender cannot be edited.
 - Editing updates content, is_edited, edited_at, and original_content.
-- If the edited message is the current conversation preview message,
-  last_message is updated without changing last_message_at.
+- Conversation previews are recomputed after edit using participant-specific
+  last_message_1 / last_message_2 fields.
 """
 
 from __future__ import annotations
@@ -32,10 +34,13 @@ from .message import (
     _fetch_reply_messages_bulk,
     _fetch_users,
     _get_receiver,
-    _message_preview,
+    _is_deleted_for_everyone,
     _serialize_attachments_bulk,
     _serialize_message,
 )
+
+from .preview import recompute_conversation_previews
+from .visibility import get_deleted_for_user_field
 
 
 EDITABLE_MESSAGE_TYPES = {
@@ -64,15 +69,18 @@ def _get_message_for_edit(message_id: str):
             m.is_edited,
             m.edited_at,
             m.original_content,
+            m.deleted_for_everyone,
+            m.deleted_for_everyone_at,
+            m.deleted_for_1,
+            m.deleted_for_1_at,
+            m.deleted_for_2,
+            m.deleted_for_2_at,
             m.delivered_to_receiver_at,
             m.read_by_receiver_at,
             m.creation,
 
             c.participant_1,
-            c.participant_2,
-            c.last_message,
-            c.last_message_at,
-            c.last_sender
+            c.participant_2
         FROM `tabAOS Message` m
         INNER JOIN `tabAOS Conversation` c
             ON c.name = m.conversation
@@ -84,26 +92,16 @@ def _get_message_for_edit(message_id: str):
     )
 
 
-def _is_latest_conversation_message(message_id: str, conversation_id: str) -> bool:
+def _is_deleted_for_current_user(msg, current_user: str) -> bool:
     """
-    Check whether this message is the latest message in the conversation.
+    Whether this message has been deleted-for-me by the current user.
 
-    We use creation desc because editing an old message should not move
-    the conversation to the top.
+    If the sender deleted the message for themselves, they should not be able
+    to edit it through the API anymore because it is no longer visible to them.
     """
 
-    latest = frappe.get_all(
-        "AOS Message",
-        filters={"conversation": conversation_id},
-        fields=["name"],
-        order_by="creation desc",
-        limit_page_length=1,
-    )
-
-    if not latest:
-        return False
-
-    return latest[0].name == message_id
+    fieldname = get_deleted_for_user_field(msg, current_user)
+    return bool(getattr(msg, fieldname, 0))
 
 
 def _serialize_edited_message(msg) -> Dict[str, Any]:
@@ -125,11 +123,11 @@ def _serialize_edited_message(msg) -> Dict[str, Any]:
 
     ad_ids: List[str] = []
 
-    if msg.ad:
+    if msg.ad and not _is_deleted_for_everyone(msg):
         ad_ids.append(msg.ad)
 
     for replied in reply_map.values():
-        if replied.ad:
+        if replied.ad and not _is_deleted_for_everyone(replied):
             ad_ids.append(replied.ad)
 
     user_map = _fetch_users(user_ids)
@@ -184,6 +182,18 @@ def edit_message_impl(**kwargs):
                 code="PERMISSION_DENIED",
             )
 
+        if _is_deleted_for_everyone(msg):
+            return fail(
+                "Deleted messages cannot be edited.",
+                code="VALIDATION_ERROR",
+            )
+
+        if _is_deleted_for_current_user(msg, current_user):
+            return fail(
+                "You cannot edit a message you deleted for yourself.",
+                code="VALIDATION_ERROR",
+            )
+
         if msg.message_type not in EDITABLE_MESSAGE_TYPES:
             return fail(
                 "This message type cannot be edited.",
@@ -205,7 +215,6 @@ def edit_message_impl(**kwargs):
             )
 
         now = now_datetime()
-
         original_content = msg.original_content or old_content
 
         frappe.db.set_value(
@@ -226,26 +235,10 @@ def edit_message_impl(**kwargs):
         msg.edited_at = now
         msg.original_content = original_content
 
-        ad_map = _fetch_ads_bulk([msg.ad]) if msg.ad else {}
-
-        preview = _message_preview(
-            content=content,
-            has_attachments=msg.has_attachments or 0,
-            ad=msg.ad,
-            ad_preview=ad_map.get(msg.ad) if msg.ad else None,
-        )
-
-        # If the edited message is the latest message, update conversation preview.
-        # Do not update last_message_at because editing should not reorder chats.
-        if _is_latest_conversation_message(message_id, msg.conversation):
-            frappe.db.set_value(
-                "AOS Conversation",
-                msg.conversation,
-                {
-                    "last_message": preview,
-                },
-                update_modified=False,
-            )
+        # Recompute both participant-specific previews.
+        # This handles cases where this edited message is the latest visible
+        # message for one participant but not the other due to delete-for-me.
+        recompute_conversation_previews(msg.conversation)
 
         serialized = _serialize_edited_message(msg)
 

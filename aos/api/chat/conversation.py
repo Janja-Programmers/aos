@@ -59,9 +59,14 @@ def _fetch_users(users: list[str]) -> dict[str, frappe._dict]:
     if not users:
         return {}
 
+    unique_users = list({user for user in users if user})
+
+    if not unique_users:
+        return {}
+
     rows = frappe.get_all(
         "User",
-        filters={"name": ["in", users]},
+        filters={"name": ["in", unique_users]},
         fields=["name", "full_name", "user_image"],
     )
 
@@ -114,6 +119,29 @@ def _build_conversation_response(
         "display_name": other["display_name"],
         "avatar": other["avatar"],
     }
+
+
+def _viewer_preview_fields(conv, current_user: str) -> tuple[str | None, object | None, str | None]:
+    """
+    Return viewer-specific conversation preview fields.
+
+    Since AOS Conversation now stores separate last-visible-message previews
+    for each participant, the API must choose the correct set based on the
+    current viewer.
+    """
+
+    if conv["participant_1"] == current_user:
+        return (
+            conv.get("last_message_1"),
+            conv.get("last_message_at_1"),
+            conv.get("last_sender_1"),
+        )
+
+    return (
+        conv.get("last_message_2"),
+        conv.get("last_message_at_2"),
+        conv.get("last_sender_2"),
+    )
 
 
 # get_or_create_conversation
@@ -254,10 +282,16 @@ def list_conversations_impl(**kwargs):
                 name,
                 participant_1,
                 participant_2,
-                last_message,
-                last_message_at,
+                last_message_1,
+                last_message_at_1,
+                last_sender_1,
+                last_message_2,
+                last_message_at_2,
+                last_sender_2,
                 unread_count_1,
-                unread_count_2
+                unread_count_2,
+                creation,
+                modified
             FROM `tabAOS Conversation`
             WHERE
                 (
@@ -271,8 +305,9 @@ def list_conversations_impl(**kwargs):
                 )
             ORDER BY
                 CASE
-                    WHEN last_message_at IS NULL THEN creation
-                    ELSE last_message_at
+                    WHEN participant_1 = %(current_user)s
+                        THEN COALESCE(last_message_at_1, creation)
+                    ELSE COALESCE(last_message_at_2, creation)
                 END DESC,
                 modified DESC
             LIMIT %(limit)s OFFSET %(offset)s
@@ -289,29 +324,29 @@ def list_conversations_impl(**kwargs):
             publish_presence_update_to_peers(current_user)
             return ok("Conversations fetched.", data=[])
 
-        # Collect other users.
-        other_users = set()
+        # Collect users needed for display:
+        # - other participant
+        # - viewer-specific last sender
+        user_ids = set()
 
         for conv in conversations:
-            other = (
-                conv["participant_2"]
-                if conv["participant_1"] == current_user
-                else conv["participant_1"]
-            )
-            other_users.add(other)
+            is_p1 = conv["participant_1"] == current_user
 
-        user_map = _fetch_users(list(other_users))
+            other = conv["participant_2"] if is_p1 else conv["participant_1"]
+            user_ids.add(other)
+
+            _, _, last_sender = _viewer_preview_fields(conv, current_user)
+            if last_sender:
+                user_ids.add(last_sender)
+
+        user_map = _fetch_users(list(user_ids))
 
         results = []
 
         for conv in conversations:
             is_p1 = conv["participant_1"] == current_user
 
-            other_user = (
-                conv["participant_2"]
-                if is_p1
-                else conv["participant_1"]
-            )
+            other_user = conv["participant_2"] if is_p1 else conv["participant_1"]
 
             user = user_map.get(other_user)
 
@@ -323,11 +358,14 @@ def list_conversations_impl(**kwargs):
 
             avatar = user.user_image if user else None
 
-            unread = (
-                conv["unread_count_1"]
-                if is_p1
-                else conv["unread_count_2"]
+            unread = conv["unread_count_1"] if is_p1 else conv["unread_count_2"]
+
+            last_message, last_message_at, last_sender = _viewer_preview_fields(
+                conv,
+                current_user,
             )
+
+            last_sender_user = user_map.get(last_sender) if last_sender else None
 
             results.append(
                 {
@@ -335,8 +373,19 @@ def list_conversations_impl(**kwargs):
                     "user": other_user,
                     "display_name": display_name,
                     "avatar": avatar,
-                    "last_message": conv["last_message"],
-                    "last_message_at": conv["last_message_at"],
+                    "last_message": last_message,
+                    "last_message_at": last_message_at,
+                    "last_sender": last_sender,
+                    "last_sender_display_name": (
+                        last_sender_user.full_name
+                        if last_sender_user and last_sender_user.full_name
+                        else last_sender
+                    ),
+                    "last_sender_avatar": (
+                        last_sender_user.user_image
+                        if last_sender_user
+                        else None
+                    ),
                     "unread_count": unread or 0,
                 }
             )

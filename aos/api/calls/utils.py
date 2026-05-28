@@ -26,6 +26,40 @@ def _validate_system_message_inputs(
         frappe.throw("content is required for call system message")
 
 
+def _validate_conversation_exists(conversation_id: str) -> None:
+    if not frappe.db.exists("AOS Conversation", conversation_id):
+        frappe.throw("Conversation not found")
+
+
+def _set_conversation_call_preview(
+    *,
+    conversation_id: str,
+    content: str,
+    sender: str,
+    timestamp,
+) -> None:
+    """
+    Update participant-specific conversation previews for a call system message.
+
+    Call system messages are visible to both participants, so both preview
+    slots are updated together.
+    """
+
+    frappe.db.set_value(
+        "AOS Conversation",
+        conversation_id,
+        {
+            "last_message_1": content,
+            "last_message_at_1": timestamp,
+            "last_sender_1": sender,
+            "last_message_2": content,
+            "last_message_at_2": timestamp,
+            "last_sender_2": sender,
+        },
+        update_modified=False,
+    )
+
+
 def upsert_call_system_message(
     *,
     call_id: str,
@@ -39,7 +73,8 @@ def upsert_call_system_message(
     - Only one message per call via call_id.
     - Updates the existing message instead of inserting duplicates.
     - Safe to call multiple times.
-    - Keeps conversation last_message in sync with the latest call state.
+    - Keeps participant-specific conversation previews in sync with the latest
+      call state.
 
     Notes:
     - AOS Message.sender is required, so system messages use Administrator.
@@ -52,6 +87,8 @@ def upsert_call_system_message(
         conversation_id=conversation_id,
         content=content,
     )
+
+    _validate_conversation_exists(conversation_id)
 
     content = content.strip()
     now = now_datetime()
@@ -88,15 +125,11 @@ def upsert_call_system_message(
 
         msg_name = msg.name
 
-    frappe.db.set_value(
-        "AOS Conversation",
-        conversation_id,
-        {
-            "last_message": content,
-            "last_message_at": now,
-            "last_sender": SYSTEM_MESSAGE_SENDER,
-        },
-        update_modified=False,
+    _set_conversation_call_preview(
+        conversation_id=conversation_id,
+        content=content,
+        sender=SYSTEM_MESSAGE_SENDER,
+        timestamp=now,
     )
 
     return msg_name

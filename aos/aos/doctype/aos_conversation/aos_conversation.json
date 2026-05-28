@@ -8,10 +8,13 @@
   "naming_series",
   "participant_1",
   "participant_2",
-  "last_message",
-  "last_message_at",
+  "last_message_1",
+  "last_message_at_1",
+  "last_sender_1",
+  "last_message_2",
+  "last_message_at_2",
+  "last_sender_2",
   "column_break_iclu",
-  "last_sender",
   "unread_count_1",
   "unread_count_2",
   "is_active_1",
@@ -44,30 +47,8 @@
    "search_index": 1
   },
   {
-   "fieldname": "last_message",
-   "fieldtype": "Small Text",
-   "label": "Last Message",
-   "read_only": 1
-  },
-  {
-   "fieldname": "last_message_at",
-   "fieldtype": "Datetime",
-   "in_list_view": 1,
-   "label": "Last Message At",
-   "read_only": 1,
-   "search_index": 1
-  },
-  {
    "fieldname": "column_break_iclu",
    "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "last_sender",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Last Sender",
-   "options": "User",
-   "read_only": 1
   },
   {
    "default": "0",
@@ -94,12 +75,56 @@
    "fieldname": "is_active_2",
    "fieldtype": "Check",
    "label": "Active for Participant 2"
+  },
+  {
+   "fieldname": "last_message_1",
+   "fieldtype": "Small Text",
+   "label": "Last Message For Participant 1",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_message_at_1",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Last Message At For Participant 1",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "last_message_2",
+   "fieldtype": "Small Text",
+   "label": "Last Message For Participant 2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_message_at_2",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Last Message At For Participant 2",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "last_sender_1",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Last Sender For Participant 1",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_sender_2",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Last Sender For Participant 2",
+   "options": "User",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-18 20:21:19.984580",
+ "modified": "2026-05-29 01:26:13.109264",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Conversation",
@@ -121,7 +146,7 @@
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
- "sort_field": "last_message_at",
+ "sort_field": "last_message_at_1",
  "sort_order": "DESC",
  "states": []
 }

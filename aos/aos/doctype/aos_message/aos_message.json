@@ -14,6 +14,12 @@
   "is_edited",
   "edited_at",
   "original_content",
+  "deleted_for_everyone",
+  "deleted_for_everyone_at",
+  "deleted_for_1",
+  "deleted_for_1_at",
+  "deleted_for_2",
+  "deleted_for_2_at",
   "column_break_bgvu",
   "ad",
   "call_id",
@@ -128,12 +134,54 @@
    "fieldtype": "Small Text",
    "label": "Original Content",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "deleted_for_everyone",
+   "fieldtype": "Check",
+   "label": "Deleted For Everyone",
+   "read_only": 1
+  },
+  {
+   "fieldname": "deleted_for_everyone_at",
+   "fieldtype": "Datetime",
+   "label": "Deleted For Everyone At",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "deleted_for_1",
+   "fieldtype": "Check",
+   "label": "Deleted For Participant 1",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "deleted_for_2",
+   "fieldtype": "Check",
+   "label": "Deleted For Participant 2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "deleted_for_1_at",
+   "fieldtype": "Datetime",
+   "label": "Deleted For Participant 1 At",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "deleted_for_2_at",
+   "fieldtype": "Datetime",
+   "label": "Deleted For Participant 2 At",
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-28 16:57:23.848944",
+ "modified": "2026-05-28 17:59:26.402311",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Message",

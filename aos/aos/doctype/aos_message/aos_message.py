@@ -14,6 +14,21 @@ VALID_MESSAGE_TYPES = {
 }
 
 
+SYSTEM_MANAGED_FIELDS = [
+    "delivered_to_receiver_at",
+    "read_by_receiver_at",
+    "is_edited",
+    "edited_at",
+    "original_content",
+    "deleted_for_everyone",
+    "deleted_for_everyone_at",
+    "deleted_for_1",
+    "deleted_for_1_at",
+    "deleted_for_2",
+    "deleted_for_2_at",
+]
+
+
 class AOSMessage(Document):
     def validate(self):
         self._validate_conversation()
@@ -153,28 +168,29 @@ class AOSMessage(Document):
         if not self.is_edited:
             self.is_edited = 0
 
+        if not self.deleted_for_everyone:
+            self.deleted_for_everyone = 0
+
+        if not self.deleted_for_1:
+            self.deleted_for_1 = 0
+
+        if not self.deleted_for_2:
+            self.deleted_for_2 = 0
+
     def _protect_system_managed_fields(self):
         if self.is_new():
             return
 
-        protected_fields = [
-            "delivered_to_receiver_at",
-            "read_by_receiver_at",
-            "is_edited",
-            "edited_at",
-            "original_content",
-        ]
-
         original = frappe.db.get_value(
             self.doctype,
             self.name,
-            protected_fields,
+            SYSTEM_MANAGED_FIELDS,
             as_dict=True,
         )
 
         if not original:
             return
 
-        for fieldname in protected_fields:
+        for fieldname in SYSTEM_MANAGED_FIELDS:
             if getattr(self, fieldname, None) != original.get(fieldname):
                 frappe.throw(f"{fieldname} cannot be modified directly")
