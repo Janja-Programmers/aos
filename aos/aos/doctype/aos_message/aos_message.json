@@ -11,6 +11,9 @@
   "message_type",
   "content",
   "reply_to_message",
+  "is_edited",
+  "edited_at",
+  "original_content",
   "column_break_bgvu",
   "ad",
   "call_id",
@@ -105,12 +108,32 @@
    "label": "Reply To Message",
    "options": "AOS Message",
    "search_index": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_edited",
+   "fieldtype": "Check",
+   "label": "Is Edited",
+   "read_only": 1
+  },
+  {
+   "fieldname": "edited_at",
+   "fieldtype": "Datetime",
+   "label": "Edited At",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "original_content",
+   "fieldtype": "Small Text",
+   "label": "Original Content",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-28 16:21:10.839886",
+ "modified": "2026-05-28 16:57:23.848944",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Message",

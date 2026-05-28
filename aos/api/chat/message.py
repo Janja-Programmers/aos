@@ -341,6 +341,8 @@ def _fetch_reply_messages_bulk(
             "message_type",
             "ad",
             "has_attachments",
+            "is_edited",
+            "edited_at",
             "creation",
         ],
     )
@@ -488,6 +490,8 @@ def _build_reply_payload(
         "ad": replied.ad,
         "ad_preview": ad_map.get(replied.ad) if replied.ad else None,
         "has_attachments": replied.has_attachments or 0,
+        "is_edited": replied.is_edited or 0,
+        "edited_at": getattr(replied, "edited_at", None),
         "created_at": replied.creation,
     }
 
@@ -527,6 +531,8 @@ def _serialize_message(
         "reply_to": reply_to,
         "has_attachments": msg.has_attachments or 0,
         "attachments": attachments_map.get(msg.name, []),
+        "is_edited": msg.is_edited or 0,
+        "edited_at": getattr(msg, "edited_at", None),
         "delivered_at": getattr(msg, "delivered_to_receiver_at", None),
         "read_at": getattr(msg, "read_by_receiver_at", None),
         "created_at": msg.creation,
@@ -820,6 +826,8 @@ def list_messages_impl(**kwargs):
                 "ad",
                 "reply_to_message",
                 "has_attachments",
+                "is_edited",
+                "edited_at",
                 "delivered_to_receiver_at",
                 "read_by_receiver_at",
                 "creation",

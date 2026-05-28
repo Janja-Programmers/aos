@@ -22,6 +22,10 @@ from .message import (
     list_messages_impl,
 )
 
+from .edit_message import (
+    edit_message_impl,
+)
+
 # Status
 from .status import (
     mark_delivered_impl,
@@ -64,6 +68,12 @@ def send_message(**kwargs):
 def list_messages(**kwargs):
     """List messages for a conversation."""
     return list_messages_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def edit_message(**kwargs):
+    """Edit a sent message."""
+    return edit_message_impl(**kwargs)
 
 
 # Status APIs

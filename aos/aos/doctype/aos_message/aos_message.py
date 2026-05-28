@@ -24,10 +24,10 @@ class AOSMessage(Document):
         self._validate_reply_to_message()
 
     def before_insert(self):
-        self._sync_attachment_flag()
+        self._sync_defaults()
 
     def before_save(self):
-        self._protect_status_fields()
+        self._protect_system_managed_fields()
 
     # Validation
     def _validate_conversation(self):
@@ -89,10 +89,7 @@ class AOSMessage(Document):
                 frappe.throw("Ad is required for ad messages")
 
             # Ad-only messages may optionally have no text.
-            if content:
-                self.content = content
-            else:
-                self.content = None
+            self.content = content or None
             return
 
         if self.message_type == "mixed":
@@ -149,26 +146,35 @@ class AOSMessage(Document):
             frappe.throw("A message cannot reply to itself")
 
     # Internal helpers
-    def _sync_attachment_flag(self):
+    def _sync_defaults(self):
         if not self.has_attachments:
             self.has_attachments = 0
 
-    def _protect_status_fields(self):
+        if not self.is_edited:
+            self.is_edited = 0
+
+    def _protect_system_managed_fields(self):
         if self.is_new():
             return
+
+        protected_fields = [
+            "delivered_to_receiver_at",
+            "read_by_receiver_at",
+            "is_edited",
+            "edited_at",
+            "original_content",
+        ]
 
         original = frappe.db.get_value(
             self.doctype,
             self.name,
-            ["delivered_to_receiver_at", "read_by_receiver_at"],
+            protected_fields,
             as_dict=True,
         )
 
         if not original:
             return
 
-        if (
-            self.delivered_to_receiver_at != original.delivered_to_receiver_at
-            or self.read_by_receiver_at != original.read_by_receiver_at
-        ):
-            frappe.throw("Message status fields cannot be modified directly")
+        for fieldname in protected_fields:
+            if getattr(self, fieldname, None) != original.get(fieldname):
+                frappe.throw(f"{fieldname} cannot be modified directly")
