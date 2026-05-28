@@ -76,9 +76,14 @@ def _fetch_users(users: List[str]) -> Dict[str, frappe._dict]:
     if not users:
         return {}
 
+    unique_users = list({user for user in users if user})
+
+    if not unique_users:
+        return {}
+
     rows = frappe.get_all(
         "User",
-        filters={"name": ["in", users]},
+        filters={"name": ["in", unique_users]},
         fields=["name", "full_name", "user_image"],
     )
 
@@ -107,9 +112,14 @@ def _serialize_attachments_bulk(message_ids: List[str]) -> Dict[str, List[Dict]]
     if not message_ids:
         return {}
 
+    unique_message_ids = list({message_id for message_id in message_ids if message_id})
+
+    if not unique_message_ids:
+        return {}
+
     rows = frappe.get_all(
         "AOS Message Attachment",
-        filters={"message": ["in", message_ids]},
+        filters={"message": ["in", unique_message_ids]},
         fields=["message", "file", "file_type", "sort_order"],
         order_by="sort_order asc",
     )
@@ -124,7 +134,7 @@ def _serialize_attachments_bulk(message_ids: List[str]) -> Dict[str, List[Dict]]
 
     files = frappe.get_all(
         "File",
-        filters={"name": ["in", file_ids]},
+        filters={"name": ["in", list(set(file_ids))]},
         fields=["name", "file_url"],
     )
 
@@ -190,6 +200,11 @@ def _fetch_ad_thumbnails(ad_ids: List[str]) -> Dict[str, str | None]:
     if not ad_ids:
         return {}
 
+    unique_ad_ids = list({ad for ad in ad_ids if ad})
+
+    if not unique_ad_ids:
+        return {}
+
     rows = frappe.db.sql(
         """
         SELECT
@@ -233,7 +248,7 @@ def _fetch_ad_thumbnails(ad_ids: List[str]) -> Dict[str, str | None]:
             AND adi.parenttype = 'AOS Ad'
             AND adi.parentfield = 'images'
         """,
-        {"ad_ids": tuple(ad_ids)},
+        {"ad_ids": tuple(unique_ad_ids)},
         as_dict=True,
     )
 
@@ -299,6 +314,40 @@ def _fetch_ads_bulk(ad_ids: List[str]) -> Dict[str, Dict[str, Any]]:
     return result
 
 
+def _fetch_reply_messages_bulk(
+    reply_message_ids: List[str],
+) -> Dict[str, frappe._dict]:
+    """
+    Fetch replied messages in bulk for reply previews.
+
+    This avoids N+1 queries when listing messages with replies.
+    """
+
+    if not reply_message_ids:
+        return {}
+
+    unique_ids = list({message_id for message_id in reply_message_ids if message_id})
+
+    if not unique_ids:
+        return {}
+
+    rows = frappe.get_all(
+        "AOS Message",
+        filters={"name": ["in", unique_ids]},
+        fields=[
+            "name",
+            "sender",
+            "content",
+            "message_type",
+            "ad",
+            "has_attachments",
+            "creation",
+        ],
+    )
+
+    return {row.name: row for row in rows}
+
+
 def _validate_ad_reference(ad: str | None):
     """
     Validate ad reference only when provided.
@@ -309,6 +358,39 @@ def _validate_ad_reference(ad: str | None):
 
     if not frappe.db.exists("AOS Ad", ad):
         return fail("Invalid ad reference.", code="VALIDATION_ERROR")
+
+    return None
+
+
+def _validate_reply_to_message(
+    *,
+    reply_to_message: str | None,
+    conversation_id: str,
+):
+    """
+    Validate reply target only when provided.
+
+    A user can only reply to a message inside the same conversation.
+    """
+
+    if not reply_to_message:
+        return None
+
+    replied = frappe.db.get_value(
+        "AOS Message",
+        reply_to_message,
+        ["name", "conversation"],
+        as_dict=True,
+    )
+
+    if not replied:
+        return fail("Reply message not found.", code="NOT_FOUND")
+
+    if replied.conversation != conversation_id:
+        return fail(
+            "You can only reply to a message in the same conversation.",
+            code="VALIDATION_ERROR",
+        )
 
     return None
 
@@ -376,18 +458,61 @@ def _message_preview(
     return "[Message]"
 
 
+def _build_reply_payload(
+    *,
+    reply_to_message: str | None,
+    reply_map: Dict[str, frappe._dict],
+    user_map: Dict[str, frappe._dict],
+    ad_map: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any] | None:
+    """
+    Build lightweight reply preview for frontend rendering.
+    """
+
+    if not reply_to_message:
+        return None
+
+    replied = reply_map.get(reply_to_message)
+    if not replied:
+        return None
+
+    replied_user = _serialize_user(replied.sender, user_map)
+
+    return {
+        "id": replied.name,
+        "sender": replied_user["sender"],
+        "sender_display_name": replied_user["sender_display_name"],
+        "sender_avatar": replied_user["sender_avatar"],
+        "content": replied.content,
+        "message_type": replied.message_type,
+        "ad": replied.ad,
+        "ad_preview": ad_map.get(replied.ad) if replied.ad else None,
+        "has_attachments": replied.has_attachments or 0,
+        "created_at": replied.creation,
+    }
+
+
 def _serialize_message(
     msg,
     *,
     attachments_map: Dict[str, List[Dict]],
     user_map: Dict[str, frappe._dict],
     ad_map: Dict[str, Dict[str, Any]],
+    reply_map: Dict[str, frappe._dict] | None = None,
 ) -> Dict[str, Any]:
     """
     Serialize one message into the API/realtime shape.
     """
 
     user_payload = _serialize_user(msg.sender, user_map)
+    reply_to_message = getattr(msg, "reply_to_message", None)
+
+    reply_to = _build_reply_payload(
+        reply_to_message=reply_to_message,
+        reply_map=reply_map or {},
+        user_map=user_map,
+        ad_map=ad_map,
+    )
 
     return {
         "id": msg.name,
@@ -398,6 +523,8 @@ def _serialize_message(
         "message_type": msg.message_type,
         "ad": msg.ad,
         "ad_preview": ad_map.get(msg.ad) if msg.ad else None,
+        "reply_to_message": reply_to_message,
+        "reply_to": reply_to,
         "has_attachments": msg.has_attachments or 0,
         "attachments": attachments_map.get(msg.name, []),
         "delivered_at": getattr(msg, "delivered_to_receiver_at", None),
@@ -425,6 +552,7 @@ def send_message_impl(**kwargs):
     content = (kwargs.get("content") or "").strip()
     ad = kwargs.get("ad")
     attachments = kwargs.get("attachments") or []
+    reply_to_message = kwargs.get("reply_to_message")
 
     if not conv_id:
         return fail("conversation_id is required.", code="VALIDATION_ERROR")
@@ -450,6 +578,13 @@ def send_message_impl(**kwargs):
         if ad_error:
             return ad_error
 
+        reply_error = _validate_reply_to_message(
+            reply_to_message=reply_to_message,
+            conversation_id=conv_id,
+        )
+        if reply_error:
+            return reply_error
+
         receiver = _get_receiver(conv, current_user)
 
         message_type = _determine_message_type(
@@ -469,6 +604,9 @@ def send_message_impl(**kwargs):
 
         if ad:
             msg.ad = ad
+
+        if reply_to_message:
+            msg.reply_to_message = reply_to_message
 
         msg.insert(ignore_permissions=True)
 
@@ -520,14 +658,35 @@ def send_message_impl(**kwargs):
 
         # Build rich maps for response/realtime/preview.
         attachments_map = _serialize_attachments_bulk([msg.name])
-        user_map = _fetch_users([current_user])
-        ad_map = _fetch_ads_bulk([ad]) if ad else {}
+
+        reply_map = _fetch_reply_messages_bulk(
+            [reply_to_message] if reply_to_message else []
+        )
+
+        user_ids = [current_user]
+
+        for replied in reply_map.values():
+            if replied.sender:
+                user_ids.append(replied.sender)
+
+        ad_ids = []
+
+        if ad:
+            ad_ids.append(ad)
+
+        for replied in reply_map.values():
+            if replied.ad:
+                ad_ids.append(replied.ad)
+
+        user_map = _fetch_users(user_ids)
+        ad_map = _fetch_ads_bulk(ad_ids)
 
         serialized = _serialize_message(
             msg,
             attachments_map=attachments_map,
             user_map=user_map,
             ad_map=ad_map,
+            reply_map=reply_map,
         )
 
         preview = _message_preview(
@@ -659,6 +818,7 @@ def list_messages_impl(**kwargs):
                 "content",
                 "message_type",
                 "ad",
+                "reply_to_message",
                 "has_attachments",
                 "delivered_to_receiver_at",
                 "read_by_receiver_at",
@@ -672,8 +832,31 @@ def list_messages_impl(**kwargs):
             return ok("Messages fetched.", data=[])
 
         message_ids = [m.name for m in messages]
+        reply_message_ids = list(
+            {
+                m.reply_to_message
+                for m in messages
+                if getattr(m, "reply_to_message", None)
+            }
+        )
+
+        reply_map = _fetch_reply_messages_bulk(reply_message_ids)
+
         sender_ids = list({m.sender for m in messages if m.sender})
+
+        for replied in reply_map.values():
+            if replied.sender:
+                sender_ids.append(replied.sender)
+
+        sender_ids = list(set(sender_ids))
+
         ad_ids = list({m.ad for m in messages if m.ad})
+
+        for replied in reply_map.values():
+            if replied.ad:
+                ad_ids.append(replied.ad)
+
+        ad_ids = list(set(ad_ids))
 
         attachments_map = _serialize_attachments_bulk(message_ids)
         user_map = _fetch_users(sender_ids)
@@ -688,6 +871,7 @@ def list_messages_impl(**kwargs):
                     attachments_map=attachments_map,
                     user_map=user_map,
                     ad_map=ad_map,
+                    reply_map=reply_map,
                 )
             )
 

@@ -10,6 +10,7 @@
   "sender",
   "message_type",
   "content",
+  "reply_to_message",
   "column_break_bgvu",
   "ad",
   "call_id",
@@ -97,12 +98,19 @@
    "label": "Call",
    "options": "AOS Call",
    "search_index": 1
+  },
+  {
+   "fieldname": "reply_to_message",
+   "fieldtype": "Link",
+   "label": "Reply To Message",
+   "options": "AOS Message",
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-12 14:59:56.098648",
+ "modified": "2026-05-28 16:21:10.839886",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Message",

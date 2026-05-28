@@ -21,6 +21,7 @@ class AOSMessage(Document):
         self._validate_sender()
         self._validate_message_content()
         self._validate_ad_reference()
+        self._validate_reply_to_message()
 
     def before_insert(self):
         self._sync_attachment_flag()
@@ -32,6 +33,9 @@ class AOSMessage(Document):
     def _validate_conversation(self):
         if not self.conversation:
             frappe.throw("Conversation is required")
+
+        if not frappe.db.exists("AOS Conversation", self.conversation):
+            frappe.throw("Invalid conversation")
 
     def _validate_message_type(self):
         if not self.message_type:
@@ -121,6 +125,28 @@ class AOSMessage(Document):
 
         if not frappe.db.exists("AOS Ad", self.ad):
             frappe.throw("Invalid ad reference")
+
+    def _validate_reply_to_message(self):
+        if not self.reply_to_message:
+            return
+
+        replied = frappe.db.get_value(
+            "AOS Message",
+            self.reply_to_message,
+            ["name", "conversation"],
+            as_dict=True,
+        )
+
+        if not replied:
+            frappe.throw("Reply message not found")
+
+        if replied.conversation != self.conversation:
+            frappe.throw("You can only reply to a message in the same conversation")
+
+        # On normal insert, self.name may not be assigned yet, but this protects
+        # future updates/imports from creating a self-referencing reply.
+        if self.name and replied.name == self.name:
+            frappe.throw("A message cannot reply to itself")
 
     # Internal helpers
     def _sync_attachment_flag(self):
