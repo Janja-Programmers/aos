@@ -26,6 +26,7 @@ from .constants import (
 
 from .presence import publish_presence_update_to_peers
 from .preview import set_conversation_preview_for_new_message
+from .reactions import fetch_message_reaction_summaries, fetch_my_reactions
 from .visibility import DELETED_MESSAGE_TEXT, get_user_delete_sql_condition
 
 
@@ -383,19 +384,20 @@ def _fetch_starred_message_ids(message_ids: List[str], user: str) -> set[str]:
     return {row.message for row in rows}
 
 
-def _viewer_state(*, is_starred: bool = False) -> Dict[str, Any]:
+def _viewer_state(
+    *,
+    is_starred: bool = False,
+    my_reaction: str | None = None,
+) -> Dict[str, Any]:
     """
     Viewer-specific state for this message.
 
     This keeps private/user-specific fields out of the shared message model.
-    Later this can also include:
-    - my_reaction
-    - can_edit
-    - can_delete_for_everyone
     """
 
     return {
         "is_starred": bool(is_starred),
+        "my_reaction": my_reaction,
     }
 
 
@@ -526,6 +528,7 @@ def _build_deleted_message_payload(
     - Do not expose original content.
     - Do not expose ad preview.
     - Do not expose attachments.
+    - Do not expose reactions.
     """
 
     return {
@@ -542,12 +545,16 @@ def _build_deleted_message_payload(
         "reply_to": None,
         "has_attachments": 0,
         "attachments": [],
+        "reactions": [],
         "is_edited": msg.is_edited or 0,
         "edited_at": getattr(msg, "edited_at", None),
         "is_deleted_for_everyone": 1,
         "deleted_for_everyone_at": getattr(msg, "deleted_for_everyone_at", None),
         "display_text": DELETED_MESSAGE_TEXT,
-        "viewer_state": _viewer_state(is_starred=is_starred),
+        "viewer_state": _viewer_state(
+            is_starred=is_starred,
+            my_reaction=None,
+        ),
         "delivered_at": getattr(msg, "delivered_to_receiver_at", None),
         "read_at": getattr(msg, "read_by_receiver_at", None),
         "created_at": msg.creation,
@@ -625,6 +632,8 @@ def _serialize_message(
     ad_map: Dict[str, Dict[str, Any]],
     reply_map: Dict[str, frappe._dict] | None = None,
     is_starred: bool = False,
+    reactions: List[Dict[str, Any]] | None = None,
+    my_reaction: str | None = None,
 ) -> Dict[str, Any]:
     """
     Serialize one message into the API/realtime shape.
@@ -661,12 +670,16 @@ def _serialize_message(
         "reply_to": reply_to,
         "has_attachments": msg.has_attachments or 0,
         "attachments": attachments_map.get(msg.name, []),
+        "reactions": reactions or [],
         "is_edited": msg.is_edited or 0,
         "edited_at": getattr(msg, "edited_at", None),
         "is_deleted_for_everyone": 0,
         "deleted_for_everyone_at": None,
         "display_text": None,
-        "viewer_state": _viewer_state(is_starred=is_starred),
+        "viewer_state": _viewer_state(
+            is_starred=is_starred,
+            my_reaction=my_reaction,
+        ),
         "delivered_at": getattr(msg, "delivered_to_receiver_at", None),
         "read_at": getattr(msg, "read_by_receiver_at", None),
         "created_at": msg.creation,
@@ -828,6 +841,8 @@ def send_message_impl(**kwargs):
             ad_map=ad_map,
             reply_map=reply_map,
             is_starred=False,
+            reactions=[],
+            my_reaction=None,
         )
 
         preview = _message_preview(
@@ -996,13 +1011,23 @@ def list_messages_impl(**kwargs):
             return ok("Messages fetched.", data=[])
 
         all_message_ids = [m.name for m in messages]
-        visible_attachment_message_ids = [
+        visible_message_ids = [
             m.name for m in messages if not _is_deleted_for_everyone(m)
         ]
 
         starred_message_ids = _fetch_starred_message_ids(
             all_message_ids,
             current_user,
+        )
+
+        reaction_map = fetch_message_reaction_summaries(
+            message_ids=visible_message_ids,
+            viewer=current_user,
+        )
+
+        my_reaction_map = fetch_my_reactions(
+            message_ids=visible_message_ids,
+            user=current_user,
         )
 
         reply_message_ids = list(
@@ -1038,7 +1063,7 @@ def list_messages_impl(**kwargs):
 
         ad_ids = list(set(ad_ids))
 
-        attachments_map = _serialize_attachments_bulk(visible_attachment_message_ids)
+        attachments_map = _serialize_attachments_bulk(visible_message_ids)
         user_map = _fetch_users(sender_ids)
         ad_map = _fetch_ads_bulk(ad_ids)
 
@@ -1053,6 +1078,8 @@ def list_messages_impl(**kwargs):
                     ad_map=ad_map,
                     reply_map=reply_map,
                     is_starred=m.name in starred_message_ids,
+                    reactions=reaction_map.get(m.name, []),
+                    my_reaction=my_reaction_map.get(m.name),
                 )
             )
 

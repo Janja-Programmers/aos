@@ -38,6 +38,11 @@ from .message import (
     _serialize_message,
 )
 
+from .reactions import (
+    fetch_message_reaction_summaries,
+    fetch_my_reactions,
+)
+
 from .visibility import get_deleted_for_user_field
 
 
@@ -139,17 +144,6 @@ def _fetch_starred_message_ids(message_ids: List[str], user: str) -> set[str]:
     return {row.message for row in rows}
 
 
-def _add_viewer_state(
-    payload: Dict[str, Any],
-    *,
-    is_starred: bool,
-) -> Dict[str, Any]:
-    viewer_state = payload.get("viewer_state") or {}
-    viewer_state["is_starred"] = bool(is_starred)
-    payload["viewer_state"] = viewer_state
-    return payload
-
-
 def _serialize_starred_messages(
     *,
     messages: List[frappe._dict],
@@ -160,7 +154,7 @@ def _serialize_starred_messages(
 
     message_ids = [m.name for m in messages]
 
-    visible_message_ids_for_attachments = [
+    visible_message_ids = [
         m.name for m in messages if not _is_deleted_for_everyone(m)
     ]
 
@@ -199,25 +193,33 @@ def _serialize_starred_messages(
 
     starred_ids = _fetch_starred_message_ids(message_ids, current_user)
 
-    attachments_map = _serialize_attachments_bulk(visible_message_ids_for_attachments)
+    reaction_summaries = fetch_message_reaction_summaries(
+        message_ids=visible_message_ids,
+        viewer=current_user,
+    )
+
+    my_reactions = fetch_my_reactions(
+        message_ids=visible_message_ids,
+        user=current_user,
+    )
+
+    attachments_map = _serialize_attachments_bulk(visible_message_ids)
     user_map = _fetch_users(user_ids)
     ad_map = _fetch_ads_bulk(ad_ids)
 
     results: List[Dict[str, Any]] = []
 
     for msg in messages:
-        serialized = _serialize_message(
-            msg,
-            attachments_map=attachments_map,
-            user_map=user_map,
-            ad_map=ad_map,
-            reply_map=reply_map,
-        )
-
         results.append(
-            _add_viewer_state(
-                serialized,
+            _serialize_message(
+                msg,
+                attachments_map=attachments_map,
+                user_map=user_map,
+                ad_map=ad_map,
+                reply_map=reply_map,
                 is_starred=msg.name in starred_ids,
+                reactions=reaction_summaries.get(msg.name, []),
+                my_reaction=my_reactions.get(msg.name),
             )
         )
 

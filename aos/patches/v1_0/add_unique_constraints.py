@@ -12,6 +12,11 @@ UNIQUE_CONSTRAINTS = [
         "fields": ["message", "user"],
         "constraint_name": "unique_aos_message_star_user",
     },
+    {
+        "doctype": "AOS Message Reaction",
+        "fields": ["message", "user"],
+        "constraint_name": "unique_aos_message_reaction_user",
+    },
 
     # Add more DocTypes here:
     # {

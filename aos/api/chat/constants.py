@@ -46,6 +46,9 @@ TOGGLE_MESSAGE_STAR_LIMIT_PER_MINUTE_PER_USER = 120
 # Listing starred messages for the current user.
 LIST_STARRED_MESSAGES_LIMIT_PER_MINUTE_PER_USER = 120
 
+# Add/change/remove message reactions.
+TOGGLE_MESSAGE_REACTION_LIMIT_PER_MINUTE_PER_USER = 120
+
 # Message pagination can happen more often while scrolling.
 LIST_MESSAGES_LIMIT_PER_MINUTE_PER_USER = 300
 

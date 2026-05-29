@@ -39,6 +39,10 @@ from .stars import (
     list_starred_messages_impl,
 )
 
+from .reactions import (
+    toggle_message_reaction_impl,
+)
+
 # Status
 from .status import (
     mark_delivered_impl,
@@ -111,6 +115,12 @@ def toggle_message_star(**kwargs):
 def list_starred_messages(**kwargs):
     """List current user's starred messages."""
     return list_starred_messages_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def toggle_message_reaction(**kwargs):
+    """Add, change, or remove the current user's reaction to a message."""
+    return toggle_message_reaction_impl(**kwargs)
 
 
 # Status APIs
