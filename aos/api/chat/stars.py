@@ -62,6 +62,11 @@ def _get_message_with_conversation(message_id: str):
             m.ad,
             m.reply_to_message,
             m.has_attachments,
+
+            m.is_forwarded,
+            m.forwarded_from_message,
+            m.forwarded_from_conversation,
+
             m.is_edited,
             m.edited_at,
 
@@ -419,6 +424,11 @@ def list_starred_messages_impl(**kwargs):
                 m.ad,
                 m.reply_to_message,
                 m.has_attachments,
+
+                m.is_forwarded,
+                m.forwarded_from_message,
+                m.forwarded_from_conversation,
+
                 m.is_edited,
                 m.edited_at,
 

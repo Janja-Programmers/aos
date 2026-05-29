@@ -261,19 +261,6 @@ def _fetch_ad_thumbnails(ad_ids: List[str]) -> Dict[str, str | None]:
 def _fetch_ads_bulk(ad_ids: List[str]) -> Dict[str, Dict[str, Any]]:
     """
     Fetch lightweight ad previews in bulk.
-
-    Returns:
-        {
-            "AD-001": {
-                "id": "AD-001",
-                "title": "...",
-                "price": 1200,
-                "currency": "KES",
-                "status": "Active",
-                "seller": "...",
-                "thumbnail": "/files/..."
-            }
-        }
     """
 
     if not ad_ids:
@@ -344,6 +331,9 @@ def _fetch_reply_messages_bulk(
             "message_type",
             "ad",
             "has_attachments",
+            "is_forwarded",
+            "forwarded_from_message",
+            "forwarded_from_conversation",
             "is_edited",
             "edited_at",
             "deleted_for_everyone",
@@ -546,6 +536,13 @@ def _build_deleted_message_payload(
         "has_attachments": 0,
         "attachments": [],
         "reactions": [],
+        "is_forwarded": getattr(msg, "is_forwarded", 0) or 0,
+        "forwarded_from_message": getattr(msg, "forwarded_from_message", None),
+        "forwarded_from_conversation": getattr(
+            msg,
+            "forwarded_from_conversation",
+            None,
+        ),
         "is_edited": msg.is_edited or 0,
         "edited_at": getattr(msg, "edited_at", None),
         "is_deleted_for_everyone": 1,
@@ -593,6 +590,17 @@ def _build_reply_payload(
             "ad": None,
             "ad_preview": None,
             "has_attachments": 0,
+            "is_forwarded": getattr(replied, "is_forwarded", 0) or 0,
+            "forwarded_from_message": getattr(
+                replied,
+                "forwarded_from_message",
+                None,
+            ),
+            "forwarded_from_conversation": getattr(
+                replied,
+                "forwarded_from_conversation",
+                None,
+            ),
             "is_edited": replied.is_edited or 0,
             "edited_at": getattr(replied, "edited_at", None),
             "is_deleted_for_everyone": 1,
@@ -615,6 +623,13 @@ def _build_reply_payload(
         "ad": replied.ad,
         "ad_preview": ad_map.get(replied.ad) if replied.ad else None,
         "has_attachments": replied.has_attachments or 0,
+        "is_forwarded": getattr(replied, "is_forwarded", 0) or 0,
+        "forwarded_from_message": getattr(replied, "forwarded_from_message", None),
+        "forwarded_from_conversation": getattr(
+            replied,
+            "forwarded_from_conversation",
+            None,
+        ),
         "is_edited": replied.is_edited or 0,
         "edited_at": getattr(replied, "edited_at", None),
         "is_deleted_for_everyone": 0,
@@ -671,6 +686,13 @@ def _serialize_message(
         "has_attachments": msg.has_attachments or 0,
         "attachments": attachments_map.get(msg.name, []),
         "reactions": reactions or [],
+        "is_forwarded": getattr(msg, "is_forwarded", 0) or 0,
+        "forwarded_from_message": getattr(msg, "forwarded_from_message", None),
+        "forwarded_from_conversation": getattr(
+            msg,
+            "forwarded_from_conversation",
+            None,
+        ),
         "is_edited": msg.is_edited or 0,
         "edited_at": getattr(msg, "edited_at", None),
         "is_deleted_for_everyone": 0,
@@ -808,6 +830,11 @@ def send_message_impl(**kwargs):
             msg.has_attachments = 1
         else:
             msg.has_attachments = 0
+
+        # Normal sent messages are not forwarded.
+        msg.is_forwarded = 0
+        msg.forwarded_from_message = None
+        msg.forwarded_from_conversation = None
 
         # Build rich maps for response/realtime/preview.
         attachments_map = _serialize_attachments_bulk([msg.name])
@@ -984,6 +1011,9 @@ def list_messages_impl(**kwargs):
                 ad,
                 reply_to_message,
                 has_attachments,
+                is_forwarded,
+                forwarded_from_message,
+                forwarded_from_conversation,
                 is_edited,
                 edited_at,
                 deleted_for_everyone,

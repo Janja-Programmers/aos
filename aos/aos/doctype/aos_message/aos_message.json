@@ -11,6 +11,9 @@
   "message_type",
   "content",
   "reply_to_message",
+  "is_forwarded",
+  "forwarded_from_message",
+  "forwarded_from_conversation",
   "is_edited",
   "edited_at",
   "original_content",
@@ -176,12 +179,35 @@
    "label": "Deleted For Participant 2 At",
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_forwarded",
+   "fieldtype": "Check",
+   "label": "Is Forwarded",
+   "read_only": 1
+  },
+  {
+   "fieldname": "forwarded_from_message",
+   "fieldtype": "Link",
+   "label": "Forwarded From Message",
+   "options": "AOS Message",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "forwarded_from_conversation",
+   "fieldtype": "Link",
+   "label": "Forwarded From Conversation",
+   "options": "AOS Conversation",
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-28 17:59:26.402311",
+ "modified": "2026-05-29 15:45:05.249029",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Message",

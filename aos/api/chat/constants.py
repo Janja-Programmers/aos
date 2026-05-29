@@ -31,6 +31,9 @@ DELETE_CONVERSATION_LIMIT_PER_MINUTE_PER_USER = 60
 # Sending text/media/ad messages.
 SEND_MESSAGE_LIMIT_PER_MINUTE_PER_USER = 120
 
+# Forwarding one message to one or more conversations.
+FORWARD_MESSAGE_LIMIT_PER_MINUTE_PER_USER = 60
+
 # Editing sent messages.
 EDIT_MESSAGE_LIMIT_PER_MINUTE_PER_USER = 30
 

@@ -22,6 +22,10 @@ from .message import (
     list_messages_impl,
 )
 
+from .forward_message import (
+    forward_message_impl,
+)
+
 from .edit_message import (
     edit_message_impl,
 )
@@ -85,6 +89,12 @@ def send_message(**kwargs):
 def list_messages(**kwargs):
     """List messages for a conversation."""
     return list_messages_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def forward_message(**kwargs):
+    """Forward a visible message to one or more conversations."""
+    return forward_message_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])

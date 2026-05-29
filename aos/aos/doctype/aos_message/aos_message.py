@@ -17,6 +17,9 @@ VALID_MESSAGE_TYPES = {
 SYSTEM_MANAGED_FIELDS = [
     "delivered_to_receiver_at",
     "read_by_receiver_at",
+    "is_forwarded",
+    "forwarded_from_message",
+    "forwarded_from_conversation",
     "is_edited",
     "edited_at",
     "original_content",
@@ -37,6 +40,7 @@ class AOSMessage(Document):
         self._validate_message_content()
         self._validate_ad_reference()
         self._validate_reply_to_message()
+        self._validate_forward_reference()
 
     def before_insert(self):
         self._sync_defaults()
@@ -160,10 +164,52 @@ class AOSMessage(Document):
         if self.name and replied.name == self.name:
             frappe.throw("A message cannot reply to itself")
 
+    def _validate_forward_reference(self):
+        """
+        Validate forwarding metadata when it is set internally.
+
+        Normal client-created messages should not set these fields directly;
+        _protect_system_managed_fields protects updates, while API logic should
+        set forwarding metadata using db_set/db.set_value after insert.
+        """
+
+        is_forwarded = bool(self.is_forwarded)
+
+        if not is_forwarded:
+            return
+
+        if not self.forwarded_from_message:
+            frappe.throw("Forwarded From Message is required for forwarded messages")
+
+        if not self.forwarded_from_conversation:
+            frappe.throw("Forwarded From Conversation is required for forwarded messages")
+
+        forwarded = frappe.db.get_value(
+            "AOS Message",
+            self.forwarded_from_message,
+            ["name", "conversation"],
+            as_dict=True,
+        )
+
+        if not forwarded:
+            frappe.throw("Invalid forwarded message reference")
+
+        if forwarded.conversation != self.forwarded_from_conversation:
+            frappe.throw("Forwarded message does not belong to forwarded conversation")
+
+        if self.name and forwarded.name == self.name:
+            frappe.throw("A message cannot be forwarded from itself")
+
+        if not frappe.db.exists("AOS Conversation", self.forwarded_from_conversation):
+            frappe.throw("Invalid forwarded conversation reference")
+
     # Internal helpers
     def _sync_defaults(self):
         if not self.has_attachments:
             self.has_attachments = 0
+
+        if not self.is_forwarded:
+            self.is_forwarded = 0
 
         if not self.is_edited:
             self.is_edited = 0
