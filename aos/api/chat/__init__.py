@@ -34,6 +34,11 @@ from .clear_chat import (
     clear_chat_impl,
 )
 
+from .stars import (
+    toggle_message_star_impl,
+    list_starred_messages_impl,
+)
+
 # Status
 from .status import (
     mark_delivered_impl,
@@ -94,6 +99,18 @@ def delete_messages(**kwargs):
 def clear_chat(**kwargs):
     """Clear all visible messages in a conversation for the current user."""
     return clear_chat_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def toggle_message_star(**kwargs):
+    """Star or unstar a message for the current user."""
+    return toggle_message_star_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["GET", "POST"])
+def list_starred_messages(**kwargs):
+    """List current user's starred messages."""
+    return list_starred_messages_impl(**kwargs)
 
 
 # Status APIs

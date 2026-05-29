@@ -7,6 +7,11 @@ UNIQUE_CONSTRAINTS = [
         "fields": ["follower_user", "following_user"],
         "constraint_name": "unique_aos_follow_pair",
     },
+    {
+        "doctype": "AOS Message Star",
+        "fields": ["message", "user"],
+        "constraint_name": "unique_aos_message_star_user",
+    },
 
     # Add more DocTypes here:
     # {

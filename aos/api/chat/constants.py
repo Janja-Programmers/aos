@@ -40,6 +40,12 @@ DELETE_MESSAGES_LIMIT_PER_MINUTE_PER_USER = 60
 # Clear all visible messages in a conversation for the current user.
 CLEAR_CHAT_LIMIT_PER_MINUTE_PER_USER = 20
 
+# Star/unstar messages for the current user.
+TOGGLE_MESSAGE_STAR_LIMIT_PER_MINUTE_PER_USER = 120
+
+# Listing starred messages for the current user.
+LIST_STARRED_MESSAGES_LIMIT_PER_MINUTE_PER_USER = 120
+
 # Message pagination can happen more often while scrolling.
 LIST_MESSAGES_LIMIT_PER_MINUTE_PER_USER = 300
 

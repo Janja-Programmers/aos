@@ -358,6 +358,47 @@ def _fetch_reply_messages_bulk(
     return {row.name: row for row in rows}
 
 
+def _fetch_starred_message_ids(message_ids: List[str], user: str) -> set[str]:
+    """
+    Fetch message ids starred by the current viewer.
+    """
+
+    if not message_ids or not user:
+        return set()
+
+    unique_message_ids = list({message_id for message_id in message_ids if message_id})
+
+    if not unique_message_ids:
+        return set()
+
+    rows = frappe.get_all(
+        "AOS Message Star",
+        filters={
+            "message": ["in", unique_message_ids],
+            "user": user,
+        },
+        fields=["message"],
+    )
+
+    return {row.message for row in rows}
+
+
+def _viewer_state(*, is_starred: bool = False) -> Dict[str, Any]:
+    """
+    Viewer-specific state for this message.
+
+    This keeps private/user-specific fields out of the shared message model.
+    Later this can also include:
+    - my_reaction
+    - can_edit
+    - can_delete_for_everyone
+    """
+
+    return {
+        "is_starred": bool(is_starred),
+    }
+
+
 def _validate_ad_reference(ad: str | None):
     """
     Validate ad reference only when provided.
@@ -472,7 +513,12 @@ def _is_deleted_for_everyone(msg) -> bool:
     return bool(getattr(msg, "deleted_for_everyone", 0))
 
 
-def _build_deleted_message_payload(msg, user_payload: Dict[str, Any]) -> Dict[str, Any]:
+def _build_deleted_message_payload(
+    msg,
+    user_payload: Dict[str, Any],
+    *,
+    is_starred: bool = False,
+) -> Dict[str, Any]:
     """
     Serialize a globally deleted message as a safe placeholder.
 
@@ -501,6 +547,7 @@ def _build_deleted_message_payload(msg, user_payload: Dict[str, Any]) -> Dict[st
         "is_deleted_for_everyone": 1,
         "deleted_for_everyone_at": getattr(msg, "deleted_for_everyone_at", None),
         "display_text": DELETED_MESSAGE_TEXT,
+        "viewer_state": _viewer_state(is_starred=is_starred),
         "delivered_at": getattr(msg, "delivered_to_receiver_at", None),
         "read_at": getattr(msg, "read_by_receiver_at", None),
         "created_at": msg.creation,
@@ -577,6 +624,7 @@ def _serialize_message(
     user_map: Dict[str, frappe._dict],
     ad_map: Dict[str, Dict[str, Any]],
     reply_map: Dict[str, frappe._dict] | None = None,
+    is_starred: bool = False,
 ) -> Dict[str, Any]:
     """
     Serialize one message into the API/realtime shape.
@@ -585,7 +633,11 @@ def _serialize_message(
     user_payload = _serialize_user(msg.sender, user_map)
 
     if _is_deleted_for_everyone(msg):
-        return _build_deleted_message_payload(msg, user_payload)
+        return _build_deleted_message_payload(
+            msg,
+            user_payload,
+            is_starred=is_starred,
+        )
 
     reply_to_message = getattr(msg, "reply_to_message", None)
 
@@ -614,6 +666,7 @@ def _serialize_message(
         "is_deleted_for_everyone": 0,
         "deleted_for_everyone_at": None,
         "display_text": None,
+        "viewer_state": _viewer_state(is_starred=is_starred),
         "delivered_at": getattr(msg, "delivered_to_receiver_at", None),
         "read_at": getattr(msg, "read_by_receiver_at", None),
         "created_at": msg.creation,
@@ -774,6 +827,7 @@ def send_message_impl(**kwargs):
             user_map=user_map,
             ad_map=ad_map,
             reply_map=reply_map,
+            is_starred=False,
         )
 
         preview = _message_preview(
@@ -941,7 +995,15 @@ def list_messages_impl(**kwargs):
         if not messages:
             return ok("Messages fetched.", data=[])
 
-        message_ids = [m.name for m in messages if not _is_deleted_for_everyone(m)]
+        all_message_ids = [m.name for m in messages]
+        visible_attachment_message_ids = [
+            m.name for m in messages if not _is_deleted_for_everyone(m)
+        ]
+
+        starred_message_ids = _fetch_starred_message_ids(
+            all_message_ids,
+            current_user,
+        )
 
         reply_message_ids = list(
             {
@@ -976,7 +1038,7 @@ def list_messages_impl(**kwargs):
 
         ad_ids = list(set(ad_ids))
 
-        attachments_map = _serialize_attachments_bulk(message_ids)
+        attachments_map = _serialize_attachments_bulk(visible_attachment_message_ids)
         user_map = _fetch_users(sender_ids)
         ad_map = _fetch_ads_bulk(ad_ids)
 
@@ -990,6 +1052,7 @@ def list_messages_impl(**kwargs):
                     user_map=user_map,
                     ad_map=ad_map,
                     reply_map=reply_map,
+                    is_starred=m.name in starred_message_ids,
                 )
             )
 
