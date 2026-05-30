@@ -47,6 +47,10 @@ from .reactions import (
     toggle_message_reaction_impl,
 )
 
+from .translate_message import (
+    translate_message_impl,
+)
+
 # Status
 from .status import (
     mark_delivered_impl,
@@ -131,6 +135,12 @@ def list_starred_messages(**kwargs):
 def toggle_message_reaction(**kwargs):
     """Add, change, or remove the current user's reaction to a message."""
     return toggle_message_reaction_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def translate_message(**kwargs):
+    """Translate a visible text message for the current user."""
+    return translate_message_impl(**kwargs)
 
 
 # Status APIs

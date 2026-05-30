@@ -17,13 +17,11 @@ UNIQUE_CONSTRAINTS = [
         "fields": ["message", "user"],
         "constraint_name": "unique_aos_message_reaction_user",
     },
-
-    # Add more DocTypes here:
-    # {
-    #     "doctype": "AOS Like",
-    #     "fields": ["user", "post"],
-    #     "constraint_name": "unique_aos_like_user_post",
-    # },
+    {
+        "doctype": "AOS Message Translation",
+        "fields": ["message", "target_language", "original_content_hash"],
+        "constraint_name": "unique_aos_message_translation_cache",
+    },
 ]
 
 

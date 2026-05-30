@@ -57,6 +57,32 @@ services:
     networks:
       - aos_net
 
+  translation:
+    build:
+      context: ./infra/translation
+      dockerfile: Dockerfile
+    container_name: aos-translation
+    restart: unless-stopped
+    environment:
+      TRANSLATION_MODEL_PATH: /models/nllb
+      TRANSLATION_MODEL_NAME: ${TRANSLATION_MODEL_NAME:-nllb-200-distilled-1.3B-ct2-int8}
+      TRANSLATION_DEVICE: ${TRANSLATION_DEVICE:-cpu}
+      TRANSLATION_COMPUTE_TYPE: ${TRANSLATION_COMPUTE_TYPE:-int8}
+      TRANSLATION_DEFAULT_SOURCE_LANGUAGE: ${TRANSLATION_DEFAULT_SOURCE_LANGUAGE:-eng_Latn}
+      TRANSLATION_MAX_CHARS: ${TRANSLATION_MAX_CHARS:-1000}
+    ports:
+      - "${TRANSLATION_PORT:-8100}:8000"
+    volumes:
+      - ${TRANSLATION_MODEL_HOST_PATH:-./models/nllb-200-distilled-1.3B-ct2-int8}:/models/nllb:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - aos_net
+
 volumes:
   qdrant_data:
   minio_data:

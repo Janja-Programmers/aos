@@ -1,0 +1,126 @@
+{
+ "actions": [],
+ "creation": "2026-05-30 00:32:25.900957",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "message",
+  "conversation",
+  "source_language",
+  "source_language_label",
+  "target_language",
+  "target_language_label",
+  "translated_by",
+  "original_content_hash",
+  "column_break_oanp",
+  "translated_content",
+  "provider",
+  "model_name"
+ ],
+ "fields": [
+  {
+   "fieldname": "message",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Message",
+   "options": "AOS Message",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "conversation",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Conversation",
+   "options": "AOS Conversation",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "source_language",
+   "fieldtype": "Data",
+   "label": "Source Language",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "source_language_label",
+   "fieldtype": "Data",
+   "label": "Source Language Label"
+  },
+  {
+   "fieldname": "target_language",
+   "fieldtype": "Data",
+   "label": "Target Language",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "target_language_label",
+   "fieldtype": "Data",
+   "label": "Target Language Label"
+  },
+  {
+   "fieldname": "translated_by",
+   "fieldtype": "Link",
+   "label": "Translated By",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_oanp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "original_content_hash",
+   "fieldtype": "Data",
+   "label": "Original Content Hash",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "translated_content",
+   "fieldtype": "Long Text",
+   "label": "Translated Content",
+   "reqd": 1
+  },
+  {
+   "fieldname": "provider",
+   "fieldtype": "Data",
+   "label": "Provider"
+  },
+  {
+   "fieldname": "model_name",
+   "fieldtype": "Data",
+   "label": "Model Name"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-05-30 13:15:16.466666",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Message Translation",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

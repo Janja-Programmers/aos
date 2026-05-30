@@ -45,11 +45,17 @@
   "minio_public_base_url",
   "minio_secure",
   "connect_tab",
+  "livekit_section",
   "livekit_endpoint",
   "livekit_api_secret",
   "column_break_zsze",
   "livekit_api_key",
-  "livekit_token_ttl_minutes"
+  "livekit_token_ttl_minutes",
+  "translation_section",
+  "translation_service_url",
+  "translation_max_characters",
+  "column_break_vhzg",
+  "translation_service_timeout_seconds"
  ],
  "fields": [
   {
@@ -292,13 +298,45 @@
    "fieldname": "livekit_api_secret",
    "fieldtype": "Password",
    "label": "LiveKit API Secret"
+  },
+  {
+   "fieldname": "livekit_section",
+   "fieldtype": "Section Break",
+   "label": "Livekit"
+  },
+  {
+   "fieldname": "translation_section",
+   "fieldtype": "Section Break",
+   "label": "Translation"
+  },
+  {
+   "default": "http://127.0.0.1:8100",
+   "fieldname": "translation_service_url",
+   "fieldtype": "Data",
+   "label": "Translation Service URL"
+  },
+  {
+   "default": "1000",
+   "fieldname": "translation_max_characters",
+   "fieldtype": "Int",
+   "label": "Translation Max Characters"
+  },
+  {
+   "fieldname": "column_break_vhzg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "10",
+   "fieldname": "translation_service_timeout_seconds",
+   "fieldtype": "Int",
+   "label": "Translation Service Timeout Seconds"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-04-24 19:06:22.455562",
+ "modified": "2026-05-30 13:27:23.435258",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Settings",
