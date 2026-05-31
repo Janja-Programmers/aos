@@ -12,6 +12,8 @@ from aos.api.shorts.constants import (
     MAX_HASHTAGS,
     SHORT_CONTENT_MODE_SHOP,
     VALID_SHORT_CONTENT_MODES,
+    DEFAULT_SHORT_AUDIENCE,
+    VALID_SHORT_AUDIENCES,
 )
 
 
@@ -21,6 +23,7 @@ class AOSShort(Document):
 
     def validate(self):
         self._validate_content_mode()
+        self._validate_audience()
 
         # Deleted shorts must not be blocked by old ad/content validation.
         if self.status == "deleted" or self.visibility_status == "deleted":
@@ -42,6 +45,9 @@ class AOSShort(Document):
         if not self.approval_status:
             self.approval_status = "auto_approved"
 
+        if not self.audience:
+            self.audience = DEFAULT_SHORT_AUDIENCE
+
     def _validate_content_mode(self):
         """
         Content mode is optional during upload/processing.
@@ -56,6 +62,27 @@ class AOSShort(Document):
 
         if self.content_mode not in VALID_SHORT_CONTENT_MODES:
             frappe.throw("Invalid short content mode")
+
+    def _validate_audience(self):
+        """
+        Validate short audience visibility.
+
+        Supported values:
+        - everyone: visible to everyone
+        - followers: visible to users who follow the creator
+        - friends: visible to mutual followers
+        - only_me: visible only to the creator
+
+        Audience defaults to everyone for backward compatibility.
+        """
+        if not self.audience:
+            self.audience = DEFAULT_SHORT_AUDIENCE
+            return
+
+        self.audience = str(self.audience).strip().lower()
+
+        if self.audience not in VALID_SHORT_AUDIENCES:
+            frappe.throw("Invalid short audience")
 
     def _validate_ad(self):
         """
@@ -131,6 +158,7 @@ class AOSShort(Document):
         Publishing rules:
         - Short must be ready before becoming visible.
         - Content mode is required before becoming visible.
+        - Audience must be valid before becoming visible.
         - Shop shorts require seller + active ad.
         - Non-shop shorts must not be attached to an ad.
         - posted_on is set once when first published.
@@ -162,6 +190,12 @@ class AOSShort(Document):
 
         if not self.content_mode:
             frappe.throw("Content mode is required before publishing")
+
+        if not self.audience:
+            self.audience = DEFAULT_SHORT_AUDIENCE
+
+        if self.audience not in VALID_SHORT_AUDIENCES:
+            frappe.throw("Invalid short audience")
 
         if self.content_mode == SHORT_CONTENT_MODE_SHOP:
             if not self.seller:

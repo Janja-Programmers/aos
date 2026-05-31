@@ -23,6 +23,9 @@ from aos.api.shorts.constants import (
     FEED_MAX_LIMIT,
     FEED_LIMIT_PER_MINUTE_PER_IP,
     SHORT_CONTENT_MODE_SHOP,
+    SHORT_AUDIENCE_EVERYONE,
+    SHORT_AUDIENCE_FOLLOWERS,
+    SHORT_AUDIENCE_FRIENDS,
 )
 
 from aos.api.shorts.utils import (
@@ -30,6 +33,8 @@ from aos.api.shorts.utils import (
     build_ranked_cursor_where_clause,
     serialize_short_row,
 )
+
+from aos.api.shorts.visibility import can_view_short
 
 
 # COMMON
@@ -65,6 +70,98 @@ def _build_content_mode_filter(content_mode):
         return "", (), err
 
     return "AND s.content_mode = %s", (mode,), None
+
+
+def _build_audience_where_clause(viewer: str | None) -> tuple[str, tuple]:
+    """
+    SQL-level audience filter.
+
+    This is the first privacy layer. The Python can_view_short() check remains
+    as the final safety layer before serialization.
+
+    Guest:
+    - only everyone
+
+    Logged-in user:
+    - everyone
+    - own shorts
+    - followers shorts where viewer follows creator
+    - friends shorts where viewer and creator mutually follow each other
+    """
+    if not viewer:
+        return "AND s.audience = %s", (SHORT_AUDIENCE_EVERYONE,)
+
+    return (
+        """
+        AND (
+            s.audience = %s
+            OR s.owner = %s
+            OR (
+                s.audience = %s
+                AND EXISTS (
+                    SELECT 1
+                    FROM `tabAOS Follow` af
+                    WHERE
+                        af.follower_user = %s
+                        AND af.following_user = s.owner
+                    LIMIT 1
+                )
+            )
+            OR (
+                s.audience = %s
+                AND EXISTS (
+                    SELECT 1
+                    FROM `tabAOS Follow` af1
+                    WHERE
+                        af1.follower_user = %s
+                        AND af1.following_user = s.owner
+                    LIMIT 1
+                )
+                AND EXISTS (
+                    SELECT 1
+                    FROM `tabAOS Follow` af2
+                    WHERE
+                        af2.follower_user = s.owner
+                        AND af2.following_user = %s
+                    LIMIT 1
+                )
+            )
+        )
+        """,
+        (
+            SHORT_AUDIENCE_EVERYONE,
+            viewer,
+            SHORT_AUDIENCE_FOLLOWERS,
+            viewer,
+            SHORT_AUDIENCE_FRIENDS,
+            viewer,
+            viewer,
+        ),
+    )
+
+
+def _filter_viewable_rows(
+    rows: list[dict[str, Any]],
+    *,
+    viewer: str | None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """
+    Final Python safety filter for audience visibility.
+
+    SQL already filters audience for performance, but this guarantees no row is
+    exposed if a SQL clause changes later.
+    """
+    result = []
+
+    for row in rows or []:
+        if can_view_short(row, current_user=viewer):
+            result.append(row)
+
+            if len(result) >= limit + 1:
+                break
+
+    return result
 
 
 def _load_liked_short_ids(viewer: str | None, short_ids: list[str]) -> set[str]:
@@ -267,8 +364,20 @@ def _build_response(rows, limit: int, *, viewer: str | None = None):
             },
         )
 
-    has_more = len(rows) > limit
-    visible_rows = rows[:limit]
+    safe_rows = _filter_viewable_rows(rows, viewer=viewer, limit=limit)
+
+    if not safe_rows:
+        return ok(
+            "Feed fetched.",
+            data={
+                "items": [],
+                "next_cursor": None,
+                "has_more": False,
+            },
+        )
+
+    has_more = len(safe_rows) > limit
+    visible_rows = safe_rows[:limit]
 
     short_ids = [
         row.get("name")
@@ -327,7 +436,9 @@ def _select_short_rows_sql() -> str:
             s.name,
             s.owner,
             s.status,
+            s.visibility_status,
             s.content_mode,
+            s.audience,
             s.caption,
             s.hashtags,
             s.playback_url,
@@ -390,6 +501,8 @@ def feed_for_you_impl(**kwargs):
         if mode_err:
             return mode_err
 
+        audience_clause, audience_params = _build_audience_where_clause(viewer)
+
         where_cursor, params_cursor = build_ranked_cursor_where_clause(
             score_field="s.ranking_score",
             created_field="s.creation",
@@ -405,6 +518,7 @@ def feed_for_you_impl(**kwargs):
                 s.status = 'ready'
                 AND s.visibility_status = 'visible'
                 {mode_clause}
+                {audience_clause}
                 {where_cursor}
 
             ORDER BY
@@ -414,7 +528,7 @@ def feed_for_you_impl(**kwargs):
 
             LIMIT %s
             """,
-            (*mode_params, *params_cursor, limit + 1),
+            (*mode_params, *audience_params, *params_cursor, limit + 1),
             as_dict=True,
         )
 
@@ -450,6 +564,8 @@ def feed_following_impl(**kwargs):
         if mode_err:
             return mode_err
 
+        audience_clause, audience_params = _build_audience_where_clause(user)
+
         where_cursor, params_cursor = build_ranked_cursor_where_clause(
             score_field="s.ranking_score",
             created_field="s.creation",
@@ -467,6 +583,7 @@ def feed_following_impl(**kwargs):
                 AND s.status = 'ready'
                 AND s.visibility_status = 'visible'
                 {mode_clause}
+                {audience_clause}
                 {where_cursor}
 
             ORDER BY
@@ -476,7 +593,7 @@ def feed_following_impl(**kwargs):
 
             LIMIT %s
             """,
-            (user, *mode_params, *params_cursor, limit + 1),
+            (user, *mode_params, *audience_params, *params_cursor, limit + 1),
             as_dict=True,
         )
 
@@ -507,6 +624,8 @@ def feed_by_ad_impl(**kwargs):
         limit = _get_limit(kwargs)
         cursor = kwargs.get("cursor")
 
+        audience_clause, audience_params = _build_audience_where_clause(viewer)
+
         where_cursor, params_cursor = build_ranked_cursor_where_clause(
             score_field="s.ranking_score",
             created_field="s.creation",
@@ -523,6 +642,7 @@ def feed_by_ad_impl(**kwargs):
                 AND s.content_mode = %s
                 AND s.status = 'ready'
                 AND s.visibility_status = 'visible'
+                {audience_clause}
                 {where_cursor}
 
             ORDER BY
@@ -532,7 +652,13 @@ def feed_by_ad_impl(**kwargs):
 
             LIMIT %s
             """,
-            (ad_id, SHORT_CONTENT_MODE_SHOP, *params_cursor, limit + 1),
+            (
+                ad_id,
+                SHORT_CONTENT_MODE_SHOP,
+                *audience_params,
+                *params_cursor,
+                limit + 1,
+            ),
             as_dict=True,
         )
 

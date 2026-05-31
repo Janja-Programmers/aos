@@ -4,7 +4,7 @@ Upload APIs for Shorts.
 Handles:
 - init upload (presigned URL)
 - confirm upload (trigger processing)
-- update metadata (caption, hashtags, content mode)
+- update metadata (caption, hashtags, content mode, audience)
 """
 
 from __future__ import annotations
@@ -31,6 +31,8 @@ from aos.api.shorts.constants import (
     INIT_UPLOAD_LIMIT_PER_MINUTE_PER_USER,
     CONFIRM_UPLOAD_LIMIT_PER_MINUTE_PER_USER,
     SHORT_CONTENT_MODE_SHOP,
+    DEFAULT_SHORT_AUDIENCE,
+    VALID_SHORT_AUDIENCES,
 )
 
 
@@ -50,6 +52,27 @@ def _get_seller_for_user(user: str) -> str | None:
         return user
 
     return frappe.db.get_value("AOS Seller", {"user": user}, "name")
+
+
+def _normalize_audience(value) -> tuple[str | None, object | None]:
+    """
+    Normalize and validate short audience.
+
+    Supported values:
+    - everyone
+    - followers
+    - friends
+    - only_me
+
+    Missing audience defaults to everyone to preserve existing behavior.
+    """
+    audience = value or DEFAULT_SHORT_AUDIENCE
+    audience = str(audience).strip().lower()
+
+    if audience not in VALID_SHORT_AUDIENCES:
+        return None, fail("Invalid audience.", code="VALIDATION_ERROR")
+
+    return audience, None
 
 
 # INIT UPLOAD
@@ -86,6 +109,7 @@ def init_upload_impl(**kwargs):
                 "file_key": file_key,
                 "status": "initialized",
                 "owner": user,
+                "audience": DEFAULT_SHORT_AUDIENCE,
             }
         )
         doc.insert(ignore_permissions=True)
@@ -187,6 +211,10 @@ def update_short_metadata_impl(**kwargs):
     if err:
         return err
 
+    audience, err = _normalize_audience(kwargs.get("audience"))
+    if err:
+        return err
+
     hashtags = normalize_hashtags(kwargs.get("hashtags"))
 
     try:
@@ -205,6 +233,7 @@ def update_short_metadata_impl(**kwargs):
         was_visible = doc.visibility_status == "visible"
 
         doc.content_mode = content_mode
+        doc.audience = audience
         doc.caption = caption
         doc.hashtags = json.dumps(hashtags or [])
 
@@ -262,6 +291,7 @@ def update_short_metadata_impl(**kwargs):
             data={
                 "short_id": doc.name,
                 "content_mode": doc.content_mode,
+                "audience": doc.audience,
                 "visibility_status": doc.visibility_status,
             },
         )

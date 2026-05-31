@@ -19,7 +19,10 @@ from typing import Any
 from frappe.utils import cint, flt
 
 from aos.api.shared.auth import current_user
-from aos.api.shorts.constants import DEFAULT_SHORT_CONTENT_MODE
+from aos.api.shorts.constants import (
+    DEFAULT_SHORT_CONTENT_MODE,
+    DEFAULT_SHORT_AUDIENCE,
+)
 
 
 # JSON HELPERS
@@ -243,6 +246,7 @@ def serialize_short_row(
     - owner is the creator/poster user.
     - seller is optional shop/seller context and is nested under creator.
     - ad is optional product/ad context.
+    - audience controls who can view the short.
     - viewer_state should be precomputed by API/service layer to avoid N+1 queries.
     """
     status = row.get("status")
@@ -251,7 +255,9 @@ def serialize_short_row(
     return {
         "id": row.get("name"),
         "status": status,
+        "visibility_status": row.get("visibility_status"),
         "content_mode": row.get("content_mode") or DEFAULT_SHORT_CONTENT_MODE,
+        "audience": row.get("audience") or DEFAULT_SHORT_AUDIENCE,
         "is_ready": status == "ready",
         "is_processing": status in ("initialized", "uploaded", "processing"),
         "is_failed": status == "failed",

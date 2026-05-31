@@ -31,6 +31,8 @@ from aos.api.shorts.utils import (
     serialize_short_row,
 )
 
+from aos.api.shorts.visibility import can_view_short
+
 
 # COMMON
 def _get_optional_viewer() -> str | None:
@@ -269,6 +271,7 @@ def _select_short_rows_sql() -> str:
             s.status,
             s.visibility_status,
             s.content_mode,
+            s.audience,
             s.caption,
             s.hashtags,
             s.playback_url,
@@ -331,12 +334,15 @@ def get_short_impl(**kwargs):
         doc = frappe.get_doc("AOS Short", short_id)
 
         # ACCESS CONTROL
-        # Public can only access visible + ready shorts.
         # Owner can access own draft/hidden/failed/processing short.
+        # Non-owners can only access ready + visible shorts that pass audience rules.
         is_owner = bool(viewer and doc.owner == viewer)
 
         if not is_owner:
             if doc.status != "ready" or doc.visibility_status != "visible":
+                return fail("Short not available.", code="NOT_FOUND")
+
+            if not can_view_short(doc, current_user=viewer):
                 return fail("Short not available.", code="NOT_FOUND")
 
         rows = frappe.db.sql(
