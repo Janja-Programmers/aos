@@ -4,7 +4,7 @@ Upload APIs for Shorts.
 Handles:
 - init upload (presigned URL)
 - confirm upload (trigger processing)
-- update metadata (caption, hashtags, content mode, audience)
+- update metadata (caption, hashtags, content mode, audience, allow comments)
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ from aos.api.shorts.constants import (
     SHORT_CONTENT_MODE_SHOP,
     DEFAULT_SHORT_AUDIENCE,
     VALID_SHORT_AUDIENCES,
+    DEFAULT_ALLOW_COMMENTS,
 )
 
 
@@ -75,6 +76,39 @@ def _normalize_audience(value) -> tuple[str | None, object | None]:
     return audience, None
 
 
+def _normalize_bool(value, *, default: int = 1) -> int:
+    """
+    Normalize flexible boolean input into 1 or 0.
+
+    Accepts:
+    - true/false
+    - 1/0
+    - "true"/"false"
+    - "yes"/"no"
+    - "on"/"off"
+
+    Invalid or missing values fall back to default.
+    """
+    if value is None:
+        return 1 if default else 0
+
+    if isinstance(value, bool):
+        return 1 if value else 0
+
+    if isinstance(value, int):
+        return 1 if value else 0
+
+    value = str(value).strip().lower()
+
+    if value in {"1", "true", "yes", "y", "on"}:
+        return 1
+
+    if value in {"0", "false", "no", "n", "off"}:
+        return 0
+
+    return 1 if default else 0
+
+
 # INIT UPLOAD
 def init_upload_impl(**kwargs):
     user, err = require_login()
@@ -110,6 +144,7 @@ def init_upload_impl(**kwargs):
                 "status": "initialized",
                 "owner": user,
                 "audience": DEFAULT_SHORT_AUDIENCE,
+                "allow_comments": DEFAULT_ALLOW_COMMENTS,
             }
         )
         doc.insert(ignore_permissions=True)
@@ -215,6 +250,11 @@ def update_short_metadata_impl(**kwargs):
     if err:
         return err
 
+    allow_comments = _normalize_bool(
+        kwargs.get("allow_comments"),
+        default=DEFAULT_ALLOW_COMMENTS,
+    )
+
     hashtags = normalize_hashtags(kwargs.get("hashtags"))
 
     try:
@@ -234,6 +274,7 @@ def update_short_metadata_impl(**kwargs):
 
         doc.content_mode = content_mode
         doc.audience = audience
+        doc.allow_comments = allow_comments
         doc.caption = caption
         doc.hashtags = json.dumps(hashtags or [])
 
@@ -292,6 +333,7 @@ def update_short_metadata_impl(**kwargs):
                 "short_id": doc.name,
                 "content_mode": doc.content_mode,
                 "audience": doc.audience,
+                "allow_comments": bool(int(doc.allow_comments or 0)),
                 "visibility_status": doc.visibility_status,
             },
         )

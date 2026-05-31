@@ -14,6 +14,7 @@ from aos.api.shorts.constants import (
     VALID_SHORT_CONTENT_MODES,
     DEFAULT_SHORT_AUDIENCE,
     VALID_SHORT_AUDIENCES,
+    DEFAULT_ALLOW_COMMENTS,
 )
 
 
@@ -24,6 +25,7 @@ class AOSShort(Document):
     def validate(self):
         self._validate_content_mode()
         self._validate_audience()
+        self._validate_allow_comments()
 
         # Deleted shorts must not be blocked by old ad/content validation.
         if self.status == "deleted" or self.visibility_status == "deleted":
@@ -47,6 +49,9 @@ class AOSShort(Document):
 
         if not self.audience:
             self.audience = DEFAULT_SHORT_AUDIENCE
+
+        if self.allow_comments in (None, ""):
+            self.allow_comments = DEFAULT_ALLOW_COMMENTS
 
     def _validate_content_mode(self):
         """
@@ -83,6 +88,25 @@ class AOSShort(Document):
 
         if self.audience not in VALID_SHORT_AUDIENCES:
             frappe.throw("Invalid short audience")
+
+    def _validate_allow_comments(self):
+        """
+        Normalize comment permission.
+
+        allow_comments is a Check field:
+        - 1 means comments are allowed
+        - 0 means comments are disabled
+
+        Missing values default to 1 for backward compatibility.
+        """
+        if self.allow_comments in (None, ""):
+            self.allow_comments = DEFAULT_ALLOW_COMMENTS
+            return
+
+        try:
+            self.allow_comments = 1 if int(self.allow_comments) else 0
+        except Exception:
+            frappe.throw("Invalid allow_comments value")
 
     def _validate_ad(self):
         """
@@ -159,6 +183,7 @@ class AOSShort(Document):
         - Short must be ready before becoming visible.
         - Content mode is required before becoming visible.
         - Audience must be valid before becoming visible.
+        - Comment permission is normalized before publishing.
         - Shop shorts require seller + active ad.
         - Non-shop shorts must not be attached to an ad.
         - posted_on is set once when first published.
@@ -196,6 +221,11 @@ class AOSShort(Document):
 
         if self.audience not in VALID_SHORT_AUDIENCES:
             frappe.throw("Invalid short audience")
+
+        if self.allow_comments in (None, ""):
+            self.allow_comments = DEFAULT_ALLOW_COMMENTS
+
+        self.allow_comments = 1 if int(self.allow_comments or 0) else 0
 
         if self.content_mode == SHORT_CONTENT_MODE_SHOP:
             if not self.seller:

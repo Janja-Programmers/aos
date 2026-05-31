@@ -98,6 +98,9 @@ VALID_SHORT_AUDIENCES = {
     SHORT_AUDIENCE_ONLY_ME,
 }
 
+# Comment permissions
+DEFAULT_ALLOW_COMMENTS = 1
+
 # Duration limits (seconds)
 MAX_SHORT_DURATION_SECONDS = 600
 

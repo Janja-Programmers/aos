@@ -272,6 +272,7 @@ def _select_short_rows_sql() -> str:
             s.visibility_status,
             s.content_mode,
             s.audience,
+            s.allow_comments,
             s.caption,
             s.hashtags,
             s.playback_url,

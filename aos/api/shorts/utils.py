@@ -22,6 +22,7 @@ from aos.api.shared.auth import current_user
 from aos.api.shorts.constants import (
     DEFAULT_SHORT_CONTENT_MODE,
     DEFAULT_SHORT_AUDIENCE,
+    DEFAULT_ALLOW_COMMENTS,
 )
 
 
@@ -247,6 +248,7 @@ def serialize_short_row(
     - seller is optional shop/seller context and is nested under creator.
     - ad is optional product/ad context.
     - audience controls who can view the short.
+    - allow_comments controls whether new comments/replies are allowed.
     - viewer_state should be precomputed by API/service layer to avoid N+1 queries.
     """
     status = row.get("status")
@@ -258,6 +260,9 @@ def serialize_short_row(
         "visibility_status": row.get("visibility_status"),
         "content_mode": row.get("content_mode") or DEFAULT_SHORT_CONTENT_MODE,
         "audience": row.get("audience") or DEFAULT_SHORT_AUDIENCE,
+        "allow_comments": bool(
+            cint(row.get("allow_comments", DEFAULT_ALLOW_COMMENTS))
+        ),
         "is_ready": status == "ready",
         "is_processing": status in ("initialized", "uploaded", "processing"),
         "is_failed": status == "failed",

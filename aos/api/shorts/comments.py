@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 import frappe
+from frappe.utils import cint
 
 from aos.api.shared.auth import require_login, current_user
 from aos.api.shared.rate_limit import rate_limit, request_ip
@@ -42,6 +43,8 @@ from aos.api.shorts.utils import (
     serialize_comment_row,
 )
 
+from aos.api.shorts.visibility import can_view_short
+
 RANKING_TASK = "aos.api.shorts.tasks.update_short_score_task"
 
 
@@ -61,30 +64,66 @@ def _get_short_owner(short_id: str) -> str | None:
     return frappe.db.get_value("AOS Short", short_id, "owner")
 
 
-def _ensure_commentable_short(short_id: str):
+def _ensure_commentable_short(
+    short_id: str,
+    *,
+    viewer: str | None = None,
+    require_comments_allowed: bool = False,
+):
     """
-    Ensure comments are only added to public/available shorts.
+    Ensure short is available for comment-related actions.
+
+    Rules:
+    - Short must exist.
+    - Non-owners can only access ready + visible shorts.
+    - Audience privacy must be respected.
+    - If require_comments_allowed=True, short.allow_comments must be enabled.
+
+    Note:
+    Listing existing comments/replies should not require allow_comments = 1.
+    Disabled comments only block new comments and new replies.
     """
     short = frappe.db.get_value(
         "AOS Short",
         short_id,
-        ["name", "status", "visibility_status", "owner"],
+        [
+            "name",
+            "status",
+            "visibility_status",
+            "owner",
+            "audience",
+            "allow_comments",
+        ],
         as_dict=True,
     )
 
     if not short:
         return None, fail("Short not found.", code="NOT_FOUND")
 
-    if short.status != "ready" or short.visibility_status != "visible":
+    is_owner = bool(viewer and short.owner == viewer)
+
+    if not is_owner:
+        if short.status != "ready" or short.visibility_status != "visible":
+            return None, fail("Short not available.", code="NOT_FOUND")
+
+        if not can_view_short(short, current_user=viewer):
+            return None, fail("Short not available.", code="NOT_FOUND")
+
+    if require_comments_allowed and not cint(short.allow_comments):
         return None, fail(
-            "Short is not available for comments.",
-            code="VALIDATION_ERROR",
+            "Comments are disabled for this short.",
+            code="COMMENTS_DISABLED",
         )
 
     return short, None
 
 
-def _ensure_active_comment(comment_id: str):
+def _ensure_active_comment(
+    comment_id: str,
+    *,
+    viewer: str | None = None,
+    require_comments_allowed: bool = False,
+):
     """
     Ensure comment exists, is active, and belongs to an available short.
     """
@@ -101,7 +140,11 @@ def _ensure_active_comment(comment_id: str):
     if comment.status != "active":
         return None, None, fail("Comment not available.", code="NOT_FOUND")
 
-    short, err = _ensure_commentable_short(comment.short)
+    short, err = _ensure_commentable_short(
+        comment.short,
+        viewer=viewer,
+        require_comments_allowed=require_comments_allowed,
+    )
     if err:
         return None, None, err
 
@@ -246,7 +289,11 @@ def add_comment_impl(**kwargs):
         return err
 
     try:
-        short, err = _ensure_commentable_short(short_id)
+        short, err = _ensure_commentable_short(
+            short_id,
+            viewer=user,
+            require_comments_allowed=True,
+        )
         if err:
             return err
 
@@ -338,7 +385,11 @@ def reply_comment_impl(**kwargs):
         if parent.status != "active":
             return fail("Comment not available.", code="NOT_FOUND")
 
-        short, err = _ensure_commentable_short(parent.short)
+        short, err = _ensure_commentable_short(
+            parent.short,
+            viewer=user,
+            require_comments_allowed=True,
+        )
         if err:
             return err
 
@@ -424,7 +475,11 @@ def toggle_comment_like_impl(**kwargs):
         return err
 
     try:
-        comment, short, err = _ensure_active_comment(comment_id)
+        comment, short, err = _ensure_active_comment(
+            comment_id,
+            viewer=user,
+            require_comments_allowed=False,
+        )
         if err:
             return err
 
@@ -521,11 +576,15 @@ def list_comments_impl(**kwargs):
     cursor = kwargs.get("cursor")
 
     try:
-        short_owner = _get_short_owner(short_id)
-        if not short_owner:
-            return fail("Short not found.", code="NOT_FOUND")
-
         viewer = _get_optional_viewer()
+
+        short, err = _ensure_commentable_short(
+            short_id,
+            viewer=viewer,
+            require_comments_allowed=False,
+        )
+        if err:
+            return err
 
         where_cursor, params_cursor = build_cursor_where_clause(
             created_field="c.creation",
@@ -578,7 +637,7 @@ def list_comments_impl(**kwargs):
         items = _serialize_comments_with_viewer_state(
             visible_rows,
             viewer=viewer,
-            short_owner=short_owner,
+            short_owner=short.owner,
         )
 
         next_cursor = None
@@ -639,11 +698,15 @@ def list_replies_impl(**kwargs):
         if not root or root.status != "active":
             return fail("Comment not found.", code="NOT_FOUND")
 
-        short_owner = _get_short_owner(root.short)
-        if not short_owner:
-            return fail("Short not found.", code="NOT_FOUND")
-
         viewer = _get_optional_viewer()
+
+        short, err = _ensure_commentable_short(
+            root.short,
+            viewer=viewer,
+            require_comments_allowed=False,
+        )
+        if err:
+            return err
 
         where_cursor, params_cursor = build_cursor_where_clause(
             created_field="c.creation",
@@ -696,7 +759,7 @@ def list_replies_impl(**kwargs):
         items = _serialize_comments_with_viewer_state(
             visible_rows,
             viewer=viewer,
-            short_owner=short_owner,
+            short_owner=short.owner,
         )
 
         next_cursor = None
