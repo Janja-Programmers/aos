@@ -23,6 +23,33 @@ import frappe
 
 
 DELETED_MESSAGE_TEXT = "This message was deleted"
+YOU_DELETED_MESSAGE_TEXT = "You deleted this message"
+
+
+def get_deleted_for_everyone_display_text(
+    *,
+    sender: str | None,
+    viewer: str | None,
+) -> str:
+    """
+    Return viewer-specific placeholder text for delete-for-everyone messages.
+
+    Sender sees:
+        You deleted this message
+
+    Receiver sees:
+        This message was deleted
+
+    The DB stores only the neutral delete state:
+        deleted_for_everyone = 1
+
+    The API computes display text per viewer.
+    """
+
+    if sender and viewer and sender == viewer:
+        return YOU_DELETED_MESSAGE_TEXT
+
+    return DELETED_MESSAGE_TEXT
 
 
 def get_participant_index(conv: Any, user: str) -> int | None:

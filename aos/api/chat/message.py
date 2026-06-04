@@ -27,7 +27,10 @@ from .constants import (
 from .presence import publish_presence_update_to_peers
 from .preview import set_conversation_preview_for_new_message
 from .reactions import fetch_message_reaction_summaries, fetch_my_reactions
-from .visibility import DELETED_MESSAGE_TEXT, get_user_delete_sql_condition
+from .visibility import (
+    get_deleted_for_everyone_display_text,
+    get_user_delete_sql_condition,
+)
 
 
 # Helpers
@@ -509,6 +512,7 @@ def _build_deleted_message_payload(
     msg,
     user_payload: Dict[str, Any],
     *,
+    current_user: str,
     is_starred: bool = False,
 ) -> Dict[str, Any]:
     """
@@ -519,6 +523,9 @@ def _build_deleted_message_payload(
     - Do not expose ad preview.
     - Do not expose attachments.
     - Do not expose reactions.
+    - Display text is viewer-specific:
+        sender   -> You deleted this message
+        receiver -> This message was deleted
     """
 
     return {
@@ -547,7 +554,10 @@ def _build_deleted_message_payload(
         "edited_at": getattr(msg, "edited_at", None),
         "is_deleted_for_everyone": 1,
         "deleted_for_everyone_at": getattr(msg, "deleted_for_everyone_at", None),
-        "display_text": DELETED_MESSAGE_TEXT,
+        "display_text": get_deleted_for_everyone_display_text(
+            sender=msg.sender,
+            viewer=current_user,
+        ),
         "viewer_state": _viewer_state(
             is_starred=is_starred,
             my_reaction=None,
@@ -564,6 +574,7 @@ def _build_reply_payload(
     reply_map: Dict[str, frappe._dict],
     user_map: Dict[str, frappe._dict],
     ad_map: Dict[str, Dict[str, Any]],
+    current_user: str,
 ) -> Dict[str, Any] | None:
     """
     Build lightweight reply preview for frontend rendering.
@@ -609,7 +620,10 @@ def _build_reply_payload(
                 "deleted_for_everyone_at",
                 None,
             ),
-            "display_text": DELETED_MESSAGE_TEXT,
+            "display_text": get_deleted_for_everyone_display_text(
+                sender=replied.sender,
+                viewer=current_user,
+            ),
             "created_at": replied.creation,
         }
 
@@ -645,6 +659,7 @@ def _serialize_message(
     attachments_map: Dict[str, List[Dict]],
     user_map: Dict[str, frappe._dict],
     ad_map: Dict[str, Dict[str, Any]],
+    current_user: str,
     reply_map: Dict[str, frappe._dict] | None = None,
     is_starred: bool = False,
     reactions: List[Dict[str, Any]] | None = None,
@@ -660,6 +675,7 @@ def _serialize_message(
         return _build_deleted_message_payload(
             msg,
             user_payload,
+            current_user=current_user,
             is_starred=is_starred,
         )
 
@@ -670,6 +686,7 @@ def _serialize_message(
         reply_map=reply_map or {},
         user_map=user_map,
         ad_map=ad_map,
+        current_user=current_user,
     )
 
     return {
@@ -866,6 +883,7 @@ def send_message_impl(**kwargs):
             attachments_map=attachments_map,
             user_map=user_map,
             ad_map=ad_map,
+            current_user=current_user,
             reply_map=reply_map,
             is_starred=False,
             reactions=[],
@@ -898,6 +916,8 @@ def send_message_impl(**kwargs):
             f"""
             UPDATE `tabAOS Conversation`
             SET
+                is_active_1 = 1,
+                is_active_2 = 1,
                 {unread_field} = COALESCE({unread_field}, 0) + 1
             WHERE name = %s
             """,
@@ -1106,6 +1126,7 @@ def list_messages_impl(**kwargs):
                     attachments_map=attachments_map,
                     user_map=user_map,
                     ad_map=ad_map,
+                    current_user=current_user,
                     reply_map=reply_map,
                     is_starred=m.name in starred_message_ids,
                     reactions=reaction_map.get(m.name, []),

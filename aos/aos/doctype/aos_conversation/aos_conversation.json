@@ -124,7 +124,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-29 01:26:13.109264",
+ "modified": "2026-06-04 16:22:01.897280",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Conversation",
@@ -146,7 +146,7 @@
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
- "sort_field": "last_message_at_1",
+ "sort_field": "modified",
  "sort_order": "DESC",
  "states": []
 }

@@ -221,6 +221,7 @@ def _serialize_starred_messages(
                 attachments_map=attachments_map,
                 user_map=user_map,
                 ad_map=ad_map,
+                current_user=current_user,
                 reply_map=reply_map,
                 is_starred=msg.name in starred_ids,
                 reactions=reaction_summaries.get(msg.name, []),

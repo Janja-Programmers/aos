@@ -16,6 +16,9 @@ Notes:
 - Messages are soft-deleted, not physically removed.
 - Delete-for-me messages disappear from list_messages for that user.
 - Delete-for-everyone messages remain visible as placeholders.
+- Delete-for-everyone display text is viewer-specific:
+    sender   -> You deleted this message
+    receiver -> This message was deleted
 """
 
 from __future__ import annotations
@@ -30,9 +33,12 @@ from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
 
 from .constants import DELETE_MESSAGES_LIMIT_PER_MINUTE_PER_USER
-from .preview import recompute_conversation_preview_for_user, recompute_conversation_previews
+from .preview import (
+    recompute_conversation_preview_for_user,
+    recompute_conversation_previews,
+)
 from .visibility import (
-    DELETED_MESSAGE_TEXT,
+    get_deleted_for_everyone_display_text,
     get_deleted_for_user_at_field,
     get_deleted_for_user_field,
     get_other_participant,
@@ -86,6 +92,9 @@ def _fetch_messages(message_ids: List[str]) -> List[frappe._dict]:
             "ad",
             "reply_to_message",
             "has_attachments",
+            "is_forwarded",
+            "forwarded_from_message",
+            "forwarded_from_conversation",
             "is_edited",
             "edited_at",
             "deleted_for_everyone",
@@ -94,6 +103,8 @@ def _fetch_messages(message_ids: List[str]) -> List[frappe._dict]:
             "deleted_for_1_at",
             "deleted_for_2",
             "deleted_for_2_at",
+            "delivered_to_receiver_at",
+            "read_by_receiver_at",
             "creation",
         ],
     )
@@ -108,11 +119,56 @@ def _validate_messages_same_conversation(messages: List[frappe._dict]) -> str | 
     return next(iter(conversation_ids))
 
 
-def _build_deleted_payload(message_ids: List[str], *, delete_scope: str) -> Dict[str, Any]:
+def _build_display_text_map(
+    *,
+    messages: List[frappe._dict],
+    viewer: str,
+) -> Dict[str, str]:
+    """
+    Build per-message deleted display text for one viewer.
+
+    For the sender:
+        You deleted this message
+
+    For the receiver:
+        This message was deleted
+    """
+
+    return {
+        msg.name: get_deleted_for_everyone_display_text(
+            sender=msg.sender,
+            viewer=viewer,
+        )
+        for msg in messages
+    }
+
+
+def _build_deleted_payload(
+    message_ids: List[str],
+    *,
+    delete_scope: str,
+    display_text_map: Dict[str, str] | None = None,
+) -> Dict[str, Any]:
+    """
+    Build delete response/realtime payload.
+
+    display_text is kept for simple clients.
+    display_text_by_message_id is safer for multi-delete payloads.
+    """
+
+    display_text_by_message_id = display_text_map or {}
+    first_display_text = None
+
+    if display_text_by_message_id:
+        first_display_text = next(iter(display_text_by_message_id.values()))
+
     return {
         "delete_scope": delete_scope,
         "message_ids": message_ids,
-        "display_text": DELETED_MESSAGE_TEXT if delete_scope == "everyone" else None,
+        "display_text": first_display_text if delete_scope == "everyone" else None,
+        "display_text_by_message_id": (
+            display_text_by_message_id if delete_scope == "everyone" else {}
+        ),
     }
 
 
@@ -225,6 +281,7 @@ def delete_messages_impl(**kwargs):
                 return fail(
                     "System messages cannot be deleted for everyone.",
                     code="VALIDATION_ERROR",
+                    data={"message_id": msg.name},
                 )
 
             if msg.sender != current_user:
@@ -250,17 +307,33 @@ def delete_messages_impl(**kwargs):
                 update_modified=True,
             )
 
+            # Keep in-memory row current for payload display maps.
+            msg.deleted_for_everyone = 1
+            msg.deleted_for_everyone_at = now
+
             deleted_ids.append(msg.name)
 
         recompute_conversation_previews(conversation_id)
 
         receiver = get_other_participant(conv, current_user)
 
+        sender_display_text_map = _build_display_text_map(
+            messages=messages,
+            viewer=current_user,
+        )
+
+        receiver_display_text_map = _build_display_text_map(
+            messages=messages,
+            viewer=receiver,
+        )
+
         realtime_payload = {
             "conversation_id": conversation_id,
-            "delete_scope": "everyone",
-            "message_ids": deleted_ids,
-            "display_text": DELETED_MESSAGE_TEXT,
+            **_build_deleted_payload(
+                deleted_ids,
+                delete_scope="everyone",
+                display_text_map=receiver_display_text_map,
+            ),
         }
 
         frappe.publish_realtime(
@@ -274,6 +347,7 @@ def delete_messages_impl(**kwargs):
             data=_build_deleted_payload(
                 deleted_ids,
                 delete_scope=delete_scope,
+                display_text_map=sender_display_text_map,
             ),
         )
 

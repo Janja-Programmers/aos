@@ -66,15 +66,22 @@ def _get_message_for_edit(message_id: str):
             m.ad,
             m.reply_to_message,
             m.has_attachments,
+
+            m.is_forwarded,
+            m.forwarded_from_message,
+            m.forwarded_from_conversation,
+
             m.is_edited,
             m.edited_at,
             m.original_content,
+
             m.deleted_for_everyone,
             m.deleted_for_everyone_at,
             m.deleted_for_1,
             m.deleted_for_1_at,
             m.deleted_for_2,
             m.deleted_for_2_at,
+
             m.delivered_to_receiver_at,
             m.read_by_receiver_at,
             m.creation,
@@ -104,7 +111,11 @@ def _is_deleted_for_current_user(msg, current_user: str) -> bool:
     return bool(getattr(msg, fieldname, 0))
 
 
-def _serialize_edited_message(msg) -> Dict[str, Any]:
+def _serialize_edited_message(
+    msg,
+    *,
+    current_user: str,
+) -> Dict[str, Any]:
     """
     Serialize edited message using the same shape as send/list message.
     """
@@ -138,7 +149,11 @@ def _serialize_edited_message(msg) -> Dict[str, Any]:
         attachments_map=attachments_map,
         user_map=user_map,
         ad_map=ad_map,
+        current_user=current_user,
         reply_map=reply_map,
+        is_starred=False,
+        reactions=[],
+        my_reaction=None,
     )
 
 
@@ -240,13 +255,21 @@ def edit_message_impl(**kwargs):
         # message for one participant but not the other due to delete-for-me.
         recompute_conversation_previews(msg.conversation)
 
-        serialized = _serialize_edited_message(msg)
-
         receiver = _get_receiver(msg, current_user)
+
+        serialized_for_sender = _serialize_edited_message(
+            msg,
+            current_user=current_user,
+        )
+
+        serialized_for_receiver = _serialize_edited_message(
+            msg,
+            current_user=receiver,
+        )
 
         realtime_payload = {
             "conversation_id": msg.conversation,
-            "message": serialized,
+            "message": serialized_for_receiver,
         }
 
         frappe.publish_realtime(
@@ -255,7 +278,7 @@ def edit_message_impl(**kwargs):
             user=receiver,
         )
 
-        return ok("Message edited.", data=serialized)
+        return ok("Message edited.", data=serialized_for_sender)
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()

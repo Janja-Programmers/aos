@@ -14,6 +14,8 @@ Behavior:
     is_forwarded
     forwarded_from_message
     forwarded_from_conversation
+- Reactivates target conversations for both participants because a new message
+  should make a previously hidden/deleted conversation visible again.
 """
 
 from __future__ import annotations
@@ -314,14 +316,21 @@ def _increment_unread_for_receiver(
     frappe.db.sql(
         f"""
         UPDATE `tabAOS Conversation`
-        SET {unread_field} = COALESCE({unread_field}, 0) + 1
+        SET
+            is_active_1 = 1,
+            is_active_2 = 1,
+            {unread_field} = COALESCE({unread_field}, 0) + 1
         WHERE name = %s
         """,
         (conv.name,),
     )
 
 
-def _serialize_forwarded_message(msg) -> Dict[str, Any]:
+def _serialize_forwarded_message(
+    msg,
+    *,
+    current_user: str,
+) -> Dict[str, Any]:
     attachments_map = _serialize_attachments_bulk([msg.name])
 
     reply_map = _fetch_reply_messages_bulk(
@@ -351,6 +360,7 @@ def _serialize_forwarded_message(msg) -> Dict[str, Any]:
         attachments_map=attachments_map,
         user_map=user_map,
         ad_map=ad_map,
+        current_user=current_user,
         reply_map=reply_map,
         is_starred=False,
         reactions=[],
@@ -443,7 +453,10 @@ def forward_message_impl(**kwargs):
                 current_user=current_user,
             )
 
-            serialized = _serialize_forwarded_message(msg)
+            serialized = _serialize_forwarded_message(
+                msg,
+                current_user=current_user,
+            )
 
             receiver = _get_receiver(target_conv, current_user)
 

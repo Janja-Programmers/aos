@@ -7,6 +7,9 @@ Why participant-specific previews exist:
 - If participant 1 deletes a message "for me", participant 1 should no longer
   see that message as the conversation preview.
 - Participant 2 should still see it.
+- If a sender deletes a message for everyone, sender should see
+  "You deleted this message", while receiver should see
+  "This message was deleted".
 - Therefore AOS Conversation stores:
     last_message_1 / last_message_at_1 / last_sender_1
     last_message_2 / last_message_at_2 / last_sender_2
@@ -19,7 +22,7 @@ from typing import Any, Dict
 import frappe
 
 from .visibility import (
-    DELETED_MESSAGE_TEXT,
+    get_deleted_for_everyone_display_text,
     get_last_message_at_field,
     get_last_message_field,
     get_last_sender_field,
@@ -103,14 +106,22 @@ def _fetch_ads_bulk(ad_ids: list[str]) -> Dict[str, Dict[str, Any]]:
 def build_message_preview(
     msg,
     *,
+    viewer: str,
     ad_map: Dict[str, Dict[str, Any]] | None = None,
 ) -> str:
     """
-    Build a display-safe conversation preview for one message.
+    Build a display-safe conversation preview for one viewer.
+
+    Delete-for-everyone previews are viewer-specific:
+    - sender sees: You deleted this message
+    - receiver sees: This message was deleted
     """
 
     if is_deleted_for_everyone(msg):
-        return DELETED_MESSAGE_TEXT
+        return get_deleted_for_everyone_display_text(
+            sender=getattr(msg, "sender", None),
+            viewer=viewer,
+        )
 
     content = (getattr(msg, "content", None) or "").strip()
     if content:
@@ -159,14 +170,21 @@ def _get_latest_visible_message_for_user(
             ad,
             reply_to_message,
             has_attachments,
+
+            is_forwarded,
+            forwarded_from_message,
+            forwarded_from_conversation,
+
             is_edited,
             edited_at,
+
             deleted_for_everyone,
             deleted_for_everyone_at,
             deleted_for_1,
             deleted_for_1_at,
             deleted_for_2,
             deleted_for_2_at,
+
             delivered_to_receiver_at,
             read_by_receiver_at,
             creation
@@ -236,6 +254,7 @@ def recompute_conversation_preview_for_user(
 
     preview = build_message_preview(
         latest,
+        viewer=user,
         ad_map=ad_map,
     )
 
@@ -285,10 +304,14 @@ def set_conversation_preview_for_new_message(
     sent_at,
 ) -> None:
     """
-    Fast path for send_message.
+    Fast path for send_message / forward_message.
 
     A newly sent message is visible to both participants, so both previews can be
     updated directly without scanning the message table.
+
+    A newly sent/forwarded message should also reactivate both participants'
+    conversation list visibility. Deleting a conversation only hides it until
+    a new message arrives or the user opens it again.
     """
 
     frappe.db.set_value(
@@ -300,6 +323,45 @@ def set_conversation_preview_for_new_message(
             "last_sender_1": sender,
             "last_message_2": preview,
             "last_message_at_2": sent_at,
+            "last_sender_2": sender,
+            "is_active_1": 1,
+            "is_active_2": 1,
+        },
+        update_modified=False,
+    )
+
+
+def set_conversation_preview_for_deleted_everyone(
+    *,
+    conversation_id: str,
+    sender: str,
+    deleted_at,
+    participant_1: str,
+    participant_2: str,
+) -> None:
+    """
+    Set participant-specific previews for a latest message deleted for everyone.
+
+    Use this only when the deleted message should remain the latest preview.
+    If delete-for-me visibility differs per participant, prefer
+    recompute_conversation_previews().
+    """
+
+    frappe.db.set_value(
+        "AOS Conversation",
+        conversation_id,
+        {
+            "last_message_1": get_deleted_for_everyone_display_text(
+                sender=sender,
+                viewer=participant_1,
+            ),
+            "last_message_at_1": deleted_at,
+            "last_sender_1": sender,
+            "last_message_2": get_deleted_for_everyone_display_text(
+                sender=sender,
+                viewer=participant_2,
+            ),
+            "last_message_at_2": deleted_at,
             "last_sender_2": sender,
         },
         update_modified=False,
