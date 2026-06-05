@@ -6,7 +6,7 @@ Handles:
 - Viewer count events
 - Unified live message events
 - User-targeted live message events
-- Reaction batching
+- Immediate reaction events
 - Display-ready lightweight payloads
 
 Privacy:
@@ -17,14 +17,7 @@ Privacy:
 
 from __future__ import annotations
 
-import time
-from typing import Any
 import frappe
-
-
-# INTERNAL CACHE
-_VIEWER_CACHE: dict[str, float] = {}
-_REACTION_CACHE: dict[str, dict[str, Any]] = {}
 
 
 # CHANNEL HELPERS
@@ -131,10 +124,6 @@ def _build_live_message_payload(
     live_id: str,
     message: dict,
 ) -> dict:
-    """
-    Build the canonical realtime envelope for a live message.
-    """
-
     return {
         "live_id": live_id,
         "message": message,
@@ -149,15 +138,19 @@ def publish_live_started(live):
     - The host's active devices
     - Clients already subscribed to the live room
     """
-    payload = _build_live_payload(live)
-    host_user = live.host_user
-
-    followers = _get_followers(
-        host_user
+    payload = _build_live_payload(
+        live
     )
 
-    for user in followers:
-        if not user or user == host_user:
+    host_user = live.host_user
+
+    for user in _get_followers(
+        host_user
+    ):
+        if (
+            not user
+            or user == host_user
+        ):
             continue
 
         frappe.publish_realtime(
@@ -184,7 +177,9 @@ def publish_live_started(live):
 
 
 def publish_live_ended(live):
-    payload = _build_live_payload(live)
+    payload = _build_live_payload(
+        live
+    )
 
     frappe.publish_realtime(
         event="aos_live_ended",
@@ -208,32 +203,20 @@ def publish_viewer_count(
     viewer_count: int,
 ):
     """
-    Publish the current viewer count to the live room.
+    Publish the current viewer count immediately.
 
-    Updates are throttled to at most once per second per live stream.
     Viewer identities and session IDs are never included.
     """
-
-    now = time.time()
-
-    last_sent = _VIEWER_CACHE.get(
-        live_id
-    )
-
-    if (
-        last_sent
-        and (now - last_sent) < 1
-    ):
+    if not live_id:
         return
-
-    _VIEWER_CACHE[live_id] = now
 
     frappe.publish_realtime(
         event="aos_live_viewer_count",
         message={
             "live_id": live_id,
-            "viewer_count": int(
-                viewer_count or 0
+            "viewer_count": max(
+                int(viewer_count or 0),
+                0,
             ),
         },
         room=live_channel(live_id),
@@ -247,16 +230,12 @@ def publish_live_message(
     message: dict,
 ):
     """
-    Publish a live message to every client subscribed to the live room.
+    Publish a message to every client subscribed to the live room.
 
     Use only for messages visible to room participants.
-
-    Examples:
-    - Viewer comments
-    - Replies
-    - Public lifecycle messages
-    - Public co-host events
     """
+    if not live_id or not message:
+        return
 
     frappe.publish_realtime(
         event="aos_live_message",
@@ -285,7 +264,11 @@ def publish_live_message_to_user(
     - Co-host requests delivered only to the host
     """
 
-    if not user:
+    if (
+        not user
+        or not live_id
+        or not message
+    ):
         return
 
     frappe.publish_realtime(
@@ -310,14 +293,14 @@ def publish_live_message_to_users(
 
     Empty and duplicate recipients are removed.
     """
+    if not live_id or not message:
+        return
 
-    recipients = {
+    for user in {
         user
         for user in users
         if user
-    }
-
-    for user in recipients:
+    }:
         publish_live_message_to_user(
             user=user,
             live_id=live_id,
@@ -337,6 +320,8 @@ def publish_live_message_deleted(
     deleted_message_ids contains the selected message and any descendant
     replies deleted with it.
     """
+    if not live_id or not message_id:
+        return
 
     ids = list(
         dict.fromkeys(
@@ -346,7 +331,10 @@ def publish_live_message_deleted(
     )
 
     if message_id not in ids:
-        ids.insert(0, message_id)
+        ids.insert(
+            0,
+            message_id,
+        )
 
     frappe.publish_realtime(
         event="aos_live_message_deleted",
@@ -362,90 +350,24 @@ def publish_live_message_deleted(
 
 # REACTION EVENTS
 def publish_reaction(
+    *,
     live_id: str,
-    reaction_type: str,
-    user: str | None = None,
+    reaction: dict,
 ):
     """
-    Batch reactions and flush when:
-    - At least 500 milliseconds have passed since the previous flush, or
-    - The batch reaches 20 reactions.
+    Publish one canonical reaction immediately.
 
-    Reaction events may include public user display context, but never
-    include private session identifiers.
+    The API response and realtime event use the same serialized payload.
     """
-    now = time.time()
-
-    user_payload = _get_user_display(
-        user
-    )
-
-    cache = _REACTION_CACHE.setdefault(
-        live_id,
-        {
-            "last_flush": now,
-            "items": [],
-        },
-    )
-
-    cache["items"].append(
-        {
-            "reaction_type": reaction_type,
-            "user": user_payload["user"],
-            "display_name": user_payload[
-                "display_name"
-            ],
-            "avatar": user_payload["avatar"],
-        }
-    )
-
-    should_flush_by_time = (
-        now
-        - float(cache["last_flush"])
-    ) >= 0.5
-
-    should_flush_by_size = (
-        len(cache["items"]) >= 20
-    )
-
-    if (
-        not should_flush_by_time
-        and not should_flush_by_size
-    ):
+    if not live_id or not reaction:
         return
-
-    items = list(
-        cache["items"]
-    )
-
-    cache["items"] = []
-    cache["last_flush"] = now
 
     frappe.publish_realtime(
         event="aos_live_reaction",
         message={
             "live_id": live_id,
-            "reactions": items,
+            "reaction": reaction,
         },
         room=live_channel(live_id),
         after_commit=True,
-    )
-
-
-# CACHE CLEANUP
-def clear_live_realtime_cache(
-    live_id: str,
-):
-    """
-    Clear process-local throttling and batching state after a live ends.
-    """
-
-    _VIEWER_CACHE.pop(
-        live_id,
-        None,
-    )
-
-    _REACTION_CACHE.pop(
-        live_id,
-        None,
     )

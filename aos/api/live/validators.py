@@ -7,6 +7,7 @@ Responsibilities:
 - Live stream validation
 - Host and go-live eligibility validation
 - Viewer-session validation
+- Live participant eligibility validation
 """
 
 from __future__ import annotations
@@ -20,12 +21,52 @@ LIVE_STREAM_DOCTYPE = "AOS Live Stream"
 LIVE_VIEW_DOCTYPE = "AOS Live Stream View"
 USER_DOCTYPE = "User"
 
+GUEST_USER = "Guest"
+
 LIVE_STATUS = "live"
 ENDED_STATUS = "ended"
 
 
+# GENERIC HELPERS
+def is_authenticated_user(
+    user: str | None,
+) -> bool:
+    return bool(
+        user
+        and user != GUEST_USER
+    )
+
+
+def _apply_viewer_ownership_filter(
+    *,
+    filters: dict,
+    user: str | None,
+):
+    """
+    Add the correct viewer ownership constraint.
+
+    Authenticated session:
+    - user must exactly match the authenticated user.
+
+    Guest session:
+    - user must be empty.
+
+    This prevents a guest request from matching an authenticated user's
+    session when the session ID is known.
+    """
+    if is_authenticated_user(user):
+        filters["user"] = user
+    else:
+        filters["user"] = [
+            "is",
+            "not set",
+        ]
+
+
 # FETCH HELPERS
-def get_live_row(live_id: str):
+def get_live_row(
+    live_id: str,
+):
     """
     Return an AOS Live Stream document or None.
     """
@@ -41,7 +82,9 @@ def get_live_row(live_id: str):
         return None
 
 
-def get_live_view_row(view_id: str):
+def get_live_view_row(
+    view_id: str,
+):
     """
     Return an AOS Live Stream View document or None.
     """
@@ -58,14 +101,18 @@ def get_live_view_row(view_id: str):
 
 
 # LIVE VALIDATION
-def validate_live_exists(live_id: str):
+def validate_live_exists(
+    live_id: str,
+):
     """
     Validate that a live stream exists.
 
     Returns:
         tuple[live | None, error_response | None]
     """
-    live = get_live_row(live_id)
+    live = get_live_row(
+        live_id
+    )
 
     if not live:
         return None, fail(
@@ -76,7 +123,9 @@ def validate_live_exists(live_id: str):
     return live, None
 
 
-def validate_live_active(live):
+def validate_live_active(
+    live,
+):
     """
     Validate that a live stream is currently active.
     """
@@ -92,7 +141,9 @@ def validate_live_active(live):
     return None
 
 
-def validate_live_not_ended(live):
+def validate_live_not_ended(
+    live,
+):
     """
     Validate that the live stream has not ended.
     """
@@ -112,8 +163,7 @@ def validate_user_is_host(
     """
     Validate that the supplied user owns the live stream.
     """
-
-    if not user or user == "Guest":
+    if not is_authenticated_user(user):
         return fail(
             "Login required.",
             code="AUTH_REQUIRED",
@@ -128,7 +178,9 @@ def validate_user_is_host(
     return None
 
 
-def validate_user_can_go_live(user: str):
+def validate_user_can_go_live(
+    user: str,
+):
     """
     Validate whether a user can start a live stream.
 
@@ -137,15 +189,9 @@ def validate_user_can_go_live(user: str):
     - User must exist.
     - User account must be enabled.
 
-    Keep this validation separate so future eligibility rules can be added,
-    such as:
-    - minimum account age
-    - suspension checks
-    - live-stream restrictions
-    - verification or follower requirements
+    Future eligibility rules can be added here without changing start_live.
     """
-
-    if not user or user == "Guest":
+    if not is_authenticated_user(user):
         return None, fail(
             "Login required.",
             code="AUTH_REQUIRED",
@@ -182,14 +228,14 @@ def validate_view_identity(
     session_id: str | None,
 ):
     """
-    Validate a viewer-tracking identity.
+    Validate a viewer tracking identity.
 
-    View tracking supports:
-    - logged-in viewers
+    session_id is required for both:
+    - authenticated viewers
     - guest viewers
 
-    session_id is required for both. The optional user field associates the
-    session with an authenticated AOS user.
+    Authenticated users are additionally checked for existence and enabled
+    status.
     """
     if not session_id:
         return fail(
@@ -197,24 +243,26 @@ def validate_view_identity(
             code="VALIDATION_ERROR",
         )
 
-    if user and user != "Guest":
-        enabled = frappe.db.get_value(
-            USER_DOCTYPE,
-            user,
-            "enabled",
+    if not is_authenticated_user(user):
+        return None
+
+    enabled = frappe.db.get_value(
+        USER_DOCTYPE,
+        user,
+        "enabled",
+    )
+
+    if enabled is None:
+        return fail(
+            "Viewer user not found.",
+            code="NOT_FOUND",
         )
 
-        if enabled is None:
-            return fail(
-                "Viewer user not found.",
-                code="NOT_FOUND",
-            )
-
-        if not bool(enabled):
-            return fail(
-                "Viewer account is disabled.",
-                code="INVALID_STATE",
-            )
+    if not bool(enabled):
+        return fail(
+            "Viewer account is disabled.",
+            code="INVALID_STATE",
+        )
 
     return None
 
@@ -225,10 +273,9 @@ def validate_no_active_view_session(
     session_id: str | None,
 ):
     """
-    Ensure the same session does not create multiple active view rows.
+    Ensure this viewer identity does not already have an active session row.
 
-    session_id is the canonical viewer-session identifier. This works for
-    both guests and authenticated viewers.
+    Ownership is enforced for both authenticated and guest sessions.
     """
     if not session_id:
         return fail(
@@ -236,13 +283,20 @@ def validate_no_active_view_session(
             code="VALIDATION_ERROR",
         )
 
+    filters = {
+        "live_stream": live_id,
+        "session_id": session_id,
+        "is_active": 1,
+    }
+
+    _apply_viewer_ownership_filter(
+        filters=filters,
+        user=user,
+    )
+
     exists = frappe.db.exists(
         LIVE_VIEW_DOCTYPE,
-        {
-            "live_stream": live_id,
-            "session_id": session_id,
-            "is_active": 1,
-        },
+        filters,
     )
 
     if exists:
@@ -260,10 +314,13 @@ def validate_active_view_session(
     session_id: str | None,
 ):
     """
-    Fetch and validate an active view session.
+    Fetch and validate an active view session owned by the supplied viewer.
 
-    The user argument is used as an additional ownership check for
-    authenticated viewers. Guest sessions are identified using session_id.
+    Authenticated viewers:
+    - session must belong to that exact user.
+
+    Guests:
+    - session must belong to a row with no user.
     """
     if not session_id:
         return None, fail(
@@ -277,8 +334,10 @@ def validate_active_view_session(
         "is_active": 1,
     }
 
-    if user and user != "Guest":
-        filters["user"] = user
+    _apply_viewer_ownership_filter(
+        filters=filters,
+        user=user,
+    )
 
     view = frappe.db.get_value(
         LIVE_VIEW_DOCTYPE,
@@ -302,3 +361,50 @@ def validate_active_view_session(
         )
 
     return view, None
+
+
+def validate_live_participant_session(
+    *,
+    live,
+    user: str,
+    session_id: str | None,
+):
+    """
+    Validate that an authenticated user may interact with the live.
+
+    Host:
+    - Does not require an AOS Live Stream View session.
+
+    Non-host viewer:
+    - Must provide session_id.
+    - Must own an active view session for this live.
+
+    Intended for:
+    - comments
+    - replies
+    - reactions
+    - future co-host requests
+    - other viewer-only interactions
+    """
+    if not is_authenticated_user(user):
+        return fail(
+            "Login required.",
+            code="AUTH_REQUIRED",
+        )
+
+    if live.host_user == user:
+        return None
+
+    if not session_id:
+        return fail(
+            "session_id is required for viewers.",
+            code="VALIDATION_ERROR",
+        )
+
+    _, err = validate_active_view_session(
+        live.name,
+        user,
+        session_id,
+    )
+
+    return err

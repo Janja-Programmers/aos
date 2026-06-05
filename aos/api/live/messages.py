@@ -21,10 +21,12 @@ Live messages include:
 Rules:
 - Guests can read viewer-visible messages.
 - Only logged-in users can comment, reply, or delete comments.
-- Comment authors can delete their own comments.
-- The live host can delete comments in their own live.
+- Non-host viewers must own an active view session to comment or reply.
+- Comment authors can soft-delete their own comments while the live is active.
+- The live host can soft-delete comments while their live is active.
 - Only comment messages can have replies.
 - System and co-host messages are created internally.
+- Administrative hard deletion is handled by the DocType controller.
 """
 
 from __future__ import annotations
@@ -58,11 +60,11 @@ from .serializers import (
 from .validators import (
     validate_live_active,
     validate_live_exists,
+    validate_live_participant_session,
 )
 
 
 LIVE_MESSAGE_DOCTYPE = "AOS Live Message"
-LIVE_STREAM_DOCTYPE = "AOS Live Stream"
 
 ACTIVE_STATUS = "active"
 DELETED_STATUS = "deleted"
@@ -82,18 +84,45 @@ MAX_REPLIES_LIMIT = 100
 GUEST_USER = "Guest"
 
 
-# PAGINATION
+# GENERIC HELPERS
+def _normalize_session_id(
+    value,
+) -> str | None:
+    session_id = str(
+        value or ""
+    ).strip()
+
+    return session_id or None
+
+
 def _parse_pagination(
     kwargs,
     *,
     default_limit: int,
     max_limit: int,
 ) -> tuple[int, int]:
-    limit = int(kwargs.get("limit") or default_limit)
-    limit = max(1, min(limit, max_limit))
+    limit = int(
+        kwargs.get("limit")
+        or default_limit
+    )
 
-    start = int(kwargs.get("start") or 0)
-    start = max(0, start)
+    limit = max(
+        1,
+        min(
+            limit,
+            max_limit,
+        ),
+    )
+
+    start = int(
+        kwargs.get("start")
+        or 0
+    )
+
+    start = max(
+        0,
+        start,
+    )
 
     return start, limit
 
@@ -108,24 +137,14 @@ def _get_optional_current_user() -> str | None:
     return user
 
 
-def _get_live_host(live) -> str | None:
-    """
-    Return the live host from either a Frappe Document or frappe._dict.
-    """
-
-    return getattr(live, "host_user", None)
-
-
 def _is_live_host(
     live,
     user: str | None,
 ) -> bool:
-    host_user = _get_live_host(live)
-
     return bool(
         user
-        and host_user
-        and user == host_user
+        and live.host_user
+        and user == live.host_user
     )
 
 
@@ -152,7 +171,9 @@ def _get_live_message(
 
 
 # MESSAGE VALIDATION HELPERS
-def _validate_comment_message(message):
+def _validate_comment_message(
+    message,
+):
     if message.message_kind != COMMENT_KIND:
         return fail(
             "Only comment messages can be used for this action.",
@@ -171,7 +192,9 @@ def _validate_comment_message(message):
     return None
 
 
-def _validate_message_active(message):
+def _validate_message_active(
+    message,
+):
     if message.status != ACTIVE_STATUS:
         return fail(
             "Live message is not active.",
@@ -195,13 +218,15 @@ def _validate_message_belongs_to_live(
 
 
 def _validate_user_can_delete_message(
+    *,
     message,
+    live,
     user: str,
 ):
     """
-    Only user comments can be deleted through this public endpoint.
+    Only comment messages can be soft-deleted through the public endpoint.
 
-    System, co-host, gift, and moderation messages must be managed by their
+    System, co-host, gift, and moderation messages are managed by their
     respective internal services.
     """
     if message.message_kind != COMMENT_KIND:
@@ -212,22 +237,6 @@ def _validate_user_can_delete_message(
 
     if message.user == user:
         return None
-
-    live = frappe.db.get_value(
-        LIVE_STREAM_DOCTYPE,
-        message.live_stream,
-        [
-            "name",
-            "host_user",
-        ],
-        as_dict=True,
-    )
-
-    if not live:
-        return fail(
-            "Live stream not found.",
-            code="NOT_FOUND",
-        )
 
     if live.host_user == user:
         return None
@@ -255,31 +264,45 @@ def _create_live_message(
     """
     Canonical internal creator for AOS Live Message.
 
-    The DocType controller remains responsible for validating:
-    - kind/type compatibility
-    - user requirements
+    The DocType controller validates:
+    - message kind/type compatibility
+    - actor requirements
+    - target-user requirements
     - parent/root integrity
     - live state
     - metadata shape
+    - visibility rules
     """
 
-    message = frappe.new_doc(LIVE_MESSAGE_DOCTYPE)
+    message = frappe.new_doc(
+        LIVE_MESSAGE_DOCTYPE
+    )
 
     message.live_stream = live_id
     message.message_kind = message_kind
     message.message_type = message_type
     message.user = user
     message.target_user = target_user
-    message.content = str(content or "").strip()
+    message.content = str(
+        content or ""
+    ).strip()
     message.status = ACTIVE_STATUS
     message.parent_message = parent_message
-    message.visible_to_host = int(bool(visible_to_host))
-    message.visible_to_viewers = int(bool(visible_to_viewers))
+    message.visible_to_host = int(
+        bool(visible_to_host)
+    )
+    message.visible_to_viewers = int(
+        bool(visible_to_viewers)
+    )
 
-    if metadata:
-        message.metadata_json = frappe.as_json(metadata)
+    if metadata is not None:
+        message.metadata_json = frappe.as_json(
+            metadata
+        )
 
-    message.insert(ignore_permissions=True)
+    message.insert(
+        ignore_permissions=True
+    )
 
     return message
 
@@ -343,7 +366,9 @@ def create_live_system_message(
         visible_to_viewers=visible_to_viewers,
     )
 
-    serialized = serialize_live_message(message)
+    serialized = serialize_live_message(
+        message
+    )
 
     if publish:
         publish_live_message(
@@ -376,8 +401,13 @@ def add_live_message_impl(**kwargs):
     if err:
         return err
 
+    session_id = _normalize_session_id(
+        kwargs.get("session_id")
+    )
+
     content = str(
-        kwargs.get("content") or ""
+        kwargs.get("content")
+        or ""
     ).strip()
 
     if not content:
@@ -387,11 +417,23 @@ def add_live_message_impl(**kwargs):
         )
 
     try:
-        live, err = validate_live_exists(live_id)
+        live, err = validate_live_exists(
+            live_id
+        )
         if err:
             return err
 
-        err = validate_live_active(live)
+        err = validate_live_active(
+            live
+        )
+        if err:
+            return err
+
+        err = validate_live_participant_session(
+            live=live,
+            user=user,
+            session_id=session_id,
+        )
         if err:
             return err
 
@@ -467,8 +509,13 @@ def reply_live_message_impl(**kwargs):
     if err:
         return err
 
+    session_id = _normalize_session_id(
+        kwargs.get("session_id")
+    )
+
     content = str(
-        kwargs.get("content") or ""
+        kwargs.get("content")
+        or ""
     ).strip()
 
     if not content:
@@ -478,11 +525,23 @@ def reply_live_message_impl(**kwargs):
         )
 
     try:
-        live, err = validate_live_exists(live_id)
+        live, err = validate_live_exists(
+            live_id
+        )
         if err:
             return err
 
-        err = validate_live_active(live)
+        err = validate_live_active(
+            live
+        )
+        if err:
+            return err
+
+        err = validate_live_participant_session(
+            live=live,
+            user=user,
+            session_id=session_id,
+        )
         if err:
             return err
 
@@ -492,7 +551,9 @@ def reply_live_message_impl(**kwargs):
         if err:
             return err
 
-        err = _validate_comment_message(parent)
+        err = _validate_comment_message(
+            parent
+        )
         if err:
             return err
 
@@ -503,7 +564,9 @@ def reply_live_message_impl(**kwargs):
         if err:
             return err
 
-        err = _validate_message_active(parent)
+        err = _validate_message_active(
+            parent
+        )
         if err:
             return err
 
@@ -572,7 +635,9 @@ def list_live_messages_impl(**kwargs):
         return err
 
     try:
-        live, err = validate_live_exists(live_id)
+        live, err = validate_live_exists(
+            live_id
+        )
         if err:
             return err
 
@@ -583,6 +648,7 @@ def list_live_messages_impl(**kwargs):
         )
 
         current_user = _get_optional_current_user()
+
         is_host = _is_live_host(
             live,
             current_user,
@@ -590,7 +656,10 @@ def list_live_messages_impl(**kwargs):
 
         filters: dict[str, Any] = {
             "live_stream": live_id,
-            "parent_message": ["is", "not set"],
+            "parent_message": [
+                "is",
+                "not set",
+            ],
             "status": ACTIVE_STATUS,
         }
 
@@ -618,7 +687,9 @@ def list_live_messages_impl(**kwargs):
                     "start": start,
                     "limit": limit,
                     "count": len(rows),
-                    "has_more": len(rows) == limit,
+                    "has_more": (
+                        len(rows) == limit
+                    ),
                 },
             },
         )
@@ -668,11 +739,15 @@ def list_live_replies_impl(**kwargs):
         if err:
             return err
 
-        err = _validate_comment_message(parent)
+        err = _validate_comment_message(
+            parent
+        )
         if err:
             return err
 
-        err = _validate_message_active(parent)
+        err = _validate_message_active(
+            parent
+        )
         if err:
             return err
 
@@ -707,7 +782,9 @@ def list_live_replies_impl(**kwargs):
                     "start": start,
                     "limit": limit,
                     "count": len(rows),
-                    "has_more": len(rows) == limit,
+                    "has_more": (
+                        len(rows) == limit
+                    ),
                 },
             },
         )
@@ -735,18 +812,25 @@ def _collect_descendant_message_ids(
     message_id: str,
 ) -> list[str]:
     """
-    Collect active or hidden descendants recursively.
+    Collect non-deleted descendants recursively.
 
-    This prevents child replies from remaining accessible after their parent
-    message is deleted.
+    This prevents active or hidden child replies from remaining accessible
+    after their parent message is soft-deleted.
     """
 
     collected: list[str] = []
-    seen: set[str] = {message_id}
-    pending: list[str] = [message_id]
+    seen: set[str] = {
+        message_id,
+    }
+    pending: list[str] = [
+        message_id,
+    ]
 
     while pending:
-        parent_ids = list(pending)
+        parent_ids = list(
+            pending
+        )
+
         pending.clear()
 
         children = frappe.get_all(
@@ -768,9 +852,15 @@ def _collect_descendant_message_ids(
             if child_id in seen:
                 continue
 
-            seen.add(child_id)
-            collected.append(child_id)
-            pending.append(child_id)
+            seen.add(
+                child_id
+            )
+            collected.append(
+                child_id
+            )
+            pending.append(
+                child_id
+            )
 
     return collected
 
@@ -802,7 +892,7 @@ def _sync_reply_counts(
             LIVE_MESSAGE_DOCTYPE,
             parent_id,
             "reply_count",
-            active_reply_count,
+            int(active_reply_count or 0),
             update_modified=False,
         )
 
@@ -821,7 +911,9 @@ def _soft_delete_messages(
         """,
         {
             "status": DELETED_STATUS,
-            "message_ids": tuple(message_ids),
+            "message_ids": tuple(
+                message_ids
+            ),
         },
     )
 
@@ -855,9 +947,25 @@ def delete_live_message_impl(**kwargs):
         if err:
             return err
 
+        live, err = validate_live_exists(
+            message.live_stream
+        )
+        if err:
+            return err
+
+        # Public/API soft deletion is only available while the live is active.
+        # After the live ends, administrative cleanup is performed through
+        # the DocType's hard-delete policy.
+        err = validate_live_active(
+            live
+        )
+        if err:
+            return err
+
         err = _validate_user_can_delete_message(
-            message,
-            user,
+            message=message,
+            live=live,
+            user=user,
         )
         if err:
             return err
@@ -868,15 +976,13 @@ def delete_live_message_impl(**kwargs):
                 data={
                     "message_id": message_id,
                     "deleted_message_ids": [
-                        message_id
+                        message_id,
                     ],
                 },
             )
 
-        descendant_ids = (
-            _collect_descendant_message_ids(
-                message_id
-            )
+        descendant_ids = _collect_descendant_message_ids(
+            message_id
         )
 
         deleted_ids = list(
@@ -905,9 +1011,11 @@ def delete_live_message_impl(**kwargs):
         affected_parent_ids = {
             row.parent_message
             for row in affected_rows
-            if row.parent_message
-            and row.parent_message
-            not in deleted_ids
+            if (
+                row.parent_message
+                and row.parent_message
+                not in deleted_ids
+            )
         }
 
         _soft_delete_messages(

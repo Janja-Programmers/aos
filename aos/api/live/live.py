@@ -10,9 +10,11 @@ Handles:
 
 Social Live rules:
 - Live is hosted by AOS Live Stream.host_user.
-- Guests can watch using session_id.
-- Logged-in users can fully interact.
-- Follow/relationship state is user-to-user.
+- Every non-host viewer requires a session_id.
+- Guests use session-scoped LiveKit identities.
+- Authenticated viewers use user-and-session-scoped LiveKit identities.
+- The host uses a live-scoped host identity.
+- Follow and relationship state is user-to-user.
 - Lifecycle system messages are stored in AOS Live Message.
 - Host-only messages are never broadcast to the live room.
 """
@@ -25,7 +27,6 @@ from aos.api.shared.auth import current_user, require_login
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.validators import require_id
-
 from aos.services.livekit_service import LiveKitService
 from aos.services.notification_service import NotificationService
 
@@ -38,7 +39,6 @@ from .constants import (
 )
 from .messages import create_live_system_message
 from .realtime import (
-    clear_live_realtime_cache,
     publish_live_ended,
     publish_live_message_to_user,
     publish_live_started,
@@ -58,8 +58,13 @@ from .validators import (
 
 
 LIVE_STREAM_DOCTYPE = "AOS Live Stream"
+
 LIVE_STATUS = "live"
 ENDED_STATUS = "ended"
+
+HOST_ROLE = "host"
+VIEWER_ROLE = "viewer"
+
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 50
 
@@ -71,32 +76,65 @@ def _viewer_user() -> str | None:
     return None if is_guest_user(user) else user
 
 
-def _normalize_session_id(value) -> str | None:
-    session_id = str(value or "").strip()
+def _normalize_session_id(
+    value,
+) -> str | None:
+    session_id = str(
+        value or ""
+    ).strip()
 
     return session_id or None
 
 
-def _get_guest_identity(
-    session_id: str,
-) -> str:
-    return f"guest:{session_id}"
-
-
 def _get_livekit_identity(
     *,
+    live_id: str,
     viewer: str | None,
     session_id: str | None,
+    role: str,
 ) -> str:
-    if viewer:
-        return viewer
+    """
+    Build the canonical LiveKit participant identity.
 
-    if session_id:
-        return _get_guest_identity(
-            session_id
+    Host:
+        user:{user}:host:{live_id}
+
+    Authenticated viewer:
+        user:{user}:session:{session_id}
+
+    Guest viewer:
+        guest:{session_id}
+
+    Viewer identities are session-scoped so the same authenticated user can
+    join from multiple devices or browser tabs without LiveKit participant
+    identity collisions.
+
+    A future viewer-to-cohost role upgrade should preserve the authenticated
+    viewer identity instead of creating a different participant identity.
+    """
+    if role == HOST_ROLE:
+        if not viewer:
+            frappe.throw(
+                "Host user is required."
+            )
+
+        return (
+            f"user:{viewer}:"
+            f"host:{live_id}"
         )
 
-    return f"guest:{request_ip()}"
+    if not session_id:
+        frappe.throw(
+            "Session id is required for viewers."
+        )
+
+    if viewer:
+        return (
+            f"user:{viewer}:"
+            f"session:{session_id}"
+        )
+
+    return f"guest:{session_id}"
 
 
 # DATA HELPERS
@@ -155,6 +193,35 @@ def _get_active_live_for_host(
     )
 
 
+def _validate_viewer_session(
+    *,
+    viewer: str | None,
+    host_user: str,
+    session_id: str | None,
+):
+    """
+    Require a session ID for every non-host participant.
+
+    The host does not use a normal viewer session and is not included in the
+    viewer count.
+    """
+    is_host = bool(
+        viewer
+        and viewer == host_user
+    )
+
+    if is_host:
+        return None
+
+    if not session_id:
+        return fail(
+            "session_id is required for viewers.",
+            code="VALIDATION_ERROR",
+        )
+
+    return None
+
+
 # LIVEKIT HELPERS
 def _build_livekit_payload(
     *,
@@ -164,8 +231,10 @@ def _build_livekit_payload(
     role: str,
 ) -> dict:
     identity = _get_livekit_identity(
+        live_id=live.name,
         viewer=viewer,
         session_id=session_id,
+        role=role,
     )
 
     display = get_user_display(
@@ -177,6 +246,7 @@ def _build_livekit_payload(
     )
 
     metadata = LiveKitService.build_metadata(
+        # Store the stable AOS user separately from the participant identity.
         user=viewer or identity,
         role=role,
         display_name=display.get(
@@ -203,7 +273,9 @@ def _build_livekit_payload(
         "ws_url": LiveKitService.get_ws_url(),
         "role": role,
         "identity": identity,
+        "user": viewer,
         "is_guest": guest,
+        "session_id": session_id,
     }
 
 
@@ -214,11 +286,11 @@ def _create_startup_messages(
     host_user: str,
 ) -> list[dict]:
     """
-    Create the initial lifecycle messages.
+    Create initial lifecycle messages.
 
     live_started:
     - Stored in the feed.
-    - Visible to host and viewers.
+    - Visible to the host and viewers.
     - Published to the live room.
 
     notifying_followers:
@@ -226,38 +298,32 @@ def _create_startup_messages(
     - Visible only to the host.
     - Published directly to the host's devices.
     """
-    live_started_message = (
-        create_live_system_message(
-            live_id=live.name,
-            message_type="live_started",
-            content="Live has started.",
-            user=host_user,
-            metadata={
-                "host_user": host_user,
-                "live_id": live.name,
-            },
-            visible_to_host=True,
-            visible_to_viewers=True,
-            publish=True,
-        )
+    live_started_message = create_live_system_message(
+        live_id=live.name,
+        message_type="live_started",
+        content="Live has started.",
+        user=host_user,
+        metadata={
+            "host_user": host_user,
+            "live_id": live.name,
+        },
+        visible_to_host=True,
+        visible_to_viewers=True,
+        publish=True,
     )
 
-    notifying_message = (
-        create_live_system_message(
-            live_id=live.name,
-            message_type="notifying_followers",
-            content="We are notifying people to join.",
-            user=host_user,
-            metadata={
-                "host_user": host_user,
-                "live_id": live.name,
-            },
-            visible_to_host=True,
-            visible_to_viewers=False,
-
-            # Host-only messages must not be published to the room.
-            publish=False,
-        )
+    notifying_message = create_live_system_message(
+        live_id=live.name,
+        message_type="notifying_followers",
+        content="We are notifying people to join.",
+        user=host_user,
+        metadata={
+            "host_user": host_user,
+            "live_id": live.name,
+        },
+        visible_to_host=True,
+        visible_to_viewers=False,
+        publish=False,
     )
 
     publish_live_message_to_user(
@@ -278,10 +344,7 @@ def _create_live_ended_message(
     host_user: str,
 ) -> dict:
     """
-    Create a public lifecycle message after the stream ends.
-
-    The AOS Live Message controller must allow live_ended messages on an
-    inactive stream.
+    Create the public live-ended lifecycle message.
     """
     return create_live_system_message(
         live_id=live.name,
@@ -337,10 +400,8 @@ def start_live_impl(**kwargs):
         return err
 
     try:
-        existing_live = (
-            _get_active_live_for_host(
-                user
-            )
+        existing_live = _get_active_live_for_host(
+            user
         )
 
         if existing_live:
@@ -360,7 +421,7 @@ def start_live_impl(**kwargs):
                         live=live_doc,
                         viewer=user,
                         session_id=None,
-                        role="host",
+                        role=HOST_ROLE,
                     ),
                     "startup_messages": [],
                 },
@@ -379,25 +440,21 @@ def start_live_impl(**kwargs):
             ignore_permissions=True
         )
 
-        # The Live Stream controller sets room_name and lifecycle fields.
+        # The Live Stream controller creates room_name and lifecycle fields.
         live.reload()
 
-        startup_messages = (
-            _create_startup_messages(
-                live=live,
-                host_user=user,
-            )
+        startup_messages = _create_startup_messages(
+            live=live,
+            host_user=user,
         )
 
         publish_live_started(
             live
         )
 
-        followers = _get_followers(
+        for follower in _get_followers(
             user
-        )
-
-        for follower in followers:
+        ):
             if (
                 not follower
                 or follower == user
@@ -422,11 +479,9 @@ def start_live_impl(**kwargs):
                     live=live,
                     viewer=user,
                     session_id=None,
-                    role="host",
+                    role=HOST_ROLE,
                 ),
-                "startup_messages": (
-                    startup_messages
-                ),
+                "startup_messages": startup_messages,
             },
         )
 
@@ -458,12 +513,6 @@ def join_live_impl(**kwargs):
     session_id = _normalize_session_id(
         kwargs.get("session_id")
     )
-
-    if not viewer and not session_id:
-        return fail(
-            "session_id is required for guest viewers.",
-            code="VALIDATION_ERROR",
-        )
 
     rl_identity = (
         viewer
@@ -500,13 +549,23 @@ def join_live_impl(**kwargs):
         if err:
             return err
 
+        err = _validate_viewer_session(
+            viewer=viewer,
+            host_user=live.host_user,
+            session_id=session_id,
+        )
+        if err:
+            return err
+
+        is_host = bool(
+            viewer
+            and live.host_user == viewer
+        )
+
         role = (
-            "host"
-            if (
-                viewer
-                and live.host_user == viewer
-            )
-            else "viewer"
+            HOST_ROLE
+            if is_host
+            else VIEWER_ROLE
         )
 
         return ok(
@@ -596,24 +655,20 @@ def end_live_impl(**kwargs):
             )
 
         live.status = ENDED_STATUS
+
         live.save(
             ignore_permissions=True
         )
+
         live.reload()
 
-        ended_message = (
-            _create_live_ended_message(
-                live=live,
-                host_user=user,
-            )
+        ended_message = _create_live_ended_message(
+            live=live,
+            host_user=user,
         )
 
         publish_live_ended(
             live
-        )
-
-        clear_live_realtime_cache(
-            live.name
         )
 
         return ok(

@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import frappe
 from frappe.model.document import Document
 
@@ -17,8 +15,14 @@ USER_DOCTYPE = "User"
 
 ACTIVE_MESSAGE_STATUS = "active"
 LIVE_STATUS = "live"
+ENDED_STATUS = "ended"
 
 COMMENT_KIND = "comment"
+SYSTEM_KIND = "system"
+COHOST_KIND = "cohost"
+GIFT_KIND = "gift"
+MODERATION_KIND = "moderation"
+
 COMMENT_TYPE = "comment"
 REPLY_TYPE = "reply"
 
@@ -29,26 +33,26 @@ VALID_MESSAGE_STATUSES = {
 }
 
 VALID_MESSAGE_KINDS = {
-    "comment",
-    "system",
-    "cohost",
-    "gift",
-    "moderation",
+    COMMENT_KIND,
+    SYSTEM_KIND,
+    COHOST_KIND,
+    GIFT_KIND,
+    MODERATION_KIND,
 }
 
 MESSAGE_TYPES_BY_KIND = {
-    "comment": {
-        "comment",
-        "reply",
+    COMMENT_KIND: {
+        COMMENT_TYPE,
+        REPLY_TYPE,
     },
-    "system": {
+    SYSTEM_KIND: {
         "live_started",
         "notifying_followers",
         "viewer_joined",
         "live_ended",
         "generic",
     },
-    "cohost": {
+    COHOST_KIND: {
         "cohost_invited",
         "cohost_request_sent",
         "cohost_request_accepted",
@@ -57,10 +61,10 @@ MESSAGE_TYPES_BY_KIND = {
         "cohost_ended",
         "generic",
     },
-    "gift": {
+    GIFT_KIND: {
         "generic",
     },
-    "moderation": {
+    MODERATION_KIND: {
         "generic",
     },
 }
@@ -71,6 +75,26 @@ MESSAGE_TYPES_ALLOWED_WHEN_LIVE_INACTIVE = {
     "generic",
 }
 
+HOST_ONLY_MESSAGE_TYPES = {
+    "notifying_followers",
+    "viewer_joined",
+    "cohost_request_sent",
+}
+
+TARGET_ONLY_MESSAGE_TYPES = {
+    "cohost_invited",
+}
+
+IMMUTABLE_FIELDS = {
+    "live_stream",
+    "message_kind",
+    "message_type",
+    "user",
+    "target_user",
+    "parent_message",
+    "root_message",
+}
+
 
 class AOSLiveMessage(Document):
     def validate(self):
@@ -78,6 +102,7 @@ class AOSLiveMessage(Document):
         self._validate_required_fields()
         self._validate_message_kind_and_type()
         self._validate_status()
+        self._validate_immutable_fields()
         self._validate_user()
         self._validate_target_user()
         self._validate_live_stream()
@@ -94,72 +119,93 @@ class AOSLiveMessage(Document):
 
     def on_update(self):
         """
-        Synchronize derived counters when an existing message is updated.
+        Synchronize active comment and reply counters when status changes
+        through a normal document save.
 
-        This covers changes made through:
-        - Desk
-        - internal document saves
-        - moderation services using doc.save()
-
-        Direct SQL updates still need to synchronize counters explicitly.
+        Direct database updates must synchronize counters explicitly.
         """
-
         previous = self.get_doc_before_save()
 
         if not previous:
             return
 
-        status_changed = previous.status != self.status
-
-        classification_changed = (
-            previous.message_kind != self.message_kind
-            or previous.message_type != self.message_type
-        )
-
-        parent_changed = (
-            previous.parent_message != self.parent_message
-        )
-
-        live_changed = (
-            previous.live_stream != self.live_stream
-        )
-
-        if not any(
-            {
-                status_changed,
-                classification_changed,
-                parent_changed,
-                live_changed,
-            }
-        ):
+        if previous.status == self.status:
             return
 
-        affected_live_ids = {
-            previous.live_stream,
-            self.live_stream,
-        }
+        if self.message_kind != COMMENT_KIND:
+            return
 
-        for live_id in affected_live_ids:
-            if not live_id:
-                continue
+        LiveAnalyticsService.sync_comment_count(
+            live_id=self.live_stream,
+        )
 
-            LiveAnalyticsService.sync_comment_count(
-                live_id=live_id,
-            )
-
-        affected_parent_ids = {
-            previous.parent_message,
-            self.parent_message,
-        }
-
-        for parent_id in affected_parent_ids:
+        if self._is_reply():
             self._sync_parent_reply_count(
-                parent_id
+                self.parent_message
             )
 
     def on_trash(self):
-        self._decrement_reply_count()
-        self._decrement_live_comment_count()
+        """
+        Permit permanent deletion only after the live has ended.
+
+        When deleting a parent message, permanently remove all descendant
+        replies first so no orphaned thread rows remain.
+
+        Historical Live Stream.comment_count is intentionally preserved.
+        """
+        live_status = frappe.db.get_value(
+            LIVE_STREAM_DOCTYPE,
+            self.live_stream,
+            "status",
+        )
+
+        if not live_status:
+            frappe.throw(
+                "Invalid live stream."
+            )
+
+        if live_status != ENDED_STATUS:
+            frappe.throw(
+                "Live messages can only be permanently deleted "
+                "after the live has ended."
+            )
+
+        self._deleted_parent_message = self.parent_message
+
+        descendant_ids = (
+            self._get_descendant_message_ids()
+        )
+
+        if descendant_ids:
+            frappe.db.delete(
+                LIVE_MESSAGE_DOCTYPE,
+                {
+                    "name": [
+                        "in",
+                        descendant_ids,
+                    ],
+                },
+            )
+
+    def after_delete(self):
+        """
+        Repair the surviving parent's reply_count after an administrator
+        permanently deletes a reply.
+
+        Live Stream.comment_count is not changed because it represents
+        historical engagement during the live.
+        """
+
+        parent_id = getattr(
+            self,
+            "_deleted_parent_message",
+            self.parent_message,
+        )
+
+        if parent_id:
+            self._sync_parent_reply_count(
+                parent_id
+            )
 
     # NORMALIZATION
     def _normalize_values(self):
@@ -182,22 +228,30 @@ class AOSLiveMessage(Document):
 
     def _normalize_visibility(self):
         """
-        Apply visibility rules that must not depend on API input.
+        Enforce visibility rules that must not depend on API input.
         """
-
         if self.message_kind == COMMENT_KIND:
             self.visible_to_host = 1
             self.visible_to_viewers = 1
             return
 
-        if self.message_type == "notifying_followers":
+        if self.message_type in HOST_ONLY_MESSAGE_TYPES:
             self.visible_to_host = 1
             self.visible_to_viewers = 0
             return
 
-        if self.message_type == "viewer_joined":
-            self.visible_to_host = 1
+        if self.message_type in TARGET_ONLY_MESSAGE_TYPES:
+            self.visible_to_host = 0
             self.visible_to_viewers = 0
+            return
+
+        self.visible_to_host = int(
+            bool(self.visible_to_host)
+        )
+
+        self.visible_to_viewers = int(
+            bool(self.visible_to_viewers)
+        )
 
     # VALIDATIONS
     def _validate_required_fields(self):
@@ -247,14 +301,50 @@ class AOSLiveMessage(Document):
                 f"{self.status}."
             )
 
+    def _validate_immutable_fields(self):
+        """
+        Prevent moving, reclassifying, reassigning, or rethreading an
+        existing live message.
+        """
+        if self.is_new():
+            return
+
+        previous = self.get_doc_before_save()
+
+        if not previous:
+            return
+
+        for fieldname in IMMUTABLE_FIELDS:
+            old_value = previous.get(
+                fieldname
+            )
+
+            new_value = self.get(
+                fieldname
+            )
+
+            if old_value == new_value:
+                continue
+
+            label = (
+                self.meta.get_label(fieldname)
+                or fieldname.replace(
+                    "_",
+                    " ",
+                ).title()
+            )
+
+            frappe.throw(
+                f"{label} cannot be changed after the live message "
+                f"has been created."
+            )
+
     def _validate_user(self):
         """
         Comments and replies require an enabled author.
 
-        System, co-host, gift, and moderation messages may exist without an
-        actor user.
+        Other message kinds may exist without an actor user.
         """
-
         if (
             self.message_kind == COMMENT_KIND
             and not self.user
@@ -291,14 +381,34 @@ class AOSLiveMessage(Document):
 
     def _validate_target_user(self):
         if not self.target_user:
+            if (
+                self.message_type
+                in TARGET_ONLY_MESSAGE_TYPES
+            ):
+                frappe.throw(
+                    "Target user is required for this message type."
+                )
+
             return
 
-        if not frappe.db.exists(
+        target = frappe.db.get_value(
             USER_DOCTYPE,
             self.target_user,
-        ):
+            [
+                "name",
+                "enabled",
+            ],
+            as_dict=True,
+        )
+
+        if not target:
             frappe.throw(
                 "Invalid target user."
+            )
+
+        if not bool(target.enabled):
+            frappe.throw(
+                "Target user account is disabled."
             )
 
     def _validate_live_stream(self):
@@ -318,8 +428,7 @@ class AOSLiveMessage(Document):
                 "Invalid live stream."
             )
 
-        # Existing messages may still be hidden, deleted, restored, or
-        # otherwise moderated after the live ends.
+        # Existing messages may still be moderated after the live ends.
         if not self.is_new():
             return
 
@@ -359,6 +468,11 @@ class AOSLiveMessage(Document):
             if self.parent_message:
                 frappe.throw(
                     "A top-level comment cannot have a parent message."
+                )
+
+            if self.root_message:
+                frappe.throw(
+                    "A top-level comment cannot have a root message."
                 )
 
             return
@@ -405,6 +519,14 @@ class AOSLiveMessage(Document):
                 "Replies can only target comment messages."
             )
 
+        if parent.message_type not in {
+            COMMENT_TYPE,
+            REPLY_TYPE,
+        }:
+            frappe.throw(
+                "Replies can only target comments or replies."
+            )
+
         if parent.status != ACTIVE_MESSAGE_STATUS:
             frappe.throw(
                 "Cannot reply to an inactive message."
@@ -440,12 +562,11 @@ class AOSLiveMessage(Document):
     # SETTERS
     def _set_root_message(self):
         """
-        Calculate root_message internally.
+        Set thread identity internally.
 
-        Top-level comments have no root message. Replies point to the original
-        top-level message in their thread.
+        Top-level comments have no root message. Every reply points to the
+        original top-level comment in its thread.
         """
-
         if self.message_kind != COMMENT_KIND:
             self.parent_message = None
             self.root_message = None
@@ -494,42 +615,11 @@ class AOSLiveMessage(Document):
             (self.parent_message,),
         )
 
-    def _decrement_reply_count(self):
-        """
-        Decrement only when this reply was actively represented in the
-        parent's reply_count.
-
-        Hidden or already-deleted replies must not decrement again.
-        """
-
-        if not self._should_affect_reply_count():
-            return
-
-        frappe.db.sql(
-            """
-            UPDATE `tabAOS Live Message`
-            SET reply_count = GREATEST(
-                COALESCE(reply_count, 0) - 1,
-                0
-            )
-            WHERE name = %s
-            """,
-            (self.parent_message,),
-        )
-
     def _increment_live_comment_count(self):
         if not self._should_affect_comment_count():
             return
 
         LiveAnalyticsService.handle_comment_added(
-            live_id=self.live_stream,
-        )
-
-    def _decrement_live_comment_count(self):
-        if not self._should_affect_comment_count():
-            return
-
-        LiveAnalyticsService.handle_comment_deleted(
             live_id=self.live_stream,
         )
 
@@ -565,6 +655,50 @@ class AOSLiveMessage(Document):
         )
 
     # HELPERS
+    def _get_descendant_message_ids(
+        self,
+    ) -> list[str]:
+        """
+        Return all descendant replies below the current message.
+        """
+
+        collected: list[str] = []
+        pending: list[str] = [
+            self.name,
+        ]
+
+        while pending:
+            parent_ids = list(
+                pending
+            )
+
+            pending = []
+
+            children = frappe.get_all(
+                LIVE_MESSAGE_DOCTYPE,
+                filters={
+                    "parent_message": [
+                        "in",
+                        parent_ids,
+                    ],
+                },
+                pluck="name",
+            )
+
+            for child_id in children:
+                if child_id in collected:
+                    continue
+
+                collected.append(
+                    child_id
+                )
+
+                pending.append(
+                    child_id
+                )
+
+        return collected
+
     def _is_reply(self) -> bool:
         return bool(
             self.message_kind == COMMENT_KIND
@@ -580,12 +714,9 @@ class AOSLiveMessage(Document):
 
     def _should_affect_comment_count(self) -> bool:
         """
-        Only active comments and replies affect comment analytics.
-
-        System, co-host, gift, moderation, hidden, and deleted messages never
-        affect the live stream's comment count.
+        Only active comments and replies affect live analytics while the
+        live message records still exist.
         """
-
         return bool(
             self.message_kind == COMMENT_KIND
             and self.message_type in {
