@@ -28,13 +28,13 @@ from .tracking import (
     track_leave_impl,
 )
 
-# COMMENTS
-from .comments import (
-    add_comment_impl,
-    reply_comment_impl,
-    list_comments_impl,
-    list_replies_impl,
-    delete_comment_impl,
+# MESSAGES
+from .messages import (
+    add_live_message_impl,
+    reply_live_message_impl,
+    list_live_messages_impl,
+    list_live_replies_impl,
+    delete_live_message_impl,
 )
 
 # REACTIONS
@@ -86,30 +86,30 @@ def track_leave(**kwargs):
     return track_leave_impl(**kwargs)
 
 
-# COMMENTS
+# LIVE MESSAGES
 @frappe.whitelist(methods=["POST"])
-def add_comment(**kwargs):
-    return add_comment_impl(**kwargs)
+def add_live_message(**kwargs):
+    return add_live_message_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
-def reply_comment(**kwargs):
-    return reply_comment_impl(**kwargs)
+def reply_live_message(**kwargs):
+    return reply_live_message_impl(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
-def list_comments(**kwargs):
-    return list_comments_impl(**kwargs)
+def list_live_messages(**kwargs):
+    return list_live_messages_impl(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
-def list_replies(**kwargs):
-    return list_replies_impl(**kwargs)
+def list_live_replies(**kwargs):
+    return list_live_replies_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
-def delete_comment(**kwargs):
-    return delete_comment_impl(**kwargs)
+def delete_live_message(**kwargs):
+    return delete_live_message_impl(**kwargs)
 
 
 # REACTIONS

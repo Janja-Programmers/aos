@@ -1,0 +1,155 @@
+{
+ "actions": [],
+ "creation": "2026-03-31 00:58:11.129860",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "live_stream",
+  "message_kind",
+  "message_type",
+  "user",
+  "target_user",
+  "content",
+  "metadata_json",
+  "column_break_ngos",
+  "status",
+  "parent_message",
+  "root_message",
+  "reply_count",
+  "visible_to_host",
+  "visible_to_viewers"
+ ],
+ "fields": [
+  {
+   "fieldname": "live_stream",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Live Stream",
+   "options": "AOS Live Stream",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "User",
+   "options": "User",
+   "search_index": 1
+  },
+  {
+   "fieldname": "content",
+   "fieldtype": "Small Text",
+   "label": "Content",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_ngos",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "active\nhidden\ndeleted",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "reply_count",
+   "fieldtype": "Int",
+   "label": "Reply Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "parent_message",
+   "fieldtype": "Link",
+   "label": "Parent Message",
+   "options": "AOS Live Message",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "root_message",
+   "fieldtype": "Link",
+   "label": "Root Message",
+   "options": "AOS Live Message",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "default": "comment",
+   "fieldname": "message_kind",
+   "fieldtype": "Select",
+   "label": "Message Kind",
+   "options": "comment\nsystem\ncohost\ngift\nmoderation",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "comment",
+   "fieldname": "message_type",
+   "fieldtype": "Select",
+   "label": "Message Type",
+   "options": "comment\nreply\nlive_started\nnotifying_followers\nviewer_joined\nlive_ended\ngeneric\ncohost_invited\ncohost_request_sent\ncohost_request_accepted\ncohost_request_rejected\ncohost_started\ncohost_ended",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "target_user",
+   "fieldtype": "Link",
+   "label": "Target User",
+   "options": "User",
+   "search_index": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "visible_to_host",
+   "fieldtype": "Check",
+   "label": "Visible To Host"
+  },
+  {
+   "default": "1",
+   "fieldname": "visible_to_viewers",
+   "fieldtype": "Check",
+   "label": "Visible To Viewers"
+  },
+  {
+   "fieldname": "metadata_json",
+   "fieldtype": "JSON",
+   "label": "Metadata JSON"
+  }
+ ],
+ "grid_page_length": 50,
+ "links": [],
+ "modified": "2026-06-05 13:54:34.019492",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Live Message",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

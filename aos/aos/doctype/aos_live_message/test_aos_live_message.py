@@ -13,9 +13,9 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
 
-class IntegrationTestAOSLiveStreamComment(IntegrationTestCase):
+class IntegrationTestAOSLiveMessage(IntegrationTestCase):
 	"""
-	Integration tests for AOSLiveStreamComment.
+	Integration tests for AOSLiveMessage.
 	Use this class for testing interactions between multiple components.
 	"""
 
