@@ -6,6 +6,7 @@ Responsibilities:
 - Return display-ready API and realtime payloads externally.
 - Compute viewer-specific state for Live responses.
 - Serialize unified live messages.
+- Serialize co-host requests and active co-host sessions.
 - Avoid storing duplicated display data on Live DocTypes.
 
 Canonical ownership:
@@ -15,13 +16,19 @@ Live message model:
 - AOS Live Message supports comments, replies, system events,
   co-host events, gifts, and moderation events.
 
+Co-host model:
+- AOS Live CoHost represents host invitations, viewer requests,
+  accepted requests, active sessions, and completed sessions.
+
 Guest policy:
 - Guests can watch live streams.
 - Guests can read viewer-visible live messages.
-- Guests cannot comment, react, report, follow, or end lives.
+- Guests cannot comment, react, report, follow, request co-hosting,
+  or end lives.
 """
 
 from __future__ import annotations
+
 from typing import Any
 
 import frappe
@@ -31,7 +38,9 @@ from aos.api.social.relationship import build_relationship_status
 
 LIVE_STATUS = "live"
 
+LIVE_VIEW_DOCTYPE = "AOS Live Stream View"
 LIVE_MESSAGE_DOCTYPE = "AOS Live Message"
+LIVE_COHOST_DOCTYPE = "AOS Live CoHost"
 
 LIVE_MESSAGE_KIND_COMMENT = "comment"
 LIVE_MESSAGE_KIND_SYSTEM = "system"
@@ -42,6 +51,30 @@ LIVE_MESSAGE_KIND_MODERATION = "moderation"
 LIVE_MESSAGE_TYPE_COMMENT = "comment"
 LIVE_MESSAGE_TYPE_REPLY = "reply"
 
+COHOST_REQUEST_TYPE_HOST_INVITE = "host_invite"
+COHOST_REQUEST_TYPE_VIEWER_REQUEST = "viewer_request"
+
+COHOST_STATUS_PENDING = "pending"
+COHOST_STATUS_ACCEPTED = "accepted"
+COHOST_STATUS_REJECTED = "rejected"
+COHOST_STATUS_CANCELLED = "cancelled"
+COHOST_STATUS_ACTIVE = "active"
+COHOST_STATUS_ENDED = "ended"
+COHOST_STATUS_EXPIRED = "expired"
+
+COHOST_TERMINAL_STATUSES = {
+    COHOST_STATUS_REJECTED,
+    COHOST_STATUS_CANCELLED,
+    COHOST_STATUS_ENDED,
+    COHOST_STATUS_EXPIRED,
+}
+
+COHOST_UNRESOLVED_STATUSES = {
+    COHOST_STATUS_PENDING,
+    COHOST_STATUS_ACCEPTED,
+    COHOST_STATUS_ACTIVE,
+}
+
 
 # GENERIC HELPERS
 def _value(
@@ -50,16 +83,23 @@ def _value(
     default=None,
 ):
     """
-    Read a value from either:
+    Read a value from:
     - a Frappe Document
     - a frappe._dict
     - a regular dictionary
     """
 
     if isinstance(row, dict):
-        return row.get(fieldname, default)
+        return row.get(
+            fieldname,
+            default,
+        )
 
-    return getattr(row, fieldname, default)
+    return getattr(
+        row,
+        fieldname,
+        default,
+    )
 
 
 def _as_int(
@@ -67,31 +107,42 @@ def _as_int(
     default: int = 0,
 ) -> int:
     try:
-        return int(value or default)
+        return int(
+            value or default
+        )
     except (TypeError, ValueError):
         return default
 
 
-def _as_bool(value) -> bool:
+def _as_bool(
+    value,
+) -> bool:
     return bool(value)
 
 
-def _parse_json_object(value: Any) -> dict:
+def _parse_json_object(
+    value: Any,
+) -> dict:
     """
     Parse a value into a JSON object.
 
-    Live message metadata must always be returned to clients as a dictionary.
     Invalid or missing data safely becomes an empty dictionary.
     """
 
-    if value in (None, "", {}):
+    if value in (
+        None,
+        "",
+        {},
+    ):
         return {}
 
     if isinstance(value, dict):
         return dict(value)
 
     try:
-        parsed = frappe.parse_json(value)
+        parsed = frappe.parse_json(
+            value
+        )
     except Exception:
         return {}
 
@@ -101,17 +152,50 @@ def _parse_json_object(value: Any) -> dict:
     return parsed
 
 
-def is_guest_user(user: str | None) -> bool:
-    return not user or user == "Guest"
+def is_guest_user(
+    user: str | None,
+) -> bool:
+    return (
+        not user
+        or user == "Guest"
+    )
+
+
+def _apply_viewer_ownership_filter(
+    *,
+    filters: dict,
+    viewer: str | None,
+):
+    """
+    Secure a view-session query to the expected owner.
+
+    Authenticated viewer:
+    - user must match exactly.
+
+    Guest viewer:
+    - user must be empty.
+    """
+    if (
+        viewer
+        and not is_guest_user(viewer)
+    ):
+        filters["user"] = viewer
+    else:
+        filters["user"] = [
+            "is",
+            "not set",
+        ]
 
 
 # USER DISPLAY
-def get_user_display(user: str | None) -> dict:
+def get_user_display(
+    user: str | None,
+) -> dict:
     """
     Return display-ready User context.
 
-    These values should not be duplicated on Live DocTypes. They are
-    calculated from the current User record.
+    These values are calculated from User rather than duplicated on
+    Live-related DocTypes.
     """
     if not user:
         return {
@@ -140,12 +224,17 @@ def get_user_display(user: str | None) -> dict:
 
     return {
         "user": row.name,
-        "display_name": row.full_name or row.name,
+        "display_name": (
+            row.full_name
+            or row.name
+        ),
         "avatar": row.user_image,
     }
 
 
-def get_profile_context(user: str | None) -> dict:
+def get_profile_context(
+    user: str | None,
+) -> dict:
     """
     Return profile and social context for a user.
 
@@ -159,7 +248,9 @@ def get_profile_context(user: str | None) -> dict:
 
     profile = frappe.db.get_value(
         "AOS Profile",
-        {"user": user},
+        {
+            "user": user,
+        },
         [
             "is_verified",
             "total_followers",
@@ -174,23 +265,39 @@ def get_profile_context(user: str | None) -> dict:
         }
 
     return {
-        "is_verified": bool(profile.is_verified),
+        "is_verified": bool(
+            profile.is_verified
+        ),
         "total_followers": int(
-            profile.total_followers or 0
+            profile.total_followers
+            or 0
         ),
     }
 
 
-def serialize_user(user: str | None) -> dict:
-    display = get_user_display(user)
-    profile = get_profile_context(user)
+def serialize_user(
+    user: str | None,
+) -> dict:
+    display = get_user_display(
+        user
+    )
+
+    profile = get_profile_context(
+        user
+    )
 
     return {
         "user": display["user"],
-        "display_name": display["display_name"],
+        "display_name": display[
+            "display_name"
+        ],
         "avatar": display["avatar"],
-        "is_verified": profile["is_verified"],
-        "total_followers": profile["total_followers"],
+        "is_verified": profile[
+            "is_verified"
+        ],
+        "total_followers": profile[
+            "total_followers"
+        ],
     }
 
 
@@ -204,7 +311,9 @@ def empty_user_payload() -> dict:
     }
 
 
-def fallback_user_payload(user: str | None) -> dict:
+def fallback_user_payload(
+    user: str | None,
+) -> dict:
     if not user:
         return empty_user_payload()
 
@@ -221,11 +330,7 @@ def fallback_user_payload(user: str | None) -> dict:
 def live_message_fields() -> list[str]:
     """
     Canonical fields used when querying AOS Live Message.
-
-    All Live message endpoints should use this list to keep their payloads
-    consistent.
     """
-
     return [
         "name",
         "live_stream",
@@ -255,16 +360,21 @@ def serialize_live_message(
     """
     Serialize one AOS Live Message document or query row.
 
-    The payload shape is shared by:
+    This payload is shared by:
     - add message responses
     - reply responses
-    - list messages
-    - list replies
+    - message and reply lists
     - realtime aos_live_message events
     """
+    user_id = _value(
+        message,
+        "user",
+    )
 
-    user_id = _value(message, "user")
-    target_user_id = _value(message, "target_user")
+    target_user_id = _value(
+        message,
+        "target_user",
+    )
 
     if user_id:
         actor = (
@@ -279,18 +389,36 @@ def serialize_live_message(
         target = (
             preloaded_target_user
             or serialize_user(target_user_id)
-            or fallback_user_payload(target_user_id)
+            or fallback_user_payload(
+                target_user_id
+            )
         )
     else:
         target = None
 
-    message_kind = _value(message, "message_kind")
-    message_type = _value(message, "message_type")
+    message_kind = _value(
+        message,
+        "message_kind",
+    )
+
+    message_type = _value(
+        message,
+        "message_type",
+    )
 
     return {
-        "id": _value(message, "name"),
-        "message_id": _value(message, "name"),
-        "live_stream": _value(message, "live_stream"),
+        "id": _value(
+            message,
+            "name",
+        ),
+        "message_id": _value(
+            message,
+            "name",
+        ),
+        "live_stream": _value(
+            message,
+            "live_stream",
+        ),
 
         # Message classification.
         "kind": message_kind,
@@ -299,26 +427,45 @@ def serialize_live_message(
 
         # Actor identity.
         "user": actor["user"],
-        "display_name": actor["display_name"],
+        "display_name": actor[
+            "display_name"
+        ],
         "avatar": actor["avatar"],
-        "is_verified": bool(actor["is_verified"]),
-        "total_followers": _as_int(
-            actor.get("total_followers")
+        "is_verified": bool(
+            actor["is_verified"]
         ),
-        "actor": actor if user_id else None,
+        "total_followers": _as_int(
+            actor.get(
+                "total_followers"
+            )
+        ),
+        "actor": (
+            actor
+            if user_id
+            else None
+        ),
 
         # Optional target identity.
         "target_user": target_user_id,
         "target": target,
 
         # Message content.
-        "content": _value(message, "content"),
+        "content": _value(
+            message,
+            "content",
+        ),
         "metadata": _parse_json_object(
-            _value(message, "metadata_json")
+            _value(
+                message,
+                "metadata_json",
+            )
         ),
 
         # Message state.
-        "status": _value(message, "status"),
+        "status": _value(
+            message,
+            "status",
+        ),
         "parent_message": _value(
             message,
             "parent_message",
@@ -328,33 +475,63 @@ def serialize_live_message(
             "root_message",
         ),
         "reply_count": _as_int(
-            _value(message, "reply_count")
+            _value(
+                message,
+                "reply_count",
+            )
         ),
 
         # Visibility.
         "visible_to_host": _as_bool(
-            _value(message, "visible_to_host")
+            _value(
+                message,
+                "visible_to_host",
+            )
         ),
         "visible_to_viewers": _as_bool(
-            _value(message, "visible_to_viewers")
+            _value(
+                message,
+                "visible_to_viewers",
+            )
         ),
 
-        # Convenient derived flags for Flutter.
-        "is_comment": message_kind == LIVE_MESSAGE_KIND_COMMENT,
-        "is_reply": (
-            message_kind == LIVE_MESSAGE_KIND_COMMENT
-            and message_type == LIVE_MESSAGE_TYPE_REPLY
+        # Derived client flags.
+        "is_comment": (
+            message_kind
+            == LIVE_MESSAGE_KIND_COMMENT
         ),
-        "is_system": message_kind == LIVE_MESSAGE_KIND_SYSTEM,
-        "is_cohost_event": message_kind == LIVE_MESSAGE_KIND_COHOST,
-        "is_gift": message_kind == LIVE_MESSAGE_KIND_GIFT,
+        "is_reply": (
+            message_kind
+            == LIVE_MESSAGE_KIND_COMMENT
+            and message_type
+            == LIVE_MESSAGE_TYPE_REPLY
+        ),
+        "is_system": (
+            message_kind
+            == LIVE_MESSAGE_KIND_SYSTEM
+        ),
+        "is_cohost_event": (
+            message_kind
+            == LIVE_MESSAGE_KIND_COHOST
+        ),
+        "is_gift": (
+            message_kind
+            == LIVE_MESSAGE_KIND_GIFT
+        ),
         "is_moderation": (
-            message_kind == LIVE_MESSAGE_KIND_MODERATION
+            message_kind
+            == LIVE_MESSAGE_KIND_MODERATION
         ),
 
         # Timestamps.
-        "creation": _value(message, "creation"),
-        "modified": _value(message, "modified"),
+        "creation": _value(
+            message,
+            "creation",
+        ),
+        "modified": _value(
+            message,
+            "modified",
+        ),
     }
 
 
@@ -362,32 +539,49 @@ def serialize_live_messages(
     messages: list,
 ) -> list[dict]:
     """
-    Batch serialize AOS Live Message rows without per-message user queries.
+    Batch serialize Live Message rows without per-message user queries.
     """
-
     if not messages:
         return []
 
     users_to_preload = {
-        _value(message, "user")
+        _value(
+            message,
+            "user",
+        )
         for message in messages
-        if _value(message, "user")
+        if _value(
+            message,
+            "user",
+        )
     }
 
     users_to_preload.update(
         {
-            _value(message, "target_user")
+            _value(
+                message,
+                "target_user",
+            )
             for message in messages
-            if _value(message, "target_user")
+            if _value(
+                message,
+                "target_user",
+            )
         }
     )
 
-    users = preload_users(list(users_to_preload))
+    users = preload_users(
+        list(users_to_preload)
+    )
 
     items: list[dict] = []
 
     for message in messages:
-        user_id = _value(message, "user")
+        user_id = _value(
+            message,
+            "user",
+        )
+
         target_user_id = _value(
             message,
             "target_user",
@@ -402,7 +596,9 @@ def serialize_live_messages(
                     else None
                 ),
                 preloaded_target_user=(
-                    users.get(target_user_id)
+                    users.get(
+                        target_user_id
+                    )
                     if target_user_id
                     else None
                 ),
@@ -410,6 +606,494 @@ def serialize_live_messages(
         )
 
     return items
+
+
+# LIVE CO-HOST SERIALIZATION
+def live_cohost_fields() -> list[str]:
+    """
+    Canonical fields used when querying AOS Live CoHost.
+
+    Co-host APIs should use this list to keep their payloads consistent.
+    """
+    return [
+        "name",
+        "live_stream",
+        "user",
+        "session_id",
+        "request_type",
+        "status",
+        "is_active",
+        "requested_by",
+        "requested_at",
+        "expires_at",
+        "responded_by",
+        "responded_at",
+        "accepted_at",
+        "livekit_identity",
+        "started_at",
+        "ended_at",
+        "ended_by",
+        "end_reason",
+        "response_reason",
+        "metadata_json",
+        "creation",
+        "modified",
+    ]
+
+
+def serialize_live_cohost(
+    cohost,
+    *,
+    preloaded_user: dict | None = None,
+    preloaded_requested_by: dict | None = None,
+    preloaded_responded_by: dict | None = None,
+    preloaded_ended_by: dict | None = None,
+    include_internal: bool = False,
+) -> dict:
+    """
+    Serialize one AOS Live CoHost document or query row.
+
+    By default, internal participant identifiers are not exposed:
+
+    - session_id
+    - livekit_identity
+    - metadata_json
+
+    Set include_internal=True only for trusted, targeted responses such as:
+    - the live host
+    - the co-host candidate
+    - co-host token generation
+    - targeted realtime workflow events
+    """
+    user_id = _value(
+        cohost,
+        "user",
+    )
+
+    requested_by_id = _value(
+        cohost,
+        "requested_by",
+    )
+
+    responded_by_id = _value(
+        cohost,
+        "responded_by",
+    )
+
+    ended_by_id = _value(
+        cohost,
+        "ended_by",
+    )
+
+    candidate = (
+        preloaded_user
+        or serialize_user(user_id)
+        or fallback_user_payload(user_id)
+    )
+
+    requester = (
+        preloaded_requested_by
+        or (
+            serialize_user(
+                requested_by_id
+            )
+            if requested_by_id
+            else None
+        )
+    )
+
+    responder = (
+        preloaded_responded_by
+        or (
+            serialize_user(
+                responded_by_id
+            )
+            if responded_by_id
+            else None
+        )
+    )
+
+    ended_by = (
+        preloaded_ended_by
+        or (
+            serialize_user(
+                ended_by_id
+            )
+            if ended_by_id
+            else None
+        )
+    )
+
+    request_type = _value(
+        cohost,
+        "request_type",
+    )
+
+    status = _value(
+        cohost,
+        "status",
+    )
+
+    payload = {
+        "id": _value(
+            cohost,
+            "name",
+        ),
+        "cohost_id": _value(
+            cohost,
+            "name",
+        ),
+        "live_id": _value(
+            cohost,
+            "live_stream",
+        ),
+        "live_stream": _value(
+            cohost,
+            "live_stream",
+        ),
+
+        # Candidate.
+        "user": candidate["user"],
+        "display_name": candidate[
+            "display_name"
+        ],
+        "avatar": candidate["avatar"],
+        "is_verified": bool(
+            candidate["is_verified"]
+        ),
+        "total_followers": _as_int(
+            candidate.get(
+                "total_followers"
+            )
+        ),
+        "cohost": candidate,
+
+        # Workflow classification and state.
+        "request_type": request_type,
+        "status": status,
+        "is_active": _as_bool(
+            _value(
+                cohost,
+                "is_active",
+            )
+        ),
+
+        # Request details.
+        "requested_by": requested_by_id,
+        "requester": requester,
+        "requested_at": _value(
+            cohost,
+            "requested_at",
+        ),
+        "expires_at": _value(
+            cohost,
+            "expires_at",
+        ),
+
+        # Response details.
+        "responded_by": responded_by_id,
+        "responder": responder,
+        "responded_at": _value(
+            cohost,
+            "responded_at",
+        ),
+        "accepted_at": _value(
+            cohost,
+            "accepted_at",
+        ),
+        "response_reason": _value(
+            cohost,
+            "response_reason",
+        ),
+
+        # Active-session lifecycle.
+        "started_at": _value(
+            cohost,
+            "started_at",
+        ),
+        "ended_at": _value(
+            cohost,
+            "ended_at",
+        ),
+        "ended_by": ended_by_id,
+        "ended_by_user": ended_by,
+        "end_reason": _value(
+            cohost,
+            "end_reason",
+        ),
+
+        # Derived workflow flags.
+        "is_host_invite": (
+            request_type
+            == COHOST_REQUEST_TYPE_HOST_INVITE
+        ),
+        "is_viewer_request": (
+            request_type
+            == COHOST_REQUEST_TYPE_VIEWER_REQUEST
+        ),
+        "is_pending": (
+            status
+            == COHOST_STATUS_PENDING
+        ),
+        "is_accepted": (
+            status
+            == COHOST_STATUS_ACCEPTED
+        ),
+        "is_rejected": (
+            status
+            == COHOST_STATUS_REJECTED
+        ),
+        "is_cancelled": (
+            status
+            == COHOST_STATUS_CANCELLED
+        ),
+        "is_ended": (
+            status
+            == COHOST_STATUS_ENDED
+        ),
+        "is_expired": (
+            status
+            == COHOST_STATUS_EXPIRED
+        ),
+        "is_terminal": (
+            status
+            in COHOST_TERMINAL_STATUSES
+        ),
+
+        # Audit timestamps.
+        "creation": _value(
+            cohost,
+            "creation",
+        ),
+        "modified": _value(
+            cohost,
+            "modified",
+        ),
+    }
+
+    if include_internal:
+        payload.update(
+            {
+                "session_id": _value(
+                    cohost,
+                    "session_id",
+                ),
+                "livekit_identity": _value(
+                    cohost,
+                    "livekit_identity",
+                ),
+                "metadata": _parse_json_object(
+                    _value(
+                        cohost,
+                        "metadata_json",
+                    )
+                ),
+            }
+        )
+
+    return payload
+
+
+def serialize_live_cohosts(
+    cohosts: list,
+    *,
+    include_internal: bool = False,
+) -> list[dict]:
+    """
+    Batch serialize co-host rows without per-record user queries.
+    """
+    if not cohosts:
+        return []
+
+    users_to_preload: set[str] = set()
+
+    for cohost in cohosts:
+        for fieldname in (
+            "user",
+            "requested_by",
+            "responded_by",
+            "ended_by",
+        ):
+            user_id = _value(
+                cohost,
+                fieldname,
+            )
+
+            if user_id:
+                users_to_preload.add(
+                    user_id
+                )
+
+    users = preload_users(
+        list(users_to_preload)
+    )
+
+    items: list[dict] = []
+
+    for cohost in cohosts:
+        user_id = _value(
+            cohost,
+            "user",
+        )
+
+        requested_by_id = _value(
+            cohost,
+            "requested_by",
+        )
+
+        responded_by_id = _value(
+            cohost,
+            "responded_by",
+        )
+
+        ended_by_id = _value(
+            cohost,
+            "ended_by",
+        )
+
+        items.append(
+            serialize_live_cohost(
+                cohost,
+                preloaded_user=(
+                    users.get(user_id)
+                    if user_id
+                    else None
+                ),
+                preloaded_requested_by=(
+                    users.get(
+                        requested_by_id
+                    )
+                    if requested_by_id
+                    else None
+                ),
+                preloaded_responded_by=(
+                    users.get(
+                        responded_by_id
+                    )
+                    if responded_by_id
+                    else None
+                ),
+                preloaded_ended_by=(
+                    users.get(
+                        ended_by_id
+                    )
+                    if ended_by_id
+                    else None
+                ),
+                include_internal=(
+                    include_internal
+                ),
+            )
+        )
+
+    return items
+
+
+# LIVE CO-HOST LOOKUPS
+def get_active_live_cohost(
+    live_id: str,
+):
+    """
+    Return the currently active co-host row for a live stream.
+
+    Public Live payloads must serialize this row with include_internal=False.
+    """
+    if not live_id:
+        return None
+
+    return frappe.db.get_value(
+        LIVE_COHOST_DOCTYPE,
+        {
+            "live_stream": live_id,
+            "status": COHOST_STATUS_ACTIVE,
+            "is_active": 1,
+        },
+        live_cohost_fields(),
+        as_dict=True,
+    )
+
+
+def get_viewer_live_cohost_workflow(
+    *,
+    live_id: str,
+    viewer: str | None,
+):
+    """
+    Return the authenticated viewer's unresolved co-host workflow.
+
+    Guests never have co-host workflows.
+    """
+    if (
+        not live_id
+        or is_guest_user(viewer)
+    ):
+        return None
+
+    return frappe.db.get_value(
+        LIVE_COHOST_DOCTYPE,
+        {
+            "live_stream": live_id,
+            "user": viewer,
+            "status": [
+                "in",
+                list(COHOST_UNRESOLVED_STATUSES),
+            ],
+        },
+        live_cohost_fields(),
+        as_dict=True,
+    )
+
+
+def preload_active_live_cohosts(
+    live_ids: list[str],
+) -> dict[str, dict]:
+    """
+    Batch preload active co-hosts for Live list serialization.
+
+    Returned payloads are always public and exclude session/LiveKit fields.
+    """
+    live_ids = sorted(
+        {
+            live_id
+            for live_id in live_ids
+            if live_id
+        }
+    )
+
+    if not live_ids:
+        return {}
+
+    rows = frappe.get_all(
+        LIVE_COHOST_DOCTYPE,
+        filters={
+            "live_stream": [
+                "in",
+                live_ids,
+            ],
+            "status": COHOST_STATUS_ACTIVE,
+            "is_active": 1,
+        },
+        fields=live_cohost_fields(),
+        order_by="started_at desc, creation desc",
+    )
+
+    result: dict[str, dict] = {}
+
+    for row in rows:
+        live_id = _value(
+            row,
+            "live_stream",
+        )
+
+        if live_id in result:
+            continue
+
+        result[live_id] = serialize_live_cohost(
+            row,
+            include_internal=False,
+        )
+
+    return result
 
 
 # VIEW SESSION HELPERS
@@ -420,11 +1104,10 @@ def has_active_view_session(
     session_id: str | None = None,
 ) -> bool:
     """
-    Return whether this viewer or session has an active view row.
+    Return whether this exact viewer/session has an active view row.
 
-    session_id is preferred because:
-    - guests do not have a user
-    - logged-in viewers also carry a session ID
+    Authenticated sessions are constrained to the authenticated user.
+    Guest sessions are constrained to rows with no user.
     """
     if not live_id:
         return False
@@ -435,15 +1118,27 @@ def has_active_view_session(
     }
 
     if session_id:
-        filters["session_id"] = session_id
-    elif viewer and not is_guest_user(viewer):
+        filters["session_id"] = (
+            session_id
+        )
+
+        _apply_viewer_ownership_filter(
+            filters=filters,
+            viewer=viewer,
+        )
+
+    elif (
+        viewer
+        and not is_guest_user(viewer)
+    ):
         filters["user"] = viewer
+
     else:
         return False
 
     return bool(
         frappe.db.exists(
-            "AOS Live Stream View",
+            LIVE_VIEW_DOCTYPE,
             filters,
         )
     )
@@ -471,21 +1166,39 @@ def build_live_viewer_state(
     session_id: str | None = None,
     preloaded_relationship: dict | None = None,
     preloaded_has_joined: bool | None = None,
+    preloaded_cohost_workflow: dict | None = None,
 ) -> dict:
     """
     Build viewer-specific Live state.
 
-    Guests skip relationship DB logic. Logged-in viewers receive relationship
-    state against live.host_user.
+    Guests skip relationship database logic. Logged-in viewers receive
+    relationship state against live.host_user.
     """
-    live_id = _value(live, "name")
-    host_user = _value(live, "host_user")
-    status = _value(live, "status")
-    is_active = _as_bool(
-        _value(live, "is_active")
+    live_id = _value(
+        live,
+        "name",
     )
 
-    guest = is_guest_user(viewer)
+    host_user = _value(
+        live,
+        "host_user",
+    )
+
+    status = _value(
+        live,
+        "status",
+    )
+
+    is_active = _as_bool(
+        _value(
+            live,
+            "is_active",
+        )
+    )
+
+    guest = is_guest_user(
+        viewer
+    )
 
     is_host = bool(
         viewer
@@ -499,13 +1212,17 @@ def build_live_viewer_state(
     )
 
     if guest:
-        relationship = guest_relationship_payload(
-            host_user
+        relationship = (
+            guest_relationship_payload(
+                host_user
+            )
         )
+
     elif preloaded_relationship is not None:
         relationship = dict(
             preloaded_relationship
         )
+
     else:
         relationship = build_relationship_status(
             current_user=viewer,
@@ -514,10 +1231,12 @@ def build_live_viewer_state(
 
     if is_host:
         has_joined = True
+
     elif preloaded_has_joined is not None:
         has_joined = bool(
             preloaded_has_joined
         )
+
     else:
         has_joined = has_active_view_session(
             live_id=live_id,
@@ -525,26 +1244,95 @@ def build_live_viewer_state(
             session_id=session_id,
         )
 
+    if is_host:
+        cohost_workflow = None
+    elif preloaded_cohost_workflow is not None:
+        cohost_workflow = dict(
+            preloaded_cohost_workflow
+        )
+    else:
+        cohost_workflow_row = (
+            get_viewer_live_cohost_workflow(
+                live_id=live_id,
+                viewer=viewer,
+            )
+        )
+
+        cohost_workflow = (
+            serialize_live_cohost(
+                cohost_workflow_row,
+                include_internal=True,
+            )
+            if cohost_workflow_row
+            else None
+        )
+
+    cohost_status = (
+        cohost_workflow.get("status")
+        if cohost_workflow
+        else None
+    )
+
+    is_cohost = bool(
+        cohost_status == COHOST_STATUS_ACTIVE
+    )
+
+    has_pending_cohost_workflow = bool(
+        cohost_status in {
+            COHOST_STATUS_PENDING,
+            COHOST_STATUS_ACCEPTED,
+            COHOST_STATUS_ACTIVE,
+        }
+    )
+
     can_interact = bool(
         viewer
         and not guest
         and can_watch
+        and (
+            is_host
+            or has_joined
+        )
     )
 
     relationship.update(
         {
             "is_owner": is_host,
             "is_host": is_host,
-            "has_joined": bool(has_joined),
-            "can_join": bool(can_watch),
-            "can_watch": bool(can_watch),
-            "can_comment": bool(can_interact),
-            "can_react": bool(can_interact),
+            "has_joined": bool(
+                has_joined
+            ),
+            "can_join": bool(
+                can_watch
+            ),
+            "can_watch": bool(
+                can_watch
+            ),
+            "can_comment": bool(
+                can_interact
+            ),
+            "can_react": bool(
+                can_interact
+            ),
             "can_end": bool(
-                is_host and can_watch
+                is_host
+                and can_watch
             ),
             "can_report": bool(
-                can_interact and not is_host
+                can_interact
+                and not is_host
+            ),
+            "is_cohost": is_cohost,
+            "cohost_status": cohost_status,
+            "cohost_workflow": cohost_workflow,
+            "can_request_cohost": bool(
+                can_interact
+                and not is_host
+                and not has_pending_cohost_workflow
+            ),
+            "can_invite_cohost": bool(
+                is_host
+                and can_watch
             ),
         }
     )
@@ -562,58 +1350,115 @@ def serialize_live(
     preloaded_viewer_state: dict | None = None,
     preloaded_relationship: dict | None = None,
     preloaded_has_joined: bool | None = None,
+    preloaded_active_cohost: dict | None = None,
+    preloaded_cohost_workflow: dict | None = None,
 ) -> dict:
     """
     Serialize one AOS Live Stream row or document.
 
-    Supports both Frappe Documents and dictionary rows returned by
-    frappe.get_all or frappe.db.get_value.
+    Supports Frappe Documents and dictionary rows returned by database
+    queries.
     """
-    live_id = _value(live, "name")
-    host_user = _value(live, "host_user")
+    live_id = _value(
+        live,
+        "name",
+    )
+
+    host_user = _value(
+        live,
+        "host_user",
+    )
+
     cover_image = _value(
         live,
         "cover_image",
     )
 
     room_name = (
-        _value(live, "room_name")
+        _value(
+            live,
+            "room_name",
+        )
         or f"live:{live_id}"
     )
 
     host = (
         preloaded_host
-        or serialize_user(host_user)
+        or serialize_user(
+            host_user
+        )
     )
+
+    if preloaded_active_cohost is not None:
+        active_cohost = preloaded_active_cohost
+    else:
+        active_cohost_row = get_active_live_cohost(
+            live_id
+        )
+
+        active_cohost = (
+            serialize_live_cohost(
+                active_cohost_row,
+                include_internal=False,
+            )
+            if active_cohost_row
+            else None
+        )
 
     payload = {
         "id": live_id,
         "live_id": live_id,
-        "status": _value(live, "status"),
-        "title": _value(live, "title"),
+        "status": _value(
+            live,
+            "status",
+        ),
+        "title": _value(
+            live,
+            "title",
+        ),
         "room_name": room_name,
         "viewer_count": _as_int(
-            _value(live, "viewer_count")
-        ),
-        "total_views": _as_int(
-            _value(live, "total_views")
-        ),
-        "peak_viewers": _as_int(
-            _value(live, "peak_viewers")
-        ),
-        "like_count": _as_int(
-            _value(live, "like_count")
-        ),
-        "reaction_count": _as_int(
-            _value(live, "reaction_count")
-        ),
-        "comment_count": _as_int(
-            _value(live, "comment_count")
-        ),
-        "total_watch_time_seconds": _as_int(
             _value(
                 live,
-                "total_watch_time_seconds",
+                "viewer_count",
+            )
+        ),
+        "total_views": _as_int(
+            _value(
+                live,
+                "total_views",
+            )
+        ),
+        "peak_viewers": _as_int(
+            _value(
+                live,
+                "peak_viewers",
+            )
+        ),
+        "like_count": _as_int(
+            _value(
+                live,
+                "like_count",
+            )
+        ),
+        "reaction_count": _as_int(
+            _value(
+                live,
+                "reaction_count",
+            )
+        ),
+        "comment_count": _as_int(
+            _value(
+                live,
+                "comment_count",
+            )
+        ),
+        "total_watch_time_seconds": (
+            _as_int(
+                _value(
+                    live,
+                    "total_watch_time_seconds",
+                )
             )
         ),
         "cover_image": cover_image,
@@ -627,10 +1472,16 @@ def serialize_live(
             "ended_at",
         ),
         "duration_seconds": _as_int(
-            _value(live, "duration_seconds")
+            _value(
+                live,
+                "duration_seconds",
+            )
         ),
         "is_active": _as_bool(
-            _value(live, "is_active")
+            _value(
+                live,
+                "is_active",
+            )
         ),
 
         # Compatibility flat host fields.
@@ -638,10 +1489,18 @@ def serialize_live(
         "host_display_name": host[
             "display_name"
         ],
-        "host_avatar": host["avatar"],
+        "host_avatar": host[
+            "avatar"
+        ],
 
         # Preferred structured host payload.
         "host": host,
+
+        # Public active co-host state.
+        "active_cohost": active_cohost,
+        "has_active_cohost": bool(
+            active_cohost
+        ),
     }
 
     payload["viewer_state"] = (
@@ -656,6 +1515,9 @@ def serialize_live(
             preloaded_has_joined=(
                 preloaded_has_joined
             ),
+            preloaded_cohost_workflow=(
+                preloaded_cohost_workflow
+            ),
         )
     )
 
@@ -667,7 +1529,7 @@ def preload_users(
     users: list[str],
 ) -> dict[str, dict]:
     """
-    Batch preload User and AOS Profile context for list endpoints.
+    Batch preload User and AOS Profile context.
     """
     users = sorted(
         {
@@ -683,7 +1545,10 @@ def preload_users(
     user_rows = frappe.get_all(
         "User",
         filters={
-            "name": ["in", users],
+            "name": [
+                "in",
+                users,
+            ],
         },
         fields=[
             "name",
@@ -695,7 +1560,10 @@ def preload_users(
     profile_rows = frappe.get_all(
         "AOS Profile",
         filters={
-            "user": ["in", users],
+            "user": [
+                "in",
+                users,
+            ],
         },
         fields=[
             "user",
@@ -724,7 +1592,9 @@ def preload_users(
             ),
             "avatar": row.user_image,
             "is_verified": (
-                bool(profile.is_verified)
+                bool(
+                    profile.is_verified
+                )
                 if profile
                 else False
             ),
@@ -738,11 +1608,12 @@ def preload_users(
             ),
         }
 
-    # Fallback for missing or deleted users.
     for user in users:
         result.setdefault(
             user,
-            fallback_user_payload(user),
+            fallback_user_payload(
+                user
+            ),
         )
 
     return result
@@ -756,9 +1627,6 @@ def preload_relationships(
 ) -> dict[str, dict]:
     """
     Batch preload relationship state for Live list endpoints.
-
-    Produces the same general shape as build_relationship_status without
-    running per-row existence checks.
     """
     target_users = sorted(
         {
@@ -768,10 +1636,15 @@ def preload_relationships(
         }
     )
 
-    if is_guest_user(viewer) or not target_users:
+    if (
+        is_guest_user(viewer)
+        or not target_users
+    ):
         return {
-            target: guest_relationship_payload(
-                target
+            target: (
+                guest_relationship_payload(
+                    target
+                )
             )
             for target in target_users
         }
@@ -785,7 +1658,9 @@ def preload_relationships(
                 target_users,
             ],
         },
-        fields=["following_user"],
+        fields=[
+            "following_user",
+        ],
     )
 
     followed_by_rows = frappe.get_all(
@@ -797,7 +1672,9 @@ def preload_relationships(
                 target_users,
             ],
         },
-        fields=["follower_user"],
+        fields=[
+            "follower_user",
+        ],
     )
 
     following = {
@@ -813,9 +1690,18 @@ def preload_relationships(
     result: dict[str, dict] = {}
 
     for target in target_users:
-        is_self = target == viewer
-        is_following = target in following
-        is_followed_by = target in followed_by
+        is_self = (
+            target == viewer
+        )
+
+        is_following = (
+            target in following
+        )
+
+        is_followed_by = (
+            target in followed_by
+        )
+
         is_friend = (
             is_following
             and is_followed_by
@@ -824,15 +1710,19 @@ def preload_relationships(
         if is_self:
             relationship_status = "self"
             action_label = "You"
+
         elif is_friend:
             relationship_status = "friends"
             action_label = "Friends"
+
         elif is_following:
             relationship_status = "following"
             action_label = "Following"
+
         elif is_followed_by:
             relationship_status = "followed_by"
             action_label = "Follow Back"
+
         else:
             relationship_status = "none"
             action_label = "Follow"
@@ -860,7 +1750,9 @@ def preload_joined_live_ids(
     live_ids: list[str],
 ) -> set[str]:
     """
-    Batch preload active joined/watching state for Live list endpoints.
+    Batch preload active joined/watching state.
+
+    Session-based lookups are constrained to the expected viewer owner.
     """
     live_ids = sorted(
         {
@@ -882,16 +1774,30 @@ def preload_joined_live_ids(
     }
 
     if session_id:
-        filters["session_id"] = session_id
-    elif viewer and not is_guest_user(viewer):
+        filters["session_id"] = (
+            session_id
+        )
+
+        _apply_viewer_ownership_filter(
+            filters=filters,
+            viewer=viewer,
+        )
+
+    elif (
+        viewer
+        and not is_guest_user(viewer)
+    ):
         filters["user"] = viewer
+
     else:
         return set()
 
     rows = frappe.get_all(
-        "AOS Live Stream View",
+        LIVE_VIEW_DOCTYPE,
         filters=filters,
-        fields=["live_stream"],
+        fields=[
+            "live_stream",
+        ],
     )
 
     return {
@@ -917,28 +1823,48 @@ def serialize_live_list(
         return []
 
     host_users = [
-        _value(live, "host_user")
+        _value(
+            live,
+            "host_user",
+        )
         for live in lives
-        if _value(live, "host_user")
+        if _value(
+            live,
+            "host_user",
+        )
     ]
 
     live_ids = [
-        _value(live, "name")
+        _value(
+            live,
+            "name",
+        )
         for live in lives
-        if _value(live, "name")
+        if _value(
+            live,
+            "name",
+        )
     ]
 
-    hosts = preload_users(host_users)
+    hosts = preload_users(
+        host_users
+    )
 
     relationships = preload_relationships(
         viewer=viewer,
         target_users=host_users,
     )
 
-    joined_live_ids = preload_joined_live_ids(
-        viewer=viewer,
-        session_id=session_id,
-        live_ids=live_ids,
+    joined_live_ids = (
+        preload_joined_live_ids(
+            viewer=viewer,
+            session_id=session_id,
+            live_ids=live_ids,
+        )
+    )
+
+    active_cohosts = preload_active_live_cohosts(
+        live_ids
     )
 
     items: list[dict] = []
@@ -970,6 +1896,11 @@ def serialize_live_list(
                 preloaded_has_joined=(
                     live_id
                     in joined_live_ids
+                ),
+                preloaded_active_cohost=(
+                    active_cohosts.get(
+                        live_id
+                    )
                 ),
             )
         )

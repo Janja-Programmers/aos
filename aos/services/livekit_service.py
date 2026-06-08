@@ -2,10 +2,19 @@
 LiveKit Service for AOS.
 
 Responsibilities:
-- Generate secure join tokens
-- Centralize LiveKit config access
-- Keep secrets out of snapshot usage
-- Keep LiveKit identity stable while allowing display metadata
+- Generate secure LiveKit join tokens.
+- Centralize LiveKit configuration access.
+- Keep API secrets out of cached settings snapshots.
+- Keep participant identity stable while allowing display metadata.
+- Apply role-based room permissions for calls and live streams.
+
+Live roles:
+- host:
+    Publish media, subscribe, and publish data.
+- cohost:
+    Publish media, subscribe, and publish data.
+- viewer:
+    Subscribe only.
 """
 
 from __future__ import annotations
@@ -15,24 +24,62 @@ from typing import Any
 
 import frappe
 from frappe import _
+from livekit import api
 
 from aos.utils.aos_settings import get_aos_settings_snapshot
-from livekit import api
+
+
+LIVE_ROLE_HOST = "host"
+LIVE_ROLE_COHOST = "cohost"
+LIVE_ROLE_VIEWER = "viewer"
+
+VALID_LIVE_ROLES = {
+    LIVE_ROLE_HOST,
+    LIVE_ROLE_COHOST,
+    LIVE_ROLE_VIEWER,
+}
+
+LIVE_ROLE_GRANTS = {
+    LIVE_ROLE_HOST: {
+        "can_publish": True,
+        "can_subscribe": True,
+        "can_publish_data": True,
+    },
+    LIVE_ROLE_COHOST: {
+        "can_publish": True,
+        "can_subscribe": True,
+        "can_publish_data": True,
+    },
+    LIVE_ROLE_VIEWER: {
+        "can_publish": False,
+        "can_subscribe": True,
+        "can_publish_data": False,
+    },
+}
 
 
 class LiveKitService:
-    # PUBLIC API
+    # PUBLIC CONFIGURATION
 
     @classmethod
     def get_ws_url(cls) -> str:
-        """Return LiveKit WebSocket endpoint."""
+        """
+        Return the configured LiveKit WebSocket endpoint.
+        """
         settings = get_aos_settings_snapshot()
 
-        if not settings.livekit_endpoint:
-            frappe.throw(_("LiveKit endpoint is not configured."))
+        endpoint = str(
+            settings.livekit_endpoint or ""
+        ).strip()
 
-        return settings.livekit_endpoint
+        if not endpoint:
+            frappe.throw(
+                _("LiveKit endpoint is not configured.")
+            )
 
+        return endpoint
+
+    # CALL TOKENS
     @classmethod
     def generate_call_token(
         cls,
@@ -43,12 +90,12 @@ class LiveKitService:
         metadata: str | None = None,
     ) -> str:
         """
-        Generate token for 1:1 call participant.
+        Generate a token for a call participant.
 
-        Both users:
-        - can publish
-        - can subscribe
-        - can publish data
+        Call participants may:
+        - publish media
+        - subscribe to media
+        - publish data
         """
         return cls._generate_token(
             identity=user,
@@ -60,50 +107,81 @@ class LiveKitService:
             can_publish_data=True,
         )
 
+    # LIVE TOKENS
     @classmethod
     def generate_live_token(
         cls,
         *,
         user: str,
         room_name: str,
-        role: str,  # "host" | "viewer"
+        role: str,
         participant_name: str | None = None,
         metadata: str | None = None,
     ) -> str:
         """
-        Generate token for live streaming.
+        Generate a role-based token for a live stream.
 
-        Host:
-        - can publish
-        - can subscribe
-        - can publish data
+        Roles:
 
-        Viewer:
-        - cannot publish media
-        - can subscribe
-        - cannot publish data by default
+        host:
+        - may publish media
+        - may subscribe
+        - may publish data
+
+        cohost:
+        - may publish media
+        - may subscribe
+        - may publish data
+
+        viewer:
+        - may not publish media
+        - may subscribe
+        - may not publish data
         """
-        if role == "host":
-            can_publish = True
-            can_subscribe = True
-            can_publish_data = True
-        elif role == "viewer":
-            can_publish = False
-            can_subscribe = True
-            can_publish_data = False
-        else:
-            frappe.throw(_("Invalid LiveKit role"))
+        normalized_role = cls.normalize_live_role(
+            role
+        )
+
+        grants = LIVE_ROLE_GRANTS[
+            normalized_role
+        ]
 
         return cls._generate_token(
             identity=user,
             room_name=room_name,
             participant_name=participant_name,
             metadata=metadata,
-            can_publish=can_publish,
-            can_subscribe=can_subscribe,
-            can_publish_data=can_publish_data,
+            can_publish=grants[
+                "can_publish"
+            ],
+            can_subscribe=grants[
+                "can_subscribe"
+            ],
+            can_publish_data=grants[
+                "can_publish_data"
+            ],
         )
 
+    @classmethod
+    def normalize_live_role(
+        cls,
+        role: str,
+    ) -> str:
+        """
+        Normalize and validate a LiveKit live-stream role.
+        """
+        normalized_role = str(
+            role or ""
+        ).strip().lower()
+
+        if normalized_role not in VALID_LIVE_ROLES:
+            frappe.throw(
+                _("Invalid LiveKit role.")
+            )
+
+        return normalized_role
+
+    # PARTICIPANT METADATA
     @classmethod
     def build_metadata(
         cls,
@@ -120,46 +198,152 @@ class LiveKitService:
         extra: dict[str, Any] | None = None,
     ) -> str:
         """
-        Build JSON metadata string for LiveKit tokens.
+        Build the JSON metadata stored on the LiveKit participant.
 
-        Important:
-        - `user` should match the stable participant identity where possible.
-        - For guest Live viewers, `user` may be a generated guest identity.
-        - Display fields are metadata only and should not be treated as identity.
+        Identity rules:
+        - `user` should match the stable LiveKit participant identity.
+        - Authenticated live users normally use their AOS user ID.
+        - Guest viewers use a generated session-scoped identity.
+        - Display fields are metadata only and must never be treated as
+          authentication or participant identity.
         """
+        identity = str(
+            user or ""
+        ).strip()
+
+        normalized_role = str(
+            role or ""
+        ).strip().lower()
+
+        if not identity:
+            frappe.throw(
+                _("LiveKit metadata user is required.")
+            )
+
+        if not normalized_role:
+            frappe.throw(
+                _("LiveKit metadata role is required.")
+            )
+
+        if (
+            extra is not None
+            and not isinstance(extra, dict)
+        ):
+            frappe.throw(
+                _("LiveKit metadata extra must be a dictionary.")
+            )
+
         payload: dict[str, Any] = {
-            "user": user,
-            "role": role,
+            "user": identity,
+            "role": normalized_role,
         }
 
         if conversation:
-            payload["conversation"] = conversation
+            payload["conversation"] = (
+                conversation
+            )
 
         if call_id:
             payload["call_id"] = call_id
 
         if call_type:
-            payload["call_type"] = call_type
+            payload["call_type"] = (
+                call_type
+            )
 
         if display_name:
-            payload["display_name"] = display_name
+            payload["display_name"] = (
+                display_name
+            )
 
         if avatar:
             payload["avatar"] = avatar
 
         if is_guest is not None:
-            payload["is_guest"] = bool(is_guest)
+            payload["is_guest"] = bool(
+                is_guest
+            )
 
         if session_id:
-            payload["session_id"] = session_id
+            payload["session_id"] = (
+                session_id
+            )
 
         if extra:
-            payload.update(extra)
+            payload.update(
+                extra
+            )
 
-        return frappe.as_json(payload)
+        return frappe.as_json(
+            payload
+        )
 
-    # INTERNALS
+    # INTERNAL CONFIGURATION
+    @classmethod
+    def _get_credentials(
+        cls,
+    ) -> tuple[str, str]:
+        """
+        Read LiveKit credentials from AOS Settings.
 
+        Secrets are intentionally fetched from the document instead of the
+        settings snapshot.
+        """
+        settings_doc = frappe.get_single(
+            "AOS Settings"
+        )
+
+        api_key = str(
+            settings_doc.livekit_api_key
+            or ""
+        ).strip()
+
+        api_secret = str(
+            settings_doc.get_password(
+                "livekit_api_secret"
+            )
+            or ""
+        ).strip()
+
+        if not api_key:
+            frappe.throw(
+                _("LiveKit API key is not configured.")
+            )
+
+        if not api_secret:
+            frappe.throw(
+                _("LiveKit API secret is not configured.")
+            )
+
+        return api_key, api_secret
+
+    @classmethod
+    def _get_token_ttl(
+        cls,
+    ) -> timedelta:
+        """
+        Return the configured positive token lifetime.
+        """
+        settings = get_aos_settings_snapshot()
+
+        try:
+            ttl_minutes = int(
+                settings.livekit_token_ttl_minutes
+                or 60
+            )
+        except (TypeError, ValueError):
+            ttl_minutes = 60
+
+        ttl_minutes = max(
+            ttl_minutes,
+            1,
+        )
+
+        return timedelta(
+            minutes=ttl_minutes
+        )
+
+    # TOKEN GENERATION
     @classmethod
     def _generate_token(
         cls,
@@ -172,46 +356,70 @@ class LiveKitService:
         can_subscribe: bool,
         can_publish_data: bool,
     ) -> str:
-        if not identity:
-            frappe.throw(_("LiveKit identity is required"))
+        """
+        Generate and sign one LiveKit room token.
+        """
+        normalized_identity = str(
+            identity or ""
+        ).strip()
 
-        if not room_name:
-            frappe.throw(_("LiveKit room_name is required"))
+        normalized_room_name = str(
+            room_name or ""
+        ).strip()
 
-        settings = get_aos_settings_snapshot()
-        doc = frappe.get_single("AOS Settings")
+        if not normalized_identity:
+            frappe.throw(
+                _("LiveKit identity is required.")
+            )
 
-        api_key = doc.livekit_api_key
-        api_secret = doc.get_password("livekit_api_secret")
+        if not normalized_room_name:
+            frappe.throw(
+                _("LiveKit room name is required.")
+            )
 
-        if not api_key:
-            frappe.throw(_("LiveKit API key is not configured"))
+        api_key, api_secret = (
+            cls._get_credentials()
+        )
 
-        if not api_secret:
-            frappe.throw(_("LiveKit API secret is not configured"))
+        token = api.AccessToken(
+            api_key,
+            api_secret,
+        ).with_identity(
+            normalized_identity
+        )
 
-        ttl_minutes = settings.livekit_token_ttl_minutes or 60
+        normalized_participant_name = str(
+            participant_name or ""
+        ).strip()
 
-        token = api.AccessToken(api_key, api_secret)
-
-        token = token.with_identity(identity)
-
-        if participant_name:
-            token = token.with_name(participant_name)
+        if normalized_participant_name:
+            token = token.with_name(
+                normalized_participant_name
+            )
 
         if metadata:
-            token = token.with_metadata(metadata)
+            token = token.with_metadata(
+                metadata
+            )
 
         token = token.with_grants(
             api.VideoGrants(
                 room_join=True,
-                room=room_name,
-                can_publish=can_publish,
-                can_subscribe=can_subscribe,
-                can_publish_data=can_publish_data,
+                room=normalized_room_name,
+                can_publish=bool(
+                    can_publish
+                ),
+                can_subscribe=bool(
+                    can_subscribe
+                ),
+                can_publish_data=bool(
+                    can_publish_data
+                ),
             )
         )
 
-        token = token.with_ttl(timedelta(minutes=ttl_minutes))
+        token = token.with_ttl(
+            cls._get_token_ttl()
+        )
 
         return token.to_jwt()

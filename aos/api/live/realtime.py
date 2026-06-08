@@ -6,23 +6,135 @@ Handles:
 - Viewer count events
 - Unified live message events
 - User-targeted live message events
+- Co-host workflow events
+- Co-host public lifecycle events
 - Immediate reaction events
 - Display-ready lightweight payloads
 
 Privacy:
 - Viewer identities and session IDs are not broadcast to the live room.
 - Room participants receive viewer-count changes only.
-- Host-only activity is delivered through targeted live messages.
+- Host-only activity is delivered through targeted events/messages.
+- Private co-host payloads may contain session information only when sent
+  directly to the host or co-host candidate.
+- Public co-host payloads must never contain session IDs, LiveKit identities,
+  or private metadata.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import frappe
 
 
+# REALTIME EVENT NAMES
+EVENT_LIVE_STARTED = "aos_live_started"
+EVENT_LIVE_ENDED = "aos_live_ended"
+EVENT_LIVE_VIEWER_COUNT = "aos_live_viewer_count"
+
+EVENT_LIVE_MESSAGE = "aos_live_message"
+EVENT_LIVE_MESSAGE_DELETED = "aos_live_message_deleted"
+
+EVENT_LIVE_REACTION = "aos_live_reaction"
+
+EVENT_COHOST_INVITED = "aos_live_cohost_invited"
+EVENT_COHOST_REQUEST_RECEIVED = "aos_live_cohost_request_received"
+EVENT_COHOST_ACCEPTED = "aos_live_cohost_accepted"
+EVENT_COHOST_REJECTED = "aos_live_cohost_rejected"
+EVENT_COHOST_CANCELLED = "aos_live_cohost_cancelled"
+EVENT_COHOST_ACTIVATED = "aos_live_cohost_activated"
+EVENT_COHOST_STARTED = "aos_live_cohost_started"
+EVENT_COHOST_ENDED = "aos_live_cohost_ended"
+
+
 # CHANNEL HELPERS
-def live_channel(live_id: str) -> str:
+def live_channel(
+    live_id: str,
+) -> str:
     return f"live:{live_id}"
+
+
+# GENERIC HELPERS
+def _unique_users(
+    users: Iterable[str | None],
+) -> list[str]:
+    """
+    Return unique, non-empty users while preserving input order.
+    """
+    return list(
+        dict.fromkeys(
+            user
+            for user in users
+            if user
+        )
+    )
+
+
+def _publish_to_user(
+    *,
+    event: str,
+    user: str,
+    message: dict,
+):
+    if (
+        not event
+        or not user
+        or not message
+    ):
+        return
+
+    frappe.publish_realtime(
+        event=event,
+        message=message,
+        user=user,
+        after_commit=True,
+    )
+
+
+def _publish_to_users(
+    *,
+    event: str,
+    users: Iterable[str | None],
+    message: dict,
+):
+    if (
+        not event
+        or not message
+    ):
+        return
+
+    for user in _unique_users(
+        users
+    ):
+        _publish_to_user(
+            event=event,
+            user=user,
+            message=message,
+        )
+
+
+def _publish_to_live_room(
+    *,
+    event: str,
+    live_id: str,
+    message: dict,
+):
+    if (
+        not event
+        or not live_id
+        or not message
+    ):
+        return
+
+    frappe.publish_realtime(
+        event=event,
+        message=message,
+        room=live_channel(
+            live_id
+        ),
+        after_commit=True,
+    )
 
 
 # USER HELPERS
@@ -90,7 +202,9 @@ def _get_followers(
 
 
 # PAYLOAD HELPERS
-def _build_live_payload(live) -> dict:
+def _build_live_payload(
+    live,
+) -> dict:
     host = _get_user_display(
         live.host_user
     )
@@ -106,8 +220,12 @@ def _build_live_payload(live) -> dict:
         "title": live.title,
         "cover_image": live.cover_image,
         "thumbnail": live.cover_image,
-        "viewer_count": int(
-            live.viewer_count or 0
+        "viewer_count": max(
+            int(
+                live.viewer_count
+                or 0
+            ),
+            0,
         ),
         "status": live.status,
         "room_name": (
@@ -130,8 +248,21 @@ def _build_live_message_payload(
     }
 
 
+def _build_cohost_payload(
+    *,
+    live_id: str,
+    cohost: dict,
+) -> dict:
+    return {
+        "live_id": live_id,
+        "cohost": cohost,
+    }
+
+
 # LIFECYCLE EVENTS
-def publish_live_started(live):
+def publish_live_started(
+    live,
+):
     """
     Notify:
     - Followers of the host
@@ -144,56 +275,55 @@ def publish_live_started(live):
 
     host_user = live.host_user
 
-    for user in _get_followers(
-        host_user
-    ):
-        if (
-            not user
-            or user == host_user
-        ):
-            continue
-
-        frappe.publish_realtime(
-            event="aos_live_started",
-            message=payload,
-            user=user,
-            after_commit=True,
+    followers = [
+        user
+        for user in _get_followers(
+            host_user
         )
+        if (
+            user
+            and user != host_user
+        )
+    ]
+
+    _publish_to_users(
+        event=EVENT_LIVE_STARTED,
+        users=followers,
+        message=payload,
+    )
 
     if host_user:
-        frappe.publish_realtime(
-            event="aos_live_started",
-            message=payload,
+        _publish_to_user(
+            event=EVENT_LIVE_STARTED,
             user=host_user,
-            after_commit=True,
+            message=payload,
         )
 
-    frappe.publish_realtime(
-        event="aos_live_started",
+    _publish_to_live_room(
+        event=EVENT_LIVE_STARTED,
+        live_id=live.name,
         message=payload,
-        room=live_channel(live.name),
-        after_commit=True,
     )
 
 
-def publish_live_ended(live):
+def publish_live_ended(
+    live,
+):
     payload = _build_live_payload(
         live
     )
 
-    frappe.publish_realtime(
-        event="aos_live_ended",
+    _publish_to_live_room(
+        event=EVENT_LIVE_ENDED,
+        live_id=live.name,
         message=payload,
-        room=live_channel(live.name),
-        after_commit=True,
     )
 
     if live.host_user:
-        frappe.publish_realtime(
-            event="aos_live_ended",
-            message=payload,
+        _publish_to_user(
+            event=EVENT_LIVE_ENDED,
             user=live.host_user,
-            after_commit=True,
+            message=payload,
         )
 
 
@@ -210,17 +340,19 @@ def publish_viewer_count(
     if not live_id:
         return
 
-    frappe.publish_realtime(
-        event="aos_live_viewer_count",
+    _publish_to_live_room(
+        event=EVENT_LIVE_VIEWER_COUNT,
+        live_id=live_id,
         message={
             "live_id": live_id,
             "viewer_count": max(
-                int(viewer_count or 0),
+                int(
+                    viewer_count
+                    or 0
+                ),
                 0,
             ),
         },
-        room=live_channel(live_id),
-        after_commit=True,
     )
 
 
@@ -232,19 +364,23 @@ def publish_live_message(
     """
     Publish a message to every client subscribed to the live room.
 
-    Use only for messages visible to room participants.
+    Use only for messages whose stored visibility permits viewer delivery.
+    Private messages must use publish_live_message_to_user() or
+    publish_live_message_to_users().
     """
-    if not live_id or not message:
+    if (
+        not live_id
+        or not message
+    ):
         return
 
-    frappe.publish_realtime(
-        event="aos_live_message",
+    _publish_to_live_room(
+        event=EVENT_LIVE_MESSAGE,
+        live_id=live_id,
         message=_build_live_message_payload(
             live_id=live_id,
             message=message,
         ),
-        room=live_channel(live_id),
-        after_commit=True,
     )
 
 
@@ -257,11 +393,12 @@ def publish_live_message_to_user(
     """
     Publish a live message only to one user's active devices.
 
-    Use for:
+    Used for:
     - Host-only startup messages
     - Host-only viewer-joined messages
     - Co-host invitations
-    - Co-host requests delivered only to the host
+    - Viewer co-host requests delivered to the host
+    - Private co-host response messages
     """
 
     if (
@@ -271,20 +408,19 @@ def publish_live_message_to_user(
     ):
         return
 
-    frappe.publish_realtime(
-        event="aos_live_message",
+    _publish_to_user(
+        event=EVENT_LIVE_MESSAGE,
+        user=user,
         message=_build_live_message_payload(
             live_id=live_id,
             message=message,
         ),
-        user=user,
-        after_commit=True,
     )
 
 
 def publish_live_message_to_users(
     *,
-    users: list[str],
+    users: Iterable[str | None],
     live_id: str,
     message: dict,
 ):
@@ -293,19 +429,20 @@ def publish_live_message_to_users(
 
     Empty and duplicate recipients are removed.
     """
-    if not live_id or not message:
+    if (
+        not live_id
+        or not message
+    ):
         return
 
-    for user in {
-        user
-        for user in users
-        if user
-    }:
-        publish_live_message_to_user(
-            user=user,
+    _publish_to_users(
+        event=EVENT_LIVE_MESSAGE,
+        users=users,
+        message=_build_live_message_payload(
             live_id=live_id,
             message=message,
-        )
+        ),
+    )
 
 
 def publish_live_message_deleted(
@@ -320,7 +457,10 @@ def publish_live_message_deleted(
     deleted_message_ids contains the selected message and any descendant
     replies deleted with it.
     """
-    if not live_id or not message_id:
+    if (
+        not live_id
+        or not message_id
+    ):
         return
 
     ids = list(
@@ -336,16 +476,257 @@ def publish_live_message_deleted(
             message_id,
         )
 
-    frappe.publish_realtime(
-        event="aos_live_message_deleted",
+    _publish_to_live_room(
+        event=EVENT_LIVE_MESSAGE_DELETED,
+        live_id=live_id,
         message={
             "live_id": live_id,
             "message_id": message_id,
             "deleted_message_ids": ids,
         },
-        room=live_channel(live_id),
-        after_commit=True,
     )
+
+
+# PRIVATE CO-HOST WORKFLOW EVENTS
+def publish_cohost_invited(
+    *,
+    user: str,
+    live_id: str,
+    cohost: dict,
+):
+    """
+    Notify the invited viewer privately.
+
+    The supplied payload may contain internal session fields because delivery
+    is targeted to the candidate.
+    """
+    if (
+        not user
+        or not live_id
+        or not cohost
+    ):
+        return
+
+    _publish_to_user(
+        event=EVENT_COHOST_INVITED,
+        user=user,
+        message=_build_cohost_payload(
+            live_id=live_id,
+            cohost=cohost,
+        ),
+    )
+
+
+def publish_cohost_request_received(
+    *,
+    host_user: str,
+    live_id: str,
+    cohost: dict,
+):
+    """
+    Notify the live host privately that a viewer requested co-host access.
+    """
+    if (
+        not host_user
+        or not live_id
+        or not cohost
+    ):
+        return
+
+    _publish_to_user(
+        event=EVENT_COHOST_REQUEST_RECEIVED,
+        user=host_user,
+        message=_build_cohost_payload(
+            live_id=live_id,
+            cohost=cohost,
+        ),
+    )
+
+
+def publish_cohost_accepted(
+    *,
+    users: Iterable[str | None],
+    live_id: str,
+    cohost: dict,
+):
+    """
+    Notify the host and candidate privately that the workflow was accepted.
+    """
+    if (
+        not live_id
+        or not cohost
+    ):
+        return
+
+    _publish_to_users(
+        event=EVENT_COHOST_ACCEPTED,
+        users=users,
+        message=_build_cohost_payload(
+            live_id=live_id,
+            cohost=cohost,
+        ),
+    )
+
+
+def publish_cohost_rejected(
+    *,
+    users: Iterable[str | None],
+    live_id: str,
+    cohost: dict,
+):
+    """
+    Notify the host and candidate privately that the workflow was rejected.
+    """
+    if (
+        not live_id
+        or not cohost
+    ):
+        return
+
+    _publish_to_users(
+        event=EVENT_COHOST_REJECTED,
+        users=users,
+        message=_build_cohost_payload(
+            live_id=live_id,
+            cohost=cohost,
+        ),
+    )
+
+
+def publish_cohost_cancelled(
+    *,
+    users: Iterable[str | None],
+    live_id: str,
+    cohost: dict,
+):
+    """
+    Notify involved users privately that an invitation/request was cancelled.
+    """
+    if (
+        not live_id
+        or not cohost
+    ):
+        return
+
+    _publish_to_users(
+        event=EVENT_COHOST_CANCELLED,
+        users=users,
+        message=_build_cohost_payload(
+            live_id=live_id,
+            cohost=cohost,
+        ),
+    )
+
+
+def publish_cohost_activated(
+    *,
+    users: Iterable[str | None],
+    live_id: str,
+    cohost: dict,
+):
+    """
+    Notify the host and candidate privately that the co-host record became
+    active.
+
+    This payload may include internal session details because recipients are
+    limited to workflow participants.
+    """
+    if (
+        not live_id
+        or not cohost
+    ):
+        return
+
+    _publish_to_users(
+        event=EVENT_COHOST_ACTIVATED,
+        users=users,
+        message=_build_cohost_payload(
+            live_id=live_id,
+            cohost=cohost,
+        ),
+    )
+
+
+# PUBLIC CO-HOST LIFECYCLE EVENTS
+def publish_cohost_started(
+    *,
+    live_id: str,
+    cohost: dict,
+):
+    """
+    Notify everyone in the live room that a co-host became active.
+
+    The caller must supply a public serializer payload created using:
+
+        serialize_live_cohost(..., include_internal=False)
+
+    Do not include:
+    - session_id
+    - livekit_identity
+    - private metadata
+    """
+    if (
+        not live_id
+        or not cohost
+    ):
+        return
+
+    _publish_to_live_room(
+        event=EVENT_COHOST_STARTED,
+        live_id=live_id,
+        message=_build_cohost_payload(
+            live_id=live_id,
+            cohost=cohost,
+        ),
+    )
+
+
+def publish_cohost_ended(
+    *,
+    live_id: str,
+    cohost: dict,
+    private_users: Iterable[str | None] | None = None,
+    private_cohost: dict | None = None,
+):
+    """
+    Publish the public co-host-ended lifecycle event.
+
+    Optionally publish a private version to the host and candidate using
+    private_cohost. This avoids using a second, unnecessary event name.
+
+    Public cohost:
+    - Must exclude session and LiveKit identity.
+
+    Private cohost:
+    - May include internal session fields.
+    """
+    if (
+        not live_id
+        or not cohost
+    ):
+        return
+
+    _publish_to_live_room(
+        event=EVENT_COHOST_ENDED,
+        live_id=live_id,
+        message=_build_cohost_payload(
+            live_id=live_id,
+            cohost=cohost,
+        ),
+    )
+
+    if (
+        private_users
+        and private_cohost
+    ):
+        _publish_to_users(
+            event=EVENT_COHOST_ENDED,
+            users=private_users,
+            message=_build_cohost_payload(
+                live_id=live_id,
+                cohost=private_cohost,
+            ),
+        )
 
 
 # REACTION EVENTS
@@ -359,15 +740,17 @@ def publish_reaction(
 
     The API response and realtime event use the same serialized payload.
     """
-    if not live_id or not reaction:
+    if (
+        not live_id
+        or not reaction
+    ):
         return
 
-    frappe.publish_realtime(
-        event="aos_live_reaction",
+    _publish_to_live_room(
+        event=EVENT_LIVE_REACTION,
+        live_id=live_id,
         message={
             "live_id": live_id,
             "reaction": reaction,
         },
-        room=live_channel(live_id),
-        after_commit=True,
     )

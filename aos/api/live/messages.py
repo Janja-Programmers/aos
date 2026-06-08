@@ -10,6 +10,7 @@ Handles public APIs:
 
 Handles internal creation:
 - create_live_system_message
+- create_live_cohost_message
 
 Live messages include:
 - Viewer comments
@@ -26,6 +27,8 @@ Rules:
 - The live host can soft-delete comments while their live is active.
 - Only comment messages can have replies.
 - System and co-host messages are created internally.
+- Private messages are stored without public visibility and delivered through
+  targeted realtime by the calling service.
 - Administrative hard deletion is handled by the DocType controller.
 """
 
@@ -71,9 +74,28 @@ DELETED_STATUS = "deleted"
 
 COMMENT_KIND = "comment"
 SYSTEM_KIND = "system"
+COHOST_KIND = "cohost"
 
 COMMENT_TYPE = "comment"
 REPLY_TYPE = "reply"
+
+VALID_SYSTEM_MESSAGE_TYPES = {
+    "live_started",
+    "notifying_followers",
+    "viewer_joined",
+    "live_ended",
+    "generic",
+}
+
+VALID_COHOST_MESSAGE_TYPES = {
+    "cohost_invited",
+    "cohost_request_sent",
+    "cohost_request_accepted",
+    "cohost_request_rejected",
+    "cohost_started",
+    "cohost_ended",
+    "generic",
+}
 
 DEFAULT_MESSAGES_LIMIT = 20
 MAX_MESSAGES_LIMIT = 50
@@ -93,6 +115,22 @@ def _normalize_session_id(
     ).strip()
 
     return session_id or None
+
+
+def _normalize_message_type(
+    value,
+) -> str:
+    return str(
+        value or ""
+    ).strip().lower()
+
+
+def _normalize_content(
+    value,
+) -> str:
+    return str(
+        value or ""
+    ).strip()
 
 
 def _parse_pagination(
@@ -247,6 +285,28 @@ def _validate_user_can_delete_message(
     )
 
 
+def _validate_internal_message_type(
+    *,
+    message_kind: str,
+    message_type: str,
+):
+    if (
+        message_kind == SYSTEM_KIND
+        and message_type not in VALID_SYSTEM_MESSAGE_TYPES
+    ):
+        frappe.throw(
+            f"Invalid system message type: {message_type}."
+        )
+
+    if (
+        message_kind == COHOST_KIND
+        and message_type not in VALID_COHOST_MESSAGE_TYPES
+    ):
+        frappe.throw(
+            f"Invalid co-host message type: {message_type}."
+        )
+
+
 # INTERNAL MESSAGE CREATION
 def _create_live_message(
     *,
@@ -264,7 +324,7 @@ def _create_live_message(
     """
     Canonical internal creator for AOS Live Message.
 
-    The DocType controller validates:
+    The DocType controller remains responsible for validating:
     - message kind/type compatibility
     - actor requirements
     - target-user requirements
@@ -274,18 +334,61 @@ def _create_live_message(
     - visibility rules
     """
 
+    normalized_kind = str(
+        message_kind or ""
+    ).strip().lower()
+
+    normalized_type = _normalize_message_type(
+        message_type
+    )
+
+    normalized_content = _normalize_content(
+        content
+    )
+
+    if not live_id:
+        frappe.throw(
+            "Live stream is required."
+        )
+
+    if not normalized_kind:
+        frappe.throw(
+            "Message kind is required."
+        )
+
+    if not normalized_type:
+        frappe.throw(
+            "Message type is required."
+        )
+
+    if not normalized_content:
+        frappe.throw(
+            "Message content is required."
+        )
+
+    _validate_internal_message_type(
+        message_kind=normalized_kind,
+        message_type=normalized_type,
+    )
+
+    if metadata is not None and not isinstance(
+        metadata,
+        dict,
+    ):
+        frappe.throw(
+            "Message metadata must be a dictionary."
+        )
+
     message = frappe.new_doc(
         LIVE_MESSAGE_DOCTYPE
     )
 
     message.live_stream = live_id
-    message.message_kind = message_kind
-    message.message_type = message_type
+    message.message_kind = normalized_kind
+    message.message_type = normalized_type
     message.user = user
     message.target_user = target_user
-    message.content = str(
-        content or ""
-    ).strip()
+    message.content = normalized_content
     message.status = ACTIVE_STATUS
     message.parent_message = parent_message
     message.visible_to_host = int(
@@ -352,12 +455,85 @@ def create_live_system_message(
     - notifying_followers
     - viewer_joined
     - live_ended
-    """
 
+    Private messages must use publish=False and should be delivered through
+    publish_live_message_to_user() by the calling service.
+    """
     message = _create_live_message(
         live_id=live_id,
         message_kind=SYSTEM_KIND,
         message_type=message_type,
+        user=user,
+        target_user=target_user,
+        content=content,
+        metadata=metadata,
+        visible_to_host=visible_to_host,
+        visible_to_viewers=visible_to_viewers,
+    )
+
+    serialized = serialize_live_message(
+        message
+    )
+
+    if publish:
+        publish_live_message(
+            live_id,
+            serialized,
+        )
+
+    return serialized
+
+
+def create_live_cohost_message(
+    *,
+    live_id: str,
+    message_type: str,
+    content: str,
+    user: str | None = None,
+    target_user: str | None = None,
+    metadata: dict | None = None,
+    visible_to_host: bool = False,
+    visible_to_viewers: bool = False,
+    publish: bool = False,
+) -> dict:
+    """
+    Create and optionally publish a co-host workflow or lifecycle message.
+
+    Private workflow examples:
+    - cohost_invited
+    - cohost_request_sent
+    - cohost_request_accepted
+    - cohost_request_rejected
+
+    Public lifecycle examples:
+    - cohost_started
+    - cohost_ended
+
+    Privacy contract:
+    - Private co-host messages should use publish=False.
+    - The calling co-host service delivers private messages through targeted
+      realtime.
+    - Public lifecycle messages may use publish=True and must be visible to
+      both host and viewers.
+    """
+    normalized_type = _normalize_message_type(
+        message_type
+    )
+
+    if normalized_type not in VALID_COHOST_MESSAGE_TYPES:
+        frappe.throw(
+            f"Invalid co-host message type: {normalized_type}."
+        )
+
+    if publish and not visible_to_viewers:
+        frappe.throw(
+            "A room-published co-host message must be visible to viewers."
+        )
+
+    message = _create_live_message(
+        live_id=live_id,
+        message_kind=COHOST_KIND,
+        message_type=normalized_type,
         user=user,
         target_user=target_user,
         content=content,
@@ -405,10 +581,9 @@ def add_live_message_impl(**kwargs):
         kwargs.get("session_id")
     )
 
-    content = str(
+    content = _normalize_content(
         kwargs.get("content")
-        or ""
-    ).strip()
+    )
 
     if not content:
         return fail(
@@ -513,10 +688,9 @@ def reply_live_message_impl(**kwargs):
         kwargs.get("session_id")
     )
 
-    content = str(
+    content = _normalize_content(
         kwargs.get("content")
-        or ""
-    ).strip()
+    )
 
     if not content:
         return fail(
@@ -855,9 +1029,11 @@ def _collect_descendant_message_ids(
             seen.add(
                 child_id
             )
+
             collected.append(
                 child_id
             )
+
             pending.append(
                 child_id
             )
@@ -892,7 +1068,9 @@ def _sync_reply_counts(
             LIVE_MESSAGE_DOCTYPE,
             parent_id,
             "reply_count",
-            int(active_reply_count or 0),
+            int(
+                active_reply_count or 0
+            ),
             update_modified=False,
         )
 
@@ -953,9 +1131,9 @@ def delete_live_message_impl(**kwargs):
         if err:
             return err
 
-        # Public/API soft deletion is only available while the live is active.
-        # After the live ends, administrative cleanup is performed through
-        # the DocType's hard-delete policy.
+        # API soft deletion is available only while the live is active.
+        # Administrative hard deletion after the live ends is handled by
+        # the AOS Live Message DocType controller.
         err = validate_live_active(
             live
         )
@@ -981,8 +1159,10 @@ def delete_live_message_impl(**kwargs):
                 },
             )
 
-        descendant_ids = _collect_descendant_message_ids(
-            message_id
+        descendant_ids = (
+            _collect_descendant_message_ids(
+                message_id
+            )
         )
 
         deleted_ids = list(

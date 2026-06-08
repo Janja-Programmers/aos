@@ -17,11 +17,13 @@ Social Live rules:
 - Follow and relationship state is user-to-user.
 - Lifecycle system messages are stored in AOS Live Message.
 - Host-only messages are never broadcast to the live room.
+- Ending a live closes all unresolved and active co-host workflows.
 """
 
 from __future__ import annotations
 
 import frappe
+from frappe.utils import now_datetime
 
 from aos.api.shared.auth import current_user, require_login
 from aos.api.shared.rate_limit import rate_limit, request_ip
@@ -37,8 +39,13 @@ from .constants import (
     LIST_LIVE_STREAMS_LIMIT_PER_MINUTE_PER_IP,
     START_LIVE_LIMIT_PER_MINUTE_PER_USER,
 )
-from .messages import create_live_system_message
+from .messages import (
+    create_live_cohost_message,
+    create_live_system_message,
+)
 from .realtime import (
+    publish_cohost_cancelled,
+    publish_cohost_ended,
     publish_live_ended,
     publish_live_message_to_user,
     publish_live_started,
@@ -47,6 +54,7 @@ from .serializers import (
     get_user_display,
     is_guest_user,
     serialize_live,
+    serialize_live_cohost,
     serialize_live_list,
 )
 from .validators import (
@@ -58,12 +66,27 @@ from .validators import (
 
 
 LIVE_STREAM_DOCTYPE = "AOS Live Stream"
+LIVE_COHOST_DOCTYPE = "AOS Live CoHost"
 
 LIVE_STATUS = "live"
 ENDED_STATUS = "ended"
 
 HOST_ROLE = "host"
 VIEWER_ROLE = "viewer"
+
+COHOST_STATUS_PENDING = "pending"
+COHOST_STATUS_ACCEPTED = "accepted"
+COHOST_STATUS_CANCELLED = "cancelled"
+COHOST_STATUS_ACTIVE = "active"
+COHOST_STATUS_ENDED = "ended"
+
+COHOST_MESSAGE_ENDED = "cohost_ended"
+
+UNRESOLVED_COHOST_STATUSES = {
+    COHOST_STATUS_PENDING,
+    COHOST_STATUS_ACCEPTED,
+    COHOST_STATUS_ACTIVE,
+}
 
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 50
@@ -105,12 +128,10 @@ def _get_livekit_identity(
     Guest viewer:
         guest:{session_id}
 
-    Viewer identities are session-scoped so the same authenticated user can
-    join from multiple devices or browser tabs without LiveKit participant
-    identity collisions.
+    Viewer identities are session-scoped so one authenticated user can join
+    from multiple devices without participant identity collisions.
 
-    A future viewer-to-cohost role upgrade should preserve the authenticated
-    viewer identity instead of creating a different participant identity.
+    Viewer-to-co-host upgrades must preserve the existing viewer identity.
     """
     if role == HOST_ROLE:
         if not viewer:
@@ -202,8 +223,7 @@ def _validate_viewer_session(
     """
     Require a session ID for every non-host participant.
 
-    The host does not use a normal viewer session and is not included in the
-    viewer count.
+    The host does not use a viewer session and is excluded from viewer count.
     """
     is_host = bool(
         viewer
@@ -220,6 +240,23 @@ def _validate_viewer_session(
         )
 
     return None
+
+
+def _workflow_users(
+    *,
+    host_user: str,
+    cohost_user: str,
+) -> list[str]:
+    return list(
+        dict.fromkeys(
+            user
+            for user in [
+                host_user,
+                cohost_user,
+            ]
+            if user
+        )
+    )
 
 
 # LIVEKIT HELPERS
@@ -246,7 +283,6 @@ def _build_livekit_payload(
     )
 
     metadata = LiveKitService.build_metadata(
-        # Store the stable AOS user separately from the participant identity.
         user=viewer or identity,
         role=role,
         display_name=display.get(
@@ -263,6 +299,9 @@ def _build_livekit_payload(
         user=identity,
         room_name=live.room_name,
         role=role,
+        participant_name=display.get(
+            "display_name"
+        ),
         metadata=metadata,
     )
 
@@ -289,12 +328,10 @@ def _create_startup_messages(
     Create initial lifecycle messages.
 
     live_started:
-    - Stored in the feed.
     - Visible to the host and viewers.
     - Published to the live room.
 
     notifying_followers:
-    - Stored in the feed.
     - Visible only to the host.
     - Published directly to the host's devices.
     """
@@ -343,9 +380,6 @@ def _create_live_ended_message(
     live,
     host_user: str,
 ) -> dict:
-    """
-    Create the public live-ended lifecycle message.
-    """
     return create_live_system_message(
         live_id=live.name,
         message_type="live_ended",
@@ -362,6 +396,215 @@ def _create_live_ended_message(
         visible_to_viewers=True,
         publish=True,
     )
+
+
+# CO-HOST CLEANUP
+def _close_active_cohost(
+    *,
+    live,
+    cohost,
+    host_user: str,
+    ended_at,
+) -> dict:
+    """
+    End an active co-host before the live stream becomes inactive.
+    """
+    cohost.status = COHOST_STATUS_ENDED
+    cohost.is_active = 0
+    cohost.ended_at = ended_at
+    cohost.ended_by = host_user
+    cohost.end_reason = "live_ended"
+
+    cohost.save(
+        ignore_permissions=True
+    )
+
+    private_payload = serialize_live_cohost(
+        cohost,
+        include_internal=True,
+    )
+
+    public_payload = serialize_live_cohost(
+        cohost,
+        include_internal=False,
+    )
+
+    cohost_display = get_user_display(
+        cohost.user
+    )
+
+    display_name = (
+        cohost_display.get(
+            "display_name"
+        )
+        or cohost.user
+    )
+
+    message = create_live_cohost_message(
+        live_id=live.name,
+        message_type=COHOST_MESSAGE_ENDED,
+        content=(
+            f"{display_name} is no longer co-hosting."
+        ),
+        user=host_user,
+        target_user=cohost.user,
+        metadata={
+            "cohost_id": cohost.name,
+            "status": cohost.status,
+            "end_reason": "live_ended",
+        },
+        visible_to_host=True,
+        visible_to_viewers=True,
+        publish=True,
+    )
+
+    publish_cohost_ended(
+        live_id=live.name,
+        cohost=public_payload,
+        private_users=_workflow_users(
+            host_user=live.host_user,
+            cohost_user=cohost.user,
+        ),
+        private_cohost=private_payload,
+    )
+
+    return {
+        "cohost": private_payload,
+        "message": message,
+    }
+
+
+def _cancel_unresolved_cohost(
+    *,
+    live,
+    cohost,
+    host_user: str,
+    cancelled_at,
+) -> dict:
+    """
+    Cancel a pending invitation/request or an accepted workflow that never
+    became active.
+    """
+    previous_status = cohost.status
+
+    cohost.status = COHOST_STATUS_CANCELLED
+    cohost.is_active = 0
+
+    # Pending workflows have no responder yet. Record the host as the actor
+    # that closed the workflow because the live ended.
+    if previous_status == COHOST_STATUS_PENDING:
+        cohost.responded_by = host_user
+        cohost.responded_at = cancelled_at
+
+    cohost.response_reason = (
+        "Live ended before the co-host workflow completed."
+    )
+
+    cohost.save(
+        ignore_permissions=True
+    )
+
+    private_payload = serialize_live_cohost(
+        cohost,
+        include_internal=True,
+    )
+
+    publish_cohost_cancelled(
+        users=_workflow_users(
+            host_user=live.host_user,
+            cohost_user=cohost.user,
+        ),
+        live_id=live.name,
+        cohost=private_payload,
+    )
+
+    return private_payload
+
+
+def _close_cohost_workflows_for_live(
+    *,
+    live,
+    host_user: str,
+) -> dict:
+    """
+    Close all unresolved co-host records before ending the live.
+
+    Active:
+        active -> ended
+        end_reason = live_ended
+
+    Pending/accepted:
+        pending/accepted -> cancelled
+
+    The cleanup happens while the live is still active, allowing the co-host
+    DocType controller and message controller to validate normal transitions.
+    """
+    rows = frappe.get_all(
+        LIVE_COHOST_DOCTYPE,
+        filters={
+            "live_stream": live.name,
+            "status": [
+                "in",
+                list(
+                    UNRESOLVED_COHOST_STATUSES
+                ),
+            ],
+        },
+        fields=[
+            "name",
+        ],
+        order_by="creation asc",
+    )
+
+    cleanup = {
+        "ended": [],
+        "cancelled": [],
+    }
+
+    if not rows:
+        return cleanup
+
+    closed_at = now_datetime()
+
+    for row in rows:
+        cohost = frappe.get_doc(
+            LIVE_COHOST_DOCTYPE,
+            row.name,
+        )
+
+        if (
+            cohost.status == COHOST_STATUS_ACTIVE
+            and bool(cohost.is_active)
+        ):
+            result = _close_active_cohost(
+                live=live,
+                cohost=cohost,
+                host_user=host_user,
+                ended_at=closed_at,
+            )
+
+            cleanup["ended"].append(
+                result
+            )
+
+            continue
+
+        if cohost.status in {
+            COHOST_STATUS_PENDING,
+            COHOST_STATUS_ACCEPTED,
+        }:
+            payload = _cancel_unresolved_cohost(
+                live=live,
+                cohost=cohost,
+                host_user=host_user,
+                cancelled_at=closed_at,
+            )
+
+            cleanup["cancelled"].append(
+                payload
+            )
+
+    return cleanup
 
 
 # START LIVE
@@ -440,7 +683,6 @@ def start_live_impl(**kwargs):
             ignore_permissions=True
         )
 
-        # The Live Stream controller creates room_name and lifecycle fields.
         live.reload()
 
         startup_messages = _create_startup_messages(
@@ -514,14 +756,17 @@ def join_live_impl(**kwargs):
         kwargs.get("session_id")
     )
 
-    rl_identity = (
+    rate_limit_identity = (
         viewer
         or session_id
         or request_ip()
     )
 
     rl = rate_limit(
-        key=f"aos:live:join:{rl_identity}",
+        key=(
+            f"aos:live:join:"
+            f"{rate_limit_identity}"
+        ),
         ttl_seconds=60,
         limit=JOIN_LIVE_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests.",
@@ -651,8 +896,20 @@ def end_live_impl(**kwargs):
                         viewer=user,
                     ),
                     "message": None,
+                    "cohost_cleanup": {
+                        "ended": [],
+                        "cancelled": [],
+                    },
                 },
             )
+
+        # Close co-host workflows while the live is still active.
+        cohost_cleanup = (
+            _close_cohost_workflows_for_live(
+                live=live,
+                host_user=user,
+            )
+        )
 
         live.status = ENDED_STATUS
 
@@ -679,6 +936,7 @@ def end_live_impl(**kwargs):
                     viewer=user,
                 ),
                 "message": ended_message,
+                "cohost_cleanup": cohost_cleanup,
             },
         )
 
@@ -834,8 +1092,7 @@ def list_live_streams_impl(**kwargs):
                     "limit": limit,
                     "count": len(lives),
                     "has_more": (
-                        len(lives)
-                        == limit
+                        len(lives) == limit
                     ),
                 },
             },

@@ -1,0 +1,214 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-06-08 13:17:27.671145",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "live_stream",
+  "user",
+  "session_id",
+  "request_type",
+  "status",
+  "is_active",
+  "section_break_jrfq",
+  "requested_by",
+  "requested_at",
+  "expires_at",
+  "column_break_zqve",
+  "responded_by",
+  "responded_at",
+  "accepted_at",
+  "section_break_ukym",
+  "livekit_identity",
+  "started_at",
+  "ended_at",
+  "ended_by",
+  "end_reason",
+  "response_reason",
+  "metadata_json"
+ ],
+ "fields": [
+  {
+   "fieldname": "live_stream",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Live Stream",
+   "options": "AOS Live Stream",
+   "reqd": 1,
+   "search_index": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "Co-Host User",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "session_id",
+   "fieldtype": "Data",
+   "label": "Viewer Session ID",
+   "reqd": 1,
+   "search_index": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "request_type",
+   "fieldtype": "Select",
+   "label": "Request Type",
+   "options": "host_invite\nviewer_request",
+   "reqd": 1,
+   "search_index": 1,
+   "set_only_once": 1
+  },
+  {
+   "default": "pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "pending\naccepted\nrejected\ncancelled\nactive\nended\nexpired",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "requested_by",
+   "fieldtype": "Link",
+   "label": "Requested By",
+   "options": "User",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "responded_by",
+   "fieldtype": "Link",
+   "label": "Responded By",
+   "options": "User",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "requested_at",
+   "fieldtype": "Datetime",
+   "label": "Requested At",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "responded_at",
+   "fieldtype": "Datetime",
+   "label": "Responded At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "accepted_at",
+   "fieldtype": "Datetime",
+   "label": "Accepted At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "expires_at",
+   "fieldtype": "Datetime",
+   "label": "Expires At",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "livekit_identity",
+   "fieldtype": "Data",
+   "label": "LiveKit Identity",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ended_at",
+   "fieldtype": "Datetime",
+   "label": "Ended At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "end_reason",
+   "fieldtype": "Select",
+   "label": "End Reason",
+   "options": "\nleft\nremoved_by_host\nlive_ended\ndisconnected\ntimeout\nerror",
+   "read_only": 1
+  },
+  {
+   "fieldname": "response_reason",
+   "fieldtype": "Small Text",
+   "label": "Response Reason",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Is Active",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "metadata_json",
+   "fieldtype": "JSON",
+   "label": "Metadata JSON"
+  },
+  {
+   "fieldname": "section_break_ukym",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "ended_by",
+   "fieldtype": "Link",
+   "label": "Ended By",
+   "options": "User",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_break_jrfq",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_zqve",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "grid_page_length": 50,
+ "links": [],
+ "modified": "2026-06-08 13:56:31.389913",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Live CoHost",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

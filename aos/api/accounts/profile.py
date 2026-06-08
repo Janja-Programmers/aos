@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import frappe
 
+from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
 
@@ -20,7 +21,6 @@ from .constants import (
 from .serializers import serialize_user
 
 from .validators import (
-    require_login,
     validate_full_name,
     validate_user_image,
     attach_file_to_user,
