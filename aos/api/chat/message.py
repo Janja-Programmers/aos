@@ -18,6 +18,9 @@ from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
 
 from aos.services.notification_service import NotificationService
+from aos.services.seller_response_metrics import (
+    enqueue_conversation_response_metrics_refresh,
+)
 
 from .constants import (
     SEND_MESSAGE_LIMIT_PER_MINUTE_PER_USER,
@@ -946,6 +949,14 @@ def send_message_impl(**kwargs):
 
         # Presence trigger.
         publish_presence_update_to_peers(current_user)
+
+        # Refresh seller response metrics after this transaction commits.
+        # Both participants are checked because either participant may own
+        # an active seller profile. Non-sellers are ignored by the service.
+        enqueue_conversation_response_metrics_refresh(
+            participant_1=conv.participant_1,
+            participant_2=conv.participant_2,
+        )
 
         return ok("Message sent.", data=serialized)
 

@@ -19,7 +19,13 @@
   "section_break_xlao",
   "total_ads",
   "rating",
-  "total_reviews"
+  "total_reviews",
+  "chat_response_time_seconds",
+  "column_break_xojx",
+  "chat_response_rate",
+  "chat_response_sample_size",
+  "chat_response_requests",
+  "response_metrics_updated_at"
  ],
  "fields": [
   {
@@ -120,11 +126,49 @@
    "fieldname": "business_address",
    "fieldtype": "Small Text",
    "label": "Business Address"
+  },
+  {
+   "default": "0",
+   "fieldname": "chat_response_time_seconds",
+   "fieldtype": "Int",
+   "label": "Chat Response Time Seconds",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "chat_response_rate",
+   "fieldtype": "Percent",
+   "label": "Chat Response Rate",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "chat_response_sample_size",
+   "fieldtype": "Int",
+   "label": "Chat Response Sample Size",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "chat_response_requests",
+   "fieldtype": "Int",
+   "label": "Chat Response Requests",
+   "read_only": 1
+  },
+  {
+   "fieldname": "response_metrics_updated_at",
+   "fieldtype": "Datetime",
+   "label": "Response Metrics Updated At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_xojx",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-05-11 13:09:32.844875",
+ "modified": "2026-06-08 22:13:44.667878",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Seller",
