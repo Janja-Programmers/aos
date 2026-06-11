@@ -19,7 +19,7 @@ require_command "${OSMIUM_COMMAND}"
 SOURCE="${ROOT_DIR}/maps/downloads/${KENYA_PBF_FILENAME}"
 OUTPUT_DIR="${ROOT_DIR}/maps/${MAP_REGION_ID}"
 DESTINATION="${OUTPUT_DIR}/${MOMBASA_PBF_FILENAME}"
-TEMPORARY="${OUTPUT_DIR}/${MOMBASA_PBF_FILENAME}.tmp"
+TEMPORARY="${OUTPUT_DIR}/.${MOMBASA_PBF_FILENAME}.tmp.osm.pbf"
 
 assert_nonempty_file "${SOURCE}"
 
@@ -47,6 +47,7 @@ info "Extracting ${MAP_REGION_DISPLAY_NAME:-${MAP_REGION_ID}} using bbox ${MAP_B
     --strategy "${MAP_EXTRACT_STRATEGY:-complete_ways}" \
     --set-bounds \
     --overwrite \
+    --output-format pbf \
     --output "${TEMPORARY}" \
     "${SOURCE}"
 

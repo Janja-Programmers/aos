@@ -13,10 +13,7 @@ ROOT_DIR="$(
     pwd
 )"
 
-MANIFEST_FILE="${
-    MAP_MANIFEST_FILE:-${ROOT_DIR}/infra/maps/manifest.env
-}"
-
+MANIFEST_FILE="${MAP_MANIFEST_FILE:-${ROOT_DIR}/infra/maps/manifest.env}"
 
 # LOGGING
 fail() {
