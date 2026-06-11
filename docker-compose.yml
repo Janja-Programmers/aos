@@ -305,15 +305,18 @@ services:
 
 volumes:
   qdrant_data:
+    external: true
     name: aos_qdrant_data
 
   minio_data:
+    external: true
     name: aos_minio_data
 
   nominatim_data:
+    external: true
     name: aos_nominatim_data
 
 networks:
   aos_net:
+    external: true
     name: aos_net
-    driver: bridge
