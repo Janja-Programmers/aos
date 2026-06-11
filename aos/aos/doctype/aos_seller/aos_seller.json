@@ -13,8 +13,21 @@
   "shop_banner",
   "section_break_rvlv",
   "about_business",
-  "business_address",
   "operating_hours",
+  "location_tab",
+  "has_location",
+  "location_name",
+  "location_instructions",
+  "column_break_iluh",
+  "latitude",
+  "longitude",
+  "location_updated_at",
+  "section_break_knlj",
+  "locality",
+  "region",
+  "country_code",
+  "column_break_yppu",
+  "display_address",
   "metrics_tab",
   "section_break_xlao",
   "total_ads",
@@ -123,11 +136,6 @@
    "label": "About Business"
   },
   {
-   "fieldname": "business_address",
-   "fieldtype": "Small Text",
-   "label": "Business Address"
-  },
-  {
    "default": "0",
    "fieldname": "chat_response_time_seconds",
    "fieldtype": "Int",
@@ -164,11 +172,98 @@
   {
    "fieldname": "column_break_xojx",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "location_tab",
+   "fieldtype": "Tab Break",
+   "label": "Location"
+  },
+  {
+   "fieldname": "latitude",
+   "fieldtype": "Float",
+   "label": "Latitude",
+   "precision": "7",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "has_location",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "Has Location",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "location_name",
+   "fieldtype": "Data",
+   "label": "Location Name",
+   "length": 140
+  },
+  {
+   "fieldname": "locality",
+   "fieldtype": "Data",
+   "label": "Locality",
+   "read_only": 1
+  },
+  {
+   "fieldname": "region",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Region",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "country_code",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Country Code",
+   "length": 2,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "location_updated_at",
+   "fieldtype": "Datetime",
+   "label": "Location Updated At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "longitude",
+   "fieldtype": "Float",
+   "label": "Longitude",
+   "precision": "7",
+   "read_only": 1
+  },
+  {
+   "fieldname": "display_address",
+   "fieldtype": "Small Text",
+   "label": "Display Address",
+   "read_only": 1
+  },
+  {
+   "fieldname": "location_instructions",
+   "fieldtype": "Small Text",
+   "label": "Location Instructions"
+  },
+  {
+   "fieldname": "column_break_iluh",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_knlj",
+   "fieldtype": "Section Break",
+   "label": "Resolved Location"
+  },
+  {
+   "fieldname": "column_break_yppu",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-06-08 22:13:44.667878",
+ "modified": "2026-06-10 17:31:05.105087",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Seller",

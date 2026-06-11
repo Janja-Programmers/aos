@@ -1,7 +1,7 @@
 """
 Update Seller Profile.
 
-Allows sellers to update their business information.
+Allows sellers to update their general business information.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from .constants import UPDATE_MY_SELLER_LIMIT_PER_MINUTE_PER_USER
 
 
 def _file_exists(file_url: str) -> bool:
-    """Check if a file exists in the File doctype."""
+    """Check whether a file URL exists in the File doctype."""
     if not file_url:
         return False
 
@@ -29,7 +29,7 @@ def _file_exists(file_url: str) -> bool:
 
 
 def update_my_seller_impl(**kwargs):
-    """Update seller business profile."""
+    """Update the authenticated seller's general profile."""
 
     current_user, err = require_login()
     if err:
@@ -57,7 +57,10 @@ def update_my_seller_impl(**kwargs):
                 code="NOT_FOUND",
             )
 
-        seller_doc = frappe.get_doc("AOS Seller", seller)
+        seller_doc = frappe.get_doc(
+            "AOS Seller",
+            seller,
+        )
 
         if seller_doc.status != "Active":
             return fail(
@@ -66,13 +69,14 @@ def update_my_seller_impl(**kwargs):
             )
 
         if "business_category" in kwargs:
-            seller_doc.business_category = kwargs.get("business_category")
+            seller_doc.business_category = kwargs.get(
+                "business_category"
+            )
 
         if "about_business" in kwargs:
-            seller_doc.about_business = kwargs.get("about_business")
-
-        if "business_address" in kwargs:
-            seller_doc.business_address = kwargs.get("business_address")
+            seller_doc.about_business = kwargs.get(
+                "about_business"
+            )
 
         if "shop_banner" in kwargs:
             banner = kwargs.get("shop_banner")
@@ -86,7 +90,10 @@ def update_my_seller_impl(**kwargs):
             seller_doc.shop_banner = banner
 
         if "operating_hours" in kwargs:
-            seller_doc.set("operating_hours", kwargs.get("operating_hours"))
+            seller_doc.set(
+                "operating_hours",
+                kwargs.get("operating_hours") or [],
+            )
 
         seller_doc.save(ignore_permissions=True)
         frappe.db.commit()
@@ -96,20 +103,27 @@ def update_my_seller_impl(**kwargs):
             data={
                 "business_category": seller_doc.business_category,
                 "about_business": seller_doc.about_business,
-                "business_address": seller_doc.business_address,
                 "shop_banner": seller_doc.shop_banner,
                 "seller_type": seller_doc.seller_type,
             },
         )
 
     except frappe.ValidationError as ex:
-        return fail(str(ex), code="VALIDATION_ERROR")
+        frappe.db.rollback()
+
+        return fail(
+            str(ex),
+            code="VALIDATION_ERROR",
+        )
 
     except Exception:
+        frappe.db.rollback()
+
         frappe.log_error(
             frappe.get_traceback(),
             "AOS Update Seller Failed",
         )
+
         return fail(
             "Failed to update seller profile.",
             code="INTERNAL_ERROR",

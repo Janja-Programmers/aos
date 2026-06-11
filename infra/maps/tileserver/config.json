@@ -1,0 +1,35 @@
+{
+  "options": {
+    "paths": {
+      "root": "/data",
+      "styles": "styles",
+      "mbtiles": "data"
+    },
+    "frontPage": false,
+    "serveAllStyles": false,
+    "serveAllFonts": false,
+    "serveStaticMaps": false,
+    "allowRemoteMarkerIcons": false,
+    "allowInlineMarkerImages": false,
+    "maxScaleFactor": 2,
+    "maxSize": 1024,
+    "tileMargin": 0,
+    "staticAttributionText": "© OpenStreetMap contributors"
+  },
+  "styles": {
+    "aos": {
+      "style": "aos/style.json",
+      "serve_rendered": false,
+      "serve_data": true,
+      "tilejson": {
+        "type": "baselayer",
+        "bounds": [39.45, -4.35, 39.95, -3.75]
+      }
+    }
+  },
+  "data": {
+    "mombasa": {
+      "mbtiles": "mombasa.mbtiles"
+    }
+  }
+}

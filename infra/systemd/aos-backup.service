@@ -1,0 +1,24 @@
+[Unit]
+Description=AOS production backup
+Requires=docker.service
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aos
+Group=aos
+Environment=AOS_BACKUP_ENV_FILE=/etc/aos/backup.env
+ExecStart=/home/aos/aos/infra/backup/backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/backups/aos /home/aos/frappe-bench /home/aos/aos /var/run/docker.sock
+TimeoutStartSec=6h
+
+[Install]
+WantedBy=multi-user.target

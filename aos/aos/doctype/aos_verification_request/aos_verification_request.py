@@ -122,7 +122,6 @@ class AOSVerificationRequest(Document):
         seller = frappe.get_doc("AOS Seller", self.user)
         seller.seller_type = "Business"
         seller.business_category = self.business_category
-        seller.business_address = self.business_address
         seller.save(ignore_permissions=True)
 
     def _notify_approved(self):

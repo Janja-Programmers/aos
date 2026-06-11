@@ -1,0 +1,32 @@
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${AOS_LIVEKIT_DOMAIN};
+    location /.well-known/acme-challenge/ { root /var/www/letsencrypt; }
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${AOS_LIVEKIT_DOMAIN};
+
+    ssl_certificate /etc/letsencrypt/live/${AOS_LIVEKIT_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${AOS_LIVEKIT_DOMAIN}/privkey.pem;
+    include /etc/nginx/snippets/aos-ssl.conf;
+    include /etc/nginx/snippets/aos-security-headers.conf;
+
+    access_log /var/log/nginx/aos-livekit.access.log;
+    error_log /var/log/nginx/aos-livekit.error.log warn;
+
+    location / {
+        include /etc/nginx/snippets/aos-proxy-common.conf;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_pass http://127.0.0.1:${LIVEKIT_PORT};
+    }
+}

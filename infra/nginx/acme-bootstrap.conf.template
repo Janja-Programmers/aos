@@ -1,0 +1,24 @@
+server {
+    listen 80;
+    listen [::]:80;
+
+    server_name
+        ${AOS_API_DOMAIN}
+        ${AOS_MAPS_DOMAIN}
+        ${AOS_LIVEKIT_DOMAIN}
+        ${AOS_MINIO_DOMAIN};
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+
+        default_type text/plain;
+        try_files $uri =404;
+
+        access_log off;
+        log_not_found off;
+    }
+
+    location / {
+        return 404;
+    }
+}

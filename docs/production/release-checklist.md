@@ -1,0 +1,51 @@
+# AOS Production Release Checklist
+
+## Code and repository
+
+- [ ] Reviewed commit is pushed and tagged
+- [ ] Working tree is clean
+- [ ] No `.env`, credentials, map artifacts, backups, or compiled caches are tracked
+- [ ] `python -m compileall aos` succeeds
+- [ ] Required migrations are reviewed
+
+## Images and configuration
+
+- [ ] Valhalla, Planetiler, and other production images are pinned
+- [ ] `docker compose config` succeeds
+- [ ] No placeholder secret remains
+- [ ] Internal services bind to `127.0.0.1`
+- [ ] LiveKit public ports match firewall rules
+
+## Backup and rollback
+
+- [ ] Fresh backup completed
+- [ ] Backup verification passed
+- [ ] Backup ID recorded
+- [ ] Previous Git commit/image digests recorded
+- [ ] Rollback operator and decision criteria assigned
+
+## Deployment
+
+- [ ] Application code updated
+- [ ] `bench --site <site> migrate` succeeds
+- [ ] Assets build succeeds
+- [ ] Docker services are healthy
+- [ ] Nginx configuration test succeeds
+- [ ] TLS certificates are valid
+
+## Manual map checks
+
+- [ ] Search endpoint works
+- [ ] Reverse geocoding works
+- [ ] Route endpoint works
+- [ ] Seller can set/remove location
+- [ ] Guest can retrieve active seller location
+- [ ] Tile style and vector tiles load over HTTPS
+- [ ] Nominatim and Valhalla are not publicly exposed
+
+## Post-deployment
+
+- [ ] Error logs checked
+- [ ] CPU, RAM, disk and latency checked
+- [ ] Backup timer remains active
+- [ ] Deployed commit and completion time recorded

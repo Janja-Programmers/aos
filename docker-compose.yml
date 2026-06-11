@@ -1,18 +1,42 @@
+name: aos-infrastructure
+
+x-common-logging: &common-logging
+  driver: json-file
+  options:
+    max-size: "${DOCKER_LOG_MAX_SIZE:-20m}"
+    max-file: "${DOCKER_LOG_MAX_FILES:-5}"
+
+x-common-security: &common-security
+  security_opt:
+    - no-new-privileges:true
+
 services:
   qdrant:
     image: qdrant/qdrant:v1.17.1
     container_name: aos-qdrant
     restart: unless-stopped
+
     ports:
-      - "${QDRANT_PORT:-6333}:6333"
+      - "${QDRANT_BIND_ADDRESS:-127.0.0.1}:${QDRANT_PORT:-6333}:6333"
+
     volumes:
       - qdrant_data:/qdrant/storage
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:6333/healthz"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 20s
+
+    mem_limit: "${QDRANT_MEMORY_LIMIT:-1536m}"
+    cpus: "${QDRANT_CPU_LIMIT:-1.50}"
+    pids_limit: "${QDRANT_PIDS_LIMIT:-512}"
+
+    stop_grace_period: 30s
+    logging: *common-logging
+    <<: *common-security
+
     networks:
       - aos_net
 
@@ -20,21 +44,39 @@ services:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: aos-minio
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+
+    command:
+      - server
+      - /data
+      - --console-address
+      - ":9001"
+
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+
     ports:
-      - "${MINIO_API_PORT:-9100}:9000"
-      - "${MINIO_CONSOLE_PORT:-9101}:9001"
+      - "${MINIO_BIND_ADDRESS:-127.0.0.1}:${MINIO_API_PORT:-9100}:9000"
+      - "${MINIO_CONSOLE_BIND_ADDRESS:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9101}:9001"
+
     volumes:
       - minio_data:/data
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 20s
+
+    mem_limit: "${MINIO_MEMORY_LIMIT:-1g}"
+    cpus: "${MINIO_CPU_LIMIT:-1.00}"
+    pids_limit: "${MINIO_PIDS_LIMIT:-512}"
+
+    stop_grace_period: 60s
+    logging: *common-logging
+    <<: *common-security
+
     networks:
       - aos_net
 
@@ -42,18 +84,42 @@ services:
     image: livekit/livekit-server:v1.9.12
     container_name: aos-livekit
     restart: unless-stopped
-    command: --config /etc/livekit/livekit.yaml
+
+    command:
+      - --config
+      - /etc/livekit/livekit.yaml
+
+    environment:
+      LIVEKIT_KEYS: ${LIVEKIT_KEYS:?LIVEKIT_KEYS is required}
+
     ports:
-      - "${LIVEKIT_PORT:-7880}:7880"
-      - "${LIVEKIT_UDP_PORT_START:-50000}-${LIVEKIT_UDP_PORT_END:-50010}:${LIVEKIT_UDP_PORT_START:-50000}-${LIVEKIT_UDP_PORT_END:-50010}/udp"
+      # Signaling is private and proxied by Nginx.
+      - "${LIVEKIT_BIND_ADDRESS:-127.0.0.1}:${LIVEKIT_PORT:-7880}:7880"
+
+      # RTC TCP fallback is accessed directly.
+      - "${LIVEKIT_TCP_BIND_ADDRESS:-0.0.0.0}:${LIVEKIT_TCP_PORT:-7881}:7881/tcp"
+
+      # WebRTC UDP media range is accessed directly.
+      - "${LIVEKIT_UDP_BIND_ADDRESS:-0.0.0.0}:${LIVEKIT_UDP_PORT_START:-50000}-${LIVEKIT_UDP_PORT_END:-50010}:${LIVEKIT_UDP_PORT_START:-50000}-${LIVEKIT_UDP_PORT_END:-50010}/udp"
+
     volumes:
       - ./infra/livekit/livekit.yaml:/etc/livekit/livekit.yaml:ro
+
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:7880"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 20s
+
+    mem_limit: "${LIVEKIT_MEMORY_LIMIT:-1536m}"
+    cpus: "${LIVEKIT_CPU_LIMIT:-2.00}"
+    pids_limit: "${LIVEKIT_PIDS_LIMIT:-1024}"
+
+    stop_grace_period: 60s
+    logging: *common-logging
+    <<: *common-security
+
     networks:
       - aos_net
 
@@ -61,8 +127,10 @@ services:
     build:
       context: ./infra/translation
       dockerfile: Dockerfile
+
     container_name: aos-translation
     restart: unless-stopped
+
     environment:
       TRANSLATION_MODEL_PATH: /models/nllb
       TRANSLATION_MODEL_NAME: ${TRANSLATION_MODEL_NAME:-nllb-200-distilled-1.3B-ct2-int8}
@@ -70,23 +138,182 @@ services:
       TRANSLATION_COMPUTE_TYPE: ${TRANSLATION_COMPUTE_TYPE:-int8}
       TRANSLATION_DEFAULT_SOURCE_LANGUAGE: ${TRANSLATION_DEFAULT_SOURCE_LANGUAGE:-eng_Latn}
       TRANSLATION_MAX_CHARS: ${TRANSLATION_MAX_CHARS:-1000}
+
     ports:
-      - "${TRANSLATION_PORT:-8100}:8000"
+      - "${TRANSLATION_BIND_ADDRESS:-127.0.0.1}:${TRANSLATION_PORT:-8100}:8000"
+
     volumes:
-      - ${TRANSLATION_MODEL_HOST_PATH:-./models/nllb-200-distilled-1.3B-ct2-int8}:/models/nllb:ro
+      - "${TRANSLATION_MODEL_HOST_PATH:-./models/nllb-200-distilled-1.3B-ct2-int8}:/models/nllb:ro"
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 90s
+
+    mem_limit: "${TRANSLATION_MEMORY_LIMIT:-4g}"
+    cpus: "${TRANSLATION_CPU_LIMIT:-3.00}"
+    pids_limit: "${TRANSLATION_PIDS_LIMIT:-1024}"
+
+    stop_grace_period: 60s
+    logging: *common-logging
+    <<: *common-security
+
+    networks:
+      - aos_net
+
+  tileserver:
+    image: ${TILESERVER_IMAGE:?TILESERVER_IMAGE is required}
+    container_name: aos-tileserver
+    restart: unless-stopped
+
+    command:
+      - --config
+      - /data/config.json
+      - --public_url
+      - ${TILESERVER_PUBLIC_URL:?TILESERVER_PUBLIC_URL is required}
+
+    environment:
+      TILESERVER_GL_ALLOWED_HOSTS: ${TILESERVER_ALLOWED_HOSTS:?TILESERVER_ALLOWED_HOSTS is required}
+
+    ports:
+      - "${TILESERVER_BIND_ADDRESS:-127.0.0.1}:${TILESERVER_PORT:-8080}:8080"
+
+    volumes:
+      - ./infra/maps/tileserver/config.json:/data/config.json:ro
+      - ./infra/maps/tileserver/styles:/data/styles:ro
+      - ./maps/tiles:/data/data:ro
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8080/styles/aos/style.json').then(r => { if (!r.ok) process.exit(1); }).catch(() => process.exit(1));",
+        ]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 45s
+
+    mem_limit: "${TILESERVER_MEMORY_LIMIT:-1536m}"
+    cpus: "${TILESERVER_CPU_LIMIT:-2.00}"
+    pids_limit: "${TILESERVER_PIDS_LIMIT:-512}"
+
+    stop_grace_period: 30s
+    logging: *common-logging
+    <<: *common-security
+
+    networks:
+      - aos_net
+
+  nominatim:
+    image: mediagis/nominatim:5.3
+    container_name: aos-nominatim
+    restart: unless-stopped
+
+    environment:
+      PBF_PATH: /data/mombasa.osm.pbf
+      REPLICATION_URL: ""
+      UPDATE_MODE: none
+      REVERSE_ONLY: "false"
+
+      NOMINATIM_PASSWORD: ${NOMINATIM_PASSWORD:?NOMINATIM_PASSWORD is required}
+      IMPORT_STYLE: full
+
+      THREADS: ${NOMINATIM_THREADS:-2}
+      GUNICORN_WORKERS: ${NOMINATIM_WORKERS:-1}
+
+    ports:
+      - "${NOMINATIM_BIND_ADDRESS:-127.0.0.1}:${NOMINATIM_PORT:-8081}:8080"
+
+    volumes:
+      - ./maps/mombasa/mombasa.osm.pbf:/data/mombasa.osm.pbf:ro
+      - nominatim_data:/var/lib/postgresql/16/main
+
+    shm_size: "${NOMINATIM_SHM_SIZE:-1gb}"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/status?format=json"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 5m
+
+    mem_limit: "${NOMINATIM_MEMORY_LIMIT:-3g}"
+    cpus: "${NOMINATIM_CPU_LIMIT:-2.00}"
+    pids_limit: "${NOMINATIM_PIDS_LIMIT:-1024}"
+
+    stop_grace_period: 2m
+    logging: *common-logging
+
+    # Do not apply no-new-privileges to this image. Its startup/import process
+    # creates users and starts its bundled PostgreSQL service.
+
+    networks:
+      - aos_net
+
+  valhalla:
+    image: ${VALHALLA_IMAGE:?VALHALLA_IMAGE must be pinned to an immutable digest}
+    container_name: aos-valhalla
+    restart: unless-stopped
+
+    environment:
+      # Runtime serves already-built routing artifacts.
+      tile_urls: ""
+      use_tiles_ignore_pbf: "True"
+      force_rebuild: "False"
+
+      build_admins: "True"
+      build_time_zones: "True"
+      build_elevation: "False"
+      build_transit: "False"
+      build_tar: "True"
+
+      serve_tiles: "True"
+      server_threads: ${VALHALLA_THREADS:-2}
+      tileset_name: ${VALHALLA_TILESET_NAME:-mombasa_valhalla_tiles}
+
+      update_existing_config: "True"
+      use_default_speeds_config: "True"
+
+    ports:
+      - "${VALHALLA_BIND_ADDRESS:-127.0.0.1}:${VALHALLA_PORT:-8002}:8002"
+
+    volumes:
+      - ./maps/valhalla:/custom_files:rw
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8002/status"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 5m
+
+    mem_limit: "${VALHALLA_MEMORY_LIMIT:-2g}"
+    cpus: "${VALHALLA_CPU_LIMIT:-2.00}"
+    pids_limit: "${VALHALLA_PIDS_LIMIT:-1024}"
+
+    stop_grace_period: 60s
+    logging: *common-logging
+    <<: *common-security
+
     networks:
       - aos_net
 
 volumes:
   qdrant_data:
+    name: aos_qdrant_data
+
   minio_data:
+    name: aos_minio_data
+
+  nominatim_data:
+    name: aos_nominatim_data
 
 networks:
   aos_net:
+    name: aos_net
     driver: bridge

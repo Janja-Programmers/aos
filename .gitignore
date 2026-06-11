@@ -53,3 +53,14 @@ jspm_packages/
 
 # Aider AI Chat
 .aider*
+
+# Heavy local AI models
+models/*
+!models/.gitkeep
+
+# Heavy local map data
+maps/*
+!maps/.gitkeep
+
+# Local map build manifest with exact source checksums and image digests
+infra/maps/manifest.env

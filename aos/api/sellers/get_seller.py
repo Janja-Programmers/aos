@@ -5,8 +5,12 @@ Used in:
 - Seller Storefront
 - Ad detail seller card
 
-Returns exact numeric metrics together with compact display values,
-including seller chat response metrics.
+Returns:
+- Seller profile information
+- Social metrics
+- Rating and review metrics
+- Chat response metrics
+- Public seller storefront location
 """
 
 from __future__ import annotations
@@ -23,7 +27,10 @@ from aos.api.shared.formatters import (
     to_float,
     to_non_negative_int,
 )
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.rate_limit import (
+    rate_limit,
+    request_ip,
+)
 from aos.api.shared.responses import fail, ok
 from aos.api.social.relationship import build_relationship_status
 from aos.services.seller_response_metrics import (
@@ -32,6 +39,7 @@ from aos.services.seller_response_metrics import (
 )
 
 from .constants import GET_SELLER_LIMIT_PER_MINUTE_PER_IP
+from .serializers import serialize_seller_location
 
 
 def get_seller_impl(**kwargs):
@@ -47,8 +55,10 @@ def get_seller_impl(**kwargs):
             code="VALIDATION_ERROR",
         )
 
+    ip = request_ip()
+
     rl = rate_limit(
-        key="aos:sellers:get_seller:ip",
+        key=f"aos:sellers:get_seller:ip:{ip}",
         ttl_seconds=60,
         limit=GET_SELLER_LIMIT_PER_MINUTE_PER_IP,
         message="Too many requests. Please try again shortly.",
@@ -96,19 +106,23 @@ def get_seller_impl(**kwargs):
         )
 
         viewer = current_user()
+
         is_logged_in = bool(
             viewer
             and viewer != "Guest"
         )
+
         can_edit = (
             is_logged_in
             and viewer == seller_doc.user
         )
 
-        relationship = _build_seller_relationship_payload(
-            current_user_value=viewer,
-            target_user=seller_doc.user,
-            is_logged_in=is_logged_in,
+        relationship = (
+            _build_seller_relationship_payload(
+                current_user_value=viewer,
+                target_user=seller_doc.user,
+                is_logged_in=is_logged_in,
+            )
         )
 
         rating = to_float(
@@ -118,19 +132,23 @@ def get_seller_impl(**kwargs):
         total_reviews = to_non_negative_int(
             seller_doc.total_reviews
         )
+
         total_followers = to_non_negative_int(
             profile.get("total_followers")
             if profile
             else 0
         )
+
         total_following = to_non_negative_int(
             profile.get("total_following")
             if profile
             else 0
         )
+
         total_friends = _get_total_friends(
             seller_doc.user
         )
+
         total_ads = to_non_negative_int(
             seller_doc.total_ads
         )
@@ -138,12 +156,15 @@ def get_seller_impl(**kwargs):
         response_time_seconds = to_non_negative_int(
             seller_doc.chat_response_time_seconds
         )
+
         response_rate = _clamp_percentage(
             seller_doc.chat_response_rate
         )
+
         response_sample_size = to_non_negative_int(
             seller_doc.chat_response_sample_size
         )
+
         response_requests = to_non_negative_int(
             seller_doc.chat_response_requests
         )
@@ -175,13 +196,15 @@ def get_seller_impl(**kwargs):
                 "about_business": (
                     seller_doc.about_business
                 ),
-                "business_address": (
-                    seller_doc.business_address
-                ),
                 "is_verified": bool(
                     profile.get("is_verified")
                     if profile
                     else False
+                ),
+
+                # Public storefront location.
+                "location": serialize_seller_location(
+                    seller_doc
                 ),
 
                 # Rating
@@ -247,7 +270,9 @@ def get_seller_impl(**kwargs):
                     response_rate,
                     response_requests=response_requests,
                 ),
-                "response_sample_size": response_sample_size,
+                "response_sample_size": (
+                    response_sample_size
+                ),
                 "response_requests": response_requests,
                 "response_metrics_updated_at": (
                     seller_doc.response_metrics_updated_at
@@ -393,5 +418,8 @@ def _clamp_percentage(
 
     return max(
         0.0,
-        min(percentage, 100.0),
+        min(
+            percentage,
+            100.0,
+        ),
     )
