@@ -1,4 +1,4 @@
-name: aos-infrastructure
+name: aos
 
 x-common-logging: &common-logging
   driver: json-file
