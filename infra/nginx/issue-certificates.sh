@@ -170,8 +170,8 @@ validate_email() {
 certificate_exists() {
     local domain="$1"
 
-    [[ -s "/etc/letsencrypt/live/${domain}/fullchain.pem" ]] &&
-        [[ -s "/etc/letsencrypt/live/${domain}/privkey.pem" ]]
+    sudo test -s "/etc/letsencrypt/live/${domain}/fullchain.pem" &&
+        sudo test -s "/etc/letsencrypt/live/${domain}/privkey.pem"
 }
 
 

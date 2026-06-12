@@ -2,8 +2,17 @@ server {
     listen 80;
     listen [::]:80;
     server_name ${AOS_MAPS_DOMAIN};
-    location /.well-known/acme-challenge/ { root /var/www/letsencrypt; }
-    location / { return 301 https://$host$request_uri; }
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        default_type text/plain;
+        try_files $uri =404;
+        access_log off;
+        log_not_found off;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
 server {
@@ -35,6 +44,9 @@ server {
 
         include /etc/nginx/snippets/aos-proxy-common.conf;
         proxy_buffering on;
+        proxy_connect_timeout ${NGINX_PROXY_CONNECT_TIMEOUT};
+        proxy_read_timeout ${NGINX_PROXY_READ_TIMEOUT};
+        proxy_send_timeout ${NGINX_PROXY_SEND_TIMEOUT};
         proxy_cache_valid 200 1h;
         proxy_set_header Accept-Encoding "";
         add_header Access-Control-Allow-Origin "*" always;
@@ -44,6 +56,9 @@ server {
 
     location ~* ^/(data|fonts|sprites)/ {
         include /etc/nginx/snippets/aos-proxy-common.conf;
+        proxy_connect_timeout ${NGINX_PROXY_CONNECT_TIMEOUT};
+        proxy_read_timeout ${NGINX_PROXY_READ_TIMEOUT};
+        proxy_send_timeout ${NGINX_PROXY_SEND_TIMEOUT};
         add_header Access-Control-Allow-Origin "*" always;
         add_header Cache-Control "public, max-age=86400" always;
         expires 1d;

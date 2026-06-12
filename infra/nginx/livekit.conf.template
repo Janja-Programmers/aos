@@ -2,8 +2,17 @@ server {
     listen 80;
     listen [::]:80;
     server_name ${AOS_LIVEKIT_DOMAIN};
-    location /.well-known/acme-challenge/ { root /var/www/letsencrypt; }
-    location / { return 301 https://$host$request_uri; }
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        default_type text/plain;
+        try_files $uri =404;
+        access_log off;
+        log_not_found off;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
 server {
@@ -25,6 +34,7 @@ server {
         proxy_set_header Connection $connection_upgrade;
         proxy_buffering off;
         proxy_request_buffering off;
+        proxy_connect_timeout ${NGINX_PROXY_CONNECT_TIMEOUT};
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
         proxy_pass http://127.0.0.1:${LIVEKIT_PORT};
