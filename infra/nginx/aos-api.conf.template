@@ -1,11 +1,15 @@
 server {
     listen 80;
     listen [::]:80;
+
     server_name ${AOS_API_DOMAIN};
+
     location ^~ /.well-known/acme-challenge/ {
         root /var/www/letsencrypt;
         default_type text/plain;
+
         try_files $uri =404;
+
         access_log off;
         log_not_found off;
     }
@@ -15,46 +19,67 @@ server {
     }
 }
 
+
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
+
     server_name ${AOS_API_DOMAIN};
 
-    ssl_certificate /etc/letsencrypt/live/${AOS_API_DOMAIN}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${AOS_API_DOMAIN}/privkey.pem;
+    ssl_certificate
+        /etc/letsencrypt/live/${AOS_API_DOMAIN}/fullchain.pem;
+
+    ssl_certificate_key
+        /etc/letsencrypt/live/${AOS_API_DOMAIN}/privkey.pem;
+
     include /etc/nginx/snippets/aos-ssl.conf;
     include /etc/nginx/snippets/aos-security-headers.conf;
 
     client_max_body_size ${NGINX_CLIENT_MAX_BODY_SIZE};
-    access_log /var/log/nginx/aos-api.access.log;
-    error_log /var/log/nginx/aos-api.error.log warn;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        default_type text/plain;
+
+        try_files $uri =404;
+
+        access_log off;
+        log_not_found off;
+    }
 
     location /socket.io {
         include /etc/nginx/snippets/aos-proxy-common.conf;
+
+        proxy_set_header Host ${FRAPPE_SITE_NAME};
+        proxy_set_header X-Frappe-Site-Name ${FRAPPE_SITE_NAME};
+
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
-        proxy_buffering off;
-        proxy_connect_timeout ${NGINX_PROXY_CONNECT_TIMEOUT};
-        proxy_read_timeout ${NGINX_PROXY_READ_TIMEOUT};
-        proxy_send_timeout ${NGINX_PROXY_SEND_TIMEOUT};
-        proxy_pass http://${FRAPPE_SOCKETIO_HOST}:${FRAPPE_SOCKETIO_PORT};
-    }
 
-    location /assets/ {
-        alias ${FRAPPE_BENCH_PATH}/sites/assets/;
-        try_files $uri =404;
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-        access_log off;
+        proxy_buffering off;
+
+        proxy_connect_timeout ${NGINX_PROXY_CONNECT_TIMEOUT};
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+
+        proxy_pass
+            http://${FRAPPE_SOCKETIO_HOST}:${FRAPPE_SOCKETIO_PORT};
     }
 
     location / {
         include /etc/nginx/snippets/aos-proxy-common.conf;
-        proxy_set_header X-Frappe-Site-Name $host;
+
+        # The public API hostname is not the Frappe site name.
+        # Force Frappe to resolve the actual staging site.
+        proxy_set_header Host ${FRAPPE_SITE_NAME};
+        proxy_set_header X-Frappe-Site-Name ${FRAPPE_SITE_NAME};
+
         proxy_buffering off;
+
         proxy_connect_timeout ${NGINX_PROXY_CONNECT_TIMEOUT};
         proxy_read_timeout ${NGINX_PROXY_READ_TIMEOUT};
         proxy_send_timeout ${NGINX_PROXY_SEND_TIMEOUT};
+
         proxy_pass http://${FRAPPE_WEB_HOST}:${FRAPPE_WEB_PORT};
     }
 }

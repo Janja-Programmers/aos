@@ -134,10 +134,9 @@ render_file() {
   local source_file="$1"
   local destination_file="$2"
   local substitution_variables="$3"
+  local temporary_file
 
   require_file "${source_file}" "Nginx template"
-
-  local temporary_file
 
   temporary_file="$(
     mktemp
@@ -159,8 +158,8 @@ render_file() {
 render_site() {
   local source_file="$1"
   local destination_name="$2"
-
   local destination_file
+
   destination_file="${NGINX_SITES_AVAILABLE_DIR}/${destination_name}"
 
   render_file \
@@ -204,7 +203,6 @@ install_static_snippet() {
 
 validate_certificate() {
   local domain="$1"
-
   local certificate_dir
   local fullchain_file
   local private_key_file
@@ -241,7 +239,7 @@ set +a
 # REQUIRED TOOLS
 require_command \
   "sudo" \
-  "Install sudo or run the script in an environment where sudo is available."
+  "Install sudo or run the script where sudo is available."
 
 require_command \
   "nginx" \
@@ -251,11 +249,8 @@ require_command \
   "envsubst" \
   "Install envsubst first: sudo apt install -y gettext-base"
 
-require_command \
-  "mktemp"
-
-require_command \
-  "systemctl"
+require_command "mktemp"
+require_command "systemctl"
 
 
 # REQUIRED ENVIRONMENT VARIABLES
@@ -266,6 +261,7 @@ required_variables=(
   AOS_MINIO_DOMAIN
 
   FRAPPE_BENCH_PATH
+  FRAPPE_SITE_NAME
   FRAPPE_WEB_HOST
   FRAPPE_WEB_PORT
   FRAPPE_SOCKETIO_HOST
@@ -302,6 +298,10 @@ validate_domain \
 validate_domain \
   "${AOS_MINIO_DOMAIN}" \
   "AOS_MINIO_DOMAIN"
+
+validate_domain \
+  "${FRAPPE_SITE_NAME}" \
+  "FRAPPE_SITE_NAME"
 
 validate_port \
   "${FRAPPE_WEB_PORT}" \
@@ -403,13 +403,11 @@ sudo install \
 
 
 # SUBSTITUTION VARIABLE SETS
-# Restrict envsubst to these variables so native Nginx variables such as
-# $host, $request_uri, $remote_addr, and $http_upgrade remain unchanged.
-PROXY_SNIPPET_SUBSTITUTION_VARIABLES='
-${NGINX_PROXY_CONNECT_TIMEOUT}
-${NGINX_PROXY_READ_TIMEOUT}
-${NGINX_PROXY_SEND_TIMEOUT}
-'
+
+# This shared snippet currently contains only ordinary Nginx variables.
+# Keeping envsubst restricted prevents values such as $host and $remote_addr
+# from being expanded by the shell.
+PROXY_SNIPPET_SUBSTITUTION_VARIABLES=''
 
 SITE_SUBSTITUTION_VARIABLES='
 ${AOS_API_DOMAIN}
@@ -418,6 +416,7 @@ ${AOS_LIVEKIT_DOMAIN}
 ${AOS_MINIO_DOMAIN}
 
 ${FRAPPE_BENCH_PATH}
+${FRAPPE_SITE_NAME}
 ${FRAPPE_WEB_HOST}
 ${FRAPPE_WEB_PORT}
 ${FRAPPE_SOCKETIO_HOST}
@@ -473,16 +472,15 @@ render_site \
 
 # REMOVE DEFAULT SITE
 if [[ -L "${NGINX_SITES_ENABLED_DIR}/default" ]]; then
-  sudo rm -f \
-    "${NGINX_SITES_ENABLED_DIR}/default"
+  sudo rm -f "${NGINX_SITES_ENABLED_DIR}/default"
 fi
 
 
 # VERIFY RENDERING
 if sudo grep -R \
   --line-number \
-  --fixed-strings \
-  '${NGINX_' \
+  --extended-regexp \
+  '\$\{(AOS|FRAPPE|TILESERVER|LIVEKIT|MINIO|NGINX)_[A-Z0-9_]+\}' \
   "${NGINX_SNIPPETS_DIR}/aos-proxy-common.conf" \
   "${NGINX_SITES_AVAILABLE_DIR}/aos-api.conf" \
   "${NGINX_SITES_AVAILABLE_DIR}/aos-maps.conf" \
@@ -517,6 +515,9 @@ echo "  API:     https://${AOS_API_DOMAIN}"
 echo "  Maps:    https://${AOS_MAPS_DOMAIN}"
 echo "  LiveKit: https://${AOS_LIVEKIT_DOMAIN}"
 echo "  Files:   https://${AOS_MINIO_DOMAIN}"
+echo
+echo "Frappe site:"
+echo "  ${FRAPPE_SITE_NAME}"
 echo
 echo "Rendered proxy snippet:"
 echo "  ${NGINX_SNIPPETS_DIR}/aos-proxy-common.conf"
