@@ -19,14 +19,59 @@ BOOTSTRAP_AVAILABLE="/etc/nginx/sites-available/aos-acme-bootstrap.conf"
 BOOTSTRAP_ENABLED="/etc/nginx/sites-enabled/aos-acme-bootstrap.conf"
 
 LETSENCRYPT_WEBROOT="/var/www/letsencrypt"
+LETSENCRYPT_CHALLENGE_DIR="${LETSENCRYPT_WEBROOT}/.well-known/acme-challenge"
 
 
-# ERROR HANDLING
+# RUNTIME STATE
+
+temporary_file=""
+challenge_file=""
+bootstrap_installed=false
+
+
+# CLEANUP AND ERROR HANDLING
+
+cleanup_challenge_file() {
+    if [[ -n "${challenge_file}" ]]; then
+        sudo rm -f \
+            "${LETSENCRYPT_CHALLENGE_DIR}/${challenge_file}" \
+            2>/dev/null || true
+    fi
+}
+
+
+cleanup_temporary_file() {
+    if [[ -n "${temporary_file}" ]]; then
+        rm -f "${temporary_file}" 2>/dev/null || true
+    fi
+}
+
+
+cleanup_bootstrap() {
+    if [[ "${bootstrap_installed}" == true ]]; then
+        sudo rm -f \
+            "${BOOTSTRAP_ENABLED}" \
+            "${BOOTSTRAP_AVAILABLE}" \
+            2>/dev/null || true
+
+        bootstrap_installed=false
+    fi
+}
+
+
+reload_nginx_if_valid() {
+    if sudo nginx -t >/dev/null 2>&1; then
+        sudo systemctl reload nginx >/dev/null 2>&1 || true
+    fi
+}
+
 
 cleanup() {
-    sudo rm -f "${BOOTSTRAP_ENABLED}"
-    sudo rm -f "${BOOTSTRAP_AVAILABLE}"
+    cleanup_challenge_file
+    cleanup_temporary_file
+    cleanup_bootstrap
 }
+
 
 on_error() {
     local exit_code=$?
@@ -37,16 +82,14 @@ on_error() {
     echo "Line: ${line_number}" >&2
     echo "Exit code: ${exit_code}" >&2
 
-    cleanup || true
-
-    if sudo nginx -t >/dev/null 2>&1; then
-        sudo systemctl reload nginx || true
-    fi
+    cleanup
+    reload_nginx_if_valid
 
     exit "${exit_code}"
 }
 
 trap 'on_error ${LINENO}' ERR
+trap cleanup EXIT
 
 
 # HELPERS
@@ -111,11 +154,24 @@ validate_domain() {
 }
 
 
+validate_email() {
+    local email="$1"
+
+    if [[ "${email}" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]; then
+        return
+    fi
+
+    echo "TLS_ADMIN_EMAIL is not a valid email address:" >&2
+    echo "  ${email}" >&2
+    exit 1
+}
+
+
 certificate_exists() {
     local domain="$1"
 
     [[ -s "/etc/letsencrypt/live/${domain}/fullchain.pem" ]] &&
-    [[ -s "/etc/letsencrypt/live/${domain}/privkey.pem" ]]
+        [[ -s "/etc/letsencrypt/live/${domain}/privkey.pem" ]]
 }
 
 
@@ -142,9 +198,38 @@ issue_certificate() {
 }
 
 
+verify_acme_domain() {
+    local domain="$1"
+    local response
+
+    response="$(
+        curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --connect-timeout 5 \
+            --max-time 15 \
+            --resolve "${domain}:80:127.0.0.1" \
+            "http://${domain}/.well-known/acme-challenge/${challenge_file}"
+    )"
+
+    if [[ "${response}" != "aos-acme-ok" ]]; then
+        echo "ACME challenge verification failed for:" >&2
+        echo "  ${domain}" >&2
+        exit 1
+    fi
+
+    echo "ACME challenge verified:"
+    echo "  ${domain}"
+}
+
+
 # LOAD ENVIRONMENT
 
-require_file "${ENV_FILE}" "environment file"
+require_file \
+    "${ENV_FILE}" \
+    "environment file"
 
 set -a
 
@@ -170,6 +255,13 @@ require_command \
 require_command \
     "envsubst" \
     "Install envsubst: sudo apt install -y gettext-base"
+
+require_command \
+    "curl" \
+    "Install curl: sudo apt install -y curl"
+
+require_command \
+    "mktemp"
 
 require_command \
     "systemctl"
@@ -205,6 +297,8 @@ validate_domain \
     "${AOS_MINIO_DOMAIN}" \
     "AOS_MINIO_DOMAIN"
 
+validate_email "${TLS_ADMIN_EMAIL}"
+
 require_file \
     "${BOOTSTRAP_TEMPLATE}" \
     "ACME bootstrap Nginx template"
@@ -215,7 +309,9 @@ require_file \
 sudo install \
     -d \
     -m 0755 \
-    "${LETSENCRYPT_WEBROOT}"
+    "${LETSENCRYPT_WEBROOT}" \
+    "${LETSENCRYPT_WEBROOT}/.well-known" \
+    "${LETSENCRYPT_CHALLENGE_DIR}"
 
 sudo install \
     -d \
@@ -240,11 +336,14 @@ sudo install \
     "${temporary_file}" \
     "${BOOTSTRAP_AVAILABLE}"
 
-rm -f "${temporary_file}"
-
 sudo ln -sfn \
     "${BOOTSTRAP_AVAILABLE}" \
     "${BOOTSTRAP_ENABLED}"
+
+bootstrap_installed=true
+
+cleanup_temporary_file
+temporary_file=""
 
 
 # START OR RELOAD NGINX
@@ -263,34 +362,17 @@ fi
 challenge_file="aos-acme-test-$$"
 
 printf 'aos-acme-ok\n' |
-sudo tee \
-    "${LETSENCRYPT_WEBROOT}/${challenge_file}" \
-    >/dev/null
+    sudo tee \
+        "${LETSENCRYPT_CHALLENGE_DIR}/${challenge_file}" \
+        >/dev/null
 
-for domain in \
-    "${AOS_API_DOMAIN}" \
-    "${AOS_MAPS_DOMAIN}" \
-    "${AOS_LIVEKIT_DOMAIN}" \
-    "${AOS_MINIO_DOMAIN}"
-do
-    response="$(
-        curl \
-            --fail \
-            --silent \
-            --show-error \
-            --resolve "${domain}:80:127.0.0.1" \
-            "http://${domain}/.well-known/acme-challenge/${challenge_file}"
-    )"
+verify_acme_domain "${AOS_API_DOMAIN}"
+verify_acme_domain "${AOS_MAPS_DOMAIN}"
+verify_acme_domain "${AOS_LIVEKIT_DOMAIN}"
+verify_acme_domain "${AOS_MINIO_DOMAIN}"
 
-    if [[ "${response}" != "aos-acme-ok" ]]; then
-        echo "ACME challenge verification failed for:" >&2
-        echo "  ${domain}" >&2
-        exit 1
-    fi
-done
-
-sudo rm -f \
-    "${LETSENCRYPT_WEBROOT}/${challenge_file}"
+cleanup_challenge_file
+challenge_file=""
 
 
 # ISSUE CERTIFICATES
@@ -303,7 +385,7 @@ issue_certificate "${AOS_MINIO_DOMAIN}"
 
 # REMOVE TEMPORARY CONFIGURATION
 
-cleanup
+cleanup_bootstrap
 
 sudo nginx -t
 sudo systemctl reload nginx
