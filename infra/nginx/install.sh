@@ -3,10 +3,7 @@
 set -Eeuo pipefail
 
 
-# =============================================================================
 # PATHS
-# =============================================================================
-
 ROOT_DIR="$(
   cd "$(dirname "${BASH_SOURCE[0]}")/../.."
   pwd
@@ -21,12 +18,10 @@ NGINX_SITES_AVAILABLE_DIR="/etc/nginx/sites-available"
 NGINX_SITES_ENABLED_DIR="/etc/nginx/sites-enabled"
 
 LETSENCRYPT_WEBROOT="/var/www/letsencrypt"
+LETSENCRYPT_CHALLENGE_DIR="${LETSENCRYPT_WEBROOT}/.well-known/acme-challenge"
 
 
-# =============================================================================
 # ERROR HANDLING
-# =============================================================================
-
 on_error() {
   local exit_code=$?
   local line_number="${1:-unknown}"
@@ -42,10 +37,7 @@ on_error() {
 trap 'on_error ${LINENO}' ERR
 
 
-# =============================================================================
 # HELPERS
-# =============================================================================
-
 require_command() {
   local command_name="$1"
   local installation_hint="${2:-}"
@@ -214,22 +206,28 @@ validate_certificate() {
   local domain="$1"
 
   local certificate_dir
+  local fullchain_file
+  local private_key_file
+
   certificate_dir="/etc/letsencrypt/live/${domain}"
+  fullchain_file="${certificate_dir}/fullchain.pem"
+  private_key_file="${certificate_dir}/privkey.pem"
 
-  require_file \
-    "${certificate_dir}/fullchain.pem" \
-    "TLS certificate for ${domain}"
+  if ! sudo test -s "${fullchain_file}"; then
+    echo "Missing TLS certificate for ${domain}:" >&2
+    echo "  ${fullchain_file}" >&2
+    exit 1
+  fi
 
-  require_file \
-    "${certificate_dir}/privkey.pem" \
-    "TLS private key for ${domain}"
+  if ! sudo test -s "${private_key_file}"; then
+    echo "Missing TLS private key for ${domain}:" >&2
+    echo "  ${private_key_file}" >&2
+    exit 1
+  fi
 }
 
 
-# =============================================================================
 # LOAD ENVIRONMENT
-# =============================================================================
-
 require_file "${ENV_FILE}" "environment file"
 
 set -a
@@ -240,10 +238,7 @@ source "${ENV_FILE}"
 set +a
 
 
-# =============================================================================
 # REQUIRED TOOLS
-# =============================================================================
-
 require_command \
   "sudo" \
   "Install sudo or run the script in an environment where sudo is available."
@@ -263,10 +258,7 @@ require_command \
   "systemctl"
 
 
-# =============================================================================
 # REQUIRED ENVIRONMENT VARIABLES
-# =============================================================================
-
 required_variables=(
   AOS_API_DOMAIN
   AOS_MAPS_DOMAIN
@@ -294,10 +286,7 @@ for variable_name in "${required_variables[@]}"; do
 done
 
 
-# =============================================================================
 # VALUE VALIDATION
-# =============================================================================
-
 validate_domain \
   "${AOS_API_DOMAIN}" \
   "AOS_API_DOMAIN"
@@ -353,10 +342,7 @@ if [[ ! -d "${FRAPPE_BENCH_PATH}" ]]; then
 fi
 
 
-# =============================================================================
 # REQUIRED SOURCE FILES
-# =============================================================================
-
 require_file \
   "${NGINX_DIR}/aos-api.conf.template" \
   "AOS API Nginx template"
@@ -390,10 +376,7 @@ require_file \
   "WebSocket map configuration"
 
 
-# =============================================================================
 # TLS CERTIFICATES
-# =============================================================================
-
 domains=(
   "${AOS_API_DOMAIN}"
   "${AOS_MAPS_DOMAIN}"
@@ -406,10 +389,7 @@ for domain in "${domains[@]}"; do
 done
 
 
-# =============================================================================
 # CREATE NGINX DIRECTORIES
-# =============================================================================
-
 sudo install \
   -d \
   -m 0755 \
@@ -417,13 +397,12 @@ sudo install \
   "${NGINX_CONF_D_DIR}" \
   "${NGINX_SITES_AVAILABLE_DIR}" \
   "${NGINX_SITES_ENABLED_DIR}" \
-  "${LETSENCRYPT_WEBROOT}"
+  "${LETSENCRYPT_WEBROOT}" \
+  "${LETSENCRYPT_WEBROOT}/.well-known" \
+  "${LETSENCRYPT_CHALLENGE_DIR}"
 
 
-# =============================================================================
 # SUBSTITUTION VARIABLE SETS
-# =============================================================================
-
 # Restrict envsubst to these variables so native Nginx variables such as
 # $host, $request_uri, $remote_addr, and $http_upgrade remain unchanged.
 PROXY_SNIPPET_SUBSTITUTION_VARIABLES='
@@ -455,10 +434,7 @@ ${NGINX_PROXY_SEND_TIMEOUT}
 '
 
 
-# =============================================================================
 # INSTALL SHARED CONFIGURATION
-# =============================================================================
-
 render_proxy_common_snippet
 
 install_static_snippet \
@@ -477,10 +453,7 @@ install_static_snippet \
   "WebSocket map configuration"
 
 
-# =============================================================================
 # RENDER SITE CONFIGURATIONS
-# =============================================================================
-
 render_site \
   "${NGINX_DIR}/aos-api.conf.template" \
   "aos-api.conf"
@@ -498,20 +471,14 @@ render_site \
   "aos-minio.conf"
 
 
-# =============================================================================
 # REMOVE DEFAULT SITE
-# =============================================================================
-
 if [[ -L "${NGINX_SITES_ENABLED_DIR}/default" ]]; then
   sudo rm -f \
     "${NGINX_SITES_ENABLED_DIR}/default"
 fi
 
 
-# =============================================================================
 # VERIFY RENDERING
-# =============================================================================
-
 if sudo grep -R \
   --line-number \
   --fixed-strings \
@@ -527,10 +494,7 @@ then
 fi
 
 
-# =============================================================================
 # VALIDATE AND RELOAD NGINX
-# =============================================================================
-
 echo "Validating Nginx configuration..."
 
 sudo nginx -t
@@ -544,10 +508,7 @@ else
 fi
 
 
-# =============================================================================
 # RESULT
-# =============================================================================
-
 echo
 echo "Nginx configurations installed successfully."
 echo
