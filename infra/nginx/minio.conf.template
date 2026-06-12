@@ -1,11 +1,15 @@
 server {
     listen 80;
     listen [::]:80;
+
     server_name ${AOS_MINIO_DOMAIN};
+
     location ^~ /.well-known/acme-challenge/ {
         root /var/www/letsencrypt;
         default_type text/plain;
+
         try_files $uri =404;
+
         access_log off;
         log_not_found off;
     }
@@ -15,29 +19,58 @@ server {
     }
 }
 
+
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
+
     server_name ${AOS_MINIO_DOMAIN};
 
-    ssl_certificate /etc/letsencrypt/live/${AOS_MINIO_DOMAIN}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${AOS_MINIO_DOMAIN}/privkey.pem;
+    ssl_certificate
+        /etc/letsencrypt/live/${AOS_MINIO_DOMAIN}/fullchain.pem;
+
+    ssl_certificate_key
+        /etc/letsencrypt/live/${AOS_MINIO_DOMAIN}/privkey.pem;
+
     include /etc/nginx/snippets/aos-ssl.conf;
     include /etc/nginx/snippets/aos-security-headers.conf;
 
     client_max_body_size ${NGINX_CLIENT_MAX_BODY_SIZE};
+
     access_log /var/log/nginx/aos-minio.access.log;
     error_log /var/log/nginx/aos-minio.error.log warn;
 
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        default_type text/plain;
+
+        try_files $uri =404;
+
+        access_log off;
+        log_not_found off;
+    }
+
     location / {
-        include /etc/nginx/snippets/aos-proxy-common.conf;
+        proxy_pass http://127.0.0.1:${MINIO_API_PORT};
+
+        proxy_http_version 1.1;
+
         proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-Port $server_port;
+
+        proxy_set_header Connection "";
+
         proxy_buffering off;
         proxy_request_buffering off;
+
+        chunked_transfer_encoding off;
+
         proxy_connect_timeout ${NGINX_PROXY_CONNECT_TIMEOUT};
-        proxy_read_timeout ${NGINX_PROXY_READ_TIMEOUT};
-        proxy_send_timeout ${NGINX_PROXY_SEND_TIMEOUT};
-        proxy_pass http://127.0.0.1:${MINIO_API_PORT};
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
     }
 }
