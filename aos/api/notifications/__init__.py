@@ -10,6 +10,8 @@ import frappe
 
 # Notification APIs
 from .notification import (
+    clear_notifications_impl,
+    delete_notification_impl,
     list_notifications_impl,
     mark_notification_read_impl,
     mark_all_notifications_read_impl,
@@ -47,3 +49,13 @@ def mark_notification_read(**kwargs):
 @frappe.whitelist(methods=["POST"])
 def mark_all_notifications_read(**kwargs):
     return mark_all_notifications_read_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def delete_notification(**kwargs):
+    return delete_notification_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def clear_notifications(**kwargs):
+    return clear_notifications_impl(**kwargs)
