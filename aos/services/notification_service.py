@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import frappe
+
 from aos.services.push_service import PushService
 
 
@@ -9,14 +10,18 @@ class NotificationService:
     Central notification orchestrator.
 
     Responsibilities:
-    - Create AOS Notification record
-    - Send push notification (FCM)
+    - Create persistent AOS Notification records
+    - Send push notifications through FCM
+    - Send transient push-only events when persistence is not appropriate
 
     Notes:
     - `user` should always be a real User ID/email recipient.
     - `actor` should also be a real User ID/email when available.
     - Seller docnames should not be passed as notification users/actors unless
       that seller docname is intentionally the same as the User ID.
+    - Incoming-call events are transient and must not be stored as
+      AOS Notification records.
+    - Missed-call events remain persistent notifications.
     """
 
     # CALL PUSH CONFIG
@@ -52,7 +57,7 @@ class NotificationService:
         payload: dict | None = None,
     ):
         """
-        Create notification record.
+        Create a persistent AOS Notification record.
         """
         if not user:
             return None
@@ -90,7 +95,7 @@ class NotificationService:
         android_notification_priority: str | None = None,
     ):
         """
-        Deliver notification via push.
+        Deliver a notification or transient event through push.
 
         Optional push options are mainly used by incoming calls.
         PushService translates these into Firebase Admin SDK platform configs.
@@ -111,7 +116,7 @@ class NotificationService:
             android_notification_priority=android_notification_priority,
         )
 
-    # GENERIC ENTRY POINT
+    # GENERIC ENTRY POINTS
     @classmethod
     def notify(
         cls,
@@ -128,16 +133,19 @@ class NotificationService:
         android_channel_id: str | None = None,
         android_notification_priority: str | None = None,
     ):
+        """
+        Create a persistent notification and deliver its push notification.
+        """
         if not user:
             return None
 
         payload = payload or {}
 
-        # Prevent self-notifications before both DB + push.
+        # Prevent self-notifications before both DB persistence and push.
         if actor and actor == user:
             return None
 
-        # 1. Save notification.
+        # 1. Save persistent notification.
         doc = cls._create_notification(
             user=user,
             type=type,
@@ -147,7 +155,7 @@ class NotificationService:
             payload=payload,
         )
 
-        # 2. Push notification.
+        # 2. Deliver push notification.
         cls._deliver(
             user=user,
             event=event or type,
@@ -162,6 +170,50 @@ class NotificationService:
 
         return doc
 
+    @classmethod
+    def deliver_transient(
+        cls,
+        *,
+        user: str,
+        event: str,
+        title: str,
+        body: str,
+        actor: str | None = None,
+        payload: dict | None = None,
+        priority: str | None = None,
+        ttl_seconds: int | None = None,
+        android_channel_id: str | None = None,
+        android_notification_priority: str | None = None,
+    ):
+        """
+        Deliver a transient push event without creating an
+        AOS Notification record.
+
+        Use this for short-lived events such as incoming calls where the event
+        should be handled immediately but should not appear in the persistent
+        notification inbox.
+        """
+        if not user:
+            return None
+
+        # Prevent self-notifications before push delivery.
+        if actor and actor == user:
+            return None
+
+        cls._deliver(
+            user=user,
+            event=event,
+            title=title,
+            body=body,
+            payload=payload or {},
+            priority=priority,
+            ttl_seconds=ttl_seconds,
+            android_channel_id=android_channel_id,
+            android_notification_priority=android_notification_priority,
+        )
+
+        return None
+
     # CHAT
     @classmethod
     def notify_new_message(
@@ -174,7 +226,7 @@ class NotificationService:
     ):
         sender_name = cls._display_name(sender)
 
-        cls.notify(
+        return cls.notify(
             user=user,
             type="message",
             title="New Message",
@@ -198,6 +250,12 @@ class NotificationService:
         call_type: str,
         payload: dict | None = None,
     ):
+        """
+        Deliver an incoming-call push event.
+
+        Incoming calls are transient and are not stored as AOS Notification
+        records. Only missed calls are stored in the notification inbox.
+        """
         caller_name = cls._display_name(caller)
 
         call_payload = dict(payload or {})
@@ -212,18 +270,19 @@ class NotificationService:
         call_payload.setdefault("call_type", call_type)
         call_payload.setdefault("caller_display_name", caller_name)
 
-        cls.notify(
+        return cls.deliver_transient(
             user=user,
-            type="call",
+            event="aos_incoming_call",
             title="Incoming Call",
             body=f"{caller_name} is calling you",
             actor=caller,
             payload=call_payload,
-            event="aos_incoming_call",
             priority=cls.INCOMING_CALL_FCM_PRIORITY,
             ttl_seconds=cls.INCOMING_CALL_FCM_TTL_SECONDS,
             android_channel_id=cls.INCOMING_CALL_ANDROID_CHANNEL_ID,
-            android_notification_priority=cls.INCOMING_CALL_ANDROID_NOTIFICATION_PRIORITY,
+            android_notification_priority=(
+                cls.INCOMING_CALL_ANDROID_NOTIFICATION_PRIORITY
+            ),
         )
 
     @classmethod
@@ -234,9 +293,12 @@ class NotificationService:
         caller: str,
         call_id: str,
     ):
+        """
+        Create and deliver a persistent missed-call notification.
+        """
         caller_name = cls._display_name(caller)
 
-        cls.notify(
+        return cls.notify(
             user=user,
             type="missed_call",
             title="Missed Call",
@@ -261,7 +323,7 @@ class NotificationService:
     ):
         follower_name = cls._display_name(follower)
 
-        cls.notify(
+        return cls.notify(
             user=user,
             type="follow",
             title="New Follower",
@@ -280,7 +342,7 @@ class NotificationService:
         ad_id: str,
         title: str | None = None,
     ):
-        cls.notify(
+        return cls.notify(
             user=user,
             type="ad_approved",
             title="Ad Approved",
@@ -301,7 +363,7 @@ class NotificationService:
         ad_id: str,
         title: str | None = None,
     ):
-        cls.notify(
+        return cls.notify(
             user=user,
             type="ad_rejected",
             title="Ad Rejected",
@@ -322,7 +384,7 @@ class NotificationService:
         ad_id: str,
         title: str | None = None,
     ):
-        cls.notify(
+        return cls.notify(
             user=user,
             type="ad_expired",
             title="Ad Expired",
@@ -342,7 +404,7 @@ class NotificationService:
         *,
         user: str,
     ):
-        cls.notify(
+        return cls.notify(
             user=user,
             type="verification_approved",
             title="Verification Approved ✅",
@@ -357,7 +419,7 @@ class NotificationService:
         *,
         user: str,
     ):
-        cls.notify(
+        return cls.notify(
             user=user,
             type="verification_rejected",
             title="Verification Rejected",
@@ -381,7 +443,7 @@ class NotificationService:
         Do not pass AOS Short.seller here because seller is optional shop context.
         """
         if not actor or not short_id:
-            return
+            return None
 
         followers = frappe.get_all(
             "AOS Follow",
@@ -390,7 +452,7 @@ class NotificationService:
         )
 
         if not followers:
-            return
+            return None
 
         actor_name = cls._display_name(actor)
 
@@ -414,6 +476,8 @@ class NotificationService:
                 event="aos_new_short",
             )
 
+        return None
+
     @classmethod
     def notify_short_like(
         cls,
@@ -430,7 +494,7 @@ class NotificationService:
         """
         actor_name = cls._display_name(actor)
 
-        cls.notify(
+        return cls.notify(
             user=user,
             type="short_like",
             title="New Like ❤️",
@@ -461,7 +525,7 @@ class NotificationService:
         preview = (content or "").strip()
         actor_name = cls._display_name(actor)
 
-        cls.notify(
+        return cls.notify(
             user=user,
             type="short_comment",
             title="New Comment",
@@ -507,7 +571,7 @@ class NotificationService:
         if short_id:
             payload["short_id"] = short_id
 
-        cls.notify(
+        return cls.notify(
             user=user,
             type="comment_reply",
             title="New Reply",
@@ -540,7 +604,7 @@ class NotificationService:
         host_name = cls._display_name(host_user)
         live_title = (title or "").strip()
 
-        cls.notify(
+        return cls.notify(
             user=user,
             type="live_started",
             title="Live Started",
