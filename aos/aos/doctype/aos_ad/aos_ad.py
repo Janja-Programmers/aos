@@ -190,17 +190,56 @@ class AOSAd(Document):
         if self.is_new():
             return
 
-        old_status = frappe.db.get_value(
-            "AOS Ad",
-            self.name,
-            "status",
+        previous = self.get_doc_before_save()
+
+        old_status = _norm(
+            previous.status
+            if previous
+            else frappe.db.get_value(
+                "AOS Ad",
+                self.name,
+                "status",
+            )
         )
+
+        new_status = _norm(self.status)
 
         if old_status in ("Deleted", "Suspended"):
             frappe.throw("This ad cannot be modified.")
 
-        if old_status == "Sold":
+        if old_status != "Sold":
+            return
+
+        # A sold ad may only be reactivated.
+        if new_status != "Active":
             frappe.throw("Sold ads cannot be edited.")
+
+        # Prevent editing ad content while simultaneously reactivating it.
+        allowed_changed_fields = {
+            "status",
+            "reviewed_by",
+            "reviewed_on",
+        }
+
+        changed_fields = []
+
+        for field in self.meta.fields:
+            fieldname = field.fieldname
+
+            if not fieldname:
+                continue
+
+            if fieldname in allowed_changed_fields:
+                continue
+
+            if self.has_value_changed(fieldname):
+                changed_fields.append(fieldname)
+
+        if changed_fields:
+            frappe.throw(
+                "A sold ad can only be marked as available. "
+                "Reactivate it first, then edit it."
+            )
 
     def _stamp_review_metadata(self):
         """
