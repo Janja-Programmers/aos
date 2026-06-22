@@ -5,5 +5,5 @@ python-multipart==0.0.20
 
 # Background-removal runtime. Keep these in this service only.
 # Do not add rembg/onnxruntime to the Frappe backend pyproject.toml.
-Pillow>=10.3.0,<12.0.0
+Pillow>=12.1.0,<13.0.0
 rembg[cpu]==2.0.76
