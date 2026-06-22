@@ -52,7 +52,7 @@ bench --site <site> set-config nominatim_base_url http://127.0.0.1:8081
 bench --site <site> set-config valhalla_base_url http://127.0.0.1:8002
 ```
 
-Configure AOS Settings after migration so image search and background removal point to the private services:
+Configure AOS Settings after migration so AI integrations point to private services:
 
 ```text
 image_search_service_url: http://127.0.0.1:8110
@@ -63,6 +63,10 @@ image_search_max_limit: 100
 background_removal_service_url: http://127.0.0.1:8120
 background_removal_service_timeout_seconds: 30
 background_removal_max_image_bytes: 10485760
+
+translation_service_url: http://127.0.0.1:8100
+translation_service_timeout_seconds: 30
+translation_max_characters: 1000
 ```
 
 ## 5. Build or restore map data
@@ -91,6 +95,8 @@ curl http://127.0.0.1:8110/health
 curl http://127.0.0.1:8110/ready
 curl http://127.0.0.1:8120/health
 curl http://127.0.0.1:8120/ready
+curl http://127.0.0.1:8100/health
+curl http://127.0.0.1:8100/ready
 ```
 
 ## 7. Migrate Frappe
@@ -104,6 +110,18 @@ bench restart
 # Rebuild image-search vectors after the image-search service is deployed.
 bench --site <site> execute aos.integrations.ai.image_search_tasks.rebuild_image_search_index --kwargs '{"dry_run": true}'
 bench --site <site> execute aos.integrations.ai.image_search_tasks.rebuild_image_search_index
+```
+
+Smoke-test the Frappe translation integration client when translation is enabled:
+
+```bash
+bench --site <site> console
+```
+
+```python
+from aos.integrations.ai.translation_client import health_check, ready_check
+print(health_check())
+print(ready_check())
 ```
 
 ## 8. Configure TLS and Nginx

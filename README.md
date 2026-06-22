@@ -34,7 +34,7 @@ sudo apt install -y libgl1 ffmpeg build-essential python3-dev curl wget git git-
 - `curl` / `wget` → service health checks and downloads
 - `git-lfs` → required for downloading large model files such as the translation model
 
-Image search model/runtime dependencies live in `infra/image-search` and are installed inside the image-search Docker service, not in the Frappe backend.
+Image search model/runtime dependencies live in `infra/image-search` and are installed inside the image-search Docker service, not in the Frappe backend. Background-removal dependencies live in `infra/background-removal`. Translation dependencies live in `infra/translation`.
 
 ---
 
@@ -64,8 +64,7 @@ Qdrant is private infrastructure behind image-search.
 Only Active ads with images should be indexed.
 ```
 
-Do not import AI/ML dependencies from Frappe code. The Frappe backend should call private AI HTTP services such as image-search and background-removal.
-
+Do not import AI/ML dependencies from Frappe code. The Frappe backend should call private AI HTTP services through integration clients such as `aos.integrations.ai.image_search_client`, `aos.integrations.ai.background_removal_client`, and `aos.integrations.ai.translation_client`.
 
 ---
 
@@ -123,6 +122,8 @@ TRANSLATION_MODEL_HOST_PATH=./models/nllb-200-distilled-1.3B-ct2-int8
 ```
 
 If you do not need translation locally, you can skip starting the translation service.
+
+Frappe should only know the private translation service URL, timeout, and maximum text length. Provider/model/device details belong to this Docker service, not chat business logic.
 
 ---
 
@@ -218,12 +219,17 @@ The frontend should call the Frappe remove-background endpoint. It should not ca
 - Model: NLLB-200 distilled 1.3B CT2 INT8
 - URL: http://localhost:8100
 - Health: http://localhost:8100/health
+- Ready: http://localhost:8100/ready
 
 Used for:
 
 - On-demand chat message translation
 - Cached translated messages
 - Multilingual buyer/seller communication
+- Language normalization
+- Returning translated text plus passive provider/model metadata
+
+The frontend should call the Frappe chat translation endpoint. It should not call this private service directly. Frappe should call translation through `aos.integrations.ai.translation_client` only.
 
 ---
 
@@ -347,12 +353,9 @@ api_secret: from .env
 ## Translation
 
 ```text
-enabled: 1
-service_url: http://127.0.0.1:8100
-timeout_seconds: 10
-provider: nllb
-model_name: nllb-200-distilled-1.3B-ct2-int8
-max_chars: 1000
+translation_service_url: http://127.0.0.1:8100
+translation_service_timeout_seconds: 10
+translation_max_characters: 1000
 ```
 
 For Docker-based single-server setup where Frappe runs on the host, use:

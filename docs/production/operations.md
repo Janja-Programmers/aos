@@ -11,6 +11,8 @@ curl http://127.0.0.1:8110/health
 curl http://127.0.0.1:8110/ready
 curl http://127.0.0.1:8120/health
 curl http://127.0.0.1:8120/ready
+curl http://127.0.0.1:8100/health
+curl http://127.0.0.1:8100/ready
 sudo supervisorctl status
 sudo systemctl status nginx
 ```
@@ -21,6 +23,7 @@ sudo systemctl status nginx
 docker compose logs --tail=200 <service>
 docker compose logs --tail=200 image-search
 docker compose logs --tail=200 background-removal
+docker compose logs --tail=200 translation
 docker compose logs --tail=200 qdrant
 sudo journalctl -u aos-backup.service -n 200 --no-pager
 sudo tail -n 200 /var/log/nginx/error.log
@@ -85,6 +88,35 @@ file /tmp/aos-removed-bg.png
 ```
 
 Use this when the Flutter image editor reports background-removal failures. If direct service testing works but the app fails, inspect Frappe file ownership, rate limits, and `aos/api/files/remove_background.py` logs.
+
+## Translation service check
+
+Directly test the private translation service:
+
+```bash
+curl -X POST http://127.0.0.1:8100/translate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Hello, how are you?",
+    "source_language": "eng_Latn",
+    "target_language": "swh_Latn"
+  }'
+```
+
+Check Frappe connectivity:
+
+```bash
+cd /home/aos/frappe-bench
+bench --site <site> console
+```
+
+```python
+from aos.integrations.ai.translation_client import health_check, ready_check
+print(health_check())
+print(ready_check())
+```
+
+If direct service testing works but the app fails, inspect chat membership, deleted-message rules, rate limits, `AOS Message Translation` cache records, and `aos/api/chat/translate_message.py` logs.
 
 ## Incident priorities
 

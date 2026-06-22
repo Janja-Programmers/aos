@@ -14,9 +14,10 @@
 - [ ] `docker compose config` succeeds
 - [ ] No placeholder secret remains
 - [ ] Internal services bind to `127.0.0.1`
-- [ ] Image Search, Background Removal, and Qdrant are not publicly exposed
+- [ ] Image Search, Background Removal, Translation, and Qdrant are not publicly exposed
 - [ ] Image Search `/health` and `/ready` pass
 - [ ] Background Removal `/health` and `/ready` pass
+- [ ] Translation `/health` and `/ready` pass
 - [ ] LiveKit public ports match firewall rules
 
 ## Backup and rollback
@@ -36,6 +37,8 @@
 - [ ] Image-search vector rebuild dry run reviewed
 - [ ] Image-search vector rebuild completed when required
 - [ ] Background-removal service direct test completed
+- [ ] Translation service direct test completed
+- [ ] Translation Frappe client smoke test completed
 - [ ] Nginx configuration test succeeds
 - [ ] TLS certificates are valid
 
@@ -55,6 +58,19 @@
 - [ ] Oversized images are rejected
 - [ ] User cannot process another user's private file
 - [ ] Background-removal service unavailable path returns a friendly temporary error
+
+
+## Manual translation checks
+
+- [ ] Translation container is healthy
+- [ ] Translation model reports loaded from `/ready`
+- [ ] `aos.integrations.ai.translation_client.health_check()` works from bench console
+- [ ] `translate_text()` works from bench console
+- [ ] Chat translate endpoint returns translated content
+- [ ] Translating the same message twice returns `cached: true` on the second request
+- [ ] User cannot translate a message from a conversation they cannot access
+- [ ] Deleted or unsupported message types are rejected
+- [ ] Translation service unavailable path returns a friendly temporary error
 
 ## Manual map checks
 
