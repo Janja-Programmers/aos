@@ -24,7 +24,7 @@ from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
 
-from aos.services.translation_service import (
+from aos.integrations.ai.translation_client import (
 	TranslationUnavailableError,
 	TranslationValidationError,
 	translate_text,
@@ -367,7 +367,7 @@ def translate_message_impl(**kwargs):
 		return fail(str(ex), code="VALIDATION_ERROR")
 
 	except TranslationUnavailableError as ex:
-		return fail(str(ex), code="SERVICE_UNAVAILABLE")
+		return fail(str(ex), code="TRANSLATION_UNAVAILABLE")
 
 	except frappe.ValidationError as ex:
 		frappe.db.rollback()

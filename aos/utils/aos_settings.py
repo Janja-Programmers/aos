@@ -106,7 +106,7 @@ def _bounded_pair(
 
 def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
 	cache = frappe.cache()
-	key = "aos:settings:snapshot:v1"
+	key = "aos:settings:snapshot:v4"
 
 	if use_cache:
 		cached = cache.get_value(key)
@@ -114,6 +114,7 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
 			isinstance(cached, dict)
 			and "image_search_service_url" in cached
 			and "background_removal_service_url" in cached
+			and "translation_service_url" in cached
 		):
 			return AOSSettingsSnapshot(**cached)
 
