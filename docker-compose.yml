@@ -169,6 +169,56 @@ services:
     networks:
       - aos_net
 
+  image-search:
+    build:
+      context: ./infra/image-search
+      dockerfile: Dockerfile
+
+    container_name: aos-image-search
+    restart: unless-stopped
+
+    environment:
+      IMAGE_SEARCH_SERVICE_NAME: ${IMAGE_SEARCH_SERVICE_NAME:-aos-image-search}
+      IMAGE_SEARCH_ENVIRONMENT: ${IMAGE_SEARCH_ENVIRONMENT:-development}
+      IMAGE_SEARCH_DEBUG: ${IMAGE_SEARCH_DEBUG:-false}
+      IMAGE_SEARCH_MODEL_NAME: ${IMAGE_SEARCH_MODEL_NAME:-ViT-B-32}
+      IMAGE_SEARCH_PRETRAINED: ${IMAGE_SEARCH_PRETRAINED:-laion2b_s34b_b79k}
+      IMAGE_SEARCH_DEVICE: ${IMAGE_SEARCH_DEVICE:-cpu}
+      IMAGE_SEARCH_VECTOR_SIZE: ${IMAGE_SEARCH_VECTOR_SIZE:-512}
+      IMAGE_SEARCH_QDRANT_URL: ${IMAGE_SEARCH_QDRANT_URL:-http://qdrant:6333}
+      IMAGE_SEARCH_QDRANT_API_KEY: ${IMAGE_SEARCH_QDRANT_API_KEY:-}
+      IMAGE_SEARCH_COLLECTION: ${IMAGE_SEARCH_COLLECTION:-ads}
+      IMAGE_SEARCH_LIMIT: ${IMAGE_SEARCH_LIMIT:-50}
+      IMAGE_SEARCH_MAX_LIMIT: ${IMAGE_SEARCH_MAX_LIMIT:-100}
+      IMAGE_SEARCH_SCORE_THRESHOLD: ${IMAGE_SEARCH_SCORE_THRESHOLD:-0.75}
+      IMAGE_SEARCH_PRIMARY_BOOST: ${IMAGE_SEARCH_PRIMARY_BOOST:-0.02}
+      IMAGE_SEARCH_MAX_IMAGE_BYTES: ${IMAGE_SEARCH_MAX_IMAGE_BYTES:-10485760}
+
+    ports:
+      - "${IMAGE_SEARCH_BIND_ADDRESS:-127.0.0.1}:${IMAGE_SEARCH_PORT:-8110}:8000"
+
+    depends_on:
+      qdrant:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+    mem_limit: "${IMAGE_SEARCH_MEMORY_LIMIT:-4g}"
+    cpus: "${IMAGE_SEARCH_CPU_LIMIT:-3.00}"
+    pids_limit: "${IMAGE_SEARCH_PIDS_LIMIT:-1024}"
+
+    stop_grace_period: 60s
+    logging: *common-logging
+    <<: *common-security
+
+    networks:
+      - aos_net
+
   tileserver:
     image: ${TILESERVER_IMAGE:?TILESERVER_IMAGE is required}
     container_name: aos-tileserver

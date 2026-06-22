@@ -10,6 +10,7 @@ from frappe.utils import getdate
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.integrations.ai.image_search_tasks import enqueue_index_refresh_for_status
 
 from .constants import UPDATE_AD_LIMIT_PER_MINUTE_PER_USER
 from .validators import (
@@ -187,12 +188,6 @@ def update_ad_impl(**kwargs):
             )
 
         if status in _FULL_EDIT_STATUSES:
-            old_images = [
-                row.image
-                for row in (doc.images or [])
-                if row.image
-            ]
-
             title, location, category, description, e = validate_basic_fields(
                 kwargs.get("title"),
                 kwargs.get("location"),
@@ -277,18 +272,14 @@ def update_ad_impl(**kwargs):
                 attach_file_to_ad(video_url, ad_name=doc.name)
 
             try:
-                frappe.enqueue(
-                    "aos.services.image_search_service.sync_ad_images",
-                    queue="short",
-                    timeout=300,
-                    ad_id=doc.name,
-                    old_images=old_images,
-                    new_images=images_rows,
+                enqueue_index_refresh_for_status(
+                    doc.name,
+                    status=doc.status,
                 )
             except Exception:
                 frappe.log_error(
                     frappe.get_traceback(),
-                    f"Failed to enqueue image sync for {doc.name}",
+                    f"Failed to enqueue image-search refresh for {doc.name}",
                 )
 
             return ok(

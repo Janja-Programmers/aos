@@ -22,6 +22,7 @@ from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.validators import resolve_location
 from aos.utils.aos_settings import get_aos_settings_snapshot
 from aos.services.account_service import get_or_create_seller
+from aos.integrations.ai.image_search_tasks import enqueue_index_refresh_for_status
 
 from .constants import CREATE_AD_LIMIT_PER_MINUTE_PER_USER
 from .validators import (
@@ -291,17 +292,14 @@ def create_ad_impl(**kwargs):
             )
 
         try:
-            frappe.enqueue(
-                "aos.services.image_search_service.index_ad_images",
-                queue="short",
-                timeout=300,
-                ad_id=ad.name,
-                images=images_rows,
+            enqueue_index_refresh_for_status(
+                ad.name,
+                status=ad.status,
             )
         except Exception:
             frappe.log_error(
                 frappe.get_traceback(),
-                f"Failed to enqueue image indexing for {ad.name}",
+                f"Failed to enqueue image-search refresh for {ad.name}",
             )
 
         return ok(

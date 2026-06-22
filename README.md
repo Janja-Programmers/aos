@@ -34,12 +34,37 @@ sudo apt install -y libgl1 ffmpeg build-essential python3-dev curl wget git git-
 - `curl` / `wget` → service health checks and downloads
 - `git-lfs` → required for downloading large model files such as the translation model
 
+Image search model/runtime dependencies live in `infra/image-search` and are installed inside the image-search Docker service, not in the Frappe backend.
+
 ---
 
 # 🐳 External Services Setup (Docker)
 
 AOS depends on external services.
 Run them using Docker Compose.
+
+---
+
+## 🧠 AI/ML Architecture
+
+AI/ML features must run outside the Frappe business backend. The backend owns users, ads, permissions, moderation, rate limits, database records, and response serialization. AI services own model runtimes and vector infrastructure.
+
+Current AI services:
+
+- `image-search` → visual similarity search for ads. Owns OpenCLIP, Torch, embeddings, Qdrant access, vector scoring, and image-search thresholds.
+- `translation` → chat message translation. Owns the NLLB translation runtime.
+
+Production rule for image search:
+
+```text
+AOS backend owns ads.
+Image-search service owns vectors.
+Qdrant is private infrastructure behind image-search.
+Only Active ads with images should be indexed.
+```
+
+Do not import image-search ML/vector dependencies from Frappe code. The Frappe backend should call the private image-search HTTP service.
+
 
 ---
 
@@ -109,7 +134,7 @@ docker compose up -d
 To start only selected services:
 
 ```bash
-docker compose up -d qdrant minio livekit
+docker compose up -d qdrant image-search minio livekit
 ```
 
 To start translation too:
@@ -118,14 +143,33 @@ To start translation too:
 docker compose up -d translation
 ```
 
+To start only image search and its vector store:
+
+```bash
+docker compose up -d qdrant image-search
+```
+
 ---
 
 ## 🌐 Services Overview
 
-### Vector Search (Image Search)
+### Image Search
 
-- Qdrant
-- URL: http://localhost:6333
+- AOS Image Search Service
+- URL: http://localhost:8110
+- Health: http://localhost:8110/health
+- Ready: http://localhost:8110/ready
+
+Used for:
+
+- Visual similarity search for ads
+- Image embedding generation
+- Qdrant vector indexing and search
+
+Qdrant is still used internally, but the Frappe backend should not connect to Qdrant directly.
+
+- Qdrant internal service: http://qdrant:6333
+- Local host binding: http://127.0.0.1:6333
 
 ---
 
@@ -205,13 +249,28 @@ After installing the app, configure **AOS Settings** in Frappe.
 
 ---
 
-## Qdrant
+## Image Search
 
 ```text
-host: 127.0.0.1
-port: 6333
-collection: ads
+service_url: http://127.0.0.1:8110
+timeout_seconds: 20
+default_limit: 20
+max_limit: 100
 ```
+
+For Docker-based single-server setup where Frappe runs on the host, use:
+
+```text
+http://127.0.0.1:8110
+```
+
+If Frappe is also running inside Docker on the same Docker network, use:
+
+```text
+http://aos-image-search:8000
+```
+
+Do not configure Qdrant in AOS Settings. Qdrant belongs behind the image-search service.
 
 ---
 
@@ -282,6 +341,13 @@ To check Docker services:
 docker compose ps
 ```
 
+To check image-search service health/readiness:
+
+```bash
+curl http://127.0.0.1:8110/health
+curl http://127.0.0.1:8110/ready
+```
+
 To check translation service health:
 
 ```bash
@@ -298,6 +364,14 @@ apps/aos/
 ├── docker-compose.yml           # Dev/infra services
 ├── .env.example                 # Environment variables template
 ├── infra/
+│   ├── image-search/
+│   │   ├── Dockerfile           # Image-search service image
+│   │   ├── requirements.txt     # Image-search ML/vector dependencies
+│   │   └── app/
+│   │       ├── main.py          # FastAPI app
+│   │       ├── embedding.py     # OpenCLIP embedding runtime
+│   │       ├── qdrant_store.py  # Qdrant access layer
+│   │       └── service.py       # Image-search use cases
 │   ├── livekit/
 │   │   └── livekit.yaml         # LiveKit config
 │   └── translation/
@@ -342,6 +416,38 @@ For high-scale production:
 - Monitor CPU, RAM, disk, and service health
 
 ---
+
+## Image Search Production Notes
+
+Image search runs as a separate internal service so heavy ML/vector dependencies do not affect Frappe workers.
+
+Recommended production setup:
+
+- Keep Frappe as the main AOS backend.
+- Keep image search as a private Docker service.
+- Keep Qdrant private and accessible only to image search.
+- Do not expose image search or Qdrant publicly.
+- Index only `Active` ads with images.
+- Treat image search as always-on infrastructure. If it is unavailable, return a temporary unavailable error instead of disabling the feature.
+
+Health checks:
+
+```bash
+curl http://127.0.0.1:8110/health
+curl http://127.0.0.1:8110/ready
+```
+
+Manual rebuild after deployment, restore, or vector corruption:
+
+```bash
+bench --site <site> execute aos.integrations.ai.image_search_tasks.rebuild_image_search_index
+```
+
+Dry run:
+
+```bash
+bench --site <site> execute aos.integrations.ai.image_search_tasks.rebuild_image_search_index --kwargs '{"dry_run": true}'
+```
 
 ## Translation Production Notes
 

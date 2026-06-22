@@ -32,6 +32,8 @@ The script stops services, restores selected Docker volumes and map artifacts, r
 ## 5. Verify
 
 - `docker compose ps` reports healthy services
+- `curl http://127.0.0.1:8110/health` succeeds
+- `curl http://127.0.0.1:8110/ready` succeeds
 - Frappe login succeeds
 - Private/public files load
 - Seller location APIs work
@@ -40,5 +42,14 @@ The script stops services, restores selected Docker volumes and map artifacts, r
 - TileServer style and tiles load
 - MinIO objects are available
 - LiveKit signaling and media work
+- Image search returns expected Active ads
+
+If the restored Qdrant volume is missing or stale, rebuild vectors before switching traffic:
+
+```bash
+cd /home/aos/frappe-bench
+bench --site <site> execute aos.integrations.ai.image_search_tasks.rebuild_image_search_index --kwargs '{"dry_run": true}'
+bench --site <site> execute aos.integrations.ai.image_search_tasks.rebuild_image_search_index
+```
 
 Do not switch production DNS until verification is complete.

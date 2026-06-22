@@ -26,15 +26,11 @@ class AOSSettingsSnapshot:
 	ad_expiry_days: int
 	flash_sale_window_days: int
 
-	# Image Search (Qdrant)
-	qdrant_host: str | None
-	qdrant_port: int
-	qdrant_collection: str | None
-	qdrant_api_key: str | None
-	qdrant_https: int
-
-	image_search_limit: int
-	score_threshold: float
+	# Image Search Service
+	image_search_service_url: str
+	image_search_service_timeout_seconds: int
+	image_search_default_limit: int
+	image_search_max_limit: int
 
 	# Storage (MinIO)
 	minio_endpoint: str | None
@@ -69,20 +65,6 @@ def _clamp_int(val: object, default: int, min_value: int, max_value: int) -> int
 	return int(n)
 
 
-def _clamp_float(val: object, default: float, min_value: float, max_value: float) -> float:
-	"""Best-effort float parsing with bounds safety."""
-	try:
-		n = float(val)  # type: ignore[arg-type]
-	except Exception:
-		n = float(default)
-
-	if n < min_value:
-		return float(min_value)
-	if n > max_value:
-		return float(max_value)
-	return float(n)
-
-
 def _clean_url(value: object, default: str) -> str:
 	"""Normalize a URL-like setting."""
 	url = str(value or "").strip()
@@ -93,16 +75,57 @@ def _clean_url(value: object, default: str) -> str:
 	return url.rstrip("/")
 
 
+def _bounded_pair(
+	*,
+	default_limit: int,
+	max_limit: int,
+	absolute_min: int,
+	absolute_max: int,
+) -> tuple[int, int]:
+	"""Ensure default limit never exceeds max limit."""
+	clean_max = _clamp_int(
+		max_limit,
+		default=absolute_max,
+		min_value=absolute_min,
+		max_value=absolute_max,
+	)
+	clean_default = _clamp_int(
+		default_limit,
+		default=min(20, clean_max),
+		min_value=absolute_min,
+		max_value=clean_max,
+	)
+
+	return clean_default, clean_max
+
+
 def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
 	cache = frappe.cache()
-	key = "aos:settings:snapshot:v1"
+	key = "aos:settings:snapshot:v2"
 
 	if use_cache:
 		cached = cache.get_value(key)
-		if isinstance(cached, dict) and "translation_service_url" in cached:
+		if isinstance(cached, dict) and "image_search_service_url" in cached:
 			return AOSSettingsSnapshot(**cached)
 
 	s = frappe.get_single("AOS Settings")
+
+	image_search_default_limit, image_search_max_limit = _bounded_pair(
+		default_limit=_clamp_int(
+			getattr(s, "image_search_default_limit", 20),
+			default=20,
+			min_value=1,
+			max_value=100,
+		),
+		max_limit=_clamp_int(
+			getattr(s, "image_search_max_limit", 100),
+			default=100,
+			min_value=1,
+			max_value=100,
+		),
+		absolute_min=1,
+		absolute_max=100,
+	)
 
 	snap = AOSSettingsSnapshot(
 		# Localization
@@ -134,36 +157,21 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
 			max_value=60,
 		),
 
-		# Image Search (Qdrant)
-		qdrant_host=(getattr(s, "qdrant_host", None) or "localhost"),
-		qdrant_port=_clamp_int(
-			getattr(s, "qdrant_port", 6333),
-			default=6333,
-			min_value=1,
-			max_value=65535,
-		),
-		qdrant_collection=(getattr(s, "qdrant_collection", None) or "ads"),
-		qdrant_api_key=(getattr(s, "qdrant_api_key", None) or None),
-		qdrant_https=_clamp_int(
-			getattr(s, "qdrant_https", 0),
-			default=0,
-			min_value=0,
-			max_value=1,
+		# Image Search Service
+		image_search_service_url=_clean_url(
+			getattr(s, "image_search_service_url", None),
+			default="http://127.0.0.1:8110",
 		),
 
-		image_search_limit=_clamp_int(
-			getattr(s, "image_search_limit", 50),
-			default=50,
+		image_search_service_timeout_seconds=_clamp_int(
+			getattr(s, "image_search_service_timeout_seconds", 20),
+			default=20,
 			min_value=1,
-			max_value=200,
+			max_value=120,
 		),
 
-		score_threshold=_clamp_float(
-			getattr(s, "score_threshold", 0.0),
-			default=0.0,
-			min_value=0.0,
-			max_value=1.0,
-		),
+		image_search_default_limit=image_search_default_limit,
+		image_search_max_limit=image_search_max_limit,
 
 		# Storage (MinIO)
 		minio_endpoint=(getattr(s, "minio_endpoint", None) or "localhost:9100"),

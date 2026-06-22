@@ -14,6 +14,8 @@
 - [ ] `docker compose config` succeeds
 - [ ] No placeholder secret remains
 - [ ] Internal services bind to `127.0.0.1`
+- [ ] Image Search and Qdrant are not publicly exposed
+- [ ] Image Search `/health` and `/ready` pass
 - [ ] LiveKit public ports match firewall rules
 
 ## Backup and rollback
@@ -30,8 +32,17 @@
 - [ ] `bench --site <site> migrate` succeeds
 - [ ] Assets build succeeds
 - [ ] Docker services are healthy
+- [ ] Image-search vector rebuild dry run reviewed
+- [ ] Image-search vector rebuild completed when required
 - [ ] Nginx configuration test succeeds
 - [ ] TLS certificates are valid
+
+## Manual image-search checks
+
+- [ ] Active ad with images is indexed
+- [ ] Sold/Expired/Deleted ads do not appear in image search
+- [ ] Image search returns serialized AOS ad data plus `image_search` metadata
+- [ ] Image-search service unavailable path returns a friendly temporary error
 
 ## Manual map checks
 

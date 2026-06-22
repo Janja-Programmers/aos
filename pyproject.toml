@@ -17,25 +17,15 @@ dependencies = [
     # STORAGE
     "minio>=7.2.0",
 
-    # VECTOR SEARCH
-    "qdrant-client>=1.9.0",
-
     # REALTIME
     "livekit-api>=0.3.0",
 
     # NOTIFICATIONS
     "firebase-admin>=6.5.0",
 
-    # NUMERICAL
-    "numpy>=1.26.0",
-
     # BACKGROUND REMOVAL
     "onnxruntime>=1.18.0",
     "rembg==2.0.60",
-
-    # IMAGE SEARCH
-    "torch>=2.2.0",
-    "open-clip-torch>=2.24.0",
 ]
 
 [build-system]

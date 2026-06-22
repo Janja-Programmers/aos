@@ -25,15 +25,12 @@
   "ad_expiry_days",
   "column_break_tyqg",
   "flash_sale_window_days",
-  "image_search_qdrant_section",
-  "qdrant_host",
-  "qdrant_port",
-  "qdrant_collection",
-  "image_search_limit",
-  "column_break_ebhh",
-  "score_threshold",
-  "qdrant_api_key",
-  "qdrant_https",
+  "image_search_service_section",
+  "image_search_service_url",
+  "image_search_default_limit",
+  "column_break_image_search_service",
+  "image_search_service_timeout_seconds",
+  "image_search_max_limit",
   "shorts_tab",
   "minio_endpoint",
   "minio_access_key",
@@ -156,6 +153,44 @@
    "label": "Flash Sale Window (Days)"
   },
   {
+   "description": "External image-search service. OpenCLIP and Qdrant run outside the Frappe business backend.",
+   "fieldname": "image_search_service_section",
+   "fieldtype": "Section Break",
+   "label": "Image Search Service"
+  },
+  {
+   "default": "http://127.0.0.1:8110",
+   "description": "Private URL for the internal image-search FastAPI service.",
+   "fieldname": "image_search_service_url",
+   "fieldtype": "Data",
+   "label": "Image Search Service URL"
+  },
+  {
+   "default": "20",
+   "description": "Default number of visually similar ads returned when the request does not provide a limit.",
+   "fieldname": "image_search_default_limit",
+   "fieldtype": "Int",
+   "label": "Default Result Limit"
+  },
+  {
+   "fieldname": "column_break_image_search_service",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "20",
+   "description": "HTTP timeout in seconds when calling the internal image-search service.",
+   "fieldname": "image_search_service_timeout_seconds",
+   "fieldtype": "Int",
+   "label": "Service Timeout Seconds"
+  },
+  {
+   "default": "100",
+   "description": "Maximum image-search result limit accepted by the backend API.",
+   "fieldname": "image_search_max_limit",
+   "fieldtype": "Int",
+   "label": "Max Result Limit"
+  },
+  {
    "fieldname": "apple_auth_section",
    "fieldtype": "Section Break",
    "label": "Apple Auth"
@@ -164,58 +199,6 @@
    "fieldname": "apple_bundle_id",
    "fieldtype": "Data",
    "label": "Apple Bundle Id"
-  },
-  {
-   "fieldname": "image_search_qdrant_section",
-   "fieldtype": "Section Break",
-   "label": "Image Search (Qdrant)"
-  },
-  {
-   "default": "localhost",
-   "fieldname": "qdrant_host",
-   "fieldtype": "Data",
-   "label": "Qdrant Host"
-  },
-  {
-   "default": "6333",
-   "fieldname": "qdrant_port",
-   "fieldtype": "Int",
-   "label": "Qdrant Port"
-  },
-  {
-   "default": "ads",
-   "fieldname": "qdrant_collection",
-   "fieldtype": "Data",
-   "label": "Qdrant Collection"
-  },
-  {
-   "fieldname": "column_break_ebhh",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "qdrant_api_key",
-   "fieldtype": "Password",
-   "label": "Qdrant API Key"
-  },
-  {
-   "default": "0.75",
-   "description": "Minimum similarity score required for an image match to be considered relevant. Based on cosine similarity between CLIP embeddings (range 0.0 - 1.0). Higher values return stricter, more accurate matches. Lower values increase recall but may introduce irrelevant results.",
-   "fieldname": "score_threshold",
-   "fieldtype": "Float",
-   "label": "Score Threshold"
-  },
-  {
-   "default": "0",
-   "fieldname": "qdrant_https",
-   "fieldtype": "Check",
-   "label": "Use HTTPS"
-  },
-  {
-   "default": "50",
-   "description": "Controls how many candidate image matches are retrieved from Qdrant before filtering and grouping into ads. Higher values improve match coverage but increase latency and noise in results. Lower values improve speed but may miss relevant matches.",
-   "fieldname": "image_search_limit",
-   "fieldtype": "Int",
-   "label": "Image Search Limit"
   },
   {
    "fieldname": "shorts_tab",
@@ -336,7 +319,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-05-30 13:27:23.435258",
+ "modified": "2026-06-22 17:30:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Settings",

@@ -27,6 +27,7 @@ from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 from aos.utils.aos_settings import get_aos_settings_snapshot
+from aos.integrations.ai.image_search_tasks import enqueue_index_refresh_for_status
 
 from .constants import SET_AD_STATUS_LIMIT_PER_MINUTE_PER_USER
 
@@ -91,31 +92,18 @@ def _get_transition(
     return None, "Invalid action."
 
 
-def _enqueue_image_cleanup(doc) -> None:
-    """Queue removal of image-search embeddings after soft deletion."""
+def _enqueue_image_search_refresh(doc) -> None:
+    """Queue image-search index refresh for the ad's current status."""
 
     try:
-        image_urls = [
-            row.image
-            for row in (doc.images or [])
-            if getattr(row, "image", None)
-        ]
-
-        if not image_urls:
-            return
-
-        frappe.enqueue(
-            "aos.services.image_search_service.delete_ad_images",
-            queue="short",
-            timeout=300,
-            ad_id=doc.name,
-            image_urls=image_urls,
+        enqueue_index_refresh_for_status(
+            doc.name,
+            status=doc.status,
         )
-
     except Exception:
         frappe.log_error(
             frappe.get_traceback(),
-            f"Failed to enqueue image delete for {doc.name}",
+            f"Failed to enqueue image-search refresh for {doc.name}",
         )
 
 
@@ -227,8 +215,7 @@ def set_ad_status_impl(**kwargs):
 
         doc.save(ignore_permissions=True)
 
-        if new_status == "Deleted":
-            _enqueue_image_cleanup(doc)
+        _enqueue_image_search_refresh(doc)
 
         frappe.db.commit()
 

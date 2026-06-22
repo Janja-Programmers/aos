@@ -12,7 +12,7 @@ Required public ports:
 - `7881/tcp` for LiveKit TCP fallback
 - `50000-50010/udp` for LiveKit media
 
-Do not publicly expose Qdrant, MinIO console, Nominatim, Valhalla, Translation, TileServer raw port, or Frappe worker ports.
+Do not publicly expose Qdrant, Image Search, MinIO console, Nominatim, Valhalla, Translation, TileServer raw port, or Frappe worker ports.
 
 ## 2. Install prerequisites
 
@@ -45,11 +45,20 @@ sudo chmod 600 infra/maps/manifest.env
 
 Replace every placeholder. All Docker images used by the map build/runtime pipeline must be pinned to immutable digests.
 
-Configure Frappe:
+Configure Frappe map service URLs:
 
 ```bash
 bench --site <site> set-config nominatim_base_url http://127.0.0.1:8081
 bench --site <site> set-config valhalla_base_url http://127.0.0.1:8002
+```
+
+Configure AOS Settings after migration so image search points to the private service:
+
+```text
+image_search_service_url: http://127.0.0.1:8110
+image_search_service_timeout_seconds: 20
+image_search_default_limit: 20
+image_search_max_limit: 100
 ```
 
 ## 5. Build or restore map data
@@ -74,6 +83,8 @@ docker compose config
 docker compose up -d --build
 docker compose ps
 ./infra/maps/scripts/verify-map-data.sh --services
+curl http://127.0.0.1:8110/health
+curl http://127.0.0.1:8110/ready
 ```
 
 ## 7. Migrate Frappe
@@ -83,6 +94,10 @@ cd /home/aos/frappe-bench
 bench --site <site> migrate
 bench build --force
 bench restart
+
+# Rebuild image-search vectors after the image-search service is deployed.
+bench --site <site> execute aos.integrations.ai.image_search_tasks.rebuild_image_search_index --kwargs '{"dry_run": true}'
+bench --site <site> execute aos.integrations.ai.image_search_tasks.rebuild_image_search_index
 ```
 
 ## 8. Configure TLS and Nginx

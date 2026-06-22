@@ -8,13 +8,15 @@ The automated backup covers:
 - Frappe public and private files
 - Frappe site configuration
 - MinIO Docker volume
-- Qdrant Docker volume
+- Qdrant Docker volume for image-search vectors
 - Optional Nominatim Docker volume
 - Generated MBTiles and Valhalla artifacts
 - Map manifest and production infrastructure configuration
 - Checksums and deployment metadata
 
 Nominatim data is reproducible from the PBF and is disabled by default because its volume can be large. Enable it only when recovery-time requirements justify the storage cost.
+
+Qdrant stores image-search vectors. Backing it up improves recovery time, but vectors can also be rebuilt from Active AOS ads and saved ad images using `aos.integrations.ai.image_search_tasks.rebuild_image_search_index`.
 
 ## Schedule and retention
 
