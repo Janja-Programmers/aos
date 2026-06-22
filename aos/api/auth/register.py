@@ -71,12 +71,12 @@ def register_impl(**kwargs):
         user.enabled = 0
         user.user_type = "Website User"
         user.send_welcome_email = 0
-        user.insert(ignore_permissions=True)
 
         # Set password
         user.new_password = password
         user.flags.ignore_password_policy = True
-        user.save(ignore_permissions=True)
+        user.flags.no_welcome_mail = True
+        user.insert(ignore_permissions=True)
 
         # Create User Profile
         profile = frappe.new_doc("AOS Profile")
