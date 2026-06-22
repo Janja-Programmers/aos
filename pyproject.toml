@@ -23,9 +23,6 @@ dependencies = [
     # NOTIFICATIONS
     "firebase-admin>=6.5.0",
 
-    # BACKGROUND REMOVAL
-    "onnxruntime>=1.18.0",
-    "rembg==2.0.60",
 ]
 
 [build-system]

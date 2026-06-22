@@ -27,7 +27,7 @@ sudo apt install -y libgl1 ffmpeg build-essential python3-dev curl wget git git-
 
 ### Why these are required:
 
-- `libgl1` → required for background removal (rembg)
+- `libgl1` → legacy image/runtime support; AI model runtimes now live in external Docker services
 - `ffmpeg` → video processing (shorts)
 - `build-essential` → build Python dependencies
 - `python3-dev` → required for some Python packages
@@ -53,6 +53,10 @@ Current AI services:
 
 - `image-search` → visual similarity search for ads. Owns OpenCLIP, Torch, embeddings, Qdrant access, vector scoring, and image-search thresholds.
 - `translation` → chat message translation. Owns the NLLB translation runtime.
+
+Planned AI services:
+
+- `background-removal` → image background removal. The Frappe backend must not install or run `rembg`/`onnxruntime` directly.
 
 Production rule for image search:
 
