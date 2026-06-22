@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-
 import frappe
+
 from aos.api.social.relationship import build_relationship_status
 
 
@@ -45,6 +45,7 @@ def serialize_user(user_doc, *, current_user: str | None = None) -> dict[str, An
         "user": target_user,
         "full_name": user_doc.full_name or user_doc.first_name or target_user,
         "email": user_doc.email,
+        "bio": user_doc.get("bio") or "",
         "user_image": user_doc.user_image,
         "total_followers": int(profile.total_followers or 0) if profile else 0,
         "total_following": int(profile.total_following or 0) if profile else 0,

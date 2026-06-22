@@ -22,6 +22,7 @@ from .serializers import serialize_user
 
 from .validators import (
     validate_full_name,
+    validate_bio,
     validate_user_image,
     attach_file_to_user,
 )
@@ -33,7 +34,7 @@ def get_profile_impl(**kwargs):
 
     Behavior:
       - If no target user is provided, fetch current logged-in user's profile.
-      - If target_user/user is provided, fetch that user's public profile.
+      - If target_user is provided, fetch that user's public profile.
     """
 
     current_user, err = require_login()
@@ -121,6 +122,14 @@ def update_profile_impl(**kwargs):
                 return e
 
             user_doc.first_name = full_name
+
+        # Update bio
+        if "bio" in incoming:
+            bio, e = validate_bio(incoming.get("bio"))
+            if e:
+                return e
+
+            user_doc.bio = bio
 
         # Update user image
         if "user_image" in incoming:

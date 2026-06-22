@@ -8,10 +8,13 @@ Central place for profile editing rules.
 EDITABLE_USER_FIELDS = {
     "full_name",
     "user_image",
+    "bio",
 }
 
 FULL_NAME_MIN_LEN = 2
 FULL_NAME_MAX_LEN = 80
+
+BIO_MAX_LEN = 300
 
 # Common Frappe file_url patterns.
 # If you later use full CDN URLs, you can relax this to accept
