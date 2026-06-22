@@ -31,6 +31,11 @@
   "column_break_image_search_service",
   "image_search_service_timeout_seconds",
   "image_search_max_limit",
+  "background_removal_service_section",
+  "background_removal_service_url",
+  "background_removal_max_image_bytes",
+  "column_break_background_removal_service",
+  "background_removal_service_timeout_seconds",
   "shorts_tab",
   "minio_endpoint",
   "minio_access_key",
@@ -189,6 +194,37 @@
    "fieldname": "image_search_max_limit",
    "fieldtype": "Int",
    "label": "Max Result Limit"
+  },
+  {
+   "description": "External background-removal service. rembg and ONNX Runtime run outside the Frappe business backend.",
+   "fieldname": "background_removal_service_section",
+   "fieldtype": "Section Break",
+   "label": "Background Removal Service"
+  },
+  {
+   "default": "http://127.0.0.1:8120",
+   "description": "Private URL for the internal background-removal FastAPI service.",
+   "fieldname": "background_removal_service_url",
+   "fieldtype": "Data",
+   "label": "Background Removal Service URL"
+  },
+  {
+   "default": "10485760",
+   "description": "Maximum source image size in bytes accepted by the backend before calling the background-removal service.",
+   "fieldname": "background_removal_max_image_bytes",
+   "fieldtype": "Int",
+   "label": "Max Image Size Bytes"
+  },
+  {
+   "fieldname": "column_break_background_removal_service",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "30",
+   "description": "HTTP timeout in seconds when calling the internal background-removal service.",
+   "fieldname": "background_removal_service_timeout_seconds",
+   "fieldtype": "Int",
+   "label": "Service Timeout Seconds"
   },
   {
    "fieldname": "apple_auth_section",

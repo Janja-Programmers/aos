@@ -5,10 +5,12 @@
 ```bash
 cd /home/aos/aos
 docker compose ps
-docker compose ps qdrant image-search translation minio livekit
+docker compose ps qdrant image-search background-removal translation minio livekit
 docker stats --no-stream
 curl http://127.0.0.1:8110/health
 curl http://127.0.0.1:8110/ready
+curl http://127.0.0.1:8120/health
+curl http://127.0.0.1:8120/ready
 sudo supervisorctl status
 sudo systemctl status nginx
 ```
@@ -18,6 +20,7 @@ sudo systemctl status nginx
 ```bash
 docker compose logs --tail=200 <service>
 docker compose logs --tail=200 image-search
+docker compose logs --tail=200 background-removal
 docker compose logs --tail=200 qdrant
 sudo journalctl -u aos-backup.service -n 200 --no-pager
 sudo tail -n 200 /var/log/nginx/error.log
@@ -69,6 +72,19 @@ bench --site <site> execute aos.integrations.ai.image_search_tasks.rebuild_image
 ```
 
 Use this after image-search deployment, Qdrant restore issues, vector corruption, or suspected stale search results.
+
+## Background-removal service check
+
+Directly test the private service with a known image:
+
+```bash
+curl -X POST http://127.0.0.1:8120/remove-background \
+  -F "image=@/path/to/test-image.jpg" \
+  --output /tmp/aos-removed-bg.png
+file /tmp/aos-removed-bg.png
+```
+
+Use this when the Flutter image editor reports background-removal failures. If direct service testing works but the app fails, inspect Frappe file ownership, rate limits, and `aos/api/files/remove_background.py` logs.
 
 ## Incident priorities
 

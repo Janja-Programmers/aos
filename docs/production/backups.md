@@ -16,7 +16,7 @@ The automated backup covers:
 
 Nominatim data is reproducible from the PBF and is disabled by default because its volume can be large. Enable it only when recovery-time requirements justify the storage cost.
 
-Qdrant stores image-search vectors. Backing it up improves recovery time, but vectors can also be rebuilt from Active AOS ads and saved ad images using `aos.integrations.ai.image_search_tasks.rebuild_image_search_index`.
+Qdrant stores image-search vectors. Backing it up improves recovery time, but vectors can also be rebuilt from Active AOS ads and saved ad images using `aos.integrations.ai.image_search_tasks.rebuild_image_search_index`. Background removal has no generated index or persistent service data; processed outputs are normal Frappe files and are covered by the Frappe public/private files backup.
 
 ## Schedule and retention
 

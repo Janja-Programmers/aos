@@ -27,7 +27,7 @@ sudo apt install -y libgl1 ffmpeg build-essential python3-dev curl wget git git-
 
 ### Why these are required:
 
-- `libgl1` → legacy image/runtime support; AI model runtimes now live in external Docker services
+- `libgl1` → required for background removal (rembg)
 - `ffmpeg` → video processing (shorts)
 - `build-essential` → build Python dependencies
 - `python3-dev` → required for some Python packages
@@ -53,10 +53,7 @@ Current AI services:
 
 - `image-search` → visual similarity search for ads. Owns OpenCLIP, Torch, embeddings, Qdrant access, vector scoring, and image-search thresholds.
 - `translation` → chat message translation. Owns the NLLB translation runtime.
-
-Planned AI services:
-
-- `background-removal` → image background removal. The Frappe backend must not install or run `rembg`/`onnxruntime` directly.
+- `background-removal` → AI media processing for transparent PNG output. Owns rembg, ONNX Runtime, and background-removal model runtime.
 
 Production rule for image search:
 
@@ -67,7 +64,7 @@ Qdrant is private infrastructure behind image-search.
 Only Active ads with images should be indexed.
 ```
 
-Do not import image-search ML/vector dependencies from Frappe code. The Frappe backend should call the private image-search HTTP service.
+Do not import AI/ML dependencies from Frappe code. The Frappe backend should call private AI HTTP services such as image-search and background-removal.
 
 
 ---
@@ -138,7 +135,7 @@ docker compose up -d
 To start only selected services:
 
 ```bash
-docker compose up -d qdrant image-search minio livekit
+docker compose up -d qdrant image-search background-removal minio livekit
 ```
 
 To start translation too:
@@ -151,6 +148,12 @@ To start only image search and its vector store:
 
 ```bash
 docker compose up -d qdrant image-search
+```
+
+To start only background removal:
+
+```bash
+docker compose up -d background-removal
 ```
 
 ---
@@ -174,6 +177,23 @@ Qdrant is still used internally, but the Frappe backend should not connect to Qd
 
 - Qdrant internal service: http://qdrant:6333
 - Local host binding: http://127.0.0.1:6333
+
+---
+
+### Background Removal
+
+- AOS Background Removal Service
+- URL: http://localhost:8120
+- Health: http://localhost:8120/health
+- Ready: http://localhost:8120/ready
+
+Used for:
+
+- Removing image backgrounds
+- Returning transparent PNG output
+- Keeping rembg/ONNX Runtime outside the Frappe backend
+
+The frontend should call the Frappe remove-background endpoint. It should not call this private service directly.
 
 ---
 
@@ -275,6 +295,30 @@ http://aos-image-search:8000
 ```
 
 Do not configure Qdrant in AOS Settings. Qdrant belongs behind the image-search service.
+
+---
+
+## Background Removal
+
+```text
+service_url: http://127.0.0.1:8120
+timeout_seconds: 30
+max_image_bytes: 10485760
+```
+
+For Docker-based single-server setup where Frappe runs on the host, use:
+
+```text
+http://127.0.0.1:8120
+```
+
+If Frappe is also running inside Docker on the same Docker network, use:
+
+```text
+http://aos-background-removal:8000
+```
+
+Do not configure rembg, ONNX Runtime, or model details in AOS Settings. Those belong to the background-removal service environment.
 
 ---
 
@@ -451,6 +495,33 @@ Dry run:
 
 ```bash
 bench --site <site> execute aos.integrations.ai.image_search_tasks.rebuild_image_search_index --kwargs '{"dry_run": true}'
+```
+
+## Background Removal Production Notes
+
+Background removal runs as a separate internal service so rembg/ONNX Runtime dependencies do not affect Frappe workers.
+
+Recommended production setup:
+
+- Keep Frappe as the main AOS backend.
+- Keep background removal as a private Docker service.
+- Do not expose background removal publicly.
+- Store the processed result as a new Frappe File.
+- Treat background removal as always-on infrastructure. If it is unavailable, return a temporary unavailable error instead of disabling the feature.
+
+Health checks:
+
+```bash
+curl http://127.0.0.1:8120/health
+curl http://127.0.0.1:8120/ready
+```
+
+Direct service test:
+
+```bash
+curl -X POST http://127.0.0.1:8120/remove-background \
+  -F "image=@/path/to/test-image.jpg" \
+  --output removed-bg.png
 ```
 
 ## Translation Production Notes

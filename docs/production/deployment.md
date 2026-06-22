@@ -12,7 +12,7 @@ Required public ports:
 - `7881/tcp` for LiveKit TCP fallback
 - `50000-50010/udp` for LiveKit media
 
-Do not publicly expose Qdrant, Image Search, MinIO console, Nominatim, Valhalla, Translation, TileServer raw port, or Frappe worker ports.
+Do not publicly expose Qdrant, Image Search, Background Removal, MinIO console, Nominatim, Valhalla, Translation, TileServer raw port, or Frappe worker ports.
 
 ## 2. Install prerequisites
 
@@ -52,13 +52,17 @@ bench --site <site> set-config nominatim_base_url http://127.0.0.1:8081
 bench --site <site> set-config valhalla_base_url http://127.0.0.1:8002
 ```
 
-Configure AOS Settings after migration so image search points to the private service:
+Configure AOS Settings after migration so image search and background removal point to the private services:
 
 ```text
 image_search_service_url: http://127.0.0.1:8110
 image_search_service_timeout_seconds: 20
 image_search_default_limit: 20
 image_search_max_limit: 100
+
+background_removal_service_url: http://127.0.0.1:8120
+background_removal_service_timeout_seconds: 30
+background_removal_max_image_bytes: 10485760
 ```
 
 ## 5. Build or restore map data
@@ -85,6 +89,8 @@ docker compose ps
 ./infra/maps/scripts/verify-map-data.sh --services
 curl http://127.0.0.1:8110/health
 curl http://127.0.0.1:8110/ready
+curl http://127.0.0.1:8120/health
+curl http://127.0.0.1:8120/ready
 ```
 
 ## 7. Migrate Frappe

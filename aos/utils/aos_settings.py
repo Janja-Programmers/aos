@@ -32,6 +32,11 @@ class AOSSettingsSnapshot:
 	image_search_default_limit: int
 	image_search_max_limit: int
 
+	# Background Removal Service
+	background_removal_service_url: str
+	background_removal_service_timeout_seconds: int
+	background_removal_max_image_bytes: int
+
 	# Storage (MinIO)
 	minio_endpoint: str | None
 	minio_access_key: str | None
@@ -101,11 +106,15 @@ def _bounded_pair(
 
 def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
 	cache = frappe.cache()
-	key = "aos:settings:snapshot:v2"
+	key = "aos:settings:snapshot:v1"
 
 	if use_cache:
 		cached = cache.get_value(key)
-		if isinstance(cached, dict) and "image_search_service_url" in cached:
+		if (
+			isinstance(cached, dict)
+			and "image_search_service_url" in cached
+			and "background_removal_service_url" in cached
+		):
 			return AOSSettingsSnapshot(**cached)
 
 	s = frappe.get_single("AOS Settings")
@@ -172,6 +181,26 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
 
 		image_search_default_limit=image_search_default_limit,
 		image_search_max_limit=image_search_max_limit,
+
+		# Background Removal Service
+		background_removal_service_url=_clean_url(
+			getattr(s, "background_removal_service_url", None),
+			default="http://127.0.0.1:8120",
+		),
+
+		background_removal_service_timeout_seconds=_clamp_int(
+			getattr(s, "background_removal_service_timeout_seconds", 30),
+			default=30,
+			min_value=1,
+			max_value=180,
+		),
+
+		background_removal_max_image_bytes=_clamp_int(
+			getattr(s, "background_removal_max_image_bytes", 10 * 1024 * 1024),
+			default=10 * 1024 * 1024,
+			min_value=1,
+			max_value=50 * 1024 * 1024,
+		),
 
 		# Storage (MinIO)
 		minio_endpoint=(getattr(s, "minio_endpoint", None) or "localhost:9100"),

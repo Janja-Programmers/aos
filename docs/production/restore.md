@@ -34,6 +34,8 @@ The script stops services, restores selected Docker volumes and map artifacts, r
 - `docker compose ps` reports healthy services
 - `curl http://127.0.0.1:8110/health` succeeds
 - `curl http://127.0.0.1:8110/ready` succeeds
+- `curl http://127.0.0.1:8120/health` succeeds
+- `curl http://127.0.0.1:8120/ready` succeeds
 - Frappe login succeeds
 - Private/public files load
 - Seller location APIs work
@@ -43,6 +45,7 @@ The script stops services, restores selected Docker volumes and map artifacts, r
 - MinIO objects are available
 - LiveKit signaling and media work
 - Image search returns expected Active ads
+- Background removal returns a transparent PNG for a known image
 
 If the restored Qdrant volume is missing or stale, rebuild vectors before switching traffic:
 

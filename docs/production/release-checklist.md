@@ -14,8 +14,9 @@
 - [ ] `docker compose config` succeeds
 - [ ] No placeholder secret remains
 - [ ] Internal services bind to `127.0.0.1`
-- [ ] Image Search and Qdrant are not publicly exposed
+- [ ] Image Search, Background Removal, and Qdrant are not publicly exposed
 - [ ] Image Search `/health` and `/ready` pass
+- [ ] Background Removal `/health` and `/ready` pass
 - [ ] LiveKit public ports match firewall rules
 
 ## Backup and rollback
@@ -34,6 +35,7 @@
 - [ ] Docker services are healthy
 - [ ] Image-search vector rebuild dry run reviewed
 - [ ] Image-search vector rebuild completed when required
+- [ ] Background-removal service direct test completed
 - [ ] Nginx configuration test succeeds
 - [ ] TLS certificates are valid
 
@@ -43,6 +45,16 @@
 - [ ] Sold/Expired/Deleted ads do not appear in image search
 - [ ] Image search returns serialized AOS ad data plus `image_search` metadata
 - [ ] Image-search service unavailable path returns a friendly temporary error
+
+## Manual background-removal checks
+
+- [ ] User-owned image can be processed through the Frappe endpoint
+- [ ] Processed result is saved as a new PNG Frappe File
+- [ ] Original image remains unchanged
+- [ ] Non-image files are rejected
+- [ ] Oversized images are rejected
+- [ ] User cannot process another user's private file
+- [ ] Background-removal service unavailable path returns a friendly temporary error
 
 ## Manual map checks
 

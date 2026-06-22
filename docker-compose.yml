@@ -221,6 +221,46 @@ services:
     networks:
       - aos_net
 
+  background-removal:
+    build:
+      context: ./infra/background-removal
+      dockerfile: Dockerfile
+
+    container_name: aos-background-removal
+    restart: unless-stopped
+
+    environment:
+      BACKGROUND_REMOVAL_SERVICE_NAME: ${BACKGROUND_REMOVAL_SERVICE_NAME:-aos-background-removal}
+      BACKGROUND_REMOVAL_ENVIRONMENT: ${BACKGROUND_REMOVAL_ENVIRONMENT:-development}
+      BACKGROUND_REMOVAL_DEBUG: ${BACKGROUND_REMOVAL_DEBUG:-false}
+      BACKGROUND_REMOVAL_MODEL_NAME: ${BACKGROUND_REMOVAL_MODEL_NAME:-u2net}
+      BACKGROUND_REMOVAL_DEVICE: ${BACKGROUND_REMOVAL_DEVICE:-cpu}
+      BACKGROUND_REMOVAL_MODEL_PATH: ${BACKGROUND_REMOVAL_MODEL_PATH:-}
+      BACKGROUND_REMOVAL_MAX_IMAGE_BYTES: ${BACKGROUND_REMOVAL_MAX_IMAGE_BYTES:-10485760}
+      BACKGROUND_REMOVAL_REQUEST_TIMEOUT_SECONDS: ${BACKGROUND_REMOVAL_REQUEST_TIMEOUT_SECONDS:-30}
+      BACKGROUND_REMOVAL_OUTPUT_FORMAT: ${BACKGROUND_REMOVAL_OUTPUT_FORMAT:-png}
+
+    ports:
+      - "${BACKGROUND_REMOVAL_BIND_ADDRESS:-127.0.0.1}:${BACKGROUND_REMOVAL_PORT:-8120}:8000"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+    mem_limit: "${BACKGROUND_REMOVAL_MEMORY_LIMIT:-3g}"
+    cpus: "${BACKGROUND_REMOVAL_CPU_LIMIT:-2.00}"
+    pids_limit: "${BACKGROUND_REMOVAL_PIDS_LIMIT:-1024}"
+
+    stop_grace_period: 60s
+    logging: *common-logging
+    <<: *common-security
+
+    networks:
+      - aos_net
+
   tileserver:
     image: ${TILESERVER_IMAGE:?TILESERVER_IMAGE is required}
     container_name: aos-tileserver
