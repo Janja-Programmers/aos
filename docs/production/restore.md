@@ -36,6 +36,9 @@ The script stops services, restores selected Docker volumes and map artifacts, r
 - `curl http://127.0.0.1:8110/ready` succeeds
 - `curl http://127.0.0.1:8120/health` succeeds
 - `curl http://127.0.0.1:8120/ready` succeeds
+- `curl http://127.0.0.1:8100/health` succeeds
+- `curl http://127.0.0.1:8100/ready` succeeds
+- Translation endpoint returns translated content for a known message. If translation model files are missing after restore, re-download or restore the model directory and restart the translation container.
 - Frappe login succeeds
 - Private/public files load
 - Seller location APIs work

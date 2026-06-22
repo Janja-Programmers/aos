@@ -27,7 +27,7 @@ sudo apt install -y libgl1 ffmpeg build-essential python3-dev curl wget git git-
 
 ### Why these are required:
 
-- `libgl1` → required for background removal (rembg)
+- `libgl1` → libgl1 / libglib dependencies are installed inside AI service containers where needed. The Frappe backend should not require rembg or ONNX Runtime system dependencies.
 - `ffmpeg` → video processing (shorts)
 - `build-essential` → build Python dependencies
 - `python3-dev` → required for some Python packages
@@ -354,7 +354,7 @@ api_secret: from .env
 
 ```text
 translation_service_url: http://127.0.0.1:8100
-translation_service_timeout_seconds: 10
+translation_service_timeout_seconds: 30
 translation_max_characters: 1000
 ```
 

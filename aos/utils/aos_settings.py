@@ -256,7 +256,7 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
 
 		translation_service_timeout_seconds=_clamp_int(
 			getattr(s, "translation_service_timeout_seconds", 10),
-			default=10,
+			default=30,
 			min_value=1,
 			max_value=60,
 		),

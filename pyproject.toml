@@ -8,9 +8,6 @@ requires-python = ">=3.12"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [
-    # IMAGE PROCESSING
-    "Pillow>=10.3.0",
-
     # HTTP
     "requests>=2.31.0",
 

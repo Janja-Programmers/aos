@@ -71,9 +71,6 @@ Translation model/runtime variables belong in the infra `.env` file used by Dock
 ```env
 TRANSLATION_BIND_ADDRESS=127.0.0.1
 TRANSLATION_PORT=8100
-TRANSLATION_SERVICE_NAME=aos-translation
-TRANSLATION_ENVIRONMENT=staging
-TRANSLATION_DEBUG=false
 
 TRANSLATION_MODEL_NAME=nllb-200-distilled-1.3B-ct2-int8
 TRANSLATION_DEVICE=cpu
