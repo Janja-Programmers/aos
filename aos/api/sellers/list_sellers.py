@@ -29,7 +29,7 @@ from aos.api.shared.rate_limit import (
     request_ip,
 )
 from aos.api.shared.responses import fail, ok
-from aos.api.shared.user_display import get_user_display
+from aos.api.shared.user_display import get_user_display_map
 from aos.api.social.relationship import build_relationship_status
 from aos.services.seller_response_metrics import (
     format_response_rate,
@@ -378,11 +378,22 @@ def list_sellers_impl(**kwargs):
             as_dict=True,
         )
 
+        seller_users = [
+            seller.get("user")
+            for seller in sellers
+            if seller.get("user")
+        ]
+
+        display_by_user = get_user_display_map(
+            seller_users
+        )
+
         items = [
             _serialize_seller(
                 seller=seller,
                 viewer=viewer,
                 is_logged_in=is_logged_in,
+                display_by_user=display_by_user,
             )
             for seller in sellers
         ]
@@ -414,6 +425,7 @@ def _serialize_seller(
     seller: dict,
     viewer: str | None,
     is_logged_in: bool,
+    display_by_user: dict[str, dict[str, Any]],
 ) -> dict:
     """Serialize a lightweight seller discovery item."""
 
@@ -467,8 +479,13 @@ def _serialize_seller(
         )
     )
 
-    display = get_user_display(seller_user)
-    is_deleted = bool(display.get("is_deleted"))
+    display = display_by_user.get(
+        seller_user
+    ) or {}
+
+    is_deleted = bool(
+        display.get("is_deleted")
+    )
 
     item = {
         "seller": seller.get("name"),
@@ -476,6 +493,13 @@ def _serialize_seller(
         "display_name": display.get("display_name"),
         "avatar": display.get("avatar"),
         "is_deleted": is_deleted,
+        "is_live": bool(display.get("is_live")) if not is_deleted else False,
+        "live_id": display.get("live_id") if not is_deleted else None,
+        "live_status": display.get("live_status") if not is_deleted else None,
+        "live_title": display.get("live_title") if not is_deleted else None,
+        "live_cover_image": display.get("live_cover_image") if not is_deleted else None,
+        "live_started_at": display.get("live_started_at") if not is_deleted else None,
+        "live_viewer_count": int(display.get("live_viewer_count") or 0) if not is_deleted else 0,
         "business_category": seller.get(
             "business_category"
         ),

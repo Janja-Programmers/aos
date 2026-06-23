@@ -76,6 +76,10 @@ def _build_conversation_response(
         "user": other["user"],
         "display_name": other["display_name"],
         "avatar": other["avatar"],
+        "is_deleted": bool(other.get("is_deleted")),
+        "is_live": bool(other.get("is_live")) if not bool(other.get("is_deleted")) else False,
+        "live_id": other.get("live_id") if not bool(other.get("is_deleted")) else None,
+        "live_status": other.get("live_status") if not bool(other.get("is_deleted")) else None,
     }
 
 
@@ -326,6 +330,10 @@ def list_conversations_impl(**kwargs):
                     "user": other_user,
                     "display_name": display_name,
                     "avatar": avatar,
+                    "is_deleted": bool(user.get("is_deleted")),
+                    "is_live": bool(user.get("is_live")) if not bool(user.get("is_deleted")) else False,
+                    "live_id": user.get("live_id") if not bool(user.get("is_deleted")) else None,
+                    "live_status": user.get("live_status") if not bool(user.get("is_deleted")) else None,
                     "last_message": last_message,
                     "last_message_at": last_message_at,
                     "last_sender": last_sender,
@@ -337,6 +345,21 @@ def list_conversations_impl(**kwargs):
                     "last_sender_avatar": (
                         last_sender_user.get("avatar")
                         if last_sender_user
+                        else None
+                    ),
+                    "last_sender_is_deleted": (
+                        bool(last_sender_user.get("is_deleted"))
+                        if last_sender_user
+                        else False
+                    ),
+                    "last_sender_is_live": (
+                        bool(last_sender_user.get("is_live"))
+                        if last_sender_user and not bool(last_sender_user.get("is_deleted"))
+                        else False
+                    ),
+                    "last_sender_live_id": (
+                        last_sender_user.get("live_id")
+                        if last_sender_user and not bool(last_sender_user.get("is_deleted"))
                         else None
                     ),
                     "unread_count": unread or 0,

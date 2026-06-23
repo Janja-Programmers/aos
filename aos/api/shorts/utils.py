@@ -286,6 +286,13 @@ def serialize_short_row(
             "display_name": creator_display.get("display_name"),
             "avatar": creator_display.get("avatar"),
             "is_deleted": creator_is_deleted,
+            "is_live": bool(creator_display.get("is_live")) if not creator_is_deleted else False,
+            "live_id": creator_display.get("live_id") if not creator_is_deleted else None,
+            "live_status": creator_display.get("live_status") if not creator_is_deleted else None,
+            "live_title": creator_display.get("live_title") if not creator_is_deleted else None,
+            "live_cover_image": creator_display.get("live_cover_image") if not creator_is_deleted else None,
+            "live_started_at": creator_display.get("live_started_at") if not creator_is_deleted else None,
+            "live_viewer_count": int(creator_display.get("live_viewer_count") or 0) if not creator_is_deleted else 0,
             "is_verified": bool(row.get("creator_is_verified")) if not creator_is_deleted else False,
             "seller": (
                 {
@@ -327,6 +334,9 @@ def serialize_comment_row(
         "display_name": author_display.get("display_name"),
         "avatar": author_display.get("avatar"),
         "is_deleted_user": bool(author_display.get("is_deleted")),
+        "is_live": bool(author_display.get("is_live")) if not bool(author_display.get("is_deleted")) else False,
+        "live_id": author_display.get("live_id") if not bool(author_display.get("is_deleted")) else None,
+        "live_status": author_display.get("live_status") if not bool(author_display.get("is_deleted")) else None,
         "comment": row.get("comment") or "",
         "parent_comment": row.get("parent_comment"),
         "root_comment": row.get("root_comment"),

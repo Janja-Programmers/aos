@@ -263,6 +263,13 @@ def serialize_user(
         ],
         "avatar": display["avatar"],
         "is_deleted": is_deleted,
+        "is_live": bool(display.get("is_live")) if not is_deleted else False,
+        "live_id": display.get("live_id") if not is_deleted else None,
+        "live_status": display.get("live_status") if not is_deleted else None,
+        "live_title": display.get("live_title") if not is_deleted else None,
+        "live_cover_image": display.get("live_cover_image") if not is_deleted else None,
+        "live_started_at": display.get("live_started_at") if not is_deleted else None,
+        "live_viewer_count": int(display.get("live_viewer_count") or 0) if not is_deleted else 0,
         "is_verified": (
             False
             if is_deleted
@@ -281,6 +288,14 @@ def empty_user_payload() -> dict:
         "user": None,
         "display_name": None,
         "avatar": None,
+        "is_deleted": False,
+        "is_live": False,
+        "live_id": None,
+        "live_status": None,
+        "live_title": None,
+        "live_cover_image": None,
+        "live_started_at": None,
+        "live_viewer_count": 0,
         "is_verified": False,
         "total_followers": 0,
     }
@@ -296,6 +311,14 @@ def fallback_user_payload(
         "user": user,
         "display_name": user,
         "avatar": None,
+        "is_deleted": False,
+        "is_live": False,
+        "live_id": None,
+        "live_status": None,
+        "live_title": None,
+        "live_cover_image": None,
+        "live_started_at": None,
+        "live_viewer_count": 0,
         "is_verified": False,
         "total_followers": 0,
     }
@@ -1549,6 +1572,13 @@ def preload_users(
             "display_name": display.get("display_name"),
             "avatar": display.get("avatar"),
             "is_deleted": is_deleted,
+            "is_live": bool(display.get("is_live")) if not is_deleted else False,
+            "live_id": display.get("live_id") if not is_deleted else None,
+            "live_status": display.get("live_status") if not is_deleted else None,
+            "live_title": display.get("live_title") if not is_deleted else None,
+            "live_cover_image": display.get("live_cover_image") if not is_deleted else None,
+            "live_started_at": display.get("live_started_at") if not is_deleted else None,
+            "live_viewer_count": int(display.get("live_viewer_count") or 0) if not is_deleted else 0,
             "is_verified": (
                 bool(profile.is_verified)
                 if profile and not is_deleted

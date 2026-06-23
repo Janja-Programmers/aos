@@ -190,6 +190,13 @@ def get_seller_impl(**kwargs):
                 "display_name": display.get("display_name"),
                 "avatar": display.get("avatar"),
                 "is_deleted": is_deleted,
+                "is_live": bool(display.get("is_live")) if not is_deleted else False,
+                "live_id": display.get("live_id") if not is_deleted else None,
+                "live_status": display.get("live_status") if not is_deleted else None,
+                "live_title": display.get("live_title") if not is_deleted else None,
+                "live_cover_image": display.get("live_cover_image") if not is_deleted else None,
+                "live_started_at": display.get("live_started_at") if not is_deleted else None,
+                "live_viewer_count": int(display.get("live_viewer_count") or 0) if not is_deleted else 0,
                 "business_category": (
                     seller_doc.business_category
                 ),

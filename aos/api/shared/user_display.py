@@ -8,6 +8,8 @@ Important:
 - Public display fields are masked for soft-deleted accounts.
 - Restored accounts automatically show their normal profile again because the
   underlying User data is preserved during recoverable deletion.
+- Live state is computed from AOS Live Stream and attached to the display
+  payload so avatar UIs can show a TikTok-style LIVE ring consistently.
 """
 
 from __future__ import annotations
@@ -16,7 +18,32 @@ from typing import Any, Iterable
 
 import frappe
 
+from aos.api.shared.live_state import get_user_live_state, get_users_live_state
+
 DELETED_USER_DISPLAY_NAME = "Deleted User"
+
+
+def _empty_live_state() -> dict[str, Any]:
+    return {
+        "is_live": False,
+        "live_id": None,
+        "live_status": None,
+        "live_title": None,
+        "live_cover_image": None,
+        "live_started_at": None,
+        "live_viewer_count": 0,
+    }
+
+
+def _coerce_live_state(live_state: dict[str, Any] | None) -> dict[str, Any]:
+    if not live_state:
+        return _empty_live_state()
+
+    base = _empty_live_state()
+    base.update(live_state)
+    base["is_live"] = bool(base.get("is_live"))
+    base["live_viewer_count"] = int(base.get("live_viewer_count") or 0)
+    return base
 
 
 def _has_profile_field(fieldname: str) -> bool:
@@ -40,8 +67,16 @@ def _is_deleted_from_profile(profile: Any | None) -> bool:
     if not profile:
         return False
 
-    status = (profile.get("account_status") if isinstance(profile, dict) else getattr(profile, "account_status", None))
-    is_deleted = (profile.get("is_deleted") if isinstance(profile, dict) else getattr(profile, "is_deleted", 0))
+    status = (
+        profile.get("account_status")
+        if isinstance(profile, dict)
+        else getattr(profile, "account_status", None)
+    )
+    is_deleted = (
+        profile.get("is_deleted")
+        if isinstance(profile, dict)
+        else getattr(profile, "is_deleted", 0)
+    )
 
     return bool(int(is_deleted or 0)) or status == "Deleted"
 
@@ -54,6 +89,7 @@ def _deleted_payload(user: str | None) -> dict[str, Any]:
         "avatar": None,
         "user_image": None,
         "is_deleted": True,
+        **_empty_live_state(),
     }
 
 
@@ -64,8 +100,12 @@ def normalize_user_display(
     avatar: str | None = None,
     is_deleted: bool = False,
     fallback_to_user: bool = True,
+    live_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Normalize user display fields from already-fetched data."""
+    """Normalize user display fields from already-fetched data.
+
+    When is_deleted=True, public identity and live state are always masked.
+    """
     if not user:
         return {
             "user": None,
@@ -74,6 +114,7 @@ def normalize_user_display(
             "avatar": None,
             "user_image": None,
             "is_deleted": False,
+            **_empty_live_state(),
         }
 
     if is_deleted:
@@ -90,6 +131,7 @@ def normalize_user_display(
         "avatar": avatar,
         "user_image": avatar,
         "is_deleted": False,
+        **_coerce_live_state(live_state),
     }
 
 
@@ -109,12 +151,16 @@ def get_user_display(user: str | None) -> dict[str, Any]:
         return normalize_user_display(user=user)
 
     profile_fields = _profile_status_fields()
-    profile = frappe.db.get_value(
-        "AOS Profile",
-        user,
-        profile_fields,
-        as_dict=True,
-    ) if profile_fields else None
+    profile = (
+        frappe.db.get_value(
+            "AOS Profile",
+            user,
+            profile_fields,
+            as_dict=True,
+        )
+        if profile_fields
+        else None
+    )
 
     is_deleted = _is_deleted_from_profile(profile)
 
@@ -123,6 +169,7 @@ def get_user_display(user: str | None) -> dict[str, Any]:
         full_name=user_row.full_name or user_row.first_name,
         avatar=user_row.user_image,
         is_deleted=is_deleted,
+        live_state=None if is_deleted else get_user_live_state(user_row.name),
     )
 
 
@@ -152,6 +199,8 @@ def get_user_display_map(users: Iterable[str]) -> dict[str, dict[str, Any]]:
         )
         profile_by_user = {row.user: row for row in profile_rows}
 
+    live_by_user = get_users_live_state(unique_users)
+
     result: dict[str, dict[str, Any]] = {}
 
     for user in unique_users:
@@ -161,11 +210,14 @@ def get_user_display_map(users: Iterable[str]) -> dict[str, dict[str, Any]]:
             continue
 
         profile = profile_by_user.get(user)
+        is_deleted = _is_deleted_from_profile(profile)
+
         result[user] = normalize_user_display(
             user=row.name,
             full_name=row.full_name or row.first_name,
             avatar=row.user_image,
-            is_deleted=_is_deleted_from_profile(profile),
+            is_deleted=is_deleted,
+            live_state=None if is_deleted else live_by_user.get(user),
         )
 
     return result

@@ -57,6 +57,21 @@ def _serialize_notification(notification):
             if actor_display
             else False
         ),
+        "actor_is_live": (
+            bool(actor_display.get("is_live"))
+            if actor_display and not bool(actor_display.get("is_deleted"))
+            else False
+        ),
+        "actor_live_id": (
+            actor_display.get("live_id")
+            if actor_display and not bool(actor_display.get("is_deleted"))
+            else None
+        ),
+        "actor_live_status": (
+            actor_display.get("live_status")
+            if actor_display and not bool(actor_display.get("is_deleted"))
+            else None
+        ),
         "payload": notification.payload or {},
         "is_read": notification.is_read,
         "created_at": notification.creation,

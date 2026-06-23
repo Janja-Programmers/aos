@@ -187,6 +187,10 @@ def _build_live_payload(
             "display_name"
         ],
         "host_avatar": host["avatar"],
+        "host_is_deleted": bool(host.get("is_deleted")),
+        "host_is_live": bool(host.get("is_live")) if not bool(host.get("is_deleted")) else False,
+        "host_live_id": host.get("live_id") if not bool(host.get("is_deleted")) else None,
+        "host_live_status": host.get("live_status") if not bool(host.get("is_deleted")) else None,
         "title": live.title,
         "cover_image": live.cover_image,
         "thumbnail": live.cover_image,

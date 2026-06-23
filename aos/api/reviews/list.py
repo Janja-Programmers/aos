@@ -177,6 +177,9 @@ def list_reviews_impl(**kwargs):
                         "full_name": reviewer_info.get("display_name", ""),
                         "avatar": reviewer_info.get("avatar", ""),
                         "is_deleted": bool(reviewer_info.get("is_deleted")),
+                        "is_live": bool(reviewer_info.get("is_live")) if not bool(reviewer_info.get("is_deleted")) else False,
+                        "live_id": reviewer_info.get("live_id") if not bool(reviewer_info.get("is_deleted")) else None,
+                        "live_status": reviewer_info.get("live_status") if not bool(reviewer_info.get("is_deleted")) else None,
                     },
                     "images": images_map.get(r["name"], []),
                 }

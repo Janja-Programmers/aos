@@ -88,6 +88,9 @@ def _presence_payload(user: str) -> dict:
         "user": summary["user"],
         "display_name": summary["display_name"],
         "avatar": summary["avatar"],
+        "is_live": bool(summary.get("is_live")) if not bool(summary.get("is_deleted")) else False,
+        "live_id": summary.get("live_id") if not bool(summary.get("is_deleted")) else None,
+        "live_status": summary.get("live_status") if not bool(summary.get("is_deleted")) else None,
         "is_online": _is_online(last_active),
         "last_seen": last_active,
     }
