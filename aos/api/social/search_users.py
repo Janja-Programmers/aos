@@ -24,6 +24,7 @@ from .constants import (
     USER_SEARCH_MIN_LEN,
 )
 from .relationship import build_relationship_status
+from .activity import record_user_search_activity
 
 
 SEARCHABLE_USER_FIELDS = (
@@ -77,6 +78,12 @@ def search_users_impl(**kwargs):
         items = _serialize_search_rows(
             rows=rows,
             current_user=current_user,
+        )
+
+        record_user_search_activity(
+            user=current_user,
+            query=query,
+            result_count=total,
         )
 
         return ok(

@@ -6,6 +6,10 @@ from frappe.utils import nowdate, getdate
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
+from aos.api.ads.activity import (
+    hide_ad_wishlist_activity,
+    record_ad_wishlist_activity,
+)
 
 from .constants import WISHLIST_LIMIT_PER_MINUTE_PER_IP
 
@@ -83,6 +87,17 @@ def toggle_wishlist_impl(**kwargs):
             doc.status = "Removed" if doc.status == "Active" else "Active"
             doc.save(ignore_permissions=True)
 
+            if doc.status == "Active":
+                record_ad_wishlist_activity(
+                    user=user,
+                    ad_id=ad_id,
+                )
+            else:
+                hide_ad_wishlist_activity(
+                    user=user,
+                    ad_id=ad_id,
+                )
+
             return ok(
                 "Wishlist updated.",
                 data={"wishlisted": doc.status == "Active"},
@@ -95,6 +110,11 @@ def toggle_wishlist_impl(**kwargs):
         doc.status = "Active"
 
         doc.insert(ignore_permissions=True)
+
+        record_ad_wishlist_activity(
+            user=user,
+            ad_id=ad_id,
+        )
 
         return ok(
             "Wishlist updated.",

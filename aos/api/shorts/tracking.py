@@ -25,6 +25,7 @@ from aos.api.shorts.constants import (
 )
 
 from aos.api.shorts.utils import resolve_actor
+from aos.api.shorts.activity import record_short_watch_activity
 
 
 # COMMON
@@ -179,6 +180,15 @@ def track_view_impl(**kwargs):
                 doc.save(ignore_permissions=True)
 
                 should_update_ranking = True
+
+        # Record private Activity Center watch history for logged-in users only.
+        # Guests still contribute to analytics/views but do not get account history.
+        if user:
+            record_short_watch_activity(
+                user=user,
+                short_id=short_id,
+                watch_ms=watch_ms,
+            )
 
         frappe.db.commit()
 

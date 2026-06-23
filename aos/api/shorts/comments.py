@@ -44,6 +44,10 @@ from aos.api.shorts.utils import (
 )
 
 from aos.api.shorts.visibility import can_view_short
+from aos.api.shorts.activity import (
+    hide_short_comment_activity,
+    record_short_comment_activity,
+)
 
 RANKING_TASK = "aos.api.shorts.tasks.update_short_score_task"
 
@@ -308,6 +312,13 @@ def add_comment_impl(**kwargs):
         )
         doc.insert(ignore_permissions=True)
 
+        record_short_comment_activity(
+            user=user,
+            short_id=short_id,
+            comment_id=doc.name,
+            comment_text=comment,
+        )
+
         # Notify short creator/poster, not seller.
         if short.owner and short.owner != user:
             NotificationService.notify_short_comment(
@@ -405,6 +416,14 @@ def reply_comment_impl(**kwargs):
             }
         )
         doc.insert(ignore_permissions=True)
+
+        record_short_comment_activity(
+            user=user,
+            short_id=parent.short,
+            comment_id=doc.name,
+            comment_text=comment,
+            parent_comment_id=parent.name,
+        )
 
         # Notify comment owner.
         if parent.user and parent.user != user:
@@ -807,6 +826,35 @@ def delete_comment_impl(**kwargs):
             return fail("Not allowed.", code="FORBIDDEN")
 
         short_id = doc.short
+
+        # Hide Activity Center comment-history rows for the deleted comment and
+        # any cascaded replies before their source records are soft-deleted.
+        activity_rows = [
+            {"name": doc.name, "user": doc.user},
+        ]
+
+        if not doc.parent_comment:
+            reply_activity_rows = frappe.get_all(
+                "AOS Short Comment",
+                filters={
+                    "root_comment": doc.name,
+                    "status": ["!=", "deleted"],
+                },
+                fields=["name", "user"],
+            )
+
+            seen_comment_ids = {doc.name}
+            for row in reply_activity_rows or []:
+                if row.name in seen_comment_ids:
+                    continue
+                seen_comment_ids.add(row.name)
+                activity_rows.append({"name": row.name, "user": row.user})
+
+        for row in activity_rows:
+            hide_short_comment_activity(
+                user=row.get("user"),
+                comment_id=row.get("name"),
+            )
 
         # CASCADE DELETE replies if deleting a top-level comment.
         if not doc.parent_comment:

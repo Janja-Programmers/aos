@@ -44,6 +44,10 @@ from aos.api.shared.responses import fail, ok
 from aos.api.shared.validators import require_id
 from aos.services.live_analytics_service import LiveAnalyticsService
 
+from .activity import (
+    hide_live_comment_activity,
+    record_live_comment_activity,
+)
 from .constants import (
     ADD_COMMENT_LIMIT_PER_MINUTE_PER_USER,
     DELETE_COMMENT_LIMIT_PER_MINUTE_PER_USER,
@@ -613,6 +617,13 @@ def add_live_message_impl(**kwargs):
             content=content,
         )
 
+        record_live_comment_activity(
+            user=user,
+            live_id=live_id,
+            message_id=message.name,
+            content=content,
+        )
+
         serialized = serialize_live_message(
             message
         )
@@ -744,6 +755,14 @@ def reply_live_message_impl(**kwargs):
             user=user,
             content=content,
             parent_message=parent_id,
+        )
+
+        record_live_comment_activity(
+            user=user,
+            live_id=live_id,
+            message_id=message.name,
+            content=content,
+            parent_message_id=parent_id,
         )
 
         serialized = serialize_live_message(
@@ -1179,6 +1198,7 @@ def delete_live_message_impl(**kwargs):
             },
             fields=[
                 "name",
+                "user",
                 "parent_message",
             ],
         )
@@ -1196,6 +1216,12 @@ def delete_live_message_impl(**kwargs):
         _soft_delete_messages(
             deleted_ids
         )
+
+        for row in affected_rows:
+            hide_live_comment_activity(
+                user=row.user,
+                message_id=row.name,
+            )
 
         _sync_reply_counts(
             affected_parent_ids

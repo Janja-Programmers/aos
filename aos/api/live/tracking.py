@@ -30,6 +30,7 @@ from aos.api.shared.responses import fail, ok
 from aos.api.shared.validators import require_id
 from aos.services.live_analytics_service import LiveAnalyticsService
 
+from .activity import record_live_join_activity
 from .constants import (
     TRACK_JOIN_LIMIT_PER_MINUTE_PER_IP,
     TRACK_LEAVE_LIMIT_PER_MINUTE_PER_IP,
@@ -399,6 +400,13 @@ def track_join_impl(**kwargs):
             live_id=live_id,
             viewer=viewer,
             session_id=session_id,
+        )
+
+        record_live_join_activity(
+            user=viewer,
+            live_id=live_id,
+            session_id=session_id,
+            view_id=view.name,
         )
 
         metrics = _sync_view_metrics(

@@ -9,6 +9,7 @@ from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 from aos.api.social.block import block_user_impl
+from aos.api.social.activity import record_report_user_activity
 
 from .constants import (
     REPORT_USER_LIMIT_PER_MINUTE_PER_USER,
@@ -135,6 +136,13 @@ def report_user_impl(**kwargs):
         report.status = "Reviewing"
 
         report.insert(ignore_permissions=True)
+
+        record_report_user_activity(
+            user=current_user,
+            target_user=target_user,
+            report_id=report.name,
+            reason=reason,
+        )
 
         response_data = {
             "id": report.name,

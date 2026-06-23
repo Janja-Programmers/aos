@@ -29,6 +29,7 @@ from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.user_display import get_user_display_map
 
+from .activity import record_block_user_activity
 from .constants import (
     BLOCK_REASON_MAX_LEN,
     BLOCK_USER_LIMIT_PER_MINUTE_PER_USER,
@@ -138,6 +139,12 @@ def block_user_impl(**kwargs):
         _remove_follow_relationships_and_sync(
             current_user=current_user,
             target_user=target_user,
+        )
+
+        record_block_user_activity(
+            user=current_user,
+            target_user=target_user,
+            reason=reason,
         )
 
         frappe.db.commit()

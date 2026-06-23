@@ -16,6 +16,7 @@ from aos.api.shared.responses import fail, ok
 
 from .constants import GET_AD_LIMIT_PER_HOUR_PER_IP
 from .serializers import serialize_ad_detail
+from .activity import record_ad_view_activity
 
 
 def get_ad_impl(**kwargs):
@@ -171,6 +172,12 @@ def get_ad_impl(**kwargs):
         doc,
         is_wishlisted=ad_id in wishlisted_ids,
     )
+
+    if user != "Guest":
+        record_ad_view_activity(
+            user=user,
+            ad_id=ad_id,
+        )
 
     return ok(
         "Ad fetched.",

@@ -19,6 +19,10 @@ from aos.services.notification_service import NotificationService
 from aos.api.shorts.constants import (
     LIKE_TOGGLE_RATE_LIMIT_PER_MINUTE,
 )
+from aos.api.shorts.activity import (
+    hide_short_like_activity,
+    record_short_like_activity,
+)
 
 
 # TOGGLE LIKE
@@ -89,6 +93,11 @@ def toggle_like_impl(**kwargs):
             message = "Liked."
             should_update_ranking = True
 
+            record_short_like_activity(
+                user=user,
+                short_id=short_id,
+            )
+
             # NOTIFICATION
             if short.owner and short.owner != user:
                 NotificationService.notify_short_like(
@@ -108,6 +117,11 @@ def toggle_like_impl(**kwargs):
             liked = False
             message = "Unliked."
             should_update_ranking = True
+
+            hide_short_like_activity(
+                user=user,
+                short_id=short_id,
+            )
 
         frappe.db.commit()
 

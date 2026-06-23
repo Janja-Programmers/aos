@@ -25,6 +25,7 @@ from aos.services.account_service import get_or_create_seller
 from aos.integrations.ai.image_search_tasks import enqueue_index_refresh_for_status
 
 from .constants import CREATE_AD_LIMIT_PER_MINUTE_PER_USER
+from .activity import record_ad_posted_activity
 from .validators import (
     attach_file_to_ad,
     sanitize_details,
@@ -301,6 +302,11 @@ def create_ad_impl(**kwargs):
                 frappe.get_traceback(),
                 f"Failed to enqueue image-search refresh for {ad.name}",
             )
+
+        record_ad_posted_activity(
+            user=current_user,
+            ad_id=ad.name,
+        )
 
         return ok(
             "Ad created.",

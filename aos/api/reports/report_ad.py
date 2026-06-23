@@ -5,6 +5,7 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.ads.activity import record_ad_report_activity
 
 from .constants import REPORT_AD_LIMIT_PER_MINUTE_PER_USER
 
@@ -71,6 +72,13 @@ def report_ad_impl(**kwargs):
         report.seller = ad_doc.seller
 
         report.insert(ignore_permissions=True)
+
+        record_ad_report_activity(
+            user=current_user,
+            ad_id=ad,
+            report_id=report.name,
+            reason=reason,
+        )
 
         return ok(
             "Report submitted successfully. Our team will review it.",

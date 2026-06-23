@@ -32,6 +32,7 @@ from aos.api.shared.validators import require_id
 from aos.services.livekit_service import LiveKitService
 from aos.services.notification_service import NotificationService
 
+from .activity import record_live_host_activity
 from .constants import (
     END_LIVE_LIMIT_PER_MINUTE_PER_USER,
     GET_LIVE_LIMIT_PER_MINUTE_PER_IP,
@@ -684,6 +685,11 @@ def start_live_impl(**kwargs):
         )
 
         live.reload()
+
+        record_live_host_activity(
+            user=user,
+            live_id=live.name,
+        )
 
         startup_messages = _create_startup_messages(
             live=live,

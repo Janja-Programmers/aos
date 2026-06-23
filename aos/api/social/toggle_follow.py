@@ -17,6 +17,7 @@ from aos.api.shared.responses import fail, ok
 
 from aos.services.notification_service import NotificationService
 
+from .activity import record_follow_user_activity
 from .constants import TOGGLE_FOLLOW_LIMIT_PER_MINUTE_PER_USER
 from .relationship import build_relationship_status
 
@@ -106,6 +107,11 @@ def toggle_follow_impl(**kwargs):
         doc.follower_user = current_user
         doc.following_user = target_user
         doc.insert(ignore_permissions=True)
+
+        record_follow_user_activity(
+            user=current_user,
+            target_user=target_user,
+        )
 
         _sync_profile_totals(
             current_user=current_user,
