@@ -9,6 +9,7 @@ import frappe
 
 from .toggle_follow import toggle_follow_impl
 from .relationship import get_relationship_status_impl
+from .search_users import search_users_impl
 from .lists import (
     get_following_impl,
     get_followers_impl,
@@ -44,3 +45,9 @@ def get_followers(**kwargs):
 def get_friends(**kwargs):
     """Get mutual follows for the current user."""
     return get_friends_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["GET"])
+def search_users(**kwargs):
+    """Search active AOS users globally."""
+    return search_users_impl(**kwargs)

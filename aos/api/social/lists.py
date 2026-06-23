@@ -5,9 +5,12 @@ Supports:
   - Following: users current_user follows
   - Followers: users following current_user
   - Friends: mutual follows
+  - Optional search inside each list by user name/email
 """
 
 from __future__ import annotations
+
+import re
 
 import frappe
 
@@ -22,8 +25,13 @@ from .constants import (
     GET_FOLLOWING_LIMIT_PER_MINUTE_PER_USER,
     GET_FRIENDS_LIMIT_PER_MINUTE_PER_USER,
     MAX_SOCIAL_LIST_LIMIT,
+    SOCIAL_LIST_SEARCH_MAX_LEN,
+    SOCIAL_LIST_SEARCH_MIN_LEN,
 )
 from .relationship import build_relationship_status
+
+
+LIKE_ESCAPE_CHAR = "\\"
 
 
 def get_following_impl(**kwargs):
@@ -33,6 +41,9 @@ def get_following_impl(**kwargs):
     Meaning:
       AOS Follow.follower_user = current_user
       AOS Follow.following_user = returned user
+
+    Optional:
+      search: filters returned users by full_name/first_name/user id.
     """
 
     current_user, err = require_login()
@@ -51,9 +62,15 @@ def get_following_impl(**kwargs):
     try:
         limit = _get_limit(kwargs)
         start = _get_start(kwargs)
+        search, search_err = _get_search(kwargs)
+        if search_err:
+            return search_err
 
+        search_sql, search_params = _build_user_search_filter(search)
+
+        row_params = [current_user, *search_params, limit, start]
         rows = frappe.db.sql(
-            """
+            f"""
             SELECT
                 f.following_user AS user,
                 f.creation AS followed_at,
@@ -70,18 +87,18 @@ def get_following_impl(**kwargs):
             INNER JOIN `tabUser` u
                 ON u.name = f.following_user
             WHERE f.follower_user = %s
+            {search_sql}
             ORDER BY f.creation DESC
             LIMIT %s OFFSET %s
             """,
-            (current_user, limit, start),
+            row_params,
             as_dict=True,
         )
 
-        total = frappe.db.count(
-            "AOS Follow",
-            filters={
-                "follower_user": current_user,
-            },
+        total = _get_following_total(
+            current_user=current_user,
+            search_sql=search_sql,
+            search_params=search_params,
         )
 
         users = _serialize_users(
@@ -96,6 +113,7 @@ def get_following_impl(**kwargs):
                 "total": total,
                 "limit": limit,
                 "start": start,
+                "search": search or "",
                 "has_more": start + len(users) < total,
             },
         )
@@ -115,6 +133,9 @@ def get_followers_impl(**kwargs):
     Meaning:
       AOS Follow.following_user = current_user
       AOS Follow.follower_user = returned user
+
+    Optional:
+      search: filters returned users by full_name/first_name/user id.
     """
 
     current_user, err = require_login()
@@ -133,9 +154,15 @@ def get_followers_impl(**kwargs):
     try:
         limit = _get_limit(kwargs)
         start = _get_start(kwargs)
+        search, search_err = _get_search(kwargs)
+        if search_err:
+            return search_err
 
+        search_sql, search_params = _build_user_search_filter(search)
+
+        row_params = [current_user, *search_params, limit, start]
         rows = frappe.db.sql(
-            """
+            f"""
             SELECT
                 f.follower_user AS user,
                 f.creation AS followed_at,
@@ -152,18 +179,18 @@ def get_followers_impl(**kwargs):
             INNER JOIN `tabUser` u
                 ON u.name = f.follower_user
             WHERE f.following_user = %s
+            {search_sql}
             ORDER BY f.creation DESC
             LIMIT %s OFFSET %s
             """,
-            (current_user, limit, start),
+            row_params,
             as_dict=True,
         )
 
-        total = frappe.db.count(
-            "AOS Follow",
-            filters={
-                "following_user": current_user,
-            },
+        total = _get_followers_total(
+            current_user=current_user,
+            search_sql=search_sql,
+            search_params=search_params,
         )
 
         users = _serialize_users(
@@ -178,6 +205,7 @@ def get_followers_impl(**kwargs):
                 "total": total,
                 "limit": limit,
                 "start": start,
+                "search": search or "",
                 "has_more": start + len(users) < total,
             },
         )
@@ -197,6 +225,9 @@ def get_friends_impl(**kwargs):
     Meaning:
       current_user follows returned user
       AND returned user follows current_user
+
+    Optional:
+      search: filters returned users by full_name/first_name/user id.
     """
 
     current_user, err = require_login()
@@ -215,9 +246,15 @@ def get_friends_impl(**kwargs):
     try:
         limit = _get_limit(kwargs)
         start = _get_start(kwargs)
+        search, search_err = _get_search(kwargs)
+        if search_err:
+            return search_err
 
+        search_sql, search_params = _build_user_search_filter(search)
+
+        row_params = [current_user, *search_params, limit, start]
         rows = frappe.db.sql(
-            """
+            f"""
             SELECT
                 f1.following_user AS user,
                 f1.creation AS followed_at,
@@ -238,27 +275,19 @@ def get_friends_impl(**kwargs):
             INNER JOIN `tabUser` u
                 ON u.name = f1.following_user
             WHERE f1.follower_user = %s
+            {search_sql}
             ORDER BY GREATEST(f1.creation, f2.creation) DESC
             LIMIT %s OFFSET %s
             """,
-            (current_user, limit, start),
+            row_params,
             as_dict=True,
         )
 
-        total = frappe.db.sql(
-            """
-            SELECT COUNT(*) AS total
-            FROM `tabAOS Follow` f1
-            INNER JOIN `tabAOS Follow` f2
-                ON f2.follower_user = f1.following_user
-               AND f2.following_user = f1.follower_user
-            WHERE f1.follower_user = %s
-            """,
-            (current_user,),
-            as_dict=True,
+        total_count = _get_friends_total(
+            current_user=current_user,
+            search_sql=search_sql,
+            search_params=search_params,
         )
-
-        total_count = int(total[0].total or 0) if total else 0
 
         users = _serialize_users(
             rows=rows,
@@ -272,6 +301,7 @@ def get_friends_impl(**kwargs):
                 "total": total_count,
                 "limit": limit,
                 "start": start,
+                "search": search or "",
                 "has_more": start + len(users) < total_count,
             },
         )
@@ -343,3 +373,137 @@ def _get_start(kwargs) -> int:
         start = 0
 
     return max(start, 0)
+
+
+def _get_search(kwargs) -> tuple[str | None, dict | None]:
+    search = re.sub(r"\s+", " ", str(kwargs.get("search") or "").strip())
+
+    if not search:
+        return None, None
+
+    if len(search) < SOCIAL_LIST_SEARCH_MIN_LEN:
+        return None, fail(
+            f"Search must be at least {SOCIAL_LIST_SEARCH_MIN_LEN} characters.",
+            code="VALIDATION_ERROR",
+        )
+
+    if len(search) > SOCIAL_LIST_SEARCH_MAX_LEN:
+        return None, fail(
+            f"Search is too long. Maximum is {SOCIAL_LIST_SEARCH_MAX_LEN} characters.",
+            code="VALIDATION_ERROR",
+        )
+
+    return search, None
+
+
+def _escape_like(value: str) -> str:
+    return (
+        value.replace(LIKE_ESCAPE_CHAR, LIKE_ESCAPE_CHAR * 2)
+        .replace("%", LIKE_ESCAPE_CHAR + "%")
+        .replace("_", LIKE_ESCAPE_CHAR + "_")
+    )
+
+
+def _build_user_search_filter(
+    search: str | None,
+    *,
+    user_alias: str = "u",
+    profile_alias: str = "p",
+) -> tuple[str, list[str]]:
+    """Build SQL and params for social-list user search.
+
+    When a search term is supplied, deleted profiles are excluded so old private
+    names/emails from deleted accounts cannot be matched by search.
+    """
+    if not search:
+        return "", []
+
+    like_value = f"%{_escape_like(search)}%"
+
+    return (
+        f"""
+        AND IFNULL({profile_alias}.is_deleted, 0) = 0
+        AND IFNULL({profile_alias}.account_status, 'Active') != 'Deleted'
+        AND (
+            IFNULL({user_alias}.full_name, '') LIKE %s ESCAPE '\\\\'
+            OR IFNULL({user_alias}.first_name, '') LIKE %s ESCAPE '\\\\'
+            OR {user_alias}.name LIKE %s ESCAPE '\\\\'
+        )
+        """,
+        [like_value, like_value, like_value],
+    )
+
+
+def _get_following_total(
+    *,
+    current_user: str,
+    search_sql: str,
+    search_params: list[str],
+) -> int:
+    rows = frappe.db.sql(
+        f"""
+        SELECT COUNT(*) AS total
+        FROM `tabAOS Follow` f
+        INNER JOIN `tabAOS Profile` p
+            ON p.name = f.following_user
+        INNER JOIN `tabUser` u
+            ON u.name = f.following_user
+        WHERE f.follower_user = %s
+        {search_sql}
+        """,
+        [current_user, *search_params],
+        as_dict=True,
+    )
+
+    return int(rows[0].total or 0) if rows else 0
+
+
+def _get_followers_total(
+    *,
+    current_user: str,
+    search_sql: str,
+    search_params: list[str],
+) -> int:
+    rows = frappe.db.sql(
+        f"""
+        SELECT COUNT(*) AS total
+        FROM `tabAOS Follow` f
+        INNER JOIN `tabAOS Profile` p
+            ON p.name = f.follower_user
+        INNER JOIN `tabUser` u
+            ON u.name = f.follower_user
+        WHERE f.following_user = %s
+        {search_sql}
+        """,
+        [current_user, *search_params],
+        as_dict=True,
+    )
+
+    return int(rows[0].total or 0) if rows else 0
+
+
+def _get_friends_total(
+    *,
+    current_user: str,
+    search_sql: str,
+    search_params: list[str],
+) -> int:
+    rows = frappe.db.sql(
+        f"""
+        SELECT COUNT(*) AS total
+        FROM `tabAOS Follow` f1
+        INNER JOIN `tabAOS Follow` f2
+            ON f2.follower_user = f1.following_user
+           AND f2.following_user = f1.follower_user
+        INNER JOIN `tabAOS Profile` p
+            ON p.name = f1.following_user
+        INNER JOIN `tabUser` u
+            ON u.name = f1.following_user
+        WHERE f1.follower_user = %s
+        {search_sql}
+        """,
+        [current_user, *search_params],
+        as_dict=True,
+    )
+
+    return int(rows[0].total or 0) if rows else 0
