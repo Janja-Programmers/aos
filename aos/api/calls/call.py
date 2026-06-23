@@ -18,6 +18,7 @@ import frappe
 from frappe.utils import now_datetime, get_datetime
 
 from aos.api.shared.auth import require_login
+from aos.api.shared.blocking import ensure_not_blocked
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.user_display import get_user_display
@@ -280,6 +281,14 @@ def initiate_call_impl(**kwargs):
             if conv.participant_1 == current_user
             else conv.participant_1
         )
+
+        block_err = ensure_not_blocked(
+            current_user=current_user,
+            target_user=receiver,
+            action="call",
+        )
+        if block_err:
+            return block_err
 
         # Create call.
         call = frappe.new_doc("AOS Call")

@@ -14,6 +14,7 @@ import frappe
 from frappe.utils import now_datetime
 
 from aos.api.shared.auth import require_login
+from aos.api.shared.blocking import ensure_not_blocked
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.user_display import get_user_display_map
@@ -780,6 +781,14 @@ def send_message_impl(**kwargs):
             return reply_error
 
         receiver = _get_receiver(conv, current_user)
+
+        block_err = ensure_not_blocked(
+            current_user=current_user,
+            target_user=receiver,
+            action="message",
+        )
+        if block_err:
+            return block_err
 
         message_type = _determine_message_type(
             content=content,

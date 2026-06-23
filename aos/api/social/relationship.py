@@ -6,6 +6,12 @@ Supports:
   - following
   - followed_by
   - friends
+
+Also includes user-block state:
+  - is_blocked_by_me
+  - has_blocked_me
+  - is_blocked
+  - block_status
 """
 
 from __future__ import annotations
@@ -13,6 +19,7 @@ from __future__ import annotations
 import frappe
 
 from aos.api.shared.auth import require_login
+from aos.api.shared.blocking import get_block_status
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 
@@ -34,6 +41,11 @@ def get_relationship_status_impl(**kwargs):
       - is_following: current_user follows target_user
       - is_followed_by: target_user follows current_user
       - is_friend: both users follow each other
+
+    Block fields:
+      - is_blocked_by_me: current_user blocked target_user
+      - has_blocked_me: target_user blocked current_user
+      - is_blocked: either side has an active block
     """
 
     current_user, err = require_login()
@@ -98,6 +110,11 @@ def build_relationship_status(*, current_user: str, target_user: str) -> dict:
     if current_user == target_user:
         return _self_relationship_payload(target_user=target_user)
 
+    block = get_block_status(
+        current_user=current_user,
+        target_user=target_user,
+    )
+
     is_following = _follow_exists(
         follower_user=current_user,
         following_user=target_user,
@@ -115,7 +132,10 @@ def build_relationship_status(*, current_user: str, target_user: str) -> dict:
         is_followed_by=is_followed_by,
     )
 
-    action_label = _get_action_label(relationship_status)
+    action_label = _get_action_label(
+        relationship_status=relationship_status,
+        block=block,
+    )
 
     return {
         "target_user": target_user,
@@ -125,10 +145,16 @@ def build_relationship_status(*, current_user: str, target_user: str) -> dict:
         "is_friend": is_friend,
         "relationship_status": relationship_status,
         "action_label": action_label,
+        **block,
     }
 
 
 def _self_relationship_payload(*, target_user: str) -> dict:
+    block = get_block_status(
+        current_user=target_user,
+        target_user=target_user,
+    )
+
     return {
         "target_user": target_user,
         "is_self": True,
@@ -137,6 +163,7 @@ def _self_relationship_payload(*, target_user: str) -> dict:
         "is_friend": False,
         "relationship_status": RELATIONSHIP_NONE,
         "action_label": "You",
+        **block,
     }
 
 
@@ -165,7 +192,13 @@ def _get_relationship_status(*, is_following: bool, is_followed_by: bool) -> str
     return RELATIONSHIP_NONE
 
 
-def _get_action_label(relationship_status: str) -> str:
+def _get_action_label(*, relationship_status: str, block: dict) -> str:
+    if block.get("is_blocked_by_me"):
+        return "Unblock"
+
+    if block.get("has_blocked_me"):
+        return "Unavailable"
+
     if relationship_status == RELATIONSHIP_FRIENDS:
         return "Friends"
 

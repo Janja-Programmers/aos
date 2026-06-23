@@ -65,10 +65,14 @@ def search_users_impl(**kwargs):
     try:
         rows = _search_user_rows(
             query=query,
+            current_user=current_user,
             limit=limit,
             start=start,
         )
-        total = _count_user_rows(query=query)
+        total = _count_user_rows(
+            query=query,
+            current_user=current_user,
+        )
 
         items = _serialize_search_rows(
             rows=rows,
@@ -161,12 +165,26 @@ def _base_where_sql() -> str:
     """
 
 
+def _not_blocked_sql(*, target_expr: str) -> str:
+    return f"""
+        NOT EXISTS (
+            SELECT 1
+            FROM `tabAOS User Block` b
+            WHERE b.status = 'Active'
+              AND (
+                    (b.blocker_user = %s AND b.blocked_user = {target_expr})
+                 OR (b.blocked_user = %s AND b.blocker_user = {target_expr})
+              )
+        )
+    """
+
+
 def _search_params(query: str) -> tuple:
     search_value = _search_like(query)
     return tuple(search_value for _ in SEARCHABLE_USER_FIELDS)
 
 
-def _search_user_rows(*, query: str, limit: int, start: int) -> list[dict]:
+def _search_user_rows(*, query: str, current_user: str, limit: int, start: int) -> list[dict]:
     search_params = _search_params(query)
     prefix_value = _prefix_like(query)
 
@@ -185,6 +203,7 @@ def _search_user_rows(*, query: str, limit: int, start: int) -> list[dict]:
         INNER JOIN `tabAOS Profile` p
             ON p.user = u.name
         WHERE {_base_where_sql()}
+          AND {_not_blocked_sql(target_expr="u.name")}
         ORDER BY
             CASE
                 WHEN u.full_name LIKE %s ESCAPE '\\\\' THEN 0
@@ -200,6 +219,8 @@ def _search_user_rows(*, query: str, limit: int, start: int) -> list[dict]:
         """,
         search_params
         + (
+            current_user,
+            current_user,
             prefix_value,
             prefix_value,
             prefix_value,
@@ -210,7 +231,7 @@ def _search_user_rows(*, query: str, limit: int, start: int) -> list[dict]:
     )
 
 
-def _count_user_rows(*, query: str) -> int:
+def _count_user_rows(*, query: str, current_user: str) -> int:
     rows = frappe.db.sql(
         f"""
         SELECT COUNT(*) AS total
@@ -218,8 +239,9 @@ def _count_user_rows(*, query: str) -> int:
         INNER JOIN `tabAOS Profile` p
             ON p.user = u.name
         WHERE {_base_where_sql()}
+          AND {_not_blocked_sql(target_expr="u.name")}
         """,
-        _search_params(query),
+        _search_params(query) + (current_user, current_user),
         as_dict=True,
     )
 

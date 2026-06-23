@@ -67,8 +67,12 @@ def get_following_impl(**kwargs):
             return search_err
 
         search_sql, search_params = _build_user_search_filter(search)
+        block_sql, block_params = _build_block_filter(
+            current_user=current_user,
+            target_expr="f.following_user",
+        )
 
-        row_params = [current_user, *search_params, limit, start]
+        row_params = [current_user, *block_params, *search_params, limit, start]
         rows = frappe.db.sql(
             f"""
             SELECT
@@ -87,6 +91,7 @@ def get_following_impl(**kwargs):
             INNER JOIN `tabUser` u
                 ON u.name = f.following_user
             WHERE f.follower_user = %s
+            {block_sql}
             {search_sql}
             ORDER BY f.creation DESC
             LIMIT %s OFFSET %s
@@ -97,6 +102,8 @@ def get_following_impl(**kwargs):
 
         total = _get_following_total(
             current_user=current_user,
+            block_sql=block_sql,
+            block_params=block_params,
             search_sql=search_sql,
             search_params=search_params,
         )
@@ -159,8 +166,12 @@ def get_followers_impl(**kwargs):
             return search_err
 
         search_sql, search_params = _build_user_search_filter(search)
+        block_sql, block_params = _build_block_filter(
+            current_user=current_user,
+            target_expr="f.follower_user",
+        )
 
-        row_params = [current_user, *search_params, limit, start]
+        row_params = [current_user, *block_params, *search_params, limit, start]
         rows = frappe.db.sql(
             f"""
             SELECT
@@ -179,6 +190,7 @@ def get_followers_impl(**kwargs):
             INNER JOIN `tabUser` u
                 ON u.name = f.follower_user
             WHERE f.following_user = %s
+            {block_sql}
             {search_sql}
             ORDER BY f.creation DESC
             LIMIT %s OFFSET %s
@@ -189,6 +201,8 @@ def get_followers_impl(**kwargs):
 
         total = _get_followers_total(
             current_user=current_user,
+            block_sql=block_sql,
+            block_params=block_params,
             search_sql=search_sql,
             search_params=search_params,
         )
@@ -251,8 +265,12 @@ def get_friends_impl(**kwargs):
             return search_err
 
         search_sql, search_params = _build_user_search_filter(search)
+        block_sql, block_params = _build_block_filter(
+            current_user=current_user,
+            target_expr="f1.following_user",
+        )
 
-        row_params = [current_user, *search_params, limit, start]
+        row_params = [current_user, *block_params, *search_params, limit, start]
         rows = frappe.db.sql(
             f"""
             SELECT
@@ -275,6 +293,7 @@ def get_friends_impl(**kwargs):
             INNER JOIN `tabUser` u
                 ON u.name = f1.following_user
             WHERE f1.follower_user = %s
+            {block_sql}
             {search_sql}
             ORDER BY GREATEST(f1.creation, f2.creation) DESC
             LIMIT %s OFFSET %s
@@ -285,6 +304,8 @@ def get_friends_impl(**kwargs):
 
         total_count = _get_friends_total(
             current_user=current_user,
+            block_sql=block_sql,
+            block_params=block_params,
             search_sql=search_sql,
             search_params=search_params,
         )
@@ -434,9 +455,29 @@ def _build_user_search_filter(
     )
 
 
+def _build_block_filter(*, current_user: str, target_expr: str) -> tuple[str, list[str]]:
+    """Exclude users blocked in either direction from social lists."""
+    return (
+        f"""
+        AND NOT EXISTS (
+            SELECT 1
+            FROM `tabAOS User Block` b
+            WHERE b.status = 'Active'
+              AND (
+                    (b.blocker_user = %s AND b.blocked_user = {target_expr})
+                 OR (b.blocked_user = %s AND b.blocker_user = {target_expr})
+              )
+        )
+        """,
+        [current_user, current_user],
+    )
+
+
 def _get_following_total(
     *,
     current_user: str,
+    block_sql: str,
+    block_params: list[str],
     search_sql: str,
     search_params: list[str],
 ) -> int:
@@ -449,9 +490,10 @@ def _get_following_total(
         INNER JOIN `tabUser` u
             ON u.name = f.following_user
         WHERE f.follower_user = %s
+        {block_sql}
         {search_sql}
         """,
-        [current_user, *search_params],
+        [current_user, *block_params, *search_params],
         as_dict=True,
     )
 
@@ -461,6 +503,8 @@ def _get_following_total(
 def _get_followers_total(
     *,
     current_user: str,
+    block_sql: str,
+    block_params: list[str],
     search_sql: str,
     search_params: list[str],
 ) -> int:
@@ -473,9 +517,10 @@ def _get_followers_total(
         INNER JOIN `tabUser` u
             ON u.name = f.follower_user
         WHERE f.following_user = %s
+        {block_sql}
         {search_sql}
         """,
-        [current_user, *search_params],
+        [current_user, *block_params, *search_params],
         as_dict=True,
     )
 
@@ -485,6 +530,8 @@ def _get_followers_total(
 def _get_friends_total(
     *,
     current_user: str,
+    block_sql: str,
+    block_params: list[str],
     search_sql: str,
     search_params: list[str],
 ) -> int:
@@ -500,9 +547,10 @@ def _get_friends_total(
         INNER JOIN `tabUser` u
             ON u.name = f1.following_user
         WHERE f1.follower_user = %s
+        {block_sql}
         {search_sql}
         """,
-        [current_user, *search_params],
+        [current_user, *block_params, *search_params],
         as_dict=True,
     )
 

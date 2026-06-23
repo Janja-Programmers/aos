@@ -9,6 +9,7 @@ from __future__ import annotations
 import frappe
 
 from aos.api.shared.auth import require_login
+from aos.api.shared.blocking import get_block_status
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
 
@@ -59,6 +60,19 @@ def get_profile_impl(**kwargs):
 
         if not frappe.db.exists("AOS Profile", target_user):
             return fail("User profile not found.", code="PROFILE_NOT_FOUND")
+
+        if target_user != current_user:
+            block = get_block_status(
+                current_user=current_user,
+                target_user=target_user,
+            )
+            if block.get("has_blocked_me"):
+                return fail(
+                    "Profile is unavailable.",
+                    code="PROFILE_UNAVAILABLE",
+                    data=block,
+                    http_status=403,
+                )
 
         user_doc = frappe.get_doc("User", target_user)
 

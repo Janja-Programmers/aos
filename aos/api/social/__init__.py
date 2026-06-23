@@ -10,6 +10,12 @@ import frappe
 from .toggle_follow import toggle_follow_impl
 from .relationship import get_relationship_status_impl
 from .search_users import search_users_impl
+from .block import (
+    block_user_impl,
+    unblock_user_impl,
+    get_block_status_impl,
+    list_blocked_users_impl,
+)
 from .lists import (
     get_following_impl,
     get_followers_impl,
@@ -51,3 +57,27 @@ def get_friends(**kwargs):
 def search_users(**kwargs):
     """Search active AOS users globally."""
     return search_users_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def block_user(**kwargs):
+    """Block a user."""
+    return block_user_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def unblock_user(**kwargs):
+    """Unblock a user."""
+    return unblock_user_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["GET"])
+def get_block_status(**kwargs):
+    """Get block status between current user and target user."""
+    return get_block_status_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["GET"])
+def list_blocked_users(**kwargs):
+    """List users blocked by current user."""
+    return list_blocked_users_impl(**kwargs)

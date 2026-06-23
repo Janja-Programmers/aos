@@ -6,10 +6,10 @@ from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 
-from .constants import CREATE_REPORT_LIMIT_PER_MINUTE_PER_USER
+from .constants import REPORT_AD_LIMIT_PER_MINUTE_PER_USER
 
 
-def create_report_impl(**kwargs):
+def report_ad_impl(**kwargs):
     current_user, err = require_login()
     if err:
         return err
@@ -17,7 +17,7 @@ def create_report_impl(**kwargs):
     rl = rate_limit(
         key=f"aos:reports:create:user:{current_user}",
         ttl_seconds=60,
-        limit=CREATE_REPORT_LIMIT_PER_MINUTE_PER_USER,
+        limit=REPORT_AD_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
     )
     if rl:

@@ -12,6 +12,7 @@ from __future__ import annotations
 import frappe
 
 from aos.api.shared.auth import require_login
+from aos.api.shared.blocking import ensure_not_blocked
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.user_display import get_user_display, get_user_display_map
@@ -135,6 +136,14 @@ def get_or_create_conversation_impl(**kwargs):
     try:
         if not frappe.db.exists("User", other_user):
             return fail("User not found.", code="NOT_FOUND")
+
+        block_err = ensure_not_blocked(
+            current_user=current_user,
+            target_user=other_user,
+            action="message",
+        )
+        if block_err:
+            return block_err
 
         p1, p2 = _sort_participants(current_user, other_user)
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 import frappe
 
 from aos.api.shared.auth import require_login
+from aos.api.shared.blocking import ensure_not_blocked
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 
@@ -53,6 +54,14 @@ def toggle_follow_impl(**kwargs):
 
         if not frappe.db.exists("AOS Profile", target_user):
             return fail("User profile not found.", code="PROFILE_NOT_FOUND")
+
+        block_err = ensure_not_blocked(
+            current_user=current_user,
+            target_user=target_user,
+            action="follow",
+        )
+        if block_err:
+            return block_err
 
         existing_follow = frappe.db.get_value(
             "AOS Follow",
