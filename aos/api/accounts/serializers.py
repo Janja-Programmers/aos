@@ -7,7 +7,10 @@ from typing import Any
 import frappe
 
 from aos.api.social.relationship import build_relationship_status
+from aos.api.shared.formatters import humanize_count
 from aos.api.shared.user_display import get_user_display
+
+from .profile_stats import get_user_short_likes_count
 
 
 def serialize_user(user_doc, *, current_user: str | None = None) -> dict[str, Any]:
@@ -43,6 +46,7 @@ def serialize_user(user_doc, *, current_user: str | None = None) -> dict[str, An
     can_edit = viewer == target_user
     display = get_user_display(target_user)
     is_deleted = bool(display.get("is_deleted"))
+    total_short_likes = 0 if is_deleted else get_user_short_likes_count(target_user)
 
     return {
         "user": target_user,
@@ -60,6 +64,8 @@ def serialize_user(user_doc, *, current_user: str | None = None) -> dict[str, An
         "live_viewer_count": int(display.get("live_viewer_count") or 0) if not is_deleted else 0,
         "total_followers": int(profile.total_followers or 0) if profile and not is_deleted else 0,
         "total_following": int(profile.total_following or 0) if profile and not is_deleted else 0,
+        "total_short_likes": total_short_likes,
+        "total_short_likes_display": humanize_count(total_short_likes),
         "is_verified": bool(profile.is_verified) if profile and not is_deleted else False,
         "verified_by": profile.verified_by if profile and not is_deleted else None,
         "verified_on": profile.verified_on if profile and not is_deleted else None,
