@@ -12,6 +12,7 @@ import frappe
 
 from aos.api.shared.auth import require_login
 from aos.api.shared.blocking import ensure_not_blocked
+from aos.api.shared.formatters import humanize_count, to_non_negative_int
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 
@@ -253,7 +254,12 @@ def _get_profile_totals(*, current_user: str, target_user: str) -> dict:
         "total_following",
     )
 
+    target_total_followers = to_non_negative_int(target_total_followers)
+    current_total_following = to_non_negative_int(current_total_following)
+
     return {
-        "target_total_followers": int(target_total_followers or 0),
-        "current_total_following": int(current_total_following or 0),
+        "target_total_followers": target_total_followers,
+        "target_total_followers_display": humanize_count(target_total_followers),
+        "current_total_following": current_total_following,
+        "current_total_following_display": humanize_count(current_total_following),
     }

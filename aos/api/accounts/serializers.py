@@ -7,7 +7,7 @@ from typing import Any
 import frappe
 
 from aos.api.social.relationship import build_relationship_status
-from aos.api.shared.formatters import humanize_count
+from aos.api.shared.formatters import humanize_count, to_non_negative_int
 from aos.api.shared.user_display import get_user_display
 
 from .profile_stats import get_user_short_likes_count
@@ -46,7 +46,24 @@ def serialize_user(user_doc, *, current_user: str | None = None) -> dict[str, An
     can_edit = viewer == target_user
     display = get_user_display(target_user)
     is_deleted = bool(display.get("is_deleted"))
+
+    total_followers = (
+        to_non_negative_int(profile.total_followers)
+        if profile and not is_deleted
+        else 0
+    )
+    total_following = (
+        to_non_negative_int(profile.total_following)
+        if profile and not is_deleted
+        else 0
+    )
+    total_friends = 0 if is_deleted else _get_total_friends(target_user)
     total_short_likes = 0 if is_deleted else get_user_short_likes_count(target_user)
+    live_viewer_count = (
+        to_non_negative_int(display.get("live_viewer_count"))
+        if not is_deleted
+        else 0
+    )
 
     return {
         "user": target_user,
@@ -61,9 +78,14 @@ def serialize_user(user_doc, *, current_user: str | None = None) -> dict[str, An
         "live_title": display.get("live_title") if not is_deleted else None,
         "live_cover_image": display.get("live_cover_image") if not is_deleted else None,
         "live_started_at": display.get("live_started_at") if not is_deleted else None,
-        "live_viewer_count": int(display.get("live_viewer_count") or 0) if not is_deleted else 0,
-        "total_followers": int(profile.total_followers or 0) if profile and not is_deleted else 0,
-        "total_following": int(profile.total_following or 0) if profile and not is_deleted else 0,
+        "live_viewer_count": live_viewer_count,
+        "live_viewer_count_display": humanize_count(live_viewer_count),
+        "total_followers": total_followers,
+        "total_followers_display": humanize_count(total_followers),
+        "total_following": total_following,
+        "total_following_display": humanize_count(total_following),
+        "total_friends": total_friends,
+        "total_friends_display": humanize_count(total_friends),
         "total_short_likes": total_short_likes,
         "total_short_likes_display": humanize_count(total_short_likes),
         "is_verified": bool(profile.is_verified) if profile and not is_deleted else False,
@@ -72,3 +94,24 @@ def serialize_user(user_doc, *, current_user: str | None = None) -> dict[str, An
         "can_edit": can_edit and not is_deleted,
         **relationship,
     }
+
+
+def _get_total_friends(user: str) -> int:
+    """Return number of mutual follows for a user profile."""
+    if not user:
+        return 0
+
+    rows = frappe.db.sql(
+        """
+        SELECT COUNT(*) AS total_friends
+        FROM `tabAOS Follow` outgoing_follow
+        INNER JOIN `tabAOS Follow` incoming_follow
+            ON incoming_follow.follower_user = outgoing_follow.following_user
+           AND incoming_follow.following_user = outgoing_follow.follower_user
+        WHERE outgoing_follow.follower_user = %s
+        """,
+        (user,),
+        as_dict=True,
+    )
+
+    return to_non_negative_int(rows[0].get("total_friends") if rows else 0)

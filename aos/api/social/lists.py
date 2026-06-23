@@ -17,6 +17,7 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.formatters import humanize_count, to_non_negative_int
 from aos.api.shared.user_display import get_user_display_map
 
 from .constants import (
@@ -118,6 +119,7 @@ def get_following_impl(**kwargs):
             data={
                 "items": users,
                 "total": total,
+                "total_display": humanize_count(total),
                 "limit": limit,
                 "start": start,
                 "search": search or "",
@@ -217,6 +219,7 @@ def get_followers_impl(**kwargs):
             data={
                 "items": users,
                 "total": total,
+                "total_display": humanize_count(total),
                 "limit": limit,
                 "start": start,
                 "search": search or "",
@@ -320,6 +323,7 @@ def get_friends_impl(**kwargs):
             data={
                 "items": users,
                 "total": total_count,
+                "total_display": humanize_count(total_count),
                 "limit": limit,
                 "start": start,
                 "search": search or "",
@@ -350,6 +354,17 @@ def _serialize_users(*, rows: list[dict], current_user: str) -> list[dict]:
             target_user=target_user,
         )
 
+        total_followers = (
+            to_non_negative_int(row.get("total_followers"))
+            if not is_deleted
+            else 0
+        )
+        total_following = (
+            to_non_negative_int(row.get("total_following"))
+            if not is_deleted
+            else 0
+        )
+
         item = {
             "user": target_user,
             "full_name": display.get("display_name") or row.get("full_name"),
@@ -360,8 +375,10 @@ def _serialize_users(*, rows: list[dict], current_user: str) -> list[dict]:
             "live_status": display.get("live_status") if not is_deleted else None,
             "live_title": display.get("live_title") if not is_deleted else None,
             "live_cover_image": display.get("live_cover_image") if not is_deleted else None,
-            "total_followers": int(row.get("total_followers") or 0) if not is_deleted else 0,
-            "total_following": int(row.get("total_following") or 0) if not is_deleted else 0,
+            "total_followers": total_followers,
+            "total_followers_display": humanize_count(total_followers),
+            "total_following": total_following,
+            "total_following_display": humanize_count(total_following),
             "is_verified": bool(row.get("is_verified")) if not is_deleted else False,
             "followed_at": row.get("followed_at"),
             **relationship,

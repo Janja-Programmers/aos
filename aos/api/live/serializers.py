@@ -34,6 +34,7 @@ from typing import Any
 import frappe
 
 from aos.api.social.relationship import build_relationship_status
+from aos.api.shared.formatters import humanize_count
 from aos.api.shared.user_display import get_user_display as shared_get_user_display
 from aos.api.shared.user_display import get_user_display_map
 
@@ -270,12 +271,22 @@ def serialize_user(
         "live_cover_image": display.get("live_cover_image") if not is_deleted else None,
         "live_started_at": display.get("live_started_at") if not is_deleted else None,
         "live_viewer_count": int(display.get("live_viewer_count") or 0) if not is_deleted else 0,
+        "live_viewer_count_display": humanize_count(
+            int(display.get("live_viewer_count") or 0)
+            if not is_deleted
+            else 0
+        ),
         "is_verified": (
             False
             if is_deleted
             else profile["is_verified"]
         ),
         "total_followers": (
+            0
+            if is_deleted
+            else profile["total_followers"]
+        ),
+        "total_followers_display": humanize_count(
             0
             if is_deleted
             else profile["total_followers"]
@@ -296,8 +307,10 @@ def empty_user_payload() -> dict:
         "live_cover_image": None,
         "live_started_at": None,
         "live_viewer_count": 0,
+        "live_viewer_count_display": "0",
         "is_verified": False,
         "total_followers": 0,
+        "total_followers_display": "0",
     }
 
 
@@ -319,8 +332,10 @@ def fallback_user_payload(
         "live_cover_image": None,
         "live_started_at": None,
         "live_viewer_count": 0,
+        "live_viewer_count_display": "0",
         "is_verified": False,
         "total_followers": 0,
+        "total_followers_display": "0",
     }
 
 
@@ -437,6 +452,13 @@ def serialize_live_message(
                 "total_followers"
             )
         ),
+        "total_followers_display": actor.get(
+            "total_followers_display"
+        ) or humanize_count(
+            actor.get(
+                "total_followers"
+            )
+        ),
         "actor": (
             actor
             if user_id
@@ -476,6 +498,14 @@ def serialize_live_message(
             _value(
                 message,
                 "reply_count",
+            )
+        ),
+        "reply_count_display": humanize_count(
+            _as_int(
+                _value(
+                    message,
+                    "reply_count",
+                )
             )
         ),
 
@@ -760,6 +790,13 @@ def serialize_live_cohost(
             candidate["is_verified"]
         ),
         "total_followers": _as_int(
+            candidate.get(
+                "total_followers"
+            )
+        ),
+        "total_followers_display": candidate.get(
+            "total_followers_display"
+        ) or humanize_count(
             candidate.get(
                 "total_followers"
             )
@@ -1421,10 +1458,26 @@ def serialize_live(
                 "viewer_count",
             )
         ),
+        "viewer_count_display": humanize_count(
+            _as_int(
+                _value(
+                    live,
+                    "viewer_count",
+                )
+            )
+        ),
         "total_views": _as_int(
             _value(
                 live,
                 "total_views",
+            )
+        ),
+        "total_views_display": humanize_count(
+            _as_int(
+                _value(
+                    live,
+                    "total_views",
+                )
             )
         ),
         "peak_viewers": _as_int(
@@ -1433,10 +1486,26 @@ def serialize_live(
                 "peak_viewers",
             )
         ),
+        "peak_viewers_display": humanize_count(
+            _as_int(
+                _value(
+                    live,
+                    "peak_viewers",
+                )
+            )
+        ),
         "like_count": _as_int(
             _value(
                 live,
                 "like_count",
+            )
+        ),
+        "like_count_display": humanize_count(
+            _as_int(
+                _value(
+                    live,
+                    "like_count",
+                )
             )
         ),
         "reaction_count": _as_int(
@@ -1445,10 +1514,26 @@ def serialize_live(
                 "reaction_count",
             )
         ),
+        "reaction_count_display": humanize_count(
+            _as_int(
+                _value(
+                    live,
+                    "reaction_count",
+                )
+            )
+        ),
         "comment_count": _as_int(
             _value(
                 live,
                 "comment_count",
+            )
+        ),
+        "comment_count_display": humanize_count(
+            _as_int(
+                _value(
+                    live,
+                    "comment_count",
+                )
             )
         ),
         "total_watch_time_seconds": (
@@ -1490,6 +1575,18 @@ def serialize_live(
         "host_avatar": host[
             "avatar"
         ],
+        "host_total_followers": _as_int(
+            host.get(
+                "total_followers"
+            )
+        ),
+        "host_total_followers_display": host.get(
+            "total_followers_display"
+        ) or humanize_count(
+            host.get(
+                "total_followers"
+            )
+        ),
 
         # Preferred structured host payload.
         "host": host,
@@ -1579,12 +1676,22 @@ def preload_users(
             "live_cover_image": display.get("live_cover_image") if not is_deleted else None,
             "live_started_at": display.get("live_started_at") if not is_deleted else None,
             "live_viewer_count": int(display.get("live_viewer_count") or 0) if not is_deleted else 0,
+            "live_viewer_count_display": humanize_count(
+                int(display.get("live_viewer_count") or 0)
+                if not is_deleted
+                else 0
+            ),
             "is_verified": (
                 bool(profile.is_verified)
                 if profile and not is_deleted
                 else False
             ),
             "total_followers": (
+                int(profile.total_followers or 0)
+                if profile and not is_deleted
+                else 0
+            ),
+            "total_followers_display": humanize_count(
                 int(profile.total_followers or 0)
                 if profile and not is_deleted
                 else 0

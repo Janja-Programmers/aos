@@ -10,6 +10,7 @@ from aos.api.shared.auth import optional_active_user
 
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.user_display import get_user_display_map
+from aos.api.shared.formatters import humanize_count
 
 
 ALLOWED_SORTS = {"newest", "helpful", "rating_high", "rating_low"}
@@ -170,8 +171,10 @@ def list_reviews_impl(**kwargs):
                     "title": r["title"],
                     "comment": r["comment"],
                     "created_at": r["creation"],
-                    "like_count": r["like_count"],
-                    "dislike_count": r["dislike_count"],
+                    "like_count": int(r["like_count"] or 0),
+                    "like_count_display": humanize_count(r["like_count"] or 0),
+                    "dislike_count": int(r["dislike_count"] or 0),
+                    "dislike_count_display": humanize_count(r["dislike_count"] or 0),
                     "user_reaction": user_reactions_map.get(r["name"]),
                     "reviewer": {
                         "full_name": reviewer_info.get("display_name", ""),
@@ -191,7 +194,12 @@ def list_reviews_impl(**kwargs):
                 "summary": {
                     "average_rating": float(ad_doc.average_rating or 0),
                     "total_reviews": int(ad_doc.total_reviews or 0),
+                    "total_reviews_display": humanize_count(ad_doc.total_reviews or 0),
                     "distribution": distribution,
+                    "distribution_display": {
+                        rating: humanize_count(count)
+                        for rating, count in distribution.items()
+                    },
                 },
                 "reviews": formatted_reviews,
                 "pagination": {

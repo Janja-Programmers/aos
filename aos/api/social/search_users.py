@@ -14,6 +14,7 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.formatters import humanize_count, to_non_negative_int
 from aos.api.shared.user_display import get_user_display_map
 
 from .constants import (
@@ -274,6 +275,9 @@ def _serialize_search_rows(*, rows: list[dict], current_user: str) -> list[dict]
             target_user=target_user,
         )
 
+        total_followers = to_non_negative_int(row.get("total_followers"))
+        total_following = to_non_negative_int(row.get("total_following"))
+
         items.append(
             {
                 "user": target_user,
@@ -285,8 +289,10 @@ def _serialize_search_rows(*, rows: list[dict], current_user: str) -> list[dict]
                 "live_status": display.get("live_status"),
                 "live_title": display.get("live_title"),
                 "live_cover_image": display.get("live_cover_image"),
-                "total_followers": int(row.get("total_followers") or 0),
-                "total_following": int(row.get("total_following") or 0),
+                "total_followers": total_followers,
+                "total_followers_display": humanize_count(total_followers),
+                "total_following": total_following,
+                "total_following_display": humanize_count(total_following),
                 "is_verified": bool(row.get("is_verified")),
                 **relationship,
             }

@@ -20,6 +20,7 @@ from frappe.utils import cint, flt
 
 from aos.api.shared.auth import current_user
 from aos.api.shared.user_display import get_user_display
+from aos.api.shared.formatters import humanize_count
 from aos.api.shorts.constants import (
     DEFAULT_SHORT_CONTENT_MODE,
     DEFAULT_SHORT_AUDIENCE,
@@ -275,10 +276,15 @@ def serialize_short_row(
         "thumbnail_url": row.get("thumbnail_url"),
         "duration_seconds": flt(row.get("duration_seconds") or 0),
         "view_count": cint(row.get("view_count") or 0),
+        "view_count_display": humanize_count(row.get("view_count") or 0),
         "like_count": cint(row.get("like_count") or 0),
+        "like_count_display": humanize_count(row.get("like_count") or 0),
         "comment_count": cint(row.get("comment_count") or 0),
+        "comment_count_display": humanize_count(row.get("comment_count") or 0),
         "share_count": cint(row.get("share_count") or 0),
+        "share_count_display": humanize_count(row.get("share_count") or 0),
         "impression_count": cint(row.get("impression_count") or 0),
+        "impression_count_display": humanize_count(row.get("impression_count") or 0),
         "ranking_score": flt(row.get("ranking_score") or 0),
         "posted_on": row.get("posted_on"),
         "creator": {
@@ -293,6 +299,7 @@ def serialize_short_row(
             "live_cover_image": creator_display.get("live_cover_image") if not creator_is_deleted else None,
             "live_started_at": creator_display.get("live_started_at") if not creator_is_deleted else None,
             "live_viewer_count": int(creator_display.get("live_viewer_count") or 0) if not creator_is_deleted else 0,
+            "live_viewer_count_display": humanize_count(creator_display.get("live_viewer_count") or 0) if not creator_is_deleted else "0",
             "is_verified": bool(row.get("creator_is_verified")) if not creator_is_deleted else False,
             "seller": (
                 {
@@ -341,7 +348,9 @@ def serialize_comment_row(
         "parent_comment": row.get("parent_comment"),
         "root_comment": row.get("root_comment"),
         "reply_count": cint(row.get("reply_count") or 0),
+        "reply_count_display": humanize_count(row.get("reply_count") or 0),
         "like_count": cint(row.get("like_count") or 0),
+        "like_count_display": humanize_count(row.get("like_count") or 0),
         "status": row.get("status"),
         "created_at": row.get("creation"),
         "viewer_state": viewer_state or default_comment_viewer_state(),

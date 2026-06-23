@@ -12,6 +12,7 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.formatters import humanize_count
 from aos.api.shared.validators import require_id
 
 from aos.services.notification_service import NotificationService
@@ -150,6 +151,7 @@ def toggle_like_impl(**kwargs):
                 },
                 "metrics": {
                     "like_count": int(like_count),
+                    "like_count_display": humanize_count(like_count),
                 },
             },
         )
