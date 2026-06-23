@@ -13,6 +13,12 @@ from .password_change import change_password_impl
 from .google_login import google_login_impl
 from .apple_login import apple_login_impl
 
+from .delete_account import (
+    delete_account_impl,
+    request_restore_account_impl,
+    restore_account_impl,
+)
+
 from .password_reset import (
     forgot_password_request_impl,
     forgot_password_verify_otp_impl,
@@ -79,3 +85,17 @@ def forgot_password_reset(**kwargs):
 def change_password(**kwargs):
     return change_password_impl(**kwargs)
 
+
+@frappe.whitelist(methods=["POST"])
+def delete_account(**kwargs):
+    return delete_account_impl(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def request_restore_account(**kwargs):
+    return request_restore_account_impl(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def restore_account(**kwargs):
+    return restore_account_impl(**kwargs)

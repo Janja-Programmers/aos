@@ -19,6 +19,7 @@ from frappe.utils import now_datetime, time_diff_in_seconds
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.user_display import get_user_display
 
 from .constants import (
     SEND_TYPING_LIMIT_PER_MINUTE_PER_USER,
@@ -54,33 +55,11 @@ def _as_bool(value: Any) -> bool:
 
 
 def _get_user_summary(user: str) -> dict:
-    """
-    Return lightweight user display info.
+    """Return display-safe user summary plus presence timestamp."""
 
-    Fallback is the user id/email only if full_name is unavailable.
-    """
-
-    row = frappe.db.get_value(
-        "User",
-        user,
-        ["name", "full_name", "user_image", "last_active"],
-        as_dict=True,
-    )
-
-    if not row:
-        return {
-            "user": user,
-            "display_name": user,
-            "avatar": None,
-            "last_active": None,
-        }
-
-    return {
-        "user": row.name,
-        "display_name": row.full_name or row.name,
-        "avatar": row.user_image,
-        "last_active": row.last_active,
-    }
+    display = get_user_display(user)
+    display["last_active"] = frappe.db.get_value("User", user, "last_active")
+    return display
 
 
 def _get_user_last_active(user: str):

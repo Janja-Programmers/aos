@@ -20,6 +20,7 @@ from typing import Any
 
 import frappe
 
+from aos.api.shared.auth import optional_active_user
 from aos.api.shorts.constants import (
     DEFAULT_SHORT_AUDIENCE,
     SHORT_AUDIENCE_EVERYONE,
@@ -50,9 +51,9 @@ def normalize_user(user: str | None) -> str | None:
 
 def get_current_user_or_none() -> str | None:
     """
-    Return the current logged-in user, or None for Guest.
+    Return the current active logged-in user, or None for Guest/stale sessions.
     """
-    return normalize_user(getattr(frappe.session, "user", None))
+    return optional_active_user()
 
 
 def normalize_audience(value: str | None) -> str:

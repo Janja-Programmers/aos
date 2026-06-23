@@ -1,5 +1,6 @@
 import frappe
 
+from aos.api.shared.account_status import get_account_state
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.market_context import resolve_market_context
@@ -106,6 +107,15 @@ def google_login_impl(**kwargs):
     user_name = frappe.db.get_value("User", {"email": email}, "name")
 
     if user_name:
+        state = get_account_state(user_name)
+        if state.get("is_deleted"):
+            return fail(
+                "This account was previously deleted. Please restore it instead.",
+                code="ACCOUNT_DELETED_RESTORABLE",
+                data={"can_restore": bool(state.get("can_restore"))},
+                http_status=403,
+            )
+
         enabled = frappe.db.get_value("User", user_name, "enabled")
         if int(enabled or 0) != 1:
             frappe.db.set_value("User", user_name, "enabled", 1)
@@ -124,6 +134,8 @@ def google_login_impl(**kwargs):
 
             profile = frappe.new_doc("AOS Profile")
             profile.user = user_name
+            profile.account_status = "Active"
+            profile.is_deleted = 0
             profile.insert(ignore_permissions=True)
 
         except Exception:

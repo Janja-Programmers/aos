@@ -1,6 +1,7 @@
 import frappe
 from frappe.exceptions import AuthenticationError
 
+from aos.api.shared.account_status import deleted_account_response, get_account_state
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
 
@@ -52,6 +53,10 @@ def login_impl(**kwargs):
         # Do not leak account existence
         return fail("Invalid email or password.", code="INVALID_CREDENTIALS")
 
+    state = get_account_state(user_name)
+    if state.get("is_deleted"):
+        return deleted_account_response(restorable=bool(state.get("can_restore")))
+
     enabled = frappe.db.get_value("User", user_name, "enabled")
     if int(enabled or 0) != 1:
         return fail("Please verify your email to continue.", code="NOT_VERIFIED")
@@ -93,6 +98,10 @@ def me_impl(**_):
         return fail("Session invalid. Please login again.", code="SESSION_INVALID")
 
     try:
+        state = get_account_state(user_name)
+        if state.get("is_deleted"):
+            return deleted_account_response(restorable=bool(state.get("can_restore")))
+
         enabled = frappe.db.get_value("User", user_name, "enabled")
 
         if int(enabled or 0) != 1:

@@ -16,6 +16,7 @@ from frappe.utils import now_datetime
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.user_display import get_user_display_map
 
 from aos.services.notification_service import NotificationService
 from aos.services.seller_response_metrics import (
@@ -77,43 +78,26 @@ def _get_receiver(conv, sender: str) -> str:
     )
 
 
-def _fetch_users(users: List[str]) -> Dict[str, frappe._dict]:
-    """
-    Fetch lightweight user profile info for display.
-    """
+def _fetch_users(users: List[str]) -> Dict[str, dict]:
+    """Fetch display-safe user summaries for messages."""
 
-    if not users:
-        return {}
-
-    unique_users = list({user for user in users if user})
-
-    if not unique_users:
-        return {}
-
-    rows = frappe.get_all(
-        "User",
-        filters={"name": ["in", unique_users]},
-        fields=["name", "full_name", "user_image"],
-    )
-
-    return {row.name: row for row in rows}
+    return get_user_display_map(users)
 
 
-def _serialize_user(user_id: str, user_map: Dict[str, frappe._dict]) -> Dict[str, Any]:
-    """
-    Build display fields for a user.
-    """
+def _serialize_user(user_id: str, user_map: Dict[str, dict]) -> Dict[str, Any]:
+    """Build display fields for a user."""
 
     user = user_map.get(user_id)
 
     return {
         "sender": user_id,
         "sender_display_name": (
-            user.full_name
-            if user and user.full_name
+            user.get("display_name")
+            if user
             else user_id
         ),
-        "sender_avatar": user.user_image if user else None,
+        "sender_avatar": user.get("avatar") if user else None,
+        "sender_is_deleted": bool(user.get("is_deleted")) if user else False,
     }
 
 

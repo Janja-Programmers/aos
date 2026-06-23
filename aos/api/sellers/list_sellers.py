@@ -29,6 +29,7 @@ from aos.api.shared.rate_limit import (
     request_ip,
 )
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.user_display import get_user_display
 from aos.api.social.relationship import build_relationship_status
 from aos.services.seller_response_metrics import (
     format_response_rate,
@@ -466,22 +467,21 @@ def _serialize_seller(
         )
     )
 
+    display = get_user_display(seller_user)
+    is_deleted = bool(display.get("is_deleted"))
+
     item = {
         "seller": seller.get("name"),
         "user": seller_user,
-        "display_name": (
-            seller.get("full_name")
-            or seller_user
-        ),
-        "avatar": seller.get(
-            "user_image"
-        ),
+        "display_name": display.get("display_name"),
+        "avatar": display.get("avatar"),
+        "is_deleted": is_deleted,
         "business_category": seller.get(
             "business_category"
         ),
         "is_verified": bool(
             seller.get("is_verified")
-        ),
+        ) if not is_deleted else False,
         "seller_type": seller.get(
             "seller_type"
         ),

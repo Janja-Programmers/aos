@@ -14,6 +14,7 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.user_display import get_user_display, get_user_display_map
 
 from .constants import (
     OPEN_CONVERSATION_LIMIT_PER_MINUTE_PER_USER,
@@ -48,59 +49,16 @@ def _clean_int(value, default: int, *, min_value: int, max_value: int) -> int:
     return parsed
 
 
-def _fetch_users(users: list[str]) -> dict[str, frappe._dict]:
-    """
-    Fetch lightweight user profile info for display.
+def _fetch_users(users: list[str]) -> dict[str, dict]:
+    """Fetch display-safe user summaries for chat payloads."""
 
-    User.name remains the stable ID.
-    User.full_name is used for UI display.
-    """
-
-    if not users:
-        return {}
-
-    unique_users = list({user for user in users if user})
-
-    if not unique_users:
-        return {}
-
-    rows = frappe.get_all(
-        "User",
-        filters={"name": ["in", unique_users]},
-        fields=["name", "full_name", "user_image"],
-    )
-
-    return {row.name: row for row in rows}
+    return get_user_display_map(users)
 
 
 def _get_user_summary(user_id: str) -> dict:
-    """
-    Return a normalized user summary.
+    """Return a display-safe user summary."""
 
-    This ensures the frontend can always render display_name
-    and never needs to show the email/user id unless full_name is missing.
-    """
-
-    user = frappe.db.get_value(
-        "User",
-        user_id,
-        ["name", "full_name", "user_image"],
-        as_dict=True,
-    )
-
-    if not user:
-        return {
-            "user": user_id,
-            "display_name": user_id,
-            "avatar": None,
-        }
-
-    return {
-        "user": user.name,
-        "display_name": user.full_name or user.name,
-        "avatar": user.user_image,
-    }
-
+    return get_user_display(user_id)
 
 def _build_conversation_response(
     *,
@@ -348,15 +306,10 @@ def list_conversations_impl(**kwargs):
 
             other_user = conv["participant_2"] if is_p1 else conv["participant_1"]
 
-            user = user_map.get(other_user)
+            user = user_map.get(other_user) or get_user_display(other_user)
 
-            display_name = (
-                user.full_name
-                if user and user.full_name
-                else other_user
-            )
-
-            avatar = user.user_image if user else None
+            display_name = user.get("display_name")
+            avatar = user.get("avatar")
 
             unread = conv["unread_count_1"] if is_p1 else conv["unread_count_2"]
 
@@ -377,12 +330,12 @@ def list_conversations_impl(**kwargs):
                     "last_message_at": last_message_at,
                     "last_sender": last_sender,
                     "last_sender_display_name": (
-                        last_sender_user.full_name
-                        if last_sender_user and last_sender_user.full_name
+                        last_sender_user.get("display_name")
+                        if last_sender_user
                         else last_sender
                     ),
                     "last_sender_avatar": (
-                        last_sender_user.user_image
+                        last_sender_user.get("avatar")
                         if last_sender_user
                         else None
                     ),

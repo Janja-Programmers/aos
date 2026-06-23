@@ -27,6 +27,8 @@ from collections.abc import Iterable
 
 import frappe
 
+from aos.api.shared.user_display import get_user_display
+
 
 # REALTIME EVENT NAMES
 EVENT_LIVE_STARTED = "aos_live_started"
@@ -141,39 +143,7 @@ def _publish_to_live_room(
 def _get_user_display(
     user: str | None,
 ) -> dict:
-    if not user:
-        return {
-            "user": None,
-            "display_name": None,
-            "avatar": None,
-        }
-
-    row = frappe.db.get_value(
-        "User",
-        user,
-        [
-            "name",
-            "full_name",
-            "user_image",
-        ],
-        as_dict=True,
-    )
-
-    if not row:
-        return {
-            "user": user,
-            "display_name": user,
-            "avatar": None,
-        }
-
-    return {
-        "user": row.name,
-        "display_name": (
-            row.full_name
-            or row.name
-        ),
-        "avatar": row.user_image,
-    }
+    return get_user_display(user)
 
 
 def _get_followers(

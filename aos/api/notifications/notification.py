@@ -16,6 +16,7 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.user_display import get_user_display
 
 from .constants import (
     CLEAR_NOTIFICATIONS_LIMIT_PER_MINUTE_PER_USER,
@@ -33,12 +34,29 @@ from .constants import (
 
 # HELPERS
 def _serialize_notification(notification):
+    actor_display = get_user_display(notification.actor) if notification.actor else None
+
     return {
         "id": notification.name,
         "type": notification.type,
         "title": notification.title,
         "body": notification.body,
         "actor": notification.actor,
+        "actor_display_name": (
+            actor_display.get("display_name")
+            if actor_display
+            else None
+        ),
+        "actor_avatar": (
+            actor_display.get("avatar")
+            if actor_display
+            else None
+        ),
+        "actor_is_deleted": (
+            bool(actor_display.get("is_deleted"))
+            if actor_display
+            else False
+        ),
         "payload": notification.payload or {},
         "is_read": notification.is_read,
         "created_at": notification.creation,

@@ -17,6 +17,7 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.user_display import get_user_display
 
 from aos.services.livekit_service import LiveKitService
 
@@ -40,33 +41,12 @@ def _get_call_role(call, current_user: str) -> str:
 
 
 def _get_user_display(user: str | None) -> dict:
-    """
-    Resolve display-ready user metadata for LiveKit.
-
-    Stable identity remains the User ID/email. Display fields are metadata only.
-    """
-    if not user:
-        return {
-            "display_name": None,
-            "avatar": None,
-        }
-
-    row = frappe.db.get_value(
-        "User",
-        user,
-        ["full_name", "user_image"],
-        as_dict=True,
-    )
-
-    if not row:
-        return {
-            "display_name": user,
-            "avatar": None,
-        }
+    """Resolve display-ready user metadata for LiveKit safely."""
+    display = get_user_display(user)
 
     return {
-        "display_name": row.full_name or user,
-        "avatar": row.user_image,
+        "display_name": display.get("display_name"),
+        "avatar": display.get("avatar"),
     }
 
 

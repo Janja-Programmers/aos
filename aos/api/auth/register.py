@@ -1,5 +1,6 @@
 import frappe
 
+from aos.api.shared.account_status import get_account_state
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.market_context import resolve_market_context
@@ -41,8 +42,20 @@ def register_impl(**kwargs):
     if err:
         return err
 
-    # Prevent duplicate accounts
-    if frappe.db.exists("User", {"email": email}):
+    # Prevent duplicate accounts.
+    # If the old account is deleted, do not create a new User with the same email.
+    # The same User must be restored instead to keep old AOS links safe.
+    existing_user = frappe.db.get_value("User", {"email": email}, "name")
+    if existing_user:
+        state = get_account_state(existing_user)
+        if state.get("is_deleted"):
+            return fail(
+                "This account was previously deleted. Please restore it instead.",
+                code="ACCOUNT_DELETED_RESTORABLE",
+                data={"can_restore": bool(state.get("can_restore"))},
+                http_status=403,
+            )
+
         return fail("An account with this email already exists.", code="ALREADY_EXISTS")
 
     # Resolve preference values
@@ -72,7 +85,8 @@ def register_impl(**kwargs):
         user.user_type = "Website User"
         user.send_welcome_email = 0
 
-        # Set password
+        # Set password during insert, not after insert.
+        # This prevents Frappe from sending a "password changed" email on signup.
         user.new_password = password
         user.flags.ignore_password_policy = True
         user.flags.no_welcome_mail = True
@@ -81,6 +95,8 @@ def register_impl(**kwargs):
         # Create User Profile
         profile = frappe.new_doc("AOS Profile")
         profile.user = user.name
+        profile.account_status = "Active"
+        profile.is_deleted = 0
         profile.insert(ignore_permissions=True)
 
         # Create User Preference

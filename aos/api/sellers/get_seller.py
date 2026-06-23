@@ -32,6 +32,7 @@ from aos.api.shared.rate_limit import (
     request_ip,
 )
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.user_display import get_user_display
 from aos.api.social.relationship import build_relationship_status
 from aos.services.seller_response_metrics import (
     format_response_rate,
@@ -178,16 +179,17 @@ def get_seller_impl(**kwargs):
             seller_doc.operating_hours
         )
 
+        display = get_user_display(seller_doc.user)
+        is_deleted = bool(display.get("is_deleted"))
+
         return ok(
             "Seller fetched.",
             data={
                 "seller": seller_doc.name,
                 "user": seller_doc.user,
-                "display_name": (
-                    user_doc.full_name
-                    or seller_doc.user
-                ),
-                "avatar": user_doc.user_image,
+                "display_name": display.get("display_name"),
+                "avatar": display.get("avatar"),
+                "is_deleted": is_deleted,
                 "business_category": (
                     seller_doc.business_category
                 ),
@@ -198,7 +200,7 @@ def get_seller_impl(**kwargs):
                 ),
                 "is_verified": bool(
                     profile.get("is_verified")
-                    if profile
+                    if profile and not is_deleted
                     else False
                 ),
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import frappe
 
 from aos.services.push_service import PushService
+from aos.api.shared.user_display import get_user_display
 
 
 class NotificationService:
@@ -33,16 +34,12 @@ class NotificationService:
     # CORE
     @staticmethod
     def _display_name(user: str | None) -> str:
-        """
-        Resolve a user-facing display name.
-
-        Falls back to the user ID/email if User.full_name is unavailable.
-        """
+        """Resolve a display-safe user-facing name."""
         if not user:
             return ""
 
         try:
-            return frappe.db.get_value("User", user, "full_name") or user
+            return get_user_display(user).get("display_name") or user
         except Exception:
             return user
 

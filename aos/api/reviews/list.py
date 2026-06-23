@@ -6,7 +6,10 @@ from typing import Any, Dict, List
 
 import frappe
 
+from aos.api.shared.auth import optional_active_user
+
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.user_display import get_user_display_map
 
 
 ALLOWED_SORTS = {"newest", "helpful", "rating_high", "rating_low"}
@@ -118,7 +121,7 @@ def list_reviews_impl(**kwargs):
         review_names = [r["name"] for r in reviews]
 
         # User Reaction
-        current_user = frappe.session.user if frappe.session.user != "Guest" else None
+        current_user = optional_active_user()
         user_reactions_map: Dict[str, str] = {}
 
         if current_user and review_names:
@@ -152,20 +155,7 @@ def list_reviews_impl(**kwargs):
 
         # Reviewer Info
         reviewer_emails = list({r["reviewer"] for r in reviews})
-        user_map: Dict[str, Dict[str, Any]] = {}
-
-        if reviewer_emails:
-            users = frappe.get_all(
-                "User",
-                filters={"name": ["in", reviewer_emails]},
-                fields=["name", "first_name", "user_image"],
-            )
-
-            for u in users:
-                user_map[u["name"]] = {
-                    "full_name": u["first_name"] or "",
-                    "avatar": u["user_image"] or "",
-                }
+        user_map: Dict[str, Dict[str, Any]] = get_user_display_map(reviewer_emails)
 
         # Format Response
         formatted_reviews = []
@@ -184,8 +174,9 @@ def list_reviews_impl(**kwargs):
                     "dislike_count": r["dislike_count"],
                     "user_reaction": user_reactions_map.get(r["name"]),
                     "reviewer": {
-                        "full_name": reviewer_info.get("full_name", ""),
+                        "full_name": reviewer_info.get("display_name", ""),
                         "avatar": reviewer_info.get("avatar", ""),
+                        "is_deleted": bool(reviewer_info.get("is_deleted")),
                     },
                     "images": images_map.get(r["name"], []),
                 }

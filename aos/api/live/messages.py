@@ -38,7 +38,7 @@ from typing import Any
 
 import frappe
 
-from aos.api.shared.auth import require_login
+from aos.api.shared.auth import optional_active_user, require_login
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.validators import require_id
@@ -167,12 +167,7 @@ def _parse_pagination(
 
 # SESSION / LIVE HELPERS
 def _get_optional_current_user() -> str | None:
-    user = frappe.session.user
-
-    if not user or user == GUEST_USER:
-        return None
-
-    return user
+    return optional_active_user()
 
 
 def _is_live_host(

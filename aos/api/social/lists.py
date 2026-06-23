@@ -14,6 +14,7 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.user_display import get_user_display_map
 
 from .constants import (
     DEFAULT_SOCIAL_LIST_LIMIT,
@@ -286,9 +287,12 @@ def get_friends_impl(**kwargs):
 # HELPERS
 def _serialize_users(*, rows: list[dict], current_user: str) -> list[dict]:
     items = []
+    display_map = get_user_display_map([row.get("user") for row in rows])
 
     for row in rows:
         target_user = row.get("user")
+        display = display_map.get(target_user) or {}
+        is_deleted = bool(display.get("is_deleted"))
 
         relationship = build_relationship_status(
             current_user=current_user,
@@ -297,11 +301,12 @@ def _serialize_users(*, rows: list[dict], current_user: str) -> list[dict]:
 
         item = {
             "user": target_user,
-            "full_name": row.get("full_name"),
-            "user_image": row.get("user_image"),
-            "total_followers": int(row.get("total_followers") or 0),
-            "total_following": int(row.get("total_following") or 0),
-            "is_verified": bool(row.get("is_verified")),
+            "full_name": display.get("display_name") or row.get("full_name"),
+            "user_image": display.get("avatar"),
+            "is_deleted": is_deleted,
+            "total_followers": int(row.get("total_followers") or 0) if not is_deleted else 0,
+            "total_following": int(row.get("total_following") or 0) if not is_deleted else 0,
+            "is_verified": bool(row.get("is_verified")) if not is_deleted else False,
             "followed_at": row.get("followed_at"),
             **relationship,
         }

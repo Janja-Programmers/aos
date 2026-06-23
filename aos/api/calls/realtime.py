@@ -7,37 +7,16 @@ from typing import Any
 
 import frappe
 
+from aos.api.shared.user_display import get_user_display
+
 # HELPERS
 def _get_user_summary(user_id: str | None) -> dict[str, Any] | None:
-    """
-    Return lightweight user display info.
-
-    Fallback is the user id/email only if full_name is unavailable.
-    """
+    """Return display-safe user summary."""
 
     if not user_id:
         return None
 
-    row = frappe.db.get_value(
-        "User",
-        user_id,
-        ["name", "full_name", "user_image"],
-        as_dict=True,
-    )
-
-    if not row:
-        return {
-            "user": user_id,
-            "display_name": user_id,
-            "avatar": None,
-        }
-
-    return {
-        "user": row.name,
-        "display_name": row.full_name or row.name,
-        "avatar": row.user_image,
-    }
-
+    return get_user_display(user_id)
 
 def serialize_call_for_realtime(
     call,

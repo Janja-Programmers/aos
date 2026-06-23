@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import frappe
 
+from aos.api.shared.auth import optional_active_user
 from aos.api.shared.responses import fail, ok
 
 from .eligibility import get_review_eligibility_for_ad
@@ -35,7 +36,7 @@ def get_review_viewer_state_impl(**kwargs):
     if not ad_doc or ad_doc.status != "Active":
         return fail("Ad not found.", code="NOT_FOUND")
 
-    current_user = frappe.session.user if frappe.session.user != "Guest" else None
+    current_user = optional_active_user()
 
     state = get_review_eligibility_for_ad(
         ad_doc=ad_doc,

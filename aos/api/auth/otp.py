@@ -1,5 +1,10 @@
 import frappe
 
+from aos.api.shared.account_status import (
+    can_restore_account,
+    deleted_account_response,
+    is_account_deleted,
+)
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.rate_limit import rate_limit
 
@@ -11,6 +16,15 @@ from .constants import (
 from .validators import normalize_email
 from .verification import get_ver_doc
 from .otp_service import enforce_resend_cooldown, issue_otp, verify_otp
+
+
+def _deleted_account_block(user_name: str):
+    if is_account_deleted(user_name):
+        return deleted_account_response(
+            restorable=can_restore_account(user_name),
+        )
+
+    return None
 
 
 def verify_email_otp_impl(**kwargs):
@@ -33,6 +47,10 @@ def verify_email_otp_impl(**kwargs):
     user_name = frappe.db.get_value("User", {"email": email}, "name")
     if not user_name:
         return fail("Account not found.", code="NOT_FOUND")
+
+    deleted_err = _deleted_account_block(user_name)
+    if deleted_err:
+        return deleted_err
 
     ver = get_ver_doc(user_name, purpose="email_verification")
     if not ver:
@@ -70,6 +88,10 @@ def resend_email_otp_impl(**kwargs):
     user_name = frappe.db.get_value("User", {"email": email}, "name")
     if not user_name:
         return fail("Account not found.", code="NOT_FOUND")
+
+    deleted_err = _deleted_account_block(user_name)
+    if deleted_err:
+        return deleted_err
 
     user = frappe.get_doc("User", user_name)
 

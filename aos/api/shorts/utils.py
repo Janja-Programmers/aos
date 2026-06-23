@@ -19,6 +19,7 @@ from typing import Any
 from frappe.utils import cint, flt
 
 from aos.api.shared.auth import current_user
+from aos.api.shared.user_display import get_user_display
 from aos.api.shorts.constants import (
     DEFAULT_SHORT_CONTENT_MODE,
     DEFAULT_SHORT_AUDIENCE,
@@ -253,6 +254,8 @@ def serialize_short_row(
     """
     status = row.get("status")
     owner = row.get("owner")
+    creator_display = get_user_display(owner)
+    creator_is_deleted = bool(creator_display.get("is_deleted"))
 
     return {
         "id": row.get("name"),
@@ -280,9 +283,10 @@ def serialize_short_row(
         "posted_on": row.get("posted_on"),
         "creator": {
             "user": owner,
-            "display_name": row.get("creator_name") or owner,
-            "avatar": row.get("creator_avatar"),
-            "is_verified": bool(row.get("creator_is_verified")),
+            "display_name": creator_display.get("display_name"),
+            "avatar": creator_display.get("avatar"),
+            "is_deleted": creator_is_deleted,
+            "is_verified": bool(row.get("creator_is_verified")) if not creator_is_deleted else False,
             "seller": (
                 {
                     "id": row.get("seller"),
@@ -312,11 +316,17 @@ def serialize_comment_row(
     *,
     viewer_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    user = row.get("user")
+    author_display = get_user_display(user)
+
     return {
         "id": row.get("name"),
         "short": row.get("short"),
-        "user": row.get("user"),
+        "user": user,
         "seller": row.get("seller"),
+        "display_name": author_display.get("display_name"),
+        "avatar": author_display.get("avatar"),
+        "is_deleted_user": bool(author_display.get("is_deleted")),
         "comment": row.get("comment") or "",
         "parent_comment": row.get("parent_comment"),
         "root_comment": row.get("root_comment"),

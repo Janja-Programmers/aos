@@ -34,6 +34,8 @@ from typing import Any
 import frappe
 
 from aos.api.social.relationship import build_relationship_status
+from aos.api.shared.user_display import get_user_display as shared_get_user_display
+from aos.api.shared.user_display import get_user_display_map
 
 
 LIVE_STATUS = "live"
@@ -191,45 +193,9 @@ def _apply_viewer_ownership_filter(
 def get_user_display(
     user: str | None,
 ) -> dict:
-    """
-    Return display-ready User context.
+    """Return display-safe User context."""
 
-    These values are calculated from User rather than duplicated on
-    Live-related DocTypes.
-    """
-    if not user:
-        return {
-            "user": None,
-            "display_name": None,
-            "avatar": None,
-        }
-
-    row = frappe.db.get_value(
-        "User",
-        user,
-        [
-            "name",
-            "full_name",
-            "user_image",
-        ],
-        as_dict=True,
-    )
-
-    if not row:
-        return {
-            "user": user,
-            "display_name": user,
-            "avatar": None,
-        }
-
-    return {
-        "user": row.name,
-        "display_name": (
-            row.full_name
-            or row.name
-        ),
-        "avatar": row.user_image,
-    }
+    return shared_get_user_display(user)
 
 
 def get_profile_context(
@@ -286,18 +252,27 @@ def serialize_user(
         user
     )
 
+    is_deleted = bool(
+        display.get("is_deleted")
+    )
+
     return {
         "user": display["user"],
         "display_name": display[
             "display_name"
         ],
         "avatar": display["avatar"],
-        "is_verified": profile[
-            "is_verified"
-        ],
-        "total_followers": profile[
-            "total_followers"
-        ],
+        "is_deleted": is_deleted,
+        "is_verified": (
+            False
+            if is_deleted
+            else profile["is_verified"]
+        ),
+        "total_followers": (
+            0
+            if is_deleted
+            else profile["total_followers"]
+        ),
     }
 
 
@@ -1528,9 +1503,7 @@ def serialize_live(
 def preload_users(
     users: list[str],
 ) -> dict[str, dict]:
-    """
-    Batch preload User and AOS Profile context.
-    """
+    """Batch preload display-safe User and AOS Profile context."""
     users = sorted(
         {
             user
@@ -1542,20 +1515,7 @@ def preload_users(
     if not users:
         return {}
 
-    user_rows = frappe.get_all(
-        "User",
-        filters={
-            "name": [
-                "in",
-                users,
-            ],
-        },
-        fields=[
-            "name",
-            "full_name",
-            "user_image",
-        ],
-    )
+    display_map = get_user_display_map(users)
 
     profile_rows = frappe.get_all(
         "AOS Profile",
@@ -1579,42 +1539,27 @@ def preload_users(
 
     result: dict[str, dict] = {}
 
-    for row in user_rows:
-        profile = profile_by_user.get(
-            row.name
-        )
+    for user in users:
+        display = display_map.get(user) or fallback_user_payload(user)
+        is_deleted = bool(display.get("is_deleted"))
+        profile = profile_by_user.get(user)
 
-        result[row.name] = {
-            "user": row.name,
-            "display_name": (
-                row.full_name
-                or row.name
-            ),
-            "avatar": row.user_image,
+        result[user] = {
+            "user": display.get("user"),
+            "display_name": display.get("display_name"),
+            "avatar": display.get("avatar"),
+            "is_deleted": is_deleted,
             "is_verified": (
-                bool(
-                    profile.is_verified
-                )
-                if profile
+                bool(profile.is_verified)
+                if profile and not is_deleted
                 else False
             ),
             "total_followers": (
-                int(
-                    profile.total_followers
-                    or 0
-                )
-                if profile
+                int(profile.total_followers or 0)
+                if profile and not is_deleted
                 else 0
             ),
         }
-
-    for user in users:
-        result.setdefault(
-            user,
-            fallback_user_payload(
-                user
-            ),
-        )
 
     return result
 

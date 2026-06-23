@@ -1,6 +1,11 @@
 import frappe
 from frappe.utils import now_datetime
 
+from aos.api.shared.account_status import (
+    can_restore_account,
+    deleted_account_response,
+    is_account_deleted,
+)
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
 
@@ -24,6 +29,16 @@ from .otp_service import enforce_resend_cooldown, issue_otp, verify_otp
 
 
 PURPOSE = "password_reset"
+GENERIC_REQUEST_MESSAGE = "If an account exists for this email, an OTP has been sent."
+
+
+def _deleted_account_block(user_name: str):
+    if is_account_deleted(user_name):
+        return deleted_account_response(
+            restorable=can_restore_account(user_name),
+        )
+
+    return None
 
 
 def forgot_password_request_impl(**kwargs):
@@ -56,7 +71,13 @@ def forgot_password_request_impl(**kwargs):
 
     if not user_name:
         # Do not leak account existence
-        return ok("If an account exists for this email, an OTP has been sent.")
+        return ok(GENERIC_REQUEST_MESSAGE)
+
+    if is_account_deleted(user_name):
+        # Do not send password-reset OTPs for deleted accounts.
+        # The user must use the restore-account flow instead.
+        # Keep this response generic to avoid account-state enumeration.
+        return ok(GENERIC_REQUEST_MESSAGE)
 
     user = frappe.get_doc("User", user_name)
 
@@ -78,7 +99,7 @@ def forgot_password_request_impl(**kwargs):
     ver.reset_token_expires_at = None
     ver.save(ignore_permissions=True)
 
-    return ok("If an account exists for this email, an OTP has been sent.")
+    return ok(GENERIC_REQUEST_MESSAGE)
 
 
 def forgot_password_verify_otp_impl(**kwargs):
@@ -101,6 +122,10 @@ def forgot_password_verify_otp_impl(**kwargs):
 
     if not user_name:
         return fail("Invalid OTP.", code="OTP_INVALID")
+
+    deleted_err = _deleted_account_block(user_name)
+    if deleted_err:
+        return deleted_err
 
     ver = get_ver_doc(user_name, purpose=PURPOSE)
 
@@ -162,6 +187,10 @@ def forgot_password_reset_impl(**kwargs):
 
     if not user_name:
         return fail("Invalid reset token.", code="TOKEN_INVALID")
+
+    deleted_err = _deleted_account_block(user_name)
+    if deleted_err:
+        return deleted_err
 
     ver = get_ver_doc(user_name, purpose=PURPOSE)
 

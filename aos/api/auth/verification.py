@@ -75,6 +75,9 @@ def send_otp_email(email: str, otp: str, full_name: str = "", purpose: str = "em
     if purpose == "password_reset":
         subject = "Your Africa Online Stores password reset code"
         action = "reset your password"
+    elif purpose == "account_restore":
+        subject = "Your Africa Online Stores account restore code"
+        action = "restore your account"
     else:
         subject = "Your Africa Online Stores verification code"
         action = "verify your email"
