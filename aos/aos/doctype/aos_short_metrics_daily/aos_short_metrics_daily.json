@@ -12,6 +12,9 @@
   "likes",
   "comments",
   "shares",
+  "saves",
+  "downloads",
+  "reposts",
   "column_break_ttxd",
   "watch_time_ms",
   "avg_watch_time_ms",
@@ -85,6 +88,27 @@
    "fieldname": "shares",
    "fieldtype": "Int",
    "label": "Shares",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "saves",
+   "fieldtype": "Int",
+   "label": "Saves",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "downloads",
+   "fieldtype": "Int",
+   "label": "Downloads",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "reposts",
+   "fieldtype": "Int",
+   "label": "Reposts",
    "read_only": 1
   },
   {

@@ -68,6 +68,14 @@ from .management import (
     retry_processing_impl,
 )
 
+# ANALYTICS
+from .analytics import (
+    get_short_analytics_impl,
+    my_shorts_analytics_impl,
+    user_short_analytics_impl,
+    general_short_analytics_impl,
+)
+
 
 # UPLOAD
 @frappe.whitelist(methods=["POST"])
@@ -218,3 +226,24 @@ def delete_short(**kwargs):
 @frappe.whitelist(methods=["POST"])
 def retry_processing(**kwargs):
     return retry_processing_impl(**kwargs)
+
+
+# ANALYTICS
+@frappe.whitelist()
+def get_short_analytics(**kwargs):
+    return get_short_analytics_impl(**kwargs)
+
+
+@frappe.whitelist()
+def my_shorts_analytics(**kwargs):
+    return my_shorts_analytics_impl(**kwargs)
+
+
+@frappe.whitelist()
+def user_short_analytics(**kwargs):
+    return user_short_analytics_impl(**kwargs)
+
+
+@frappe.whitelist()
+def general_short_analytics(**kwargs):
+    return general_short_analytics_impl(**kwargs)
