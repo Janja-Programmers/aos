@@ -35,6 +35,7 @@ from aos.api.shorts.utils import (
 )
 
 from aos.api.shorts.visibility import can_view_short
+from aos.api.shorts.mentions import get_short_mentions_map
 
 
 # COMMON
@@ -202,6 +203,25 @@ def _load_saved_short_ids(viewer: str | None, short_ids: list[str]) -> set[str]:
     return set(rows or [])
 
 
+
+
+def _load_reposted_short_ids(viewer: str | None, short_ids: list[str]) -> set[str]:
+    """Batch-load short IDs reposted by the current viewer."""
+    if not viewer or not short_ids:
+        return set()
+
+    rows = frappe.get_all(
+        "AOS Short Repost",
+        filters={
+            "user": viewer,
+            "short": ["in", short_ids],
+            "status": "active",
+        },
+        pluck="short",
+    )
+
+    return set(rows or [])
+
 def _load_followed_user_ids(
     viewer: str | None,
     target_users: list[str],
@@ -337,6 +357,7 @@ def _build_viewer_state(
     viewer: str | None,
     liked_short_ids: set[str],
     saved_short_ids: set[str],
+    reposted_short_ids: set[str],
     followed_user_ids: set[str],
     followed_by_user_ids: set[str],
 ) -> dict[str, Any]:
@@ -364,10 +385,13 @@ def _build_viewer_state(
     return {
         "is_liked": bool(short_id and short_id in liked_short_ids),
         "is_saved": bool(short_id and short_id in saved_short_ids),
+        "is_reposted": bool(short_id and short_id in reposted_short_ids),
         "is_owner": is_owner,
         "can_edit": is_owner,
         "can_delete": is_owner,
         "can_report": bool(is_logged_in and not is_owner),
+        "can_repost": bool(is_logged_in and not is_owner),
+        "can_share": True,
         **relationship,
     }
 
@@ -414,6 +438,12 @@ def _build_response(rows, limit: int, *, viewer: str | None = None):
 
     liked_short_ids = _load_liked_short_ids(viewer, short_ids)
     saved_short_ids = _load_saved_short_ids(viewer, short_ids)
+    reposted_short_ids = _load_reposted_short_ids(viewer, short_ids)
+    mention_map = get_short_mentions_map(short_ids)
+
+    for row in visible_rows:
+        row["mentions"] = mention_map.get(row.get("name"), [])
+
     followed_user_ids = _load_followed_user_ids(viewer, owner_users)
     followed_by_user_ids = _load_followed_by_user_ids(viewer, owner_users)
 
@@ -425,6 +455,7 @@ def _build_response(rows, limit: int, *, viewer: str | None = None):
                 viewer=viewer,
                 liked_short_ids=liked_short_ids,
                 saved_short_ids=saved_short_ids,
+                reposted_short_ids=reposted_short_ids,
                 followed_user_ids=followed_user_ids,
                 followed_by_user_ids=followed_by_user_ids,
             ),
@@ -473,6 +504,7 @@ def _select_short_rows_sql() -> str:
             s.share_count,
             s.save_count,
             s.download_count,
+            s.repost_count,
             s.impression_count,
             s.ranking_score,
             s.posted_on,

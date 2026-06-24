@@ -37,12 +37,14 @@ from .message import (
     _determine_message_type,
     _fetch_ads_bulk,
     _fetch_reply_messages_bulk,
+    _fetch_shorts_bulk,
     _fetch_users,
     _get_receiver,
     _is_deleted_for_everyone,
     _message_preview,
     _serialize_attachments_bulk,
     _serialize_message,
+    _validate_short_reference,
 )
 
 from .preview import set_conversation_preview_for_new_message
@@ -85,6 +87,7 @@ def _get_source_message(message_id: str):
             m.content,
             m.message_type,
             m.ad,
+            m.short,
             m.reply_to_message,
             m.has_attachments,
             m.is_forwarded,
@@ -208,6 +211,31 @@ def _validate_target_conversations(
     return None
 
 
+
+def _validate_forwarded_short_access(
+    *,
+    short: str | None,
+    target_conversation_ids: List[str],
+    target_conversation_map: Dict[str, frappe._dict],
+    current_user: str,
+):
+    """Ensure a forwarded short can be viewed by all target recipients."""
+    if not short:
+        return None
+
+    recipients: List[str] = []
+    for conv_id in target_conversation_ids:
+        conv = target_conversation_map.get(conv_id)
+        if not conv:
+            continue
+        recipients.append(_get_receiver(conv, current_user))
+
+    return _validate_short_reference(
+        short,
+        viewer=current_user,
+        recipients=recipients,
+    )
+
 def _copy_attachments(
     *,
     source_attachments: List[frappe._dict],
@@ -249,6 +277,7 @@ def _create_forwarded_message(
 ):
     content = (source.content or "").strip()
     ad = source.ad
+    short = getattr(source, "short", None)
 
     message_type = _determine_message_type(
         content=content,
@@ -258,6 +287,7 @@ def _create_forwarded_message(
             if att.file and att.file_type
         ],
         ad=ad,
+        short=short,
     )
 
     msg = frappe.new_doc("AOS Message")
@@ -268,6 +298,9 @@ def _create_forwarded_message(
 
     if ad:
         msg.ad = ad
+
+    if short:
+        msg.short = short
 
     msg.insert(ignore_permissions=True)
 
@@ -352,14 +385,25 @@ def _serialize_forwarded_message(
         if replied.ad and not _is_deleted_for_everyone(replied):
             ad_ids.append(replied.ad)
 
+    short_ids: List[str] = []
+
+    if getattr(msg, "short", None) and not _is_deleted_for_everyone(msg):
+        short_ids.append(msg.short)
+
+    for replied in reply_map.values():
+        if getattr(replied, "short", None) and not _is_deleted_for_everyone(replied):
+            short_ids.append(replied.short)
+
     user_map = _fetch_users(user_ids)
     ad_map = _fetch_ads_bulk(ad_ids)
+    short_map = _fetch_shorts_bulk(short_ids, viewer=current_user)
 
     return _serialize_message(
         msg,
         attachments_map=attachments_map,
         user_map=user_map,
         ad_map=ad_map,
+        short_map=short_map,
         current_user=current_user,
         reply_map=reply_map,
         is_starred=False,
@@ -417,18 +461,30 @@ def forward_message_impl(**kwargs):
         if target_error:
             return target_error
 
+        short_error = _validate_forwarded_short_access(
+            short=getattr(source, "short", None),
+            target_conversation_ids=target_conversation_ids,
+            target_conversation_map=target_conversation_map,
+            current_user=current_user,
+        )
+        if short_error:
+            return short_error
+
         source_attachments = _fetch_source_attachments(source.name)
 
         now = now_datetime()
         forwarded_messages: List[Dict[str, Any]] = []
 
         source_ad_map = _fetch_ads_bulk([source.ad]) if source.ad else {}
+        source_short_map = _fetch_shorts_bulk([source.short], viewer=current_user) if getattr(source, "short", None) else {}
 
         preview = _message_preview(
             content=source.content,
             has_attachments=1 if source_attachments else 0,
             ad=source.ad,
+            short=getattr(source, "short", None),
             ad_preview=source_ad_map.get(source.ad) if source.ad else None,
+            short_preview=source_short_map.get(source.short) if getattr(source, "short", None) else None,
         )
 
         for target_conversation_id in target_conversation_ids:

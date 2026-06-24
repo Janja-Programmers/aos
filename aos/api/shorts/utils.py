@@ -84,6 +84,7 @@ def default_short_viewer_state(
     return {
         "is_liked": False,
         "is_saved": False,
+        "is_reposted": False,
 
         # Relationship state
         "target_user": target_user,
@@ -99,6 +100,8 @@ def default_short_viewer_state(
         "can_edit": False,
         "can_delete": False,
         "can_report": False,
+        "can_repost": False,
+        "can_share": False,
     }
 
 
@@ -111,6 +114,8 @@ def default_comment_viewer_state() -> dict[str, bool]:
         "is_owner": False,
         "can_delete": False,
         "can_report": False,
+        "can_repost": False,
+        "can_share": False,
     }
 
 
@@ -292,10 +297,13 @@ def serialize_short_row(
         "save_count_display": humanize_count(row.get("save_count") or 0),
         "download_count": cint(row.get("download_count") or 0),
         "download_count_display": humanize_count(row.get("download_count") or 0),
+        "repost_count": cint(row.get("repost_count") or 0),
+        "repost_count_display": humanize_count(row.get("repost_count") or 0),
         "impression_count": cint(row.get("impression_count") or 0),
         "impression_count_display": humanize_count(row.get("impression_count") or 0),
         "ranking_score": flt(row.get("ranking_score") or 0),
         "posted_on": row.get("posted_on"),
+        "mentions": row.get("mentions") or [],
         "creator": {
             "user": owner,
             "display_name": creator_display.get("display_name"),
@@ -361,6 +369,7 @@ def serialize_comment_row(
         "like_count": cint(row.get("like_count") or 0),
         "like_count_display": humanize_count(row.get("like_count") or 0),
         "status": row.get("status"),
+        "mentions": row.get("mentions") or [],
         "created_at": row.get("creation"),
         "viewer_state": viewer_state or default_comment_viewer_state(),
     }

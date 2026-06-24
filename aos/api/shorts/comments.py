@@ -49,6 +49,11 @@ from aos.api.shorts.activity import (
     hide_short_comment_activity,
     record_short_comment_activity,
 )
+from aos.api.shorts.mentions import (
+    delete_comment_mentions,
+    get_comment_mentions_map,
+    sync_comment_mentions,
+)
 
 RANKING_TASK = "aos.api.shorts.tasks.update_short_score_task"
 
@@ -218,6 +223,10 @@ def _serialize_comments_with_viewer_state(
     ]
 
     liked_comment_ids = _load_liked_comment_ids(viewer, comment_ids)
+    mention_map = get_comment_mentions_map(comment_ids)
+
+    for row in rows:
+        row["mentions"] = mention_map.get(row.get("name"), [])
 
     return [
         serialize_comment_row(
@@ -312,6 +321,14 @@ def add_comment_impl(**kwargs):
             }
         )
         doc.insert(ignore_permissions=True)
+
+        sync_comment_mentions(
+            short_id=short_id,
+            comment_id=doc.name,
+            text=comment,
+            mentioned_by=user,
+            is_reply=False,
+        )
 
         record_short_comment_activity(
             user=user,
@@ -417,6 +434,14 @@ def reply_comment_impl(**kwargs):
             }
         )
         doc.insert(ignore_permissions=True)
+
+        sync_comment_mentions(
+            short_id=parent.short,
+            comment_id=doc.name,
+            text=comment,
+            mentioned_by=user,
+            is_reply=True,
+        )
 
         record_short_comment_activity(
             user=user,
@@ -857,6 +882,7 @@ def delete_comment_impl(**kwargs):
                 user=row.get("user"),
                 comment_id=row.get("name"),
             )
+            delete_comment_mentions(row.get("name"))
 
         # CASCADE DELETE replies if deleting a top-level comment.
         if not doc.parent_comment:

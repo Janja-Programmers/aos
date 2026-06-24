@@ -541,6 +541,40 @@ class NotificationService:
         )
 
     @classmethod
+    def notify_short_mention(
+        cls,
+        *,
+        user: str,
+        actor: str,
+        short_id: str,
+        comment_id: str | None = None,
+        source_type: str | None = None,
+    ):
+        """Notify a user that they were mentioned in a short caption/comment."""
+        actor_name = cls._display_name(actor)
+
+        payload = {
+            "short_id": short_id,
+            "actor": actor,
+            "source_type": source_type,
+        }
+
+        if comment_id:
+            payload["comment_id"] = comment_id
+
+        where = "a comment" if source_type in {"comment", "reply"} else "a short"
+
+        return cls.notify(
+            user=user,
+            type="short_mention",
+            title="You were mentioned",
+            body=f"{actor_name} mentioned you in {where}",
+            actor=actor,
+            payload=payload,
+            event="aos_short_mention",
+        )
+
+    @classmethod
     def notify_comment_reply(
         cls,
         *,

@@ -21,6 +21,7 @@ SHORT_WATCH_ACTIVITY = "short_watch"
 SHORT_LIKE_ACTIVITY = "short_like"
 SHORT_COMMENT_ACTIVITY = "short_comment"
 SHORT_REPORT_ACTIVITY = "short_report"
+SHORT_REPOST_ACTIVITY = "short_repost"
 
 ROUTE_TYPE_SHORT = "short"
 
@@ -53,6 +54,16 @@ def short_comment_unique_key(comment_id: str) -> str:
         target_name=comment_id,
         route_type=ROUTE_TYPE_SHORT,
         route_id=comment_id,
+    )
+
+
+def short_repost_unique_key(short_id: str) -> str:
+    return ActivityService.build_unique_key(
+        activity_type=SHORT_REPOST_ACTIVITY,
+        target_doctype=SHORT_DOCTYPE,
+        target_name=short_id,
+        route_type=ROUTE_TYPE_SHORT,
+        route_id=short_id,
     )
 
 
@@ -286,4 +297,45 @@ def record_short_report_activity(
         metadata=metadata,
         unique_key=short_report_unique_key(report_id),
         **target,
+    )
+
+
+def record_short_repost_activity(
+    *,
+    user: str | None,
+    short_id: str,
+) -> str | None:
+    """Record/de-dupe a Shorts repost history item."""
+    if not user:
+        return None
+
+    target = _load_short_target(short_id)
+    if not target:
+        return None
+
+    metadata = target.pop("metadata", None)
+    target["target_subtitle"] = "Reposted a short"
+
+    return ActivityService.record_or_update_activity(
+        user=user,
+        activity_group=SHORT_ACTIVITY_GROUP,
+        activity_type=SHORT_REPOST_ACTIVITY,
+        metadata=metadata,
+        unique_key=short_repost_unique_key(short_id),
+        **target,
+    )
+
+
+def hide_short_repost_activity(
+    *,
+    user: str | None,
+    short_id: str,
+) -> bool:
+    """Hide a Shorts repost history item after repost removal."""
+    if not user:
+        return False
+
+    return ActivityService.hide_activity_by_unique_key(
+        user=user,
+        unique_key=short_repost_unique_key(short_id),
     )

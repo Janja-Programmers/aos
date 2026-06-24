@@ -33,6 +33,7 @@
   "share_count",
   "save_count",
   "download_count",
+  "repost_count",
   "ranking_score",
   "review_tab",
   "visibility_status",
@@ -209,6 +210,12 @@
    "fieldtype": "Int",
    "label": "Download Count",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "repost_count",
+   "fieldtype": "Int",
+   "label": "Repost Count"
   },
   {
    "fieldname": "ranking_score",

@@ -21,15 +21,22 @@ from aos.services.minio_service import MinioService
 
 from aos.api.shorts.constants import (
     SAVE_TOGGLE_RATE_LIMIT_PER_MINUTE,
+    REPOST_TOGGLE_RATE_LIMIT_PER_MINUTE,
     SAVED_SHORTS_DEFAULT_LIMIT,
     SAVED_SHORTS_MAX_LIMIT,
     LIKED_SHORTS_DEFAULT_LIMIT,
     LIKED_SHORTS_MAX_LIMIT,
+    REPOSTED_SHORTS_DEFAULT_LIMIT,
+    REPOSTED_SHORTS_MAX_LIMIT,
     DOWNLOAD_SHORT_LIMIT_PER_MINUTE_PER_IP,
 )
 from aos.api.shorts.validators import validate_limit
 from aos.api.shorts.utils import build_cursor_where_clause, build_time_id_cursor
 from aos.api.shorts.visibility import can_view_short
+from aos.api.shorts.activity import (
+    hide_short_repost_activity,
+    record_short_repost_activity,
+)
 from aos.api.shorts.management import (
     _get_optional_viewer,
     _select_short_rows_sql,
@@ -413,3 +420,190 @@ def download_short_impl(**kwargs):
         frappe.log_error(frappe.get_traceback(), "download_short failed")
         frappe.db.rollback()
         return fail("Failed to generate download URL", code="INTERNAL_ERROR")
+
+
+
+def toggle_repost_impl(**kwargs):
+    user, err = require_login()
+    if err:
+        return err
+
+    rl = rate_limit(
+        key=f"aos:shorts:repost:user:{user}",
+        ttl_seconds=60,
+        limit=REPOST_TOGGLE_RATE_LIMIT_PER_MINUTE,
+        message="Too many requests. Please try again shortly.",
+    )
+    if rl:
+        return rl
+
+    short_id, err = require_id(kwargs.get("short_id"), "short_id")
+    if err:
+        return err
+
+    note = (kwargs.get("note") or "").strip() or None
+
+    try:
+        existing = frappe.get_all(
+            "AOS Short Repost",
+            filters={"short": short_id, "user": user, "status": "active"},
+            fields=["name"],
+            limit=1,
+        )
+
+        # Removing a repost should remain possible even if the original short
+        # was later hidden, made private, deleted, or otherwise unavailable.
+        if existing:
+            repost_doc = frappe.get_doc("AOS Short Repost", existing[0].name)
+            repost_doc.status = "deleted"
+            repost_doc.save(ignore_permissions=True)
+            hide_short_repost_activity(user=user, short_id=short_id)
+            reposted = False
+            message = "Repost removed."
+        else:
+            short = frappe.db.get_value(
+                "AOS Short",
+                short_id,
+                ["name", "owner", "status", "visibility_status", "audience"],
+                as_dict=True,
+            )
+
+            if not short:
+                return fail("Short not found.", code="NOT_FOUND")
+
+            if short.owner == user:
+                return fail("You cannot repost your own short.", code="VALIDATION_ERROR")
+
+            if short.status != "ready" or short.visibility_status != "visible":
+                return fail(
+                    "Short is not available for reposting.",
+                    code="VALIDATION_ERROR",
+                )
+
+            if not can_view_short(short, current_user=user):
+                return fail("Short not found.", code="NOT_FOUND")
+
+            frappe.get_doc(
+                {
+                    "doctype": "AOS Short Repost",
+                    "short": short_id,
+                    "user": user,
+                    "note": note,
+                    "status": "active",
+                }
+            ).insert(ignore_permissions=True)
+            record_short_repost_activity(user=user, short_id=short_id)
+            reposted = True
+            message = "Reposted."
+
+        frappe.db.commit()
+
+        repost_count = frappe.db.get_value("AOS Short", short_id, "repost_count") or 0
+        share_count = frappe.db.get_value("AOS Short", short_id, "share_count") or 0
+
+        frappe.enqueue(RANKING_TASK, short_id=short_id, queue="short")
+
+        return ok(
+            message,
+            data={
+                "short_id": short_id,
+                "reposted": reposted,
+                "viewer_state": {"is_reposted": reposted},
+                "metrics": {
+                    "repost_count": int(repost_count),
+                    "repost_count_display": humanize_count(repost_count),
+                    "share_count": int(share_count),
+                    "share_count_display": humanize_count(share_count),
+                },
+            },
+        )
+
+    except frappe.ValidationError as ex:
+        frappe.db.rollback()
+        return fail(str(ex), code="VALIDATION_ERROR")
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "toggle_repost failed")
+        frappe.db.rollback()
+        return fail("Failed to toggle repost", code="INTERNAL_ERROR")
+
+
+def reposted_shorts_impl(**kwargs):
+    viewer = _get_optional_viewer()
+    target_user = kwargs.get("user") or kwargs.get("target_user")
+
+    if not target_user:
+        user, err = require_login()
+        if err:
+            return err
+        target_user = user
+
+    if not frappe.db.exists("User", target_user):
+        return fail("User not found.", code="NOT_FOUND")
+
+    limit = validate_limit(
+        kwargs.get("limit"),
+        REPOSTED_SHORTS_DEFAULT_LIMIT,
+        REPOSTED_SHORTS_MAX_LIMIT,
+    )
+    cursor = kwargs.get("cursor")
+
+    where_cursor, params_cursor = build_cursor_where_clause(
+        created_field="rp.creation",
+        name_field="rp.name",
+        cursor=cursor,
+    )
+
+    try:
+        rows = frappe.db.sql(
+            f"""
+            {_select_short_rows_with_action_sql("rp")}
+            INNER JOIN `tabAOS Short Repost` rp ON rp.short = s.name
+
+            WHERE
+                rp.user = %s
+                AND rp.status = 'active'
+                AND s.status = 'ready'
+                AND s.visibility_status = 'visible'
+                {where_cursor}
+
+            ORDER BY
+                rp.creation DESC,
+                rp.name DESC
+
+            LIMIT %s
+            """,
+            (target_user, *params_cursor, limit + 1),
+            as_dict=True,
+        )
+
+        # Reposted shorts are only returned if the current viewer can view the
+        # original short. This keeps repost tabs privacy-safe.
+        safe_rows = _filter_viewable_rows(rows, viewer=viewer, limit=limit)
+
+        if not safe_rows:
+            return ok(
+                "Reposted shorts fetched.",
+                data={"items": [], "next_cursor": None, "has_more": False},
+            )
+
+        has_more = len(safe_rows) > limit
+        visible_rows = safe_rows[:limit]
+        items = _serialize_rows_with_viewer_state(visible_rows, viewer=viewer)
+
+        next_cursor = None
+        if has_more:
+            last = visible_rows[-1]
+            next_cursor = build_time_id_cursor(
+                created_on=last["action_creation"],
+                name=last["action_name"],
+            )
+
+        return ok(
+            "Reposted shorts fetched.",
+            data={"items": items, "next_cursor": next_cursor, "has_more": has_more},
+        )
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "reposted_shorts failed")
+        return fail("Failed to fetch reposted shorts", code="INTERNAL_ERROR")

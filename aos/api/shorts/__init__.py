@@ -31,7 +31,15 @@ from .library import (
     toggle_save_short_impl,
     saved_shorts_impl,
     liked_shorts_impl,
+    reposted_shorts_impl,
+    toggle_repost_impl,
     download_short_impl,
+)
+
+# SHARING
+from .share import (
+    create_short_share_link_impl,
+    share_short_to_chat_impl,
 )
 
 # COMMENTS
@@ -114,9 +122,29 @@ def liked_shorts(**kwargs):
     return liked_shorts_impl(**kwargs)
 
 
+@frappe.whitelist(methods=["POST"])
+def toggle_repost(**kwargs):
+    return toggle_repost_impl(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def reposted_shorts(**kwargs):
+    return reposted_shorts_impl(**kwargs)
+
+
 @frappe.whitelist(allow_guest=True)
 def download_short(**kwargs):
     return download_short_impl(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def create_short_share_link(**kwargs):
+    return create_short_share_link_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def share_short_to_chat(**kwargs):
+    return share_short_to_chat_impl(**kwargs)
 
 
 # COMMENTS

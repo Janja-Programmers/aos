@@ -25,6 +25,7 @@ class RankingService:
     LIKE_WEIGHT = 3.0
     COMMENT_WEIGHT = 5.0
     SHARE_WEIGHT = 7.0
+    REPOST_WEIGHT = 8.0
     WATCH_WEIGHT = 10.0
 
     DECAY_FACTOR_HOURS = 48  # bigger = slower decay
@@ -44,6 +45,7 @@ class RankingService:
                     "like_count",
                     "comment_count",
                     "share_count",
+                    "repost_count",
                     "duration_seconds",
                     "creation",
                 ],
@@ -79,6 +81,7 @@ class RankingService:
         likes = float(short.get("like_count") or 0)
         comments = float(short.get("comment_count") or 0)
         shares = float(short.get("share_count") or 0)
+        reposts = float(short.get("repost_count") or 0)
         duration = float(short.get("duration_seconds") or 1)
 
         # WATCH RATIO
@@ -91,6 +94,7 @@ class RankingService:
             + likes * cls.LIKE_WEIGHT
             + comments * cls.COMMENT_WEIGHT
             + shares * cls.SHARE_WEIGHT
+            + reposts * cls.REPOST_WEIGHT
             + watch_ratio * cls.WATCH_WEIGHT
         )
 

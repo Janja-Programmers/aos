@@ -25,6 +25,7 @@
   "deleted_for_2_at",
   "column_break_bgvu",
   "ad",
+  "short",
   "call_id",
   "delivered_to_receiver_at",
   "read_by_receiver_at",
@@ -62,7 +63,7 @@
    "fieldname": "message_type",
    "fieldtype": "Select",
    "label": "Message Type",
-   "options": "text\nmedia\nad\nmixed\nsystem",
+   "options": "text\nmedia\nad\nshort\nmixed\nsystem",
    "reqd": 1
   },
   {
@@ -75,6 +76,12 @@
    "fieldtype": "Link",
    "label": "Ad",
    "options": "AOS Ad"
+  },
+  {
+   "fieldname": "short",
+   "fieldtype": "Link",
+   "label": "Short",
+   "options": "AOS Short"
   },
   {
    "fieldname": "column_break_bgvu",

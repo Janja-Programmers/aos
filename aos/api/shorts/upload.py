@@ -27,6 +27,8 @@ from aos.api.shorts.validators import (
     validate_content_mode,
 )
 
+from aos.api.shorts.mentions import sync_short_mentions
+
 from aos.api.shorts.constants import (
     INIT_UPLOAD_LIMIT_PER_MINUTE_PER_USER,
     CONFIRM_UPLOAD_LIMIT_PER_MINUTE_PER_USER,
@@ -326,6 +328,13 @@ def update_short_metadata_impl(**kwargs):
         doc.visibility_status = "visible"
         doc.hidden_reason = None
         doc.save(ignore_permissions=True)
+
+        mentions = sync_short_mentions(
+            short_id=doc.name,
+            text=caption,
+            mentioned_by=user,
+        )
+
         frappe.db.commit()
 
         # Notify followers only on first publish, not on later metadata edits.
@@ -343,6 +352,7 @@ def update_short_metadata_impl(**kwargs):
                 "audience": doc.audience,
                 "allow_comments": bool(int(doc.allow_comments or 0)),
                 "allow_downloads": bool(int(doc.allow_downloads or 0)),
+                "mentions": mentions,
                 "visibility_status": doc.visibility_status,
             },
         )

@@ -57,6 +57,7 @@ class AOSShortEvent(Document):
             "share",
             "save",
             "download",
+            "repost",
         }
 
         if self.event_type not in allowed:

@@ -20,6 +20,7 @@ from aos.api.shared.responses import ok, fail
 from aos.api.shared.user_display import get_user_display_map
 
 from aos.services.notification_service import NotificationService
+from aos.api.shorts.visibility import can_view_short
 from aos.services.seller_response_metrics import (
     enqueue_conversation_response_metrics_refresh,
 )
@@ -310,6 +311,133 @@ def _fetch_ads_bulk(ad_ids: List[str]) -> Dict[str, Dict[str, Any]]:
     return result
 
 
+def _fetch_shorts_bulk(
+    short_ids: List[str],
+    *,
+    viewer: str | None = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Fetch lightweight short previews in bulk for chat messages.
+
+    Privacy rule:
+    - A chat short preview is returned only when the current viewer can still
+      view the referenced short.
+    - If a short was hidden/deleted/private after it was shared, serializers
+      keep the short id but return short_preview=None and short_unavailable=True.
+    """
+    if not short_ids:
+        return {}
+
+    unique_short_ids = list({short_id for short_id in short_ids if short_id})
+    if not unique_short_ids:
+        return {}
+
+    rows = frappe.get_all(
+        "AOS Short",
+        filters={"name": ["in", unique_short_ids]},
+        fields=[
+            "name",
+            "owner",
+            "caption",
+            "thumbnail_url",
+            "playback_url",
+            "duration_seconds",
+            "status",
+            "visibility_status",
+            "audience",
+            "like_count",
+            "comment_count",
+            "share_count",
+            "repost_count",
+        ],
+    )
+
+    result: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        if row.status != "ready" or row.visibility_status != "visible":
+            continue
+
+        if not can_view_short(row, current_user=viewer):
+            continue
+
+        result[row.name] = {
+            "id": row.name,
+            "owner": row.owner,
+            "caption": row.caption or "",
+            "thumbnail_url": row.thumbnail_url,
+            "playback_url": row.playback_url,
+            "duration_seconds": row.duration_seconds,
+            "status": row.status,
+            "visibility_status": row.visibility_status,
+            "like_count": row.like_count or 0,
+            "comment_count": row.comment_count or 0,
+            "share_count": row.share_count or 0,
+            "repost_count": row.repost_count or 0,
+        }
+
+    return result
+
+
+def _get_short_reference(short: str | None):
+    """Fetch the minimum short row needed for chat visibility checks."""
+    if not short:
+        return None
+
+    return frappe.db.get_value(
+        "AOS Short",
+        short,
+        ["name", "owner", "status", "visibility_status", "audience"],
+        as_dict=True,
+    )
+
+
+def _validate_short_reference(
+    short: str | None,
+    *,
+    viewer: str | None = None,
+    recipients: List[str] | None = None,
+):
+    """Validate a short reference before it is attached to a chat message.
+
+    The sender/viewer must be able to view the short, and every recipient in
+    the target conversation must also be able to view it. This prevents
+    followers/friends/only_me shorts from leaking through chat shares or
+    forwarded messages.
+    """
+    if not short:
+        return None
+
+    short_row = _get_short_reference(short)
+
+    if not short_row:
+        return fail("Invalid short reference.", code="VALIDATION_ERROR")
+
+    if short_row.status != "ready" or short_row.visibility_status != "visible":
+        return fail("Short is not available.", code="VALIDATION_ERROR")
+
+    if not can_view_short(short_row, current_user=viewer):
+        return fail("Short is not available.", code="VALIDATION_ERROR")
+
+    for recipient in recipients or []:
+        if not can_view_short(short_row, current_user=recipient):
+            return fail(
+                "This short cannot be shared with one or more recipients.",
+                code="FORBIDDEN",
+            )
+
+    return None
+
+
+def _short_unavailable_payload(short_id: str | None, short_map: Dict[str, Dict[str, Any]]):
+    if not short_id:
+        return {"short_preview": None, "short_unavailable": False}
+
+    preview = short_map.get(short_id)
+    return {
+        "short_preview": preview,
+        "short_unavailable": preview is None,
+    }
+
+
 def _fetch_reply_messages_bulk(
     reply_message_ids: List[str],
 ) -> Dict[str, frappe._dict]:
@@ -336,6 +464,7 @@ def _fetch_reply_messages_bulk(
             "content",
             "message_type",
             "ad",
+            "short",
             "has_attachments",
             "is_forwarded",
             "forwarded_from_message",
@@ -449,6 +578,7 @@ def _determine_message_type(
     content: str,
     attachments: List[Dict],
     ad: str | None,
+    short: str | None = None,
 ) -> str:
     """
     Determine message type.
@@ -471,11 +601,17 @@ def _determine_message_type(
     if ad:
         parts += 1
 
+    if short:
+        parts += 1
+
     if parts > 1:
         return "mixed"
 
     if ad:
         return "ad"
+
+    if short:
+        return "short"
 
     if attachments:
         return "media"
@@ -488,7 +624,9 @@ def _message_preview(
     content: str | None,
     has_attachments: int,
     ad: str | None,
+    short: str | None = None,
     ad_preview: Dict[str, Any] | None = None,
+    short_preview: Dict[str, Any] | None = None,
 ) -> str:
     """
     Build last_message / notification preview.
@@ -500,6 +638,10 @@ def _message_preview(
     if ad:
         title = ad_preview.get("title") if ad_preview else None
         return title or "[Ad]"
+
+    if short:
+        caption = short_preview.get("caption") if short_preview else None
+        return caption or "[Short]"
 
     if has_attachments:
         return "[Attachment]"
@@ -541,6 +683,9 @@ def _build_deleted_message_payload(
         "original_message_type": msg.message_type,
         "ad": None,
         "ad_preview": None,
+        "short": None,
+        "short_preview": None,
+        "short_unavailable": False,
         "reply_to_message": getattr(msg, "reply_to_message", None),
         "reply_to": None,
         "has_attachments": 0,
@@ -577,7 +722,8 @@ def _build_reply_payload(
     reply_map: Dict[str, frappe._dict],
     user_map: Dict[str, frappe._dict],
     ad_map: Dict[str, Dict[str, Any]],
-    current_user: str,
+    short_map: Dict[str, Dict[str, Any]] | None = None,
+    current_user: str = "",
 ) -> Dict[str, Any] | None:
     """
     Build lightweight reply preview for frontend rendering.
@@ -585,6 +731,8 @@ def _build_reply_payload(
 
     if not reply_to_message:
         return None
+
+    short_map = short_map or {}
 
     replied = reply_map.get(reply_to_message)
     if not replied:
@@ -603,6 +751,9 @@ def _build_reply_payload(
             "original_message_type": replied.message_type,
             "ad": None,
             "ad_preview": None,
+            "short": None,
+            "short_preview": None,
+            "short_unavailable": False,
             "has_attachments": 0,
             "is_forwarded": getattr(replied, "is_forwarded", 0) or 0,
             "forwarded_from_message": getattr(
@@ -630,6 +781,9 @@ def _build_reply_payload(
             "created_at": replied.creation,
         }
 
+    short_id = getattr(replied, "short", None)
+    short_payload = _short_unavailable_payload(short_id, short_map)
+
     return {
         "id": replied.name,
         "sender": replied_user["sender"],
@@ -639,6 +793,9 @@ def _build_reply_payload(
         "message_type": replied.message_type,
         "ad": replied.ad,
         "ad_preview": ad_map.get(replied.ad) if replied.ad else None,
+        "short": short_id,
+        "short_preview": short_payload["short_preview"],
+        "short_unavailable": short_payload["short_unavailable"],
         "has_attachments": replied.has_attachments or 0,
         "is_forwarded": getattr(replied, "is_forwarded", 0) or 0,
         "forwarded_from_message": getattr(replied, "forwarded_from_message", None),
@@ -662,7 +819,8 @@ def _serialize_message(
     attachments_map: Dict[str, List[Dict]],
     user_map: Dict[str, frappe._dict],
     ad_map: Dict[str, Dict[str, Any]],
-    current_user: str,
+    short_map: Dict[str, Dict[str, Any]] | None = None,
+    current_user: str = "",
     reply_map: Dict[str, frappe._dict] | None = None,
     is_starred: bool = False,
     reactions: List[Dict[str, Any]] | None = None,
@@ -671,6 +829,8 @@ def _serialize_message(
     """
     Serialize one message into the API/realtime shape.
     """
+
+    short_map = short_map or {}
 
     user_payload = _serialize_user(msg.sender, user_map)
 
@@ -689,8 +849,12 @@ def _serialize_message(
         reply_map=reply_map or {},
         user_map=user_map,
         ad_map=ad_map,
+        short_map=short_map,
         current_user=current_user,
     )
+
+    short_id = getattr(msg, "short", None)
+    short_payload = _short_unavailable_payload(short_id, short_map)
 
     return {
         "id": msg.name,
@@ -701,6 +865,9 @@ def _serialize_message(
         "message_type": msg.message_type,
         "ad": msg.ad,
         "ad_preview": ad_map.get(msg.ad) if msg.ad else None,
+        "short": short_id,
+        "short_preview": short_payload["short_preview"],
+        "short_unavailable": short_payload["short_unavailable"],
         "reply_to_message": reply_to_message,
         "reply_to": reply_to,
         "has_attachments": msg.has_attachments or 0,
@@ -746,6 +913,7 @@ def send_message_impl(**kwargs):
     conv_id = kwargs.get("conversation_id")
     content = (kwargs.get("content") or "").strip()
     ad = kwargs.get("ad")
+    short = kwargs.get("short")
     attachments = kwargs.get("attachments") or []
     reply_to_message = kwargs.get("reply_to_message")
 
@@ -763,9 +931,9 @@ def send_message_impl(**kwargs):
         if not _validate_sender(conv, current_user):
             return fail("Not allowed.", code="PERMISSION_DENIED")
 
-        if not content and not attachments and not ad:
+        if not content and not attachments and not ad and not short:
             return fail(
-                "Message must have content, attachments, or an ad.",
+                "Message must have content, attachments, an ad, or a short.",
                 code="VALIDATION_ERROR",
             )
 
@@ -773,14 +941,22 @@ def send_message_impl(**kwargs):
         if ad_error:
             return ad_error
 
+        receiver = _get_receiver(conv, current_user)
+
+        short_error = _validate_short_reference(
+            short,
+            viewer=current_user,
+            recipients=[receiver],
+        )
+        if short_error:
+            return short_error
+
         reply_error = _validate_reply_to_message(
             reply_to_message=reply_to_message,
             conversation_id=conv_id,
         )
         if reply_error:
             return reply_error
-
-        receiver = _get_receiver(conv, current_user)
 
         block_err = ensure_not_blocked(
             current_user=current_user,
@@ -794,6 +970,7 @@ def send_message_impl(**kwargs):
             content=content,
             attachments=attachments,
             ad=ad,
+            short=short,
         )
 
         now = now_datetime()
@@ -807,6 +984,9 @@ def send_message_impl(**kwargs):
 
         if ad:
             msg.ad = ad
+
+        if short:
+            msg.short = short
 
         if reply_to_message:
             msg.reply_to_message = reply_to_message
@@ -886,14 +1066,24 @@ def send_message_impl(**kwargs):
             if replied.ad and not _is_deleted_for_everyone(replied):
                 ad_ids.append(replied.ad)
 
+        short_ids = []
+        if short:
+            short_ids.append(short)
+
+        for replied in reply_map.values():
+            if getattr(replied, "short", None) and not _is_deleted_for_everyone(replied):
+                short_ids.append(replied.short)
+
         user_map = _fetch_users(user_ids)
         ad_map = _fetch_ads_bulk(ad_ids)
+        short_map = _fetch_shorts_bulk(short_ids, viewer=current_user)
 
         serialized = _serialize_message(
             msg,
             attachments_map=attachments_map,
             user_map=user_map,
             ad_map=ad_map,
+            short_map=short_map,
             current_user=current_user,
             reply_map=reply_map,
             is_starred=False,
@@ -905,7 +1095,9 @@ def send_message_impl(**kwargs):
             content=msg.content,
             has_attachments=has_attachments,
             ad=ad,
+            short=short,
             ad_preview=ad_map.get(ad) if ad else None,
+            short_preview=short_map.get(short) if short else None,
         )
 
         # Update conversation.
@@ -1048,6 +1240,7 @@ def list_messages_impl(**kwargs):
                 content,
                 message_type,
                 ad,
+                short,
                 reply_to_message,
                 has_attachments,
                 is_forwarded,
@@ -1132,9 +1325,24 @@ def list_messages_impl(**kwargs):
 
         ad_ids = list(set(ad_ids))
 
+        short_ids = list(
+            {
+                getattr(m, "short", None)
+                for m in messages
+                if getattr(m, "short", None) and not _is_deleted_for_everyone(m)
+            }
+        )
+
+        for replied in reply_map.values():
+            if getattr(replied, "short", None) and not _is_deleted_for_everyone(replied):
+                short_ids.append(replied.short)
+
+        short_ids = list(set(short_ids))
+
         attachments_map = _serialize_attachments_bulk(visible_message_ids)
         user_map = _fetch_users(sender_ids)
         ad_map = _fetch_ads_bulk(ad_ids)
+        short_map = _fetch_shorts_bulk(short_ids, viewer=current_user)
 
         results = []
 
@@ -1145,6 +1353,7 @@ def list_messages_impl(**kwargs):
                     attachments_map=attachments_map,
                     user_map=user_map,
                     ad_map=ad_map,
+                    short_map=short_map,
                     current_user=current_user,
                     reply_map=reply_map,
                     is_starred=m.name in starred_message_ids,

@@ -9,6 +9,7 @@ VALID_MESSAGE_TYPES = {
     "text",
     "media",
     "ad",
+    "short",
     "mixed",
     "system",
 }
@@ -39,6 +40,7 @@ class AOSMessage(Document):
         self._validate_sender()
         self._validate_message_content()
         self._validate_ad_reference()
+        self._validate_short_reference()
         self._validate_reply_to_message()
         self._validate_forward_reference()
 
@@ -88,6 +90,7 @@ class AOSMessage(Document):
     def _validate_message_content(self):
         content = (self.content or "").strip()
         has_ad = bool(self.ad)
+        has_short = bool(getattr(self, "short", None))
         has_attachments = bool(self.has_attachments)
 
         if self.message_type == "text":
@@ -111,18 +114,27 @@ class AOSMessage(Document):
             self.content = content or None
             return
 
+        if self.message_type == "short":
+            if not has_short:
+                frappe.throw("Short is required for short messages")
+
+            # Short-only messages may optionally have no text.
+            self.content = content or None
+            return
+
         if self.message_type == "mixed":
             # Mixed can be:
             # - text + media
             # - text + ad
-            # - ad + media
-            # - text + ad + media
+            # - text + short
+            # - ad/short + media
+            # - text + ad/short + media
             #
             # Attachments are inserted after the message row in the API,
             # so has_attachments may still be 0 during initial validation.
-            # Therefore, content OR ad is enough here.
-            if not content and not has_ad and not has_attachments:
-                frappe.throw("Mixed messages require content, an ad, or attachments")
+            # Therefore, content OR ad OR short is enough here.
+            if not content and not has_ad and not has_short and not has_attachments:
+                frappe.throw("Mixed messages require content, an ad, a short, or attachments")
 
             self.content = content or None
             return
@@ -141,6 +153,14 @@ class AOSMessage(Document):
 
         if not frappe.db.exists("AOS Ad", self.ad):
             frappe.throw("Invalid ad reference")
+
+
+    def _validate_short_reference(self):
+        if not getattr(self, "short", None):
+            return
+
+        if not frappe.db.exists("AOS Short", self.short):
+            frappe.throw("Invalid short reference")
 
     def _validate_reply_to_message(self):
         if not self.reply_to_message:
