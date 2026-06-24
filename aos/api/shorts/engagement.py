@@ -20,6 +20,7 @@ from aos.services.notification_service import NotificationService
 from aos.api.shorts.constants import (
     LIKE_TOGGLE_RATE_LIMIT_PER_MINUTE,
 )
+from aos.api.shorts.visibility import can_view_short
 from aos.api.shorts.activity import (
     hide_short_like_activity,
     record_short_like_activity,
@@ -59,6 +60,7 @@ def toggle_like_impl(**kwargs):
                 "owner",
                 "status",
                 "visibility_status",
+                "audience",
             ],
             as_dict=True,
         )
@@ -71,6 +73,9 @@ def toggle_like_impl(**kwargs):
                 "Short is not available for likes.",
                 code="VALIDATION_ERROR",
             )
+
+        if not can_view_short(short, current_user=user):
+            return fail("Short not found.", code="NOT_FOUND")
 
         # CHECK EXISTING LIKE
         existing = frappe.get_all(

@@ -4,7 +4,7 @@ Upload APIs for Shorts.
 Handles:
 - init upload (presigned URL)
 - confirm upload (trigger processing)
-- update metadata (caption, hashtags, content mode, audience, allow comments)
+- update metadata (caption, hashtags, content mode, audience, comment/download controls)
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ from aos.api.shorts.constants import (
     DEFAULT_SHORT_AUDIENCE,
     VALID_SHORT_AUDIENCES,
     DEFAULT_ALLOW_COMMENTS,
+    DEFAULT_ALLOW_DOWNLOADS,
 )
 
 
@@ -145,6 +146,7 @@ def init_upload_impl(**kwargs):
                 "owner": user,
                 "audience": DEFAULT_SHORT_AUDIENCE,
                 "allow_comments": DEFAULT_ALLOW_COMMENTS,
+                "allow_downloads": DEFAULT_ALLOW_DOWNLOADS,
             }
         )
         doc.insert(ignore_permissions=True)
@@ -255,6 +257,11 @@ def update_short_metadata_impl(**kwargs):
         default=DEFAULT_ALLOW_COMMENTS,
     )
 
+    allow_downloads = _normalize_bool(
+        kwargs.get("allow_downloads"),
+        default=DEFAULT_ALLOW_DOWNLOADS,
+    )
+
     hashtags = normalize_hashtags(kwargs.get("hashtags"))
 
     try:
@@ -275,6 +282,7 @@ def update_short_metadata_impl(**kwargs):
         doc.content_mode = content_mode
         doc.audience = audience
         doc.allow_comments = allow_comments
+        doc.allow_downloads = allow_downloads
         doc.caption = caption
         doc.hashtags = json.dumps(hashtags or [])
 
@@ -334,6 +342,7 @@ def update_short_metadata_impl(**kwargs):
                 "content_mode": doc.content_mode,
                 "audience": doc.audience,
                 "allow_comments": bool(int(doc.allow_comments or 0)),
+                "allow_downloads": bool(int(doc.allow_downloads or 0)),
                 "visibility_status": doc.visibility_status,
             },
         )

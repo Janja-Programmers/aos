@@ -5,30 +5,29 @@ import frappe
 from frappe.model.document import Document
 
 
-class AOSShortLike(Document):
+class AOSShortSave(Document):
+    def before_insert(self):
+        self._set_user()
+
     def validate(self):
         self._validate_short()
         self._prevent_duplicate()
 
-    def before_insert(self):
-        self._set_user()
-
     def after_insert(self):
-        self._increment_like_count()
+        self._increment_save_count()
+        self._record_save_event()
 
     def on_trash(self):
-        self._decrement_like_count()
+        self._decrement_save_count()
 
     def _set_user(self):
-        """Ensure like is tied to logged-in user"""
         if not self.user:
             self.user = frappe.session.user
 
         if self.user == "Guest":
-            frappe.throw("Login required to like a short")
+            frappe.throw("Login required to save a short")
 
     def _validate_short(self):
-        """Ensure short exists and is valid"""
         if not self.short:
             frappe.throw("Short is required")
 
@@ -50,31 +49,43 @@ class AOSShortLike(Document):
 
     def _prevent_duplicate(self):
         existing = frappe.db.exists(
-            "AOS Short Like",
+            "AOS Short Save",
             {"short": self.short, "user": self.user},
         )
 
         if existing and existing != self.name:
-            frappe.throw("Short already liked")
+            frappe.throw("Short already saved")
 
-    def _increment_like_count(self):
-        """Atomic increment"""
+    def _increment_save_count(self):
         frappe.db.sql(
             """
             UPDATE `tabAOS Short`
-            SET like_count = like_count + 1
+            SET save_count = save_count + 1
             WHERE name = %s
             """,
             (self.short,),
         )
 
-    def _decrement_like_count(self):
-        """Atomic decrement (safe)"""
+    def _decrement_save_count(self):
         frappe.db.sql(
             """
             UPDATE `tabAOS Short`
-            SET like_count = GREATEST(like_count - 1, 0)
+            SET save_count = GREATEST(save_count - 1, 0)
             WHERE name = %s
             """,
             (self.short,),
         )
+
+    def _record_save_event(self):
+        try:
+            frappe.get_doc(
+                {
+                    "doctype": "AOS Short Event",
+                    "short": self.short,
+                    "user": self.user,
+                    "event_type": "save",
+                }
+            ).insert(ignore_permissions=True)
+        except Exception:
+            # Saving should not fail because analytics event recording failed.
+            frappe.log_error(frappe.get_traceback(), "AOS Short Save event failed")

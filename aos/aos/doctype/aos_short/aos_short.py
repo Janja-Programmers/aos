@@ -15,6 +15,7 @@ from aos.api.shorts.constants import (
     DEFAULT_SHORT_AUDIENCE,
     VALID_SHORT_AUDIENCES,
     DEFAULT_ALLOW_COMMENTS,
+    DEFAULT_ALLOW_DOWNLOADS,
 )
 
 
@@ -26,6 +27,7 @@ class AOSShort(Document):
         self._validate_content_mode()
         self._validate_audience()
         self._validate_allow_comments()
+        self._validate_allow_downloads()
 
         # Deleted shorts must not be blocked by old ad/content validation.
         if self.status == "deleted" or self.visibility_status == "deleted":
@@ -52,6 +54,9 @@ class AOSShort(Document):
 
         if self.allow_comments in (None, ""):
             self.allow_comments = DEFAULT_ALLOW_COMMENTS
+
+        if getattr(self, "allow_downloads", None) in (None, ""):
+            self.allow_downloads = DEFAULT_ALLOW_DOWNLOADS
 
     def _validate_content_mode(self):
         """
@@ -107,6 +112,21 @@ class AOSShort(Document):
             self.allow_comments = 1 if int(self.allow_comments) else 0
         except Exception:
             frappe.throw("Invalid allow_comments value")
+
+    def _validate_allow_downloads(self):
+        """Normalize download permission.
+
+        allow_downloads is intentionally independent of visibility/audience.
+        A viewer must still pass privacy checks before a download URL is issued.
+        """
+        if getattr(self, "allow_downloads", None) in (None, ""):
+            self.allow_downloads = DEFAULT_ALLOW_DOWNLOADS
+            return
+
+        try:
+            self.allow_downloads = 1 if int(self.allow_downloads) else 0
+        except Exception:
+            frappe.throw("Invalid allow_downloads value")
 
     def _validate_ad(self):
         """
@@ -184,6 +204,7 @@ class AOSShort(Document):
         - Content mode is required before becoming visible.
         - Audience must be valid before becoming visible.
         - Comment permission is normalized before publishing.
+        - Download permission is normalized before publishing.
         - Shop shorts require seller + active ad.
         - Non-shop shorts must not be attached to an ad.
         - posted_on is set once when first published.
@@ -226,6 +247,11 @@ class AOSShort(Document):
             self.allow_comments = DEFAULT_ALLOW_COMMENTS
 
         self.allow_comments = 1 if int(self.allow_comments or 0) else 0
+
+        if getattr(self, "allow_downloads", None) in (None, ""):
+            self.allow_downloads = DEFAULT_ALLOW_DOWNLOADS
+
+        self.allow_downloads = 1 if int(self.allow_downloads or 0) else 0
 
         if self.content_mode == SHORT_CONTENT_MODE_SHOP:
             if not self.seller:

@@ -19,6 +19,7 @@
   "audience",
   "posted_on",
   "allow_comments",
+  "allow_downloads",
   "section_break_kdxw",
   "caption",
   "hashtags",
@@ -30,6 +31,8 @@
   "column_break_hqyq",
   "comment_count",
   "share_count",
+  "save_count",
+  "download_count",
   "ranking_score",
   "review_tab",
   "visibility_status",
@@ -194,6 +197,20 @@
    "read_only": 1
   },
   {
+   "default": "0",
+   "fieldname": "save_count",
+   "fieldtype": "Int",
+   "label": "Save Count",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "download_count",
+   "fieldtype": "Int",
+   "label": "Download Count",
+   "read_only": 1
+  },
+  {
    "fieldname": "ranking_score",
    "fieldtype": "Float",
    "label": "Ranking Score",
@@ -243,6 +260,12 @@
    "fieldname": "allow_comments",
    "fieldtype": "Check",
    "label": "Allow Comments"
+  },
+  {
+   "default": "0",
+   "fieldname": "allow_downloads",
+   "fieldtype": "Check",
+   "label": "Allow Downloads"
   }
  ],
  "grid_page_length": 50,

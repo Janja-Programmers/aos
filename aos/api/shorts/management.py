@@ -4,6 +4,7 @@ Management APIs for Shorts.
 Handles:
 - get short detail
 - list my shorts
+- list user/profile shorts
 - delete short (soft)
 - retry processing
 """
@@ -18,11 +19,13 @@ from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.validators import require_id
 
-from aos.api.shorts.validators import validate_limit
+from aos.api.shorts.validators import validate_limit, validate_content_mode
 
 from aos.api.shorts.constants import (
     MY_SHORTS_DEFAULT_LIMIT,
     MY_SHORTS_MAX_LIMIT,
+    USER_SHORTS_DEFAULT_LIMIT,
+    USER_SHORTS_MAX_LIMIT,
 )
 
 from aos.api.shorts.utils import (
@@ -37,11 +40,10 @@ from aos.api.shorts.visibility import can_view_short
 # COMMON
 def _get_optional_viewer() -> str | None:
     """
-    Resolve viewer for public detail endpoint.
+    Resolve viewer for public detail/profile endpoints.
 
-    get_short can be called by guests or logged-in users.
+    Guest users return None.
     Logged-in users receive real viewer_state.
-    Guests receive default false viewer_state.
     """
     user = current_user()
     if not user or user == "Guest":
@@ -56,6 +58,22 @@ def _load_liked_short_ids(viewer: str | None, short_ids: list[str]) -> set[str]:
 
     rows = frappe.get_all(
         "AOS Short Like",
+        filters={
+            "user": viewer,
+            "short": ["in", short_ids],
+        },
+        pluck="short",
+    )
+
+    return set(rows or [])
+
+
+def _load_saved_short_ids(viewer: str | None, short_ids: list[str]) -> set[str]:
+    if not viewer or not short_ids:
+        return set()
+
+    rows = frappe.get_all(
+        "AOS Short Save",
         filters={
             "user": viewer,
             "short": ["in", short_ids],
@@ -196,6 +214,7 @@ def _build_viewer_state(
     *,
     viewer: str | None,
     liked_short_ids: set[str],
+    saved_short_ids: set[str],
     followed_user_ids: set[str],
     followed_by_user_ids: set[str],
 ) -> dict[str, Any]:
@@ -214,6 +233,7 @@ def _build_viewer_state(
 
     return {
         "is_liked": bool(short_id and short_id in liked_short_ids),
+        "is_saved": bool(short_id and short_id in saved_short_ids),
         "is_owner": is_owner,
         "can_edit": is_owner,
         "can_delete": is_owner,
@@ -245,6 +265,7 @@ def _serialize_rows_with_viewer_state(
     )
 
     liked_short_ids = _load_liked_short_ids(viewer, short_ids)
+    saved_short_ids = _load_saved_short_ids(viewer, short_ids)
     followed_user_ids = _load_followed_user_ids(viewer, owner_users)
     followed_by_user_ids = _load_followed_by_user_ids(viewer, owner_users)
 
@@ -255,6 +276,7 @@ def _serialize_rows_with_viewer_state(
                 row,
                 viewer=viewer,
                 liked_short_ids=liked_short_ids,
+                saved_short_ids=saved_short_ids,
                 followed_user_ids=followed_user_ids,
                 followed_by_user_ids=followed_by_user_ids,
             ),
@@ -273,6 +295,7 @@ def _select_short_rows_sql() -> str:
             s.content_mode,
             s.audience,
             s.allow_comments,
+            s.allow_downloads,
             s.caption,
             s.hashtags,
             s.playback_url,
@@ -282,6 +305,8 @@ def _select_short_rows_sql() -> str:
             s.like_count,
             s.comment_count,
             s.share_count,
+            s.save_count,
+            s.download_count,
             s.impression_count,
             s.ranking_score,
             s.posted_on,
@@ -456,6 +481,130 @@ def my_shorts_impl(**kwargs):
     except Exception:
         frappe.log_error(frappe.get_traceback(), "my_shorts failed")
         return fail("Failed to fetch my shorts", code="INTERNAL_ERROR")
+
+
+# USER SHORTS / PROFILE SHORTS
+def user_shorts_impl(**kwargs):
+    """List shorts for a given user/profile.
+
+    Behavior:
+    - Owner viewing own profile sees all their shorts, including private/hidden/failed.
+    - Other viewers/guests see only ready + visible shorts that pass audience rules.
+    - Optional content_mode/mode filter supports shop, geo, vibes, learn, or all.
+    """
+    rl = rate_limit(
+        key=f"aos:shorts:user_profile:ip:{request_ip()}",
+        ttl_seconds=60,
+        limit=120,
+        message="Too many requests. Please try again shortly.",
+    )
+    if rl:
+        return rl
+
+    target_user, err = require_id(
+        kwargs.get("user") or kwargs.get("target_user"),
+        "user",
+    )
+    if err:
+        return err
+
+    if not frappe.db.exists("User", target_user):
+        return fail("User not found.", code="NOT_FOUND")
+
+    viewer = _get_optional_viewer()
+    is_owner = bool(viewer and viewer == target_user)
+
+    limit = validate_limit(
+        kwargs.get("limit"),
+        USER_SHORTS_DEFAULT_LIMIT,
+        USER_SHORTS_MAX_LIMIT,
+    )
+    cursor = kwargs.get("cursor")
+    content_mode = kwargs.get("content_mode") or kwargs.get("mode")
+
+    mode_clause = ""
+    mode_params: tuple = ()
+
+    if content_mode and str(content_mode).strip().lower() != "all":
+        content_mode, err = validate_content_mode(content_mode)
+        if err:
+            return err
+
+        mode_clause = "AND s.content_mode = %s"
+        mode_params = (content_mode,)
+
+    try:
+        where_cursor, params_cursor = build_cursor_where_clause(
+            created_field="s.creation",
+            name_field="s.name",
+            cursor=cursor,
+        )
+
+        if is_owner:
+            availability_clause = ""
+            availability_params: tuple = ()
+        else:
+            availability_clause = """
+                AND s.status = 'ready'
+                AND s.visibility_status = 'visible'
+            """
+            availability_params = ()
+
+        rows = frappe.db.sql(
+            f"""
+            {_select_short_rows_sql()}
+
+            WHERE
+                s.owner = %s
+                {availability_clause}
+                {mode_clause}
+                {where_cursor}
+
+            ORDER BY
+                s.creation DESC,
+                s.name DESC
+
+            LIMIT %s
+            """,
+            (target_user, *mode_params, *availability_params, *params_cursor, limit + 1),
+            as_dict=True,
+        )
+
+        if not is_owner:
+            safe_rows = []
+            for row in rows or []:
+                if can_view_short(row, current_user=viewer):
+                    safe_rows.append(row)
+                    if len(safe_rows) >= limit + 1:
+                        break
+            rows = safe_rows
+
+        if not rows:
+            return ok(
+                "User shorts fetched.",
+                data={"items": [], "next_cursor": None, "has_more": False},
+            )
+
+        has_more = len(rows) > limit
+        visible_rows = rows[:limit]
+        items = _serialize_rows_with_viewer_state(visible_rows, viewer=viewer)
+
+        next_cursor = None
+        if has_more:
+            last = visible_rows[-1]
+            next_cursor = build_time_id_cursor(
+                created_on=last["creation"],
+                name=last["name"],
+            )
+
+        return ok(
+            "User shorts fetched.",
+            data={"items": items, "next_cursor": next_cursor, "has_more": has_more},
+        )
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "user_shorts failed")
+        return fail("Failed to fetch user shorts", code="INTERNAL_ERROR")
 
 
 # DELETE SHORT (SOFT)

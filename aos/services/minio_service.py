@@ -97,6 +97,32 @@ class MinioService:
             )
             raise Exception("Failed to generate upload URL")
 
+
+    # PRESIGNED DOWNLOAD URL
+    def get_presigned_download_url(
+        self,
+        file_key: str,
+        *,
+        expiry_minutes: int | None = None,
+    ) -> str:
+        """Generate a short-lived signed GET URL for controlled downloads."""
+        try:
+            minutes = int(expiry_minutes or self.upload_expiry_minutes or 15)
+            if minutes <= 0:
+                minutes = 15
+
+            return self.client.presigned_get_object(
+                bucket_name=self.bucket,
+                object_name=self._object_name(file_key),
+                expires=timedelta(minutes=minutes),
+            )
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                "MinIO Presigned Download Failed",
+            )
+            raise Exception("Failed to generate download URL")
+
     # PUBLIC URL
     def get_public_url(self, file_key: str) -> str:
         return f"{self.public_base_url}/{self.bucket}/{self._object_name(file_key)}"

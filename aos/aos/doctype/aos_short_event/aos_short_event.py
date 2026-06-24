@@ -54,6 +54,9 @@ class AOSShortEvent(Document):
             "open_ad",
             "open_seller",
             "follow_click",
+            "share",
+            "save",
+            "download",
         }
 
         if self.event_type not in allowed:

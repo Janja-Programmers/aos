@@ -20,6 +20,7 @@ SHORT_ACTIVITY_GROUP = "Shorts"
 SHORT_WATCH_ACTIVITY = "short_watch"
 SHORT_LIKE_ACTIVITY = "short_like"
 SHORT_COMMENT_ACTIVITY = "short_comment"
+SHORT_REPORT_ACTIVITY = "short_report"
 
 ROUTE_TYPE_SHORT = "short"
 
@@ -52,6 +53,16 @@ def short_comment_unique_key(comment_id: str) -> str:
         target_name=comment_id,
         route_type=ROUTE_TYPE_SHORT,
         route_id=comment_id,
+    )
+
+
+def short_report_unique_key(report_id: str) -> str:
+    return ActivityService.build_unique_key(
+        activity_type=SHORT_REPORT_ACTIVITY,
+        target_doctype="AOS Short Report",
+        target_name=report_id,
+        route_type=ROUTE_TYPE_SHORT,
+        route_id=report_id,
     )
 
 
@@ -243,4 +254,36 @@ def hide_short_comment_activity(
     return ActivityService.hide_activity_by_unique_key(
         user=user,
         unique_key=short_comment_unique_key(comment_id),
+    )
+
+
+def record_short_report_activity(
+    *,
+    user: str | None,
+    short_id: str,
+    report_id: str,
+    reason: str | None = None,
+) -> str | None:
+    """Record a private Activity Center row for a submitted short report."""
+    if not user or not report_id:
+        return None
+
+    target = _load_short_target(short_id)
+    if not target:
+        return None
+
+    metadata = _merge_metadata(
+        target.pop("metadata", None),
+        {"report_id": report_id, "reason": reason},
+    )
+
+    target["target_subtitle"] = "Reported a short"
+
+    return ActivityService.record_activity(
+        user=user,
+        activity_group=SHORT_ACTIVITY_GROUP,
+        activity_type=SHORT_REPORT_ACTIVITY,
+        metadata=metadata,
+        unique_key=short_report_unique_key(report_id),
+        **target,
     )

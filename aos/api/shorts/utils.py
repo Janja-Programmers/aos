@@ -25,6 +25,7 @@ from aos.api.shorts.constants import (
     DEFAULT_SHORT_CONTENT_MODE,
     DEFAULT_SHORT_AUDIENCE,
     DEFAULT_ALLOW_COMMENTS,
+    DEFAULT_ALLOW_DOWNLOADS,
 )
 
 
@@ -82,6 +83,7 @@ def default_short_viewer_state(
     """
     return {
         "is_liked": False,
+        "is_saved": False,
 
         # Relationship state
         "target_user": target_user,
@@ -267,6 +269,9 @@ def serialize_short_row(
         "allow_comments": bool(
             cint(row.get("allow_comments", DEFAULT_ALLOW_COMMENTS))
         ),
+        "allow_downloads": bool(
+            cint(row.get("allow_downloads", DEFAULT_ALLOW_DOWNLOADS))
+        ),
         "is_ready": status == "ready",
         "is_processing": status in ("initialized", "uploaded", "processing"),
         "is_failed": status == "failed",
@@ -283,6 +288,10 @@ def serialize_short_row(
         "comment_count_display": humanize_count(row.get("comment_count") or 0),
         "share_count": cint(row.get("share_count") or 0),
         "share_count_display": humanize_count(row.get("share_count") or 0),
+        "save_count": cint(row.get("save_count") or 0),
+        "save_count_display": humanize_count(row.get("save_count") or 0),
+        "download_count": cint(row.get("download_count") or 0),
+        "download_count_display": humanize_count(row.get("download_count") or 0),
         "impression_count": cint(row.get("impression_count") or 0),
         "impression_count_display": humanize_count(row.get("impression_count") or 0),
         "ranking_score": flt(row.get("ranking_score") or 0),

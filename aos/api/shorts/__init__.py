@@ -26,6 +26,14 @@ from .engagement import (
     toggle_like_impl,
 )
 
+# LIBRARY / ACTIONS
+from .library import (
+    toggle_save_short_impl,
+    saved_shorts_impl,
+    liked_shorts_impl,
+    download_short_impl,
+)
+
 # COMMENTS
 from .comments import (
     add_comment_impl,
@@ -40,12 +48,14 @@ from .comments import (
 from .tracking import (
     track_impression_impl,
     track_view_impl,
+    track_share_impl,
 )
 
 # MANAGEMENT
 from .management import (
     get_short_impl,
     my_shorts_impl,
+    user_shorts_impl,
     delete_short_impl,
     retry_processing_impl,
 )
@@ -87,6 +97,26 @@ def feed_by_ad(**kwargs):
 @frappe.whitelist(methods=["POST"])
 def toggle_like(**kwargs):
     return toggle_like_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def toggle_save_short(**kwargs):
+    return toggle_save_short_impl(**kwargs)
+
+
+@frappe.whitelist()
+def saved_shorts(**kwargs):
+    return saved_shorts_impl(**kwargs)
+
+
+@frappe.whitelist()
+def liked_shorts(**kwargs):
+    return liked_shorts_impl(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def download_short(**kwargs):
+    return download_short_impl(**kwargs)
 
 
 # COMMENTS
@@ -131,6 +161,11 @@ def track_view(**kwargs):
     return track_view_impl(**kwargs)
 
 
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def track_share(**kwargs):
+    return track_share_impl(**kwargs)
+
+
 # MANAGEMENT
 @frappe.whitelist(allow_guest=True)
 def get_short(**kwargs):
@@ -140,6 +175,11 @@ def get_short(**kwargs):
 @frappe.whitelist()
 def my_shorts(**kwargs):
     return my_shorts_impl(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def user_shorts(**kwargs):
+    return user_shorts_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])

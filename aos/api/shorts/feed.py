@@ -185,6 +185,23 @@ def _load_liked_short_ids(viewer: str | None, short_ids: list[str]) -> set[str]:
     return set(rows or [])
 
 
+def _load_saved_short_ids(viewer: str | None, short_ids: list[str]) -> set[str]:
+    """Batch-load short IDs saved by the current viewer."""
+    if not viewer or not short_ids:
+        return set()
+
+    rows = frappe.get_all(
+        "AOS Short Save",
+        filters={
+            "user": viewer,
+            "short": ["in", short_ids],
+        },
+        pluck="short",
+    )
+
+    return set(rows or [])
+
+
 def _load_followed_user_ids(
     viewer: str | None,
     target_users: list[str],
@@ -319,6 +336,7 @@ def _build_viewer_state(
     *,
     viewer: str | None,
     liked_short_ids: set[str],
+    saved_short_ids: set[str],
     followed_user_ids: set[str],
     followed_by_user_ids: set[str],
 ) -> dict[str, Any]:
@@ -345,6 +363,7 @@ def _build_viewer_state(
 
     return {
         "is_liked": bool(short_id and short_id in liked_short_ids),
+        "is_saved": bool(short_id and short_id in saved_short_ids),
         "is_owner": is_owner,
         "can_edit": is_owner,
         "can_delete": is_owner,
@@ -394,6 +413,7 @@ def _build_response(rows, limit: int, *, viewer: str | None = None):
     )
 
     liked_short_ids = _load_liked_short_ids(viewer, short_ids)
+    saved_short_ids = _load_saved_short_ids(viewer, short_ids)
     followed_user_ids = _load_followed_user_ids(viewer, owner_users)
     followed_by_user_ids = _load_followed_by_user_ids(viewer, owner_users)
 
@@ -404,6 +424,7 @@ def _build_response(rows, limit: int, *, viewer: str | None = None):
                 row,
                 viewer=viewer,
                 liked_short_ids=liked_short_ids,
+                saved_short_ids=saved_short_ids,
                 followed_user_ids=followed_user_ids,
                 followed_by_user_ids=followed_by_user_ids,
             ),
@@ -440,6 +461,7 @@ def _select_short_rows_sql() -> str:
             s.content_mode,
             s.audience,
             s.allow_comments,
+            s.allow_downloads,
             s.caption,
             s.hashtags,
             s.playback_url,
@@ -449,6 +471,8 @@ def _select_short_rows_sql() -> str:
             s.like_count,
             s.comment_count,
             s.share_count,
+            s.save_count,
+            s.download_count,
             s.impression_count,
             s.ranking_score,
             s.posted_on,

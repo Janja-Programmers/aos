@@ -22,6 +22,16 @@ UNIQUE_CONSTRAINTS = [
         "fields": ["message", "target_language", "original_content_hash"],
         "constraint_name": "unique_aos_message_translation_cache",
     },
+    {
+        "doctype": "AOS Short Like",
+        "fields": ["short", "user"],
+        "constraint_name": "unique_aos_short_like_user",
+    },
+    {
+        "doctype": "AOS Short Save",
+        "fields": ["short", "user"],
+        "constraint_name": "unique_aos_short_save_user",
+    },
 ]
 
 
