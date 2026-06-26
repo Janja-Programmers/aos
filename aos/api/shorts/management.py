@@ -36,6 +36,7 @@ from aos.api.shorts.utils import (
 
 from aos.api.shorts.visibility import can_view_short
 from aos.api.shorts.mentions import get_short_mentions_map
+from aos.api.shorts.sounds import get_short_sound_map
 
 
 # COMMON
@@ -291,9 +292,12 @@ def _serialize_rows_with_viewer_state(
     saved_short_ids = _load_saved_short_ids(viewer, short_ids)
     reposted_short_ids = _load_reposted_short_ids(viewer, short_ids)
     mention_map = get_short_mentions_map(short_ids)
+    sound_map = get_short_sound_map(short_ids)
 
     for row in rows:
-        row["mentions"] = mention_map.get(row.get("name"), [])
+        short_id = row.get("name")
+        row["mentions"] = mention_map.get(short_id, [])
+        row["sound"] = sound_map.get(short_id)
 
     followed_user_ids = _load_followed_user_ids(viewer, owner_users)
     followed_by_user_ids = _load_followed_by_user_ids(viewer, owner_users)
@@ -329,6 +333,10 @@ def _select_short_rows_sql() -> str:
             s.caption,
             s.hashtags,
             s.playback_url,
+            s.processed_file_key,
+            s.processed_file_url,
+            s.audio_mix_status,
+            s.audio_mix_error,
             s.thumbnail_url,
             s.duration_seconds,
             s.view_count,

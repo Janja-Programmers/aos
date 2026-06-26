@@ -32,6 +32,11 @@ UNIQUE_CONSTRAINTS = [
         "fields": ["short", "user"],
         "constraint_name": "unique_aos_short_save_user",
     },
+    {
+        "doctype": "AOS Sound Favorite",
+        "fields": ["sound", "user"],
+        "constraint_name": "unique_aos_sound_favorite_user",
+    },
 ]
 
 

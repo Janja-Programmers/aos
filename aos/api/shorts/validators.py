@@ -22,6 +22,11 @@ from aos.api.shorts.constants import (
     MAX_VIDEO_FILE_SIZE_BYTES,
     DEFAULT_SHORT_CONTENT_MODE,
     VALID_SHORT_CONTENT_MODES,
+    ALLOWED_SOUND_EXTENSIONS,
+    MAX_SOUND_FILE_SIZE_BYTES,
+    MAX_SOUND_DURATION_SECONDS,
+    DEFAULT_SOUND_SOURCE_TYPE,
+    VALID_SOUND_SOURCE_TYPES,
 )
 
 
@@ -177,3 +182,119 @@ def validate_limit(value, default: int, max_limit: int):
         return default
 
     return min(value, max_limit)
+
+
+# SOUNDS
+def validate_sound_filename(filename: str):
+    if not filename:
+        return None, fail("Filename is required", code="VALIDATION_ERROR")
+
+    if "." not in filename:
+        return None, fail("Invalid filename", code="VALIDATION_ERROR")
+
+    ext = filename.split(".")[-1].lower()
+
+    if ext not in ALLOWED_SOUND_EXTENSIONS:
+        return None, fail("Unsupported audio file type", code="VALIDATION_ERROR")
+
+    return ext, None
+
+
+def validate_sound_file_size(size_bytes: int | str | None):
+    if size_bytes is None:
+        return None
+
+    try:
+        size_bytes = int(size_bytes)
+    except Exception:
+        return fail("Invalid file size", code="VALIDATION_ERROR")
+
+    if size_bytes > MAX_SOUND_FILE_SIZE_BYTES:
+        return fail("Sound file too large", code="VALIDATION_ERROR")
+
+    return None
+
+
+def validate_sound_title(title: str | None):
+    if not title:
+        return None, fail("Sound title is required", code="VALIDATION_ERROR")
+
+    title = str(title).strip()
+    if not title:
+        return None, fail("Sound title is required", code="VALIDATION_ERROR")
+
+    if len(title) > 140:
+        return None, fail("Sound title is too long", code="VALIDATION_ERROR")
+
+    return title, None
+
+
+def validate_sound_artist(artist: str | None):
+    if not artist:
+        return "", None
+
+    artist = str(artist).strip()
+    if len(artist) > 140:
+        return None, fail("Sound artist is too long", code="VALIDATION_ERROR")
+
+    return artist, None
+
+
+def validate_sound_source_type(source_type: str | None):
+    if not source_type:
+        return DEFAULT_SOUND_SOURCE_TYPE, None
+
+    source_type = str(source_type).strip().lower()
+    if source_type not in VALID_SOUND_SOURCE_TYPES:
+        return None, fail("Invalid sound source type", code="VALIDATION_ERROR")
+
+    return source_type, None
+
+
+def validate_sound_duration(duration_seconds):
+    if duration_seconds in (None, ""):
+        return 0, None
+
+    try:
+        duration_seconds = float(duration_seconds)
+    except Exception:
+        return None, fail("Invalid sound duration", code="VALIDATION_ERROR")
+
+    if duration_seconds < 0:
+        return None, fail("Invalid sound duration", code="VALIDATION_ERROR")
+
+    if duration_seconds > MAX_SOUND_DURATION_SECONDS:
+        return None, fail(
+            f"Sound must be <= {MAX_SOUND_DURATION_SECONDS} seconds",
+            code="VALIDATION_ERROR",
+        )
+
+    return duration_seconds, None
+
+
+def validate_sound_timing(start_ms=None, duration_ms=None, volume=None):
+    try:
+        start_ms = int(start_ms or 0)
+    except Exception:
+        return None, None, None, fail("Invalid sound_start_ms", code="VALIDATION_ERROR")
+
+    try:
+        duration_ms = int(duration_ms or 0)
+    except Exception:
+        return None, None, None, fail("Invalid sound_duration_ms", code="VALIDATION_ERROR")
+
+    try:
+        volume = float(volume if volume is not None else 1.0)
+    except Exception:
+        return None, None, None, fail("Invalid sound_volume", code="VALIDATION_ERROR")
+
+    if start_ms < 0:
+        return None, None, None, fail("sound_start_ms cannot be negative", code="VALIDATION_ERROR")
+
+    if duration_ms < 0:
+        return None, None, None, fail("sound_duration_ms cannot be negative", code="VALIDATION_ERROR")
+
+    if volume < 0 or volume > 1:
+        return None, None, None, fail("sound_volume must be between 0 and 1", code="VALIDATION_ERROR")
+
+    return start_ms, duration_ms, volume, None

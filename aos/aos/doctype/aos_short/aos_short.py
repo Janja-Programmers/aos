@@ -58,6 +58,9 @@ class AOSShort(Document):
         if getattr(self, "allow_downloads", None) in (None, ""):
             self.allow_downloads = DEFAULT_ALLOW_DOWNLOADS
 
+        if getattr(self, "audio_mix_status", None) in (None, ""):
+            self.audio_mix_status = "none"
+
     def _validate_content_mode(self):
         """
         Content mode is optional during upload/processing.

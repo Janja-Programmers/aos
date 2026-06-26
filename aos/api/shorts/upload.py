@@ -28,6 +28,11 @@ from aos.api.shorts.validators import (
 )
 
 from aos.api.shorts.mentions import sync_short_mentions
+from aos.api.shorts.sounds import (
+    set_short_sound,
+    validate_existing_short_sound_for_mode,
+    enqueue_short_audio_reprocess,
+)
 
 from aos.api.shorts.constants import (
     INIT_UPLOAD_LIMIT_PER_MINUTE_PER_USER,
@@ -325,9 +330,29 @@ def update_short_metadata_impl(**kwargs):
             doc.ad = None
             doc.country = None
 
+        sound = None
+        sound_id = kwargs.get("sound_id")
+
+        if content_mode == SHORT_CONTENT_MODE_SHOP and not sound_id:
+            existing_sound_err = validate_existing_short_sound_for_mode(
+                short_id=doc.name,
+                content_mode=content_mode,
+            )
+            if existing_sound_err:
+                return existing_sound_err
+
         doc.visibility_status = "visible"
         doc.hidden_reason = None
         doc.save(ignore_permissions=True)
+
+        if sound_id:
+            sound = set_short_sound(
+                short_id=doc.name,
+                sound_id=sound_id,
+                start_ms=kwargs.get("sound_start_ms") or kwargs.get("start_ms"),
+                duration_ms=kwargs.get("sound_duration_ms") or kwargs.get("duration_ms"),
+                volume=kwargs.get("sound_volume") if kwargs.get("sound_volume") is not None else kwargs.get("volume"),
+            )
 
         mentions = sync_short_mentions(
             short_id=doc.name,
@@ -336,6 +361,9 @@ def update_short_metadata_impl(**kwargs):
         )
 
         frappe.db.commit()
+
+        if sound_id:
+            enqueue_short_audio_reprocess(doc.name)
 
         # Notify followers only on first publish, not on later metadata edits.
         if not was_visible:
@@ -353,6 +381,8 @@ def update_short_metadata_impl(**kwargs):
                 "allow_comments": bool(int(doc.allow_comments or 0)),
                 "allow_downloads": bool(int(doc.allow_downloads or 0)),
                 "mentions": mentions,
+                "sound": sound,
+                "audio_mix_status": "pending" if sound_id else getattr(doc, "audio_mix_status", None),
                 "visibility_status": doc.visibility_status,
             },
         )

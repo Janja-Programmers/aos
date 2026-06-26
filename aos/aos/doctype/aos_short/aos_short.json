@@ -8,6 +8,10 @@
   "naming_series",
   "file_key",
   "playback_url",
+  "processed_file_key",
+  "processed_file_url",
+  "audio_mix_status",
+  "audio_mix_error",
   "thumbnail_url",
   "duration_seconds",
   "ad",
@@ -80,6 +84,32 @@
    "fieldname": "playback_url",
    "fieldtype": "Data",
    "label": "Playback URL",
+   "read_only": 1
+  },
+  {
+   "fieldname": "processed_file_key",
+   "fieldtype": "Data",
+   "label": "Processed File Key",
+   "read_only": 1
+  },
+  {
+   "fieldname": "processed_file_url",
+   "fieldtype": "Data",
+   "label": "Processed File URL",
+   "read_only": 1
+  },
+  {
+   "fieldname": "audio_mix_status",
+   "fieldtype": "Select",
+   "label": "Audio Mix Status",
+   "options": "none\npending\nprocessing\nready\nfailed",
+   "default": "none",
+   "read_only": 1
+  },
+  {
+   "fieldname": "audio_mix_error",
+   "fieldtype": "Small Text",
+   "label": "Audio Mix Error",
    "read_only": 1
   },
   {
@@ -278,7 +308,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-06-25 00:45:02.030830",
+ "modified": "2026-06-26 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Short",

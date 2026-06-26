@@ -339,6 +339,7 @@ def download_short_impl(**kwargs):
                 "audience",
                 "allow_downloads",
                 "file_key",
+                "processed_file_key",
             ],
             as_dict=True,
         )
@@ -361,16 +362,21 @@ def download_short_impl(**kwargs):
             if not int(short.allow_downloads or 0):
                 return fail("Downloads are disabled for this short.", code="FORBIDDEN")
 
-        if not short.file_key:
+        download_file_key = short.processed_file_key or short.file_key
+
+        if not download_file_key:
             return fail("Download file is not available.", code="NOT_FOUND")
 
         service = MinioService()
-        if not service.file_exists(short.file_key):
-            return fail("Download file is missing.", code="NOT_FOUND")
+        if not service.file_exists(download_file_key):
+            if download_file_key != short.file_key and short.file_key and service.file_exists(short.file_key):
+                download_file_key = short.file_key
+            else:
+                return fail("Download file is missing.", code="NOT_FOUND")
 
         expiry_minutes = 15
         download_url = service.get_presigned_download_url(
-            short.file_key,
+            download_file_key,
             expiry_minutes=expiry_minutes,
         )
 
@@ -404,6 +410,7 @@ def download_short_impl(**kwargs):
             data={
                 "short_id": short_id,
                 "download_url": download_url,
+                "download_file_key": download_file_key,
                 "expires_in_seconds": expiry_minutes * 60,
                 "metrics": {
                     "download_count": int(download_count),

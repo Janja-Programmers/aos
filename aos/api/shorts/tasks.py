@@ -6,7 +6,7 @@ from aos.services.video_service import VideoService
 from aos.services.ranking_service import RankingService
 
 
-def process_short_task(short_id: str):
+def process_short_task(short_id: str, force: bool = False):
     """
     Process uploaded short.
 
@@ -16,6 +16,7 @@ def process_short_task(short_id: str):
     - Playback URL generation
     - Duration extraction
     - Marking the short ready/failed through VideoService
+    - Forced background audio/HLS remuxing when a ready short changes sound
 
     Important:
     - Do not notify followers here.
@@ -26,7 +27,7 @@ def process_short_task(short_id: str):
         return
 
     try:
-        VideoService.process_short(short_id)
+        VideoService.process_short(short_id, force=force)
 
     except Exception:
         frappe.log_error(

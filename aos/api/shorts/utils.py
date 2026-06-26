@@ -283,6 +283,9 @@ def serialize_short_row(
         "caption": row.get("caption") or "",
         "hashtags": parse_json_if_needed(row.get("hashtags"), default=[]),
         "playback_url": row.get("playback_url"),
+        "processed_file_url": row.get("processed_file_url"),
+        "audio_mix_status": row.get("audio_mix_status") or "none",
+        "audio_mix_error": row.get("audio_mix_error"),
         "thumbnail_url": row.get("thumbnail_url"),
         "duration_seconds": flt(row.get("duration_seconds") or 0),
         "view_count": cint(row.get("view_count") or 0),
@@ -304,6 +307,7 @@ def serialize_short_row(
         "ranking_score": flt(row.get("ranking_score") or 0),
         "posted_on": row.get("posted_on"),
         "mentions": row.get("mentions") or [],
+        "sound": row.get("sound"),
         "creator": {
             "user": owner,
             "display_name": creator_display.get("display_name"),

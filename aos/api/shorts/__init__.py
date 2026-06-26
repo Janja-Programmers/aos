@@ -76,6 +76,20 @@ from .analytics import (
     general_short_analytics_impl,
 )
 
+# SOUNDS
+from .sounds import (
+    init_sound_upload_impl,
+    confirm_sound_upload_impl,
+    list_sounds_impl,
+    search_sounds_impl,
+    get_sound_impl,
+    favorite_sound_impl,
+    my_favorite_sounds_impl,
+    sound_shorts_impl,
+    change_short_sound_impl,
+    remove_short_sound_impl,
+)
+
 
 # UPLOAD
 @frappe.whitelist(methods=["POST"])
@@ -247,3 +261,54 @@ def user_short_analytics(**kwargs):
 @frappe.whitelist()
 def general_short_analytics(**kwargs):
     return general_short_analytics_impl(**kwargs)
+
+
+# SOUNDS
+@frappe.whitelist(methods=["POST"])
+def init_sound_upload(**kwargs):
+    return init_sound_upload_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def confirm_sound_upload(**kwargs):
+    return confirm_sound_upload_impl(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def list_sounds(**kwargs):
+    return list_sounds_impl(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def search_sounds(**kwargs):
+    return search_sounds_impl(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_sound(**kwargs):
+    return get_sound_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def favorite_sound(**kwargs):
+    return favorite_sound_impl(**kwargs)
+
+
+@frappe.whitelist()
+def my_favorite_sounds(**kwargs):
+    return my_favorite_sounds_impl(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def sound_shorts(**kwargs):
+    return sound_shorts_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def change_short_sound(**kwargs):
+    return change_short_sound_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def remove_short_sound(**kwargs):
+    return remove_short_sound_impl(**kwargs)
