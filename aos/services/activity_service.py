@@ -172,13 +172,9 @@ class ActivityService:
             )
 
             if existing:
-                doc = frappe.get_doc(ACTIVITY_DOCTYPE, existing)
-                now = occurred_at or now_datetime()
-                doc.last_occurrence_at = now
-                doc.count = max(int(doc.count or 0), 0) + 1
-
-                cls._apply_optional_updates(
-                    doc,
+                cls._atomic_update_existing_activity(
+                    activity_id=existing,
+                    occurred_at=occurred_at,
                     activity_group=activity_group,
                     target_doctype=target_doctype,
                     target_name=target_name,
@@ -189,8 +185,7 @@ class ActivityService:
                     route_id=route_id,
                     metadata=metadata,
                 )
-                doc.save(ignore_permissions=True)
-                return doc.name
+                return existing
 
         return cls.record_activity(
             user=user,
@@ -206,6 +201,76 @@ class ActivityService:
             metadata=metadata,
             occurred_at=occurred_at,
             unique_key=unique_key,
+        )
+
+
+    @classmethod
+    def _atomic_update_existing_activity(
+        cls,
+        *,
+        activity_id: str,
+        occurred_at=None,
+        activity_group: str | None = None,
+        target_doctype: str | None = None,
+        target_name: str | None = None,
+        target_title: str | None = None,
+        target_subtitle: str | None = None,
+        target_image: str | None = None,
+        route_type: str | None = None,
+        route_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Atomically update an existing de-duped activity row.
+
+        Noisy events such as short watch history can arrive many times in quick
+        succession. Loading the document and calling doc.save() can raise
+        TimestampMismatchError when two requests update the same activity row at
+        the same time. This SQL update keeps the operation atomic and avoids
+        failing the user-facing action.
+        """
+        now = occurred_at or now_datetime()
+
+        set_clauses = [
+            "activity_group = %s",
+            "last_occurrence_at = %s",
+            "`count` = GREATEST(COALESCE(`count`, 0), 0) + 1",
+            "modified = NOW()",
+            "modified_by = %s",
+        ]
+        params: list[Any] = [
+            cls.normalize_group(activity_group),
+            now,
+            frappe.session.user or "Administrator",
+        ]
+
+        optional_fields = {
+            "target_doctype": target_doctype,
+            "target_name": target_name,
+            "target_title": target_title,
+            "target_subtitle": target_subtitle,
+            "target_image": target_image,
+            "route_type": route_type,
+            "route_id": route_id,
+        }
+
+        for fieldname, value in optional_fields.items():
+            if value is not None:
+                set_clauses.append(f"`{fieldname}` = %s")
+                params.append((value or "").strip())
+
+        if metadata is not None:
+            set_clauses.append("metadata_json = %s")
+            params.append(frappe.as_json(metadata or {}))
+
+        params.append(activity_id)
+
+        frappe.db.sql(
+            f"""
+            UPDATE `tab{ACTIVITY_DOCTYPE}`
+            SET {', '.join(set_clauses)}
+            WHERE name = %s
+            """,
+            params,
         )
 
     @classmethod

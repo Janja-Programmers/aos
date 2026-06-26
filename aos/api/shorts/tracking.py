@@ -195,12 +195,20 @@ def track_view_impl(**kwargs):
 
         # Record private Activity Center watch history for logged-in users only.
         # Guests still contribute to analytics/views but do not get account history.
+        # Activity Center is secondary; a concurrency error there must not fail
+        # the actual view tracking request.
         if user:
-            record_short_watch_activity(
-                user=user,
-                short_id=short_id,
-                watch_ms=watch_ms,
-            )
+            try:
+                record_short_watch_activity(
+                    user=user,
+                    short_id=short_id,
+                    watch_ms=watch_ms,
+                )
+            except Exception:
+                frappe.log_error(
+                    frappe.get_traceback(),
+                    "record_short_watch_activity failed",
+                )
 
         frappe.db.commit()
 

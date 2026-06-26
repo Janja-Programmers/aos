@@ -4,6 +4,7 @@ import mimetypes
 import os
 import uuid
 from datetime import timedelta
+from urllib.parse import urlparse
 
 import frappe
 from minio import Minio
@@ -19,27 +20,102 @@ class MinioService:
     - Public URLs
     - Server-side uploads
     - Deletions
+
+    MinIO SDK note:
+    - endpoint must be host[:port] only.
+    - scheme belongs in minio_secure.
+    - bucket/path must not be placed in endpoint.
     """
+
     def __init__(self):
         settings = frappe.get_single("AOS Settings")
 
-        self.endpoint = (settings.minio_endpoint or "").strip()
+        self.endpoint = self._normalize_endpoint(settings.minio_endpoint)
         self.access_key = (settings.minio_access_key or "").strip()
         self.secret_key = settings.get_password("minio_secret_key")
-        self.bucket = (settings.minio_bucket or "").strip()
-        self.public_base_url = (settings.minio_public_base_url or "").rstrip("/")
+        self.bucket = (settings.minio_bucket or "").strip().strip("/")
+        self.public_base_url = self._normalize_public_base_url(
+            settings.minio_public_base_url
+        )
         self.secure = bool(settings.minio_secure)
         self.upload_expiry_minutes = int(settings.minio_upload_expiry_minutes or 15)
         self.base_path = (settings.minio_base_path or "shorts").strip("/")
 
         self._validate_config()
 
-        self.client = Minio(
-            endpoint=self.endpoint,
-            access_key=self.access_key,
-            secret_key=self.secret_key,
-            secure=self.secure,
-        )
+        try:
+            self.client = Minio(
+                endpoint=self.endpoint,
+                access_key=self.access_key,
+                secret_key=self.secret_key,
+                secure=self.secure,
+            )
+        except ValueError as exc:
+            frappe.log_error(
+                frappe.get_traceback(),
+                "Invalid MinIO Endpoint Configuration",
+            )
+            raise Exception(
+                "Invalid MinIO endpoint. Use host[:port] only, without http(s), "
+                "bucket, or path. Example: minio.example.com or 127.0.0.1:9000"
+            ) from exc
+
+    # CONFIG NORMALIZATION
+    @staticmethod
+    def _normalize_endpoint(value: str | None) -> str:
+        """
+        Normalize the SDK endpoint into host[:port].
+
+        Accepted:
+        - minio.example.com
+        - minio.example.com:9000
+        - https://minio.example.com
+        - http://127.0.0.1:9000
+
+        Rejected:
+        - minio.example.com/path
+        - https://minio.example.com/path
+        - https://minio.example.com/bucket
+
+        MinIO's Python SDK rejects paths in endpoint, so we fail early with a
+        clearer error instead of leaking ValueError: path in endpoint is not allowed.
+        """
+        raw = (value or "").strip().rstrip("/")
+        if not raw:
+            return ""
+
+        if "://" in raw:
+            parsed = urlparse(raw)
+            endpoint = (parsed.netloc or "").strip()
+            path = (parsed.path or "").strip("/")
+
+            if path or parsed.params or parsed.query or parsed.fragment:
+                raise Exception(
+                    "Invalid MinIO endpoint. Remove the path/query from "
+                    "minio_endpoint. Use only host[:port], for example "
+                    "minio.example.com or 127.0.0.1:9000. Put public paths "
+                    "in minio_public_base_url only if your public URL requires them."
+                )
+
+            return endpoint
+
+        if "/" in raw:
+            raise Exception(
+                "Invalid MinIO endpoint. minio_endpoint must be host[:port] only "
+                "and must not include a path, bucket, or base path."
+            )
+
+        return raw
+
+    @staticmethod
+    def _normalize_public_base_url(value: str | None) -> str:
+        """
+        Normalize the public base URL used for browser/CDN-facing URLs.
+
+        This may include http(s). It should normally not include the bucket,
+        because get_public_url appends /<bucket>/<object_name>.
+        """
+        return (value or "").strip().rstrip("/")
 
     # CONFIG VALIDATION
     def _validate_config(self):
@@ -80,6 +156,10 @@ class MinioService:
 
     # OBJECT NAME
     def _object_name(self, file_key: str) -> str:
+        file_key = (file_key or "").strip().strip("/")
+        if not file_key:
+            return ""
+
         return file_key.replace(f"{self.base_path}/", "", 1)
 
     # PRESIGNED UPLOAD URL
