@@ -1,8 +1,8 @@
 """
-Search Places.
+Autocomplete Places.
 
-Public AOS map-search endpoint backed primarily by the internal Photon service
-with Nominatim fallback.
+Public AOS autocomplete endpoint backed primarily by the internal Photon
+service with Nominatim fallback.
 """
 
 from __future__ import annotations
@@ -32,24 +32,24 @@ from .constants import (
     GEOCODER_PRIMARY_PHOTON,
     MAPS_GEOCODER_FALLBACK_CONFIG_KEY,
     MAPS_GEOCODER_PRIMARY_CONFIG_KEY,
-    SEARCH_CACHE_TTL_SECONDS,
-    SEARCH_PLACES_LIMIT_PER_MINUTE_PER_IP,
+    AUTOCOMPLETE_CACHE_TTL_SECONDS,
+    AUTOCOMPLETE_PLACES_LIMIT_PER_MINUTE_PER_IP,
 )
 from .serializers import (
     serialize_photon_place_results,
     serialize_place_search_results,
 )
-from .validators import validate_search_request
+from .validators import validate_autocomplete_request
 
 
-def search_places_impl(**kwargs):
+def autocomplete_places_impl(**kwargs):
     """
-    Search for places in the supported map area.
+    Fast place autocomplete within the supported map area.
 
     Supported parameters:
     - query or q
     - limit
-    - bounded
+    - latitude / longitude, optional location bias
     - country_codes or countrycodes
     - language
     """
@@ -57,16 +57,16 @@ def search_places_impl(**kwargs):
     ip = request_ip()
 
     rl = rate_limit(
-        key=f"aos:maps:search_places:ip:{ip}",
+        key=f"aos:maps:autocomplete_places:ip:{ip}",
         ttl_seconds=60,
-        limit=SEARCH_PLACES_LIMIT_PER_MINUTE_PER_IP,
-        message="Too many place-search requests. Please try again shortly.",
+        limit=AUTOCOMPLETE_PLACES_LIMIT_PER_MINUTE_PER_IP,
+        message="Too many autocomplete requests. Please try again shortly.",
     )
     if rl:
         return rl
 
     try:
-        request = validate_search_request(
+        request = validate_autocomplete_request(
             kwargs
         )
 
@@ -74,11 +74,12 @@ def search_places_impl(**kwargs):
             kwargs.get("language")
         )
 
-        cache_key = _build_search_cache_key(
+        cache_key = _build_autocomplete_cache_key(
             query=request["query"],
             limit=request["limit"],
-            bounded=request["bounded"],
             country_codes=request["country_codes"],
+            latitude=request["latitude"],
+            longitude=request["longitude"],
             language=language,
         )
 
@@ -88,7 +89,7 @@ def search_places_impl(**kwargs):
 
         if cached is not None:
             return ok(
-                "Places fetched successfully.",
+                "Place suggestions fetched successfully.",
                 data={
                     "items": cached,
                     "count": len(cached),
@@ -97,7 +98,7 @@ def search_places_impl(**kwargs):
                 },
             )
 
-        items, source = _search_with_fallback(
+        items, source = _autocomplete_with_fallback(
             request=request,
             language=language,
         )
@@ -105,11 +106,11 @@ def search_places_impl(**kwargs):
         _set_cached_payload(
             cache_key=cache_key,
             payload=items,
-            ttl_seconds=SEARCH_CACHE_TTL_SECONDS,
+            ttl_seconds=AUTOCOMPLETE_CACHE_TTL_SECONDS,
         )
 
         return ok(
-            "Places fetched successfully.",
+            "Place suggestions fetched successfully.",
             data={
                 "items": items,
                 "count": len(items),
@@ -136,21 +137,21 @@ def search_places_impl(**kwargs):
     except Exception:
         frappe.log_error(
             frappe.get_traceback(),
-            "AOS Search Places Failed",
+            "AOS Autocomplete Places Failed",
         )
 
         return fail(
-            "Failed to search places.",
+            "Failed to fetch place suggestions.",
             code="INTERNAL_ERROR",
         )
 
 
-def _search_with_fallback(
+def _autocomplete_with_fallback(
     *,
     request: dict,
     language: str | None,
 ) -> tuple[list[dict], str]:
-    """Search places using configured primary/fallback geocoders."""
+    """Autocomplete places using configured primary/fallback geocoders."""
 
     last_error: Exception | None = None
 
@@ -163,8 +164,8 @@ def _search_with_fallback(
                     raw_results = client.autocomplete_places(
                         query=request["query"],
                         limit=request["limit"],
-                        latitude=None,
-                        longitude=None,
+                        latitude=request["latitude"],
+                        longitude=request["longitude"],
                         country_codes=request["country_codes"],
                         language=language,
                     )
@@ -179,7 +180,7 @@ def _search_with_fallback(
                 last_error = ex
                 frappe.log_error(
                     frappe.get_traceback(),
-                    "AOS Photon Search Fallback",
+                    "AOS Photon Autocomplete Fallback",
                 )
 
         elif provider == GEOCODER_PRIMARY_NOMINATIM:
@@ -190,7 +191,7 @@ def _search_with_fallback(
                     raw_results = client.search_places(
                         query=request["query"],
                         limit=request["limit"],
-                        bounded=request["bounded"],
+                        bounded=True,
                         country_codes=request["country_codes"],
                         language=language,
                     )
@@ -205,7 +206,7 @@ def _search_with_fallback(
                 last_error = ex
                 frappe.log_error(
                     frappe.get_traceback(),
-                    "AOS Nominatim Search Fallback",
+                    "AOS Nominatim Autocomplete Fallback",
                 )
 
     if last_error is not None:
@@ -216,15 +217,16 @@ def _search_with_fallback(
     )
 
 
-def _build_search_cache_key(
+def _build_autocomplete_cache_key(
     *,
     query: str,
     limit: int,
-    bounded: bool,
     country_codes: str,
+    latitude: float | None,
+    longitude: float | None,
     language: str | None,
 ) -> str:
-    """Build a stable Redis cache key for a search request."""
+    """Build a stable Redis cache key for an autocomplete request."""
 
     normalized_query = " ".join(
         query.lower().split()
@@ -236,18 +238,18 @@ def _build_search_cache_key(
         else ""
     )
 
-    bounded_value = (
-        "1"
-        if bounded
-        else "0"
-    )
+    bias = ""
+
+    if latitude is not None and longitude is not None:
+        # Round bias to reduce cache fragmentation while preserving locality.
+        bias = f"{latitude:.3f},{longitude:.3f}"
 
     return (
-        "aos:maps:search:v2:"
+        "aos:maps:autocomplete:v1:"
         f"{normalized_query}:"
         f"{limit}:"
-        f"{bounded_value}:"
         f"{country_codes.lower()}:"
+        f"{bias}:"
         f"{normalized_language}"
     )
 
@@ -255,7 +257,7 @@ def _build_search_cache_key(
 def _get_cached_payload(
     cache_key: str,
 ) -> list[dict] | None:
-    """Read and decode a cached search payload."""
+    """Read and decode a cached autocomplete payload."""
 
     try:
         cached = frappe.cache().get_value(
@@ -264,7 +266,7 @@ def _get_cached_payload(
     except Exception:
         frappe.log_error(
             frappe.get_traceback(),
-            "AOS Maps Search Cache Read Failed",
+            "AOS Maps Autocomplete Cache Read Failed",
         )
         return None
 
@@ -311,7 +313,7 @@ def _set_cached_payload(
     payload: list[dict],
     ttl_seconds: int,
 ):
-    """Encode and cache a search payload."""
+    """Encode and cache an autocomplete payload."""
 
     try:
         frappe.cache().set_value(
@@ -326,7 +328,7 @@ def _set_cached_payload(
     except Exception:
         frappe.log_error(
             frappe.get_traceback(),
-            "AOS Maps Search Cache Write Failed",
+            "AOS Maps Autocomplete Cache Write Failed",
         )
 
 
@@ -368,8 +370,6 @@ def _normalize_optional_string(
     if value is None:
         return None
 
-    normalized = str(
-        value
-    ).strip()
+    normalized = str(value).strip()
 
     return normalized or None

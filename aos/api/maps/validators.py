@@ -10,17 +10,19 @@ from typing import Any
 import frappe
 
 from .constants import (
+    AUTOCOMPLETE_DEFAULT_LIMIT,
+    AUTOCOMPLETE_MAX_LIMIT,
     COORDINATE_PRECISION,
     DEFAULT_SEARCH_BOUNDED,
     DEFAULT_SEARCH_COUNTRY_CODES,
+    KENYA_BBOX_EAST,
+    KENYA_BBOX_NORTH,
+    KENYA_BBOX_SOUTH,
+    KENYA_BBOX_WEST,
     LATITUDE_MAX,
     LATITUDE_MIN,
     LONGITUDE_MAX,
     LONGITUDE_MIN,
-    MOMBASA_BBOX_EAST,
-    MOMBASA_BBOX_NORTH,
-    MOMBASA_BBOX_SOUTH,
-    MOMBASA_BBOX_WEST,
     ROUTE_ALLOWED_COSTINGS,
     ROUTE_ALLOWED_UNITS,
     ROUTE_DEFAULT_COSTING,
@@ -36,8 +38,71 @@ from .constants import (
 )
 
 
+def validate_autocomplete_request(
+    kwargs: dict,
+) -> dict:
+    """
+    Validate and normalize an autocomplete request.
+
+    Supported request fields:
+    - query or q
+    - limit
+    - latitude or lat, optional location bias
+    - longitude or lon/lng, optional location bias
+    - country_codes or countrycodes
+    """
+
+    request = validate_search_request(
+        {
+            **kwargs,
+            "limit": kwargs.get("limit")
+            or AUTOCOMPLETE_DEFAULT_LIMIT,
+        },
+        default_limit=AUTOCOMPLETE_DEFAULT_LIMIT,
+        max_limit=AUTOCOMPLETE_MAX_LIMIT,
+    )
+
+    latitude = validate_optional_latitude(
+        kwargs.get("latitude")
+        if "latitude" in kwargs
+        else kwargs.get("lat")
+    )
+
+    longitude = validate_optional_longitude(
+        kwargs.get("longitude")
+        if "longitude" in kwargs
+        else kwargs.get("lon")
+        if "lon" in kwargs
+        else kwargs.get("lng")
+    )
+
+    if (latitude is None) != (longitude is None):
+        frappe.throw(
+            "Both latitude and longitude are required when using location bias."
+        )
+
+    if latitude is not None and longitude is not None:
+        validate_supported_location(
+            latitude=latitude,
+            longitude=longitude,
+            label="Location bias",
+        )
+
+    request.update(
+        {
+            "latitude": latitude,
+            "longitude": longitude,
+        }
+    )
+
+    return request
+
+
 def validate_search_request(
     kwargs: dict,
+    *,
+    default_limit: int = SEARCH_DEFAULT_LIMIT,
+    max_limit: int = SEARCH_MAX_LIMIT,
 ) -> dict:
     """
     Validate and normalize a place-search request.
@@ -69,8 +134,8 @@ def validate_search_request(
 
     limit = validate_limit(
         kwargs.get("limit"),
-        default=SEARCH_DEFAULT_LIMIT,
-        maximum=SEARCH_MAX_LIMIT,
+        default=default_limit,
+        maximum=max_limit,
     )
 
     bounded = parse_boolean(
@@ -101,7 +166,7 @@ def validate_reverse_geocode_request(
 
     Required:
     - latitude or lat
-    - longitude or lon
+    - longitude or lon/lng
     """
 
     latitude = validate_latitude(
@@ -114,6 +179,8 @@ def validate_reverse_geocode_request(
         kwargs.get("longitude")
         if "longitude" in kwargs
         else kwargs.get("lon")
+        if "lon" in kwargs
+        else kwargs.get("lng")
     )
 
     validate_supported_location(
@@ -253,6 +320,8 @@ def validate_route_locations(
             location.get("longitude")
             if "longitude" in location
             else location.get("lon")
+            if "lon" in location
+            else location.get("lng")
         )
 
         validate_supported_location(
@@ -269,6 +338,32 @@ def validate_route_locations(
         )
 
     return normalized
+
+
+def validate_optional_latitude(
+    value: Any,
+) -> float | None:
+    """Validate optional latitude."""
+
+    if value is None or str(value).strip() == "":
+        return None
+
+    return validate_latitude(
+        value
+    )
+
+
+def validate_optional_longitude(
+    value: Any,
+) -> float | None:
+    """Validate optional longitude."""
+
+    if value is None or str(value).strip() == "":
+        return None
+
+    return validate_longitude(
+        value
+    )
 
 
 def validate_latitude(
@@ -353,20 +448,111 @@ def validate_supported_location(
     """
     Ensure a coordinate lies inside the currently supported map extract.
 
-    Version 1 supports the Mombasa regional extract only.
+    Version 1 supports the Kenya extract.
     """
 
-    if not (
-        MOMBASA_BBOX_SOUTH
-        <= latitude
-        <= MOMBASA_BBOX_NORTH
-        and MOMBASA_BBOX_WEST
-        <= longitude
-        <= MOMBASA_BBOX_EAST
+    if not is_supported_location(
+        latitude=latitude,
+        longitude=longitude,
     ):
         frappe.throw(
-            f"{label} is outside the currently supported map area."
+            f"{label} is outside the supported AOS Maps coverage area."
         )
+
+
+def is_supported_location(
+    *,
+    latitude: float,
+    longitude: float,
+) -> bool:
+    """Return whether a coordinate is inside the supported map extract."""
+
+    return (
+        KENYA_BBOX_SOUTH
+        <= latitude
+        <= KENYA_BBOX_NORTH
+        and KENYA_BBOX_WEST
+        <= longitude
+        <= KENYA_BBOX_EAST
+    )
+
+
+def supported_area_bounds() -> dict:
+    """Return the supported map bounds as a normalized viewport object."""
+
+    return {
+        "north": KENYA_BBOX_NORTH,
+        "south": KENYA_BBOX_SOUTH,
+        "east": KENYA_BBOX_EAST,
+        "west": KENYA_BBOX_WEST,
+    }
+
+
+def viewport_intersects_supported_area(
+    *,
+    north: float,
+    south: float,
+    east: float,
+    west: float,
+) -> bool:
+    """Return whether a viewport intersects the supported map area."""
+
+    if north < KENYA_BBOX_SOUTH or south > KENYA_BBOX_NORTH:
+        return False
+
+    if east < KENYA_BBOX_WEST or west > KENYA_BBOX_EAST:
+        return False
+
+    return True
+
+
+def validate_supported_viewport(
+    *,
+    north: float,
+    south: float,
+    east: float,
+    west: float,
+    label: str = "Viewport",
+):
+    """Ensure a viewport intersects the currently supported map extract."""
+
+    if not viewport_intersects_supported_area(
+        north=north,
+        south=south,
+        east=east,
+        west=west,
+    ):
+        frappe.throw(
+            f"{label} is outside the supported AOS Maps coverage area."
+        )
+
+
+def clamp_bbox_to_supported_area(
+    *,
+    north: float,
+    south: float,
+    east: float,
+    west: float,
+) -> dict | None:
+    """Clamp a viewport/bounding box to the supported map area.
+
+    Returns None when the supplied box does not intersect the supported area.
+    """
+
+    if not viewport_intersects_supported_area(
+        north=north,
+        south=south,
+        east=east,
+        west=west,
+    ):
+        return None
+
+    return {
+        "north": min(north, KENYA_BBOX_NORTH),
+        "south": max(south, KENYA_BBOX_SOUTH),
+        "east": min(east, KENYA_BBOX_EAST),
+        "west": max(west, KENYA_BBOX_WEST),
+    }
 
 
 def validate_limit(
@@ -375,7 +561,7 @@ def validate_limit(
     default: int,
     maximum: int,
 ) -> int:
-    """Validate a positive bounded result limit."""
+    """Validate a safe positive integer limit."""
 
     if value is None or value == "":
         return default
@@ -401,31 +587,60 @@ def validate_limit(
     )
 
 
+def normalize_required_string(
+    value: Any,
+    *,
+    label: str,
+) -> str:
+    """Normalize and validate a required string."""
+
+    normalized = normalize_optional_string(
+        value
+    )
+
+    if normalized is None:
+        frappe.throw(
+            f"{label} is required."
+        )
+
+    return normalized
+
+
+def normalize_optional_string(
+    value: Any,
+) -> str | None:
+    """Trim optional text and normalize empty values to None."""
+
+    if value is None:
+        return None
+
+    normalized = str(
+        value
+    ).strip()
+
+    return normalized or None
+
+
 def parse_boolean(
     value: Any,
     *,
-    default: bool | None = None,
-    field_label: str = "value",
+    default: bool,
+    field_label: str,
 ) -> bool:
-    """Parse common boolean request values."""
+    """Parse a boolean request value."""
 
     if value is None or value == "":
-        if default is not None:
-            return default
-
-        frappe.throw(
-            f"{field_label} is required."
-        )
+        return default
 
     if isinstance(value, bool):
         return value
 
     if isinstance(value, int):
-        if value == 1:
-            return True
-
-        if value == 0:
-            return False
+        if value in {0, 1}:
+            return bool(value)
+        frappe.throw(
+            f"{field_label} must be true or false."
+        )
 
     normalized = str(
         value
@@ -435,7 +650,6 @@ def parse_boolean(
         "1",
         "true",
         "yes",
-        "on",
     }:
         return True
 
@@ -443,7 +657,6 @@ def parse_boolean(
         "0",
         "false",
         "no",
-        "off",
     }:
         return False
 
@@ -456,130 +669,72 @@ def normalize_country_codes(
     value: Any,
 ) -> str:
     """
-    Normalize comma-separated ISO alpha-2 country codes.
+    Normalize and restrict country codes.
 
-    Version 1 only supports Kenya.
+    V1 intentionally supports Kenya only.
     """
-
-    if isinstance(value, (list, tuple, set)):
-        raw_codes = value
-    else:
-        raw_codes = str(
-            value or ""
-        ).split(",")
-
-    normalized_codes = []
-
-    for raw_code in raw_codes:
-        code = normalize_optional_string(
-            raw_code
-        )
-
-        if not code:
-            continue
-
-        code = code.upper()
-
-        if (
-            len(code) != 2
-            or not code.isalpha()
-        ):
-            frappe.throw(
-                "country_codes must contain valid "
-                "2-letter country codes."
-            )
-
-        if code != SUPPORTED_COUNTRY_CODE:
-            frappe.throw(
-                "Only Kenya is currently supported."
-            )
-
-        if code not in normalized_codes:
-            normalized_codes.append(code)
-
-    if not normalized_codes:
-        normalized_codes = [
-            SUPPORTED_COUNTRY_CODE,
-        ]
-
-    return ",".join(
-        code.lower()
-        for code in normalized_codes
-    )
-
-
-def normalize_required_string(
-    value: Any,
-    *,
-    label: str,
-) -> str:
-    """Normalize required text."""
 
     normalized = normalize_optional_string(
         value
     )
 
     if not normalized:
-        frappe.throw(
-            f"{label} is required."
-        )
+        return DEFAULT_SEARCH_COUNTRY_CODES
 
-    return normalized
+    country_codes = [
+        code.strip().lower()
+        for code in normalized.split(",")
+        if code.strip()
+    ]
 
+    if not country_codes:
+        return DEFAULT_SEARCH_COUNTRY_CODES
 
-def normalize_optional_string(
-    value: Any,
-) -> str | None:
-    """Trim text and normalize empty values to None."""
+    supported_lower = SUPPORTED_COUNTRY_CODE.lower()
 
-    if value is None:
-        return None
+    for code in country_codes:
+        if (
+            len(code) != 2
+            or not code.isalpha()
+        ):
+            frappe.throw(
+                "country_codes must contain valid 2-letter country codes."
+            )
 
-    normalized = str(value).strip()
+        if code != supported_lower:
+            frappe.throw(
+                f"Only {SUPPORTED_COUNTRY_CODE} is currently supported."
+            )
 
-    return normalized or None
+    return ",".join(
+        country_codes
+    )
 
 
 def _build_origin_destination_locations(
     kwargs: dict,
 ) -> list[dict]:
-    """Build route locations from origin and destination parameters."""
-
-    required_fields = (
-        "origin_latitude",
-        "origin_longitude",
-        "destination_latitude",
-        "destination_longitude",
-    )
-
-    missing = [
-        fieldname
-        for fieldname in required_fields
-        if kwargs.get(fieldname) is None
-        or str(kwargs.get(fieldname)).strip() == ""
-    ]
-
-    if missing:
-        frappe.throw(
-            "locations or complete origin and destination "
-            "coordinates are required."
-        )
+    """Build route locations from origin/destination fields."""
 
     return [
         {
-            "latitude": kwargs.get(
-                "origin_latitude"
-            ),
-            "longitude": kwargs.get(
-                "origin_longitude"
-            ),
+            "latitude": kwargs.get("origin_latitude")
+            if "origin_latitude" in kwargs
+            else kwargs.get("origin_lat"),
+            "longitude": kwargs.get("origin_longitude")
+            if "origin_longitude" in kwargs
+            else kwargs.get("origin_lon")
+            if "origin_lon" in kwargs
+            else kwargs.get("origin_lng"),
         },
         {
-            "latitude": kwargs.get(
-                "destination_latitude"
-            ),
-            "longitude": kwargs.get(
-                "destination_longitude"
-            ),
+            "latitude": kwargs.get("destination_latitude")
+            if "destination_latitude" in kwargs
+            else kwargs.get("destination_lat"),
+            "longitude": kwargs.get("destination_longitude")
+            if "destination_longitude" in kwargs
+            else kwargs.get("destination_lon")
+            if "destination_lon" in kwargs
+            else kwargs.get("destination_lng"),
         },
     ]

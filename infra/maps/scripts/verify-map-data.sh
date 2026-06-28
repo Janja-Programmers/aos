@@ -27,7 +27,7 @@ case "${1:-}" in
         ;;
 
     *)
-        fail "Unknown argument: ${1}. Supported argument: --services"
+        fail "Unknown argument: ${1}. Supported argument: $0 [--services]"
         ;;
 esac
 
@@ -38,18 +38,19 @@ fi
 
 # ARTIFACT PATHS
 SOURCE="${ROOT_DIR}/maps/downloads/${KENYA_PBF_FILENAME}"
-EXTRACT="${ROOT_DIR}/maps/${MAP_REGION_ID}/${MOMBASA_PBF_FILENAME}"
-MBTILES="${ROOT_DIR}/maps/tiles/${MOMBASA_MBTILES_FILENAME}"
+REGION_PBF="${ROOT_DIR}/maps/${MAP_REGION_ID}/${REGION_PBF_FILENAME}"
+MBTILES="${ROOT_DIR}/maps/tiles/${REGION_MBTILES_FILENAME}"
 VALHALLA_DIR="${ROOT_DIR}/maps/valhalla"
 
 VALHALLA_CONFIG="${VALHALLA_DIR}/valhalla.json"
+PHOTON_VOLUME_NAME="${PHOTON_VOLUME:-aos_photon_data}"
 
 
 # STATIC ARTIFACT VERIFICATION
 info "Verifying static map artifacts"
 
 assert_nonempty_file "${SOURCE}"
-assert_nonempty_file "${EXTRACT}"
+assert_nonempty_file "${REGION_PBF}"
 assert_nonempty_file "${MBTILES}"
 assert_nonempty_file "${VALHALLA_CONFIG}"
 
@@ -96,14 +97,36 @@ cd "${ROOT_DIR}"
 docker compose config >/dev/null
 
 
+# Photon uses a Docker volume, not a committed file artifact. Verify that the
+# volume exists and is not empty before runtime checks pass.
+if ! docker volume inspect "${PHOTON_VOLUME_NAME}" >/dev/null 2>&1; then
+    fail "Photon data volume does not exist: ${PHOTON_VOLUME_NAME}. Run import-photon.sh --rebuild."
+fi
+
+if [[ -z "${PHOTON_IMAGE:-}" ]]; then
+    fail "PHOTON_IMAGE is required to verify the Photon data volume."
+fi
+
+if ! docker run \
+    --rm \
+    --entrypoint /bin/sh \
+    -v "${PHOTON_VOLUME_NAME}:/photon/photon_data:ro" \
+    "${PHOTON_IMAGE}" \
+    -c 'find /photon/photon_data -mindepth 1 -maxdepth 3 -print -quit | grep -q .'
+then
+    fail "Photon data volume is empty: ${PHOTON_VOLUME_NAME}. Run import-photon.sh --rebuild."
+fi
+
+
 # STATIC VERIFICATION RESULT
 info "Static map artifacts are valid."
 
 printf 'Source PBF:      %s\n' "${SOURCE}"
-printf 'Regional PBF:    %s\n' "${EXTRACT}"
+printf 'Region PBF:      %s\n' "${REGION_PBF}"
 printf 'MBTiles:         %s\n' "${MBTILES}"
 printf 'Valhalla config: %s\n' "${VALHALLA_CONFIG}"
 printf 'Valhalla data:   %s\n' "${VALHALLA_DIR}"
+printf 'Photon volume:   %s\n' "${PHOTON_VOLUME_NAME}"
 
 
 # OPTIONAL RUNTIME SERVICE VERIFICATION
@@ -152,7 +175,8 @@ if [[ "${VERIFY_SERVICES}" == true ]]; then
         -d \
         tileserver \
         valhalla \
-        nominatim
+        nominatim \
+        photon
 
     info "Verifying TileServer production style"
 
@@ -160,11 +184,11 @@ if [[ "${VERIFY_SERVICES}" == true ]]; then
         "http://127.0.0.1:${TILESERVER_PORT:-8080}/styles/aos/style.json" \
         "TileServer AOS style"
 
-    info "Verifying TileServer Mombasa data source"
+    info "Verifying TileServer Kenya data source"
 
     wait_http \
-        "http://127.0.0.1:${TILESERVER_PORT:-8080}/data/mombasa.json" \
-        "TileServer Mombasa data source"
+        "http://127.0.0.1:${TILESERVER_PORT:-8080}/data/kenya.json" \
+        "TileServer Kenya data source"
 
     info "Verifying Valhalla"
 
@@ -177,6 +201,12 @@ if [[ "${VERIFY_SERVICES}" == true ]]; then
     wait_http \
         "http://127.0.0.1:${NOMINATIM_PORT:-8081}/status?format=json" \
         "Nominatim"
+
+    info "Verifying Photon"
+
+    wait_http \
+        "http://127.0.0.1:${PHOTON_PORT:-2322}/api?q=Nairobi&limit=1" \
+        "Photon"
 
     info "All map services passed runtime verification."
 fi

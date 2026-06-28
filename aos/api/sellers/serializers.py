@@ -104,7 +104,7 @@ def serialize_lightweight_seller_location(
             "has_location": False,
         }
 
-    return {
+    payload = {
         "has_location": True,
         "name": _normalize_optional_string(
             seller.get("location_name")
@@ -117,6 +117,22 @@ def serialize_lightweight_seller_location(
         ),
         "country_code": country_code,
     }
+
+    distance_km = _to_optional_float(
+        seller.get("distance_km")
+    )
+
+    if distance_km is not None:
+        distance_km = max(
+            0.0,
+            round(distance_km, 2),
+        )
+        payload["distance_km"] = distance_km
+        payload["distance_display"] = _format_distance(
+            distance_km
+        )
+
+    return payload
 
 
 def _empty_location_payload() -> dict:
@@ -189,3 +205,19 @@ def _normalize_optional_string(
     normalized = str(value).strip()
 
     return normalized or None
+
+
+def _format_distance(
+    distance_km: float,
+) -> str:
+    """Format a seller distance for display."""
+
+    if distance_km < 1:
+        meters = int(round(distance_km * 1000))
+        meters = max(meters, 1)
+        return f"{meters} m away"
+
+    if distance_km < 10:
+        return f"{distance_km:.1f} km away"
+
+    return f"{distance_km:.0f} km away"

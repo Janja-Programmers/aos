@@ -49,7 +49,10 @@ Configure Frappe map service URLs:
 
 ```bash
 bench --site <site> set-config nominatim_base_url http://127.0.0.1:8081
+bench --site <site> set-config photon_base_url http://127.0.0.1:2322
 bench --site <site> set-config valhalla_base_url http://127.0.0.1:8002
+bench --site <site> set-config maps_geocoder_primary photon
+bench --site <site> set-config maps_geocoder_fallback nominatim
 ```
 
 Configure AOS Settings after migration so AI integrations point to private services:
@@ -75,10 +78,12 @@ For a fresh build:
 
 ```bash
 ./infra/maps/scripts/download-kenya.sh
-./infra/maps/scripts/extract-mombasa.sh
-./infra/maps/scripts/build-mombasa-tiles.sh
+./infra/maps/scripts/prepare-kenya.sh
+./infra/maps/scripts/build-kenya-tiles.sh
 ./infra/maps/scripts/build-valhalla.sh
 ./infra/maps/scripts/import-nominatim.sh --rebuild
+# Prepare Photon data before starting the photon service.
+# See infra/maps/manifest.env.example for PHOTON_IMAGE/volume settings.
 ./infra/maps/scripts/verify-map-data.sh
 ```
 

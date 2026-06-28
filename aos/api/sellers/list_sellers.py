@@ -7,12 +7,14 @@ Lightweight version of the seller profile.
 Returns:
 - Seller identity and business information
 - Lightweight seller location information
+- Optional near-me distance information
 - Social and marketplace metrics
 - Chat response metrics
 """
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import frappe
@@ -31,12 +33,21 @@ from aos.api.shared.rate_limit import (
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.user_display import get_user_display_map
 from aos.api.social.relationship import build_relationship_status
+from aos.api.maps.validators import (
+    clamp_bbox_to_supported_area,
+    is_supported_location,
+)
 from aos.services.seller_response_metrics import (
     format_response_rate,
     format_response_time,
 )
 
-from .constants import LIST_SELLERS_LIMIT_PER_MINUTE_PER_IP
+from .constants import (
+    LIST_SELLERS_LIMIT_PER_MINUTE_PER_IP,
+    NEARBY_SELLERS_DEFAULT_RADIUS_KM,
+    NEARBY_SELLERS_MAX_RADIUS_KM,
+    NEARBY_SELLERS_MIN_RADIUS_KM,
+)
 from .serializers import (
     serialize_lightweight_seller_location,
 )
@@ -44,10 +55,15 @@ from .serializers import (
 
 DEFAULT_LIMIT = 20
 MAX_LIMIT = 50
+EARTH_RADIUS_KM = 6371.0
 
 VALID_FOLLOW_FILTERS = {
     "following",
     "not_following",
+}
+
+VALID_SORTS = {
+    "nearest",
 }
 
 
@@ -94,6 +110,28 @@ def list_sellers_impl(**kwargs):
             kwargs.get("region")
         )
 
+        sort = _normalize_optional_string(
+            kwargs.get("sort")
+        )
+
+        if sort and sort not in VALID_SORTS:
+            return fail(
+                "sort must be nearest when provided.",
+                code="VALIDATION_ERROR",
+            )
+
+        geo_context, geo_error = _get_geo_context(
+            kwargs
+        )
+        if geo_error:
+            return geo_error
+
+        if sort == "nearest" and not geo_context:
+            return fail(
+                "latitude and longitude are required when sort is nearest.",
+                code="VALIDATION_ERROR",
+            )
+
         country_code, country_code_error = (
             _get_country_code_filter(
                 kwargs.get("country_code")
@@ -119,6 +157,9 @@ def list_sellers_impl(**kwargs):
         )
         if has_location_error:
             return has_location_error
+
+        if geo_context and has_location_value is None:
+            has_location_value = 1
 
         viewer = current_user()
 
@@ -196,6 +237,25 @@ def list_sellers_impl(**kwargs):
                 country_code
             )
 
+        if geo_context:
+            conditions.extend(
+                [
+                    "COALESCE(s.has_location, 0) = 1",
+                    "s.latitude IS NOT NULL",
+                    "s.longitude IS NOT NULL",
+                    "s.latitude BETWEEN %s AND %s",
+                    "s.longitude BETWEEN %s AND %s",
+                ]
+            )
+            params.extend(
+                [
+                    geo_context["south"],
+                    geo_context["north"],
+                    geo_context["west"],
+                    geo_context["east"],
+                ]
+            )
+
         if search:
             conditions.append(
                 """
@@ -267,6 +327,29 @@ def list_sellers_impl(**kwargs):
             conditions
         )
 
+        distance_select = "NULL AS distance_km"
+        select_params: list[Any] = []
+        having_clause = ""
+        having_params: list[Any] = []
+
+        if geo_context:
+            distance_select = _distance_sql_expression()
+            select_params.extend(
+                [
+                    geo_context["latitude"],
+                    geo_context["latitude"],
+                    geo_context["longitude"],
+                ]
+            )
+            having_clause = "HAVING distance_km <= %s"
+            having_params.append(
+                geo_context["radius_km"]
+            )
+
+        order_clause = _build_order_clause(
+            nearest=bool(geo_context and sort == "nearest"),
+        )
+
         sellers = frappe.db.sql(
             f"""
             SELECT
@@ -288,6 +371,10 @@ def list_sellers_impl(**kwargs):
                 s.locality,
                 s.region,
                 s.country_code,
+                s.latitude,
+                s.longitude,
+
+                {distance_select},
 
                 COALESCE(
                     s.chat_response_time_seconds,
@@ -353,25 +440,16 @@ def list_sellers_impl(**kwargs):
 
             WHERE {where_clause}
 
-            ORDER BY
-                COALESCE(
-                    p.is_verified,
-                    0
-                ) DESC,
-                COALESCE(
-                    s.rating,
-                    0
-                ) DESC,
-                COALESCE(
-                    p.total_followers,
-                    0
-                ) DESC,
-                s.creation DESC
+            {having_clause}
+
+            {order_clause}
 
             LIMIT %s OFFSET %s
             """,
             (
+                *select_params,
                 *params,
+                *having_params,
                 limit,
                 offset,
             ),
@@ -398,14 +476,24 @@ def list_sellers_impl(**kwargs):
             for seller in sellers
         ]
 
+        data = {
+            "items": items,
+            "limit": limit,
+            "offset": offset,
+            "count": len(items),
+        }
+
+        if geo_context:
+            data["nearby"] = {
+                "latitude": geo_context["latitude"],
+                "longitude": geo_context["longitude"],
+                "radius_km": geo_context["radius_km"],
+                "sort": sort or None,
+            }
+
         return ok(
             "Sellers fetched successfully.",
-            data={
-                "items": items,
-                "limit": limit,
-                "offset": offset,
-                "count": len(items),
-            },
+            data=data,
         )
 
     except Exception:
@@ -779,6 +867,277 @@ def _get_country_code_filter(
         )
 
     return normalized, None
+
+
+def _get_geo_context(
+    kwargs: dict,
+):
+    """
+    Validate optional near-me parameters.
+
+    Returns:
+        tuple[dict | None, response | None]
+    """
+
+    latitude_value = (
+        kwargs.get("latitude")
+        if "latitude" in kwargs
+        else kwargs.get("lat")
+    )
+
+    longitude_value = (
+        kwargs.get("longitude")
+        if "longitude" in kwargs
+        else kwargs.get("lon")
+        if "lon" in kwargs
+        else kwargs.get("lng")
+    )
+
+    radius_value = kwargs.get("radius_km")
+
+    has_lat = latitude_value is not None and str(latitude_value).strip() != ""
+    has_lon = longitude_value is not None and str(longitude_value).strip() != ""
+    has_radius = radius_value is not None and str(radius_value).strip() != ""
+
+    if not has_lat and not has_lon and not has_radius:
+        return None, None
+
+    if not has_lat or not has_lon:
+        return (
+            None,
+            fail(
+                "latitude and longitude are required for nearby seller discovery.",
+                code="VALIDATION_ERROR",
+            ),
+        )
+
+    latitude, latitude_error = _parse_coordinate(
+        latitude_value,
+        label="latitude",
+        minimum=-90,
+        maximum=90,
+    )
+    if latitude_error:
+        return None, latitude_error
+
+    longitude, longitude_error = _parse_coordinate(
+        longitude_value,
+        label="longitude",
+        minimum=-180,
+        maximum=180,
+    )
+    if longitude_error:
+        return None, longitude_error
+
+    if not is_supported_location(
+        latitude=latitude,
+        longitude=longitude,
+    ):
+        return (
+            None,
+            fail(
+                "Location is outside the supported AOS Maps coverage area.",
+                code="VALIDATION_ERROR",
+            ),
+        )
+
+    radius_km, radius_error = _parse_radius_km(
+        radius_value
+    )
+    if radius_error:
+        return None, radius_error
+
+    bbox = _build_radius_bbox(
+        latitude=latitude,
+        longitude=longitude,
+        radius_km=radius_km,
+    )
+
+    clipped_bbox = clamp_bbox_to_supported_area(
+        north=bbox["north"],
+        south=bbox["south"],
+        east=bbox["east"],
+        west=bbox["west"],
+    )
+
+    if not clipped_bbox:
+        return (
+            None,
+            fail(
+                "Nearby seller search area is outside the supported AOS Maps coverage area.",
+                code="VALIDATION_ERROR",
+            ),
+        )
+
+    return {
+        "latitude": latitude,
+        "longitude": longitude,
+        "radius_km": radius_km,
+        **clipped_bbox,
+    }, None
+
+
+def _parse_radius_km(
+    value: Any,
+):
+    """Validate radius_km."""
+
+    if value is None or value == "":
+        return NEARBY_SELLERS_DEFAULT_RADIUS_KM, None
+
+    try:
+        radius = float(value)
+    except (TypeError, ValueError):
+        return (
+            None,
+            fail(
+                "radius_km must be a valid number.",
+                code="VALIDATION_ERROR",
+            ),
+        )
+
+    if not math.isfinite(radius):
+        return (
+            None,
+            fail(
+                "radius_km must be a finite number.",
+                code="VALIDATION_ERROR",
+            ),
+        )
+
+    if radius < NEARBY_SELLERS_MIN_RADIUS_KM:
+        return (
+            None,
+            fail(
+                f"radius_km must be at least {NEARBY_SELLERS_MIN_RADIUS_KM}.",
+                code="VALIDATION_ERROR",
+            ),
+        )
+
+    if radius > NEARBY_SELLERS_MAX_RADIUS_KM:
+        return (
+            None,
+            fail(
+                f"radius_km cannot exceed {NEARBY_SELLERS_MAX_RADIUS_KM}.",
+                code="VALIDATION_ERROR",
+            ),
+        )
+
+    return round(radius, 2), None
+
+
+def _parse_coordinate(
+    value: Any,
+    *,
+    label: str,
+    minimum: float,
+    maximum: float,
+):
+    """Validate a coordinate for seller discovery."""
+
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError):
+        return (
+            None,
+            fail(
+                f"{label} must be a valid number.",
+                code="VALIDATION_ERROR",
+            ),
+        )
+
+    if not math.isfinite(normalized):
+        return (
+            None,
+            fail(
+                f"{label} must be a finite number.",
+                code="VALIDATION_ERROR",
+            ),
+        )
+
+    if normalized < minimum or normalized > maximum:
+        return (
+            None,
+            fail(
+                f"{label} must be between {minimum:g} and {maximum:g}.",
+                code="VALIDATION_ERROR",
+            ),
+        )
+
+    return round(normalized, 7), None
+
+
+def _build_radius_bbox(
+    *,
+    latitude: float,
+    longitude: float,
+    radius_km: float,
+) -> dict:
+    """Build an approximate bounding box around a coordinate."""
+
+    lat_delta = radius_km / 111.32
+
+    cos_lat = math.cos(
+        math.radians(latitude)
+    )
+
+    if abs(cos_lat) < 0.000001:
+        lon_delta = 180
+    else:
+        lon_delta = radius_km / (111.32 * cos_lat)
+
+    return {
+        "south": latitude - lat_delta,
+        "north": latitude + lat_delta,
+        "west": longitude - lon_delta,
+        "east": longitude + lon_delta,
+    }
+
+
+def _distance_sql_expression() -> str:
+    """Return a Haversine distance expression in kilometers."""
+
+    return f"""
+        ({EARTH_RADIUS_KM} * 2 * ASIN(SQRT(
+            POWER(SIN(RADIANS(%s - s.latitude) / 2), 2)
+            + COS(RADIANS(%s))
+            * COS(RADIANS(s.latitude))
+            * POWER(SIN(RADIANS(%s - s.longitude) / 2), 2)
+        ))) AS distance_km
+    """
+
+
+def _build_order_clause(
+    *,
+    nearest: bool,
+) -> str:
+    """Return SQL ORDER BY for seller discovery."""
+
+    if nearest:
+        return """
+            ORDER BY
+                distance_km ASC,
+                COALESCE(p.is_verified, 0) DESC,
+                COALESCE(s.rating, 0) DESC,
+                s.creation DESC
+        """
+
+    return """
+        ORDER BY
+            COALESCE(
+                p.is_verified,
+                0
+            ) DESC,
+            COALESCE(
+                s.rating,
+                0
+            ) DESC,
+            COALESCE(
+                p.total_followers,
+                0
+            ) DESC,
+            s.creation DESC
+    """
 
 
 def _normalize_optional_string(

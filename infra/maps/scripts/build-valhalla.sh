@@ -10,7 +10,7 @@ load_manifest
 require_command docker
 require_command rsync
 
-SOURCE="${ROOT_DIR}/maps/${MAP_REGION_ID}/${MOMBASA_PBF_FILENAME}"
+SOURCE="${ROOT_DIR}/maps/${MAP_REGION_ID}/${REGION_PBF_FILENAME}"
 LIVE_DIR="${ROOT_DIR}/maps/valhalla"
 STAGING_DIR="${ROOT_DIR}/maps/valhalla.build"
 BACKUP_DIR="${ROOT_DIR}/maps/valhalla.previous"
@@ -18,7 +18,7 @@ BACKUP_DIR="${ROOT_DIR}/maps/valhalla.previous"
 assert_nonempty_file "${SOURCE}"
 rm -rf "${STAGING_DIR}"
 mkdir -p "${STAGING_DIR}"
-cp "${SOURCE}" "${STAGING_DIR}/${MOMBASA_PBF_FILENAME}"
+cp "${SOURCE}" "${STAGING_DIR}/${REGION_PBF_FILENAME}"
 
 ensure_image "${VALHALLA_IMAGE}"
 
@@ -40,7 +40,7 @@ docker run --rm \
     -e build_tar="True" \
     -e serve_tiles="False" \
     -e server_threads="${VALHALLA_BUILD_THREADS:-2}" \
-    -e tileset_name="${VALHALLA_TILESET_NAME:-mombasa_valhalla_tiles}" \
+    -e tileset_name="${VALHALLA_TILESET_NAME:-kenya_valhalla_tiles}" \
     -e update_existing_config="True" \
     -e use_default_speeds_config="True" \
     -v "${STAGING_DIR}:/custom_files:rw" \

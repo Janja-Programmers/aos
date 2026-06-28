@@ -13,12 +13,12 @@ if [[ "${1:-}" != "--rebuild" ]]; then
     fail "This operation recreates the Nominatim database. Run explicitly with: $0 --rebuild"
 fi
 
-SOURCE="${ROOT_DIR}/maps/${MAP_REGION_ID}/${MOMBASA_PBF_FILENAME}"
+SOURCE="${ROOT_DIR}/maps/${MAP_REGION_ID}/${REGION_PBF_FILENAME}"
 assert_nonempty_file "${SOURCE}"
 
 SERVICE="${NOMINATIM_SERVICE:-nominatim}"
 VOLUME="${NOMINATIM_VOLUME:-aos_nominatim_data}"
-TIMEOUT="${NOMINATIM_IMPORT_TIMEOUT_SECONDS:-3600}"
+TIMEOUT="${NOMINATIM_IMPORT_TIMEOUT_SECONDS:-21600}"
 
 cd "${ROOT_DIR}"
 
@@ -29,8 +29,9 @@ if [[ -n "${affected_container}" ]]; then
     docker compose rm -f "${SERVICE}"
 fi
 
-info "Removing Nominatim database volume: ${VOLUME}"
-docker volume rm -f "${VOLUME}" >/dev/null
+info "Recreating Nominatim database volume: ${VOLUME}"
+docker volume rm -f "${VOLUME}" >/dev/null || true
+docker volume create "${VOLUME}" >/dev/null
 
 info "Starting a clean deterministic Nominatim import"
 docker compose up -d "${SERVICE}"

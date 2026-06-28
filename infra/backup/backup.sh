@@ -112,7 +112,7 @@ is_true "$INCLUDE_NOMINATIM_DATA" && archive_volume aos_nominatim_data nominatim
 
 if is_true "$INCLUDE_MAP_ARTIFACTS"; then
   log "Archiving generated map artifacts"
-  for path in maps/tiles maps/valhalla maps/mombasa; do
+  for path in maps/tiles maps/valhalla maps/kenya; do
     if [[ -e "$AOS_REPO_ROOT/$path" ]]; then
       tar -C "$AOS_REPO_ROOT" -czf "$BACKUP_DIR/maps/$(basename "$path").tar.gz" "$path"
     fi

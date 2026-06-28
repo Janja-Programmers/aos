@@ -53,14 +53,15 @@ load_manifest() {
     set +a
 
     : "${MAP_REGION_ID:?MAP_REGION_ID is required}"
+    : "${MAP_REGION_DISPLAY_NAME:?MAP_REGION_DISPLAY_NAME is required}"
     : "${MAP_BBOX:?MAP_BBOX is required}"
 
     : "${KENYA_PBF_URL:?KENYA_PBF_URL is required}"
     : "${KENYA_PBF_SHA256:?KENYA_PBF_SHA256 is required}"
     : "${KENYA_PBF_FILENAME:?KENYA_PBF_FILENAME is required}"
 
-    : "${MOMBASA_PBF_FILENAME:?MOMBASA_PBF_FILENAME is required}"
-    : "${MOMBASA_MBTILES_FILENAME:?MOMBASA_MBTILES_FILENAME is required}"
+    : "${REGION_PBF_FILENAME:?REGION_PBF_FILENAME is required}"
+    : "${REGION_MBTILES_FILENAME:?REGION_MBTILES_FILENAME is required}"
 
     : "${OSMIUM_COMMAND:?OSMIUM_COMMAND is required}"
 
@@ -78,6 +79,12 @@ load_manifest() {
     validate_digest_image \
         "${VALHALLA_IMAGE}" \
         "VALHALLA_IMAGE"
+
+    if [[ "${PHOTON_IMAGE:-}" != "" ]]; then
+        validate_digest_image \
+            "${PHOTON_IMAGE}" \
+            "PHOTON_IMAGE"
+    fi
 
     validate_osmium_command \
         "${OSMIUM_COMMAND}"

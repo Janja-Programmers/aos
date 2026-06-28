@@ -15,6 +15,7 @@ from .get_my_seller_status import (
 )
 from .get_seller import get_seller_impl
 from .list_sellers import list_sellers_impl
+from .map_points import list_seller_map_points_impl
 from .remove_location import (
     remove_my_seller_location_impl,
 )
@@ -36,6 +37,15 @@ def list_sellers(**kwargs):
 def get_seller(**kwargs):
     """Get seller profile for storefront and ad detail."""
     return get_seller_impl(**kwargs)
+
+
+@frappe.whitelist(
+    allow_guest=True,
+    methods=["GET", "POST"],
+)
+def list_seller_map_points(**kwargs):
+    """List seller pins or clusters for a map viewport."""
+    return list_seller_map_points_impl(**kwargs)
 
 
 @frappe.whitelist()

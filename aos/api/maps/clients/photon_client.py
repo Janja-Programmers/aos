@@ -1,8 +1,9 @@
 """
-Internal Nominatim client.
+Internal Photon client.
 
-Nominatim is an internal infrastructure service. Public API endpoints should
-use this client instead of exposing Nominatim directly to Flutter clients.
+Photon is an internal infrastructure service used for fast place
+search-as-you-type. Public API endpoints should use this client instead of
+exposing Photon directly to Flutter clients.
 """
 
 from __future__ import annotations
@@ -13,23 +14,24 @@ import frappe
 import requests
 
 from ..constants import (
-    DEFAULT_NOMINATIM_BASE_URL,
+    DEFAULT_PHOTON_BASE_URL,
+    KENYA_BBOX_EAST,
+    KENYA_BBOX_NORTH,
+    KENYA_BBOX_SOUTH,
+    KENYA_BBOX_WEST,
     MAP_SERVICE_CONNECT_TIMEOUT_SECONDS,
-    KENYA_VIEWBOX,
-    NOMINATIM_BASE_URL_CONFIG_KEY,
-    NOMINATIM_REQUEST_TIMEOUT_SECONDS,
-    REVERSE_GEOCODE_ADDRESS_DETAILS,
-    REVERSE_GEOCODE_DEFAULT_ZOOM,
-    SEARCH_ADDRESS_DETAILS,
+    PHOTON_BASE_URL_CONFIG_KEY,
+    PHOTON_REQUEST_TIMEOUT_SECONDS,
+    SUPPORTED_COUNTRY_CODE_LOWER,
 )
 
 
-class NominatimClientError(Exception):
-    """Raised when the internal Nominatim service cannot satisfy a request."""
+class PhotonClientError(Exception):
+    """Raised when the internal Photon service cannot satisfy a request."""
 
 
-class NominatimClient:
-    """HTTP client for the internal Nominatim service."""
+class PhotonClient:
+    """HTTP client for the internal Photon service."""
 
     def __init__(
         self,
@@ -39,9 +41,9 @@ class NominatimClient:
         configured_url = (
             base_url
             or frappe.conf.get(
-                NOMINATIM_BASE_URL_CONFIG_KEY
+                PHOTON_BASE_URL_CONFIG_KEY
             )
-            or DEFAULT_NOMINATIM_BASE_URL
+            or DEFAULT_PHOTON_BASE_URL
         )
 
         self.base_url = _normalize_base_url(
@@ -57,129 +59,86 @@ class NominatimClient:
             }
         )
 
-    def search_places(
+    def autocomplete_places(
         self,
         *,
         query: str,
         limit: int,
-        bounded: bool,
-        country_codes: str,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        country_codes: str | None = None,
         language: str | None = None,
     ) -> list[dict]:
         """
-        Search for places using the configured Kenya viewbox.
+        Search places using Photon.
 
-        Returns raw Nominatim result dictionaries. Public response
+        Returns raw GeoJSON feature dictionaries. Public response
         normalization is handled by the maps serializers.
         """
 
         params: dict[str, Any] = {
             "q": query,
-            "format": "jsonv2",
-            "addressdetails": (
-                1
-                if SEARCH_ADDRESS_DETAILS
-                else 0
-            ),
             "limit": limit,
-            "countrycodes": country_codes,
-            "viewbox": KENYA_VIEWBOX,
-            "bounded": 1 if bounded else 0,
-        }
-
-        normalized_language = _normalize_optional_string(
-            language
-        )
-
-        if normalized_language:
-            params["accept-language"] = normalized_language
-
-        response_data = self._get_json(
-            endpoint="/search",
-            params=params,
-            operation="place search",
-        )
-
-        if not isinstance(
-            response_data,
-            list,
-        ):
-            raise NominatimClientError(
-                "Nominatim returned an invalid search response."
-            )
-
-        return [
-            item
-            for item in response_data
-            if isinstance(item, dict)
-        ]
-
-    def reverse_geocode(
-        self,
-        *,
-        latitude: float,
-        longitude: float,
-        language: str | None = None,
-    ) -> dict:
-        """
-        Resolve coordinates into an address.
-
-        Returns the raw Nominatim response dictionary. Public response
-        normalization is handled by the maps serializers.
-        """
-
-        params: dict[str, Any] = {
-            "lat": latitude,
-            "lon": longitude,
-            "format": "jsonv2",
-            "addressdetails": (
-                1
-                if REVERSE_GEOCODE_ADDRESS_DETAILS
-                else 0
+            "countrycode": _first_country_code(
+                country_codes
+            ) or SUPPORTED_COUNTRY_CODE_LOWER,
+            "bbox": (
+                f"{KENYA_BBOX_WEST},"
+                f"{KENYA_BBOX_SOUTH},"
+                f"{KENYA_BBOX_EAST},"
+                f"{KENYA_BBOX_NORTH}"
             ),
-            "zoom": REVERSE_GEOCODE_DEFAULT_ZOOM,
         }
+
+        if latitude is not None and longitude is not None:
+            params["lat"] = latitude
+            params["lon"] = longitude
 
         normalized_language = _normalize_optional_string(
             language
         )
 
         if normalized_language:
-            params["accept-language"] = normalized_language
+            params["lang"] = normalized_language
 
         response_data = self._get_json(
-            endpoint="/reverse",
+            endpoint="/api",
             params=params,
-            operation="reverse geocoding",
+            operation="place autocomplete",
         )
 
         if not isinstance(
             response_data,
             dict,
         ):
-            raise NominatimClientError(
-                "Nominatim returned an invalid reverse-geocoding response."
+            raise PhotonClientError(
+                "Photon returned an invalid autocomplete response."
             )
 
-        error_message = response_data.get(
-            "error"
+        features = response_data.get(
+            "features"
         )
 
-        if error_message:
-            raise NominatimClientError(
-                str(error_message)
+        if not isinstance(
+            features,
+            list,
+        ):
+            raise PhotonClientError(
+                "Photon returned an invalid feature list."
             )
 
-        return response_data
+        return [
+            feature
+            for feature in features
+            if isinstance(feature, dict)
+        ]
 
     def status(self) -> dict:
-        """Fetch the internal Nominatim status response."""
+        """Fetch the internal Photon status response."""
 
         response_data = self._get_json(
             endpoint="/status",
-            params={
-                "format": "json",
-            },
+            params={},
             operation="status check",
         )
 
@@ -187,8 +146,8 @@ class NominatimClient:
             response_data,
             dict,
         ):
-            raise NominatimClientError(
-                "Nominatim returned an invalid status response."
+            raise PhotonClientError(
+                "Photon returned an invalid status response."
             )
 
         return response_data
@@ -218,28 +177,28 @@ class NominatimClient:
                 params=params,
                 timeout=(
                     MAP_SERVICE_CONNECT_TIMEOUT_SECONDS,
-                    NOMINATIM_REQUEST_TIMEOUT_SECONDS,
+                    PHOTON_REQUEST_TIMEOUT_SECONDS,
                 ),
             )
 
         except requests.ConnectTimeout as ex:
-            raise NominatimClientError(
-                "The geocoding service could not be reached."
+            raise PhotonClientError(
+                "The autocomplete service could not be reached."
             ) from ex
 
         except requests.ReadTimeout as ex:
-            raise NominatimClientError(
-                "The geocoding service took too long to respond."
+            raise PhotonClientError(
+                "The autocomplete service took too long to respond."
             ) from ex
 
         except requests.ConnectionError as ex:
-            raise NominatimClientError(
-                "The geocoding service is unavailable."
+            raise PhotonClientError(
+                "The autocomplete service is unavailable."
             ) from ex
 
         except requests.RequestException as ex:
-            raise NominatimClientError(
-                "The geocoding request failed."
+            raise PhotonClientError(
+                "The autocomplete request failed."
             ) from ex
 
         if response.status_code != 200:
@@ -250,22 +209,22 @@ class NominatimClient:
             )
 
             if response.status_code == 404:
-                raise NominatimClientError(
+                raise PhotonClientError(
                     "No matching location was found."
                 )
 
             if response.status_code == 429:
-                raise NominatimClientError(
-                    "The geocoding service is temporarily busy."
+                raise PhotonClientError(
+                    "The autocomplete service is temporarily busy."
                 )
 
             if 500 <= response.status_code <= 599:
-                raise NominatimClientError(
-                    "The geocoding service is temporarily unavailable."
+                raise PhotonClientError(
+                    "The autocomplete service is temporarily unavailable."
                 )
 
-            raise NominatimClientError(
-                "The geocoding service rejected the request."
+            raise PhotonClientError(
+                "The autocomplete service rejected the request."
             )
 
         try:
@@ -278,8 +237,8 @@ class NominatimClient:
                 response_body=response.text,
             )
 
-            raise NominatimClientError(
-                "The geocoding service returned an invalid response."
+            raise PhotonClientError(
+                "The autocomplete service returned an invalid response."
             ) from ex
 
     def _log_service_error(
@@ -304,14 +263,14 @@ class NominatimClient:
                 f"Status code: {status_code}\n"
                 f"Response body:\n{safe_body}"
             ),
-            title="AOS Nominatim Service Error",
+            title="AOS Photon Service Error",
         )
 
 
-def get_nominatim_client() -> NominatimClient:
-    """Return a configured Nominatim client instance."""
+def get_photon_client() -> PhotonClient:
+    """Return a configured Photon client instance."""
 
-    return NominatimClient()
+    return PhotonClient()
 
 
 def _normalize_base_url(
@@ -324,16 +283,16 @@ def _normalize_base_url(
     ).strip().rstrip("/")
 
     if not normalized:
-        raise NominatimClientError(
-            "Nominatim service URL is not configured."
+        raise PhotonClientError(
+            "Photon service URL is not configured."
         )
 
     if not (
         normalized.startswith("http://")
         or normalized.startswith("https://")
     ):
-        raise NominatimClientError(
-            "Nominatim service URL must use HTTP or HTTPS."
+        raise PhotonClientError(
+            "Photon service URL must use HTTP or HTTPS."
         )
 
     return normalized
@@ -344,7 +303,7 @@ def _build_url(
     base_url: str,
     endpoint: str,
 ) -> str:
-    """Build an internal Nominatim endpoint URL."""
+    """Build an internal Photon endpoint URL."""
 
     normalized_endpoint = (
         endpoint
@@ -371,3 +330,20 @@ def _normalize_optional_string(
     ).strip()
 
     return normalized or None
+
+
+def _first_country_code(
+    value: str | None,
+) -> str | None:
+    """Return the first normalized country code from a comma list."""
+
+    normalized = _normalize_optional_string(
+        value
+    )
+
+    if not normalized:
+        return None
+
+    first = normalized.split(",", 1)[0].strip().lower()
+
+    return first or None

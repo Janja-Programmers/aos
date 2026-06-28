@@ -2,6 +2,7 @@
 Maps API serializers.
 
 Normalizes raw responses from:
+- Photon
 - Nominatim
 - Valhalla
 
@@ -21,6 +22,7 @@ from .constants import (
     PLACE_NAME_MAX_LENGTH,
     POSTCODE_MAX_LENGTH,
     REGION_MAX_LENGTH,
+    ROUTE_SHAPE_FORMAT,
 )
 
 
@@ -33,6 +35,24 @@ def serialize_place_search_results(
 
     for result in results:
         place = serialize_place(result)
+
+        if place is not None:
+            serialized.append(place)
+
+    return serialized
+
+
+def serialize_photon_place_results(
+    results: list[dict],
+) -> list[dict]:
+    """Serialize raw Photon feature results."""
+
+    serialized: list[dict] = []
+
+    for result in results:
+        place = serialize_photon_place(
+            result
+        )
 
         if place is not None:
             serialized.append(place)
@@ -132,6 +152,124 @@ def serialize_place(
         "importance": _to_optional_float(
             raw.get("importance")
         ),
+        "source": "nominatim",
+    }
+
+
+def serialize_photon_place(
+    raw: dict,
+) -> dict | None:
+    """Serialize one Photon GeoJSON feature."""
+
+    geometry = _as_dict(
+        raw.get("geometry")
+    )
+
+    coordinates = geometry.get(
+        "coordinates"
+    )
+
+    if not isinstance(
+        coordinates,
+        (list, tuple),
+    ) or len(coordinates) < 2:
+        return None
+
+    longitude = _to_optional_float(
+        coordinates[0]
+    )
+    latitude = _to_optional_float(
+        coordinates[1]
+    )
+
+    if latitude is None or longitude is None:
+        return None
+
+    properties = _as_dict(
+        raw.get("properties")
+    )
+
+    name = _normalize_optional_string(
+        properties.get("name"),
+        max_length=PLACE_NAME_MAX_LENGTH,
+    )
+
+    locality = _first_normalized_string(
+        properties.get("district"),
+        properties.get("city"),
+        properties.get("town"),
+        properties.get("village"),
+        properties.get("locality"),
+        max_length=LOCALITY_MAX_LENGTH,
+    )
+
+    region = _first_normalized_string(
+        properties.get("state"),
+        properties.get("county"),
+        max_length=REGION_MAX_LENGTH,
+    )
+
+    country = _normalize_optional_string(
+        properties.get("country"),
+        max_length=COUNTRY_NAME_MAX_LENGTH,
+    )
+
+    country_code = _normalize_country_code(
+        properties.get("countrycode")
+        or properties.get("country_code")
+    )
+
+    display_address = _build_photon_display_address(
+        name=name,
+        properties=properties,
+        locality=locality,
+        region=region,
+        country=country,
+    )
+
+    return {
+        "place_id": _to_optional_int(
+            properties.get("osm_id")
+        ),
+        "osm_type": _normalize_optional_string(
+            properties.get("osm_type"),
+            max_length=20,
+        ),
+        "osm_id": _to_optional_int(
+            properties.get("osm_id")
+        ),
+        "name": name,
+        "display_address": display_address,
+        "latitude": latitude,
+        "longitude": longitude,
+        "category": _normalize_optional_string(
+            properties.get("osm_key"),
+            max_length=100,
+        ),
+        "type": _normalize_optional_string(
+            properties.get("osm_value"),
+            max_length=100,
+        ),
+        "address_type": _normalize_optional_string(
+            properties.get("type")
+            or properties.get("osm_value"),
+            max_length=100,
+        ),
+        "locality": locality,
+        "region": region,
+        "postcode": _normalize_optional_string(
+            properties.get("postcode"),
+            max_length=POSTCODE_MAX_LENGTH,
+        ),
+        "country": country,
+        "country_code": country_code,
+        "bounding_box": _serialize_photon_extent(
+            properties.get("extent")
+        ),
+        "importance": _to_optional_float(
+            properties.get("importance")
+        ),
+        "source": "photon",
     }
 
 
@@ -225,6 +363,7 @@ def serialize_reverse_geocode_result(
         "bounding_box": _serialize_bounding_box(
             raw.get("boundingbox")
         ),
+        "source": "nominatim",
     }
 
 
@@ -289,8 +428,18 @@ def serialize_route_response(
             trip.get("language"),
             max_length=30,
         ),
+        "shape_format": ROUTE_SHAPE_FORMAT,
         "distance": total_distance,
+        "distance_display": _format_distance(
+            total_distance,
+            trip.get("units"),
+        ),
         "duration_seconds": total_duration,
+        "duration_display": _format_duration(
+            total_duration
+        ),
+        "traffic_enabled": False,
+        "traffic_source": None,
         "locations": locations,
         "legs": legs,
     }
@@ -335,13 +484,23 @@ def serialize_route_leg(
         summary.get("duration"),
     )
 
+    units = summary.get("units")
+
     return {
         "index": leg_index,
         "distance": distance,
+        "distance_display": _format_distance(
+            distance,
+            units,
+        ),
         "duration_seconds": duration,
+        "duration_display": _format_duration(
+            duration
+        ),
         "shape": _normalize_optional_string(
             leg.get("shape"),
         ),
+        "shape_format": ROUTE_SHAPE_FORMAT,
         "maneuvers": maneuvers,
     }
 
@@ -395,6 +554,16 @@ def serialize_route_maneuver(
         maneuver.get("sign")
     )
 
+    distance = _first_available_float(
+        maneuver.get("length"),
+        maneuver.get("distance"),
+    )
+
+    duration = _first_available_float(
+        maneuver.get("time"),
+        maneuver.get("duration"),
+    )
+
     return {
         "index": maneuver_index,
         "type": _to_optional_int(
@@ -412,13 +581,14 @@ def serialize_route_maneuver(
         ),
         "street_names": street_names,
         "begin_street_names": begin_street_names,
-        "distance": _first_available_float(
-            maneuver.get("length"),
-            maneuver.get("distance"),
+        "distance": distance,
+        "distance_display": _format_distance(
+            distance,
+            None,
         ),
-        "duration_seconds": _first_available_float(
-            maneuver.get("time"),
-            maneuver.get("duration"),
+        "duration_seconds": duration,
+        "duration_display": _format_duration(
+            duration
         ),
         "begin_shape_index": _to_optional_int(
             maneuver.get("begin_shape_index")
@@ -658,6 +828,63 @@ def _extract_region(
     return None
 
 
+def _build_photon_display_address(
+    *,
+    name: str | None,
+    properties: dict,
+    locality: str | None,
+    region: str | None,
+    country: str | None,
+) -> str | None:
+    """Build a human-readable address from Photon properties."""
+
+    candidates = [
+        name,
+        properties.get("street"),
+        properties.get("housenumber"),
+        locality,
+        region,
+        country,
+    ]
+
+    parts: list[str] = []
+
+    for candidate in candidates:
+        normalized = _normalize_optional_string(
+            candidate,
+            max_length=DISPLAY_ADDRESS_MAX_LENGTH,
+        )
+
+        if normalized and normalized not in parts:
+            parts.append(normalized)
+
+    if not parts:
+        return None
+
+    return _normalize_optional_string(
+        ", ".join(parts),
+        max_length=DISPLAY_ADDRESS_MAX_LENGTH,
+    )
+
+
+def _first_normalized_string(
+    *values: Any,
+    max_length: int,
+) -> str | None:
+    """Return the first non-empty normalized string."""
+
+    for value in values:
+        normalized = _normalize_optional_string(
+            value,
+            max_length=max_length,
+        )
+
+        if normalized:
+            return normalized
+
+    return None
+
+
 def _serialize_bounding_box(
     value: Any,
 ) -> dict | None:
@@ -684,6 +911,51 @@ def _serialize_bounding_box(
         value[2]
     )
     east = _to_optional_float(
+        value[3]
+    )
+
+    if None in {
+        south,
+        north,
+        west,
+        east,
+    }:
+        return None
+
+    return {
+        "south": south,
+        "north": north,
+        "west": west,
+        "east": east,
+    }
+
+
+def _serialize_photon_extent(
+    value: Any,
+) -> dict | None:
+    """
+    Serialize Photon extent.
+
+    Photon commonly returns:
+    west, north, east, south
+    """
+
+    if not isinstance(
+        value,
+        (list, tuple),
+    ) or len(value) != 4:
+        return None
+
+    west = _to_optional_float(
+        value[0]
+    )
+    north = _to_optional_float(
+        value[1]
+    )
+    east = _to_optional_float(
+        value[2]
+    )
+    south = _to_optional_float(
         value[3]
     )
 
@@ -761,6 +1033,61 @@ def _normalize_string_list(
             break
 
     return result
+
+
+def _format_distance(
+    value: Any,
+    units: Any,
+) -> str | None:
+    """Format route distance for mobile display."""
+
+    distance = _to_optional_float(
+        value
+    )
+
+    if distance is None:
+        return None
+
+    normalized_units = _normalize_optional_string(
+        units,
+        max_length=30,
+    ) or "kilometers"
+
+    suffix = "mi" if normalized_units == "miles" else "km"
+
+    if distance < 10:
+        return f"{distance:.1f} {suffix}"
+
+    return f"{distance:.0f} {suffix}"
+
+
+def _format_duration(
+    value: Any,
+) -> str | None:
+    """Format duration seconds for mobile display."""
+
+    seconds = _to_optional_float(
+        value
+    )
+
+    if seconds is None:
+        return None
+
+    total_minutes = max(
+        1,
+        int(round(seconds / 60)),
+    )
+
+    if total_minutes < 60:
+        return f"{total_minutes} min"
+
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+
+    if minutes == 0:
+        return f"{hours} hr"
+
+    return f"{hours} hr {minutes} min"
 
 
 def _as_dict(

@@ -13,12 +13,12 @@ source "${SCRIPT_DIR}/common.sh"
 load_manifest
 require_command docker
 
-SOURCE="${ROOT_DIR}/maps/${MAP_REGION_ID}/${MOMBASA_PBF_FILENAME}"
+SOURCE="${ROOT_DIR}/maps/${MAP_REGION_ID}/${REGION_PBF_FILENAME}"
 OUTPUT_DIR="${ROOT_DIR}/maps/tiles"
-DESTINATION="${OUTPUT_DIR}/${MOMBASA_MBTILES_FILENAME}"
+DESTINATION="${OUTPUT_DIR}/${REGION_MBTILES_FILENAME}"
 
 # Keep the final .mbtiles extension so Planetiler can detect the archive type.
-TEMPORARY="${OUTPUT_DIR}/.${MOMBASA_MBTILES_FILENAME}.tmp.mbtiles"
+TEMPORARY="${OUTPUT_DIR}/.${REGION_MBTILES_FILENAME}.tmp.mbtiles"
 TEMPORARY_BASENAME="$(
     basename "${TEMPORARY}"
 )"
@@ -45,7 +45,7 @@ trap cleanup EXIT
 
 ensure_image "${PLANETILER_IMAGE}"
 
-info "Building deterministic vector tiles"
+info "Building deterministic Kenya vector tiles"
 
 docker run \
     --rm \
@@ -54,7 +54,7 @@ docker run \
     -e "JAVA_TOOL_OPTIONS=-Xmx${PLANETILER_JAVA_MEMORY:-4g}" \
     -v "${ROOT_DIR}/maps:/data:rw" \
     "${PLANETILER_IMAGE}" \
-    --osm-path="/data/${MAP_REGION_ID}/${MOMBASA_PBF_FILENAME}" \
+    --osm-path="/data/${MAP_REGION_ID}/${REGION_PBF_FILENAME}" \
     --output="/data/tiles/${TEMPORARY_BASENAME}" \
     --bounds="${MAP_BBOX}" \
     --tmpdir=/data/planetiler/tmp \

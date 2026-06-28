@@ -14,7 +14,7 @@
     "maxScaleFactor": 2,
     "maxSize": 1024,
     "tileMargin": 0,
-    "staticAttributionText": "© OpenStreetMap contributors"
+    "staticAttributionText": "\u00a9 OpenStreetMap contributors"
   },
   "styles": {
     "aos": {
@@ -23,13 +23,18 @@
       "serve_data": true,
       "tilejson": {
         "type": "baselayer",
-        "bounds": [39.45, -4.35, 39.95, -3.75]
+        "bounds": [
+          33.5,
+          -5.2,
+          42.2,
+          5.7
+        ]
       }
     }
   },
   "data": {
-    "mombasa": {
-      "mbtiles": "mombasa.mbtiles"
+    "kenya": {
+      "mbtiles": "kenya.mbtiles"
     }
   }
 }

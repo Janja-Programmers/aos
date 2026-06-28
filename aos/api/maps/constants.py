@@ -3,9 +3,10 @@ Maps API constants.
 
 Used by:
 - place search
+- autocomplete
 - reverse geocoding
 - routing
-- internal Nominatim and Valhalla clients
+- internal Photon, Nominatim and Valhalla clients
 """
 
 from __future__ import annotations
@@ -13,14 +14,22 @@ from __future__ import annotations
 
 # RATE LIMITS
 
+# Public search-as-you-type endpoint. Flutter should still debounce requests.
+AUTOCOMPLETE_PLACES_LIMIT_PER_MINUTE_PER_IP = 240
+
 # Public place-search endpoint.
 SEARCH_PLACES_LIMIT_PER_MINUTE_PER_IP = 120
 
 # Public reverse-geocoding endpoint.
 REVERSE_GEOCODE_LIMIT_PER_MINUTE_PER_IP = 180
 
-# Route requests are more expensive than geocoding.
-GET_ROUTE_LIMIT_PER_MINUTE_PER_IP = 120
+# Route requests are more expensive than geocoding and require login.
+GET_ROUTE_LIMIT_PER_MINUTE_PER_USER = 60
+REFRESH_ROUTE_LIMIT_PER_MINUTE_PER_USER = 30
+
+# Best-effort extra IP shield for authenticated route requests.
+GET_ROUTE_LIMIT_PER_MINUTE_PER_IP = 300
+REFRESH_ROUTE_LIMIT_PER_MINUTE_PER_IP = 180
 
 
 # INTERNAL SERVICE URLS
@@ -30,6 +39,7 @@ GET_ROUTE_LIMIT_PER_MINUTE_PER_IP = 120
 #
 # They can be overridden through site_config.json or common_site_config.json.
 DEFAULT_NOMINATIM_BASE_URL = "http://127.0.0.1:8081"
+DEFAULT_PHOTON_BASE_URL = "http://127.0.0.1:2322"
 DEFAULT_VALHALLA_BASE_URL = "http://127.0.0.1:8002"
 
 
@@ -38,14 +48,20 @@ DEFAULT_VALHALLA_BASE_URL = "http://127.0.0.1:8002"
 # Connection timeout for opening a connection to an internal map service.
 MAP_SERVICE_CONNECT_TIMEOUT_SECONDS = 5
 
+# Photon should be fast because it powers autocomplete.
+PHOTON_REQUEST_TIMEOUT_SECONDS = 10
+
 # Nominatim queries can occasionally take longer while caches are cold.
 NOMINATIM_REQUEST_TIMEOUT_SECONDS = 30
 
-# Valhalla route generation should usually be fast for regional data.
+# Valhalla route generation should usually be fast for country-level data.
 VALHALLA_REQUEST_TIMEOUT_SECONDS = 20
 
 
-# SEARCH
+# SEARCH / AUTOCOMPLETE
+
+AUTOCOMPLETE_DEFAULT_LIMIT = 5
+AUTOCOMPLETE_MAX_LIMIT = 8
 
 SEARCH_DEFAULT_LIMIT = 5
 SEARCH_MAX_LIMIT = 10
@@ -59,13 +75,23 @@ DEFAULT_SEARCH_COUNTRY_CODES = "ke"
 # Nominatim viewbox order:
 # west, north, east, south
 #
-# Current supported region:
-# Mombasa and its surrounding extracted map area.
-MOMBASA_VIEWBOX = "39.45,-3.75,39.95,-4.35"
+# Kenya-wide coverage with a small buffer for border/coastal edge cases.
+KENYA_VIEWBOX = "33.50,5.70,42.20,-5.20"
 
 DEFAULT_SEARCH_BOUNDED = True
 
 SEARCH_ADDRESS_DETAILS = True
+
+# Search providers.
+GEOCODER_PRIMARY_PHOTON = "photon"
+GEOCODER_PRIMARY_NOMINATIM = "nominatim"
+GEOCODER_PRIMARY_ALLOWED = {
+    GEOCODER_PRIMARY_PHOTON,
+    GEOCODER_PRIMARY_NOMINATIM,
+}
+
+DEFAULT_GEOCODER_PRIMARY = GEOCODER_PRIMARY_PHOTON
+DEFAULT_GEOCODER_FALLBACK = GEOCODER_PRIMARY_NOMINATIM
 
 
 # REVERSE GEOCODING
@@ -87,15 +113,16 @@ COORDINATE_PRECISION = 7
 
 # SUPPORTED MAP COVERAGE
 
-# Current Mombasa map extract bounding box.
+# Kenya map extract bounding box.
 #
 # west, south, east, north
-MOMBASA_BBOX_WEST = 39.45
-MOMBASA_BBOX_SOUTH = -4.35
-MOMBASA_BBOX_EAST = 39.95
-MOMBASA_BBOX_NORTH = -3.75
+KENYA_BBOX_WEST = 33.50
+KENYA_BBOX_SOUTH = -5.20
+KENYA_BBOX_EAST = 42.20
+KENYA_BBOX_NORTH = 5.70
 
 SUPPORTED_COUNTRY_CODE = "KE"
+SUPPORTED_COUNTRY_CODE_LOWER = "ke"
 
 
 # ROUTING
@@ -124,7 +151,10 @@ ROUTE_SHAPE_FORMAT = "polyline6"
 
 # CACHE
 
-# Short cache for repeated autocomplete/search requests.
+# Very short cache for repeated autocomplete requests.
+AUTOCOMPLETE_CACHE_TTL_SECONDS = 120
+
+# Short cache for repeated search requests.
 SEARCH_CACHE_TTL_SECONDS = 300
 
 # Reverse-geocoded coordinates rarely change.
@@ -153,7 +183,14 @@ ROUTE_LANGUAGE_MAX_LENGTH = 20
 #
 # {
 #   "nominatim_base_url": "http://127.0.0.1:8081",
-#   "valhalla_base_url": "http://127.0.0.1:8002"
+#   "photon_base_url": "http://127.0.0.1:2322",
+#   "valhalla_base_url": "http://127.0.0.1:8002",
+#   "maps_geocoder_primary": "photon",
+#   "maps_geocoder_fallback": "nominatim"
 # }
 NOMINATIM_BASE_URL_CONFIG_KEY = "nominatim_base_url"
+PHOTON_BASE_URL_CONFIG_KEY = "photon_base_url"
 VALHALLA_BASE_URL_CONFIG_KEY = "valhalla_base_url"
+
+MAPS_GEOCODER_PRIMARY_CONFIG_KEY = "maps_geocoder_primary"
+MAPS_GEOCODER_FALLBACK_CONFIG_KEY = "maps_geocoder_fallback"

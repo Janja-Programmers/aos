@@ -313,7 +313,7 @@ services:
     restart: unless-stopped
 
     environment:
-      PBF_PATH: /data/mombasa.osm.pbf
+      PBF_PATH: /data/kenya.osm.pbf
       REPLICATION_URL: ""
       UPDATE_MODE: none
       REVERSE_ONLY: "false"
@@ -328,7 +328,7 @@ services:
       - "${NOMINATIM_BIND_ADDRESS:-127.0.0.1}:${NOMINATIM_PORT:-8081}:8080"
 
     volumes:
-      - ./maps/mombasa/mombasa.osm.pbf:/data/mombasa.osm.pbf:ro
+      - ./maps/kenya/kenya.osm.pbf:/data/kenya.osm.pbf:ro
       - nominatim_data:/var/lib/postgresql/16/main
 
     shm_size: "${NOMINATIM_SHM_SIZE:-1gb}"
@@ -353,6 +353,43 @@ services:
     networks:
       - aos_net
 
+  photon:
+    image: ${PHOTON_IMAGE:?PHOTON_IMAGE must be pinned to an immutable digest}
+    container_name: aos-photon
+    restart: unless-stopped
+
+    # Photon runtime serves an already prepared photon_data directory.
+    # Keep the service private and access it only through AOS backend APIs.
+    ports:
+      - "${PHOTON_BIND_ADDRESS:-127.0.0.1}:${PHOTON_PORT:-2322}:2322"
+
+    volumes:
+      - photon_data:/photon/photon_data:rw
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://127.0.0.1:2322/api?q=Nairobi&limit=1",
+        ]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 2m
+
+    mem_limit: "${PHOTON_MEMORY_LIMIT:-3g}"
+    cpus: "${PHOTON_CPU_LIMIT:-2.00}"
+    pids_limit: "${PHOTON_PIDS_LIMIT:-1024}"
+
+    stop_grace_period: 60s
+    logging: *common-logging
+    <<: *common-security
+
+    networks:
+      - aos_net
+
   valhalla:
     image: ${VALHALLA_IMAGE:?VALHALLA_IMAGE must be pinned to an immutable digest}
     container_name: aos-valhalla
@@ -372,7 +409,7 @@ services:
 
       serve_tiles: "True"
       server_threads: ${VALHALLA_THREADS:-2}
-      tileset_name: ${VALHALLA_TILESET_NAME:-mombasa_valhalla_tiles}
+      tileset_name: ${VALHALLA_TILESET_NAME:-kenya_valhalla_tiles}
 
       update_existing_config: "True"
       use_default_speeds_config: "True"
@@ -413,6 +450,10 @@ volumes:
   nominatim_data:
     external: true
     name: aos_nominatim_data
+
+  photon_data:
+    external: true
+    name: aos_photon_data
 
 networks:
   aos_net:
