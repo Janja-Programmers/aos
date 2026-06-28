@@ -81,7 +81,7 @@ load_manifest() {
         "VALHALLA_IMAGE"
 
     if [[ "${PHOTON_IMAGE:-}" != "" ]]; then
-        validate_digest_image \
+        validate_photon_image \
             "${PHOTON_IMAGE}" \
             "PHOTON_IMAGE"
     fi
@@ -115,6 +115,27 @@ validate_digest_image() {
 }
 
 
+validate_photon_image() {
+    local value="$1"
+    local label="$2"
+
+    # Staging/prod builds the Komoot Photon geocoder into a local AOS image.
+    # Accept that controlled local semver tag, while still allowing digest-pinned
+    # registry images for deployments that later publish the image to a registry.
+    if [[ "${value}" =~ ^aos-photon:[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        return
+    fi
+
+    if [[ "${value}" =~ ^[^[:space:]@]+@sha256:[a-f0-9]{64}$ ]]; then
+        return
+    fi
+
+    fail \
+        "${label} must be either aos-photon:<semver> " \
+        "or registry/image@sha256:<64 lowercase hex characters>."
+}
+
+
 validate_osmium_command() {
     local command_name="$1"
 
@@ -132,6 +153,23 @@ ensure_image() {
 
     if docker image inspect "${image}" >/dev/null 2>&1; then
         return
+    fi
+
+    docker pull "${image}"
+}
+
+
+ensure_photon_image() {
+    local image="$1"
+
+    if docker image inspect "${image}" >/dev/null 2>&1; then
+        return
+    fi
+
+    if [[ "${image}" =~ ^aos-photon:[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        fail \
+            "Photon image not found locally: ${image}. " \
+            "Run infra/maps/scripts/build-photon-image.sh first."
     fi
 
     docker pull "${image}"

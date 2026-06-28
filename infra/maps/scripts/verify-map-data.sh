@@ -107,6 +107,8 @@ if [[ -z "${PHOTON_IMAGE:-}" ]]; then
     fail "PHOTON_IMAGE is required to verify the Photon data volume."
 fi
 
+ensure_photon_image "${PHOTON_IMAGE}"
+
 if ! docker run \
     --rm \
     --entrypoint /bin/sh \

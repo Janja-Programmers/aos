@@ -42,7 +42,8 @@ if [[ $# -gt 1 ]]; then
 fi
 
 : "${PHOTON_IMAGE:?PHOTON_IMAGE is required}"
-validate_digest_image "${PHOTON_IMAGE}" "PHOTON_IMAGE"
+validate_photon_image "${PHOTON_IMAGE}" "PHOTON_IMAGE"
+ensure_photon_image "${PHOTON_IMAGE}"
 
 SERVICE="${PHOTON_SERVICE:-photon}"
 VOLUME="${PHOTON_VOLUME:-aos_photon_data}"

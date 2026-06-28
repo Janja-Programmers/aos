@@ -354,7 +354,7 @@ services:
       - aos_net
 
   photon:
-    image: ${PHOTON_IMAGE:?PHOTON_IMAGE must be pinned to an immutable digest}
+    image: ${PHOTON_IMAGE:?PHOTON_IMAGE is required}
     container_name: aos-photon
     restart: unless-stopped
 
@@ -362,6 +362,11 @@ services:
     # Keep the service private and access it only through AOS backend APIs.
     ports:
       - "${PHOTON_BIND_ADDRESS:-127.0.0.1}:${PHOTON_PORT:-2322}:2322"
+
+    environment:
+      PHOTON_DATA_DIR: /photon/photon_data
+      PHOTON_LISTEN_IP: 0.0.0.0
+      PHOTON_PORT: 2322
 
     volumes:
       - photon_data:/photon/photon_data:rw
