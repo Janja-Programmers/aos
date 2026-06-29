@@ -119,6 +119,33 @@ with sqlite3.connect(mbtiles) as conn:
     conn.commit()
 PYMETA
 
+echo "==> Cleaning MBTiles metadata"
+python3 - "$OUT_MBTILES" <<'PYMETA'
+import sqlite3
+import sys
+
+mbtiles = sys.argv[1]
+
+updates = {
+    "name": "AOS Named Building Labels",
+    "description": "Named building labels for AOS Kenya maps.",
+    "attribution": "© OpenStreetMap contributors",
+    "generator_options": "tippecanoe aos_building_label --minimum-zoom=13 --maximum-zoom=14",
+}
+
+with sqlite3.connect(mbtiles) as conn:
+    for name, value in updates.items():
+        conn.execute(
+            """
+            insert into metadata(name, value)
+            values(?, ?)
+            on conflict(name) do update set value = excluded.value
+            """,
+            (name, value),
+        )
+    conn.commit()
+PYMETA
+
 echo "==> Built:"
 ls -lh "$OUT_MBTILES"
 
