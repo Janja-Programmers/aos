@@ -3,11 +3,12 @@
     "paths": {
       "root": "/data",
       "styles": "styles",
-      "mbtiles": "data"
+      "mbtiles": "data",
+      "fonts": "fonts"
     },
     "frontPage": false,
     "serveAllStyles": false,
-    "serveAllFonts": false,
+    "serveAllFonts": true,
     "serveStaticMaps": false,
     "allowRemoteMarkerIcons": false,
     "allowInlineMarkerImages": false,

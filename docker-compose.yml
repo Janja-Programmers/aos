@@ -281,6 +281,7 @@ services:
     volumes:
       - ./infra/maps/tileserver/config.json:/data/config.json:ro
       - ./infra/maps/tileserver/styles:/data/styles:ro
+      - ./infra/maps/tileserver/fonts:/data/fonts:ro
       - ./maps/tiles:/data/data:ro
 
     healthcheck:
