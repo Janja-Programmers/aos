@@ -35,6 +35,9 @@
   "data": {
     "kenya": {
       "mbtiles": "kenya.mbtiles"
+    },
+    "aos_building_labels": {
+      "mbtiles": "aos_building_labels.mbtiles"
     }
   }
 }
