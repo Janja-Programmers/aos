@@ -39,7 +39,13 @@ def _dotenv_values() -> dict[str, str]:
     process environment variables still take priority.
     """
 
-    candidates = []
+    candidates: list[Path] = []
+
+    # Explicit override wins. Useful for staging/production where the infra
+    # clone owns .env and the Frappe app clone runs from frappe-bench.
+    explicit_env_file = _clean(os.environ.get("AOS_ENV_FILE"))
+    if explicit_env_file:
+        candidates.append(Path(explicit_env_file).expanduser())
 
     try:
         candidates.append(Path.cwd() / ".env")
@@ -47,14 +53,32 @@ def _dotenv_values() -> dict[str, str]:
         pass
 
     try:
+        # App clone root: /home/aos/frappe-bench/apps/aos/.env in dev setups.
         app_root = Path(__file__).resolve().parents[2]
         candidates.append(app_root / ".env")
     except Exception:
         pass
 
+    # Staging/production layout used by AOS:
+    #   /home/aos/aos                 -> infra clone with docker-compose + .env
+    #   /home/aos/frappe-bench/apps/aos -> Frappe app clone
+    candidates.append(Path("/home/aos/aos/.env"))
+
+    # Generic nearby fallback for single-clone/local development.
+    candidates.append(Path.home() / "aos" / ".env")
+
+    seen: set[str] = set()
+    unique_candidates: list[Path] = []
+    for path in candidates:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_candidates.append(path)
+
     values: dict[str, str] = {}
 
-    for path in candidates:
+    for path in unique_candidates:
         try:
             if not path.exists() or not path.is_file():
                 continue
