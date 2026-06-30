@@ -37,12 +37,15 @@ curl http://127.0.0.1:8110/ready
 
 `/health` should be fast. `/ready` verifies model readiness and Qdrant access, so it can be slower during cold startup.
 
-## AOS Settings
+## AOS Settings and environment
 
-Configure only the image-search service connection in AOS Settings:
+Configure the private image-search service URL in `.env` and keep only product limits/timeouts in AOS Settings:
 
 ```text
-image_search_service_url: http://127.0.0.1:8110
+# .env
+IMAGE_SEARCH_SERVICE_URL=http://127.0.0.1:8110
+
+# AOS Settings
 image_search_service_timeout_seconds: 20
 image_search_default_limit: 20
 image_search_max_limit: 100

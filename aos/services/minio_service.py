@@ -4,42 +4,53 @@ import mimetypes
 import os
 import uuid
 from datetime import timedelta
-from urllib.parse import urlparse
 
 import frappe
 from minio import Minio
 from minio.error import S3Error
+
+from aos.utils.aos_config import get_minio_config
+from aos.utils.aos_settings import get_aos_settings_snapshot
 
 
 class MinioService:
     """
     Centralized MinIO service for AOS.
 
-    Handles:
-    - Presigned uploads
+    Current responsibilities:
+    - Presigned uploads/downloads for Shorts and existing MinIO-backed flows
     - Public URLs
     - Server-side uploads
     - Deletions
 
-    MinIO SDK note:
-    - endpoint must be host[:port] only.
-    - scheme belongs in minio_secure.
-    - bucket/path must not be placed in endpoint.
+    Config source:
+    - MinIO endpoint/secrets/buckets/public URL come from environment variables.
+    - Upload expiry comes from AOS Settings as a business/media policy.
+
+    The interface intentionally stays compatible with the existing Shorts code
+    until the broader AOS Media Object rewrite replaces feature-specific storage.
     """
 
     def __init__(self):
-        settings = frappe.get_single("AOS Settings")
+        config = get_minio_config()
 
-        self.endpoint = self._normalize_endpoint(settings.minio_endpoint)
-        self.access_key = (settings.minio_access_key or "").strip()
-        self.secret_key = settings.get_password("minio_secret_key")
-        self.bucket = (settings.minio_bucket or "").strip().strip("/")
+        self.endpoint = config.endpoint
+        self.access_key = config.access_key
+        self.secret_key = config.secret_key
+        self.bucket = config.bucket
         self.public_base_url = self._normalize_public_base_url(
-            settings.minio_public_base_url
+            config.public_base_url
         )
-        self.secure = bool(settings.minio_secure)
-        self.upload_expiry_minutes = int(settings.minio_upload_expiry_minutes or 15)
-        self.base_path = (settings.minio_base_path or "shorts").strip("/")
+        self.secure = bool(config.secure)
+        self.base_path = (config.base_path or "shorts").strip("/")
+
+        try:
+            settings = get_aos_settings_snapshot()
+            self.upload_expiry_minutes = int(
+                settings.media_presigned_upload_expiry_minutes or 10
+            )
+        except Exception:
+            self.upload_expiry_minutes = 10
 
         self._validate_config()
 
@@ -56,56 +67,9 @@ class MinioService:
                 "Invalid MinIO Endpoint Configuration",
             )
             raise Exception(
-                "Invalid MinIO endpoint. Use host[:port] only, without http(s), "
+                "Invalid MINIO_ENDPOINT. Use host[:port] only, without http(s), "
                 "bucket, or path. Example: minio.example.com or 127.0.0.1:9000"
             ) from exc
-
-    # CONFIG NORMALIZATION
-    @staticmethod
-    def _normalize_endpoint(value: str | None) -> str:
-        """
-        Normalize the SDK endpoint into host[:port].
-
-        Accepted:
-        - minio.example.com
-        - minio.example.com:9000
-        - https://minio.example.com
-        - http://127.0.0.1:9000
-
-        Rejected:
-        - minio.example.com/path
-        - https://minio.example.com/path
-        - https://minio.example.com/bucket
-
-        MinIO's Python SDK rejects paths in endpoint, so we fail early with a
-        clearer error instead of leaking ValueError: path in endpoint is not allowed.
-        """
-        raw = (value or "").strip().rstrip("/")
-        if not raw:
-            return ""
-
-        if "://" in raw:
-            parsed = urlparse(raw)
-            endpoint = (parsed.netloc or "").strip()
-            path = (parsed.path or "").strip("/")
-
-            if path or parsed.params or parsed.query or parsed.fragment:
-                raise Exception(
-                    "Invalid MinIO endpoint. Remove the path/query from "
-                    "minio_endpoint. Use only host[:port], for example "
-                    "minio.example.com or 127.0.0.1:9000. Put public paths "
-                    "in minio_public_base_url only if your public URL requires them."
-                )
-
-            return endpoint
-
-        if "/" in raw:
-            raise Exception(
-                "Invalid MinIO endpoint. minio_endpoint must be host[:port] only "
-                "and must not include a path, bucket, or base path."
-            )
-
-        return raw
 
     @staticmethod
     def _normalize_public_base_url(value: str | None) -> str:
@@ -122,23 +86,23 @@ class MinioService:
         missing = []
 
         if not self.endpoint:
-            missing.append("minio_endpoint")
+            missing.append("MINIO_ENDPOINT")
         if not self.access_key:
-            missing.append("minio_access_key")
+            missing.append("MINIO_ACCESS_KEY or MINIO_ROOT_USER")
         if not self.secret_key:
-            missing.append("minio_secret_key")
+            missing.append("MINIO_SECRET_KEY or MINIO_ROOT_PASSWORD")
         if not self.bucket:
-            missing.append("minio_bucket")
+            missing.append("AOS_MINIO_BUCKET or MINIO_BUCKET")
         if not self.public_base_url:
-            missing.append("minio_public_base_url")
+            missing.append("MINIO_PUBLIC_BASE_URL or MINIO_PUBLIC_URL")
 
         if missing:
             raise Exception(
-                "Missing MinIO configuration: " + ", ".join(missing)
+                "Missing MinIO environment configuration: " + ", ".join(missing)
             )
 
         if self.upload_expiry_minutes <= 0:
-            self.upload_expiry_minutes = 15
+            self.upload_expiry_minutes = 10
 
     # FILE KEY GENERATION
     def generate_file_key(
@@ -152,7 +116,10 @@ class MinioService:
         if not ext:
             ext = ".mp4"
 
-        return f"{self.base_path}/{folder}/{uuid.uuid4().hex}{ext}"
+        if self.base_path:
+            return f"{self.base_path}/{folder}/{uuid.uuid4().hex}{ext}"
+
+        return f"{folder}/{uuid.uuid4().hex}{ext}"
 
     # OBJECT NAME
     def _object_name(self, file_key: str) -> str:
@@ -160,7 +127,10 @@ class MinioService:
         if not file_key:
             return ""
 
-        return file_key.replace(f"{self.base_path}/", "", 1)
+        if self.base_path and file_key.startswith(f"{self.base_path}/"):
+            return file_key.replace(f"{self.base_path}/", "", 1)
+
+        return file_key
 
     # PRESIGNED UPLOAD URL
     def get_presigned_upload_url(self, file_key: str) -> str:
@@ -187,9 +157,9 @@ class MinioService:
     ) -> str:
         """Generate a short-lived signed GET URL for controlled downloads."""
         try:
-            minutes = int(expiry_minutes or self.upload_expiry_minutes or 15)
+            minutes = int(expiry_minutes or self.upload_expiry_minutes or 10)
             if minutes <= 0:
-                minutes = 15
+                minutes = 10
 
             return self.client.presigned_get_object(
                 bucket_name=self.bucket,

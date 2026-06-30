@@ -37,21 +37,20 @@ curl http://127.0.0.1:8120/ready
 
 `/health` should be fast. `/ready` verifies that the processor can be initialized, so it may be slower during cold startup.
 
-## AOS Settings
+## AOS Settings and environment
 
-Configure only the background-removal service connection in AOS Settings:
+Configure the private background-removal service URL in `.env` and keep only product limits/timeouts in AOS Settings:
 
 ```text
-background_removal_service_url: http://127.0.0.1:8120
+# .env
+BACKGROUND_REMOVAL_SERVICE_URL=http://127.0.0.1:8120
+
+# AOS Settings
 background_removal_service_timeout_seconds: 30
 background_removal_max_image_bytes: 10485760
 ```
 
-For a host-based Frappe deployment with Docker Compose services bound privately, use:
-
-```text
-http://127.0.0.1:8120
-```
+For a host-based Frappe deployment with Docker Compose services bound privately, use `http://127.0.0.1:8120`.
 
 If Frappe also runs inside the Docker network, use:
 

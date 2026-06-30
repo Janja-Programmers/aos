@@ -5,7 +5,10 @@ from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.market_context import resolve_market_context
 from aos.api.shared.validators import resolve_language
-from aos.utils.aos_settings import get_aos_settings_snapshot
+from aos.utils.aos_settings import (
+    get_aos_settings_snapshot,
+    get_google_oauth_client_ids,
+)
 
 from .constants import GOOGLE_LOGIN_LIMIT_PER_HOUR_PER_IP
 from .users import get_user_payload
@@ -13,25 +16,8 @@ from .google_jwt import verify_google_id_token
 
 
 def _get_google_client_ids():
-    """
-    Read Google OAuth Client IDs from AOS Settings.
-    Required for audience validation.
-    """
-    try:
-        settings = frappe.get_single("AOS Settings")
-    except Exception:
-        return []
-
-    raw = getattr(settings, "google_oauth_client_ids", "") or ""
-    text = raw.strip()
-
-    client_ids = []
-    for line in text.replace(",", "\n").splitlines():
-        v = (line or "").strip()
-        if v:
-            client_ids.append(v)
-
-    return client_ids
+    """Read Google OAuth Client IDs from the AOS Settings snapshot."""
+    return get_google_oauth_client_ids()
 
 
 def google_login_impl(**kwargs):

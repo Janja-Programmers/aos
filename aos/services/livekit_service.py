@@ -26,6 +26,7 @@ import frappe
 from frappe import _
 from livekit import api
 
+from aos.utils.aos_config import get_livekit_config
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
 
@@ -66,15 +67,12 @@ class LiveKitService:
         """
         Return the configured LiveKit WebSocket endpoint.
         """
-        settings = get_aos_settings_snapshot()
-
-        endpoint = str(
-            settings.livekit_endpoint or ""
-        ).strip()
+        config = get_livekit_config()
+        endpoint = str(config.endpoint or "").strip()
 
         if not endpoint:
             frappe.throw(
-                _("LiveKit endpoint is not configured.")
+                _("LiveKit endpoint is not configured in environment variables.")
             )
 
         return endpoint
@@ -284,35 +282,25 @@ class LiveKitService:
         cls,
     ) -> tuple[str, str]:
         """
-        Read LiveKit credentials from AOS Settings.
+        Read LiveKit credentials from environment variables.
 
-        Secrets are intentionally fetched from the document instead of the
-        settings snapshot.
+        Supported:
+        - LIVEKIT_API_KEY + LIVEKIT_API_SECRET
+        - LIVEKIT_KEYS="api-key:api-secret"
         """
-        settings_doc = frappe.get_single(
-            "AOS Settings"
-        )
+        config = get_livekit_config()
 
-        api_key = str(
-            settings_doc.livekit_api_key
-            or ""
-        ).strip()
-
-        api_secret = str(
-            settings_doc.get_password(
-                "livekit_api_secret"
-            )
-            or ""
-        ).strip()
+        api_key = str(config.api_key or "").strip()
+        api_secret = str(config.api_secret or "").strip()
 
         if not api_key:
             frappe.throw(
-                _("LiveKit API key is not configured.")
+                _("LiveKit API key is not configured in environment variables.")
             )
 
         if not api_secret:
             frappe.throw(
-                _("LiveKit API secret is not configured.")
+                _("LiveKit API secret is not configured in environment variables.")
             )
 
         return api_key, api_secret

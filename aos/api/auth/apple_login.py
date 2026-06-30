@@ -5,7 +5,10 @@ from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.market_context import resolve_market_context
 from aos.api.shared.validators import resolve_language
-from aos.utils.aos_settings import get_aos_settings_snapshot
+from aos.utils.aos_settings import (
+    get_aos_settings_snapshot,
+    get_apple_bundle_id,
+)
 
 from .constants import APPLE_LOGIN_LIMIT_PER_HOUR_PER_IP
 from .users import get_user_payload
@@ -13,16 +16,8 @@ from .apple_jwt import verify_apple_id_token
 
 
 def _get_apple_bundle_id():
-    """
-    Read Apple Bundle ID from AOS Settings.
-    Used for JWT audience validation.
-    """
-    try:
-        settings = frappe.get_single("AOS Settings")
-    except Exception:
-        return ""
-
-    return (getattr(settings, "apple_bundle_id", "") or "").strip()
+    """Read Apple Bundle ID from the AOS Settings snapshot."""
+    return get_apple_bundle_id()
 
 
 def apple_login_impl(**kwargs):

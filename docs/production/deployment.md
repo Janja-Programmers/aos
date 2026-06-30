@@ -55,19 +55,20 @@ bench --site <site> set-config maps_geocoder_primary photon
 bench --site <site> set-config maps_geocoder_fallback nominatim
 ```
 
-Configure AOS Settings after migration so AI integrations point to private services:
+Configure internal service URLs in `.env` and keep only product limits/timeouts in AOS Settings:
 
 ```text
-image_search_service_url: http://127.0.0.1:8110
+# .env
+IMAGE_SEARCH_SERVICE_URL=http://127.0.0.1:8110
+BACKGROUND_REMOVAL_SERVICE_URL=http://127.0.0.1:8120
+TRANSLATION_SERVICE_URL=http://127.0.0.1:8100
+
+# AOS Settings
 image_search_service_timeout_seconds: 20
 image_search_default_limit: 20
 image_search_max_limit: 100
-
-background_removal_service_url: http://127.0.0.1:8120
 background_removal_service_timeout_seconds: 30
 background_removal_max_image_bytes: 10485760
-
-translation_service_url: http://127.0.0.1:8100
 translation_service_timeout_seconds: 30
 translation_max_characters: 1000
 ```

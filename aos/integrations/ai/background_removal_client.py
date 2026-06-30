@@ -3,7 +3,7 @@
 Calls the internal AOS Background Removal Docker service.
 
 Responsibilities:
-- Read background-removal integration settings from AOS Settings snapshot.
+- Read background-removal business limits from AOS Settings and service URL from env.
 - Call the external FastAPI service over HTTP.
 - Return processed PNG bytes to Frappe business logic.
 - Convert connection/timeouts/service failures into clear application errors.
@@ -19,6 +19,7 @@ from typing import Any, BinaryIO, Dict
 
 import requests
 
+from aos.utils.aos_config import get_background_removal_service_url
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
 
@@ -97,7 +98,7 @@ def get_background_removal_client_settings() -> BackgroundRemovalClientSettings:
 
     return BackgroundRemovalClientSettings(
         service_url=_clean_url(
-            getattr(settings, "background_removal_service_url", None),
+            get_background_removal_service_url(),
             default=DEFAULT_SERVICE_URL,
         ),
         timeout_seconds=_clamp_int(

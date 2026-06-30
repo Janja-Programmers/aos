@@ -7,7 +7,7 @@ Jobs:
 
 Design:
 - Uses base_currency from AOS Settings
-- Uses fx_api_key (Password field)
+- Uses FX_API_KEY from environment variables
 - Filters only currencies present in Currency DocType
 - Upserts by currency (autoname = field:currency)
 - Updates last_updated timestamp
@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 import frappe
 from frappe.utils import now_datetime
 
+from aos.utils.aos_config import get_fx_api_key
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
 
@@ -46,12 +47,11 @@ def update_exchange_rates() -> None:
             )
             return
 
-        settings = frappe.get_single("AOS Settings")
-        api_key = settings.get_password("fx_api_key")
+        api_key = get_fx_api_key()
 
         if not api_key:
             frappe.logger().warning(
-                "AOS FX: fx_api_key not configured. Skipping update."
+                "AOS FX: FX_API_KEY not configured. Skipping update."
             )
             return
 

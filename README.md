@@ -353,9 +353,9 @@ api_secret: from .env
 ## Translation
 
 ```text
-translation_service_url: http://127.0.0.1:8100
-translation_service_timeout_seconds: 30
-translation_max_characters: 1000
+TRANSLATION_SERVICE_URL=http://127.0.0.1:8100  # .env
+translation_service_timeout_seconds: 30          # AOS Settings
+translation_max_characters: 1000                 # AOS Settings
 ```
 
 For Docker-based single-server setup where Frappe runs on the host, use:

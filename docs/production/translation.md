@@ -86,12 +86,15 @@ TRANSLATION_PIDS_LIMIT=1024
 
 These runtime details should not be hard-coded in Frappe business logic.
 
-## AOS Settings
+## AOS Settings and environment
 
-Frappe should only store integration-level settings:
+Configure the private translation service URL in `.env` and keep only product limits/timeouts in AOS Settings:
 
 ```text
-translation_service_url: http://127.0.0.1:8100
+# .env
+TRANSLATION_SERVICE_URL=http://127.0.0.1:8100
+
+# AOS Settings
 translation_max_characters: 1000
 translation_service_timeout_seconds: 30
 ```

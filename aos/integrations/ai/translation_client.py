@@ -3,7 +3,7 @@
 Calls the internal AOS Translation Docker service.
 
 Responsibilities:
-- Read translation integration settings from AOS Settings snapshot.
+- Read translation business limits from AOS Settings and service URL from env.
 - Validate request size before calling the model service.
 - Call the external FastAPI service over HTTP.
 - Normalize and validate response shapes.
@@ -20,6 +20,7 @@ from typing import Any, Dict
 
 import requests
 
+from aos.utils.aos_config import get_translation_service_url
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
 
@@ -88,7 +89,7 @@ def get_translation_client_settings() -> TranslationClientSettings:
 
     return TranslationClientSettings(
         service_url=_clean_url(
-            getattr(settings, "translation_service_url", None),
+            get_translation_service_url(),
             default=DEFAULT_SERVICE_URL,
         ),
         timeout_seconds=_clamp_int(

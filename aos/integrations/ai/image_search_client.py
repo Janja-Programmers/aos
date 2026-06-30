@@ -3,7 +3,7 @@
 Calls the internal AOS Image Search Docker service.
 
 Responsibilities:
-- Read image-search integration settings from AOS Settings snapshot.
+- Read image-search business limits from AOS Settings and service URL from env.
 - Call the external FastAPI service over HTTP.
 - Normalize and validate response shapes.
 - Convert connection/timeouts/service failures into clear application errors.
@@ -20,6 +20,7 @@ from urllib.parse import quote
 
 import requests
 
+from aos.utils.aos_config import get_image_search_service_url
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
 
@@ -89,7 +90,7 @@ def get_image_search_client_settings() -> ImageSearchClientSettings:
         )
 
     service_url = _clean_url(
-        getattr(settings, "image_search_service_url", None),
+        get_image_search_service_url(),
         default=DEFAULT_SERVICE_URL,
     )
 

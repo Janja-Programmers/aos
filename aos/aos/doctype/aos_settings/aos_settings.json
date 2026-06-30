@@ -14,72 +14,45 @@
     "foreign_exchange_section",
     "base_currency",
     "refresh_hours",
-    "column_break_rtng",
-    "fx_api_key",
-    "google_auth_tab",
-    "apple_auth_section",
-    "apple_bundle_id",
-    "google_auth_section",
+    "authentication_tab",
+    "oauth_section",
     "google_oauth_client_ids",
-    "foreign_exchange_tab",
-    "ad_expiry_days",
-    "column_break_tyqg",
-    "flash_sale_window_days",
-    "image_search_service_section",
-    "image_search_service_url",
-    "image_search_default_limit",
-    "column_break_image_search_service",
-    "image_search_service_timeout_seconds",
-    "image_search_max_limit",
-    "background_removal_service_section",
-    "background_removal_service_url",
+    "column_break_auth_oauth",
+    "apple_bundle_id",
+    "media_tab",
+    "media_upload_section",
+    "media_presigned_upload_expiry_minutes",
+    "background_removal_section",
     "background_removal_max_image_bytes",
-    "column_break_background_removal_service",
+    "column_break_background_removal",
     "background_removal_service_timeout_seconds",
-    "shorts_tab",
-    "minio_endpoint",
-    "minio_access_key",
-    "minio_secret_key",
-    "minio_upload_expiry_minutes",
-    "column_break_yvkd",
-    "minio_bucket",
-    "minio_base_path",
-    "minio_public_base_url",
-    "minio_secure",
+    "ads_tab",
+    "ads_lifecycle_section",
+    "ad_expiry_days",
+    "flash_sale_window_days",
+    "image_search_section",
+    "image_search_default_limit",
+    "image_search_max_limit",
+    "column_break_image_search",
+    "image_search_service_timeout_seconds",
     "connect_tab",
     "livekit_section",
-    "livekit_endpoint",
-    "livekit_api_secret",
-    "column_break_zsze",
-    "livekit_api_key",
     "livekit_token_ttl_minutes",
     "translation_section",
-    "translation_service_url",
     "translation_max_characters",
-    "column_break_vhzg",
+    "column_break_translation",
     "translation_service_timeout_seconds"
   ],
   "fields": [
-    {
-      "fieldname": "google_oauth_client_ids",
-      "fieldtype": "Small Text",
-      "label": "Google OAuth Client IDs"
-    },
-    {
-      "fieldname": "google_auth_tab",
-      "fieldtype": "Tab Break",
-      "label": "Authentication"
-    },
     {
       "fieldname": "localization_tab",
       "fieldtype": "Tab Break",
       "label": "Localization"
     },
     {
-      "fieldname": "default_language",
-      "fieldtype": "Link",
-      "label": "Default Language",
-      "options": "Language"
+      "fieldname": "aos_defaults_section",
+      "fieldtype": "Section Break",
+      "label": "AOS Defaults"
     },
     {
       "fieldname": "default_country",
@@ -88,30 +61,14 @@
       "options": "Country"
     },
     {
+      "fieldname": "default_language",
+      "fieldtype": "Link",
+      "label": "Default Language",
+      "options": "Language"
+    },
+    {
       "fieldname": "column_break_ohud",
       "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "foreign_exchange_tab",
-      "fieldtype": "Tab Break",
-      "label": "Ads"
-    },
-    {
-      "fieldname": "google_auth_section",
-      "fieldtype": "Section Break",
-      "label": "Google Auth"
-    },
-    {
-      "default": "30",
-      "description": "Number of days before an active ad expires",
-      "fieldname": "ad_expiry_days",
-      "fieldtype": "Int",
-      "label": "Ad Expiry Days"
-    },
-    {
-      "fieldname": "aos_defaults_section",
-      "fieldtype": "Section Break",
-      "label": "AOS Defaults"
     },
     {
       "fieldname": "default_currency",
@@ -131,162 +88,130 @@
       "options": "Currency"
     },
     {
-      "description": "Number of hours between automatic FX rate refresh",
       "fieldname": "refresh_hours",
       "fieldtype": "Int",
-      "label": "Refresh Hours"
+      "label": "Refresh Hours",
+      "description": "Number of hours between automatic FX rate refresh",
+      "default": "12"
     },
     {
-      "fieldname": "column_break_rtng",
-      "fieldtype": "Column Break"
+      "fieldname": "authentication_tab",
+      "fieldtype": "Tab Break",
+      "label": "Authentication"
     },
     {
-      "description": "ExchangeRate API Access Key",
-      "fieldname": "fx_api_key",
-      "fieldtype": "Password",
-      "label": "FX API Key"
-    },
-    {
-      "fieldname": "column_break_tyqg",
-      "fieldtype": "Column Break"
-    },
-    {
-      "default": "7",
-      "description": "Number of days before an offer expires for it to qualify as a Flash Sale.\nFor example, if set to 7, any active offer expiring within 7 days will appear under Flash Sales.",
-      "fieldname": "flash_sale_window_days",
-      "fieldtype": "Int",
-      "label": "Flash Sale Window (Days)"
-    },
-    {
-      "description": "External image-search service. OpenCLIP and Qdrant run outside the Frappe business backend.",
-      "fieldname": "image_search_service_section",
+      "fieldname": "oauth_section",
       "fieldtype": "Section Break",
-      "label": "Image Search Service"
+      "label": "OAuth Providers"
     },
     {
-      "default": "http://127.0.0.1:8110",
-      "description": "Private URL for the internal image-search FastAPI service.",
-      "fieldname": "image_search_service_url",
-      "fieldtype": "Data",
-      "label": "Image Search Service URL"
+      "fieldname": "google_oauth_client_ids",
+      "fieldtype": "Small Text",
+      "label": "Google OAuth Client IDs",
+      "description": "Allowed Google OAuth client IDs, one per line or comma-separated."
     },
     {
-      "default": "20",
-      "description": "Default number of visually similar ads returned when the request does not provide a limit.",
-      "fieldname": "image_search_default_limit",
-      "fieldtype": "Int",
-      "label": "Default Result Limit"
-    },
-    {
-      "fieldname": "column_break_image_search_service",
+      "fieldname": "column_break_auth_oauth",
       "fieldtype": "Column Break"
-    },
-    {
-      "default": "20",
-      "description": "HTTP timeout in seconds when calling the internal image-search service.",
-      "fieldname": "image_search_service_timeout_seconds",
-      "fieldtype": "Int",
-      "label": "Service Timeout Seconds"
-    },
-    {
-      "default": "100",
-      "description": "Maximum image-search result limit accepted by the backend API.",
-      "fieldname": "image_search_max_limit",
-      "fieldtype": "Int",
-      "label": "Max Result Limit"
-    },
-    {
-      "description": "External background-removal service. rembg and ONNX Runtime run outside the Frappe business backend.",
-      "fieldname": "background_removal_service_section",
-      "fieldtype": "Section Break",
-      "label": "Background Removal Service"
-    },
-    {
-      "default": "http://127.0.0.1:8120",
-      "description": "Private URL for the internal background-removal FastAPI service.",
-      "fieldname": "background_removal_service_url",
-      "fieldtype": "Data",
-      "label": "Background Removal Service URL"
-    },
-    {
-      "default": "10485760",
-      "description": "Maximum source image size in bytes accepted by the backend before calling the background-removal service.",
-      "fieldname": "background_removal_max_image_bytes",
-      "fieldtype": "Int",
-      "label": "Max Image Size Bytes"
-    },
-    {
-      "fieldname": "column_break_background_removal_service",
-      "fieldtype": "Column Break"
-    },
-    {
-      "default": "30",
-      "description": "HTTP timeout in seconds when calling the internal background-removal service.",
-      "fieldname": "background_removal_service_timeout_seconds",
-      "fieldtype": "Int",
-      "label": "Service Timeout Seconds"
-    },
-    {
-      "fieldname": "apple_auth_section",
-      "fieldtype": "Section Break",
-      "label": "Apple Auth"
     },
     {
       "fieldname": "apple_bundle_id",
       "fieldtype": "Data",
-      "label": "Apple Bundle Id"
+      "label": "Apple Bundle ID"
     },
     {
-      "fieldname": "shorts_tab",
+      "fieldname": "media_tab",
       "fieldtype": "Tab Break",
-      "label": "Shorts"
+      "label": "Media"
     },
     {
-      "fieldname": "minio_endpoint",
-      "fieldtype": "Data",
-      "label": "MinIO Endpoint"
+      "fieldname": "media_upload_section",
+      "fieldtype": "Section Break",
+      "label": "Media Upload URLs"
     },
     {
-      "fieldname": "minio_access_key",
-      "fieldtype": "Data",
-      "label": "MinIO Access Key"
+      "fieldname": "media_presigned_upload_expiry_minutes",
+      "fieldtype": "Int",
+      "label": "Upload URL Expiry (Minutes)",
+      "default": "10",
+      "description": "Expiry time for presigned upload URLs."
     },
     {
-      "fieldname": "minio_secret_key",
-      "fieldtype": "Password",
-      "label": "MinIO Secret Key"
+      "fieldname": "background_removal_section",
+      "fieldtype": "Section Break",
+      "label": "Background Removal"
     },
     {
-      "fieldname": "column_break_yvkd",
+      "fieldname": "background_removal_max_image_bytes",
+      "fieldtype": "Int",
+      "label": "Max Image Size Bytes",
+      "default": "10485760",
+      "description": "Maximum source image size in bytes accepted before calling the background-removal service."
+    },
+    {
+      "fieldname": "column_break_background_removal",
       "fieldtype": "Column Break"
     },
     {
-      "fieldname": "minio_bucket",
-      "fieldtype": "Data",
-      "label": "MinIO Bucket"
-    },
-    {
-      "fieldname": "minio_public_base_url",
-      "fieldtype": "Data",
-      "label": "MinIO Public Base URL"
-    },
-    {
-      "default": "0",
-      "fieldname": "minio_secure",
-      "fieldtype": "Check",
-      "label": "Use HTTPS"
-    },
-    {
-      "default": "10",
-      "description": "Expiry time for presigned upload URLs",
-      "fieldname": "minio_upload_expiry_minutes",
+      "fieldname": "background_removal_service_timeout_seconds",
       "fieldtype": "Int",
-      "label": "Upload URL Expiry (Minutes)"
+      "label": "Service Timeout Seconds",
+      "default": "30",
+      "description": "HTTP timeout in seconds when calling the internal background-removal service."
     },
     {
-      "fieldname": "minio_base_path",
-      "fieldtype": "Data",
-      "label": "Base Path Prefix"
+      "fieldname": "ads_tab",
+      "fieldtype": "Tab Break",
+      "label": "Ads"
+    },
+    {
+      "fieldname": "ads_lifecycle_section",
+      "fieldtype": "Section Break",
+      "label": "Ad Lifecycle"
+    },
+    {
+      "fieldname": "ad_expiry_days",
+      "fieldtype": "Int",
+      "label": "Ad Expiry Days",
+      "default": "30",
+      "description": "Number of days before an active ad expires."
+    },
+    {
+      "fieldname": "flash_sale_window_days",
+      "fieldtype": "Int",
+      "label": "Flash Sale Window (Days)",
+      "default": "7",
+      "description": "Number of days before an offer expires for it to qualify as a Flash Sale."
+    },
+    {
+      "fieldname": "image_search_section",
+      "fieldtype": "Section Break",
+      "label": "Image Search"
+    },
+    {
+      "fieldname": "image_search_default_limit",
+      "fieldtype": "Int",
+      "label": "Default Result Limit",
+      "default": "20",
+      "description": "Default number of visually similar ads returned when the request does not provide a limit."
+    },
+    {
+      "fieldname": "image_search_max_limit",
+      "fieldtype": "Int",
+      "label": "Max Result Limit",
+      "default": "100",
+      "description": "Maximum image-search result limit accepted by the backend API."
+    },
+    {
+      "fieldname": "column_break_image_search",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "image_search_service_timeout_seconds",
+      "fieldtype": "Int",
+      "label": "Service Timeout Seconds",
+      "default": "20",
+      "description": "HTTP timeout in seconds when calling the internal image-search service."
     },
     {
       "fieldname": "connect_tab",
@@ -294,34 +219,15 @@
       "label": "Connect"
     },
     {
-      "fieldname": "livekit_endpoint",
-      "fieldtype": "Data",
-      "label": "LiveKit Endpoint"
-    },
-    {
-      "fieldname": "column_break_zsze",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "livekit_api_key",
-      "fieldtype": "Data",
-      "label": "LiveKit API Key"
-    },
-    {
-      "default": "60",
-      "fieldname": "livekit_token_ttl_minutes",
-      "fieldtype": "Int",
-      "label": "Token Expiry (Minutes)"
-    },
-    {
-      "fieldname": "livekit_api_secret",
-      "fieldtype": "Password",
-      "label": "LiveKit API Secret"
-    },
-    {
       "fieldname": "livekit_section",
       "fieldtype": "Section Break",
-      "label": "Livekit"
+      "label": "LiveKit"
+    },
+    {
+      "fieldname": "livekit_token_ttl_minutes",
+      "fieldtype": "Int",
+      "label": "Token Expiry (Minutes)",
+      "default": "60"
     },
     {
       "fieldname": "translation_section",
@@ -329,33 +235,27 @@
       "label": "Translation"
     },
     {
-      "default": "http://127.0.0.1:8100",
-      "fieldname": "translation_service_url",
-      "fieldtype": "Data",
-      "label": "Translation Service URL"
-    },
-    {
-      "default": "1000",
       "fieldname": "translation_max_characters",
       "fieldtype": "Int",
-      "label": "Translation Max Characters"
+      "label": "Translation Max Characters",
+      "default": "1000"
     },
     {
-      "fieldname": "column_break_vhzg",
+      "fieldname": "column_break_translation",
       "fieldtype": "Column Break"
     },
     {
-      "default": "30",
       "fieldname": "translation_service_timeout_seconds",
       "fieldtype": "Int",
-      "label": "Translation Service Timeout Seconds"
+      "label": "Translation Service Timeout Seconds",
+      "default": "30"
     }
   ],
   "grid_page_length": 50,
   "index_web_pages_for_search": 1,
   "issingle": 1,
   "links": [],
-  "modified": "2026-06-22 17:30:00.000000",
+  "modified": "2026-07-01 17:00:00.000000",
   "modified_by": "Administrator",
   "module": "AOS",
   "name": "AOS Settings",
