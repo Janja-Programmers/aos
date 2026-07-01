@@ -11,6 +11,7 @@ import json
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import BinaryIO
+from urllib.parse import urlparse
 
 import frappe
 from minio import Minio
@@ -37,16 +38,54 @@ class MinioStorage:
         self.public_base_url = (self.config.public_base_url or "").strip().rstrip("/")
 
         try:
-            self.client = Minio(
+            self.client = self._build_client(
                 endpoint=self.config.endpoint,
-                access_key=self.config.access_key,
-                secret_key=self.config.secret_key,
                 secure=bool(self.config.secure),
             )
+            self.presign_client = self._build_presign_client()
         except ValueError as exc:
             raise RuntimeError(
                 "Invalid MINIO_ENDPOINT. Use host[:port] only, without http(s), bucket, or path."
             ) from exc
+
+    def _build_client(self, *, endpoint: str, secure: bool) -> Minio:
+        return Minio(
+            endpoint=endpoint,
+            access_key=self.config.access_key,
+            secret_key=self.config.secret_key,
+            secure=bool(secure),
+        )
+
+    def _build_presign_client(self) -> Minio:
+        """Return the client used to generate URLs consumed by app clients.
+
+        Server-side object operations should use the private/internal MinIO endpoint
+        from MINIO_ENDPOINT. Presigned URLs, however, are sent to Flutter/mobile
+        clients, so they must be signed for the public MinIO/Nginx host. With
+        AWS SigV4 the host is part of the signature, therefore replacing
+        `127.0.0.1:9100` with the public domain after signing would produce
+        invalid URLs.
+        """
+        public_base_url = (self.config.public_base_url or "").strip().rstrip("/")
+        if not public_base_url:
+            return self.client
+
+        parsed = urlparse(public_base_url if "://" in public_base_url else f"https://{public_base_url}")
+        endpoint = (parsed.netloc or "").strip()
+        path = (parsed.path or "").strip("/")
+
+        if not endpoint or path or parsed.params or parsed.query or parsed.fragment:
+            frappe.log_error(
+                "MINIO_PUBLIC_BASE_URL must be a bare public origin like "
+                "https://aos-files-staging.duckdns.org when used for presigned URLs.",
+                "AOS MinIO Presign Public URL Invalid",
+            )
+            return self.client
+
+        return self._build_client(
+            endpoint=endpoint,
+            secure=(parsed.scheme or "https").lower() == "https",
+        )
 
     def bucket_for_type(self, bucket_type: str) -> str:
         bucket_type = str(bucket_type or "").strip().lower()
@@ -91,7 +130,7 @@ class MinioStorage:
 
     def presigned_put_url(self, bucket: str, object_key: str, *, expiry_minutes: int) -> str:
         try:
-            return self.client.presigned_put_object(
+            return self.presign_client.presigned_put_object(
                 bucket_name=self._clean_bucket(bucket),
                 object_name=self._clean_object_key(object_key),
                 expires=timedelta(minutes=max(1, int(expiry_minutes or 10))),
@@ -102,7 +141,7 @@ class MinioStorage:
 
     def presigned_get_url(self, bucket: str, object_key: str, *, expiry_minutes: int) -> str:
         try:
-            return self.client.presigned_get_object(
+            return self.presign_client.presigned_get_object(
                 bucket_name=self._clean_bucket(bucket),
                 object_name=self._clean_object_key(object_key),
                 expires=timedelta(minutes=max(1, int(expiry_minutes or 10))),
