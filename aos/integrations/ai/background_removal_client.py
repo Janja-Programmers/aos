@@ -158,6 +158,38 @@ def _extract_error_message(payload: Dict[str, Any]) -> str:
     return "Background removal service failed."
 
 
+
+def _response_preview(response: requests.Response, *, limit: int = 500) -> str:
+    """Return a short safe preview of a non-image upstream response."""
+
+    try:
+        text = response.text or ""
+    except Exception:
+        text = ""
+
+    text = text.replace("\n", " ").replace("\r", " ").strip()
+    if len(text) > limit:
+        return text[:limit] + "..."
+    return text
+
+
+def _is_png_response(response: requests.Response, content: bytes) -> bool:
+    """Accept valid PNG responses even when proxies mangle Content-Type."""
+
+    content_type = str(response.headers.get("content-type") or "").lower()
+    output_format = str(response.headers.get("x-aos-output-format") or "").lower()
+
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True
+
+    if "image/png" in content_type:
+        return True
+
+    if output_format == "png" and content:
+        return True
+
+    return False
+
 def _file_tuple(
     image_file: Any,
     *,
@@ -287,10 +319,13 @@ class BackgroundRemovalClient:
                 "Background removal service returned an empty image."
             )
 
-        response_content_type = str(response.headers.get("content-type") or "").lower()
-        if response_content_type and "image/png" not in response_content_type:
+        if not _is_png_response(response, content):
+            content_type = str(response.headers.get("content-type") or "").strip()
+            preview = _response_preview(response)
             raise BackgroundRemovalUnavailableError(
-                "Background removal service returned an invalid content type."
+                "Background removal service returned an invalid image response "
+                f"(status={response.status_code}, content_type={content_type or 'unknown'}, "
+                f"preview={preview or 'empty'})."
             )
 
         return BackgroundRemovalResult(

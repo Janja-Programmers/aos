@@ -153,9 +153,14 @@ def remove_background_impl(**kwargs):
         return fail(str(exc), code="VALIDATION_ERROR")
     except BackgroundRemovalProcessingError as exc:
         return fail(str(exc), code="BACKGROUND_REMOVAL_FAILED", http_status=422)
-    except BackgroundRemovalUnavailableError:
+    except BackgroundRemovalUnavailableError as exc:
+        frappe.log_error(
+            f"Background removal unavailable for media {media_id}: {exc}",
+            "AOS Media Remove Background Unavailable",
+        )
         return fail(
-            "Background removal is temporarily unavailable. Please try again later.",
+            str(exc)
+            or "Background removal is temporarily unavailable. Please try again later.",
             code="BACKGROUND_REMOVAL_UNAVAILABLE",
             http_status=503,
         )
