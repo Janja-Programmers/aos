@@ -45,7 +45,6 @@ def _public_media_url(doc) -> str:
 
 class AOSCategory(NestedSet):
     def validate(self):
-        super().validate()
         self._sync_icon_media()
 
     def _sync_icon_media(self) -> None:
