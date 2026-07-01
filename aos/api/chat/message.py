@@ -26,7 +26,6 @@ from aos.services.media.media_service import (
     MediaService,
     MediaValidationError,
 )
-from aos.api.shorts.visibility import can_view_short
 from aos.services.seller_response_metrics import (
     enqueue_conversation_response_metrics_refresh,
 )
@@ -480,7 +479,7 @@ def _fetch_shorts_bulk(
         if row.status != "ready" or row.visibility_status != "visible":
             continue
 
-        if not can_view_short(row, current_user=viewer):
+        if not _can_view_short(row, current_user=viewer):
             continue
 
         result[row.name] = {
@@ -499,6 +498,23 @@ def _fetch_shorts_bulk(
         }
 
     return result
+
+
+
+
+def _can_view_short(short_row, *, current_user: str | None = None) -> bool:
+    """Lazily import Shorts visibility to avoid chat/shorts circular imports.
+
+    Importing aos.api.shorts.visibility at module import time loads the
+    shorts package __init__, which imports shorts.share. shorts.share imports
+    chat.message helpers, creating a circular import when Frappe resolves
+    aos.api.chat.send_message. Keep the dependency local so chat.message can
+    finish initializing first.
+    """
+
+    from aos.api.shorts.visibility import can_view_short
+
+    return can_view_short(short_row, current_user=current_user)
 
 
 def _get_short_reference(short: str | None):
@@ -538,11 +554,11 @@ def _validate_short_reference(
     if short_row.status != "ready" or short_row.visibility_status != "visible":
         return fail("Short is not available.", code="VALIDATION_ERROR")
 
-    if not can_view_short(short_row, current_user=viewer):
+    if not _can_view_short(short_row, current_user=viewer):
         return fail("Short is not available.", code="VALIDATION_ERROR")
 
     for recipient in recipients or []:
-        if not can_view_short(short_row, current_user=recipient):
+        if not _can_view_short(short_row, current_user=recipient):
             return fail(
                 "This short cannot be shared with one or more recipients.",
                 code="FORBIDDEN",
