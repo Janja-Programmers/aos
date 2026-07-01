@@ -17,6 +17,8 @@ from typing import Any, Dict, List
 import frappe
 from frappe.utils import get_url
 
+from aos.api.ads.media import get_ad_image_url
+
 from aos.integrations.ai.image_search_client import (
     ImageSearchServiceError,
     delete_ad_vectors,
@@ -175,14 +177,14 @@ def _get_current_ad_images(ad_id: str) -> List[Dict[str, Any]]:
             "parenttype": "AOS Ad",
             "parentfield": "images",
         },
-        fields=["image", "is_primary", "sort_order", "idx"],
+        fields=["media", "image", "is_primary", "sort_order", "idx"],
         order_by="sort_order asc, idx asc",
     )
 
     images: List[Dict[str, Any]] = []
 
     for row in rows:
-        raw_url = _clean_str(row.get("image"))
+        raw_url = get_ad_image_url(row) or _clean_str(row.get("image"))
         if not raw_url:
             continue
 
@@ -452,7 +454,7 @@ def _query_indexable_active_ads(*, page_length: int, start: int) -> List[Dict[st
             AND img.parenttype = 'AOS Ad'
             AND img.parentfield = 'images'
         WHERE ad.status = 'Active'
-            AND COALESCE(img.image, '') != ''
+            AND (COALESCE(img.media, '') != '' OR COALESCE(img.image, '') != '')
         ORDER BY ad.modified DESC
         LIMIT {page_length} OFFSET {start}
         """,
@@ -478,7 +480,7 @@ def _query_unindexable_ads(*, page_length: int, start: int) -> List[Dict[str, An
             ON img.parent = ad.name
             AND img.parenttype = 'AOS Ad'
             AND img.parentfield = 'images'
-            AND COALESCE(img.image, '') != ''
+            AND (COALESCE(img.media, '') != '' OR COALESCE(img.image, '') != '')
         GROUP BY ad.name, ad.status, ad.modified
         HAVING COALESCE(ad.status, '') != 'Active'
             OR COUNT(img.name) = 0

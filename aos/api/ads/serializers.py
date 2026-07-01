@@ -19,6 +19,7 @@ from aos.api.catalog.schema import (
     _get_category_chain,
     _resolve_pricing,
 )
+from aos.api.ads.media import get_ad_image_url, get_ad_video_url, serialize_ad_media
 
 
 # Currency symbol cache
@@ -171,15 +172,14 @@ def _primary_image(
     images: List[Dict[str, Any]],
 ) -> str:
     for image in images:
-        if (
-            _to_int(image.get("is_primary")) == 1
-            and _norm(image.get("image"))
-        ):
-            return _norm(image.get("image"))
+        image_url = _norm(image.get("image") or image.get("url"))
+        if _to_int(image.get("is_primary")) == 1 and image_url:
+            return image_url
 
     for image in images:
-        if _norm(image.get("image")):
-            return _norm(image.get("image"))
+        image_url = _norm(image.get("image") or image.get("url"))
+        if image_url:
+            return image_url
 
     return ""
 
@@ -194,28 +194,49 @@ def serialize_ad_images(
         getattr(ad_doc, "images", [])
         or []
     ):
+        media_id = _norm(
+            getattr(
+                row,
+                "media",
+                None,
+            )
+            or (row.get("media") if isinstance(row, dict) else None)
+        )
+        fallback_url = _norm(
+            getattr(
+                row,
+                "image",
+                None,
+            )
+            or (row.get("image") if isinstance(row, dict) else None)
+        )
+        image_url = get_ad_image_url(row)
+
         items.append(
             {
-                "image": _norm(
-                    getattr(
-                        row,
-                        "image",
-                        None,
-                    )
-                ),
+                "media_id": media_id or None,
+                "media": media_id or None,
+                "image": image_url or fallback_url,
+                "url": image_url or fallback_url,
                 "is_primary": _to_int(
                     getattr(
                         row,
                         "is_primary",
-                        0,
+                        None,
                     )
+                    if not isinstance(row, dict)
+                    else row.get("is_primary"),
+                    0,
                 ),
                 "sort_order": _to_int(
                     getattr(
                         row,
                         "sort_order",
-                        0,
+                        None,
                     )
+                    if not isinstance(row, dict)
+                    else row.get("sort_order"),
+                    0,
                 ),
             }
         )
@@ -224,7 +245,7 @@ def serialize_ad_images(
         key=lambda x: (
             0 if x["is_primary"] else 1,
             x["sort_order"],
-            x["image"],
+            x["image"] or "",
         )
     )
 
@@ -463,13 +484,21 @@ def serialize_ad_detail(
             )
             or ""
         ),
-        "video": _norm(
+        "video": get_ad_video_url(ad_doc),
+        "video_media": _norm(
             getattr(
                 ad_doc,
-                "video",
+                "video_media",
                 None,
             )
-        ),
+        ) or None,
+        "video_media_id": _norm(
+            getattr(
+                ad_doc,
+                "video_media",
+                None,
+            )
+        ) or None,
         "images": images,
         "details": serialize_ad_details(
             ad_doc
@@ -576,13 +605,22 @@ def serialize_ad_for_edit(
     ):
         images.append(
             {
-                "image": _norm(
+                "media": _norm(
                     getattr(
                         row,
-                        "image",
+                        "media",
                         None,
                     )
-                ),
+                ) or None,
+                "media_id": _norm(
+                    getattr(
+                        row,
+                        "media",
+                        None,
+                    )
+                ) or None,
+                "image": get_ad_image_url(row),
+                "url": get_ad_image_url(row),
                 "is_primary": _to_int(
                     getattr(
                         row,
@@ -692,9 +730,15 @@ def serialize_ad_for_edit(
             None,
         ),
         "images": images,
-        "video": getattr(
+        "video": get_ad_video_url(ad_doc),
+        "video_media": getattr(
             ad_doc,
-            "video",
+            "video_media",
+            None,
+        ),
+        "video_media_id": getattr(
+            ad_doc,
+            "video_media",
             None,
         ),
         "details": details,

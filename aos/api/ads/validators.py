@@ -22,6 +22,9 @@ ALLOWED_DETAILS_KEYS = {
 
 ALLOWED_IMAGE_KEYS = {
     "image",
+    "media",
+    "media_id",
+    "id",
     "is_primary",
     "sort_order",
 }
@@ -142,17 +145,55 @@ def sanitize_details(details: Any, category: str | None = None) -> List[Dict[str
 
 
 def sanitize_images(images: Any) -> List[Dict[str, Any]]:
+    """Normalize ad image payloads.
+
+    New clients should send `media` or `media_id` values created by
+    `aos.api.media.init_upload` + `confirm_upload`. The legacy `image` URL key
+    is preserved only as a response/cache fallback.
+    """
+
     items = normalize_list_payload(images)
     out: List[Dict[str, Any]] = []
     for item in items:
         row = {k: v for k, v in item.items() if k in ALLOWED_IMAGE_KEYS}
-        if row.get("image"):
-            # normalize booleans
+
+        media_id = (
+            row.get("media")
+            or row.get("media_id")
+            or row.get("id")
+        )
+        if isinstance(media_id, dict):
+            media_id = media_id.get("media_id") or media_id.get("id") or media_id.get("name")
+
+        media_id = str(media_id or "").strip()
+        image_url = str(row.get("image") or "").strip()
+
+        # Phase 3 source of truth is media_id. If only a legacy image URL is
+        # provided, keep it out so create/update can fail clearly instead of
+        # silently using Frappe File storage.
+        if not media_id:
+            continue
+
+        clean = {
+            "media": media_id,
+            "media_id": media_id,
+            "image": image_url,
+        }
+
+        try:
+            clean["is_primary"] = int(row.get("is_primary") or 0)
+        except Exception:
+            clean["is_primary"] = 0
+
+        if row.get("sort_order") not in (None, ""):
             try:
-                row["is_primary"] = int(row.get("is_primary") or 0)
+                clean["sort_order"] = int(row.get("sort_order"))
             except Exception:
-                row["is_primary"] = 0
-            out.append(row)
+                clean["sort_order"] = None
+        else:
+            clean["sort_order"] = None
+
+        out.append(clean)
     return out
 
 

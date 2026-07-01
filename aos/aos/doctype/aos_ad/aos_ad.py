@@ -25,7 +25,7 @@ _PRICE_TYPES_NO_AMOUNT = {
 
 # Media limits
 _MAX_IMAGES = 4
-_MAX_VIDEO_MB = 20
+_MAX_VIDEO_MB = 200
 _ALLOWED_VIDEO_EXTS = (
     ".mp4",
     ".mov",
@@ -634,27 +634,60 @@ class AOSAd(Document):
             )
 
         primary_count = 0
-        seen_urls: Set[str] = set()
+        seen_media: Set[str] = set()
 
         for idx, row in enumerate(
             images,
             start=1,
         ):
+            media_id = _norm(
+                getattr(row, "media", None)
+            )
             img = _norm(
-                row.image
+                getattr(row, "image", None)
             )
 
-            if not img:
+            if not media_id and not img:
                 frappe.throw(
-                    f"Image required on row {idx}."
+                    f"Image media required on row {idx}."
                 )
 
-            if img in seen_urls:
+            unique_key = media_id or img
+
+            if unique_key in seen_media:
                 frappe.throw(
                     "Duplicate image selected."
                 )
 
-            seen_urls.add(img)
+            seen_media.add(unique_key)
+
+            if media_id:
+                media = frappe.db.get_value(
+                    "AOS Media Object",
+                    media_id,
+                    ["purpose", "status", "visibility"],
+                    as_dict=True,
+                )
+
+                if not media:
+                    frappe.throw(
+                        f"Invalid image media on row {idx}."
+                    )
+
+                if media.purpose != "ad_image":
+                    frappe.throw(
+                        f"Invalid image media purpose on row {idx}."
+                    )
+
+                if media.visibility != "Public":
+                    frappe.throw(
+                        f"Image media must be public on row {idx}."
+                    )
+
+                if media.status not in {"Uploaded", "Attached"}:
+                    frappe.throw(
+                        f"Image media is not ready on row {idx}."
+                    )
 
             if int(row.is_primary or 0) == 1:
                 primary_count += 1
@@ -664,26 +697,42 @@ class AOSAd(Document):
                 "Exactly one primary image required."
             )
 
-        if not self.video:
+        video_media = _norm(
+            getattr(self, "video_media", None)
+        )
+
+        if not video_media:
             return
 
-        file_doc = frappe.db.get_value(
-            "File",
-            {"file_url": self.video},
-            [
-                "file_size",
-                "file_name",
-            ],
+        media = frappe.db.get_value(
+            "AOS Media Object",
+            video_media,
+            ["purpose", "status", "visibility", "size_bytes", "content_type"],
             as_dict=True,
         )
 
-        if not file_doc:
+        if not media:
             frappe.throw(
-                "Invalid video attachment."
+                "Invalid video media."
+            )
+
+        if media.purpose != "ad_video":
+            frappe.throw(
+                "Invalid video media purpose."
+            )
+
+        if media.visibility != "Public":
+            frappe.throw(
+                "Video media must be public."
+            )
+
+        if media.status not in {"Uploaded", "Attached"}:
+            frappe.throw(
+                "Video media is not ready."
             )
 
         size_bytes = int(
-            file_doc.file_size or 0
+            media.size_bytes or 0
         )
 
         max_bytes = (
@@ -697,13 +746,11 @@ class AOSAd(Document):
                 f"Video exceeds {_MAX_VIDEO_MB}MB."
             )
 
-        fname = (
-            file_doc.file_name or ""
+        content_type = _norm(
+            media.content_type
         ).lower()
 
-        if not fname.endswith(
-            _ALLOWED_VIDEO_EXTS
-        ):
+        if content_type and not content_type.startswith("video/"):
             frappe.throw(
                 "Unsupported video format."
             )

@@ -13,12 +13,16 @@ from aos.api.shared.responses import fail, ok
 from aos.integrations.ai.image_search_tasks import enqueue_index_refresh_for_status
 
 from .constants import UPDATE_AD_LIMIT_PER_MINUTE_PER_USER
+from .media import (
+    attach_ad_media,
+    get_media_public_url,
+    normalize_media_id,
+    validate_ad_media_for_use,
+)
 from .validators import (
-    attach_file_to_ad,
     sanitize_details,
     sanitize_images,
     validate_basic_fields,
-    validate_file_reference,
 )
 
 _MAX_IMAGES = 4
@@ -207,33 +211,62 @@ def update_ad_impl(**kwargs):
                     code="VALIDATION_ERROR",
                 )
 
-            video_url, e = validate_file_reference(
-                kwargs.get("video"),
-                current_user=user,
-                kind="Video",
+            if not images_rows:
+                return fail("At least one image is required.", code="VALIDATION_ERROR")
+
+            video_media_id = normalize_media_id(
+                kwargs.get("video_media")
+                or kwargs.get("video_media_id")
+                or kwargs.get("video")
             )
+            video_url = ""
 
-            if e:
-                return e
+            if video_media_id:
+                video_doc, e = validate_ad_media_for_use(
+                    media_id=video_media_id,
+                    user=user,
+                    purpose="ad_video",
+                    kind="Video",
+                    ad_name=doc.name,
+                )
+                if e:
+                    return e
+                video_url = get_media_public_url(video_doc.name)
 
-            for row_img in images_rows:
-                img_url, e = validate_file_reference(
-                    row_img.get("image"),
-                    current_user=user,
+            primary_count = 0
+            seen_media: set[str] = set()
+
+            for index, row_img in enumerate(images_rows, start=1):
+                media_id = normalize_media_id(row_img.get("media") or row_img.get("media_id"))
+
+                if not media_id:
+                    return fail(f"Image media id is required on row {index}.", code="VALIDATION_ERROR")
+
+                if media_id in seen_media:
+                    return fail("Duplicate image selected.", code="VALIDATION_ERROR")
+
+                media_doc, e = validate_ad_media_for_use(
+                    media_id=media_id,
+                    user=user,
+                    purpose="ad_image",
                     kind="Image",
+                    ad_name=doc.name,
                 )
 
                 if e:
                     return e
 
-                row_img["image"] = img_url
+                seen_media.add(media_id)
+                row_img["media"] = media_doc.name
+                row_img["media_id"] = media_doc.name
+                row_img["image"] = get_media_public_url(media_doc.name)
                 row_img["is_primary"] = int(row_img.get("is_primary") or 0)
 
-                if row_img.get("sort_order") not in (None, ""):
-                    try:
-                        row_img["sort_order"] = int(row_img["sort_order"])
-                    except Exception:
-                        row_img["sort_order"] = None
+                if row_img["is_primary"] == 1:
+                    primary_count += 1
+
+            if primary_count != 1:
+                return fail("Exactly one primary image is required.", code="VALIDATION_ERROR")
 
             # Core fields
             doc.title = title
@@ -252,24 +285,47 @@ def update_ad_impl(**kwargs):
             doc.offer_end_date = _to_date_or_none(kwargs.get("offer_end_date"))
 
             # Video
-            if "video" in kwargs:
+            if any(k in kwargs for k in ("video", "video_media", "video_media_id")):
+                doc.video_media = video_media_id or None
                 doc.video = video_url or None
 
             # Replace child tables
+            image_child_rows = [
+                {k: v for k, v in row.items() if k != "media_id"}
+                for row in images_rows
+            ]
             _replace_child_table(doc, "details", details_rows)
-            _replace_child_table(doc, "images", images_rows)
+            _replace_child_table(doc, "images", image_child_rows)
 
             doc.status = "Reviewing"
             doc.reviewed_by = None
 
             doc.save(ignore_permissions=True)
 
-            # Attach media
+            # Attach MinIO media metadata to this ad.
             for r in images_rows:
-                attach_file_to_ad(r.get("image") or "", ad_name=doc.name)
+                _media_doc, attach_error = attach_ad_media(
+                    media_id=r.get("media"),
+                    user=user,
+                    purpose="ad_image",
+                    ad_name=doc.name,
+                    attached_field="images",
+                )
+                if attach_error:
+                    frappe.db.rollback()
+                    return attach_error
 
-            if video_url:
-                attach_file_to_ad(video_url, ad_name=doc.name)
+            if video_media_id:
+                _media_doc, attach_error = attach_ad_media(
+                    media_id=video_media_id,
+                    user=user,
+                    purpose="ad_video",
+                    ad_name=doc.name,
+                    attached_field="video_media",
+                )
+                if attach_error:
+                    frappe.db.rollback()
+                    return attach_error
 
             try:
                 enqueue_index_refresh_for_status(

@@ -26,12 +26,16 @@ from aos.integrations.ai.image_search_tasks import enqueue_index_refresh_for_sta
 
 from .constants import CREATE_AD_LIMIT_PER_MINUTE_PER_USER
 from .activity import record_ad_posted_activity
+from .media import (
+    attach_ad_media,
+    get_media_public_url,
+    normalize_media_id,
+    validate_ad_media_for_use,
+)
 from .validators import (
-    attach_file_to_ad,
     sanitize_details,
     sanitize_images,
     validate_basic_fields,
-    validate_file_reference,
 )
 
 _MAX_IMAGES = 4
@@ -141,37 +145,63 @@ def create_ad_impl(**kwargs):
             code="VALIDATION_ERROR",
         )
 
-    # Validate video
-    video_url, e = validate_file_reference(
-        kwargs.get("video"),
-        current_user=current_user,
-        kind="Video",
+    if not images_rows:
+        return fail("At least one image is required.", code="VALIDATION_ERROR")
+
+    # Validate video media. New clients should pass `video_media`; `video` is
+    # accepted only when it contains a media id for migration convenience.
+    video_media_id = normalize_media_id(
+        kwargs.get("video_media")
+        or kwargs.get("video_media_id")
+        or kwargs.get("video")
     )
+    video_url = ""
 
-    if e:
-        return e
+    if video_media_id:
+        video_doc, e = validate_ad_media_for_use(
+            media_id=video_media_id,
+            user=current_user,
+            purpose="ad_video",
+            kind="Video",
+        )
+        if e:
+            return e
+        video_url = get_media_public_url(video_doc.name)
 
-    # Validate images
-    for row in images_rows:
-        img_url, e = validate_file_reference(
-            row.get("image"),
-            current_user=current_user,
+    # Validate image media
+    primary_count = 0
+    seen_media: set[str] = set()
+
+    for index, row in enumerate(images_rows, start=1):
+        media_id = normalize_media_id(row.get("media") or row.get("media_id"))
+
+        if not media_id:
+            return fail(f"Image media id is required on row {index}.", code="VALIDATION_ERROR")
+
+        if media_id in seen_media:
+            return fail("Duplicate image selected.", code="VALIDATION_ERROR")
+
+        media_doc, e = validate_ad_media_for_use(
+            media_id=media_id,
+            user=current_user,
+            purpose="ad_image",
             kind="Image",
         )
 
         if e:
             return e
 
-        row["image"] = img_url
-
-        # Normalize values
+        seen_media.add(media_id)
+        row["media"] = media_doc.name
+        row["media_id"] = media_doc.name
+        row["image"] = get_media_public_url(media_doc.name)
         row["is_primary"] = int(row.get("is_primary") or 0)
 
-        if row.get("sort_order") not in (None, ""):
-            try:
-                row["sort_order"] = int(row["sort_order"])
-            except Exception:
-                row["sort_order"] = None
+        if row["is_primary"] == 1:
+            primary_count += 1
+
+    if primary_count != 1:
+        return fail("Exactly one primary image is required.", code="VALIDATION_ERROR")
 
     # Pricing
     price_type = kwargs.get("price_type")
@@ -256,7 +286,8 @@ def create_ad_impl(**kwargs):
             ad.offer_end_date = offer_end_date
 
         # Video
-        if video_url:
+        if video_media_id:
+            ad.video_media = video_media_id
             ad.video = video_url
 
         # Details
@@ -270,6 +301,7 @@ def create_ad_impl(**kwargs):
         for row in images_rows:
             child = ad.append("images", {})
 
+            child.media = row.get("media")
             child.image = row.get("image")
             child.is_primary = row.get("is_primary")
 
@@ -279,18 +311,30 @@ def create_ad_impl(**kwargs):
         # Insert
         ad.insert(ignore_permissions=True)
 
-        # Attach media
+        # Attach MinIO media metadata to this ad.
         for row in images_rows:
-            attach_file_to_ad(
-                row.get("image") or "",
+            _media_doc, attach_error = attach_ad_media(
+                media_id=row.get("media"),
+                user=current_user,
+                purpose="ad_image",
                 ad_name=ad.name,
+                attached_field="images",
             )
+            if attach_error:
+                frappe.db.rollback()
+                return attach_error
 
-        if video_url:
-            attach_file_to_ad(
-                video_url,
+        if video_media_id:
+            _media_doc, attach_error = attach_ad_media(
+                media_id=video_media_id,
+                user=current_user,
+                purpose="ad_video",
                 ad_name=ad.name,
+                attached_field="video_media",
             )
+            if attach_error:
+                frappe.db.rollback()
+                return attach_error
 
         try:
             enqueue_index_refresh_for_status(

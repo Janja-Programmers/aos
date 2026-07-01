@@ -16,6 +16,7 @@
   "country",
   "location",
   "section_break_uqvx",
+  "video_media",
   "video",
   "images",
   "details_tab",
@@ -130,9 +131,18 @@
    "label": "Media"
   },
   {
+   "fieldname": "video_media",
+   "fieldtype": "Link",
+   "label": "Video Media",
+   "options": "AOS Media Object",
+   "search_index": 1
+  },
+  {
    "fieldname": "video",
-   "fieldtype": "Attach",
-   "label": "Video"
+   "fieldtype": "Data",
+   "label": "Video URL",
+   "description": "Cached public URL resolved from AOS Media Object. Do not use Frappe File for new uploads.",
+   "read_only": 1
   },
   {
    "fieldname": "images",

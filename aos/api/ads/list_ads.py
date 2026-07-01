@@ -353,7 +353,7 @@ def list_ads_impl(**kwargs):
             image_rows = frappe.get_all(
                 "AOS Ad Image",
                 filters={"parenttype": "AOS Ad", "parent": ["in", ad_names]},
-                fields=["parent", "image", "is_primary", "sort_order"],
+                fields=["parent", "media", "image", "is_primary", "sort_order"],
                 order_by="is_primary desc, sort_order asc",
             )
 

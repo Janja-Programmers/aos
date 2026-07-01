@@ -345,7 +345,7 @@ def list_wishlist_impl(**kwargs):
                     "parenttype": "AOS Ad",
                     "parent": ["in", ad_names],
                 },
-                fields=["parent", "image", "is_primary", "sort_order"],
+                fields=["parent", "media", "image", "is_primary", "sort_order"],
                 order_by="is_primary desc, sort_order asc",
             )
 
