@@ -8,6 +8,9 @@ Central place for profile editing rules.
 EDITABLE_USER_FIELDS = {
     "full_name",
     "user_image",
+    "user_image_media",
+    "profile_image_media",
+    "media_id",
     "bio",
 }
 

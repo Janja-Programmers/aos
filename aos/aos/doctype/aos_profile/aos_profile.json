@@ -6,6 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "user",
+  "profile_image_media",
   "account_status",
   "is_deleted",
   "account_status_column_break",
@@ -32,6 +33,13 @@
    "options": "User",
    "reqd": 1,
    "unique": 1
+  },
+  {
+   "fieldname": "profile_image_media",
+   "fieldtype": "Link",
+   "label": "Profile Image Media",
+   "options": "AOS Media Object",
+   "search_index": 1
   },
   {
    "default": "Active",

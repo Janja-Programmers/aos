@@ -202,6 +202,8 @@ def get_seller_impl(**kwargs):
                 ),
                 "seller_type": seller_doc.seller_type,
                 "shop_banner": seller_doc.shop_banner,
+                "shop_banner_media": getattr(seller_doc, "shop_banner_media", None),
+                "shop_banner_media_id": getattr(seller_doc, "shop_banner_media", None),
                 "about_business": (
                     seller_doc.about_business
                 ),

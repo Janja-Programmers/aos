@@ -21,6 +21,12 @@ from .constants import (
 
 from .serializers import serialize_user
 
+from .media import (
+    attach_profile_image_media,
+    clear_profile_image_media,
+    looks_like_media_id,
+    normalize_media_id,
+)
 from .validators import (
     validate_full_name,
     validate_bio,
@@ -145,22 +151,52 @@ def update_profile_impl(**kwargs):
 
             user_doc.bio = bio
 
-        # Update user image
-        if "user_image" in incoming:
-            file_url, e = validate_user_image(
-                incoming.get("user_image"),
-                current_user=current_user,
+        # Update user image.
+        #
+        # New clients should send profile_image_media / user_image_media / media_id
+        # containing an AOS Media Object id created with purpose=profile_image.
+        # user_image remains accepted for clearing and legacy Frappe File URLs.
+        image_media_id = (
+            normalize_media_id(incoming.get("profile_image_media"))
+            or normalize_media_id(incoming.get("user_image_media"))
+            or normalize_media_id(incoming.get("media_id"))
+        )
+
+        if not image_media_id and looks_like_media_id(incoming.get("user_image")):
+            image_media_id = normalize_media_id(incoming.get("user_image"))
+
+        if image_media_id:
+            _media_doc, image_url, e = attach_profile_image_media(
+                media_id=image_media_id,
+                user=current_user,
             )
 
             if e:
                 return e
 
-            attach_file_to_user(
-                file_url,
-                current_user=current_user,
-            )
+            user_doc.user_image = image_url or ""
 
-            user_doc.user_image = file_url or ""
+        elif "user_image" in incoming:
+            requested_image = str(incoming.get("user_image") or "").strip()
+
+            if requested_image == "":
+                clear_profile_image_media(user=current_user)
+                user_doc.user_image = ""
+            else:
+                file_url, e = validate_user_image(
+                    requested_image,
+                    current_user=current_user,
+                )
+
+                if e:
+                    return e
+
+                attach_file_to_user(
+                    file_url,
+                    current_user=current_user,
+                )
+
+                user_doc.user_image = file_url or ""
 
         user_doc.save(ignore_permissions=True)
 

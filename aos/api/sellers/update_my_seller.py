@@ -13,6 +13,12 @@ from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 
 from .constants import UPDATE_MY_SELLER_LIMIT_PER_MINUTE_PER_USER
+from .media import (
+    attach_seller_banner_media,
+    clear_seller_banner_media,
+    looks_like_media_id,
+    normalize_media_id,
+)
 
 
 def _file_exists(file_url: str) -> bool:
@@ -78,16 +84,48 @@ def update_my_seller_impl(**kwargs):
                 "about_business"
             )
 
-        if "shop_banner" in kwargs:
-            banner = kwargs.get("shop_banner")
+        banner_media_id = (
+            normalize_media_id(kwargs.get("shop_banner_media"))
+            or normalize_media_id(kwargs.get("banner_media"))
+            or normalize_media_id(kwargs.get("media_id"))
+        )
 
-            if banner and not _file_exists(banner):
-                return fail(
-                    "Shop banner file does not exist.",
-                    code="VALIDATION_ERROR",
+        if not banner_media_id and looks_like_media_id(kwargs.get("shop_banner")):
+            banner_media_id = normalize_media_id(kwargs.get("shop_banner"))
+
+        if banner_media_id:
+            _media_doc, banner_url, e = attach_seller_banner_media(
+                media_id=banner_media_id,
+                user=current_user,
+                seller=seller_doc.name,
+            )
+
+            if e:
+                return e
+
+            if hasattr(seller_doc, "shop_banner_media"):
+                seller_doc.shop_banner_media = banner_media_id
+            seller_doc.shop_banner = banner_url or ""
+
+        elif "shop_banner" in kwargs:
+            banner = str(kwargs.get("shop_banner") or "").strip()
+
+            if banner == "":
+                clear_seller_banner_media(
+                    seller=seller_doc.name,
+                    user=current_user,
                 )
+                if hasattr(seller_doc, "shop_banner_media"):
+                    seller_doc.shop_banner_media = ""
+                seller_doc.shop_banner = ""
+            else:
+                if not _file_exists(banner):
+                    return fail(
+                        "Shop banner file does not exist. New uploads should use media_id with purpose=seller_banner.",
+                        code="VALIDATION_ERROR",
+                    )
 
-            seller_doc.shop_banner = banner
+                seller_doc.shop_banner = banner
 
         if "operating_hours" in kwargs:
             seller_doc.set(
@@ -104,6 +142,8 @@ def update_my_seller_impl(**kwargs):
                 "business_category": seller_doc.business_category,
                 "about_business": seller_doc.about_business,
                 "shop_banner": seller_doc.shop_banner,
+                "shop_banner_media": getattr(seller_doc, "shop_banner_media", None),
+                "shop_banner_media_id": getattr(seller_doc, "shop_banner_media", None),
                 "seller_type": seller_doc.seller_type,
             },
         )

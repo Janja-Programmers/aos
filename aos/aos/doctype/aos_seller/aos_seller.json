@@ -11,6 +11,7 @@
   "column_break_gwmy",
   "status",
   "shop_banner",
+  "shop_banner_media",
   "section_break_rvlv",
   "about_business",
   "operating_hours",
@@ -57,8 +58,16 @@
   },
   {
    "fieldname": "shop_banner",
-   "fieldtype": "Attach Image",
-   "label": "Shop Banner"
+   "fieldtype": "Data",
+   "label": "Shop Banner",
+   "description": "Cached public URL. New uploads should use shop_banner_media."
+  },
+  {
+   "fieldname": "shop_banner_media",
+   "fieldtype": "Link",
+   "label": "Shop Banner Media",
+   "options": "AOS Media Object",
+   "search_index": 1
   },
   {
    "default": "Active",

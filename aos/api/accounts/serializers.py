@@ -34,6 +34,7 @@ def serialize_user(user_doc, *, current_user: str | None = None) -> dict[str, An
             "is_verified",
             "verified_by",
             "verified_on",
+            "profile_image_media",
         ],
         as_dict=True,
     )
@@ -71,6 +72,16 @@ def serialize_user(user_doc, *, current_user: str | None = None) -> dict[str, An
         "email": user_doc.email if can_edit and not is_deleted else None,
         "bio": "" if is_deleted else (user_doc.get("bio") or ""),
         "user_image": display.get("avatar"),
+        "profile_image_media": (
+            profile.profile_image_media
+            if profile and not is_deleted
+            else None
+        ),
+        "profile_image_media_id": (
+            profile.profile_image_media
+            if profile and not is_deleted
+            else None
+        ),
         "is_deleted": is_deleted,
         "is_live": bool(display.get("is_live")) if not is_deleted else False,
         "live_id": display.get("live_id") if not is_deleted else None,

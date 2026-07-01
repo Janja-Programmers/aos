@@ -56,7 +56,7 @@ def _has_profile_field(fieldname: str) -> bool:
 def _profile_status_fields() -> list[str]:
     fields = ["user"]
 
-    for fieldname in ("account_status", "is_deleted"):
+    for fieldname in ("account_status", "is_deleted", "profile_image_media"):
         if _has_profile_field(fieldname):
             fields.append(fieldname)
 
@@ -79,6 +79,29 @@ def _is_deleted_from_profile(profile: Any | None) -> bool:
     )
 
     return bool(int(is_deleted or 0)) or status == "Deleted"
+
+
+
+
+def _profile_image_media_url(profile: Any | None) -> str:
+    if not profile:
+        return ""
+
+    media_id = (
+        profile.get("profile_image_media")
+        if isinstance(profile, dict)
+        else getattr(profile, "profile_image_media", None)
+    )
+
+    if not media_id:
+        return ""
+
+    try:
+        from aos.api.accounts.media import get_public_media_url
+
+        return get_public_media_url(media_id)
+    except Exception:
+        return ""
 
 
 def _deleted_payload(user: str | None) -> dict[str, Any]:
@@ -167,7 +190,7 @@ def get_user_display(user: str | None) -> dict[str, Any]:
     return normalize_user_display(
         user=user_row.name,
         full_name=user_row.full_name or user_row.first_name,
-        avatar=user_row.user_image,
+        avatar=user_row.user_image or _profile_image_media_url(profile),
         is_deleted=is_deleted,
         live_state=None if is_deleted else get_user_live_state(user_row.name),
     )
@@ -215,7 +238,7 @@ def get_user_display_map(users: Iterable[str]) -> dict[str, dict[str, Any]]:
         result[user] = normalize_user_display(
             user=row.name,
             full_name=row.full_name or row.first_name,
-            avatar=row.user_image,
+            avatar=row.user_image or _profile_image_media_url(profile),
             is_deleted=is_deleted,
             live_state=None if is_deleted else live_by_user.get(user),
         )
