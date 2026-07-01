@@ -21,6 +21,7 @@
   "section_break_patt",
   "attributes",
   "icon",
+  "icon_media",
   "lft",
   "rgt"
  ],
@@ -72,9 +73,17 @@
   },
   {
    "fieldname": "icon",
-   "fieldtype": "Attach Image",
-   "hidden": 1,
-   "label": "Icon"
+   "fieldtype": "Data",
+   "hidden": 0,
+   "label": "Icon URL",
+   "description": "Cached public icon URL. Use icon_media as the source of truth."
+  },
+  {
+   "fieldname": "icon_media",
+   "fieldtype": "Link",
+   "label": "Icon Media",
+   "options": "AOS Media Object",
+   "description": "Public AOS Media Object uploaded with purpose category_icon."
   },
   {
    "default": "1",
@@ -139,7 +148,7 @@
  "index_web_pages_for_search": 1,
  "is_tree": 1,
  "links": [],
- "modified": "2026-03-19 01:13:19.290110",
+ "modified": "2026-07-02 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Category",

@@ -19,14 +19,6 @@ FULL_NAME_MAX_LEN = 80
 
 BIO_MAX_LEN = 300
 
-# Common Frappe file_url patterns.
-# If you later use full CDN URLs, you can relax this to accept
-# https://... but keep the File existence check in validators.
-FILE_URL_ALLOWED_PREFIXES = (
-    "/files/",
-    "/private/files/",
-)
-
 # Rate limits (defense-in-depth).
 GET_PROFILE_LIMIT_PER_MINUTE_PER_USER = 60
 UPDATE_PROFILE_LIMIT_PER_MINUTE_PER_USER = 20

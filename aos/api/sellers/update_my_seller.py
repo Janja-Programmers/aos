@@ -21,19 +21,6 @@ from .media import (
 )
 
 
-def _file_exists(file_url: str) -> bool:
-    """Check whether a file URL exists in the File doctype."""
-    if not file_url:
-        return False
-
-    return bool(
-        frappe.db.exists(
-            "File",
-            {"file_url": file_url},
-        )
-    )
-
-
 def update_my_seller_impl(**kwargs):
     """Update the authenticated seller's general profile."""
 
@@ -119,13 +106,10 @@ def update_my_seller_impl(**kwargs):
                     seller_doc.shop_banner_media = ""
                 seller_doc.shop_banner = ""
             else:
-                if not _file_exists(banner):
-                    return fail(
-                        "Shop banner file does not exist. New uploads should use media_id with purpose=seller_banner.",
-                        code="VALIDATION_ERROR",
-                    )
-
-                seller_doc.shop_banner = banner
+                return fail(
+                    "Shop banner must be uploaded using media_id with purpose=seller_banner.",
+                    code="VALIDATION_ERROR",
+                )
 
         if "operating_hours" in kwargs:
             seller_doc.set(

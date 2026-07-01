@@ -30,8 +30,6 @@ from .media import (
 from .validators import (
     validate_full_name,
     validate_bio,
-    validate_user_image,
-    attach_file_to_user,
 )
 
 
@@ -155,7 +153,8 @@ def update_profile_impl(**kwargs):
         #
         # New clients should send profile_image_media / user_image_media / media_id
         # containing an AOS Media Object id created with purpose=profile_image.
-        # user_image remains accepted for clearing and legacy Frappe File URLs.
+        # user_image remains accepted only for clearing or when it contains MEDIA-...
+        # so new profile image writes do not create/attach Frappe File records.
         image_media_id = (
             normalize_media_id(incoming.get("profile_image_media"))
             or normalize_media_id(incoming.get("user_image_media"))
@@ -183,20 +182,10 @@ def update_profile_impl(**kwargs):
                 clear_profile_image_media(user=current_user)
                 user_doc.user_image = ""
             else:
-                file_url, e = validate_user_image(
-                    requested_image,
-                    current_user=current_user,
+                return fail(
+                    "Profile image must be uploaded using media_id with purpose=profile_image.",
+                    code="VALIDATION_ERROR",
                 )
-
-                if e:
-                    return e
-
-                attach_file_to_user(
-                    file_url,
-                    current_user=current_user,
-                )
-
-                user_doc.user_image = file_url or ""
 
         user_doc.save(ignore_permissions=True)
 
