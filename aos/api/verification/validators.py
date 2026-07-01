@@ -6,6 +6,14 @@ from __future__ import annotations
 
 import frappe
 
+from aos.services.media.media_service import (
+    MediaNotFoundError,
+    MediaPermissionError,
+    MediaValidationError,
+)
+
+from .media import normalize_verification_documents_for_submit
+
 
 ALLOWED_VERIFICATION_TYPES = [
     "Business",
@@ -57,24 +65,21 @@ def validate_individual_verification(kwargs: dict):
             frappe.throw(f"{label} is required.")
 
 
-def validate_verification_documents(documents: list):
-    """Validate verification documents."""
+def validate_verification_documents(documents: list, *, user: str | None = None):
+    """Validate and normalize verification documents.
 
-    if not documents:
-        frappe.throw("Verification documents are required.")
+    New verification submissions use private MinIO-backed media objects instead
+    of Frappe File URLs. The caller should pass the current user so ownership,
+    purpose, and status can be enforced before the request is saved.
+    """
 
-    for d in documents:
-        attachment = d.get("attachment")
+    if not user:
+        frappe.throw("User is required for verification document validation.")
 
-        if not attachment:
-            frappe.throw(
-                "Each verification document must include an attachment."
-            )
-
-        if not frappe.db.exists(
-            "File",
-            {"file_url": attachment},
-        ):
-            frappe.throw(
-                f"Verification document file does not exist: {attachment}"
-            )
+    try:
+        return normalize_verification_documents_for_submit(
+            user=user,
+            documents=documents,
+        )
+    except (MediaNotFoundError, MediaPermissionError, MediaValidationError) as exc:
+        frappe.throw(str(exc))

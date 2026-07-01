@@ -13,6 +13,7 @@ from aos.api.shared.responses import fail, ok
 from aos.services.account_service import get_or_create_seller
 
 from .constants import SUBMIT_VERIFICATION_LIMIT_PER_MINUTE_PER_USER
+from .media import attach_verification_document_media
 from .validators import (
     validate_business_verification,
     validate_individual_verification,
@@ -64,7 +65,10 @@ def submit_verification_impl(**kwargs):
 
         documents = kwargs.get("verification_documents") or []
 
-        validate_verification_documents(documents)
+        normalized_documents = validate_verification_documents(
+            documents,
+            user=current_user,
+        )
 
         verification_name = frappe.db.get_value(
             "AOS Verification Request",
@@ -131,7 +135,7 @@ def submit_verification_impl(**kwargs):
             verification.phone_number = None
 
         # DOCUMENTS
-        for d in documents:
+        for d in normalized_documents:
             verification.append(
                 "verification_documents",
                 {
@@ -139,19 +143,35 @@ def submit_verification_impl(**kwargs):
                     "document_number": d.get("document_number"),
                     "issue_date": d.get("issue_date"),
                     "expiry_date": d.get("expiry_date"),
+                    "media": d.get("media"),
                     "attachment": d.get("attachment"),
                 },
             )
 
         verification.save(ignore_permissions=True)
 
+        attach_verification_document_media(
+            user=current_user,
+            verification_name=verification.name,
+            media_ids=[d.get("media") for d in normalized_documents if d.get("media")],
+        )
+
         frappe.db.commit()
 
         return ok(
             "Verification request submitted successfully.",
             data={
+                "id": verification.name,
                 "verification_type": verification.verification_type,
                 "status": verification.status,
+                "documents": [
+                    {
+                        "document_type": d.get("document_type"),
+                        "media": d.get("media"),
+                        "media_id": d.get("media"),
+                    }
+                    for d in normalized_documents
+                ],
             },
         )
 

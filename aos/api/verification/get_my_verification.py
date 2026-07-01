@@ -11,6 +11,7 @@ from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 
 from .constants import GET_MY_VERIFICATION_LIMIT_PER_MINUTE_PER_USER
+from .media import serialize_verification_document
 
 
 def get_my_verification_impl(**kwargs):
@@ -57,8 +58,19 @@ def get_my_verification_impl(**kwargs):
             as_dict=True,
         )
 
-        if verification and verification.get("status") != "Rejected":
-            verification.pop("rejection_reason", None)
+        if verification:
+            request_doc = frappe.get_doc("AOS Verification Request", verification.name)
+            verification["documents"] = [
+                serialize_verification_document(
+                    row,
+                    user=current_user,
+                    include_url=False,
+                )
+                for row in request_doc.verification_documents
+            ]
+
+            if verification.get("status") != "Rejected":
+                verification.pop("rejection_reason", None)
 
         return ok(
             "Verification status fetched.",
