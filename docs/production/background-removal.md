@@ -13,7 +13,7 @@ AOS Frappe backend
 
 Ownership boundary:
 
-- Frappe owns authentication, file ownership checks, rate limits, Frappe File records, and API response formatting.
+- Frappe owns authentication, media ownership checks, rate limits, AOS Media Object metadata, and API response formatting.
 - Background removal owns image processing, model runtime, output PNG normalization, and processor/model configuration.
 - The frontend must call the Frappe endpoint, not the private background-removal service directly.
 
@@ -68,11 +68,20 @@ Frontend flow:
 Flutter image editor
   -> Frappe remove_background endpoint
       -> private background-removal service
-      -> new transparent PNG saved as Frappe File
-      -> file_url returned to Flutter
+      -> new transparent PNG saved to MinIO as an AOS Media Object
+      -> media_id + URL returned to Flutter
 ```
 
-The original uploaded image remains unchanged. The processed result is stored as a new PNG file.
+The original uploaded image remains unchanged. The processed result is stored as a new MinIO-backed `AOS Media Object` with the requested result purpose, usually `ad_image`.
+
+Request after the source image has been uploaded and confirmed:
+
+```json
+{
+  "media_id": "MEDIA-2026-00009",
+  "result_purpose": "ad_image"
+}
+```
 
 Expected success response from Frappe:
 
@@ -81,13 +90,19 @@ Expected success response from Frappe:
   "ok": true,
   "message": "Background removed successfully.",
   "data": {
-    "file_id": "...",
-    "file_url": "/files/example_no_bg_ab12cd34.png",
-    "file_name": "example_no_bg_ab12cd34.png",
-    "is_private": 0,
+    "media_id": "MEDIA-2026-00010",
+    "source_media_id": "MEDIA-2026-00009",
+    "url": "https://aos-files-staging.duckdns.org/aos-public/ads/images/...png",
     "content_type": "image/png",
     "width": 1080,
-    "height": 1080
+    "height": 1080,
+    "media": {
+      "id": "MEDIA-2026-00010",
+      "purpose": "ad_image",
+      "status": "Uploaded",
+      "visibility": "Public",
+      "url": "https://aos-files-staging.duckdns.org/aos-public/ads/images/...png"
+    }
   }
 }
 ```
@@ -98,7 +113,7 @@ Background removal is always expected to be available. Do not add a product-leve
 
 Expected behavior:
 
-- File ownership, file type, size, and dimension validation happen in Frappe.
+- Media ownership, file type, size, and dimension validation happen in Frappe.
 - Model processing happens only in the private service.
 - If the service is down, Frappe returns a friendly temporary unavailable error.
 - Internal model, runtime, and network details should be logged server-side, not exposed to clients.

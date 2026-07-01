@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import frappe
 
+from .background import remove_background_impl
 from .delete import delete_media_impl
 from .upload import confirm_upload_impl, init_upload_impl
 from .urls import get_media_url_impl
@@ -31,3 +32,8 @@ def get_media_url(**kwargs):
 @frappe.whitelist(methods=["POST"])
 def delete_media(**kwargs):
     return delete_media_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def remove_background(**kwargs):
+    return remove_background_impl(**kwargs)

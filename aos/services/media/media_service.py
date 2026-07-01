@@ -127,6 +127,82 @@ class MediaService:
 
         return doc
 
+    # INTERNAL / SERVER-SIDE CREATION
+    def create_uploaded_from_bytes(
+        self,
+        *,
+        user: str,
+        purpose: str,
+        filename: str,
+        content_type: str,
+        data: bytes,
+        width: int | None = None,
+        height: int | None = None,
+        duration_seconds: float | None = None,
+    ) -> object:
+        """Create an uploaded media object from bytes already held by the backend.
+
+        This is for server-side media transformations such as background removal,
+        thumbnails, and future processors. User-facing uploads should continue to
+        use init_upload + direct-to-MinIO + confirm_upload.
+        """
+        purpose_rule = self._get_purpose_or_raise(purpose)
+        filename = self._normalize_filename(filename)
+        content_type = self._normalize_content_type(content_type, filename)
+        payload = bytes(data or b"")
+        size_bytes = len(payload)
+
+        self._validate_upload_request(
+            purpose_rule=purpose_rule,
+            content_type=content_type,
+            size_bytes=size_bytes,
+        )
+
+        bucket = self.storage.bucket_for_type(purpose_rule.bucket_type)
+        self.storage.ensure_bucket(bucket, public_read=purpose_rule.is_public)
+
+        object_key = self.generate_object_key(
+            owner_user=user,
+            purpose_rule=purpose_rule,
+            filename=filename,
+        )
+
+        stat = self.storage.put_bytes(
+            bucket=bucket,
+            object_key=object_key,
+            data=payload,
+            content_type=content_type,
+        )
+
+        public_url = (
+            self.storage.build_public_url(bucket, object_key)
+            if purpose_rule.is_public
+            else ""
+        )
+
+        doc = frappe.get_doc(
+            {
+                "doctype": "AOS Media Object",
+                "owner_user": user,
+                "bucket": bucket,
+                "object_key": object_key,
+                "original_filename": filename,
+                "content_type": content_type,
+                "size_bytes": int(stat.size or size_bytes),
+                "etag": stat.etag or "",
+                "visibility": purpose_rule.visibility,
+                "purpose": purpose_rule.key,
+                "status": "Uploaded",
+                "public_url": public_url,
+                "uploaded_at": now_datetime(),
+                "width": int(width or 0) if width else None,
+                "height": int(height or 0) if height else None,
+                "duration_seconds": float(duration_seconds or 0) if duration_seconds else None,
+            }
+        )
+        doc.insert(ignore_permissions=True)
+        return doc
+
     # GET / URLS
     def get_media_doc(self, media_id: str):
         media_id = str(media_id or "").strip()
