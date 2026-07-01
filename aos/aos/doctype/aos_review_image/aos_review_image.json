@@ -5,22 +5,30 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "media",
   "image"
  ],
  "fields": [
   {
+   "fieldname": "media",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Media",
+   "options": "AOS Media Object"
+  },
+  {
    "fieldname": "image",
-   "fieldtype": "Attach",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Image",
-   "reqd": 1
+   "read_only": 0
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-03-05 01:35:42.465744",
+ "modified": "2026-07-02 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Review Image",

@@ -15,6 +15,11 @@ from .eligibility import (
     get_review_eligibility_for_ad,
     review_eligibility_error_response,
 )
+from .media import (
+    attach_review_image_media,
+    normalize_review_image_inputs,
+    validate_review_images_for_create,
+)
 
 
 def create_review_impl(**kwargs):
@@ -37,7 +42,11 @@ def create_review_impl(**kwargs):
     rating = kwargs.get("rating")
     comment = str(kwargs.get("comment") or "").strip()
     title = str(kwargs.get("title") or "").strip()
-    images: List[str] = kwargs.get("images") or []
+    images: List[str] = (
+        kwargs.get("images")
+        if kwargs.get("images") is not None
+        else kwargs.get("review_images")
+    ) or []
 
     if not ad:
         return fail("Ad is required.", code="VALIDATION_ERROR")
@@ -57,11 +66,16 @@ def create_review_impl(**kwargs):
     if rating < 1 or rating > 5:
         return fail("Rating must be between 1 and 5.", code="VALIDATION_ERROR")
 
-    if not isinstance(images, list):
-        return fail("Images must be a list.", code="VALIDATION_ERROR")
+    image_media_ids, err = normalize_review_image_inputs(images)
+    if err:
+        return err
 
-    if len(images) > 5:
-        return fail("Maximum 5 images allowed.", code="VALIDATION_ERROR")
+    validated_images, err = validate_review_images_for_create(
+        media_ids=image_media_ids,
+        user=current_user,
+    )
+    if err:
+        return err
 
     ad_doc = frappe.db.get_value(
         "AOS Ad",
@@ -97,21 +111,36 @@ def create_review_impl(**kwargs):
         review.comment = comment
         review.title = title
 
-        for img in images:
-            image = str(img or "").strip()
-
-            if not image:
-                continue
-
+        for item in validated_images:
             child = review.append("review_images", {})
-            child.image = image
+            child.media = item["media"]
+            child.image = item["url"]
 
         review.insert(ignore_permissions=True)
+
+        for item in validated_images:
+            _media_doc, err = attach_review_image_media(
+                media_id=item["media"],
+                user=current_user,
+                review_id=review.name,
+            )
+            if err:
+                frappe.db.rollback()
+                return err
 
         return ok(
             "Review submitted and pending approval.",
             data={
                 "id": review.name,
+                "images": [
+                    {
+                        "media": item["media"],
+                        "media_id": item["media"],
+                        "image": item["url"],
+                        "url": item["url"],
+                    }
+                    for item in validated_images
+                ],
                 "review_viewer_state": {
                     "can_review": False,
                     "reason": "ALREADY_REVIEWED",

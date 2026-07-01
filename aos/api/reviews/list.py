@@ -11,6 +11,7 @@ from aos.api.shared.auth import optional_active_user
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.user_display import get_user_display_map
 from aos.api.shared.formatters import humanize_count
+from .media import serialize_review_image
 
 
 ALLOWED_SORTS = {"newest", "helpful", "rating_high", "rating_low"}
@@ -140,6 +141,7 @@ def list_reviews_impl(**kwargs):
 
         # Images
         images_map: Dict[str, List[str]] = {name: [] for name in review_names}
+        image_items_map: Dict[str, List[Dict[str, Any]]] = {name: [] for name in review_names}
 
         if review_names:
             image_rows = frappe.get_all(
@@ -148,11 +150,17 @@ def list_reviews_impl(**kwargs):
                     "parenttype": "AOS Review",
                     "parent": ["in", review_names],
                 },
-                fields=["parent", "image"],
+                fields=["parent", "media", "image", "idx"],
+                order_by="parent asc, idx asc",
             )
 
             for row in image_rows:
-                images_map.setdefault(row["parent"], []).append(row["image"])
+                item = serialize_review_image(row)
+                if not item.get("url"):
+                    continue
+
+                images_map.setdefault(row["parent"], []).append(item["url"])
+                image_items_map.setdefault(row["parent"], []).append(item)
 
         # Reviewer Info
         reviewer_emails = list({r["reviewer"] for r in reviews})
@@ -185,6 +193,7 @@ def list_reviews_impl(**kwargs):
                         "live_status": reviewer_info.get("live_status") if not bool(reviewer_info.get("is_deleted")) else None,
                     },
                     "images": images_map.get(r["name"], []),
+                    "image_items": image_items_map.get(r["name"], []),
                 }
             )
 
