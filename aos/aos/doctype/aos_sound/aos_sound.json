@@ -13,6 +13,7 @@
   "status",
   "column_break_dxae",
   "file_key",
+  "sound_media",
   "file_url",
   "duration_seconds",
   "is_commercial_safe",
@@ -73,6 +74,13 @@
    "label": "File Key",
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "sound_media",
+   "fieldtype": "Link",
+   "label": "Sound Media",
+   "options": "AOS Media Object",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_dxae",

@@ -12,6 +12,7 @@ import requests
 
 from aos.api.shorts.constants import MAX_SHORT_DURATION_SECONDS
 from aos.services.minio_service import MinioService
+from aos.services.media.media_service import MediaService
 
 
 class VideoService:
@@ -65,14 +66,11 @@ class VideoService:
             frappe.db.commit()
 
             minio = MinioService()
-            input_url = minio.get_public_url(doc.file_key)
-            if not input_url:
-                raise Exception("Could not resolve source video URL")
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_input:
                 tmp_input_path = tmp_input.name
 
-            cls._download_file(input_url, tmp_input_path)
+            cls._download_source_video(doc, minio, tmp_input_path)
             if not os.path.exists(tmp_input_path) or os.path.getsize(tmp_input_path) == 0:
                 raise Exception("Downloaded file is empty")
 
@@ -137,13 +135,23 @@ class VideoService:
             playback_url = minio.get_public_url(master_playlist_key)
             processed_file_url = minio.get_public_url(processed_file_key)
             thumbnail_url = None
+            thumbnail_media = None
             if os.path.exists(thumbnail_path):
                 thumbnail_url = minio.get_public_url(thumbnail_key)
+                thumbnail_media = cls._create_thumbnail_media(
+                    owner_user=doc.owner,
+                    short_id=doc.name,
+                    thumbnail_path=thumbnail_path,
+                )
+                if thumbnail_media and getattr(thumbnail_media, "public_url", None):
+                    thumbnail_url = thumbnail_media.public_url
 
             doc.reload()
             doc.playback_url = playback_url
             doc.thumbnail_url = thumbnail_url
             doc.duration_seconds = duration
+            if thumbnail_media and doc.meta.has_field("thumbnail_media"):
+                doc.thumbnail_media = thumbnail_media.name
             doc.status = "ready"
             doc.processing_error = None
 
@@ -211,6 +219,56 @@ class VideoService:
                     if chunk:
                         out.write(chunk)
 
+    @classmethod
+    def _download_source_video(cls, doc, minio: MinioService, destination_path: str) -> None:
+        """Download the raw uploaded short from the new media object or legacy key."""
+        raw_media_id = getattr(doc, "raw_video_media", None)
+        if raw_media_id:
+            media_service = MediaService()
+            media_doc = media_service.get_media_doc(raw_media_id)
+            payload = media_service.storage.get_bytes(media_doc.bucket, media_doc.object_key)
+            with open(destination_path, "wb") as out:
+                out.write(payload)
+            return
+
+        input_url = minio.get_public_url(doc.file_key)
+        if not input_url:
+            raise Exception("Could not resolve source video URL")
+        cls._download_file(input_url, destination_path)
+
+    @classmethod
+    def _create_thumbnail_media(cls, *, owner_user: str, short_id: str, thumbnail_path: str):
+        """Create and attach an AOS Media Object for the generated public thumbnail."""
+        try:
+            with open(thumbnail_path, "rb") as f:
+                data = f.read()
+            if not data:
+                return None
+
+            media_service = MediaService()
+            media_doc = media_service.create_uploaded_from_bytes(
+                user=owner_user,
+                purpose="short_thumbnail",
+                filename=f"{short_id}_thumbnail.jpg",
+                content_type="image/jpeg",
+                data=data,
+            )
+            media_service.attach_media(
+                media_id=media_doc.name,
+                user=owner_user,
+                purpose="short_thumbnail",
+                attached_doctype="AOS Short",
+                attached_name=short_id,
+                attached_field="thumbnail_media",
+            )
+            return media_service.get_media_doc(media_doc.name)
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                f"Short thumbnail media creation failed: {short_id}",
+            )
+            return None
+
     # SOUND CONFIG
     @staticmethod
     def _get_short_sound_config(short_id: str) -> dict | None:
@@ -223,6 +281,7 @@ class VideoService:
                 ss.volume,
                 ss.is_original_audio,
                 snd.file_key,
+                snd.sound_media,
                 snd.file_url,
                 snd.status
             FROM `tabAOS Short Sound` ss
@@ -245,7 +304,7 @@ class VideoService:
             # Original audio means keep the uploaded video's audio for Phase 4B.
             return None
 
-        if not sound.get("file_key") and not sound.get("file_url"):
+        if not sound.get("sound_media") and not sound.get("file_key") and not sound.get("file_url"):
             raise Exception("Selected sound file is missing")
 
         return sound
@@ -253,25 +312,38 @@ class VideoService:
     @classmethod
     def _download_sound_file(cls, sound_config: dict, minio: MinioService) -> str:
         suffix = ".mp3"
-        file_key = sound_config.get("file_key")
-        if file_key:
-            _, ext = os.path.splitext(str(file_key))
+        media_id = sound_config.get("sound_media")
+        if media_id:
+            media_service = MediaService()
+            media_doc = media_service.get_media_doc(media_id)
+            _, ext = os.path.splitext(str(media_doc.object_key or media_doc.original_filename or ""))
             if ext:
                 suffix = ext
-            url = minio.get_public_url(file_key)
+            payload = media_service.storage.get_bytes(media_doc.bucket, media_doc.object_key)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_sound:
+                tmp_sound.write(payload)
+                tmp_sound_path = tmp_sound.name
         else:
-            url = sound_config.get("file_url")
-            _, ext = os.path.splitext(str(url or ""))
-            if ext:
-                suffix = ext.split("?")[0]
+            file_key = sound_config.get("file_key")
+            if file_key:
+                _, ext = os.path.splitext(str(file_key))
+                if ext:
+                    suffix = ext
+                url = minio.get_public_url(file_key)
+            else:
+                url = sound_config.get("file_url")
+                _, ext = os.path.splitext(str(url or ""))
+                if ext:
+                    suffix = ext.split("?")[0]
 
-        if not url:
-            raise Exception("Could not resolve sound URL")
+            if not url:
+                raise Exception("Could not resolve sound URL")
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_sound:
-            tmp_sound_path = tmp_sound.name
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_sound:
+                tmp_sound_path = tmp_sound.name
 
-        cls._download_file(url, tmp_sound_path)
+            cls._download_file(url, tmp_sound_path)
+
         if not os.path.exists(tmp_sound_path) or os.path.getsize(tmp_sound_path) == 0:
             raise Exception("Downloaded sound file is empty")
 

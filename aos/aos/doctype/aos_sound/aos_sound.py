@@ -61,7 +61,7 @@ class AOSSound(Document):
             frappe.throw("Invalid sound status")
 
     def _validate_audio_reference(self):
-        if not self.file_key and not self.file_url:
+        if not self.sound_media and not self.file_key and not self.file_url:
             frappe.throw("Sound file is required")
 
     def _validate_duration(self):

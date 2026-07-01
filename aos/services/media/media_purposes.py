@@ -168,9 +168,9 @@ MEDIA_PURPOSES: dict[str, MediaPurpose] = {
     ),
     "sound_upload": MediaPurpose(
         key="sound_upload",
-        bucket_type="private",
-        prefix="sounds/raw",
-        visibility="Private",
+        bucket_type="public",
+        prefix="sounds/uploads",
+        visibility="Public",
         allowed_content_types=frozenset(AUDIO_TYPES),
         max_size_bytes=50 * 1024 * 1024,
     ),

@@ -7,12 +7,14 @@
  "field_order": [
   "naming_series",
   "file_key",
+  "raw_video_media",
   "playback_url",
   "processed_file_key",
   "processed_file_url",
   "audio_mix_status",
   "audio_mix_error",
   "thumbnail_url",
+  "thumbnail_media",
   "duration_seconds",
   "ad",
   "seller",
@@ -70,6 +72,13 @@
    "read_only": 1
   },
   {
+   "fieldname": "thumbnail_media",
+   "fieldtype": "Link",
+   "label": "Thumbnail Media",
+   "options": "AOS Media Object",
+   "read_only": 1
+  },
+  {
    "fieldname": "column_break_odah",
    "fieldtype": "Column Break"
   },
@@ -79,6 +88,13 @@
    "label": "File Key",
    "read_only": 1,
    "reqd": 1
+  },
+  {
+   "fieldname": "raw_video_media",
+   "fieldtype": "Link",
+   "label": "Raw Video Media",
+   "options": "AOS Media Object",
+   "read_only": 1
   },
   {
    "fieldname": "playback_url",

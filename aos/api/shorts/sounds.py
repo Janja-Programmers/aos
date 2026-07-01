@@ -15,6 +15,12 @@ from aos.api.shared.responses import ok, fail
 from aos.api.shared.validators import require_id
 from aos.api.shared.formatters import humanize_count
 from aos.services.minio_service import MinioService
+from aos.services.media.media_service import (
+    MediaNotFoundError,
+    MediaPermissionError,
+    MediaService,
+    MediaValidationError,
+)
 
 from aos.api.shorts.constants import (
     SOUND_DEFAULT_LIMIT,
@@ -82,6 +88,30 @@ def _normalize_bool(value, *, default: int = 0) -> int:
 
     return 1 if default else 0
 
+
+
+
+def _media_error_response(exc: Exception):
+    if isinstance(exc, MediaNotFoundError):
+        return fail(str(exc) or "Media not found.", code="NOT_FOUND")
+    if isinstance(exc, MediaPermissionError):
+        return fail(str(exc) or "Not allowed.", code="FORBIDDEN")
+    if isinstance(exc, MediaValidationError):
+        return fail(str(exc) or "Invalid media.", code="VALIDATION_ERROR")
+    return None
+
+
+def _serialize_sound_upload_media(media_doc) -> dict[str, Any]:
+    return {
+        "id": media_doc.name,
+        "media_id": media_doc.name,
+        "purpose": media_doc.purpose,
+        "status": media_doc.status,
+        "visibility": media_doc.visibility,
+        "content_type": media_doc.content_type,
+        "size_bytes": int(media_doc.size_bytes or 0),
+        "url": media_doc.public_url or None,
+    }
 
 def _active_sound_filters() -> dict[str, Any]:
     return {"status": ["in", list(SOUND_SHAREABLE_STATUSES)]}
@@ -219,6 +249,10 @@ def serialize_sound_row(
         "artist": row.get("artist") or "",
         "source_type": row.get("source_type") or DEFAULT_SOUND_SOURCE_TYPE,
         "file_url": row.get("file_url"),
+        "sound_media": row.get("sound_media"),
+        "sound_media_id": row.get("sound_media"),
+        "media": row.get("sound_media"),
+        "media_id": row.get("sound_media"),
         "duration_seconds": float(row.get("duration_seconds") or 0),
         "usage_count": int(row.get("usage_count") or 0),
         "usage_count_display": humanize_count(row.get("usage_count") or 0),
@@ -259,6 +293,7 @@ def get_short_sound_map(short_ids: list[str]) -> dict[str, dict[str, Any]]:
             snd.artist,
             snd.source_type,
             snd.file_url,
+            snd.sound_media,
             snd.duration_seconds,
             snd.usage_count,
             snd.favorite_count,
@@ -284,6 +319,7 @@ def get_short_sound_map(short_ids: list[str]) -> dict[str, dict[str, Any]]:
                 "artist": row.get("artist"),
                 "source_type": row.get("source_type"),
                 "file_url": row.get("file_url"),
+                "sound_media": row.get("sound_media"),
                 "duration_seconds": row.get("duration_seconds"),
                 "usage_count": row.get("usage_count"),
                 "favorite_count": row.get("favorite_count"),
@@ -395,6 +431,7 @@ def set_short_sound(
             "artist",
             "source_type",
             "file_url",
+            "sound_media",
             "duration_seconds",
             "usage_count",
             "favorite_count",
@@ -453,20 +490,33 @@ def init_sound_upload_impl(**kwargs):
         return size_err
 
     try:
-        service = MinioService()
-        file_key = service.generate_file_key("sounds/uploads", kwargs.get("filename"))
-        upload_url = service.get_presigned_upload_url(file_key)
-        public_url = service.get_public_url(file_key)
+        media_service = MediaService()
+        media_doc, upload_url, upload_headers, expires_in = media_service.init_upload(
+            user=user,
+            purpose="sound_upload",
+            filename=kwargs.get("filename"),
+            content_type=kwargs.get("content_type") or "audio/mpeg",
+            size_bytes=kwargs.get("size_bytes"),
+        )
 
         return ok(
             "Sound upload initialized.",
             data={
-                "file_key": file_key,
+                "media_id": media_doc.name,
+                "sound_media": media_doc.name,
+                "file_key": media_doc.object_key,
                 "upload_url": upload_url,
-                "upload_headers": {},
-                "public_url": public_url,
+                "upload_headers": upload_headers,
+                "expires_in": expires_in,
+                "public_url": media_doc.public_url,
+                "media": _serialize_sound_upload_media(media_doc),
             },
         )
+    except (MediaValidationError, MediaPermissionError, MediaNotFoundError) as exc:
+        media_err = _media_error_response(exc)
+        if media_err:
+            return media_err
+        return fail("Failed to initialize sound upload", code="INTERNAL_ERROR")
     except Exception:
         frappe.log_error(frappe.get_traceback(), "init_sound_upload failed")
         return fail("Failed to initialize sound upload", code="INTERNAL_ERROR")
@@ -486,9 +536,12 @@ def confirm_sound_upload_impl(**kwargs):
     if rl:
         return rl
 
-    file_key, err = require_id(kwargs.get("file_key"), "file_key")
-    if err:
-        return err
+    media_id = str(kwargs.get("media_id") or kwargs.get("sound_media") or "").strip()
+    file_key = str(kwargs.get("file_key") or "").strip()
+    if not media_id:
+        file_key, err = require_id(file_key, "file_key")
+        if err:
+            return err
 
     title, err = validate_sound_title(kwargs.get("title"))
     if err:
@@ -518,15 +571,34 @@ def confirm_sound_upload_impl(**kwargs):
 
     try:
         service = MinioService()
+        media_service = MediaService()
+        media_doc = None
 
-        file_key_err = _validate_sound_upload_file_key(file_key, service)
-        if file_key_err:
-            return file_key_err
+        if media_id:
+            try:
+                media_doc = media_service.confirm_upload(user=user, media_id=media_id)
+            except (MediaValidationError, MediaPermissionError, MediaNotFoundError) as exc:
+                media_err = _media_error_response(exc)
+                if media_err:
+                    return media_err
+                return fail("Upload not completed or file missing.", code="FILE_MISSING")
 
-        if not service.file_exists(file_key):
-            return fail("Upload not completed or file missing.", code="FILE_MISSING")
+            if media_doc.purpose != "sound_upload":
+                return fail("Media has the wrong purpose.", code="VALIDATION_ERROR")
+            if media_doc.visibility != "Public":
+                return fail("Sound media must be public.", code="VALIDATION_ERROR")
 
-        file_url = service.get_public_url(file_key)
+            file_key = media_doc.object_key
+            file_url = media_doc.public_url or media_service.get_url(media_id=media_doc.name, user=user)
+        else:
+            file_key_err = _validate_sound_upload_file_key(file_key, service)
+            if file_key_err:
+                return file_key_err
+
+            if not service.file_exists(file_key):
+                return fail("Upload not completed or file missing.", code="FILE_MISSING")
+
+            file_url = service.get_public_url(file_key)
 
         doc = frappe.get_doc(
             {
@@ -536,6 +608,7 @@ def confirm_sound_upload_impl(**kwargs):
                 "owner": user,
                 "source_type": source_type or SOUND_SOURCE_TYPE_UPLOADED,
                 "status": "active",
+                "sound_media": media_doc.name if media_doc else None,
                 "file_key": file_key,
                 "file_url": file_url,
                 "duration_seconds": duration_seconds,
@@ -543,6 +616,17 @@ def confirm_sound_upload_impl(**kwargs):
             }
         )
         doc.insert(ignore_permissions=True)
+
+        if media_doc:
+            media_service.attach_media(
+                media_id=media_doc.name,
+                user=user,
+                purpose="sound_upload",
+                attached_doctype="AOS Sound",
+                attached_name=doc.name,
+                attached_field="sound_media",
+            )
+
         frappe.db.commit()
 
         row = frappe.db.get_value(
@@ -554,6 +638,7 @@ def confirm_sound_upload_impl(**kwargs):
                 "artist",
                 "source_type",
                 "file_url",
+                "sound_media",
                 "duration_seconds",
                 "usage_count",
                 "favorite_count",
@@ -612,7 +697,7 @@ def list_sounds_impl(**kwargs):
         rows = frappe.db.sql(
             f"""
             SELECT
-                name, title, artist, source_type, file_url, duration_seconds,
+                name, title, artist, source_type, file_url, sound_media, duration_seconds,
                 usage_count, favorite_count, status, is_commercial_safe,
                 owner, created_from_short, creation
             FROM `tabAOS Sound`
@@ -668,7 +753,7 @@ def search_sounds_impl(**kwargs):
         rows = frappe.db.sql(
             """
             SELECT
-                name, title, artist, source_type, file_url, duration_seconds,
+                name, title, artist, source_type, file_url, sound_media, duration_seconds,
                 usage_count, favorite_count, status, is_commercial_safe,
                 owner, created_from_short, creation
             FROM `tabAOS Sound`
@@ -703,6 +788,7 @@ def get_sound_impl(**kwargs):
                 "artist",
                 "source_type",
                 "file_url",
+                "sound_media",
                 "duration_seconds",
                 "usage_count",
                 "favorite_count",
@@ -806,7 +892,7 @@ def my_favorite_sounds_impl(**kwargs):
         rows = frappe.db.sql(
             f"""
             SELECT
-                snd.name, snd.title, snd.artist, snd.source_type, snd.file_url,
+                snd.name, snd.title, snd.artist, snd.source_type, snd.file_url, snd.sound_media,
                 snd.duration_seconds, snd.usage_count, snd.favorite_count,
                 snd.status, snd.is_commercial_safe, snd.owner, snd.created_from_short,
                 fav.creation AS action_creation, fav.name AS action_name

@@ -502,6 +502,8 @@ def _select_short_rows_sql() -> str:
             s.playback_url,
             s.processed_file_key,
             s.processed_file_url,
+            s.raw_video_media,
+            s.thumbnail_media,
             s.audio_mix_status,
             s.audio_mix_error,
             s.thumbnail_url,

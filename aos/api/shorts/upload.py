@@ -14,6 +14,12 @@ import frappe
 
 from aos.services.minio_service import MinioService
 from aos.services.notification_service import NotificationService
+from aos.services.media.media_service import (
+    MediaNotFoundError,
+    MediaPermissionError,
+    MediaService,
+    MediaValidationError,
+)
 
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
@@ -117,6 +123,31 @@ def _normalize_bool(value, *, default: int = 1) -> int:
     return 1 if default else 0
 
 
+def _media_error_response(exc: Exception):
+    """Convert media service exceptions to stable API responses."""
+    if isinstance(exc, MediaNotFoundError):
+        return fail(str(exc) or "Media not found.", code="NOT_FOUND")
+    if isinstance(exc, MediaPermissionError):
+        return fail(str(exc) or "Not allowed.", code="FORBIDDEN")
+    if isinstance(exc, MediaValidationError):
+        return fail(str(exc) or "Invalid media.", code="VALIDATION_ERROR")
+    return None
+
+
+def _serialize_short_upload_media(media_doc) -> dict:
+    return {
+        "id": media_doc.name,
+        "media_id": media_doc.name,
+        "purpose": media_doc.purpose,
+        "status": media_doc.status,
+        "visibility": media_doc.visibility,
+        "content_type": media_doc.content_type,
+        "size_bytes": int(media_doc.size_bytes or 0),
+        "url": media_doc.public_url or None,
+    }
+
+
+
 # INIT UPLOAD
 def init_upload_impl(**kwargs):
     user, err = require_login()
@@ -139,16 +170,20 @@ def init_upload_impl(**kwargs):
         return err
 
     try:
-        service = MinioService()
-
-        file_key = service.generate_file_key("raw", filename)
-        upload_url = service.get_presigned_upload_url(file_key)
-        public_url = service.get_public_url(file_key)
+        media_service = MediaService()
+        media_doc, upload_url, upload_headers, expires_in = media_service.init_upload(
+            user=user,
+            purpose="short_video_raw",
+            filename=filename,
+            content_type=kwargs.get("content_type") or "video/mp4",
+            size_bytes=kwargs.get("size_bytes"),
+        )
 
         doc = frappe.get_doc(
             {
                 "doctype": "AOS Short",
-                "file_key": file_key,
+                "file_key": media_doc.object_key,
+                "raw_video_media": media_doc.name,
                 "status": "initialized",
                 "owner": user,
                 "audience": DEFAULT_SHORT_AUDIENCE,
@@ -162,13 +197,22 @@ def init_upload_impl(**kwargs):
             "Upload initialized.",
             data={
                 "short_id": doc.name,
-                "file_key": file_key,
+                "media_id": media_doc.name,
+                "raw_video_media": media_doc.name,
+                "file_key": media_doc.object_key,
                 "upload_url": upload_url,
-                "upload_headers": {},
-                "public_url": public_url,
+                "upload_headers": upload_headers,
+                "expires_in": expires_in,
+                "public_url": None,
+                "media": _serialize_short_upload_media(media_doc),
             },
         )
 
+    except (MediaValidationError, MediaPermissionError, MediaNotFoundError) as exc:
+        media_err = _media_error_response(exc)
+        if media_err:
+            return media_err
+        return fail("Failed to initialize upload", code="INTERNAL_ERROR")
     except Exception:
         frappe.log_error(frappe.get_traceback(), "init_upload failed")
         return fail("Failed to initialize upload", code="INTERNAL_ERROR")
@@ -205,17 +249,45 @@ def confirm_upload_impl(**kwargs):
                 code="VALIDATION_ERROR",
             )
 
-        # Verify file exists in MinIO
-        minio = MinioService()
-        if not minio.file_exists(doc.file_key):
-            return fail(
-                "Upload not completed or file missing.",
-                code="FILE_MISSING",
-            )
+        media_doc = None
+        media_service = MediaService()
+
+        if getattr(doc, "raw_video_media", None):
+            try:
+                media_doc = media_service.confirm_upload(
+                    user=user,
+                    media_id=doc.raw_video_media,
+                )
+            except (MediaValidationError, MediaPermissionError, MediaNotFoundError) as exc:
+                media_err = _media_error_response(exc)
+                if media_err:
+                    return media_err
+                return fail("Upload not completed or file missing.", code="FILE_MISSING")
+
+            doc.file_key = media_doc.object_key
+        else:
+            # Legacy Shorts upload flow for older rows created before AOS Media Object.
+            minio = MinioService()
+            if not minio.file_exists(doc.file_key):
+                return fail(
+                    "Upload not completed or file missing.",
+                    code="FILE_MISSING",
+                )
 
         # Move to uploaded
         doc.status = "uploaded"
         doc.save(ignore_permissions=True)
+
+        if media_doc:
+            media_service.attach_media(
+                media_id=media_doc.name,
+                user=user,
+                purpose="short_video_raw",
+                attached_doctype="AOS Short",
+                attached_name=doc.name,
+                attached_field="raw_video_media",
+            )
+
         frappe.db.commit()
 
         # Enqueue processing
@@ -228,7 +300,11 @@ def confirm_upload_impl(**kwargs):
 
         return ok(
             "Upload confirmed.",
-            data={"short_id": doc.name},
+            data={
+                "short_id": doc.name,
+                "media_id": getattr(doc, "raw_video_media", None),
+                "raw_video_media": getattr(doc, "raw_video_media", None),
+            },
         )
 
     except Exception:
