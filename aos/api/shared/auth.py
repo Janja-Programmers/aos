@@ -54,6 +54,38 @@ def current_user() -> str:
     return optional_active_user() or GUEST_USER
 
 
+def require_authenticated_user():
+    """
+    Return (user, None) when logged in and active, else (None, fail...).
+
+    Unlike require_login(), this intentionally does not require an
+    AOS User Preference. Use it for infrastructure-style authenticated
+    APIs such as media uploads where ownership is enough and market
+    preference setup should not block the operation.
+    """
+    user = session_user()
+
+    if user == GUEST_USER:
+        return None, fail(
+            "Please login to continue.",
+            code="UNAUTHORIZED",
+        )
+
+    deleted_err = ensure_account_active(user)
+    if deleted_err:
+        return None, deleted_err
+
+    enabled = frappe.db.get_value("User", user, "enabled")
+    if int(enabled or 0) != 1:
+        return None, fail(
+            "Account disabled.",
+            code="ACCOUNT_DISABLED",
+            http_status=403,
+        )
+
+    return user, None
+
+
 def require_login():
     """
     Return (user, None) when logged in, active, and preference exists,

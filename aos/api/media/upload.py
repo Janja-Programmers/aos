@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import frappe
 
-from aos.api.shared.auth import require_login
+from aos.api.shared.auth import require_authenticated_user
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 from aos.services.media.media_service import (
@@ -21,7 +21,7 @@ from .validators import invalid_purpose_response, require_media_id, require_uplo
 
 
 def init_upload_impl(**kwargs):
-    user, err = require_login()
+    user, err = require_authenticated_user()
     if err:
         return err
 
@@ -69,7 +69,7 @@ def init_upload_impl(**kwargs):
 
 
 def confirm_upload_impl(**kwargs):
-    user, err = require_login()
+    user, err = require_authenticated_user()
     if err:
         return err
 

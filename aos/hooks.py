@@ -152,9 +152,9 @@ scheduler_events = {
     "hourly": [
         "aos.tasks.ads.expire_ads",
         "aos.tasks.shorts.update_short_ranking",
-        "aos.tasks.media.cleanup_media_objects",
         "aos.tasks.shorts.aggregate_short_metrics",
         "aos.tasks.sellers.refresh_recent_seller_response_metrics",
+        "aos.tasks.media.cleanup_media_objects",
     ],
     "daily": [
         "aos.tasks.fx.update_exchange_rates",
