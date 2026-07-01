@@ -120,7 +120,7 @@ def _serialize_edited_message(
     Serialize edited message using the same shape as send/list message.
     """
 
-    attachments_map = _serialize_attachments_bulk([msg.name])
+    attachments_map = _serialize_attachments_bulk([msg.name], current_user=current_user)
 
     reply_map = _fetch_reply_messages_bulk(
         [msg.reply_to_message] if msg.reply_to_message else []

@@ -7,6 +7,7 @@
  "field_order": [
   "naming_series",
   "message",
+  "media",
   "file",
   "column_break_szow",
   "file_type",
@@ -31,12 +32,20 @@
    "search_index": 1
   },
   {
-   "fieldname": "file",
+   "fieldname": "media",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "File",
-   "options": "File",
-   "reqd": 1
+   "label": "Media",
+   "options": "AOS Media Object",
+   "search_index": 1
+  },
+  {
+   "fieldname": "file",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Legacy File",
+   "reqd": 0,
+   "description": "Legacy Frappe File reference kept only for old rows. New chat attachments must use Media."
   },
   {
    "fieldname": "file_type",
@@ -61,7 +70,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-19 01:51:23.886057",
+ "modified": "2026-07-01 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Message Attachment",

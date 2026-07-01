@@ -208,7 +208,7 @@ def _serialize_starred_messages(
         user=current_user,
     )
 
-    attachments_map = _serialize_attachments_bulk(visible_message_ids)
+    attachments_map = _serialize_attachments_bulk(visible_message_ids, current_user=current_user)
     user_map = _fetch_users(user_ids)
     ad_map = _fetch_ads_bulk(ad_ids)
 

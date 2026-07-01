@@ -20,6 +20,12 @@ from aos.api.shared.responses import ok, fail
 from aos.api.shared.user_display import get_user_display_map
 
 from aos.services.notification_service import NotificationService
+from aos.services.media.media_service import (
+    MediaNotFoundError,
+    MediaPermissionError,
+    MediaService,
+    MediaValidationError,
+)
 from aos.api.shorts.visibility import can_view_short
 from aos.services.seller_response_metrics import (
     enqueue_conversation_response_metrics_refresh,
@@ -118,7 +124,29 @@ def _serialize_user(user_id: str, user_map: Dict[str, dict]) -> Dict[str, Any]:
     }
 
 
-def _serialize_attachments_bulk(message_ids: List[str]) -> Dict[str, List[Dict]]:
+def _infer_attachment_type_from_content_type(
+    content_type: str | None,
+    fallback: str | None = None,
+) -> str:
+    content_type = str(content_type or "").split(";", 1)[0].strip().lower()
+    fallback = str(fallback or "").strip().lower()
+
+    if content_type.startswith("image/"):
+        return "image"
+    if content_type.startswith("video/"):
+        return "video"
+    if content_type.startswith("audio/"):
+        return "audio"
+    if fallback in {"image", "video", "audio", "document"}:
+        return fallback
+    return "document"
+
+
+def _serialize_attachments_bulk(
+    message_ids: List[str],
+    *,
+    current_user: str | None = None,
+) -> Dict[str, List[Dict]]:
     if not message_ids:
         return {}
 
@@ -127,41 +155,137 @@ def _serialize_attachments_bulk(message_ids: List[str]) -> Dict[str, List[Dict]]
     if not unique_message_ids:
         return {}
 
+    fields = ["name", "message", "file", "file_type", "sort_order"]
+    try:
+        if frappe.get_meta("AOS Message Attachment").has_field("media"):
+            fields.append("media")
+    except Exception:
+        pass
+
     rows = frappe.get_all(
         "AOS Message Attachment",
         filters={"message": ["in", unique_message_ids]},
-        fields=["message", "file", "file_type", "sort_order"],
+        fields=fields,
         order_by="sort_order asc",
     )
 
     if not rows:
         return {}
 
-    file_ids = [r.file for r in rows if r.file]
-
-    if not file_ids:
-        return {}
-
-    files = frappe.get_all(
-        "File",
-        filters={"name": ["in", list(set(file_ids))]},
-        fields=["name", "file_url"],
-    )
-
-    file_map = {f.name: f.file_url for f in files}
-
     grouped: Dict[str, List[Dict]] = {}
 
-    for r in rows:
-        file_url = file_map.get(r.file)
+    media_ids = list(
+        {
+            getattr(row, "media", None)
+            for row in rows
+            if getattr(row, "media", None)
+        }
+    )
+
+    media_map: Dict[str, frappe._dict] = {}
+    media_urls: Dict[str, str] = {}
+
+    if media_ids:
+        media_rows = frappe.get_all(
+            "AOS Media Object",
+            filters={"name": ["in", media_ids]},
+            fields=[
+                "name",
+                "purpose",
+                "status",
+                "visibility",
+                "original_filename",
+                "content_type",
+                "size_bytes",
+                "width",
+                "height",
+                "duration_seconds",
+                "public_url",
+            ],
+        )
+        media_map = {media.name: media for media in media_rows}
+
+        service = MediaService()
+        for media_id in media_ids:
+            try:
+                media_urls[media_id] = service.get_url(
+                    media_id=media_id,
+                    user=current_user,
+                )
+            except (MediaNotFoundError, MediaPermissionError, MediaValidationError):
+                # The caller should already have checked conversation visibility.
+                # If a stale/invalid media row slips through, skip exposing it.
+                continue
+            except Exception:
+                frappe.log_error(
+                    frappe.get_traceback(),
+                    "AOS Chat Attachment Media URL Failed",
+                )
+                continue
+
+    legacy_file_ids = [
+        row.file for row in rows if getattr(row, "file", None) and not getattr(row, "media", None)
+    ]
+    legacy_file_map: Dict[str, str] = {}
+
+    if legacy_file_ids:
+        files = frappe.get_all(
+            "File",
+            filters={"name": ["in", list(set(legacy_file_ids))]},
+            fields=["name", "file_url"],
+        )
+        legacy_file_map = {f.name: f.file_url for f in files}
+
+    for row in rows:
+        media_id = getattr(row, "media", None)
+
+        if media_id:
+            media = media_map.get(media_id)
+            url = media_urls.get(media_id)
+            if not media or not url:
+                continue
+
+            file_type = _infer_attachment_type_from_content_type(
+                media.content_type,
+                row.file_type,
+            )
+
+            grouped.setdefault(row.message, []).append(
+                {
+                    "id": row.name,
+                    "media": media_id,
+                    "media_id": media_id,
+                    "file": getattr(row, "file", None),
+                    "url": url,
+                    "type": file_type,
+                    "file_type": file_type,
+                    "sort_order": row.sort_order,
+                    "filename": media.original_filename,
+                    "content_type": media.content_type,
+                    "size_bytes": media.size_bytes,
+                    "width": media.width,
+                    "height": media.height,
+                    "duration_seconds": media.duration_seconds,
+                    "visibility": media.visibility,
+                }
+            )
+            continue
+
+        # Legacy Frappe File fallback for old messages only.
+        file_url = legacy_file_map.get(getattr(row, "file", None))
         if not file_url:
             continue
 
-        grouped.setdefault(r.message, []).append(
+        grouped.setdefault(row.message, []).append(
             {
+                "id": row.name,
+                "media": None,
+                "media_id": None,
+                "file": row.file,
                 "url": file_url,
-                "type": r.file_type,
-                "sort_order": r.sort_order,
+                "type": row.file_type,
+                "file_type": row.file_type,
+                "sort_order": row.sort_order,
             }
         )
 
@@ -895,6 +1019,72 @@ def _serialize_message(
     }
 
 
+def _prepare_chat_attachments(
+    *,
+    attachments: List[Dict],
+    current_user: str,
+) -> tuple[List[Dict[str, Any]], Any | None]:
+    """Validate chat attachment payloads and return normalized rows."""
+
+    if not isinstance(attachments, list):
+        return [], fail("attachments must be a list.", code="VALIDATION_ERROR")
+
+    service = MediaService()
+    prepared: List[Dict[str, Any]] = []
+
+    for index, att in enumerate(attachments):
+        if not isinstance(att, dict):
+            return [], fail("Invalid attachment payload.", code="VALIDATION_ERROR")
+
+        media_id = (
+            att.get("media")
+            or att.get("media_id")
+            or att.get("id")
+        )
+        media_id = str(media_id or "").strip()
+
+        if not media_id:
+            if att.get("file"):
+                return [], fail(
+                    "Chat attachments must be uploaded as media_id using purpose chat_attachment.",
+                    code="VALIDATION_ERROR",
+                )
+            return [], fail("Attachment media_id is required.", code="VALIDATION_ERROR")
+
+        try:
+            media_doc = service.assert_media_ready_for_attach(
+                media_id=media_id,
+                user=current_user,
+                purpose="chat_attachment",
+            )
+        except MediaNotFoundError as exc:
+            return [], fail(str(exc), code="NOT_FOUND")
+        except MediaPermissionError as exc:
+            return [], fail(str(exc), code="FORBIDDEN")
+        except MediaValidationError as exc:
+            return [], fail(str(exc), code="VALIDATION_ERROR")
+
+        file_type = (
+            att.get("file_type")
+            or att.get("type")
+            or _infer_attachment_type_from_content_type(media_doc.content_type)
+        )
+        file_type = str(file_type or "").strip().lower()
+
+        if file_type not in {"image", "video", "audio", "document"}:
+            file_type = _infer_attachment_type_from_content_type(media_doc.content_type)
+
+        prepared.append(
+            {
+                "media": media_id,
+                "file_type": file_type,
+                "sort_order": index,
+            }
+        )
+
+    return prepared, None
+
+
 # send_message
 def send_message_impl(**kwargs):
     current_user, err = require_login()
@@ -920,8 +1110,12 @@ def send_message_impl(**kwargs):
     if not conv_id:
         return fail("conversation_id is required.", code="VALIDATION_ERROR")
 
-    if not isinstance(attachments, list):
-        return fail("attachments must be a list.", code="VALIDATION_ERROR")
+    prepared_attachments, attachment_error = _prepare_chat_attachments(
+        attachments=attachments,
+        current_user=current_user,
+    )
+    if attachment_error:
+        return attachment_error
 
     try:
         conv = _get_conversation_row(conv_id)
@@ -995,41 +1189,27 @@ def send_message_impl(**kwargs):
 
         # Attachments.
         has_attachments = 0
+        media_service = MediaService()
 
-        for i, att in enumerate(attachments):
-            if not isinstance(att, dict):
-                frappe.db.rollback()
-                return fail(
-                    "Invalid attachment payload.",
-                    code="VALIDATION_ERROR",
-                )
-
-            file_id = att.get("file")
-            file_type = att.get("file_type")
-
-            if not file_id or not file_type:
-                frappe.db.rollback()
-                return fail(
-                    "Invalid attachment payload.",
-                    code="VALIDATION_ERROR",
-                )
-
-            if not frappe.db.exists("File", file_id):
-                frappe.db.rollback()
-                return fail(
-                    "Invalid file reference.",
-                    code="VALIDATION_ERROR",
-                )
-
+        for att in prepared_attachments:
             frappe.get_doc(
                 {
                     "doctype": "AOS Message Attachment",
                     "message": msg.name,
-                    "file": file_id,
-                    "file_type": file_type,
-                    "sort_order": i,
+                    "media": att["media"],
+                    "file_type": att["file_type"],
+                    "sort_order": att["sort_order"],
                 }
             ).insert(ignore_permissions=True)
+
+            media_service.attach_media(
+                media_id=att["media"],
+                user=current_user,
+                purpose="chat_attachment",
+                attached_doctype="AOS Message",
+                attached_name=msg.name,
+                attached_field="attachments",
+            )
 
             has_attachments = 1
 
@@ -1045,7 +1225,7 @@ def send_message_impl(**kwargs):
         msg.forwarded_from_conversation = None
 
         # Build rich maps for response/realtime/preview.
-        attachments_map = _serialize_attachments_bulk([msg.name])
+        attachments_map = _serialize_attachments_bulk([msg.name], current_user=current_user)
 
         reply_map = _fetch_reply_messages_bulk(
             [reply_to_message] if reply_to_message else []
@@ -1339,7 +1519,7 @@ def list_messages_impl(**kwargs):
 
         short_ids = list(set(short_ids))
 
-        attachments_map = _serialize_attachments_bulk(visible_message_ids)
+        attachments_map = _serialize_attachments_bulk(visible_message_ids, current_user=current_user)
         user_map = _fetch_users(sender_ids)
         ad_map = _fetch_ads_bulk(ad_ids)
         short_map = _fetch_shorts_bulk(short_ids, viewer=current_user)

@@ -374,9 +374,44 @@ class MediaService:
             return
         if "System Manager" in frappe.get_roles(user):
             return
-        # Feature-specific private media sharing checks will be added when Chat
-        # and Verification are migrated to media_id.
+        if self._user_can_read_chat_attachment(doc, user):
+            return
         raise MediaPermissionError("You cannot access this media")
+
+    def _user_can_read_chat_attachment(self, doc, user: str) -> bool:
+        """Allow chat participants to read private media attached to visible messages."""
+        if getattr(doc, "purpose", None) != "chat_attachment":
+            return False
+
+        try:
+            rows = frappe.db.sql(
+                """
+                SELECT a.name
+                FROM `tabAOS Message Attachment` a
+                INNER JOIN `tabAOS Message` m
+                    ON m.name = a.message
+                INNER JOIN `tabAOS Conversation` c
+                    ON c.name = m.conversation
+                WHERE
+                    a.media = %(media)s
+                    AND IFNULL(m.deleted_for_everyone, 0) = 0
+                    AND (
+                        (c.participant_1 = %(user)s AND IFNULL(m.deleted_for_1, 0) = 0)
+                        OR
+                        (c.participant_2 = %(user)s AND IFNULL(m.deleted_for_2, 0) = 0)
+                    )
+                LIMIT 1
+                """,
+                {"media": doc.name, "user": user},
+                as_dict=True,
+            )
+            return bool(rows)
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                "AOS Media Chat Attachment Permission Check Failed",
+            )
+            return False
 
     # INTERNAL HELPERS
     def _get_purpose_or_raise(self, purpose: str) -> MediaPurpose:

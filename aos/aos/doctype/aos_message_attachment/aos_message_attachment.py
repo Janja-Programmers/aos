@@ -8,7 +8,7 @@ from frappe.model.document import Document
 class AOSMessageAttachment(Document):
     def validate(self):
         self._validate_message()
-        self._validate_file()
+        self._validate_media_or_legacy_file()
         self._prevent_duplicates()
         self._set_sort_order()
 
@@ -25,35 +25,74 @@ class AOSMessageAttachment(Document):
         if not frappe.db.exists("AOS Message", self.message):
             frappe.throw("Invalid message")
 
-    def _validate_file(self):
-        if not self.file:
-            frappe.throw("File is required")
+    def _validate_media_or_legacy_file(self):
+        """Validate the attachment source.
 
-        file_doc = frappe.db.get_value(
-            "File",
-            self.file,
-            ["file_url", "file_type"],
-            as_dict=True,
-        )
+        New AOS chat attachments use private MinIO-backed AOS Media Object rows.
+        The legacy `file` field is kept only so older rows do not break during
+        migration, but new API flows should not create Frappe File-backed rows.
+        """
 
-        if not file_doc:
-            frappe.throw("Invalid file")
+        if self.media:
+            media = frappe.db.get_value(
+                "AOS Media Object",
+                self.media,
+                ["name", "purpose", "status", "visibility", "content_type"],
+                as_dict=True,
+            )
 
-        # Optional: auto-detect file_type if not set
-        if not self.file_type:
-            self.file_type = self._infer_file_type(file_doc.file_type)
+            if not media:
+                frappe.throw("Invalid media")
+
+            if media.purpose != "chat_attachment":
+                frappe.throw("Invalid media purpose for chat attachment")
+
+            if media.visibility != "Private":
+                frappe.throw("Chat attachments must use private media")
+
+            if media.status not in {"Uploaded", "Attached"}:
+                frappe.throw("Media must be uploaded before it can be attached")
+
+            if not self.file_type:
+                self.file_type = self._infer_file_type_from_content_type(
+                    media.content_type
+                )
+            return
+
+        if self.file:
+            # Legacy compatibility for existing Frappe File-backed rows.
+            file_doc = frappe.db.get_value(
+                "File",
+                self.file,
+                ["file_url", "file_type"],
+                as_dict=True,
+            )
+
+            if not file_doc:
+                frappe.throw("Invalid legacy file")
+
+            if not self.file_type:
+                self.file_type = self._infer_file_type(file_doc.file_type)
+            return
+
+        frappe.throw("Media is required")
 
     def _prevent_duplicates(self):
-        if self.is_new():
-            exists = frappe.db.exists(
-                "AOS Message Attachment",
-                {
-                    "message": self.message,
-                    "file": self.file,
-                },
-            )
-            if exists:
-                frappe.throw("This file is already attached to the message")
+        if not self.is_new():
+            return
+
+        filters = {"message": self.message}
+
+        if self.media:
+            filters["media"] = self.media
+            message = "This media is already attached to the message"
+        else:
+            filters["file"] = self.file
+            message = "This file is already attached to the message"
+
+        exists = frappe.db.exists("AOS Message Attachment", filters)
+        if exists:
+            frappe.throw(message)
 
     def _set_sort_order(self):
         if self.sort_order is not None and self.sort_order != 0:
@@ -69,6 +108,17 @@ class AOSMessageAttachment(Document):
         )[0][0]
 
         self.sort_order = (max_order or 0) + 1
+
+    def _infer_file_type_from_content_type(self, content_type):
+        content_type = str(content_type or "").split(";", 1)[0].strip().lower()
+
+        if content_type.startswith("image/"):
+            return "image"
+        if content_type.startswith("video/"):
+            return "video"
+        if content_type.startswith("audio/"):
+            return "audio"
+        return "document"
 
     def _infer_file_type(self, file_type):
         if not file_type:

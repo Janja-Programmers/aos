@@ -142,7 +142,7 @@ def _fetch_source_attachments(message_id: str) -> List[frappe._dict]:
     return frappe.get_all(
         "AOS Message Attachment",
         filters={"message": message_id},
-        fields=["file", "file_type", "sort_order"],
+        fields=["media", "file", "file_type", "sort_order"],
         order_by="sort_order asc",
     )
 
@@ -241,28 +241,42 @@ def _copy_attachments(
     source_attachments: List[frappe._dict],
     target_message_id: str,
 ) -> int:
-    """
-    Copy attachment rows to the forwarded message.
+    """Copy attachment rows to the forwarded message.
 
-    The File record itself is reused; only AOS Message Attachment rows are new.
+    For media-backed attachments, the same private AOS Media Object is referenced
+    by the forwarded message row. Read permission is granted through the target
+    conversation membership because MediaService checks AOS Message Attachment
+    rows, not only the media object's single attached_name.
     """
 
     has_attachments = 0
 
     for index, att in enumerate(source_attachments):
-        if not att.file or not frappe.db.exists("File", att.file):
-            continue
+        media_id = getattr(att, "media", None)
+        legacy_file = getattr(att, "file", None)
 
-        frappe.get_doc(
-            {
+        if media_id:
+            if not frappe.db.exists("AOS Media Object", media_id):
+                continue
+            doc = {
                 "doctype": "AOS Message Attachment",
                 "message": target_message_id,
-                "file": att.file,
+                "media": media_id,
                 "file_type": att.file_type,
                 "sort_order": att.sort_order if att.sort_order is not None else index,
             }
-        ).insert(ignore_permissions=True)
+        elif legacy_file and frappe.db.exists("File", legacy_file):
+            doc = {
+                "doctype": "AOS Message Attachment",
+                "message": target_message_id,
+                "file": legacy_file,
+                "file_type": att.file_type,
+                "sort_order": att.sort_order if att.sort_order is not None else index,
+            }
+        else:
+            continue
 
+        frappe.get_doc(doc).insert(ignore_permissions=True)
         has_attachments = 1
 
     return has_attachments
@@ -282,9 +296,13 @@ def _create_forwarded_message(
     message_type = _determine_message_type(
         content=content,
         attachments=[
-            {"file": att.file, "file_type": att.file_type}
+            {
+                "media": getattr(att, "media", None),
+                "file": getattr(att, "file", None),
+                "file_type": att.file_type,
+            }
             for att in source_attachments
-            if att.file and att.file_type
+            if (getattr(att, "media", None) or getattr(att, "file", None)) and att.file_type
         ],
         ad=ad,
         short=short,
@@ -364,7 +382,7 @@ def _serialize_forwarded_message(
     *,
     current_user: str,
 ) -> Dict[str, Any]:
-    attachments_map = _serialize_attachments_bulk([msg.name])
+    attachments_map = _serialize_attachments_bulk([msg.name], current_user=current_user)
 
     reply_map = _fetch_reply_messages_bulk(
         [msg.reply_to_message] if getattr(msg, "reply_to_message", None) else []
