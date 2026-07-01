@@ -88,6 +88,7 @@ def _load_live_target(live_id: str | None) -> dict[str, Any] | None:
             "title",
             "host_user",
             "cover_image",
+            "live_cover_media",
             "status",
             "is_active",
             "started_at",
@@ -113,6 +114,7 @@ def _load_live_target(live_id: str | None) -> dict[str, Any] | None:
         "metadata": {
             "live_id": live.name,
             "host_user": live.host_user,
+            "live_cover_media": getattr(live, "live_cover_media", None),
             "live_status": live.status,
             "is_active": bool(live.is_active),
             "started_at": str(live.started_at) if live.started_at else None,

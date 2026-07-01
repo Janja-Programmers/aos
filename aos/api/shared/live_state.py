@@ -23,6 +23,8 @@ def _empty_live_state() -> dict[str, Any]:
         "live_status": None,
         "live_title": None,
         "live_cover_image": None,
+        "live_cover_media": None,
+        "live_cover_media_id": None,
         "live_started_at": None,
         "live_viewer_count": 0,
     }
@@ -45,6 +47,8 @@ def _serialize_live_row(row: Any | None) -> dict[str, Any]:
         "live_status": getattr(row, "status", LIVE_STATUS) or LIVE_STATUS,
         "live_title": getattr(row, "title", None),
         "live_cover_image": getattr(row, "cover_image", None),
+        "live_cover_media": getattr(row, "live_cover_media", None),
+        "live_cover_media_id": getattr(row, "live_cover_media", None),
         "live_started_at": get_datetime_str(started_at) if started_at else None,
         "live_viewer_count": int(getattr(row, "viewer_count", 0) or 0),
     }
@@ -98,6 +102,7 @@ def get_users_live_state(users: Iterable[str]) -> dict[str, dict[str, Any]]:
             "host_user",
             "title",
             "cover_image",
+            "live_cover_media",
             "status",
             "started_at",
             "viewer_count",

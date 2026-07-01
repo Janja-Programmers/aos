@@ -44,6 +44,12 @@ from .messages import (
     create_live_cohost_message,
     create_live_system_message,
 )
+from .media import (
+    attach_live_cover_media,
+    looks_like_media_id,
+    normalize_media_id,
+    validate_live_cover_media_for_use,
+)
 from .realtime import (
     publish_cohost_cancelled,
     publish_cohost_ended,
@@ -174,6 +180,7 @@ def _live_fields() -> list[str]:
         "comment_count",
         "total_watch_time_seconds",
         "cover_image",
+        "live_cover_media",
         "room_name",
         "started_at",
         "ended_at",
@@ -627,9 +634,18 @@ def start_live_impl(**kwargs):
         kwargs.get("title") or ""
     ).strip()
 
-    cover_image = kwargs.get(
-        "cover_image"
+    cover_image = str(
+        kwargs.get("cover_image") or ""
+    ).strip()
+
+    cover_media_id = (
+        normalize_media_id(kwargs.get("live_cover_media"))
+        or normalize_media_id(kwargs.get("cover_image_media"))
+        or normalize_media_id(kwargs.get("media_id"))
     )
+
+    if not cover_media_id and looks_like_media_id(cover_image):
+        cover_media_id = normalize_media_id(cover_image)
 
     if not title:
         return fail(
@@ -642,6 +658,18 @@ def start_live_impl(**kwargs):
     )
     if err:
         return err
+
+    cover_url = cover_image
+
+    if cover_media_id:
+        _media_doc, media_cover_url, err = validate_live_cover_media_for_use(
+            media_id=cover_media_id,
+            user=user,
+        )
+        if err:
+            return err
+
+        cover_url = media_cover_url or ""
 
     try:
         existing_live = _get_active_live_for_host(
@@ -677,12 +705,28 @@ def start_live_impl(**kwargs):
 
         live.host_user = user
         live.title = title
-        live.cover_image = cover_image
+        live.cover_image = cover_url
+        if hasattr(live, "live_cover_media"):
+            live.live_cover_media = cover_media_id or ""
         live.status = LIVE_STATUS
 
         live.insert(
             ignore_permissions=True
         )
+
+        if cover_media_id:
+            _attached_media, attached_cover_url, err = attach_live_cover_media(
+                media_id=cover_media_id,
+                user=user,
+                live_id=live.name,
+            )
+            if err:
+                frappe.db.rollback()
+                return err
+
+            if attached_cover_url and attached_cover_url != live.cover_image:
+                live.cover_image = attached_cover_url
+                live.save(ignore_permissions=True)
 
         live.reload()
 

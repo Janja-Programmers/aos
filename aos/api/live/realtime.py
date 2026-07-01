@@ -193,6 +193,10 @@ def _build_live_payload(
         "host_live_status": host.get("live_status") if not bool(host.get("is_deleted")) else None,
         "title": live.title,
         "cover_image": live.cover_image,
+        "cover_image_media": getattr(live, "live_cover_media", None),
+        "cover_image_media_id": getattr(live, "live_cover_media", None),
+        "live_cover_media": getattr(live, "live_cover_media", None),
+        "live_cover_media_id": getattr(live, "live_cover_media", None),
         "thumbnail": live.cover_image,
         "viewer_count": max(
             int(

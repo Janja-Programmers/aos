@@ -15,6 +15,7 @@
   "room_name",
   "duration_seconds",
   "cover_image",
+  "live_cover_media",
   "is_active",
   "metrics_tab",
   "viewer_count",
@@ -52,8 +53,9 @@
   },
   {
    "fieldname": "cover_image",
-   "fieldtype": "Attach Image",
-   "label": "Cover Image"
+   "fieldtype": "Data",
+   "label": "Cover Image URL",
+   "description": "Cached public URL for the live cover image. New uploads should use live_cover_media."
   },
   {
    "default": "live",
@@ -156,6 +158,13 @@
    "options": "User",
    "reqd": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "live_cover_media",
+   "fieldtype": "Link",
+   "label": "Live Cover Media",
+   "options": "AOS Media Object",
+   "description": "Source-of-truth media object for the live cover image."
   }
  ],
  "grid_page_length": 50,

@@ -30,6 +30,8 @@ def _empty_live_state() -> dict[str, Any]:
         "live_status": None,
         "live_title": None,
         "live_cover_image": None,
+        "live_cover_media": None,
+        "live_cover_media_id": None,
         "live_started_at": None,
         "live_viewer_count": 0,
     }

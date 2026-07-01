@@ -1376,6 +1376,18 @@ def build_live_viewer_state(
 
 
 # LIVE SERIALIZATION
+
+def _live_cover_media_url(media_id) -> str:
+    if not media_id:
+        return ""
+
+    try:
+        from aos.api.live.media import get_public_media_url
+
+        return get_public_media_url(media_id)
+    except Exception:
+        return ""
+
 def serialize_live(
     live,
     *,
@@ -1408,6 +1420,14 @@ def serialize_live(
         live,
         "cover_image",
     )
+
+    cover_media_id = _value(
+        live,
+        "live_cover_media",
+    )
+
+    if not cover_image and cover_media_id:
+        cover_image = _live_cover_media_url(cover_media_id)
 
     room_name = (
         _value(
@@ -1545,6 +1565,10 @@ def serialize_live(
             )
         ),
         "cover_image": cover_image,
+        "cover_image_media": cover_media_id,
+        "cover_image_media_id": cover_media_id,
+        "live_cover_media": cover_media_id,
+        "live_cover_media_id": cover_media_id,
         "thumbnail": cover_image,
         "started_at": _value(
             live,
