@@ -45,14 +45,17 @@
    "options": "AOS Media Object",
    "label": "Media",
    "in_list_view": 1,
-   "description": "Private MinIO-backed verification document media. Upload with purpose verification_document."
+   "description": "Private MinIO-backed verification document media uploaded with purpose verification_document.",
+   "reqd": 1
   },
   {
    "fieldname": "attachment",
    "fieldtype": "Data",
    "in_list_view": 0,
    "label": "Attachment URL",
-   "description": "Legacy/cached attachment URL. New verification submissions should use media."
+   "description": "Deprecated. Do not use for AOS uploads.",
+   "hidden": 1,
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

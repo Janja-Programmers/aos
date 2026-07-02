@@ -141,7 +141,7 @@
    "fieldname": "video",
    "fieldtype": "Data",
    "label": "Video URL",
-   "description": "Cached public URL resolved from AOS Media Object. Do not use Frappe File for new uploads.",
+   "description": "Cached public URL resolved from AOS Media Object.",
    "read_only": 1
   },
   {

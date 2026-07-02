@@ -1,8 +1,7 @@
 """Verification media helpers.
 
-Verification documents are sensitive. New submissions must use private
-MinIO-backed AOS Media Object records with purpose ``verification_document``.
-Frappe File URLs are intentionally not accepted for new verification requests.
+Verification documents are sensitive and must use private MinIO-backed
+AOS Media Object records with purpose ``verification_document``.
 """
 
 from __future__ import annotations
@@ -24,21 +23,13 @@ VERIFICATION_DOCUMENT_FIELD = "verification_documents"
 
 
 def extract_document_media_id(row: dict[str, Any]) -> str:
-    """Return the media id from any supported verification document key."""
+    """Return the media id from supported verification document keys."""
     value = (
         row.get("media")
         or row.get("media_id")
         or row.get("attachment_media")
         or row.get("attachment_media_id")
     )
-
-    # Mild migration convenience: if a caller sends the MEDIA-* id in the old
-    # attachment key, treat it as the media id. Plain /files URLs remain rejected.
-    if not value:
-        attachment = str(row.get("attachment") or "").strip()
-        if attachment.upper().startswith("MEDIA-"):
-            value = attachment
-
     return str(value or "").strip()
 
 
@@ -83,11 +74,6 @@ def normalize_verification_documents_for_submit(
 
         media_id = extract_document_media_id(row)
         if not media_id:
-            if row.get("attachment"):
-                frappe.throw(
-                    "Verification documents must be uploaded as media_id using purpose verification_document. "
-                    "Frappe File URLs are no longer accepted."
-                )
             frappe.throw("Each verification document must include media_id.")
 
         if media_id in seen:
@@ -103,9 +89,6 @@ def normalize_verification_documents_for_submit(
                 "issue_date": row.get("issue_date"),
                 "expiry_date": row.get("expiry_date"),
                 "media": media_doc.name,
-                # Keep old field populated only with non-sensitive cached value when
-                # it is already a URL from legacy rows. New private media should not
-                # store signed URLs because they expire.
                 "attachment": "",
             }
         )
@@ -136,7 +119,6 @@ def serialize_verification_document(row, *, user: str | None = None, include_url
         "expiry_date": row.expiry_date,
         "media": row.media or None,
         "media_id": row.media or None,
-        "attachment": row.attachment or None,
     }
 
     if not row.media:

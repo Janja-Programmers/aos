@@ -45,6 +45,8 @@ def _public_media_url(doc) -> str:
 
 class AOSCategory(NestedSet):
     def validate(self):
+        # NestedSet/Document does not define a base validate() method in this
+        # Frappe version. Keep category-specific validation here only.
         self._sync_icon_media()
 
     def _sync_icon_media(self) -> None:

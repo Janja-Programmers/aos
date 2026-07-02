@@ -46,8 +46,8 @@ class VideoService:
                 )
                 return
 
-            if not doc.file_key:
-                raise Exception("Short file key is missing")
+            if not getattr(doc, "raw_video_media", None):
+                raise Exception("Short raw video media is missing")
 
             if is_ready_reprocess:
                 if hasattr(doc, "audio_mix_status"):
@@ -221,20 +221,16 @@ class VideoService:
 
     @classmethod
     def _download_source_video(cls, doc, minio: MinioService, destination_path: str) -> None:
-        """Download the raw uploaded short from the new media object or legacy key."""
+        """Download the raw uploaded short from its private media object."""
         raw_media_id = getattr(doc, "raw_video_media", None)
-        if raw_media_id:
-            media_service = MediaService()
-            media_doc = media_service.get_media_doc(raw_media_id)
-            payload = media_service.storage.get_bytes(media_doc.bucket, media_doc.object_key)
-            with open(destination_path, "wb") as out:
-                out.write(payload)
-            return
+        if not raw_media_id:
+            raise Exception("Raw video media is missing")
 
-        input_url = minio.get_public_url(doc.file_key)
-        if not input_url:
-            raise Exception("Could not resolve source video URL")
-        cls._download_file(input_url, destination_path)
+        media_service = MediaService()
+        media_doc = media_service.get_media_doc(raw_media_id)
+        payload = media_service.storage.get_bytes(media_doc.bucket, media_doc.object_key)
+        with open(destination_path, "wb") as out:
+            out.write(payload)
 
     @classmethod
     def _create_thumbnail_media(cls, *, owner_user: str, short_id: str, thumbnail_path: str):
@@ -304,8 +300,8 @@ class VideoService:
             # Original audio means keep the uploaded video's audio for Phase 4B.
             return None
 
-        if not sound.get("sound_media") and not sound.get("file_key") and not sound.get("file_url"):
-            raise Exception("Selected sound file is missing")
+        if not sound.get("sound_media"):
+            raise Exception("Selected sound media is missing")
 
         return sound
 
@@ -313,36 +309,18 @@ class VideoService:
     def _download_sound_file(cls, sound_config: dict, minio: MinioService) -> str:
         suffix = ".mp3"
         media_id = sound_config.get("sound_media")
-        if media_id:
-            media_service = MediaService()
-            media_doc = media_service.get_media_doc(media_id)
-            _, ext = os.path.splitext(str(media_doc.object_key or media_doc.original_filename or ""))
-            if ext:
-                suffix = ext
-            payload = media_service.storage.get_bytes(media_doc.bucket, media_doc.object_key)
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_sound:
-                tmp_sound.write(payload)
-                tmp_sound_path = tmp_sound.name
-        else:
-            file_key = sound_config.get("file_key")
-            if file_key:
-                _, ext = os.path.splitext(str(file_key))
-                if ext:
-                    suffix = ext
-                url = minio.get_public_url(file_key)
-            else:
-                url = sound_config.get("file_url")
-                _, ext = os.path.splitext(str(url or ""))
-                if ext:
-                    suffix = ext.split("?")[0]
+        if not media_id:
+            raise Exception("Selected sound media is missing")
 
-            if not url:
-                raise Exception("Could not resolve sound URL")
-
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_sound:
-                tmp_sound_path = tmp_sound.name
-
-            cls._download_file(url, tmp_sound_path)
+        media_service = MediaService()
+        media_doc = media_service.get_media_doc(media_id)
+        _, ext = os.path.splitext(str(media_doc.object_key or media_doc.original_filename or ""))
+        if ext:
+            suffix = ext
+        payload = media_service.storage.get_bytes(media_doc.bucket, media_doc.object_key)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_sound:
+            tmp_sound.write(payload)
+            tmp_sound_path = tmp_sound.name
 
         if not os.path.exists(tmp_sound_path) or os.path.getsize(tmp_sound_path) == 0:
             raise Exception("Downloaded sound file is empty")

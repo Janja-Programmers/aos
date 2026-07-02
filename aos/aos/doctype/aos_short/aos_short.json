@@ -94,7 +94,8 @@
    "fieldtype": "Link",
    "label": "Raw Video Media",
    "options": "AOS Media Object",
-   "read_only": 1
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "playback_url",

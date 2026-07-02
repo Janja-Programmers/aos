@@ -52,7 +52,7 @@
 ## Manual background-removal checks
 
 - [ ] User-owned image can be processed through the Frappe endpoint
-- [ ] Processed result is saved as a new PNG Frappe File
+- [ ] Processed result is saved as a new PNG AOS Media Object
 - [ ] Original image remains unchanged
 - [ ] Non-image files are rejected
 - [ ] Oversized images are rejected

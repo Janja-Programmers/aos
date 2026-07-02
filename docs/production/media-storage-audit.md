@@ -32,9 +32,9 @@ Feature payloads should submit `media_id` / feature-specific media fields, not `
 | `short_thumbnail` | Public | Shorts feed/listing |
 | `sound_upload` | Public | Shorts sounds |
 
-## Remaining intentional legacy fields
+## Remaining generated URL/cache fields
 
-These fields are retained only as URL caches or legacy compatibility fields:
+These fields are retained only as generated URL caches or playback outputs. They are not accepted as upload input:
 
 | Doctype / field | Reason |
 | --- | --- |
@@ -44,23 +44,20 @@ These fields are retained only as URL caches or legacy compatibility fields:
 | `AOS Short.thumbnail_url` | Cached public thumbnail URL. Source of truth is `thumbnail_media` for new shorts. |
 | `AOS Short.processed_file_url` and `playback_url` | Processed Shorts outputs/HLS paths. These are generated public playback outputs, not raw uploads. |
 | `AOS Sound.file_url` | Cached public sound URL. Source of truth is `sound_media` for new uploaded sounds. |
-| `AOS Message Attachment.file` | Legacy old chat attachments only. New rows use `media`. |
-| `AOS Review Image.image` | Cached public review image URL / legacy fallback. Source of truth is `media`. |
-| `AOS Ad Image.image` and `AOS Ad.video` | Cached public URL / legacy fallback. Source of truth is media fields. |
-| `AOS Verification Document.attachment` | Legacy/cached field. New verification submissions use `media`. |
+| `AOS Message Attachment.file` | Deprecated hidden field. New rows require `media`. |
+| `AOS Review Image.image` | Cached public review image URL generated from `media`. |
+| `AOS Ad Image.image` and `AOS Ad.video` | Cached public URLs generated from media fields. |
+| `AOS Verification Document.attachment` | Deprecated hidden field. New rows require `media`. |
 | `AOS User Activity.target_image` | Snapshot URL only; fieldtype is `Data`, not `Attach`. |
 | `AOS Category.icon` | Cached public category icon URL. Source of truth is `icon_media` for new icons. |
 
-## Remaining intentional `File` references
+## Frappe `File` boundary
 
-The only allowed Frappe `File` lookups in AOS-owned APIs are legacy read fallbacks, mostly for old chat attachments that already exist in the database.
-
-New write paths for profile images, seller banners, ads, reviews, verification documents, chat attachments, live covers, shorts raw uploads, thumbnails, and uploaded sounds should not create or attach Frappe `File` records.
+AOS-owned media APIs do not use Frappe `File` for business uploads. Frappe may still use `File` internally for framework/admin needs, but custom AOS upload flows use `AOS Media Object` only.
 
 ## Containment policy
 
 - Do not accept `/files/...` or `/private/files/...` for new AOS-owned user uploads.
-- Continue reading old legacy URL fields so old data does not break.
-- Keep public URL cache fields for fast UI rendering.
+- Keep public URL cache fields for fast UI rendering, but generate them from media objects.
 - Private media must be accessed through `aos.api.media.get_media_url`, which returns signed URLs after permission checks.
 - For chat attachments, signed URL access must be based on conversation membership, not only media ownership.

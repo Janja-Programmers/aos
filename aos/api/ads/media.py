@@ -1,8 +1,7 @@
 """Ads media helpers for MinIO-backed AOS Media Object usage.
 
-Ads now treat `media_id` as the source of truth for images/videos. The legacy
-`image`/`video` URL fields are kept as cached response-friendly URLs while the
-actual storage ownership lives in AOS Media Object.
+Ads treat `media_id` as the source of truth for images/videos. Cached URL
+fields are generated from AOS Media Object and are not accepted as upload input.
 """
 
 from __future__ import annotations
@@ -82,14 +81,12 @@ def get_media_public_url(media_id: Any) -> str:
 
 def get_ad_image_url(row: Any) -> str:
     media_id = clean_str(getattr(row, "media", None) or (row.get("media") if isinstance(row, dict) else None))
-    fallback = clean_str(getattr(row, "image", None) or (row.get("image") if isinstance(row, dict) else None))
-    return get_media_public_url(media_id) or fallback
+    return get_media_public_url(media_id)
 
 
 def get_ad_video_url(ad_doc: Any) -> str:
     media_id = clean_str(getattr(ad_doc, "video_media", None) or (ad_doc.get("video_media") if isinstance(ad_doc, dict) else None))
-    fallback = clean_str(getattr(ad_doc, "video", None) or (ad_doc.get("video") if isinstance(ad_doc, dict) else None))
-    return get_media_public_url(media_id) or fallback
+    return get_media_public_url(media_id)
 
 
 def validate_ad_media_for_use(
@@ -183,12 +180,10 @@ def attach_ad_media(
 
 def serialize_ad_media(media_id: Any, fallback_url: Any = "") -> Dict[str, Any] | None:
     media_id = normalize_media_id(media_id)
-    url = get_media_public_url(media_id) if media_id else clean_str(fallback_url)
-
-    if not media_id and not url:
+    if not media_id:
         return None
 
     return {
-        "media_id": media_id or None,
-        "url": url,
+        "media_id": media_id,
+        "url": get_media_public_url(media_id),
     }

@@ -147,9 +147,8 @@ def sanitize_details(details: Any, category: str | None = None) -> List[Dict[str
 def sanitize_images(images: Any) -> List[Dict[str, Any]]:
     """Normalize ad image payloads.
 
-    New clients should send `media` or `media_id` values created by
-    `aos.api.media.init_upload` + `confirm_upload`. The legacy `image` URL key
-    is preserved only as a response/cache fallback.
+    Clients must send `media` or `media_id` values created by
+    `aos.api.media.init_upload` + `confirm_upload`. URL strings are ignored.
     """
 
     items = normalize_list_payload(images)
@@ -166,18 +165,13 @@ def sanitize_images(images: Any) -> List[Dict[str, Any]]:
             media_id = media_id.get("media_id") or media_id.get("id") or media_id.get("name")
 
         media_id = str(media_id or "").strip()
-        image_url = str(row.get("image") or "").strip()
-
-        # Phase 3 source of truth is media_id. If only a legacy image URL is
-        # provided, keep it out so create/update can fail clearly instead of
-        # silently using Frappe File storage.
         if not media_id:
             continue
 
         clean = {
             "media": media_id,
             "media_id": media_id,
-            "image": image_url,
+            "image": "",
         }
 
         try:

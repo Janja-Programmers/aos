@@ -12,14 +12,8 @@ class AOSVerificationDocument(Document):
         self._validate_media_reference()
 
     def _validate_media_reference(self):
-        # New rows should use private MinIO-backed AOS Media Object records.
-        # attachment remains only as a legacy/cached URL field so old staging rows
-        # do not break while features are migrated.
-        if not self.media and not self.attachment:
-            frappe.throw("Verification document media is required")
-
         if not self.media:
-            return
+            frappe.throw("Verification document media is required")
 
         media = frappe.db.get_value(
             "AOS Media Object",

@@ -96,7 +96,11 @@ def confirm_upload_impl(**kwargs):
 
         return ok(
             "Upload confirmed.",
-            data={"media": serialize_media_doc(doc, url=url)},
+            data={
+                "media": serialize_media_doc(doc, url=url),
+                "media_id": doc.name,
+                "url": url,
+            },
         )
 
     except MediaNotFoundError as exc:

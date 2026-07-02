@@ -202,22 +202,14 @@ def serialize_ad_images(
             )
             or (row.get("media") if isinstance(row, dict) else None)
         )
-        fallback_url = _norm(
-            getattr(
-                row,
-                "image",
-                None,
-            )
-            or (row.get("image") if isinstance(row, dict) else None)
-        )
         image_url = get_ad_image_url(row)
 
         items.append(
             {
                 "media_id": media_id or None,
                 "media": media_id or None,
-                "image": image_url or fallback_url,
-                "url": image_url or fallback_url,
+                "image": image_url,
+                "url": image_url,
                 "is_primary": _to_int(
                     getattr(
                         row,

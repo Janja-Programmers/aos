@@ -253,28 +253,17 @@ def _copy_attachments(
 
     for index, att in enumerate(source_attachments):
         media_id = getattr(att, "media", None)
-        legacy_file = getattr(att, "file", None)
 
-        if media_id:
-            if not frappe.db.exists("AOS Media Object", media_id):
-                continue
-            doc = {
-                "doctype": "AOS Message Attachment",
-                "message": target_message_id,
-                "media": media_id,
-                "file_type": att.file_type,
-                "sort_order": att.sort_order if att.sort_order is not None else index,
-            }
-        elif legacy_file and frappe.db.exists("File", legacy_file):
-            doc = {
-                "doctype": "AOS Message Attachment",
-                "message": target_message_id,
-                "file": legacy_file,
-                "file_type": att.file_type,
-                "sort_order": att.sort_order if att.sort_order is not None else index,
-            }
-        else:
+        if not media_id or not frappe.db.exists("AOS Media Object", media_id):
             continue
+
+        doc = {
+            "doctype": "AOS Message Attachment",
+            "message": target_message_id,
+            "media": media_id,
+            "file_type": att.file_type,
+            "sort_order": att.sort_order if att.sort_order is not None else index,
+        }
 
         frappe.get_doc(doc).insert(ignore_permissions=True)
         has_attachments = 1

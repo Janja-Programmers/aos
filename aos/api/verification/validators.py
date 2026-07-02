@@ -68,8 +68,8 @@ def validate_individual_verification(kwargs: dict):
 def validate_verification_documents(documents: list, *, user: str | None = None):
     """Validate and normalize verification documents.
 
-    New verification submissions use private MinIO-backed media objects instead
-    of Frappe File URLs. The caller should pass the current user so ownership,
+    Verification submissions use private MinIO-backed media objects. The caller
+    should pass the current user so ownership,
     purpose, and status can be enforced before the request is saved.
     """
 

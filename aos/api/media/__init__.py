@@ -1,7 +1,7 @@
 """MinIO-backed AOS media endpoints.
 
-These endpoints are the new AOS-owned media layer. Existing feature endpoints
-will gradually migrate from Frappe File URLs to media_id references.
+These endpoints are the single AOS-owned upload layer. Feature endpoints accept
+media_id references produced here and must not accept Frappe File URLs.
 """
 
 from __future__ import annotations

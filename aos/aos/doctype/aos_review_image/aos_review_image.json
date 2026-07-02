@@ -14,7 +14,8 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Media",
-   "options": "AOS Media Object"
+   "options": "AOS Media Object",
+   "reqd": 1
   },
   {
    "fieldname": "image",

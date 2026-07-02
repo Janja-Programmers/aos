@@ -20,14 +20,15 @@
    "options": "AOS Media Object",
    "in_list_view": 1,
    "search_index": 1,
-   "description": "Source media object. New AOS uploads must use this instead of Frappe File."
+   "description": "Source media object. AOS ad images must use media_id.",
+   "reqd": 1
   },
   {
    "fieldname": "image",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Image URL",
-   "description": "Cached public URL resolved from AOS Media Object. Do not use Frappe File for new uploads.",
+   "description": "Cached public URL resolved from AOS Media Object.",
    "read_only": 1
   },
   {

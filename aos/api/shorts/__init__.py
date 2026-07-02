@@ -9,8 +9,7 @@ import frappe
 
 # UPLOAD
 from .upload import (
-    init_upload_impl,
-    confirm_upload_impl,
+    create_short_impl,
     update_short_metadata_impl,
 )
 
@@ -78,8 +77,7 @@ from .analytics import (
 
 # SOUNDS
 from .sounds import (
-    init_sound_upload_impl,
-    confirm_sound_upload_impl,
+    create_sound_impl,
     list_sounds_impl,
     search_sounds_impl,
     get_sound_impl,
@@ -91,15 +89,10 @@ from .sounds import (
 )
 
 
-# UPLOAD
+# SHORTS BUSINESS FLOW
 @frappe.whitelist(methods=["POST"])
-def init_upload(**kwargs):
-    return init_upload_impl(**kwargs)
-
-
-@frappe.whitelist(methods=["POST"])
-def confirm_upload(**kwargs):
-    return confirm_upload_impl(**kwargs)
+def create_short(**kwargs):
+    return create_short_impl(**kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -265,13 +258,8 @@ def general_short_analytics(**kwargs):
 
 # SOUNDS
 @frappe.whitelist(methods=["POST"])
-def init_sound_upload(**kwargs):
-    return init_sound_upload_impl(**kwargs)
-
-
-@frappe.whitelist(methods=["POST"])
-def confirm_sound_upload(**kwargs):
-    return confirm_sound_upload_impl(**kwargs)
+def create_sound(**kwargs):
+    return create_sound_impl(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)

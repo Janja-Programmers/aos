@@ -149,7 +149,7 @@ MEDIA_PURPOSES: dict[str, MediaPurpose] = {
         max_size_bytes=10 * 1024 * 1024,
     ),
 
-    # Future Shorts/Sounds normalization. Existing Shorts flow remains unchanged.
+    # Shorts/Sounds
     "short_video_raw": MediaPurpose(
         key="short_video_raw",
         bucket_type="private",

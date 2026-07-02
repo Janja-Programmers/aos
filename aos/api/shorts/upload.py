@@ -1,10 +1,9 @@
 """
-Upload APIs for Shorts.
+Short creation and metadata APIs.
 
-Handles:
-- init upload (presigned URL)
-- confirm upload (trigger processing)
-- update metadata (caption, hashtags, content mode, audience, comment/download controls)
+Uploads are now generic-only through ``aos.api.media.init_upload`` and
+``aos.api.media.confirm_upload``. This module accepts uploaded media IDs and
+creates the Short business record / queues processing.
 """
 
 from __future__ import annotations
@@ -12,7 +11,6 @@ from __future__ import annotations
 import json
 import frappe
 
-from aos.services.minio_service import MinioService
 from aos.services.notification_service import NotificationService
 from aos.services.media.media_service import (
     MediaNotFoundError,
@@ -27,7 +25,6 @@ from aos.api.shared.responses import ok, fail
 from aos.api.shared.validators import require_id
 
 from aos.api.shorts.validators import (
-    validate_filename,
     validate_caption,
     normalize_hashtags,
     validate_content_mode,
@@ -41,7 +38,6 @@ from aos.api.shorts.sounds import (
 )
 
 from aos.api.shorts.constants import (
-    INIT_UPLOAD_LIMIT_PER_MINUTE_PER_USER,
     CONFIRM_UPLOAD_LIMIT_PER_MINUTE_PER_USER,
     SHORT_CONTENT_MODE_SHOP,
     DEFAULT_SHORT_AUDIENCE,
@@ -134,98 +130,25 @@ def _media_error_response(exc: Exception):
     return None
 
 
-def _serialize_short_upload_media(media_doc) -> dict:
-    return {
-        "id": media_doc.name,
-        "media_id": media_doc.name,
-        "purpose": media_doc.purpose,
-        "status": media_doc.status,
-        "visibility": media_doc.visibility,
-        "content_type": media_doc.content_type,
-        "size_bytes": int(media_doc.size_bytes or 0),
-        "url": media_doc.public_url or None,
-    }
 
+# CREATE SHORT
+def create_short_impl(**kwargs):
+    """Create a short from an uploaded raw-video media object.
 
+    Required client flow:
+    1. aos.api.media.init_upload with purpose=short_video_raw
+    2. PUT video to the returned upload_url
+    3. aos.api.media.confirm_upload with media_id
+    4. aos.api.shorts.create_short with raw_video_media/media_id
 
-# INIT UPLOAD
-def init_upload_impl(**kwargs):
+    This replaces the old shorts-specific init_upload/confirm_upload endpoints.
+    """
     user, err = require_login()
     if err:
         return err
 
     rl = rate_limit(
-        key=f"aos:shorts:init:user:{user}",
-        ttl_seconds=60,
-        limit=INIT_UPLOAD_LIMIT_PER_MINUTE_PER_USER,
-        message="Too many requests. Please try again shortly.",
-    )
-    if rl:
-        return rl
-
-    filename = kwargs.get("filename")
-
-    ext, err = validate_filename(filename)
-    if err:
-        return err
-
-    try:
-        media_service = MediaService()
-        media_doc, upload_url, upload_headers, expires_in = media_service.init_upload(
-            user=user,
-            purpose="short_video_raw",
-            filename=filename,
-            content_type=kwargs.get("content_type") or "video/mp4",
-            size_bytes=kwargs.get("size_bytes"),
-        )
-
-        doc = frappe.get_doc(
-            {
-                "doctype": "AOS Short",
-                "file_key": media_doc.object_key,
-                "raw_video_media": media_doc.name,
-                "status": "initialized",
-                "owner": user,
-                "audience": DEFAULT_SHORT_AUDIENCE,
-                "allow_comments": DEFAULT_ALLOW_COMMENTS,
-                "allow_downloads": DEFAULT_ALLOW_DOWNLOADS,
-            }
-        )
-        doc.insert(ignore_permissions=True)
-
-        return ok(
-            "Upload initialized.",
-            data={
-                "short_id": doc.name,
-                "media_id": media_doc.name,
-                "raw_video_media": media_doc.name,
-                "file_key": media_doc.object_key,
-                "upload_url": upload_url,
-                "upload_headers": upload_headers,
-                "expires_in": expires_in,
-                "public_url": None,
-                "media": _serialize_short_upload_media(media_doc),
-            },
-        )
-
-    except (MediaValidationError, MediaPermissionError, MediaNotFoundError) as exc:
-        media_err = _media_error_response(exc)
-        if media_err:
-            return media_err
-        return fail("Failed to initialize upload", code="INTERNAL_ERROR")
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), "init_upload failed")
-        return fail("Failed to initialize upload", code="INTERNAL_ERROR")
-
-
-# CONFIRM UPLOAD
-def confirm_upload_impl(**kwargs):
-    user, err = require_login()
-    if err:
-        return err
-
-    rl = rate_limit(
-        key=f"aos:shorts:confirm:user:{user}",
+        key=f"aos:shorts:create:user:{user}",
         ttl_seconds=60,
         limit=CONFIRM_UPLOAD_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
@@ -233,64 +156,76 @@ def confirm_upload_impl(**kwargs):
     if rl:
         return rl
 
-    short_id, err = require_id(kwargs.get("short_id"), "short_id")
+    raw_video_media, err = require_id(
+        kwargs.get("raw_video_media")
+        or kwargs.get("media_id")
+        or kwargs.get("media"),
+        "raw_video_media",
+    )
     if err:
         return err
 
+    audience, err = _normalize_audience(kwargs.get("audience"))
+    if err:
+        return err
+
+    allow_comments = _normalize_bool(
+        kwargs.get("allow_comments"),
+        default=DEFAULT_ALLOW_COMMENTS,
+    )
+    allow_downloads = _normalize_bool(
+        kwargs.get("allow_downloads"),
+        default=DEFAULT_ALLOW_DOWNLOADS,
+    )
+
     try:
-        doc = frappe.get_doc("AOS Short", short_id)
-
-        if doc.owner != user:
-            return fail("Not allowed.", code="FORBIDDEN")
-
-        if doc.status != "initialized":
-            return fail(
-                f"Invalid state: {doc.status}",
-                code="VALIDATION_ERROR",
-            )
-
-        media_doc = None
         media_service = MediaService()
 
-        if getattr(doc, "raw_video_media", None):
-            try:
-                media_doc = media_service.confirm_upload(
-                    user=user,
-                    media_id=doc.raw_video_media,
-                )
-            except (MediaValidationError, MediaPermissionError, MediaNotFoundError) as exc:
-                media_err = _media_error_response(exc)
-                if media_err:
-                    return media_err
-                return fail("Upload not completed or file missing.", code="FILE_MISSING")
-
-            doc.file_key = media_doc.object_key
-        else:
-            # Legacy Shorts upload flow for older rows created before AOS Media Object.
-            minio = MinioService()
-            if not minio.file_exists(doc.file_key):
-                return fail(
-                    "Upload not completed or file missing.",
-                    code="FILE_MISSING",
-                )
-
-        # Move to uploaded
-        doc.status = "uploaded"
-        doc.save(ignore_permissions=True)
-
-        if media_doc:
-            media_service.attach_media(
-                media_id=media_doc.name,
+        try:
+            media_doc = media_service.confirm_upload(
                 user=user,
-                purpose="short_video_raw",
-                attached_doctype="AOS Short",
-                attached_name=doc.name,
-                attached_field="raw_video_media",
+                media_id=raw_video_media,
             )
+        except (MediaValidationError, MediaPermissionError, MediaNotFoundError) as exc:
+            media_err = _media_error_response(exc)
+            if media_err:
+                return media_err
+            return fail("Upload not completed or file missing.", code="FILE_MISSING")
+
+        if media_doc.purpose != "short_video_raw":
+            return fail("Raw short video media has the wrong purpose.", code="VALIDATION_ERROR")
+
+        if media_doc.visibility != "Private":
+            return fail("Raw short video media must be private.", code="VALIDATION_ERROR")
+
+        if media_doc.status != "Uploaded":
+            return fail("Raw short video media must be uploaded before creating a short.", code="VALIDATION_ERROR")
+
+        doc = frappe.get_doc(
+            {
+                "doctype": "AOS Short",
+                "file_key": media_doc.object_key,
+                "raw_video_media": media_doc.name,
+                "status": "uploaded",
+                "owner": user,
+                "audience": audience,
+                "allow_comments": allow_comments,
+                "allow_downloads": allow_downloads,
+            }
+        )
+        doc.insert(ignore_permissions=True)
+
+        media_service.attach_media(
+            media_id=media_doc.name,
+            user=user,
+            purpose="short_video_raw",
+            attached_doctype="AOS Short",
+            attached_name=doc.name,
+            attached_field="raw_video_media",
+        )
 
         frappe.db.commit()
 
-        # Enqueue processing
         frappe.enqueue(
             "aos.api.shorts.tasks.process_short_task",
             short_id=doc.name,
@@ -299,18 +234,22 @@ def confirm_upload_impl(**kwargs):
         )
 
         return ok(
-            "Upload confirmed.",
+            "Short created and queued for processing.",
             data={
                 "short_id": doc.name,
-                "media_id": getattr(doc, "raw_video_media", None),
-                "raw_video_media": getattr(doc, "raw_video_media", None),
+                "media_id": media_doc.name,
+                "raw_video_media": media_doc.name,
+                "status": doc.status,
             },
         )
 
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), "confirm_upload failed")
+    except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return fail("Failed to confirm upload", code="INTERNAL_ERROR")
+        return fail(str(ex), code="VALIDATION_ERROR")
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "create_short failed")
+        frappe.db.rollback()
+        return fail("Failed to create short.", code="INTERNAL_ERROR")
 
 
 # UPDATE METADATA

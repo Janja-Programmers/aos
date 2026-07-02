@@ -1,8 +1,7 @@
 """Review image media helpers.
 
 Review images are public AOS Media Object records. ``AOS Review Image.media``
-stores the source-of-truth relationship while ``image`` remains as a cached
-public URL / legacy fallback for existing rows.
+is the source of truth; ``image`` is only a generated public URL cache.
 """
 
 from __future__ import annotations
@@ -85,11 +84,7 @@ def get_review_image_url(row: Any) -> str:
         getattr(row, "media", None)
         or (row.get("media") if isinstance(row, dict) else None)
     )
-    fallback = clean_str(
-        getattr(row, "image", None)
-        or (row.get("image") if isinstance(row, dict) else None)
-    )
-    return get_public_media_url(media_id) or fallback
+    return get_public_media_url(media_id)
 
 
 def validate_review_image_media_for_use(*, media_id: Any, user: str, index: int | None = None):
@@ -134,9 +129,7 @@ def validate_review_image_media_for_use(*, media_id: Any, user: str, index: int 
 def normalize_review_image_inputs(images: Any) -> Tuple[List[str], Any | None]:
     """Normalize create-review image inputs into media ids.
 
-    New reviews must submit media ids. Legacy URL strings are still readable in
-    existing review rows, but are rejected for new submissions to avoid adding
-    more Frappe File/local URLs.
+    New reviews must submit media ids. URL strings are rejected.
     """
     if images in (None, ""):
         return [], None
@@ -224,11 +217,7 @@ def serialize_review_image(row: Any) -> Dict[str, Any]:
         getattr(row, "media", None)
         or (row.get("media") if isinstance(row, dict) else None)
     )
-    fallback = clean_str(
-        getattr(row, "image", None)
-        or (row.get("image") if isinstance(row, dict) else None)
-    )
-    url = get_public_media_url(media_id) if media_id else fallback
+    url = get_public_media_url(media_id) if media_id else ""
 
     return {
         "media": media_id or None,

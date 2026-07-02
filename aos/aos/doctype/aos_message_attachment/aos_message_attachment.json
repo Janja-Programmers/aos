@@ -37,15 +37,18 @@
    "in_list_view": 1,
    "label": "Media",
    "options": "AOS Media Object",
-   "search_index": 1
+   "search_index": 1,
+   "reqd": 1
   },
   {
    "fieldname": "file",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Legacy File",
+   "label": "Deprecated File",
    "reqd": 0,
-   "description": "Legacy Frappe File reference kept only for old rows. New chat attachments must use Media."
+   "description": "Deprecated hidden field. AOS attachments require media.",
+   "hidden": 1,
+   "read_only": 1
   },
   {
    "fieldname": "file_type",

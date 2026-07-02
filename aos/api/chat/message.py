@@ -222,19 +222,6 @@ def _serialize_attachments_bulk(
                 )
                 continue
 
-    legacy_file_ids = [
-        row.file for row in rows if getattr(row, "file", None) and not getattr(row, "media", None)
-    ]
-    legacy_file_map: Dict[str, str] = {}
-
-    if legacy_file_ids:
-        files = frappe.get_all(
-            "File",
-            filters={"name": ["in", list(set(legacy_file_ids))]},
-            fields=["name", "file_url"],
-        )
-        legacy_file_map = {f.name: f.file_url for f in files}
-
     for row in rows:
         media_id = getattr(row, "media", None)
 
@@ -270,23 +257,8 @@ def _serialize_attachments_bulk(
             )
             continue
 
-        # Legacy Frappe File fallback for old messages only.
-        file_url = legacy_file_map.get(getattr(row, "file", None))
-        if not file_url:
-            continue
-
-        grouped.setdefault(row.message, []).append(
-            {
-                "id": row.name,
-                "media": None,
-                "media_id": None,
-                "file": row.file,
-                "url": file_url,
-                "type": row.file_type,
-                "file_type": row.file_type,
-                "sort_order": row.sort_order,
-            }
-        )
+        # Attachments without media are invalid in the rewritten backend.
+        continue
 
     return grouped
 

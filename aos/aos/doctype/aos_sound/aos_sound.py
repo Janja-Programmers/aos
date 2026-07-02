@@ -61,8 +61,23 @@ class AOSSound(Document):
             frappe.throw("Invalid sound status")
 
     def _validate_audio_reference(self):
-        if not self.sound_media and not self.file_key and not self.file_url:
-            frappe.throw("Sound file is required")
+        if not self.sound_media:
+            frappe.throw("Sound media is required")
+
+        media = frappe.db.get_value(
+            "AOS Media Object",
+            self.sound_media,
+            ["purpose", "visibility", "status"],
+            as_dict=True,
+        )
+        if not media:
+            frappe.throw("Invalid sound media")
+        if media.purpose != "sound_upload":
+            frappe.throw("Sound media has the wrong purpose")
+        if media.visibility != "Public":
+            frappe.throw("Sound media must be public")
+        if media.status not in {"Uploaded", "Attached"}:
+            frappe.throw("Sound media must be uploaded")
 
     def _validate_duration(self):
         if self.duration_seconds in (None, ""):
