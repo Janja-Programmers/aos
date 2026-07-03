@@ -195,8 +195,8 @@ class MinioConfig:
 def get_minio_config() -> MinioConfig:
     """Resolve MinIO config from .env/env.
 
-    Current Shorts code still uses one legacy bucket/base_path via MinioService.
-    The future media rewrite can use public_bucket/private_bucket directly.
+    Generic media uses the public/private AOS media buckets. Processed Shorts
+    output uses the configured Shorts output bucket/base path.
     """
     endpoint = clean_endpoint(
         get_first_env(
@@ -218,7 +218,7 @@ def get_minio_config() -> MinioConfig:
         )
     )
 
-    legacy_bucket = get_first_env(
+    shorts_output_bucket = get_first_env(
         "AOS_MINIO_BUCKET",
         "MINIO_BUCKET",
         default="shorts",
@@ -230,7 +230,7 @@ def get_minio_config() -> MinioConfig:
         secret_key=secret_key,
         secure=get_env_bool("MINIO_SECURE", False),
         public_base_url=public_base_url,
-        bucket=legacy_bucket.strip().strip("/"),
+        bucket=shorts_output_bucket.strip().strip("/"),
         public_bucket=(
             get_first_env("AOS_PUBLIC_BUCKET", "MINIO_PUBLIC_BUCKET", default="aos-public")
             or "aos-public"

@@ -18,17 +18,14 @@ class MinioService:
     Centralized MinIO service for AOS.
 
     Current responsibilities:
-    - Presigned uploads/downloads for Shorts and existing MinIO-backed flows
-    - Public URLs
-    - Server-side uploads
-    - Deletions
+    - Signed downloads for processed Shorts output
+    - Public URLs for processed Shorts output
+    - Server-side upload helpers for MinIO-backed flows
+    - Object existence checks and deletions
 
     Config source:
     - MinIO endpoint/secrets/buckets/public URL come from environment variables.
     - Upload expiry comes from AOS Settings as a business/media policy.
-
-    The interface intentionally stays compatible with the existing Shorts code
-    until the broader AOS Media Object rewrite replaces feature-specific storage.
     """
 
     def __init__(self):
@@ -92,7 +89,7 @@ class MinioService:
         if not self.secret_key:
             missing.append("MINIO_SECRET_KEY or MINIO_ROOT_PASSWORD")
         if not self.bucket:
-            missing.append("AOS_MINIO_BUCKET or MINIO_BUCKET")
+            missing.append("AOS_MINIO_BUCKET")
         if not self.public_base_url:
             missing.append("MINIO_PUBLIC_BASE_URL or MINIO_PUBLIC_URL")
 

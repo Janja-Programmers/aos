@@ -39,9 +39,9 @@ def _public_url(bucket: str, object_key: str) -> str:
     return f"{base}/{bucket.strip('/')}/{object_key.strip('/')}" if base else ""
 
 
-def _legacy_object_name(file_key: str, legacy_base_prefix: str = "shorts") -> str:
+def _output_object_name(file_key: str, output_base_prefix: str = "shorts") -> str:
     key = str(file_key or "").strip().strip("/")
-    prefix = str(legacy_base_prefix or "").strip().strip("/")
+    prefix = str(output_base_prefix or "").strip().strip("/")
     if prefix and key.startswith(f"{prefix}/"):
         return key[len(prefix) + 1 :]
     return key
@@ -71,11 +71,11 @@ def _upload_file(
     object_key: str,
     file_path: str,
     content_type: str,
-    strip_legacy_prefix: bool = False,
+    strip_output_prefix: bool = False,
 ) -> dict[str, Any]:
     target_key = object_key.strip("/")
-    if strip_legacy_prefix:
-        target_key = _legacy_object_name(target_key)
+    if strip_output_prefix:
+        target_key = _output_object_name(target_key)
 
     client.fput_object(
         bucket_name=bucket.strip("/"),
@@ -414,11 +414,11 @@ def process_video_job(payload: dict[str, Any]) -> dict[str, Any]:
             raise VideoProcessingError("HLS master playlist was not generated")
 
         version = uuid.uuid4().hex
-        legacy_bucket = str(output.get("legacy_output_bucket") or settings.legacy_output_bucket).strip("/")
-        legacy_base = str(output.get("legacy_output_base_path") or settings.legacy_output_base_path).strip("/")
-        if legacy_base.endswith("/"):
-            legacy_base = legacy_base[:-1]
-        processed_base_key = f"{legacy_base}/{short_id}/{version}".strip("/")
+        output_bucket = str(output.get("output_bucket") or settings.output_bucket).strip("/")
+        output_base = str(output.get("output_base_path") or settings.output_base_path).strip("/")
+        if output_base.endswith("/"):
+            output_base = output_base[:-1]
+        processed_base_key = f"{output_base}/{short_id}/{version}".strip("/")
         processed_file_key = f"{processed_base_key}/final.mp4"
         master_playlist_key = f"{processed_base_key}/master.m3u8"
 
@@ -434,11 +434,11 @@ def process_video_job(payload: dict[str, Any]) -> dict[str, Any]:
                 uploaded_objects.append(
                     _upload_file(
                         client,
-                        bucket=legacy_bucket,
+                        bucket=output_bucket,
                         object_key=remote_key,
                         file_path=local_path,
                         content_type=content_type,
-                        strip_legacy_prefix=True,
+                        strip_output_prefix=True,
                     )
                 )
 
@@ -451,7 +451,7 @@ def process_video_job(payload: dict[str, Any]) -> dict[str, Any]:
             object_key=thumbnail_key,
             file_path=thumbnail_path,
             content_type="image/jpeg",
-            strip_legacy_prefix=False,
+            strip_output_prefix=False,
         )
         thumbnail.update({"width": width, "height": height, "filename": f"{short_id}_thumbnail.jpg"})
 
@@ -460,8 +460,8 @@ def process_video_job(payload: dict[str, Any]) -> dict[str, Any]:
             "short_id": short_id,
             "status": "ready",
             "duration_seconds": duration,
-            "playback_url": _public_url(legacy_bucket, _legacy_object_name(master_playlist_key)),
-            "processed_file_url": _public_url(legacy_bucket, _legacy_object_name(processed_file_key)),
+            "playback_url": _public_url(output_bucket, _output_object_name(master_playlist_key)),
+            "processed_file_url": _public_url(output_bucket, _output_object_name(processed_file_key)),
             "processed_file_key": processed_file_key,
             "master_playlist_key": master_playlist_key,
             "thumbnail": thumbnail,

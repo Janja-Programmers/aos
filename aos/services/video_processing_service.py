@@ -161,6 +161,15 @@ def create_video_processing_job(
 
 
 def enqueue_dispatch(job_id: str) -> None:
+    """Enqueue lightweight Frappe dispatcher for a video-processing job.
+
+    Do not pass `job_id` as a kwarg to frappe.enqueue because Frappe/RQ treats
+    it as the Redis job identifier. Use `video_job_id` for the application-level
+    AOS Video Processing Job name.
+
+    enqueue_after_commit=True keeps normal web requests safe: the dispatcher is
+    only queued after the AOS Video Processing Job transaction is committed.
+    """
     config = get_video_processing_config()
 
     frappe.enqueue(
@@ -171,7 +180,6 @@ def enqueue_dispatch(job_id: str) -> None:
         enqueue_after_commit=True,
         job_name=f"dispatch-video-processing:{job_id}",
     )
-
 
 def dispatch_video_processing_job(job_id: str) -> object:
     """Lightweight Frappe RQ dispatcher. Does not run FFmpeg."""
@@ -244,8 +252,8 @@ def build_video_job_payload(job) -> dict[str, Any]:
         },
         "sound": sound,
         "output": {
-            "legacy_output_bucket": minio.bucket,
-            "legacy_output_base_path": f"{minio.base_path}/processed".strip("/"),
+            "output_bucket": minio.bucket,
+            "output_base_path": f"{minio.base_path}/processed".strip("/"),
             "thumbnail_bucket": minio.public_bucket,
             "thumbnail_base_path": "shorts/thumbnails",
             "max_duration_seconds": get_max_short_duration_seconds(),

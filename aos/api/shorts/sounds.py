@@ -107,8 +107,8 @@ def _active_sound_filters() -> dict[str, Any]:
 def enqueue_short_audio_reprocess(short_id: str) -> None:
     """Queue background audio/HLS remuxing for a ready short.
 
-    The short remains ready while this runs. Old playback stays available until
-    VideoService successfully swaps in the new HLS/final MP4 URLs.
+    The short remains ready while this runs. Existing playback stays available
+    until the external video-processing pipeline swaps in new HLS/final MP4 URLs.
     """
     if not short_id:
         return

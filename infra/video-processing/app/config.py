@@ -49,8 +49,8 @@ class Settings:
     minio_secure: bool = _bool("MINIO_SECURE", False)
     minio_public_base_url: str = _clean(os.getenv("MINIO_PUBLIC_BASE_URL"), "") .rstrip("/")
 
-    legacy_output_bucket: str = _clean(os.getenv("VIDEO_LEGACY_OUTPUT_BUCKET"), "shorts").strip("/")
-    legacy_output_base_path: str = _clean(os.getenv("VIDEO_LEGACY_OUTPUT_BASE_PATH"), "shorts/processed").strip("/")
+    output_bucket: str = _clean(os.getenv("VIDEO_OUTPUT_BUCKET"), "shorts").strip("/")
+    output_base_path: str = _clean(os.getenv("VIDEO_OUTPUT_BASE_PATH"), "shorts/processed").strip("/")
     thumbnail_bucket: str = _clean(os.getenv("VIDEO_THUMBNAIL_BUCKET"), "aos-public").strip("/")
     thumbnail_base_path: str = _clean(os.getenv("VIDEO_THUMBNAIL_BASE_PATH"), "shorts/thumbnails").strip("/")
 
