@@ -203,6 +203,80 @@ class MediaService:
         doc.insert(ignore_permissions=True)
         return doc
 
+    def create_uploaded_from_existing_object(
+        self,
+        *,
+        user: str,
+        purpose: str,
+        filename: str,
+        content_type: str,
+        bucket: str,
+        object_key: str,
+        size_bytes: int | None = None,
+        etag: str | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        duration_seconds: float | None = None,
+    ) -> object:
+        """Create an uploaded media record for an object already in MinIO.
+
+        Used by external processors that upload derived objects directly to
+        MinIO, then call Frappe back so Frappe can own metadata, permissions,
+        and attachment state.
+        """
+        purpose_rule = self._get_purpose_or_raise(purpose)
+        filename = self._normalize_filename(filename)
+        content_type = self._normalize_content_type(content_type, filename)
+        bucket = str(bucket or "").strip().strip("/")
+        object_key = str(object_key or "").strip().strip("/")
+        if not bucket or not object_key:
+            raise MediaValidationError("Storage object is required")
+
+        expected_bucket = self.storage.bucket_for_type(purpose_rule.bucket_type)
+        if bucket != expected_bucket:
+            raise MediaValidationError("Storage object bucket does not match media purpose")
+
+        try:
+            stat = self.storage.stat_object(bucket, object_key)
+        except FileNotFoundError as exc:
+            raise MediaNotFoundError("Storage object was not found") from exc
+
+        actual_size = int(stat.size or size_bytes or 0)
+        self._validate_upload_request(
+            purpose_rule=purpose_rule,
+            content_type=content_type,
+            size_bytes=actual_size,
+        )
+
+        public_url = (
+            self.storage.build_public_url(bucket, object_key)
+            if purpose_rule.is_public
+            else ""
+        )
+
+        doc = frappe.get_doc(
+            {
+                "doctype": "AOS Media Object",
+                "owner_user": user,
+                "bucket": bucket,
+                "object_key": object_key,
+                "original_filename": filename,
+                "content_type": content_type,
+                "size_bytes": actual_size,
+                "etag": etag or stat.etag or "",
+                "visibility": purpose_rule.visibility,
+                "purpose": purpose_rule.key,
+                "status": "Uploaded",
+                "public_url": public_url,
+                "uploaded_at": now_datetime(),
+                "width": int(width or 0) if width else None,
+                "height": int(height or 0) if height else None,
+                "duration_seconds": float(duration_seconds or 0) if duration_seconds else None,
+            }
+        )
+        doc.insert(ignore_permissions=True)
+        return doc
+
     # GET / URLS
     def get_media_doc(self, media_id: str):
         media_id = str(media_id or "").strip()

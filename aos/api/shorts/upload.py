@@ -12,6 +12,8 @@ import json
 import frappe
 
 from aos.services.notification_service import NotificationService
+from aos.services.video_processing_service import create_video_processing_job
+
 from aos.services.media.media_service import (
     MediaNotFoundError,
     MediaPermissionError,
@@ -224,14 +226,14 @@ def create_short_impl(**kwargs):
             attached_field="raw_video_media",
         )
 
-        frappe.db.commit()
-
-        frappe.enqueue(
-            "aos.api.shorts.tasks.process_short_task",
+        video_job = create_video_processing_job(
             short_id=doc.name,
-            queue="long",
-            timeout=1800,
+            force=False,
+            reason="short_upload",
+            enqueue=True,
         )
+
+        frappe.db.commit()
 
         return ok(
             "Short created and queued for processing.",
@@ -239,7 +241,9 @@ def create_short_impl(**kwargs):
                 "short_id": doc.name,
                 "media_id": media_doc.name,
                 "raw_video_media": media_doc.name,
-                "status": doc.status,
+                "status": frappe.db.get_value("AOS Short", doc.name, "status"),
+                "video_job_id": video_job.name,
+                "video_job_status": video_job.status,
             },
         )
 

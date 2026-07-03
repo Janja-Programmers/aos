@@ -7,21 +7,11 @@ from aos.services.ranking_service import RankingService
 
 
 def process_short_task(short_id: str, force: bool = False):
-    """
-    Process uploaded short.
+    """Compatibility task for older queued jobs.
 
-    Responsibilities:
-    - Transcoding
-    - Thumbnail generation
-    - Playback URL generation
-    - Duration extraction
-    - Marking the short ready/failed through VideoService
-    - Forced background audio/HLS remuxing when a ready short changes sound
-
-    Important:
-    - Do not notify followers here.
-    - At processing time, the short is usually still hidden and metadata may not exist yet.
-    - New-short notifications should happen when the short is published/visible.
+    Heavy FFmpeg processing no longer runs in Frappe. This task now creates an
+    AOS Video Processing Job and dispatches it to the external video service.
+    New code should call ``create_video_processing_job`` directly.
     """
     if not short_id:
         return
@@ -32,7 +22,7 @@ def process_short_task(short_id: str, force: bool = False):
     except Exception:
         frappe.log_error(
             frappe.get_traceback(),
-            f"process_short_task failed for short {short_id}",
+            f"process_short_task dispatch failed for short {short_id}",
         )
 
 

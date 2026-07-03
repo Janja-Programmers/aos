@@ -37,6 +37,7 @@ from aos.api.shorts.utils import (
 from aos.api.shorts.visibility import can_view_short
 from aos.api.shorts.mentions import get_short_mentions_map
 from aos.api.shorts.sounds import get_short_sound_map
+from aos.services.video_processing_service import create_video_processing_job
 
 
 # COMMON
@@ -711,17 +712,16 @@ def retry_processing_impl(**kwargs):
         doc.save(ignore_permissions=True)
         frappe.db.commit()
 
-        # Enqueue via tasks layer
-        frappe.enqueue(
-            "aos.api.shorts.tasks.process_short_task",
+        video_job = create_video_processing_job(
             short_id=doc.name,
-            queue="long",
-            timeout=1800,
+            force=False,
+            reason="retry",
+            enqueue=True,
         )
 
         return ok(
             "Processing restarted.",
-            data={"short_id": short_id},
+            data={"short_id": short_id, "video_job_id": video_job.name},
         )
 
     except frappe.DoesNotExistError:

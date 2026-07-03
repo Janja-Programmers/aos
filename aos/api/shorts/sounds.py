@@ -14,6 +14,8 @@ from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.validators import require_id
 from aos.api.shared.formatters import humanize_count
+from aos.services.video_processing_service import create_video_processing_job
+
 from aos.services.media.media_service import (
     MediaNotFoundError,
     MediaPermissionError,
@@ -125,12 +127,11 @@ def enqueue_short_audio_reprocess(short_id: str) -> None:
         if values:
             frappe.db.set_value("AOS Short", short_id, values, update_modified=False)
 
-        frappe.enqueue(
-            "aos.api.shorts.tasks.process_short_task",
+        create_video_processing_job(
             short_id=short_id,
             force=True,
-            queue="long",
-            timeout=1800,
+            reason="audio_reprocess",
+            enqueue=True,
         )
     except Exception:
         frappe.log_error(

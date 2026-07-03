@@ -86,6 +86,41 @@ services:
     networks:
       - aos_net
 
+  video-redis:
+    image: redis:7.4-alpine
+    container_name: aos-video-redis
+    restart: unless-stopped
+
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - ${VIDEO_REDIS_MAXMEMORY:-512mb}
+      - --maxmemory-policy
+      - noeviction
+
+    volumes:
+      - video_redis_data:/data
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+    mem_limit: "${VIDEO_REDIS_MEMORY_LIMIT:-768m}"
+    cpus: "${VIDEO_REDIS_CPU_LIMIT:-0.50}"
+    pids_limit: "${VIDEO_REDIS_PIDS_LIMIT:-256}"
+
+    stop_grace_period: 30s
+    logging: *common-logging
+    <<: *common-security
+
+    networks:
+      - aos_net
+
   livekit:
     image: livekit/livekit-server:v1.9.12
     container_name: aos-livekit
@@ -255,6 +290,115 @@ services:
     pids_limit: "${BACKGROUND_REMOVAL_PIDS_LIMIT:-1024}"
 
     stop_grace_period: 60s
+    logging: *common-logging
+    <<: *common-security
+
+    networks:
+      - aos_net
+
+  video-api:
+    build:
+      context: ./infra/video-processing
+      dockerfile: Dockerfile
+
+    container_name: aos-video-api
+    restart: unless-stopped
+
+    environment:
+      VIDEO_SERVICE_NAME: ${VIDEO_SERVICE_NAME:-aos-video-processing}
+      VIDEO_SERVICE_ENVIRONMENT: ${VIDEO_SERVICE_ENVIRONMENT:-development}
+      VIDEO_SERVICE_DEBUG: ${VIDEO_SERVICE_DEBUG:-false}
+      VIDEO_SERVICE_SECRET: ${VIDEO_SERVICE_SECRET:?VIDEO_SERVICE_SECRET is required}
+      VIDEO_SERVICE_CALLBACK_SECRET: ${VIDEO_SERVICE_CALLBACK_SECRET:?VIDEO_SERVICE_CALLBACK_SECRET is required}
+      VIDEO_REDIS_URL: ${VIDEO_REDIS_URL:-redis://video-redis:6379/0}
+      VIDEO_QUEUE_NAME: ${VIDEO_QUEUE_NAME:-video}
+      VIDEO_JOB_TIMEOUT_SECONDS: ${VIDEO_JOB_TIMEOUT_SECONDS:-1800}
+      VIDEO_RESULT_TTL_SECONDS: ${VIDEO_RESULT_TTL_SECONDS:-86400}
+      VIDEO_FAILURE_TTL_SECONDS: ${VIDEO_FAILURE_TTL_SECONDS:-604800}
+      VIDEO_MAX_DURATION_SECONDS: ${VIDEO_MAX_DURATION_SECONDS:-180}
+
+      MINIO_ENDPOINT: ${VIDEO_MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      MINIO_SECURE: ${VIDEO_MINIO_SECURE:-false}
+      MINIO_PUBLIC_BASE_URL: ${MINIO_PUBLIC_BASE_URL:?MINIO_PUBLIC_BASE_URL is required}
+
+      VIDEO_LEGACY_OUTPUT_BUCKET: ${AOS_MINIO_BUCKET:-shorts}
+      VIDEO_LEGACY_OUTPUT_BASE_PATH: ${VIDEO_LEGACY_OUTPUT_BASE_PATH:-shorts/processed}
+      VIDEO_THUMBNAIL_BUCKET: ${AOS_PUBLIC_BUCKET:-aos-public}
+      VIDEO_THUMBNAIL_BASE_PATH: ${VIDEO_THUMBNAIL_BASE_PATH:-shorts/thumbnails}
+
+    ports:
+      - "${VIDEO_SERVICE_BIND_ADDRESS:-127.0.0.1}:${VIDEO_SERVICE_PORT:-8130}:8000"
+
+    depends_on:
+      minio:
+        condition: service_healthy
+      video-redis:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+    mem_limit: "${VIDEO_API_MEMORY_LIMIT:-512m}"
+    cpus: "${VIDEO_API_CPU_LIMIT:-1.00}"
+    pids_limit: "${VIDEO_API_PIDS_LIMIT:-512}"
+
+    stop_grace_period: 60s
+    logging: *common-logging
+    <<: *common-security
+
+    networks:
+      - aos_net
+
+  video-worker:
+    build:
+      context: ./infra/video-processing
+      dockerfile: Dockerfile
+
+    container_name: aos-video-worker
+    restart: unless-stopped
+
+    command: ["rq", "worker", "${VIDEO_QUEUE_NAME:-video}", "--url", "${VIDEO_REDIS_URL:-redis://video-redis:6379/0}"]
+
+    environment:
+      VIDEO_SERVICE_NAME: ${VIDEO_SERVICE_NAME:-aos-video-processing}
+      VIDEO_SERVICE_ENVIRONMENT: ${VIDEO_SERVICE_ENVIRONMENT:-development}
+      VIDEO_SERVICE_DEBUG: ${VIDEO_SERVICE_DEBUG:-false}
+      VIDEO_SERVICE_CALLBACK_SECRET: ${VIDEO_SERVICE_CALLBACK_SECRET:?VIDEO_SERVICE_CALLBACK_SECRET is required}
+      VIDEO_REDIS_URL: ${VIDEO_REDIS_URL:-redis://video-redis:6379/0}
+      VIDEO_QUEUE_NAME: ${VIDEO_QUEUE_NAME:-video}
+      VIDEO_JOB_TIMEOUT_SECONDS: ${VIDEO_JOB_TIMEOUT_SECONDS:-1800}
+      VIDEO_RESULT_TTL_SECONDS: ${VIDEO_RESULT_TTL_SECONDS:-86400}
+      VIDEO_FAILURE_TTL_SECONDS: ${VIDEO_FAILURE_TTL_SECONDS:-604800}
+      VIDEO_MAX_DURATION_SECONDS: ${VIDEO_MAX_DURATION_SECONDS:-180}
+
+      MINIO_ENDPOINT: ${VIDEO_MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      MINIO_SECURE: ${VIDEO_MINIO_SECURE:-false}
+      MINIO_PUBLIC_BASE_URL: ${MINIO_PUBLIC_BASE_URL:?MINIO_PUBLIC_BASE_URL is required}
+
+      VIDEO_LEGACY_OUTPUT_BUCKET: ${AOS_MINIO_BUCKET:-shorts}
+      VIDEO_LEGACY_OUTPUT_BASE_PATH: ${VIDEO_LEGACY_OUTPUT_BASE_PATH:-shorts/processed}
+      VIDEO_THUMBNAIL_BUCKET: ${AOS_PUBLIC_BUCKET:-aos-public}
+      VIDEO_THUMBNAIL_BASE_PATH: ${VIDEO_THUMBNAIL_BASE_PATH:-shorts/thumbnails}
+
+    depends_on:
+      minio:
+        condition: service_healthy
+      video-redis:
+        condition: service_healthy
+
+    mem_limit: "${VIDEO_WORKER_MEMORY_LIMIT:-3g}"
+    cpus: "${VIDEO_WORKER_CPU_LIMIT:-2.00}"
+    pids_limit: "${VIDEO_WORKER_PIDS_LIMIT:-1024}"
+
+    stop_grace_period: 5m
     logging: *common-logging
     <<: *common-security
 
@@ -460,6 +604,10 @@ volumes:
   photon_data:
     external: true
     name: aos_photon_data
+
+  video_redis_data:
+    external: true
+    name: aos_video_redis_data
 
 networks:
   aos_net:
