@@ -13,7 +13,6 @@ import frappe
 import requests
 from frappe.utils import now_datetime
 
-from aos.api.shorts.constants import MAX_SHORT_DURATION_SECONDS
 from aos.services.media.media_service import MediaService
 from aos.utils.aos_config import (
     clean_url,
@@ -38,6 +37,16 @@ class VideoProcessingConfig:
     max_attempts: int
     queue: str
     dispatcher_timeout_seconds: int
+
+
+def get_max_short_duration_seconds() -> int:
+    """Return Shorts max duration without importing aos.api.shorts.
+
+    Importing aos.api.shorts.constants executes aos.api.shorts.__init__, which imports
+    upload.py. upload.py imports this module, causing a circular import inside workers
+    and manual dispatch. Keep this value env-driven for the separated video service.
+    """
+    return get_env_int("VIDEO_MAX_DURATION_SECONDS", 600, min_value=1, max_value=3600)
 
 
 def get_video_processing_config() -> VideoProcessingConfig:
@@ -236,7 +245,7 @@ def build_video_job_payload(job) -> dict[str, Any]:
             "legacy_output_base_path": f"{minio.base_path}/processed".strip("/"),
             "thumbnail_bucket": minio.public_bucket,
             "thumbnail_base_path": "shorts/thumbnails",
-            "max_duration_seconds": MAX_SHORT_DURATION_SECONDS,
+            "max_duration_seconds": get_max_short_duration_seconds(),
         },
     }
 
