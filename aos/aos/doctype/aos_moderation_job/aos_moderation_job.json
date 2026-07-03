@@ -1,0 +1,271 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-07-03 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "target_section",
+  "target_doctype",
+  "target_name",
+  "target_owner",
+  "content_kind",
+  "source",
+  "status",
+  "decision",
+  "context_json",
+  "service_section",
+  "service_job_id",
+  "idempotency_key",
+  "attempt_count",
+  "max_attempts",
+  "last_error",
+  "result_section",
+  "labels_json",
+  "scores_json",
+  "reasons_json",
+  "risk_score",
+  "payload_section",
+  "text_items_json",
+  "media_items_json",
+  "request_payload",
+  "response_payload",
+  "timing_section",
+  "dispatched_at",
+  "started_at",
+  "callback_received_at",
+  "completed_at"
+ ],
+ "fields": [
+  {
+   "default": "MOD-JOB-.YYYY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "MOD-JOB-.YYYY.-.#####"
+  },
+  {
+   "fieldname": "target_section",
+   "fieldtype": "Section Break",
+   "label": "Target"
+  },
+  {
+   "fieldname": "target_doctype",
+   "fieldtype": "Link",
+   "label": "Target DocType",
+   "options": "DocType",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "target_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Target Name",
+   "options": "target_doctype",
+   "reqd": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "target_owner",
+   "fieldtype": "Link",
+   "label": "Target Owner",
+   "options": "User",
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "content_kind",
+   "fieldtype": "Select",
+   "label": "Content Kind",
+   "options": "ad\nreview\nshort\nprofile\nseller\nlive\nmessage\nmedia",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Data",
+   "label": "Source",
+   "in_standard_filter": 1
+  },
+  {
+   "default": "Queued",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Queued\nDispatching\nProcessing\nAllowed\nReview Required\nRejected\nFailed\nCancelled",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "default": "pending",
+   "fieldname": "decision",
+   "fieldtype": "Select",
+   "label": "Decision",
+   "options": "pending\nallow\nreview\nreject\nfailed",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "context_json",
+   "fieldtype": "Long Text",
+   "label": "Context JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "service_section",
+   "fieldtype": "Section Break",
+   "label": "Service"
+  },
+  {
+   "fieldname": "service_job_id",
+   "fieldtype": "Data",
+   "label": "Service Job ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "idempotency_key",
+   "fieldtype": "Data",
+   "label": "Idempotency Key",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "attempt_count",
+   "fieldtype": "Int",
+   "label": "Attempt Count"
+  },
+  {
+   "default": "3",
+   "fieldname": "max_attempts",
+   "fieldtype": "Int",
+   "label": "Max Attempts"
+  },
+  {
+   "fieldname": "last_error",
+   "fieldtype": "Small Text",
+   "label": "Last Error",
+   "read_only": 1
+  },
+  {
+   "fieldname": "result_section",
+   "fieldtype": "Section Break",
+   "label": "Result"
+  },
+  {
+   "fieldname": "labels_json",
+   "fieldtype": "Long Text",
+   "label": "Labels JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "scores_json",
+   "fieldtype": "Long Text",
+   "label": "Scores JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reasons_json",
+   "fieldtype": "Long Text",
+   "label": "Reasons JSON",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "risk_score",
+   "fieldtype": "Float",
+   "label": "Risk Score",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payload_section",
+   "fieldtype": "Section Break",
+   "label": "Payloads"
+  },
+  {
+   "fieldname": "text_items_json",
+   "fieldtype": "Long Text",
+   "label": "Text Items JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "media_items_json",
+   "fieldtype": "Long Text",
+   "label": "Media Items JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "request_payload",
+   "fieldtype": "Long Text",
+   "label": "Request Payload",
+   "read_only": 1
+  },
+  {
+   "fieldname": "response_payload",
+   "fieldtype": "Long Text",
+   "label": "Response Payload",
+   "read_only": 1
+  },
+  {
+   "fieldname": "timing_section",
+   "fieldtype": "Section Break",
+   "label": "Timing"
+  },
+  {
+   "fieldname": "dispatched_at",
+   "fieldtype": "Datetime",
+   "label": "Dispatched At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "callback_received_at",
+   "fieldtype": "Datetime",
+   "label": "Callback Received At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Moderation Job",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

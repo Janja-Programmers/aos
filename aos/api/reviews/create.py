@@ -9,6 +9,7 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.services.moderation_service import enqueue_review_moderation
 
 from .constants import CREATE_REVIEW_LIMIT_PER_MINUTE_PER_USER
 from .eligibility import (
@@ -128,10 +129,15 @@ def create_review_impl(**kwargs):
                 frappe.db.rollback()
                 return err
 
+        moderation_job = enqueue_review_moderation(review.name, source="review_create")
+
         return ok(
-            "Review submitted and pending approval.",
+            "Review submitted and queued for moderation.",
             data={
                 "id": review.name,
+                "status": review.status,
+                "moderation_job_id": getattr(moderation_job, "name", None),
+                "moderation_job_status": getattr(moderation_job, "status", None),
                 "images": [
                     {
                         "media": item["media"],

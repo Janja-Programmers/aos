@@ -10,7 +10,7 @@ from frappe.utils import getdate
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
-from aos.integrations.ai.image_search_tasks import enqueue_index_refresh_for_status
+from aos.services.moderation_service import enqueue_ad_moderation
 
 from .constants import UPDATE_AD_LIMIT_PER_MINUTE_PER_USER
 from .media import (
@@ -186,9 +186,18 @@ def update_ad_impl(**kwargs):
 
             doc.save(ignore_permissions=True)
 
+            moderation_job = None
+            if any(field in updates for field in {"title", "description"}):
+                moderation_job = enqueue_ad_moderation(doc.name, source="ad_update_active")
+
             return ok(
                 "Ad updated.",
-                data={"id": doc.name, "status": doc.status},
+                data={
+                    "id": doc.name,
+                    "status": doc.status,
+                    "moderation_job_id": getattr(moderation_job, "name", None),
+                    "moderation_job_status": getattr(moderation_job, "status", None),
+                },
             )
 
         if status in _FULL_EDIT_STATUSES:
@@ -327,20 +336,16 @@ def update_ad_impl(**kwargs):
                     frappe.db.rollback()
                     return attach_error
 
-            try:
-                enqueue_index_refresh_for_status(
-                    doc.name,
-                    status=doc.status,
-                )
-            except Exception:
-                frappe.log_error(
-                    frappe.get_traceback(),
-                    f"Failed to enqueue image-search refresh for {doc.name}",
-                )
+            moderation_job = enqueue_ad_moderation(doc.name, source="ad_update_reviewing")
 
             return ok(
-                "Ad updated and sent for review.",
-                data={"id": doc.name, "status": doc.status},
+                "Ad updated and queued for moderation.",
+                data={
+                    "id": doc.name,
+                    "status": doc.status,
+                    "moderation_job_id": getattr(moderation_job, "name", None),
+                    "moderation_job_status": getattr(moderation_job, "status", None),
+                },
             )
 
         return fail(

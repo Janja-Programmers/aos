@@ -205,7 +205,7 @@
    "fieldname": "approval_status",
    "fieldtype": "Select",
    "label": "Approval Status",
-   "options": "auto_approved\nflagged\nrejected"
+   "options": "pending\nauto_approved\nflagged\nrejected"
   },
   {
    "fieldname": "hidden_reason",

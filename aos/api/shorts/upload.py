@@ -11,8 +11,8 @@ from __future__ import annotations
 import json
 import frappe
 
-from aos.services.notification_service import NotificationService
 from aos.services.video_processing_service import create_video_processing_job
+from aos.services.moderation_service import enqueue_short_moderation
 
 from aos.services.media.media_service import (
     MediaNotFoundError,
@@ -360,8 +360,9 @@ def update_short_metadata_impl(**kwargs):
             if existing_sound_err:
                 return existing_sound_err
 
-        doc.visibility_status = "visible"
-        doc.hidden_reason = None
+        doc.visibility_status = "hidden"
+        doc.approval_status = "pending"
+        doc.hidden_reason = "Pending content moderation"
         doc.save(ignore_permissions=True)
 
         if sound_id:
@@ -379,20 +380,19 @@ def update_short_metadata_impl(**kwargs):
             mentioned_by=user,
         )
 
+        moderation_job = enqueue_short_moderation(
+            doc.name,
+            source="short_publish",
+            was_visible=was_visible,
+        )
+
         frappe.db.commit()
 
         if sound_id:
             enqueue_short_audio_reprocess(doc.name)
 
-        # Notify followers only on first publish, not on later metadata edits.
-        if not was_visible:
-            NotificationService.notify_new_short(
-                actor=doc.owner,
-                short_id=doc.name,
-            )
-
         return ok(
-            "Short published successfully.",
+            "Short queued for moderation.",
             data={
                 "short_id": doc.name,
                 "content_mode": doc.content_mode,
@@ -403,6 +403,9 @@ def update_short_metadata_impl(**kwargs):
                 "sound": sound,
                 "audio_mix_status": "pending" if sound_id else getattr(doc, "audio_mix_status", None),
                 "visibility_status": doc.visibility_status,
+                "approval_status": getattr(doc, "approval_status", None),
+                "moderation_job_id": getattr(moderation_job, "name", None),
+                "moderation_job_status": getattr(moderation_job, "status", None),
             },
         )
 

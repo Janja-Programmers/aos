@@ -22,7 +22,7 @@ from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.validators import resolve_location
 from aos.utils.aos_settings import get_aos_settings_snapshot
 from aos.services.account_service import get_or_create_seller
-from aos.integrations.ai.image_search_tasks import enqueue_index_refresh_for_status
+from aos.services.moderation_service import enqueue_ad_moderation
 
 from .constants import CREATE_AD_LIMIT_PER_MINUTE_PER_USER
 from .activity import record_ad_posted_activity
@@ -336,16 +336,7 @@ def create_ad_impl(**kwargs):
                 frappe.db.rollback()
                 return attach_error
 
-        try:
-            enqueue_index_refresh_for_status(
-                ad.name,
-                status=ad.status,
-            )
-        except Exception:
-            frappe.log_error(
-                frappe.get_traceback(),
-                f"Failed to enqueue image-search refresh for {ad.name}",
-            )
+        moderation_job = enqueue_ad_moderation(ad.name, source="ad_create")
 
         record_ad_posted_activity(
             user=current_user,
@@ -353,8 +344,13 @@ def create_ad_impl(**kwargs):
         )
 
         return ok(
-            "Ad created.",
-            data={"id": ad.name},
+            "Ad created and queued for moderation.",
+            data={
+                "id": ad.name,
+                "status": ad.status,
+                "moderation_job_id": getattr(moderation_job, "name", None),
+                "moderation_job_status": getattr(moderation_job, "status", None),
+            },
         )
 
     except frappe.ValidationError as ex:
