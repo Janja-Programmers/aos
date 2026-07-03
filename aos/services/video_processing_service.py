@@ -162,11 +162,14 @@ def create_video_processing_job(
 
 def enqueue_dispatch(job_id: str) -> None:
     config = get_video_processing_config()
+
     frappe.enqueue(
         "aos.tasks.video_processing.dispatch_video_processing_job",
-        job_id=job_id,
+        video_job_id=job_id,
         queue=config.queue,
         timeout=config.dispatcher_timeout_seconds,
+        enqueue_after_commit=True,
+        job_name=f"dispatch-video-processing:{job_id}",
     )
 
 

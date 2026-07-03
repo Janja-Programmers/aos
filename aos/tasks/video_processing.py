@@ -5,20 +5,22 @@ import frappe
 from aos.services.video_processing_service import dispatch_video_processing_job as _dispatch_video_processing_job
 
 
-def dispatch_video_processing_job(job_id: str):
+def dispatch_video_processing_job(video_job_id: str | None = None, job_id: str | None = None):
     """Dispatch a persistent AOS Video Processing Job to the video service."""
-    if not job_id:
-        return
+    resolved_job_id = video_job_id or job_id
+    if not resolved_job_id:
+        frappe.throw("Missing video_job_id for video processing dispatch.")
+
     try:
-        return _dispatch_video_processing_job(job_id)
+        return _dispatch_video_processing_job(resolved_job_id)
     except Exception:
         frappe.log_error(
             frappe.get_traceback(),
-            f"Video processing dispatch failed: {job_id}",
+            f"Video processing dispatch failed: {resolved_job_id}",
         )
         raise
 
 
-def dispatch_video_processing_job_task(job_id: str):
+def dispatch_video_processing_job_task(video_job_id: str | None = None, job_id: str | None = None):
     """Alias for manual/retry use."""
-    return dispatch_video_processing_job(job_id)
+    return dispatch_video_processing_job(video_job_id=video_job_id, job_id=job_id)
