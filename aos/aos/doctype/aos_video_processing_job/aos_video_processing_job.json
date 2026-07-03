@@ -1,0 +1,232 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-07-03 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "short",
+  "raw_video_media",
+  "status",
+  "reason",
+  "force_reprocess",
+  "service_section",
+  "service_job_id",
+  "idempotency_key",
+  "attempt_count",
+  "max_attempts",
+  "last_error",
+  "output_section",
+  "playback_url",
+  "processed_file_key",
+  "processed_file_url",
+  "thumbnail_media",
+  "duration_seconds",
+  "timing_section",
+  "dispatched_at",
+  "started_at",
+  "callback_received_at",
+  "completed_at",
+  "payload_section",
+  "request_payload",
+  "response_payload"
+ ],
+ "fields": [
+  {
+   "default": "VIDEO-JOB-.YYYY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "VIDEO-JOB-.YYYY.-.#####"
+  },
+  {
+   "fieldname": "short",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Short",
+   "options": "AOS Short",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "raw_video_media",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Raw Video Media",
+   "options": "AOS Media Object",
+   "reqd": 1
+  },
+  {
+   "default": "Queued",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Queued\nDispatching\nProcessing\nReady\nFailed\nCancelled",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "short_upload",
+   "fieldname": "reason",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Reason",
+   "options": "short_upload\naudio_reprocess\nretry",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "force_reprocess",
+   "fieldtype": "Check",
+   "label": "Force Reprocess"
+  },
+  {
+   "fieldname": "service_section",
+   "fieldtype": "Section Break",
+   "label": "Service"
+  },
+  {
+   "fieldname": "service_job_id",
+   "fieldtype": "Data",
+   "label": "Service Job ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "idempotency_key",
+   "fieldtype": "Data",
+   "label": "Idempotency Key",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "attempt_count",
+   "fieldtype": "Int",
+   "label": "Attempt Count"
+  },
+  {
+   "default": "3",
+   "fieldname": "max_attempts",
+   "fieldtype": "Int",
+   "label": "Max Attempts"
+  },
+  {
+   "fieldname": "last_error",
+   "fieldtype": "Small Text",
+   "label": "Last Error",
+   "read_only": 1
+  },
+  {
+   "fieldname": "output_section",
+   "fieldtype": "Section Break",
+   "label": "Output"
+  },
+  {
+   "fieldname": "playback_url",
+   "fieldtype": "Data",
+   "label": "Playback URL",
+   "read_only": 1
+  },
+  {
+   "fieldname": "processed_file_key",
+   "fieldtype": "Data",
+   "label": "Processed File Key",
+   "read_only": 1
+  },
+  {
+   "fieldname": "processed_file_url",
+   "fieldtype": "Data",
+   "label": "Processed File URL",
+   "read_only": 1
+  },
+  {
+   "fieldname": "thumbnail_media",
+   "fieldtype": "Link",
+   "label": "Thumbnail Media",
+   "options": "AOS Media Object",
+   "read_only": 1
+  },
+  {
+   "fieldname": "duration_seconds",
+   "fieldtype": "Float",
+   "label": "Duration Seconds",
+   "read_only": 1
+  },
+  {
+   "fieldname": "timing_section",
+   "fieldtype": "Section Break",
+   "label": "Timing"
+  },
+  {
+   "fieldname": "dispatched_at",
+   "fieldtype": "Datetime",
+   "label": "Dispatched At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "callback_received_at",
+   "fieldtype": "Datetime",
+   "label": "Callback Received At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payload_section",
+   "fieldtype": "Section Break",
+   "label": "Payloads"
+  },
+  {
+   "fieldname": "request_payload",
+   "fieldtype": "Long Text",
+   "label": "Request Payload",
+   "read_only": 1
+  },
+  {
+   "fieldname": "response_payload",
+   "fieldtype": "Long Text",
+   "label": "Response Payload",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Video Processing Job",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
