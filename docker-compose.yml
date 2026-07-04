@@ -121,6 +121,7 @@ services:
     networks:
       - aos_net
 
+
   moderation-redis:
     image: redis:7.4-alpine
     container_name: aos-moderation-redis
@@ -155,6 +156,8 @@ services:
 
     networks:
       - aos_net
+
+
 
   search-ranking-redis:
     image: redis:7.4-alpine
@@ -204,8 +207,13 @@ services:
       LIVEKIT_KEYS: ${LIVEKIT_KEYS:?LIVEKIT_KEYS is required}
 
     ports:
+      # Signaling is private and proxied by Nginx.
       - "${LIVEKIT_BIND_ADDRESS:-127.0.0.1}:${LIVEKIT_PORT:-7880}:7880"
+
+      # RTC TCP fallback is accessed directly.
       - "${LIVEKIT_TCP_BIND_ADDRESS:-0.0.0.0}:${LIVEKIT_TCP_PORT:-7881}:7881/tcp"
+
+      # WebRTC UDP media range is accessed directly.
       - "${LIVEKIT_UDP_BIND_ADDRESS:-0.0.0.0}:${LIVEKIT_UDP_PORT_START:-50000}-${LIVEKIT_UDP_PORT_END:-50010}:${LIVEKIT_UDP_PORT_START:-50000}-${LIVEKIT_UDP_PORT_END:-50010}/udp"
 
     volumes:
@@ -470,6 +478,7 @@ services:
     networks:
       - aos_net
 
+
   moderation-api:
     build:
       context: ./infra/moderation
@@ -574,6 +583,8 @@ services:
 
     networks:
       - aos_net
+
+
 
   search-ranking-api:
     build:
@@ -721,8 +732,10 @@ services:
       REPLICATION_URL: ""
       UPDATE_MODE: none
       REVERSE_ONLY: "false"
+
       NOMINATIM_PASSWORD: ${NOMINATIM_PASSWORD:?NOMINATIM_PASSWORD is required}
       IMPORT_STYLE: full
+
       THREADS: ${NOMINATIM_THREADS:-2}
       GUNICORN_WORKERS: ${NOMINATIM_WORKERS:-1}
 
@@ -749,6 +762,9 @@ services:
     stop_grace_period: 2m
     logging: *common-logging
 
+    # Do not apply no-new-privileges to this image. Its startup/import process
+    # creates users and starts its bundled PostgreSQL service.
+
     networks:
       - aos_net
 
@@ -757,6 +773,8 @@ services:
     container_name: aos-photon
     restart: unless-stopped
 
+    # Photon runtime serves an already prepared photon_data directory.
+    # Keep the service private and access it only through AOS backend APIs.
     ports:
       - "${PHOTON_BIND_ADDRESS:-127.0.0.1}:${PHOTON_PORT:-2322}:2322"
 
@@ -798,17 +816,21 @@ services:
     restart: unless-stopped
 
     environment:
+      # Runtime serves already-built routing artifacts.
       tile_urls: ""
       use_tiles_ignore_pbf: "True"
       force_rebuild: "False"
+
       build_admins: "True"
       build_time_zones: "True"
       build_elevation: "False"
       build_transit: "False"
       build_tar: "True"
+
       serve_tiles: "True"
       server_threads: ${VALHALLA_THREADS:-2}
       tileset_name: ${VALHALLA_TILESET_NAME:-kenya_valhalla_tiles}
+
       update_existing_config: "True"
       use_default_speeds_config: "True"
 
