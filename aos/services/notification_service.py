@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import frappe
 
-from aos.services.push_service import PushService
+from aos.services.notification_delivery_service import create_notification_delivery_job
 from aos.api.shared.user_display import get_user_display
 
 
@@ -12,8 +12,8 @@ class NotificationService:
 
     Responsibilities:
     - Create persistent AOS Notification records
-    - Send push notifications through FCM
-    - Send transient push-only events when persistence is not appropriate
+    - Queue push notification delivery jobs
+    - Queue transient push-only delivery jobs when persistence is not appropriate
 
     Notes:
     - `user` should always be a real User ID/email recipient.
@@ -90,28 +90,39 @@ class NotificationService:
         ttl_seconds: int | None = None,
         android_channel_id: str | None = None,
         android_notification_priority: str | None = None,
+        notification_id: str | None = None,
     ):
         """
         Deliver a notification or transient event through push.
 
         Optional push options are mainly used by incoming calls.
-        PushService translates these into Firebase Admin SDK platform configs.
+        The external notification-delivery worker translates these into provider configs.
         """
         push_payload = dict(payload or {})
 
         if event:
             push_payload["event"] = event
 
-        PushService.send_to_user(
-            user=user,
-            title=title,
-            body=body,
-            data=push_payload,
-            priority=priority,
-            ttl_seconds=ttl_seconds,
-            android_channel_id=android_channel_id,
-            android_notification_priority=android_notification_priority,
-        )
+        try:
+            create_notification_delivery_job(
+                user=user,
+                event=event,
+                title=title,
+                body=body,
+                payload=push_payload,
+                notification_id=notification_id,
+                delivery_kind="persistent" if notification_id else "transient",
+                priority=priority,
+                ttl_seconds=ttl_seconds,
+                android_channel_id=android_channel_id,
+                android_notification_priority=android_notification_priority,
+                enqueue=True,
+            )
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                f"Notification delivery enqueue failed for {user}",
+            )
 
     # GENERIC ENTRY POINTS
     @classmethod
@@ -163,6 +174,7 @@ class NotificationService:
             ttl_seconds=ttl_seconds,
             android_channel_id=android_channel_id,
             android_notification_priority=android_notification_priority,
+            notification_id=doc.name if doc else None,
         )
 
         return doc

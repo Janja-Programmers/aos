@@ -1,0 +1,294 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "naming_series:",
+ "creation": "2026-07-04 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "target_section",
+  "user",
+  "notification",
+  "delivery_kind",
+  "channel",
+  "event",
+  "title",
+  "body",
+  "status",
+  "options_section",
+  "priority",
+  "ttl_seconds",
+  "android_channel_id",
+  "android_notification_priority",
+  "service_section",
+  "service_job_id",
+  "idempotency_key",
+  "attempt_count",
+  "max_attempts",
+  "last_error",
+  "payload_section",
+  "payload_json",
+  "request_payload",
+  "response_payload",
+  "result_section",
+  "token_count",
+  "success_count",
+  "failure_count",
+  "inactive_count",
+  "inactive_token_hashes",
+  "dispatch_section",
+  "dispatched_at",
+  "started_at",
+  "callback_received_at",
+  "completed_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "label": "Naming Series",
+   "fieldtype": "Select",
+   "options": "NTF-JOB-.YYYY.-.#####",
+   "default": "NTF-JOB-.YYYY.-.#####",
+   "reqd": 1
+  },
+  {
+   "fieldname": "target_section",
+   "label": "Target",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "user",
+   "label": "User",
+   "fieldtype": "Link",
+   "options": "User",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "notification",
+   "label": "Notification",
+   "fieldtype": "Link",
+   "options": "AOS Notification",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "delivery_kind",
+   "label": "Delivery Kind",
+   "fieldtype": "Select",
+   "options": "persistent\ntransient",
+   "default": "persistent",
+   "reqd": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "channel",
+   "label": "Channel",
+   "fieldtype": "Select",
+   "options": "push\nemail\nsms",
+   "default": "push",
+   "reqd": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "event",
+   "label": "Event",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "title",
+   "label": "Title",
+   "fieldtype": "Data",
+   "reqd": 1
+  },
+  {
+   "fieldname": "body",
+   "label": "Body",
+   "fieldtype": "Small Text",
+   "reqd": 1
+  },
+  {
+   "fieldname": "status",
+   "label": "Status",
+   "fieldtype": "Select",
+   "options": "Queued\nDispatching\nProcessing\nDelivered\nSkipped\nFailed\nCancelled",
+   "default": "Queued",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "options_section",
+   "label": "Push Options",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "priority",
+   "label": "Priority",
+   "fieldtype": "Data"
+  },
+  {
+   "fieldname": "ttl_seconds",
+   "label": "TTL Seconds",
+   "fieldtype": "Int"
+  },
+  {
+   "fieldname": "android_channel_id",
+   "label": "Android Channel ID",
+   "fieldtype": "Data"
+  },
+  {
+   "fieldname": "android_notification_priority",
+   "label": "Android Notification Priority",
+   "fieldtype": "Data"
+  },
+  {
+   "fieldname": "service_section",
+   "label": "Service",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "service_job_id",
+   "label": "Service Job ID",
+   "fieldtype": "Data"
+  },
+  {
+   "fieldname": "idempotency_key",
+   "label": "Idempotency Key",
+   "fieldtype": "Data"
+  },
+  {
+   "fieldname": "attempt_count",
+   "label": "Attempt Count",
+   "fieldtype": "Int",
+   "default": 0
+  },
+  {
+   "fieldname": "max_attempts",
+   "label": "Max Attempts",
+   "fieldtype": "Int",
+   "default": 3
+  },
+  {
+   "fieldname": "last_error",
+   "label": "Last Error",
+   "fieldtype": "Small Text"
+  },
+  {
+   "fieldname": "payload_section",
+   "label": "Payload",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "payload_json",
+   "label": "Payload JSON",
+   "fieldtype": "Long Text"
+  },
+  {
+   "fieldname": "request_payload",
+   "label": "Request Payload",
+   "fieldtype": "Long Text"
+  },
+  {
+   "fieldname": "response_payload",
+   "label": "Response Payload",
+   "fieldtype": "Long Text"
+  },
+  {
+   "fieldname": "result_section",
+   "label": "Result",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "token_count",
+   "label": "Token Count",
+   "fieldtype": "Int",
+   "default": 0
+  },
+  {
+   "fieldname": "success_count",
+   "label": "Success Count",
+   "fieldtype": "Int",
+   "default": 0
+  },
+  {
+   "fieldname": "failure_count",
+   "label": "Failure Count",
+   "fieldtype": "Int",
+   "default": 0
+  },
+  {
+   "fieldname": "inactive_count",
+   "label": "Inactive Count",
+   "fieldtype": "Int",
+   "default": 0
+  },
+  {
+   "fieldname": "inactive_token_hashes",
+   "label": "Inactive Token Hashes",
+   "fieldtype": "Long Text"
+  },
+  {
+   "fieldname": "dispatch_section",
+   "label": "Timestamps",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "dispatched_at",
+   "label": "Dispatched At",
+   "fieldtype": "Datetime"
+  },
+  {
+   "fieldname": "started_at",
+   "label": "Started At",
+   "fieldtype": "Datetime"
+  },
+  {
+   "fieldname": "callback_received_at",
+   "label": "Callback Received At",
+   "fieldtype": "Datetime"
+  },
+  {
+   "fieldname": "completed_at",
+   "label": "Completed At",
+   "fieldtype": "Datetime"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-07-04 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Notification Delivery Job",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

@@ -147,6 +147,7 @@ scheduler_events = {
     "cron": {
         "*/1 * * * *": [
             "aos.tasks.calls.handle_missed_calls",
+            "aos.tasks.notification_delivery.retry_queued_notification_delivery_jobs",
         ],
     },
     "hourly": [
