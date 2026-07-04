@@ -376,17 +376,20 @@ def _apply_ad_decision(job, decision: str, reasons: list[Any]) -> None:
         ad.save(ignore_permissions=True)
         _notify_ad_approved(user=seller_user, ad=ad)
         _enqueue_ad_index(ad)
+        _enqueue_ad_search_index(ad.name, source="ad_moderation_allow")
     elif decision == "reject":
         ad.status = "Declined"
         ad.decline_reason = _reason_text(reasons, "Rejected by content moderation.")
         ad.save(ignore_permissions=True)
         _notify_ad_rejected(user=seller_user, ad=ad)
         _enqueue_ad_index(ad)
+        _enqueue_ad_search_index(ad.name, source="ad_moderation_reject")
     else:
         ad.status = "Reviewing"
         ad.decline_reason = _reason_text(reasons, "Requires manual content review.")
         ad.save(ignore_permissions=True)
         _enqueue_ad_index(ad)
+        _enqueue_ad_search_index(ad.name, source="ad_moderation_review")
 
 
 def _apply_review_decision(job, decision: str, reasons: list[Any]) -> None:
@@ -419,6 +422,7 @@ def _apply_short_decision(job, decision: str, reasons: list[Any]) -> None:
         short.visibility_status = "visible"
         short.hidden_reason = None
         short.save(ignore_permissions=True)
+        _enqueue_short_search_index(short.name, source="short_moderation_allow")
         if not was_visible:
             try:
                 from aos.services.notification_service import NotificationService
@@ -430,11 +434,13 @@ def _apply_short_decision(job, decision: str, reasons: list[Any]) -> None:
         short.visibility_status = "hidden"
         short.hidden_reason = _reason_text(reasons, "Rejected by content moderation.")
         short.save(ignore_permissions=True)
+        _enqueue_short_search_index(short.name, source="short_moderation_reject")
     else:
         short.approval_status = "flagged"
         short.visibility_status = "hidden"
         short.hidden_reason = _reason_text(reasons, "Requires manual content review.")
         short.save(ignore_permissions=True)
+        _enqueue_short_search_index(short.name, source="short_moderation_review")
 
 
 def _hold_target_for_review(job, error_text: str) -> None:
@@ -461,6 +467,23 @@ def _enqueue_ad_index(ad) -> None:
     except Exception:
         frappe.log_error(frappe.get_traceback(), f"Failed to enqueue image-search refresh for {ad.name}")
 
+
+
+
+def _enqueue_ad_search_index(ad_id: str, *, source: str) -> None:
+    try:
+        from aos.services.search_ranking_service import enqueue_ad_search_index
+        enqueue_ad_search_index(ad_id, source=source)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), f"Failed to enqueue search/ranking ad index for {ad_id}")
+
+
+def _enqueue_short_search_index(short_id: str, *, source: str) -> None:
+    try:
+        from aos.services.search_ranking_service import enqueue_short_search_index
+        enqueue_short_search_index(short_id, source=source)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), f"Failed to enqueue search/ranking short index for {short_id}")
 
 def _notify_ad_approved(*, user: str, ad) -> None:
     try:

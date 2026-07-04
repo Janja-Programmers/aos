@@ -23,6 +23,7 @@ from aos.api.shared.utils import get_active_wishlist_ad_ids
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
 from aos.utils.aos_settings import get_aos_settings_snapshot
+from aos.services.search_ranking_service import search_ad_candidates
 
 from .constants import LIST_ADS_LIMIT_PER_MINUTE_PER_IP
 from .category_filters import resolve_category_filter_values
@@ -54,6 +55,15 @@ def _safe_float(value: Any) -> Optional[float]:
         return None
 
 
+def _search_order_sql(ad_ids: list[str]) -> str:
+    if not ad_ids:
+        return ""
+    escaped = ", ".join(frappe.db.escape(str(ad_id)) for ad_id in ad_ids if str(ad_id or "").strip())
+    if not escaped:
+        return ""
+    return f"FIELD(a.name, {escaped})"
+
+
 def list_ads_impl(**kwargs):
     rl = rate_limit(
         key=f"aos:ads:list:ip:{request_ip()}",
@@ -81,6 +91,9 @@ def list_ads_impl(**kwargs):
     category = str(kwargs.get("category") or "").strip()
     seller = str(kwargs.get("seller") or "").strip()
     q = str(kwargs.get("q") or "").strip()
+    candidate_ad_ids: list[str] | None = None
+    candidate_order_sql = ""
+    used_search_service = False
 
     sort = str(kwargs.get("sort") or "rating_high").strip() or "rating_high"
 
@@ -126,6 +139,43 @@ def list_ads_impl(**kwargs):
     limit = max(1, min(_safe_int(kwargs.get("limit"), 20), 50))
     offset = max(0, _safe_int(kwargs.get("offset"), 0))
 
+    if q and len(q) >= 2:
+        try:
+            candidate_ad_ids = search_ad_candidates(
+                q=q,
+                filters={
+                    "country": country,
+                    "location": location,
+                    "category": category,
+                    "seller": seller,
+                },
+                limit=limit,
+                offset=offset,
+            )
+            used_search_service = True
+            candidate_order_sql = _search_order_sql(candidate_ad_ids)
+        except Exception:
+            candidate_ad_ids = None
+            used_search_service = False
+            candidate_order_sql = ""
+            frappe.log_error(
+                frappe.get_traceback(),
+                "AOS Search Ranking Ads Candidate Fetch Failed",
+            )
+
+    if used_search_service and not candidate_ad_ids:
+        return ok(
+            "Ads fetched.",
+            data={
+                "items": [],
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "returned": 0,
+                },
+            },
+        )
+
     # Base Conditions
     conditions = [
         "a.status = 'Active'",
@@ -166,7 +216,10 @@ def list_ads_impl(**kwargs):
         values["categories"] = tuple(category_ids)
 
     # Search
-    if q and len(q) >= 2:
+    if used_search_service and candidate_ad_ids:
+        conditions.append("a.name in %(candidate_ad_ids)s")
+        values["candidate_ad_ids"] = tuple(candidate_ad_ids)
+    elif q and len(q) >= 2:
         conditions.append("a.title like %(q)s")
         values["q"] = f"%{q}%"
 
@@ -293,6 +346,9 @@ def list_ads_impl(**kwargs):
             "a.creation DESC"
         )
 
+    if candidate_order_sql:
+        order_by = f"{candidate_order_sql} ASC"
+
     # SQL Query
     sql = f"""
         SELECT
@@ -331,7 +387,7 @@ def list_ads_impl(**kwargs):
     """
 
     values["limit"] = limit
-    values["offset"] = offset
+    values["offset"] = 0 if used_search_service else offset
 
     try:
         rows = frappe.db.sql(sql, values, as_dict=True)

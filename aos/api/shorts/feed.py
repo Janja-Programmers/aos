@@ -37,6 +37,7 @@ from aos.api.shorts.utils import (
 from aos.api.shorts.visibility import can_view_short
 from aos.api.shorts.mentions import get_short_mentions_map
 from aos.api.shorts.sounds import get_short_sound_map
+from aos.services.search_ranking_service import short_feed_candidates
 
 
 # COMMON
@@ -61,6 +62,14 @@ def _get_optional_viewer() -> str | None:
         return None
 
     return user
+
+
+def _short_candidate_sql(short_ids: list[str]) -> tuple[str, str]:
+    cleaned = [str(short_id).strip() for short_id in short_ids or [] if str(short_id or "").strip()]
+    if not cleaned:
+        return "", ""
+    escaped = ", ".join(frappe.db.escape(short_id) for short_id in cleaned)
+    return f"AND s.name in ({escaped})", f"FIELD(s.name, {escaped}) ASC"
 
 
 def _build_content_mode_filter(content_mode):
@@ -568,6 +577,28 @@ def feed_for_you_impl(**kwargs):
         if mode_err:
             return mode_err
 
+        candidate_clause = ""
+        candidate_order_sql = ""
+        if not cursor:
+            try:
+                candidate_short_ids = short_feed_candidates(
+                    viewer=viewer,
+                    content_mode=kwargs.get("content_mode") or kwargs.get("mode"),
+                    limit=limit + 1,
+                    offset=0,
+                )
+                if candidate_short_ids:
+                    candidate_clause, candidate_order_sql = _short_candidate_sql(candidate_short_ids)
+                else:
+                    return _build_response([], limit, viewer=viewer)
+            except Exception:
+                candidate_clause = ""
+                candidate_order_sql = ""
+                frappe.log_error(
+                    frappe.get_traceback(),
+                    "AOS Search Ranking Shorts Candidate Fetch Failed",
+                )
+
         audience_clause, audience_params = _build_audience_where_clause(viewer)
 
         where_cursor, params_cursor = build_ranked_cursor_where_clause(
@@ -586,9 +617,11 @@ def feed_for_you_impl(**kwargs):
                 AND s.visibility_status = 'visible'
                 {mode_clause}
                 {audience_clause}
+                {candidate_clause}
                 {where_cursor}
 
             ORDER BY
+                {candidate_order_sql + "," if candidate_order_sql else ""}
                 s.ranking_score DESC,
                 s.creation DESC,
                 s.name DESC

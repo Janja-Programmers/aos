@@ -107,6 +107,22 @@ def _enqueue_image_search_refresh(doc) -> None:
         )
 
 
+def _enqueue_search_ranking_refresh(doc) -> None:
+    """Queue search/ranking index refresh for the ad's current status."""
+
+    try:
+        from aos.services.search_ranking_service import enqueue_ad_search_index
+        enqueue_ad_search_index(
+            doc.name,
+            source="ad_status_change",
+        )
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            f"Failed to enqueue search/ranking refresh for {doc.name}",
+        )
+
+
 # API IMPLEMENTATION
 def set_ad_status_impl(**kwargs):
     user, err = require_login()
@@ -216,6 +232,7 @@ def set_ad_status_impl(**kwargs):
         doc.save(ignore_permissions=True)
 
         _enqueue_image_search_refresh(doc)
+        _enqueue_search_ranking_refresh(doc)
 
         frappe.db.commit()
 

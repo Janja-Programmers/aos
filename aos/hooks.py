@@ -155,6 +155,7 @@ scheduler_events = {
         "aos.tasks.shorts.aggregate_short_metrics",
         "aos.tasks.sellers.refresh_recent_seller_response_metrics",
         "aos.tasks.media.cleanup_media_objects",
+        "aos.tasks.search_ranking.refresh_search_indexes",
     ],
     "daily": [
         "aos.tasks.fx.update_exchange_rates",

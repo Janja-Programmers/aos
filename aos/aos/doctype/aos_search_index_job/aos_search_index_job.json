@@ -1,0 +1,221 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "naming_series:",
+ "creation": "2026-07-03 15:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "target_section",
+  "target_doctype",
+  "target_name",
+  "target_owner",
+  "index_kind",
+  "action",
+  "source",
+  "status",
+  "service_section",
+  "service_job_id",
+  "idempotency_key",
+  "attempt_count",
+  "max_attempts",
+  "last_error",
+  "payload_section",
+  "document_json",
+  "request_payload",
+  "response_payload",
+  "result_section",
+  "indexed",
+  "score",
+  "dispatch_section",
+  "dispatched_at",
+  "started_at",
+  "callback_received_at",
+  "completed_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "label": "Naming Series",
+   "fieldtype": "Select",
+   "options": "SRCH-JOB-.YYYY.-.#####",
+   "default": "SRCH-JOB-.YYYY.-.#####",
+   "reqd": 1
+  },
+  {
+   "fieldname": "target_section",
+   "label": "Target",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "target_doctype",
+   "label": "Target DocType",
+   "fieldtype": "Link",
+   "options": "DocType",
+   "reqd": 1
+  },
+  {
+   "fieldname": "target_name",
+   "label": "Target Name",
+   "fieldtype": "Dynamic Link",
+   "options": "target_doctype",
+   "reqd": 1
+  },
+  {
+   "fieldname": "target_owner",
+   "label": "Target Owner",
+   "fieldtype": "Link",
+   "options": "User"
+  },
+  {
+   "fieldname": "index_kind",
+   "label": "Index Kind",
+   "fieldtype": "Select",
+   "options": "ad\nshort\nseller\nuser\ncategory",
+   "reqd": 1
+  },
+  {
+   "fieldname": "action",
+   "label": "Action",
+   "fieldtype": "Select",
+   "options": "upsert\ndelete",
+   "default": "upsert",
+   "reqd": 1
+  },
+  {
+   "fieldname": "source",
+   "label": "Source",
+   "fieldtype": "Data"
+  },
+  {
+   "fieldname": "status",
+   "label": "Status",
+   "fieldtype": "Select",
+   "options": "Queued\nDispatching\nProcessing\nIndexed\nDeleted\nFailed\nCancelled",
+   "default": "Queued",
+   "reqd": 1
+  },
+  {
+   "fieldname": "service_section",
+   "label": "Service",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "service_job_id",
+   "label": "Service Job ID",
+   "fieldtype": "Data"
+  },
+  {
+   "fieldname": "idempotency_key",
+   "label": "Idempotency Key",
+   "fieldtype": "Data"
+  },
+  {
+   "fieldname": "attempt_count",
+   "label": "Attempt Count",
+   "fieldtype": "Int",
+   "default": 0
+  },
+  {
+   "fieldname": "max_attempts",
+   "label": "Max Attempts",
+   "fieldtype": "Int",
+   "default": 3
+  },
+  {
+   "fieldname": "last_error",
+   "label": "Last Error",
+   "fieldtype": "Small Text"
+  },
+  {
+   "fieldname": "payload_section",
+   "label": "Payload",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "document_json",
+   "label": "Document JSON",
+   "fieldtype": "Long Text"
+  },
+  {
+   "fieldname": "request_payload",
+   "label": "Request Payload",
+   "fieldtype": "Long Text"
+  },
+  {
+   "fieldname": "response_payload",
+   "label": "Response Payload",
+   "fieldtype": "Long Text"
+  },
+  {
+   "fieldname": "result_section",
+   "label": "Result",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "indexed",
+   "label": "Indexed",
+   "fieldtype": "Check",
+   "default": 0
+  },
+  {
+   "fieldname": "score",
+   "label": "Score",
+   "fieldtype": "Float"
+  },
+  {
+   "fieldname": "dispatch_section",
+   "label": "Timestamps",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "dispatched_at",
+   "label": "Dispatched At",
+   "fieldtype": "Datetime"
+  },
+  {
+   "fieldname": "started_at",
+   "label": "Started At",
+   "fieldtype": "Datetime"
+  },
+  {
+   "fieldname": "callback_received_at",
+   "label": "Callback Received At",
+   "fieldtype": "Datetime"
+  },
+  {
+   "fieldname": "completed_at",
+   "label": "Completed At",
+   "fieldtype": "Datetime"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-07-03 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Search Index Job",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

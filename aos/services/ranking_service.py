@@ -68,6 +68,18 @@ class RankingService:
                 update_modified=False,
             )
 
+            try:
+                from aos.services.search_ranking_service import enqueue_short_search_index
+                enqueue_short_search_index(
+                    short_id,
+                    source="short_ranking_update",
+                )
+            except Exception:
+                frappe.log_error(
+                    frappe.get_traceback(),
+                    f"Search/ranking short index refresh failed for {short_id}",
+                )
+
         except Exception:
             frappe.log_error(
                 frappe.get_traceback(),
