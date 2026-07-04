@@ -117,16 +117,62 @@ def _init_firebase() -> None:
     _FIREBASE_INITIALIZED = True
 
 
-def _is_inactive_token_error(error: str) -> bool:
+def _exception_detail(exc: Exception | None) -> dict[str, Any]:
+    """Return a JSON-safe Firebase/provider error payload.
+
+    firebase-admin exceptions expose different attributes depending on the
+    underlying provider error. Keep this defensive so callback payloads always
+    contain enough detail to diagnose bad tokens, sender mismatch, credentials,
+    or malformed notification data without leaking the raw token.
+    """
+    if exc is None:
+        return {"error_message": "Unknown provider error"}
+
+    detail: dict[str, Any] = {
+        "error_class": exc.__class__.__name__,
+        "error_message": str(exc) or exc.__class__.__name__,
+    }
+
+    for attr in ("code", "error_code", "detail"):
+        value = getattr(exc, attr, None)
+        if value:
+            detail[attr] = str(value)
+
+    cause = getattr(exc, "cause", None)
+    if cause:
+        detail["cause"] = str(cause)
+
+    http_response = getattr(exc, "http_response", None)
+    status_code = getattr(http_response, "status_code", None) if http_response is not None else None
+    if status_code is not None:
+        detail["http_status"] = status_code
+
+    return detail
+
+
+def _is_inactive_token_error(detail: dict[str, Any] | str) -> bool:
+    if isinstance(detail, dict):
+        text = " ".join(str(value or "") for value in detail.values())
+    else:
+        text = str(detail or "")
+    text_lower = text.lower()
+
     needles = [
         "registration-token-not-registered",
         "invalid-registration-token",
-        "Requested entity was not found",
-        "The registration token is not a valid FCM registration token",
-        "UNREGISTERED",
-        "INVALID_ARGUMENT",
+        "requested entity was not found",
+        "the registration token is not a valid fcm registration token",
+        "unregistered",
+        "notregistered",
+        "invalid_argument",
+        "invalid-argument",
+        "sender_id_mismatch",
+        "sender-id-mismatch",
+        "mismatched-credential",
+        "mismatched sender",
+        "sender id mismatch",
     ]
-    return any(needle in error for needle in needles)
+    return any(needle in text_lower for needle in needles)
 
 
 def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
@@ -141,6 +187,7 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
             "failure_count": 0,
             "inactive_token_hashes": [],
             "provider_responses": [],
+            "error": None,
         }
 
     if settings.dry_run:
@@ -150,6 +197,7 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
             "failure_count": 0,
             "inactive_token_hashes": [],
             "provider_responses": [{"dry_run": True, "count": len(tokens)}],
+            "error": None,
         }
 
     _init_firebase()
@@ -158,11 +206,12 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
     failure_count = 0
     inactive_hashes: list[str] = []
     provider_responses: list[dict[str, Any]] = []
+    first_error: str | None = None
 
     data_payload = _stringify_data(payload.get("data") if isinstance(payload.get("data"), dict) else {})
     android_config = _build_android_config(payload.get("options") if isinstance(payload.get("options"), dict) else {})
 
-    for chunk in _chunk(tokens, max(1, min(settings.max_tokens_per_multicast, 500))):
+    for chunk_index, chunk in enumerate(_chunk(tokens, max(1, min(settings.max_tokens_per_multicast, 500)))):
         token_values = [row["token"] for row in chunk if row.get("token")]
         if not token_values:
             continue
@@ -180,16 +229,41 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
         response = messaging.send_each_for_multicast(message)
         success_count += int(response.success_count or 0)
         failure_count += int(response.failure_count or 0)
-        provider_responses.append({"success_count": response.success_count, "failure_count": response.failure_count})
 
+        chunk_errors: list[dict[str, Any]] = []
         for idx, item in enumerate(response.responses):
             if item.success:
                 continue
-            error = str(item.exception or "")
-            if _is_inactive_token_error(error):
-                token_hash = str(chunk[idx].get("token_hash") or "").strip()
-                if token_hash:
-                    inactive_hashes.append(token_hash)
+
+            token_meta = chunk[idx] if idx < len(chunk) else {}
+            error_detail = _exception_detail(item.exception)
+            inactive = _is_inactive_token_error(error_detail)
+            token_hash = str(token_meta.get("token_hash") or "").strip()
+
+            if inactive and token_hash:
+                inactive_hashes.append(token_hash)
+
+            if not first_error:
+                code = error_detail.get("code") or error_detail.get("error_code") or error_detail.get("error_class")
+                first_error = f"{code}: {error_detail.get('error_message')}" if code else error_detail.get("error_message")
+
+            chunk_errors.append(
+                {
+                    "token_hash": token_hash,
+                    "device_type": str(token_meta.get("device_type") or ""),
+                    "inactive": inactive,
+                    **error_detail,
+                }
+            )
+
+        provider_responses.append(
+            {
+                "chunk_index": chunk_index,
+                "success_count": response.success_count,
+                "failure_count": response.failure_count,
+                "errors": chunk_errors,
+            }
+        )
 
     return {
         "status": "delivered" if success_count > 0 or failure_count == 0 else "failed",
@@ -197,8 +271,8 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
         "failure_count": failure_count,
         "inactive_token_hashes": sorted(set(inactive_hashes)),
         "provider_responses": provider_responses,
+        "error": first_error,
     }
-
 
 def process_notification_delivery_job(payload: dict[str, Any]) -> dict[str, Any]:
     job_id = str(payload.get("job_id") or "").strip()
@@ -219,6 +293,7 @@ def process_notification_delivery_job(payload: dict[str, Any]) -> dict[str, Any]
             "failure_count": result["failure_count"],
             "inactive_token_hashes": result["inactive_token_hashes"],
             "provider_responses": result["provider_responses"],
+            "error": result.get("error"),
         }
         _callback(callback_url, status_payload)
         return status_payload
