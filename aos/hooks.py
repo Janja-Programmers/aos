@@ -161,6 +161,7 @@ scheduler_events = {
     ],
     "daily": [
         "aos.tasks.fx.update_exchange_rates",
+        "aos.tasks.service_hardening.cleanup_external_service_jobs",
     ],
 }
 
