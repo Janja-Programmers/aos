@@ -1,0 +1,253 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "naming_series:",
+ "creation": "2026-07-05 01:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "event_section",
+  "source",
+  "event_group",
+  "event_type",
+  "user",
+  "session_id",
+  "target_doctype",
+  "target_name",
+  "status",
+  "service_section",
+  "service_job_id",
+  "idempotency_key",
+  "attempt_count",
+  "max_attempts",
+  "last_error",
+  "payload_section",
+  "events_json",
+  "request_payload",
+  "response_payload",
+  "result_section",
+  "event_count",
+  "ingested_count",
+  "skipped_count",
+  "counters_json",
+  "dispatch_section",
+  "dispatched_at",
+  "started_at",
+  "callback_received_at",
+  "completed_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "label": "Naming Series",
+   "fieldtype": "Select",
+   "options": "ANLY-JOB-.YYYY.-.#####",
+   "default": "ANLY-JOB-.YYYY.-.#####",
+   "reqd": 1
+  },
+  {
+   "fieldname": "event_section",
+   "label": "Event Batch",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "source",
+   "label": "Source",
+   "fieldtype": "Data",
+   "default": "server",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "event_group",
+   "label": "Event Group",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "event_type",
+   "label": "Event Type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "user",
+   "label": "User",
+   "fieldtype": "Link",
+   "options": "User",
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "session_id",
+   "label": "Session ID",
+   "fieldtype": "Data"
+  },
+  {
+   "fieldname": "target_doctype",
+   "label": "Target DocType",
+   "fieldtype": "Link",
+   "options": "DocType",
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "target_name",
+   "label": "Target Name",
+   "fieldtype": "Dynamic Link",
+   "options": "target_doctype",
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "status",
+   "label": "Status",
+   "fieldtype": "Select",
+   "options": "Queued\nDispatching\nProcessing\nIngested\nSkipped\nFailed\nCancelled",
+   "default": "Queued",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "service_section",
+   "label": "Service",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "service_job_id",
+   "label": "Service Job ID",
+   "fieldtype": "Data",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "idempotency_key",
+   "label": "Idempotency Key",
+   "fieldtype": "Data",
+   "unique": 1
+  },
+  {
+   "fieldname": "attempt_count",
+   "label": "Attempt Count",
+   "fieldtype": "Int",
+   "default": "0"
+  },
+  {
+   "fieldname": "max_attempts",
+   "label": "Max Attempts",
+   "fieldtype": "Int",
+   "default": "3"
+  },
+  {
+   "fieldname": "last_error",
+   "label": "Last Error",
+   "fieldtype": "Small Text"
+  },
+  {
+   "fieldname": "payload_section",
+   "label": "Payload",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "events_json",
+   "label": "Events JSON",
+   "fieldtype": "Long Text"
+  },
+  {
+   "fieldname": "request_payload",
+   "label": "Request Payload",
+   "fieldtype": "Long Text"
+  },
+  {
+   "fieldname": "response_payload",
+   "label": "Response Payload",
+   "fieldtype": "Long Text"
+  },
+  {
+   "fieldname": "result_section",
+   "label": "Result",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "event_count",
+   "label": "Event Count",
+   "fieldtype": "Int",
+   "default": "0",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "ingested_count",
+   "label": "Ingested Count",
+   "fieldtype": "Int",
+   "default": "0",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "skipped_count",
+   "label": "Skipped Count",
+   "fieldtype": "Int",
+   "default": "0"
+  },
+  {
+   "fieldname": "counters_json",
+   "label": "Counters JSON",
+   "fieldtype": "Long Text"
+  },
+  {
+   "fieldname": "dispatch_section",
+   "label": "Dispatch",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "dispatched_at",
+   "label": "Dispatched At",
+   "fieldtype": "Datetime"
+  },
+  {
+   "fieldname": "started_at",
+   "label": "Started At",
+   "fieldtype": "Datetime"
+  },
+  {
+   "fieldname": "callback_received_at",
+   "label": "Callback Received At",
+   "fieldtype": "Datetime"
+  },
+  {
+   "fieldname": "completed_at",
+   "label": "Completed At",
+   "fieldtype": "Datetime"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-07-05 01:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Analytics Ingest Job",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

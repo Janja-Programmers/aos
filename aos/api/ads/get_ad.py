@@ -17,6 +17,7 @@ from aos.api.shared.responses import fail, ok
 from .constants import GET_AD_LIMIT_PER_HOUR_PER_IP
 from .serializers import serialize_ad_detail
 from .activity import record_ad_view_activity
+from aos.services.analytics_pipeline_service import emit_analytics_event
 
 
 def get_ad_impl(**kwargs):
@@ -178,6 +179,26 @@ def get_ad_impl(**kwargs):
             user=user,
             ad_id=ad_id,
         )
+
+    try:
+        emit_analytics_event(
+            event_type="ad_view",
+            event_group="ads",
+            user=user if user != "Guest" else None,
+            target_doctype="AOS Ad",
+            target_name=ad_id,
+            route_type="ad",
+            route_id=ad_id,
+            source="ads.get_ad",
+            country=row.get("country"),
+            metadata={
+                "category": row.get("category"),
+                "seller": row.get("seller"),
+                "location": row.get("location"),
+            },
+        )
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "ad view analytics emit failed")
 
     return ok(
         "Ad fetched.",

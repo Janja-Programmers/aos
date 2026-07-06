@@ -148,6 +148,7 @@ scheduler_events = {
         "*/1 * * * *": [
             "aos.tasks.calls.handle_missed_calls",
             "aos.tasks.notification_delivery.retry_queued_notification_delivery_jobs",
+            "aos.tasks.analytics_pipeline.retry_queued_analytics_ingest_jobs",
         ],
     },
     "hourly": [

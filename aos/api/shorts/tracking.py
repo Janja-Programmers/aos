@@ -31,6 +31,7 @@ from aos.api.shorts.constants import (
 from aos.api.shorts.utils import resolve_actor
 from aos.api.shorts.visibility import can_view_short
 from aos.api.shorts.activity import record_short_watch_activity
+from aos.services.analytics_pipeline_service import emit_analytics_event
 
 
 # COMMON
@@ -105,6 +106,21 @@ def track_impression_impl(**kwargs):
         ).insert(ignore_permissions=True)
 
         frappe.db.commit()
+
+        try:
+            emit_analytics_event(
+                event_type="short_impression",
+                event_group="shorts",
+                user=user,
+                session_id=session_id,
+                target_doctype="AOS Short",
+                target_name=short_id,
+                route_type="short",
+                route_id=short_id,
+                source="shorts.track_impression",
+            )
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "short impression analytics emit failed")
 
         return ok(
             "Impression tracked.",
@@ -212,6 +228,23 @@ def track_view_impl(**kwargs):
 
         frappe.db.commit()
 
+        try:
+            emit_analytics_event(
+                event_type="short_view",
+                event_group="shorts",
+                user=user,
+                session_id=session_id,
+                target_doctype="AOS Short",
+                target_name=short_id,
+                route_type="short",
+                route_id=short_id,
+                source="shorts.track_view",
+                metrics={"watch_ms": watch_ms},
+                metadata={"qualified_candidate": should_update_ranking},
+            )
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "short view analytics emit failed")
+
         # TRIGGER RANKING (ASYNC)
         if should_update_ranking:
             frappe.enqueue(
@@ -280,6 +313,22 @@ def track_share_impl(**kwargs):
         )
 
         frappe.db.commit()
+
+        try:
+            emit_analytics_event(
+                event_type="short_share",
+                event_group="shorts",
+                user=user,
+                session_id=session_id,
+                target_doctype="AOS Short",
+                target_name=short_id,
+                route_type="short",
+                route_id=short_id,
+                source="shorts.track_share",
+                metadata={"channel": channel},
+            )
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "short share analytics emit failed")
 
         share_count = frappe.db.get_value("AOS Short", short_id, "share_count") or 0
 

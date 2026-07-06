@@ -1,0 +1,342 @@
+"""Frappe-side orchestration for the external analytics pipeline.
+
+Frappe remains the source of truth for product, user, permission, and feature
+events. The external analytics-pipeline service owns fast ingestion, Redis
+streams/counters, and future aggregation/export work.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import uuid
+from dataclasses import dataclass
+from typing import Any
+
+import frappe
+import requests
+from frappe.utils import now_datetime
+
+from aos.utils.aos_config import clean_url, get_env, get_env_bool, get_env_int, get_first_env
+
+
+class AnalyticsPipelineError(RuntimeError):
+    """Raised when analytics pipeline orchestration fails."""
+
+
+@dataclass(frozen=True)
+class AnalyticsPipelineConfig:
+    service_url: str
+    service_secret: str
+    callback_secret: str
+    callback_url: str
+    request_timeout_seconds: int
+    max_attempts: int
+    queue: str
+    dispatcher_timeout_seconds: int
+    enabled: bool
+    fail_open: bool
+    max_events_per_job: int
+
+
+def get_analytics_pipeline_config() -> AnalyticsPipelineConfig:
+    service_url = clean_url(
+        get_first_env(
+            "ANALYTICS_SERVICE_URL",
+            default=f"http://127.0.0.1:{get_env('ANALYTICS_SERVICE_PORT', '8170')}",
+        ),
+        default="http://127.0.0.1:8170",
+    )
+    callback_url = clean_url(get_env("ANALYTICS_CALLBACK_URL"))
+    if not callback_url:
+        domain = get_env("AOS_API_DOMAIN")
+        if domain:
+            callback_url = f"https://{domain}/api/method/aos.api.analytics_pipeline.handle_callback"
+        else:
+            callback_url = "http://127.0.0.1:8000/api/method/aos.api.analytics_pipeline.handle_callback"
+
+    return AnalyticsPipelineConfig(
+        service_url=service_url,
+        service_secret=get_env("ANALYTICS_SERVICE_SECRET", "") or "",
+        callback_secret=get_env("ANALYTICS_SERVICE_CALLBACK_SECRET", "") or "",
+        callback_url=callback_url,
+        request_timeout_seconds=get_env_int("ANALYTICS_SERVICE_REQUEST_TIMEOUT_SECONDS", 20, min_value=5, max_value=120),
+        max_attempts=get_env_int("ANALYTICS_MAX_RETRIES", 3, min_value=1, max_value=10),
+        queue=get_env("ANALYTICS_FRAPPE_QUEUE", "long") or "long",
+        dispatcher_timeout_seconds=get_env_int("ANALYTICS_DISPATCHER_TIMEOUT_SECONDS", 300, min_value=60, max_value=1800),
+        enabled=get_env_bool("ANALYTICS_PIPELINE_ENABLED", True),
+        fail_open=get_env_bool("ANALYTICS_PIPELINE_FAIL_OPEN", True),
+        max_events_per_job=get_env_int("ANALYTICS_MAX_EVENTS_PER_JOB", 200, min_value=1, max_value=1000),
+    )
+
+
+def _json_bytes(payload: dict[str, Any]) -> bytes:
+    return json.dumps(payload, separators=(",", ":"), sort_keys=True, default=str).encode("utf-8")
+
+
+def build_signature(secret: str, payload: bytes) -> str:
+    digest = hmac.new(str(secret or "").encode("utf-8"), payload, hashlib.sha256).hexdigest()
+    return f"sha256={digest}"
+
+
+def verify_signature(secret: str, payload: bytes, signature: str | None) -> bool:
+    if not secret:
+        return True
+    if not signature:
+        return False
+    return hmac.compare_digest(build_signature(secret, payload), str(signature).strip())
+
+
+def _json_dumps(value: Any) -> str:
+    return json.dumps(value if value is not None else {}, ensure_ascii=False, default=str)
+
+
+def _json_loads(value: str | None, default: Any):
+    if not value:
+        return default
+    try:
+        return json.loads(value)
+    except Exception:
+        return default
+
+
+def _clean(value: Any, *, max_len: int = 180) -> str:
+    text = str(value or "").strip()
+    if len(text) > max_len:
+        text = text[:max_len]
+    return text
+
+
+def _normalize_event(event: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(event, dict):
+        return None
+    event_type = _clean(event.get("event_type"), max_len=120)
+    if not event_type:
+        return None
+
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    metrics = event.get("metrics") if isinstance(event.get("metrics"), dict) else {}
+
+    return {
+        "event_type": event_type,
+        "event_group": _clean(event.get("event_group") or event.get("group"), max_len=80),
+        "user": _clean(event.get("user"), max_len=180),
+        "session_id": _clean(event.get("session_id"), max_len=180),
+        "source": _clean(event.get("source"), max_len=120),
+        "platform": _clean(event.get("platform"), max_len=40),
+        "country": _clean(event.get("country"), max_len=80),
+        "target_doctype": _clean(event.get("target_doctype"), max_len=120),
+        "target_name": _clean(event.get("target_name"), max_len=180),
+        "route_type": _clean(event.get("route_type"), max_len=80),
+        "route_id": _clean(event.get("route_id"), max_len=180),
+        "occurred_at": _clean(event.get("occurred_at"), max_len=80) or str(now_datetime()),
+        "metadata": metadata,
+        "metrics": metrics,
+    }
+
+
+def create_analytics_ingest_job(
+    *,
+    events: list[dict[str, Any]],
+    source: str = "server",
+    enqueue: bool = True,
+) -> object | None:
+    config = get_analytics_pipeline_config()
+    if not config.enabled:
+        return None
+
+    normalized: list[dict[str, Any]] = []
+    for event in events[: config.max_events_per_job]:
+        item = _normalize_event(event)
+        if item:
+            normalized.append(item)
+
+    if not normalized:
+        if config.fail_open:
+            return None
+        raise AnalyticsPipelineError("At least one valid analytics event is required")
+
+    first = normalized[0]
+    job = frappe.get_doc(
+        {
+            "doctype": "AOS Analytics Ingest Job",
+            "source": _clean(source, max_len=120) or "server",
+            "event_group": first.get("event_group"),
+            "event_type": first.get("event_type"),
+            "user": first.get("user"),
+            "session_id": first.get("session_id"),
+            "target_doctype": first.get("target_doctype"),
+            "target_name": first.get("target_name"),
+            "status": "Queued",
+            "attempt_count": 0,
+            "max_attempts": config.max_attempts,
+            "idempotency_key": uuid.uuid4().hex,
+            "event_count": len(normalized),
+            "events_json": _json_dumps(normalized),
+        }
+    )
+    job.insert(ignore_permissions=True)
+    frappe.db.commit()
+
+    if enqueue:
+        enqueue_analytics_ingest_dispatch(job.name)
+
+    return job
+
+
+def emit_analytics_event(**event: Any) -> object | None:
+    """Best-effort helper for feature APIs.
+
+    This should never break the primary user action when fail-open is enabled.
+    """
+    config = get_analytics_pipeline_config()
+    try:
+        return create_analytics_ingest_job(
+            events=[event],
+            source=_clean(event.get("source"), max_len=120) or "server",
+            enqueue=True,
+        )
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "AOS Analytics Event Emit Failed")
+        if config.fail_open:
+            return None
+        raise
+
+
+def enqueue_analytics_ingest_dispatch(analytics_job_id: str) -> None:
+    config = get_analytics_pipeline_config()
+    frappe.enqueue(
+        "aos.tasks.analytics_pipeline.dispatch_analytics_ingest_job",
+        analytics_job_id=analytics_job_id,
+        queue=config.queue,
+        timeout=config.dispatcher_timeout_seconds,
+        enqueue_after_commit=True,
+        job_name=f"dispatch-analytics-ingest:{analytics_job_id}",
+    )
+
+
+def build_analytics_ingest_payload(job) -> dict[str, Any]:
+    return {
+        "job_id": job.name,
+        "source": job.source,
+        "events": _json_loads(job.events_json, []),
+        "callback_url": get_analytics_pipeline_config().callback_url,
+    }
+
+
+def dispatch_analytics_ingest_job(analytics_job_id: str) -> object:
+    job = frappe.get_doc("AOS Analytics Ingest Job", analytics_job_id)
+    if job.status in {"Ingested", "Skipped", "Cancelled"}:
+        return job
+    if job.status == "Processing" and getattr(job, "service_job_id", None):
+        return job
+
+    config = get_analytics_pipeline_config()
+    if not config.enabled:
+        job.status = "Cancelled"
+        job.last_error = "Analytics pipeline is disabled"
+        job.completed_at = now_datetime()
+        job.save(ignore_permissions=True)
+        frappe.db.commit()
+        return job
+
+    job.status = "Dispatching"
+    job.attempt_count = int(job.attempt_count or 0) + 1
+    job.last_error = None
+    job.dispatched_at = now_datetime()
+    job.save(ignore_permissions=True)
+    frappe.db.commit()
+
+    payload = build_analytics_ingest_payload(job)
+    job.request_payload = _json_dumps(payload)
+    job.save(ignore_permissions=True)
+    frappe.db.commit()
+
+    body = _json_bytes(payload)
+    headers = {
+        "Content-Type": "application/json",
+        "X-AOS-Analytics-Signature": build_signature(config.service_secret, body),
+    }
+
+    try:
+        response = requests.post(
+            f"{config.service_url}/events",
+            data=body,
+            headers=headers,
+            timeout=config.request_timeout_seconds,
+        )
+        response.raise_for_status()
+        response_payload = response.json()
+
+        job.service_job_id = _clean(response_payload.get("service_job_id")) or _clean(response_payload.get("job_id"))
+        job.status = "Processing"
+        job.started_at = now_datetime()
+        job.response_payload = _json_dumps(response_payload)
+        job.last_error = None
+        job.save(ignore_permissions=True)
+        frappe.db.commit()
+        return job
+
+    except Exception as exc:
+        mark_analytics_ingest_job_failed(job.name, str(exc) or "Failed to dispatch analytics ingest job")
+        raise
+
+
+def handle_analytics_ingest_callback(payload: dict[str, Any]) -> object:
+    job_id = _clean(payload.get("job_id"))
+    if not job_id:
+        raise AnalyticsPipelineError("job_id is required")
+    if not frappe.db.exists("AOS Analytics Ingest Job", job_id):
+        raise AnalyticsPipelineError("Analytics ingest job not found")
+
+    job = frappe.get_doc("AOS Analytics Ingest Job", job_id)
+    incoming_status = _clean(payload.get("status")).lower()
+
+    if job.status in {"Ingested", "Skipped"} and incoming_status in {"ingested", "completed", "skipped"}:
+        return job
+
+    job.response_payload = _json_dumps(payload)
+    job.callback_received_at = now_datetime()
+    job.ingested_count = int(payload.get("ingested_count") or 0)
+    job.skipped_count = int(payload.get("skipped_count") or 0)
+    job.counters_json = _json_dumps(payload.get("counters") or {})
+
+    if incoming_status in {"ingested", "completed", "ready"}:
+        job.status = "Ingested"
+        job.completed_at = now_datetime()
+        job.last_error = None
+        job.save(ignore_permissions=True)
+        frappe.db.commit()
+        return job
+
+    if incoming_status == "skipped":
+        job.status = "Skipped"
+        job.completed_at = now_datetime()
+        job.last_error = None
+        job.save(ignore_permissions=True)
+        frappe.db.commit()
+        return job
+
+    if incoming_status == "failed":
+        return mark_analytics_ingest_job_failed(
+            job.name,
+            _clean(payload.get("error")) or "Analytics ingest failed",
+            response_payload=payload,
+        )
+
+    raise AnalyticsPipelineError("Invalid analytics callback status")
+
+
+def mark_analytics_ingest_job_failed(job_id: str, error: str, *, response_payload: dict | None = None) -> object:
+    job = frappe.get_doc("AOS Analytics Ingest Job", job_id)
+    job.status = "Failed"
+    job.last_error = _clean(error, max_len=1000) or "Analytics ingest failed"
+    if response_payload is not None:
+        job.response_payload = _json_dumps(response_payload)
+        job.callback_received_at = now_datetime()
+    if int(job.attempt_count or 0) >= int(job.max_attempts or 3):
+        job.completed_at = now_datetime()
+    job.save(ignore_permissions=True)
+    frappe.db.commit()
+    return job

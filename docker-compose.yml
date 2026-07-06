@@ -229,6 +229,41 @@ services:
     networks:
       - aos_net
 
+  analytics-redis:
+    image: redis:7.4-alpine
+    container_name: aos-analytics-redis
+    restart: unless-stopped
+
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - ${ANALYTICS_REDIS_MAXMEMORY:-512mb}
+      - --maxmemory-policy
+      - noeviction
+
+    volumes:
+      - analytics_redis_data:/data
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+    mem_limit: "${ANALYTICS_REDIS_MEMORY_LIMIT:-768m}"
+    cpus: "${ANALYTICS_REDIS_CPU_LIMIT:-0.50}"
+    pids_limit: "${ANALYTICS_REDIS_PIDS_LIMIT:-256}"
+
+    stop_grace_period: 30s
+    logging: *common-logging
+    <<: *common-security
+
+    networks:
+      - aos_net
+
   livekit:
     image: livekit/livekit-server:v1.9.12
     container_name: aos-livekit
@@ -803,6 +838,91 @@ services:
     networks:
       - aos_net
 
+  analytics-api:
+    build:
+      context: ./infra/analytics-pipeline
+      dockerfile: Dockerfile
+
+    container_name: aos-analytics-api
+    restart: unless-stopped
+
+    environment:
+      ANALYTICS_SERVICE_NAME: ${ANALYTICS_SERVICE_NAME:-aos-analytics-pipeline}
+      ANALYTICS_SERVICE_ENVIRONMENT: ${ANALYTICS_SERVICE_ENVIRONMENT:-development}
+      ANALYTICS_SERVICE_DEBUG: ${ANALYTICS_SERVICE_DEBUG:-false}
+      ANALYTICS_SERVICE_SECRET: ${ANALYTICS_SERVICE_SECRET:?ANALYTICS_SERVICE_SECRET is required}
+      ANALYTICS_SERVICE_CALLBACK_SECRET: ${ANALYTICS_SERVICE_CALLBACK_SECRET:?ANALYTICS_SERVICE_CALLBACK_SECRET is required}
+      ANALYTICS_REDIS_URL: ${ANALYTICS_REDIS_URL:-redis://analytics-redis:6379/0}
+      ANALYTICS_QUEUE_NAME: ${ANALYTICS_QUEUE_NAME:-analytics-pipeline}
+      ANALYTICS_JOB_TIMEOUT_SECONDS: ${ANALYTICS_JOB_TIMEOUT_SECONDS:-600}
+      ANALYTICS_RESULT_TTL_SECONDS: ${ANALYTICS_RESULT_TTL_SECONDS:-86400}
+      ANALYTICS_FAILURE_TTL_SECONDS: ${ANALYTICS_FAILURE_TTL_SECONDS:-604800}
+      ANALYTICS_STREAM_MAX_LEN: ${ANALYTICS_STREAM_MAX_LEN:-500000}
+      ANALYTICS_MAX_EVENTS_PER_JOB: ${ANALYTICS_MAX_EVENTS_PER_JOB:-200}
+
+    ports:
+      - "${ANALYTICS_SERVICE_BIND_ADDRESS:-127.0.0.1}:${ANALYTICS_SERVICE_PORT:-8170}:8000"
+
+    depends_on:
+      analytics-redis:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+    mem_limit: "${ANALYTICS_API_MEMORY_LIMIT:-512m}"
+    cpus: "${ANALYTICS_API_CPU_LIMIT:-1.00}"
+    pids_limit: "${ANALYTICS_API_PIDS_LIMIT:-512}"
+
+    stop_grace_period: 60s
+    logging: *common-logging
+    <<: *common-security
+
+    networks:
+      - aos_net
+
+  analytics-worker:
+    build:
+      context: ./infra/analytics-pipeline
+      dockerfile: Dockerfile
+
+    container_name: aos-analytics-worker
+    restart: unless-stopped
+
+    command: ["rq", "worker", "${ANALYTICS_QUEUE_NAME:-analytics-pipeline}", "--url", "${ANALYTICS_REDIS_URL:-redis://analytics-redis:6379/0}"]
+
+    environment:
+      ANALYTICS_SERVICE_NAME: ${ANALYTICS_SERVICE_NAME:-aos-analytics-pipeline}
+      ANALYTICS_SERVICE_ENVIRONMENT: ${ANALYTICS_SERVICE_ENVIRONMENT:-development}
+      ANALYTICS_SERVICE_DEBUG: ${ANALYTICS_SERVICE_DEBUG:-false}
+      ANALYTICS_SERVICE_CALLBACK_SECRET: ${ANALYTICS_SERVICE_CALLBACK_SECRET:?ANALYTICS_SERVICE_CALLBACK_SECRET is required}
+      ANALYTICS_REDIS_URL: ${ANALYTICS_REDIS_URL:-redis://analytics-redis:6379/0}
+      ANALYTICS_QUEUE_NAME: ${ANALYTICS_QUEUE_NAME:-analytics-pipeline}
+      ANALYTICS_JOB_TIMEOUT_SECONDS: ${ANALYTICS_JOB_TIMEOUT_SECONDS:-600}
+      ANALYTICS_RESULT_TTL_SECONDS: ${ANALYTICS_RESULT_TTL_SECONDS:-86400}
+      ANALYTICS_FAILURE_TTL_SECONDS: ${ANALYTICS_FAILURE_TTL_SECONDS:-604800}
+      ANALYTICS_STREAM_MAX_LEN: ${ANALYTICS_STREAM_MAX_LEN:-500000}
+      ANALYTICS_MAX_EVENTS_PER_JOB: ${ANALYTICS_MAX_EVENTS_PER_JOB:-200}
+
+    depends_on:
+      analytics-redis:
+        condition: service_healthy
+
+    mem_limit: "${ANALYTICS_WORKER_MEMORY_LIMIT:-1g}"
+    cpus: "${ANALYTICS_WORKER_CPU_LIMIT:-1.00}"
+    pids_limit: "${ANALYTICS_WORKER_PIDS_LIMIT:-512}"
+
+    stop_grace_period: 2m
+    logging: *common-logging
+    <<: *common-security
+
+    networks:
+      - aos_net
+
   tileserver:
     image: ${TILESERVER_IMAGE:?TILESERVER_IMAGE is required}
     container_name: aos-tileserver
@@ -1018,6 +1138,10 @@ volumes:
   notification_redis_data:
     external: true
     name: aos_notification_redis_data
+
+  analytics_redis_data:
+    external: true
+    name: aos_analytics_redis_data
 
 networks:
   aos_net:
