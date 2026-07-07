@@ -32,6 +32,7 @@ class ServiceEndpoint:
     health_path: str = "/health"
     ready_path: str | None = "/ready"
     enabled: bool = True
+    ready_required: bool = True
 
 
 def _clean(value: Any) -> str:
@@ -128,7 +129,12 @@ def _check(
     )
 
 
-def _status_for_http_response(response: Any, *, expect_ready: bool = False) -> tuple[HealthStatus, str]:
+def _status_for_http_response(
+    response: Any,
+    *,
+    expect_ready: bool = False,
+    ready_required: bool = True,
+) -> tuple[HealthStatus, str]:
     status_code = int(getattr(response, "status_code", 0) or 0)
     try:
         payload = response.json()
@@ -138,12 +144,16 @@ def _status_for_http_response(response: Any, *, expect_ready: bool = False) -> t
     if status_code >= 500 or status_code == 0:
         return "unhealthy", "Service returned an unhealthy response."
     if status_code >= 400:
+        if expect_ready and not ready_required:
+            return "degraded", "Optional readiness endpoint is not available or not ready."
         return "degraded", "Service is reachable but returned a client/error response."
     if isinstance(payload, dict):
         if payload.get("ok") is False:
             return "unhealthy", "Service reports not ok."
         if expect_ready and payload.get("ready") is False:
-            return "unhealthy", "Service reports not ready."
+            if ready_required:
+                return "unhealthy", "Service reports not ready."
+            return "degraded", "Optional readiness check reports not ready."
     return "healthy", "Service is reachable."
 
 
@@ -159,7 +169,11 @@ def _http_check(
     redacted = _redacted_url(url)
     try:
         response = http_get(url, timeout=timeout_seconds)
-        status, message = _status_for_http_response(response, expect_ready=expect_ready)
+        status, message = _status_for_http_response(
+            response,
+            expect_ready=expect_ready,
+            ready_required=endpoint.ready_required,
+        )
         try:
             payload = response.json()
         except Exception:
@@ -170,8 +184,12 @@ def _http_check(
             "response": _safe_payload(payload),
         }
     except Exception:
-        status = "unhealthy"
-        message = "Service is not reachable."
+        if expect_ready and not endpoint.ready_required:
+            status = "degraded"
+            message = "Optional readiness endpoint is not reachable."
+        else:
+            status = "unhealthy"
+            message = "Service is not reachable."
         details = {"url": redacted}
 
     return {
@@ -272,6 +290,7 @@ def _external_service_endpoints(env: Mapping[str, Any] | None) -> list[ServiceEn
             name="image_search",
             category="ai_ml",
             url=_env(env, "IMAGE_SEARCH_SERVICE_URL", "http://127.0.0.1:8110"),
+            ready_required=False,
         ),
         ServiceEndpoint(
             name="background_removal",
@@ -287,7 +306,7 @@ def _map_endpoints(env: Mapping[str, Any] | None, site_config: Mapping[str, Any]
             name="tileserver",
             category="maps",
             url=_env(env, "TILESERVER_PUBLIC_URL", ""),
-            health_path="/",
+            health_path="/styles.json",
             ready_path=None,
         ),
         ServiceEndpoint(

@@ -127,10 +127,10 @@ class TestOperationalHealth(FrappeTestCase):
         self.assertIn("minio_storage", names)
         self.assertIn("frappe_redis_cache", names)
         self.assertIn("firebase_credentials", names)
-        self.assertIn("livekit_health", names)
+        self.assertIn("livekit_root", names)
         self.assertIn("video_processing_health", names)
         self.assertIn("video_processing_ready", names)
-        self.assertIn("tileserver_health", names)
+        self.assertIn("tileserver_styles.json", names)
 
         serialized = self._report_text(report)
         for secret in [
@@ -171,6 +171,36 @@ class TestOperationalHealth(FrappeTestCase):
         serialized = self._report_text(report)
         self.assertNotIn("super-secret-value", serialized)
         self.assertNotIn("should-not-leak", serialized)
+
+
+    def test_optional_image_search_ready_failure_is_degraded_not_unhealthy(self):
+        env = self._valid_env()
+
+        def image_search_ready_fails(url: str, timeout: int = 3):
+            if ":8110/ready" in url:
+                raise RuntimeError("internal vector store detail should not leak")
+            return self._healthy_get(url, timeout=timeout)
+
+        with (
+            patch("aos.utils.operational_health.frappe.cache", return_value=_FakeCache()),
+            patch("aos.utils.operational_health.os.path.exists", return_value=True),
+        ):
+            report = validate_operational_health(
+                env=env,
+                site_config=self._valid_site_config(),
+                http_get=image_search_ready_fails,
+                storage_factory=_FakeStorage,
+            )
+
+        self.assertTrue(report.get("ready"), report)
+        image_ready = [
+            check for check in report.get("checks", [])
+            if check.get("name") == "image_search_ready"
+        ]
+        self.assertEqual(len(image_ready), 1)
+        self.assertEqual(image_ready[0].get("status"), "degraded")
+        serialized = self._report_text(report)
+        self.assertNotIn("vector store detail", serialized)
 
     def test_disabled_optional_service_is_skipped(self):
         env = self._valid_env()
