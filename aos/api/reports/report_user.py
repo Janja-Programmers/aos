@@ -8,6 +8,7 @@ from aos.api.shared.account_status import is_account_deleted
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.social.block import block_user_impl
 from aos.api.social.activity import record_report_user_activity
 
@@ -175,7 +176,7 @@ def report_user_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        return fail(str(ex), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Report User Failed")

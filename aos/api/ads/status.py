@@ -26,6 +26,7 @@ from frappe.utils import add_days, today
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.utils.aos_settings import get_aos_settings_snapshot
 from aos.integrations.ai.image_search_tasks import enqueue_index_refresh_for_status
 
@@ -260,10 +261,7 @@ def set_ad_status_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return fail(
-            str(ex),
-            code="VALIDATION_ERROR",
-        )
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.db.rollback()

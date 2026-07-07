@@ -46,6 +46,7 @@ from frappe.utils import get_datetime, now_datetime
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
 
 from .constants import (
@@ -557,10 +558,7 @@ def invite_live_cohost_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return fail(
-            str(ex),
-            code="VALIDATION_ERROR",
-        )
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -725,10 +723,7 @@ def request_live_cohost_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return fail(
-            str(ex),
-            code="VALIDATION_ERROR",
-        )
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -955,10 +950,7 @@ def respond_live_cohost_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return fail(
-            str(ex),
-            code="VALIDATION_ERROR",
-        )
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -1089,10 +1081,7 @@ def cancel_live_cohost_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return fail(
-            str(ex),
-            code="VALIDATION_ERROR",
-        )
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -1295,10 +1284,7 @@ def activate_live_cohost_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return fail(
-            str(ex),
-            code="VALIDATION_ERROR",
-        )
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -1475,10 +1461,7 @@ def end_live_cohost_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return fail(
-            str(ex),
-            code="VALIDATION_ERROR",
-        )
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -1570,10 +1553,7 @@ def get_live_cohost_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return fail(
-            str(ex),
-            code="VALIDATION_ERROR",
-        )
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(

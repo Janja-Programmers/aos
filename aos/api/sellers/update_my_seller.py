@@ -11,6 +11,7 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.public_errors import safe_fail_from_exception
 
 from .constants import UPDATE_MY_SELLER_LIMIT_PER_MINUTE_PER_USER
 from .media import (
@@ -135,10 +136,7 @@ def update_my_seller_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return fail(
-            str(ex),
-            code="VALIDATION_ERROR",
-        )
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.db.rollback()

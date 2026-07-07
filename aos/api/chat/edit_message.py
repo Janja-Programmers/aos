@@ -26,6 +26,7 @@ from frappe.utils import now_datetime
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.public_errors import safe_fail_from_exception
 
 from .constants import EDIT_MESSAGE_LIMIT_PER_MINUTE_PER_USER
 
@@ -282,7 +283,7 @@ def edit_message_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(

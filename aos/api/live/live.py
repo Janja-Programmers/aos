@@ -28,6 +28,7 @@ from frappe.utils import now_datetime
 from aos.api.shared.auth import current_user, require_login
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
 from aos.services.livekit_service import LiveKitService
 from aos.services.notification_service import NotificationService
@@ -780,10 +781,7 @@ def start_live_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return fail(
-            str(ex),
-            code="VALIDATION_ERROR",
-        )
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -883,10 +881,7 @@ def join_live_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return fail(
-            str(ex),
-            code="VALIDATION_ERROR",
-        )
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -993,10 +988,7 @@ def end_live_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return fail(
-            str(ex),
-            code="VALIDATION_ERROR",
-        )
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(

@@ -5,6 +5,7 @@ import frappe
 from aos.api.shared.auth import require_authenticated_user
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.services.media.media_service import (
     MediaNotFoundError,
     MediaPermissionError,
@@ -62,7 +63,7 @@ def init_upload_impl(**kwargs):
     except MediaValidationError as exc:
         if str(exc) == "Invalid media purpose":
             return invalid_purpose_response()
-        return fail(str(exc), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(exc, fallback="Invalid request.", code="VALIDATION_ERROR")
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Media Init Upload Failed")
         return fail("Failed to initialize upload.", code="INTERNAL_ERROR")
@@ -104,11 +105,11 @@ def confirm_upload_impl(**kwargs):
         )
 
     except MediaNotFoundError as exc:
-        return fail(str(exc), code="NOT_FOUND")
+        return safe_fail_from_exception(exc, fallback="Resource not found.", code="NOT_FOUND")
     except MediaPermissionError as exc:
-        return fail(str(exc), code="FORBIDDEN")
+        return safe_fail_from_exception(exc, fallback="Not allowed.", code="FORBIDDEN")
     except MediaValidationError as exc:
-        return fail(str(exc), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(exc, fallback="Invalid request.", code="VALIDATION_ERROR")
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Media Confirm Upload Failed")
         return fail("Failed to confirm upload.", code="INTERNAL_ERROR")

@@ -15,6 +15,7 @@ from frappe.utils import now_datetime, getdate
 
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.formatters import humanize_count
 from aos.api.shared.validators import (
@@ -399,7 +400,7 @@ def track_share_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "track_share failed")

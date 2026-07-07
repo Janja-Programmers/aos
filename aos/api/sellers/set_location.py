@@ -39,6 +39,7 @@ from aos.api.maps.validators import (
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.public_errors import safe_fail_from_exception
 
 from .constants import (
     SET_MY_SELLER_LOCATION_LIMIT_PER_MINUTE_PER_USER,
@@ -199,18 +200,12 @@ def set_my_seller_location_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return fail(
-            str(ex),
-            code="VALIDATION_ERROR",
-        )
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except NominatimClientError as ex:
         frappe.db.rollback()
 
-        return fail(
-            str(ex),
-            code="MAP_SERVICE_ERROR",
-        )
+        return safe_fail_from_exception(ex, fallback="Map service is temporarily unavailable.", code="MAP_SERVICE_ERROR", log_title="AOS Map Service Error")
 
     except Exception:
         frappe.db.rollback()

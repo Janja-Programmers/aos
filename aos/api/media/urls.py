@@ -5,6 +5,7 @@ import frappe
 from aos.api.shared.auth import optional_active_user
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.services.media.media_service import (
     MediaNotFoundError,
     MediaPermissionError,
@@ -51,11 +52,11 @@ def get_media_url_impl(**kwargs):
         )
 
     except MediaNotFoundError as exc:
-        return fail(str(exc), code="NOT_FOUND")
+        return safe_fail_from_exception(exc, fallback="Resource not found.", code="NOT_FOUND")
     except MediaPermissionError as exc:
-        return fail(str(exc), code="FORBIDDEN")
+        return safe_fail_from_exception(exc, fallback="Not allowed.", code="FORBIDDEN")
     except MediaValidationError as exc:
-        return fail(str(exc), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(exc, fallback="Invalid request.", code="VALIDATION_ERROR")
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Media URL Failed")
         return fail("Failed to fetch media URL.", code="INTERNAL_ERROR")

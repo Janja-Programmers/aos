@@ -25,6 +25,7 @@ except Exception:  # pragma: no cover - defensive for minimal installs
 from aos.api.shared.auth import require_authenticated_user
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.integrations.ai.background_removal_client import (
     BackgroundRemovalProcessingError,
     BackgroundRemovalUnavailableError,
@@ -144,25 +145,26 @@ def remove_background_impl(**kwargs):
     except UnidentifiedImageError:
         return fail("Only valid image files are supported.", code="UNSUPPORTED_FILE_TYPE")
     except MediaNotFoundError as exc:
-        return fail(str(exc), code="NOT_FOUND")
+        return safe_fail_from_exception(exc, fallback="Resource not found.", code="NOT_FOUND")
     except MediaPermissionError as exc:
-        return fail(str(exc), code="FORBIDDEN")
+        return safe_fail_from_exception(exc, fallback="Not allowed.", code="FORBIDDEN")
     except (MediaValidationError, RemoveBackgroundValidationError) as exc:
-        return fail(str(exc), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(exc, fallback="Invalid request.", code="VALIDATION_ERROR")
     except BackgroundRemovalValidationError as exc:
-        return fail(str(exc), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(exc, fallback="Invalid request.", code="VALIDATION_ERROR")
     except BackgroundRemovalProcessingError as exc:
-        return fail(str(exc), code="BACKGROUND_REMOVAL_FAILED", http_status=422)
+        return safe_fail_from_exception(exc, fallback="Could not remove background from this image.", code="BACKGROUND_REMOVAL_FAILED", http_status=422, log_title="AOS Background Removal Processing Failed")
     except BackgroundRemovalUnavailableError as exc:
         frappe.log_error(
             f"Background removal unavailable for media {media_id}: {exc}",
             "AOS Media Remove Background Unavailable",
         )
-        return fail(
-            str(exc)
-            or "Background removal is temporarily unavailable. Please try again later.",
+        return safe_fail_from_exception(
+            exc,
+            fallback="Background removal is temporarily unavailable. Please try again later.",
             code="BACKGROUND_REMOVAL_UNAVAILABLE",
             http_status=503,
+            log_title="AOS Background Removal Unavailable",
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Media Remove Background Failed")

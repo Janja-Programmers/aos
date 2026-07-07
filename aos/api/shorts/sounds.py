@@ -12,6 +12,7 @@ import frappe
 from aos.api.shared.auth import require_login, current_user
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
 from aos.api.shared.sql_safety import safe_like_contains
 from aos.api.shared.formatters import humanize_count
@@ -93,11 +94,11 @@ def _normalize_bool(value, *, default: int = 0) -> int:
 
 def _media_error_response(exc: Exception):
     if isinstance(exc, MediaNotFoundError):
-        return fail(str(exc) or "Media not found.", code="NOT_FOUND")
+        return safe_fail_from_exception(exc, fallback="Media not found.", code="NOT_FOUND")
     if isinstance(exc, MediaPermissionError):
-        return fail(str(exc) or "Not allowed.", code="FORBIDDEN")
+        return safe_fail_from_exception(exc, fallback="Not allowed.", code="FORBIDDEN")
     if isinstance(exc, MediaValidationError):
-        return fail(str(exc) or "Invalid media.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(exc, fallback="Invalid media.", code="VALIDATION_ERROR")
     return None
 
 
@@ -561,7 +562,7 @@ def create_sound_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
     except Exception:
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "create_sound failed")
@@ -771,7 +772,7 @@ def favorite_sound_impl(**kwargs):
         )
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
     except Exception:
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "favorite_sound failed")
@@ -962,7 +963,7 @@ def change_short_sound_impl(**kwargs):
         )
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
     except frappe.DoesNotExistError:
         return fail("Short not found.", code="NOT_FOUND")
     except Exception:

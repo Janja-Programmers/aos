@@ -19,6 +19,7 @@ from frappe.utils import cint
 from aos.api.shared.auth import require_login, current_user
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.formatters import humanize_count
 from aos.api.shared.validators import require_id
@@ -375,7 +376,7 @@ def add_comment_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "add_comment failed")
@@ -493,7 +494,7 @@ def reply_comment_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "reply_comment failed")
@@ -612,7 +613,7 @@ def toggle_comment_like_impl(**kwargs):
             )
 
         if isinstance(ex, frappe.ValidationError):
-            return fail(str(ex), code="VALIDATION_ERROR")
+            return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
         frappe.log_error(frappe.get_traceback(), "toggle_comment_like failed")
         return fail("Failed to toggle comment like", code="INTERNAL_ERROR")

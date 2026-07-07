@@ -13,6 +13,7 @@ import frappe
 from frappe.utils import now_datetime
 
 from aos.api.shared.responses import fail
+from aos.api.shared.public_errors import safe_exception_message
 from aos.services.media.media_service import (
     MediaNotFoundError,
     MediaPermissionError,
@@ -40,16 +41,14 @@ def looks_like_media_id(value: Any) -> bool:
 
 
 def response_from_media_exception(exc: Exception):
-    message = str(exc) or "Invalid seller banner media."
-
     if isinstance(exc, MediaNotFoundError):
         return fail("Seller banner media not found.", code="NOT_FOUND")
 
     if isinstance(exc, MediaPermissionError):
-        return fail(message, code="FORBIDDEN")
+        return fail(safe_exception_message(exc, "Not allowed."), code="FORBIDDEN")
 
     if isinstance(exc, MediaValidationError):
-        return fail(message, code="VALIDATION_ERROR")
+        return fail(safe_exception_message(exc, "Invalid seller banner media."), code="VALIDATION_ERROR")
 
     frappe.log_error(frappe.get_traceback(), "AOS Seller Banner Media Failed")
     return fail("Failed to validate seller banner media.", code="INTERNAL_ERROR")

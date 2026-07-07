@@ -6,6 +6,7 @@ import frappe
 
 from aos.api.shared.callback_security import CallbackSecurityError, read_signed_json_callback_payload
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.public_errors import safe_exception_message
 from aos.services.moderation_service import (
     get_moderation_config,
     handle_moderation_callback,
@@ -17,7 +18,11 @@ SIGNATURE_HEADER = "X-AOS-Moderation-Callback-Signature"
 
 
 def _security_failure(exc: CallbackSecurityError):
-    return fail(exc.message, code=exc.code, http_status=exc.http_status)
+    return fail(
+        safe_exception_message(exc, "Callback authentication failed."),
+        code=exc.code,
+        http_status=exc.http_status,
+    )
 
 
 def handle_callback_impl(**kwargs):

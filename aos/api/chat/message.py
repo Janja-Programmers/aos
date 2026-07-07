@@ -17,6 +17,7 @@ from aos.api.shared.auth import require_login
 from aos.api.shared.blocking import ensure_not_blocked
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.user_display import get_user_display_map
 
 from aos.services.notification_service import NotificationService
@@ -1046,11 +1047,11 @@ def _prepare_chat_attachments(
                 purpose="chat_attachment",
             )
         except MediaNotFoundError as exc:
-            return [], fail(str(exc), code="NOT_FOUND")
+            return [], safe_fail_from_exception(exc, fallback="Resource not found.", code="NOT_FOUND")
         except MediaPermissionError as exc:
-            return [], fail(str(exc), code="FORBIDDEN")
+            return [], safe_fail_from_exception(exc, fallback="Not allowed.", code="FORBIDDEN")
         except MediaValidationError as exc:
-            return [], fail(str(exc), code="VALIDATION_ERROR")
+            return [], safe_fail_from_exception(exc, fallback="Invalid request.", code="VALIDATION_ERROR")
 
         file_type = (
             att.get("file_type")
@@ -1330,7 +1331,7 @@ def send_message_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(

@@ -9,6 +9,7 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.db import is_duplicate_entry_error
 from aos.services.moderation_service import enqueue_review_moderation
 
@@ -187,7 +188,7 @@ def create_review_impl(**kwargs):
             )
 
         if isinstance(ex, frappe.ValidationError):
-            return fail(str(ex), code="VALIDATION_ERROR")
+            return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
         frappe.log_error(frappe.get_traceback(), "AOS Create Review Failed")
         return fail("Failed to create review.", code="INTERNAL_ERROR")

@@ -15,6 +15,7 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
 from aos.api.shared.formatters import humanize_count
 from aos.api.shared.sql_safety import require_allowed_sql_identifier
@@ -199,7 +200,7 @@ def toggle_save_short_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "toggle_save_short failed")
@@ -424,7 +425,7 @@ def download_short_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "download_short failed")
@@ -530,7 +531,7 @@ def toggle_repost_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "toggle_repost failed")

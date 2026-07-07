@@ -16,6 +16,7 @@ from aos.api.shared.rate_limit import (
     request_ip,
 )
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.public_errors import safe_fail_from_exception
 
 from .clients.nominatim_client import (
     NominatimClientError,
@@ -120,19 +121,13 @@ def autocomplete_places_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        return fail(
-            str(ex),
-            code="VALIDATION_ERROR",
-        )
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except (
         PhotonClientError,
         NominatimClientError,
     ) as ex:
-        return fail(
-            str(ex),
-            code="MAP_SERVICE_ERROR",
-        )
+        return safe_fail_from_exception(ex, fallback="Map service is temporarily unavailable.", code="MAP_SERVICE_ERROR", log_title="AOS Map Service Error")
 
     except Exception:
         frappe.log_error(

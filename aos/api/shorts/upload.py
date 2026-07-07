@@ -24,6 +24,7 @@ from aos.services.media.media_service import (
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
 
 from aos.api.shorts.validators import (
@@ -124,11 +125,11 @@ def _normalize_bool(value, *, default: int = 1) -> int:
 def _media_error_response(exc: Exception):
     """Convert media service exceptions to stable API responses."""
     if isinstance(exc, MediaNotFoundError):
-        return fail(str(exc) or "Media not found.", code="NOT_FOUND")
+        return safe_fail_from_exception(exc, fallback="Media not found.", code="NOT_FOUND")
     if isinstance(exc, MediaPermissionError):
-        return fail(str(exc) or "Not allowed.", code="FORBIDDEN")
+        return safe_fail_from_exception(exc, fallback="Not allowed.", code="FORBIDDEN")
     if isinstance(exc, MediaValidationError):
-        return fail(str(exc) or "Invalid media.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(exc, fallback="Invalid media.", code="VALIDATION_ERROR")
     return None
 
 
@@ -249,7 +250,7 @@ def create_short_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
     except Exception:
         frappe.log_error(frappe.get_traceback(), "create_short failed")
         frappe.db.rollback()
@@ -411,7 +412,7 @@ def update_short_metadata_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "update_short_metadata failed")

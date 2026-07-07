@@ -18,6 +18,7 @@ from aos.api.shared.blocking import ensure_not_blocked
 from aos.api.shared.formatters import humanize_count
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
 from aos.services.notification_service import NotificationService
 
@@ -212,7 +213,7 @@ def create_short_share_link_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "create_short_share_link failed")
@@ -374,7 +375,7 @@ def share_short_to_chat_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "share_short_to_chat failed")

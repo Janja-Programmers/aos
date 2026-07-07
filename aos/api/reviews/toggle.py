@@ -7,6 +7,7 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.db import is_duplicate_entry_error
 
 from .constants import TOGGLE_REACTION_LIMIT_PER_MINUTE_PER_USER
@@ -134,7 +135,7 @@ def toggle_reaction_impl(**kwargs):
             )
 
         if isinstance(ex, frappe.ValidationError):
-            return fail(str(ex), code="VALIDATION_ERROR")
+            return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
         frappe.log_error(frappe.get_traceback(), "AOS Toggle Reaction Failed")
         return fail("Failed to toggle reaction.", code="INTERNAL_ERROR")

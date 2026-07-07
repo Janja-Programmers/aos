@@ -10,6 +10,7 @@ from frappe.utils import getdate
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.services.moderation_service import enqueue_ad_moderation
 
 from .constants import UPDATE_AD_LIMIT_PER_MINUTE_PER_USER
@@ -357,7 +358,7 @@ def update_ad_impl(**kwargs):
         return fail("Ad not found.", code="NOT_FOUND")
 
     except frappe.ValidationError as ex:
-        return fail(str(ex), code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(

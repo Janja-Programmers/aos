@@ -12,6 +12,7 @@ import frappe
 from frappe.utils import now_datetime
 
 from aos.api.shared.responses import fail
+from aos.api.shared.public_errors import safe_exception_message
 from aos.services.media.media_service import (
     MediaNotFoundError,
     MediaPermissionError,
@@ -39,17 +40,16 @@ def looks_like_media_id(value: Any) -> bool:
 
 
 def response_from_media_exception(exc: Exception, *, index: int | None = None):
-    message = str(exc) or "Invalid review image media."
     prefix = f"Review image {index + 1}: " if index is not None else ""
 
     if isinstance(exc, MediaNotFoundError):
         return fail(f"{prefix}media not found.", code="NOT_FOUND")
 
     if isinstance(exc, MediaPermissionError):
-        return fail(prefix + message, code="FORBIDDEN")
+        return fail(prefix + safe_exception_message(exc, "Not allowed."), code="FORBIDDEN")
 
     if isinstance(exc, MediaValidationError):
-        return fail(prefix + message, code="VALIDATION_ERROR")
+        return fail(prefix + safe_exception_message(exc, "Invalid review image media."), code="VALIDATION_ERROR")
 
     frappe.log_error(frappe.get_traceback(), "AOS Review Image Media Failed")
     return fail(f"{prefix}failed to validate media.", code="INTERNAL_ERROR")
