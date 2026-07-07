@@ -16,22 +16,108 @@ from typing import Any
 import frappe
 
 
+# Keep this map broad and explicit. Public APIs should return stable HTTP
+# semantics so mobile clients, gateways, logs, and monitors can distinguish
+# auth, permission, validation, conflict, rate-limit, dependency, and server
+# failures without parsing human-readable messages.
 DEFAULT_HTTP_STATUS_MAP: dict[str, int] = {
-    "VALIDATION_ERROR": 400,
+    # Generic request/validation failures.
+    "BAD_REQUEST": 400,
+    "EMAIL_MISSING": 422,
+    "FILE_MISSING": 404,
+    "INVALID_AD": 422,
+    "OTP_INVALID": 400,
+    "PASSWORD_MISMATCH": 422,
+    "UNSUPPORTED_FILE_TYPE": 415,
+    "UNSUPPORTED_MEDIA_TYPE": 415,
+    "VALIDATION_ERROR": 422,
+
+    # Authentication/session/token failures.
+    "AUTH_REQUIRED": 401,
+    "INVALID_CREDENTIALS": 401,
+    "LOGIN_FAILED": 401,
+    "LOGIN_REQUIRED": 401,
+    "SESSION_INVALID": 401,
+    "TOKEN_EXPIRED": 410,
+    "TOKEN_INVALID": 401,
+    "TOKEN_VERIFY_FAILED": 401,
+    "UNAUTHENTICATED": 401,
+    "UNAUTHORIZED": 401,
+
+    # Permission/account/precondition failures.
+    "ACCOUNT_DELETED": 403,
+    "ACCOUNT_DELETED_RESTORABLE": 403,
+    "ACCOUNT_DISABLED": 403,
+    "ACCOUNT_SUSPENDED": 403,
+    "COMMENTS_DISABLED": 403,
+    "EMAIL_NOT_VERIFIED": 403,
+    "FORBIDDEN": 403,
+    "NOT_VERIFIED": 403,
+    "PERMISSION_DENIED": 403,
+    "PREFERENCE_MISSING": 403,
+    "PROFILE_UNAVAILABLE": 403,
+    "SELLER_INACTIVE": 403,
+    "SELLER_REQUIRED": 403,
+    "USER_BLOCKED": 403,
+
+    # Missing resources.
     "NOT_FOUND": 404,
     "OTP_NOT_FOUND": 404,
-    "OTP_INVALID": 400,
+    "OTP_RECORD_MISSING": 404,
+    "PROFILE_NOT_FOUND": 404,
+
+    # Expired/deleted resources.
+    "EXPIRED": 410,
+    "EXPIRED_AD": 410,
     "OTP_EXPIRED": 410,
+    "RESTORE_EXPIRED": 410,
+
+    # Conflict/idempotency/state failures.
+    "ACCOUNT_NOT_DELETED": 409,
+    "ACTIVE_CALL_EXISTS": 409,
+    "ALREADY_EXISTS": 409,
+    "ALREADY_REVIEWED": 409,
+    "COHOST_SLOT_UNAVAILABLE": 409,
+    "CONFLICT": 409,
+    "DUPLICATE": 409,
+    "INVALID_STATE": 409,
+    "MARKET_LOCKED": 409,
     "OTP_USED": 409,
-    "OTP_MAX_ATTEMPTS": 429,
+
+    # Rate limiting / throttling.
     "COOLDOWN": 429,
-    "PASSWORD_MISMATCH": 400,
-    "TOKEN_INVALID": 401,
-    "TOKEN_EXPIRED": 410,
-    "UNAUTHORIZED": 401,
-    "FORBIDDEN": 403,
+    "OTP_MAX_ATTEMPTS": 429,
     "RATE_LIMIT": 429,
+    "RATE_LIMITED": 429,
+
+    # Upstream/dependency/service availability failures.
+    "BACKGROUND_REMOVAL_UNAVAILABLE": 503,
+    "CALLBACK_AUTH_NOT_CONFIGURED": 503,
+    "CONFIG_ERROR": 503,
+    "IMAGE_SEARCH_UNAVAILABLE": 503,
+    "MAP_SERVICE_ERROR": 503,
+    "SERVICE_UNAVAILABLE": 503,
+    "TRANSLATION_UNAVAILABLE": 503,
+
+    # Upstream processing failures where AOS received/handled a request but a
+    # downstream service, worker, or integration failed to complete correctly.
+    "ANALYTICS_CALLBACK_FAILED": 502,
+    "BACKGROUND_REMOVAL_FAILED": 502,
+    "CALLBACK_FAILED": 502,
+    "IMAGE_SEARCH_FAILED": 502,
+    "MODERATION_CALLBACK_FAILED": 502,
+    "SEARCH_RANKING_CALLBACK_FAILED": 502,
+    "VIDEO_CALLBACK_FAILED": 502,
+
+    # Internal data or server failures.
+    "DATA_ERROR": 500,
+    "DELETE_ACCOUNT_FAILED": 500,
     "INTERNAL_ERROR": 500,
+    "LOGOUT_FAILED": 500,
+    "PREFERENCE_CREATE_FAILED": 500,
+    "REGISTER_FAILED": 500,
+    "RESTORE_ACCOUNT_FAILED": 500,
+    "USER_CREATE_FAILED": 500,
 }
 
 
@@ -41,6 +127,16 @@ def _set_http_status(status: int) -> None:
         frappe.local.response["http_status_code"] = int(status)
     except Exception:
         pass
+
+
+def http_status_for_code(code: str, default: int = 400) -> int:
+    """Return the HTTP status for an AOS error code.
+
+    Unknown codes intentionally default to 400 so older clients still receive a
+    deterministic client-error response instead of a misleading 500.
+    """
+
+    return int(DEFAULT_HTTP_STATUS_MAP.get(str(code or "").strip(), default))
 
 
 def ok(message: str, data: Any = None):
@@ -55,6 +151,6 @@ def fail(
     data: Any = None,
     http_status: int | None = None,
 ):
-    status = int(http_status or DEFAULT_HTTP_STATUS_MAP.get(code, 400))
+    status = int(http_status or http_status_for_code(code))
     _set_http_status(status)
     return {"ok": False, "message": message, "code": code, "data": data}

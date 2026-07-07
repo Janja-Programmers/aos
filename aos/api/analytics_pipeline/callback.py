@@ -38,4 +38,4 @@ def handle_callback_impl(**kwargs):
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS analytics callback failed")
-        return fail("Failed to handle analytics callback.", code="ANALYTICS_CALLBACK_FAILED", http_status=500)
+        return fail("Failed to handle analytics callback.", code="ANALYTICS_CALLBACK_FAILED")

@@ -46,4 +46,4 @@ def handle_callback_impl(**kwargs):
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Search/ranking callback failed")
-        return fail("Search/ranking callback failed.", code="SEARCH_RANKING_CALLBACK_FAILED", http_status=500)
+        return fail("Search/ranking callback failed.", code="SEARCH_RANKING_CALLBACK_FAILED")

@@ -46,4 +46,4 @@ def handle_callback_impl(**kwargs):
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Moderation callback failed")
-        return fail("Moderation callback failed.", code="MODERATION_CALLBACK_FAILED", http_status=500)
+        return fail("Moderation callback failed.", code="MODERATION_CALLBACK_FAILED")

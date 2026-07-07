@@ -44,4 +44,4 @@ def handle_callback_impl(**kwargs):
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Video processing callback failed")
-        return fail("Video processing callback failed.", code="VIDEO_CALLBACK_FAILED", http_status=500)
+        return fail("Video processing callback failed.", code="VIDEO_CALLBACK_FAILED")

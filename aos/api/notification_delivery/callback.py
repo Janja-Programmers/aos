@@ -44,4 +44,4 @@ def handle_callback_impl(**kwargs):
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Notification delivery callback failed")
-        return fail("Notification delivery callback failed.", code="CALLBACK_FAILED", http_status=500)
+        return fail("Notification delivery callback failed.", code="CALLBACK_FAILED")
