@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import json
-
 import frappe
 
+from aos.api.shared.callback_security import CallbackSecurityError, read_signed_json_callback_payload
 from aos.api.shared.responses import fail, ok
 from aos.services.video_processing_service import (
     get_video_processing_config,
@@ -14,38 +13,26 @@ from aos.services.video_processing_service import (
 )
 
 
-def _request_body() -> bytes:
-    try:
-        if frappe.request:
-            return frappe.request.get_data() or b""
-    except Exception:
-        pass
-    return b""
+SIGNATURE_HEADER = "X-AOS-Callback-Signature"
 
 
-def _payload_from_request(kwargs) -> dict:
-    body = _request_body()
-    if body:
-        try:
-            return json.loads(body.decode("utf-8") or "{}")
-        except Exception:
-            pass
-    return dict(kwargs or {})
+def _security_failure(exc: CallbackSecurityError):
+    return fail(exc.message, code=exc.code, http_status=exc.http_status)
 
 
 def handle_callback_impl(**kwargs):
-    body = _request_body()
-    try:
-        signature = frappe.get_request_header("X-AOS-Callback-Signature")
-    except Exception:
-        signature = None
-
     config = get_video_processing_config()
-    if body and not verify_signature(config.callback_secret, body, signature):
-        return fail("Invalid video callback signature.", code="FORBIDDEN")
+    try:
+        payload = read_signed_json_callback_payload(
+            callback_name="video processing",
+            callback_secret=config.callback_secret,
+            signature_header=SIGNATURE_HEADER,
+            verify_signature=verify_signature,
+        )
+    except CallbackSecurityError as exc:
+        return _security_failure(exc)
 
     try:
-        payload = _payload_from_request(kwargs)
         job = handle_video_processing_callback(payload)
         return ok(
             "Video processing callback handled.",
@@ -55,6 +42,6 @@ def handle_callback_impl(**kwargs):
                 "status": job.status,
             },
         )
-    except Exception as exc:
+    except Exception:
         frappe.log_error(frappe.get_traceback(), "Video processing callback failed")
-        return fail(str(exc) or "Video callback failed.", code="VIDEO_CALLBACK_FAILED")
+        return fail("Video processing callback failed.", code="VIDEO_CALLBACK_FAILED", http_status=500)

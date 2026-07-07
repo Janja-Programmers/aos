@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import time
 from typing import Any
 
 import requests
@@ -24,9 +25,12 @@ def _callback(callback_url: str, payload: dict[str, Any]) -> None:
         return
     settings = get_settings()
     body = _json_bytes(payload)
+    timestamp = str(int(time.time()))
+    signed_payload = timestamp.encode("utf-8") + b"." + body
     headers = {
         "Content-Type": "application/json",
-        "X-AOS-Analytics-Callback-Signature": build_signature(settings.callback_secret, body),
+        "X-AOS-Callback-Timestamp": timestamp,
+        "X-AOS-Analytics-Callback-Signature": build_signature(settings.callback_secret, signed_payload),
     }
     response = requests.post(callback_url, data=body, headers=headers, timeout=20)
     response.raise_for_status()

@@ -80,8 +80,8 @@ def build_signature(secret: str, payload: bytes) -> str:
 
 
 def verify_signature(secret: str, payload: bytes, signature: str | None) -> bool:
-    if not secret:
-        return True
+    if not str(secret or "").strip():
+        return False
     if not signature:
         return False
     return hmac.compare_digest(build_signature(secret, payload), str(signature).strip())
@@ -283,8 +283,13 @@ def handle_moderation_callback(payload: dict[str, Any]) -> object:
     job = frappe.get_doc("AOS Moderation Job", job_id)
     incoming_status = str(payload.get("status") or "").strip().lower()
 
-    if job.status in {"Allowed", "Review Required", "Rejected"} and incoming_status in {"completed", "ready"}:
-        return job
+    completed_statuses = {"Allowed", "Review Required", "Rejected"}
+    if job.status in completed_statuses or job.status == "Failed":
+        if job.status in completed_statuses and incoming_status in {"completed", "ready"}:
+            return job
+        if job.status == "Failed" and incoming_status == "failed":
+            return job
+        raise ModerationError(f"Moderation job is already {job.status}")
 
     if incoming_status in {"completed", "ready"}:
         return mark_moderation_job_completed(job, payload)

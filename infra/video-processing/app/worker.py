@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import os
 import shutil
 import subprocess
@@ -339,9 +340,12 @@ def _generate_hls(input_path: str, work_dir: str) -> None:
 def _callback(callback_url: str, payload: dict[str, Any]) -> None:
     settings = get_settings()
     body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    timestamp = str(int(time.time()))
+    signed_payload = timestamp.encode("utf-8") + b"." + body
     headers = {
         "Content-Type": "application/json",
-        "X-AOS-Callback-Signature": build_signature(settings.callback_secret, body),
+        "X-AOS-Callback-Timestamp": timestamp,
+        "X-AOS-Callback-Signature": build_signature(settings.callback_secret, signed_payload),
     }
     response = requests.post(callback_url, data=body, headers=headers, timeout=60)
     response.raise_for_status()

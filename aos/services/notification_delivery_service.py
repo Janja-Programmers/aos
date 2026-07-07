@@ -79,8 +79,8 @@ def build_signature(secret: str, payload: bytes) -> str:
 
 
 def verify_signature(secret: str, payload: bytes, signature: str | None) -> bool:
-    if not secret:
-        return True
+    if not str(secret or "").strip():
+        return False
     if not signature:
         return False
     return hmac.compare_digest(build_signature(secret, payload), str(signature).strip())
@@ -315,6 +315,16 @@ def handle_notification_delivery_callback(payload: dict[str, Any]) -> object:
 
     job = frappe.get_doc("AOS Notification Delivery Job", job_id)
     incoming_status = _clean(payload.get("status")).lower()
+
+    terminal_statuses = {"Delivered", "Skipped", "Failed"}
+    if job.status in terminal_statuses:
+        if job.status == "Delivered" and incoming_status in {"delivered", "completed", "ready"}:
+            return job
+        if job.status == "Skipped" and incoming_status == "skipped":
+            return job
+        if job.status == "Failed" and incoming_status == "failed":
+            return job
+        raise NotificationDeliveryError(f"Notification delivery job is already {job.status}")
 
     job.response_payload = json.dumps(payload, ensure_ascii=False, default=str)
     job.callback_received_at = now_datetime()

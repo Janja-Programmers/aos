@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import time
 import re
 from typing import Any
 
@@ -156,12 +157,15 @@ def _moderate(payload: dict[str, Any]) -> dict[str, Any]:
 def _callback(callback_url: str, payload: dict[str, Any]) -> None:
     settings = get_settings()
     body = json.dumps(payload, separators=(",", ":"), sort_keys=True, default=str).encode("utf-8")
+    timestamp = str(int(time.time()))
+    signed_payload = timestamp.encode("utf-8") + b"." + body
     response = requests.post(
         callback_url,
         data=body,
         headers={
             "Content-Type": "application/json",
-            "X-AOS-Moderation-Callback-Signature": build_signature(settings.callback_secret, body),
+            "X-AOS-Callback-Timestamp": timestamp,
+            "X-AOS-Moderation-Callback-Signature": build_signature(settings.callback_secret, signed_payload),
         },
         timeout=30,
     )

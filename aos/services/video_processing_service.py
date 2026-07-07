@@ -88,8 +88,8 @@ def build_signature(secret: str, payload: bytes) -> str:
 
 
 def verify_signature(secret: str, payload: bytes, signature: str | None) -> bool:
-    if not secret:
-        return True
+    if not str(secret or "").strip():
+        return False
     if not signature:
         return False
     return hmac.compare_digest(build_signature(secret, payload), str(signature).strip())
@@ -315,9 +315,11 @@ def handle_video_processing_callback(payload: dict[str, Any]) -> object:
     job = frappe.get_doc("AOS Video Processing Job", job_id)
     incoming_status = str(payload.get("status") or "").strip().lower()
 
-    # Idempotent success callback.
-    if job.status == "Ready" and incoming_status == "ready":
-        return job
+    terminal_statuses = {"Ready", "Failed"}
+    if job.status in terminal_statuses:
+        if (job.status == "Ready" and incoming_status == "ready") or (job.status == "Failed" and incoming_status == "failed"):
+            return job
+        raise VideoProcessingError(f"Video processing job is already {job.status}")
 
     if incoming_status == "ready":
         return mark_video_job_ready(job, payload)

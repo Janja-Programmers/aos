@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import json
-
 import frappe
 
+from aos.api.shared.callback_security import CallbackSecurityError, read_signed_json_callback_payload
 from aos.api.shared.responses import fail, ok
 from aos.services.analytics_pipeline_service import (
     get_analytics_pipeline_config,
@@ -12,33 +11,31 @@ from aos.services.analytics_pipeline_service import (
 )
 
 
-def _get_request_body() -> bytes:
-    try:
-        return frappe.request.get_data() or b""
-    except Exception:
-        return b""
+SIGNATURE_HEADER = "X-AOS-Analytics-Callback-Signature"
 
 
-def _get_signature() -> str | None:
-    try:
-        return frappe.get_request_header("X-AOS-Analytics-Callback-Signature")
-    except Exception:
-        return None
+def _security_failure(exc: CallbackSecurityError):
+    return fail(exc.message, code=exc.code, http_status=exc.http_status)
 
 
 def handle_callback_impl(**kwargs):
+    config = get_analytics_pipeline_config()
     try:
-        body = _get_request_body()
-        config = get_analytics_pipeline_config()
-        if not verify_signature(config.callback_secret, body, _get_signature()):
-            return fail("Invalid analytics callback signature.", code="UNAUTHORIZED")
+        payload = read_signed_json_callback_payload(
+            callback_name="analytics pipeline",
+            callback_secret=config.callback_secret,
+            signature_header=SIGNATURE_HEADER,
+            verify_signature=verify_signature,
+        )
+    except CallbackSecurityError as exc:
+        return _security_failure(exc)
 
-        payload = json.loads(body.decode("utf-8") or "{}") if body else dict(kwargs or {})
+    try:
         job = handle_analytics_ingest_callback(payload)
         return ok(
             "Analytics callback handled.",
             data={"job_id": job.name, "status": job.status},
         )
-    except Exception as exc:
+    except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS analytics callback failed")
-        return fail(str(exc) or "Failed to handle analytics callback", code="INTERNAL_ERROR")
+        return fail("Failed to handle analytics callback.", code="ANALYTICS_CALLBACK_FAILED", http_status=500)

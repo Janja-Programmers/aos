@@ -14,8 +14,8 @@ def build_signature(secret: str, payload: bytes) -> str:
 
 
 def verify_signature(secret: str, payload: bytes, signature: str | None) -> bool:
-    if not secret:
-        return True
+    if not str(secret or "").strip():
+        return False
     if not signature:
         return False
     expected = build_signature(secret, payload)

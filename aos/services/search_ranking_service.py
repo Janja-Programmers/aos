@@ -82,8 +82,8 @@ def build_signature(secret: str, payload: bytes) -> str:
 
 
 def verify_signature(secret: str, payload: bytes, signature: str | None) -> bool:
-    if not secret:
-        return True
+    if not str(secret or "").strip():
+        return False
     if not signature:
         return False
     return hmac.compare_digest(build_signature(secret, payload), str(signature).strip())
@@ -237,10 +237,16 @@ def handle_search_index_callback(payload: dict[str, Any]) -> object:
         raise SearchRankingError("Search index job not found")
     job = frappe.get_doc("AOS Search Index Job", job_id)
     incoming_status = _clean(payload.get("status")).lower()
-    if job.status in {"Indexed", "Deleted"} and incoming_status in {"completed", "ready"}:
-        return job
+    terminal_statuses = {"Indexed", "Deleted", "Failed"}
+    expected_success_status = "Deleted" if job.action == "delete" else "Indexed"
+    if job.status in terminal_statuses:
+        if job.status == expected_success_status and incoming_status in {"completed", "ready"}:
+            return job
+        if job.status == "Failed" and incoming_status == "failed":
+            return job
+        raise SearchRankingError(f"Search/ranking job is already {job.status}")
     if incoming_status in {"completed", "ready"}:
-        job.status = "Deleted" if job.action == "delete" else "Indexed"
+        job.status = expected_success_status
         job.indexed = 1 if job.action != "delete" else 0
         job.score = float(payload.get("score") or 0)
         job.response_payload = json.dumps(payload, ensure_ascii=False, default=str)

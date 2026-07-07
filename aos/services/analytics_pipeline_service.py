@@ -81,8 +81,8 @@ def build_signature(secret: str, payload: bytes) -> str:
 
 
 def verify_signature(secret: str, payload: bytes, signature: str | None) -> bool:
-    if not secret:
-        return True
+    if not str(secret or "").strip():
+        return False
     if not signature:
         return False
     return hmac.compare_digest(build_signature(secret, payload), str(signature).strip())
@@ -293,8 +293,15 @@ def handle_analytics_ingest_callback(payload: dict[str, Any]) -> object:
     job = frappe.get_doc("AOS Analytics Ingest Job", job_id)
     incoming_status = _clean(payload.get("status")).lower()
 
-    if job.status in {"Ingested", "Skipped"} and incoming_status in {"ingested", "completed", "skipped"}:
-        return job
+    terminal_statuses = {"Ingested", "Skipped", "Failed"}
+    if job.status in terminal_statuses:
+        if job.status == "Ingested" and incoming_status in {"ingested", "completed", "ready"}:
+            return job
+        if job.status == "Skipped" and incoming_status == "skipped":
+            return job
+        if job.status == "Failed" and incoming_status == "failed":
+            return job
+        raise AnalyticsPipelineError(f"Analytics ingest job is already {job.status}")
 
     job.response_payload = _json_dumps(payload)
     job.callback_received_at = now_datetime()
