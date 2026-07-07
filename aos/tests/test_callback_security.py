@@ -99,15 +99,20 @@ class TestCallbackSecurity(FrappeTestCase):
             },
         )
         with request_patch, header_patch, time_patch:
-            with self.assertRaises(CallbackSecurityError) as ctx:
-                read_signed_json_callback_payload(
-                    callback_name="test callback",
-                    callback_secret="",
-                    signature_header="X-Test-Signature",
-                    verify_signature=video_processing_service.verify_signature,
-                    max_age_seconds=300,
-                )
+            with patch.object(callback_security.frappe, "log_error") as log_error:
+                with self.assertRaises(CallbackSecurityError) as ctx:
+                    read_signed_json_callback_payload(
+                        callback_name="test callback",
+                        callback_secret="",
+                        signature_header="X-Test-Signature",
+                        verify_signature=video_processing_service.verify_signature,
+                        max_age_seconds=300,
+                    )
         self.assertEqual(ctx.exception.code, "CALLBACK_AUTH_NOT_CONFIGURED")
+        log_error.assert_called_once_with(
+            "Missing callback secret for test callback.",
+            "AOS callback auth misconfigured",
+        )
 
     def test_empty_body_fails(self):
         with self.assertRaises(CallbackSecurityError) as ctx:
