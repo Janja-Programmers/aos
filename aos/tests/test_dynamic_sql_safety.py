@@ -5,7 +5,9 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.api.ads import list_ads as ads_list
+import importlib
+
+ads_list = importlib.import_module("aos.api.ads.list_ads")
 from aos.api.shared.sql_safety import (
     clean_safe_docnames,
     require_dotted_sql_identifier,
@@ -21,9 +23,9 @@ from aos.api.shorts.utils import (
     build_time_id_cursor,
     encode_cursor,
 )
-from aos.api.social import search_users
-from aos.api.sellers import list_sellers
-from aos.api.wishlist import list as wishlist_list
+search_users = importlib.import_module("aos.api.social.search_users")
+list_sellers = importlib.import_module("aos.api.sellers.list_sellers")
+wishlist_list = importlib.import_module("aos.api.wishlist.list")
 
 
 class TestDynamicSqlSafety(FrappeTestCase):
