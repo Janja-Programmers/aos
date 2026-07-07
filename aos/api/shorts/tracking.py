@@ -15,6 +15,7 @@ from frappe.utils import now_datetime, getdate
 
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.formatters import humanize_count
 from aos.api.shared.validators import (
     require_id,
@@ -66,6 +67,14 @@ def _ensure_trackable_short(short_id: str, *, viewer: str | None = None):
     if not can_view_short(short, current_user=viewer):
         return fail("Short not found.", code="NOT_FOUND")
 
+    return None
+
+
+def _short_view_identity_key(*, user: str | None, session_id: str | None) -> str | None:
+    if user:
+        return f"user:{user}"
+    if session_id:
+        return f"session:{session_id}"
     return None
 
 
@@ -165,9 +174,15 @@ def track_view_impl(**kwargs):
 
         today = getdate()
 
+        identity_key = _short_view_identity_key(
+            user=user,
+            session_id=session_id,
+        )
+
         filters = {
             "short": short_id,
             "view_date": today,
+            "identity_key": identity_key,
         }
 
         if user:
@@ -188,6 +203,7 @@ def track_view_impl(**kwargs):
                     "user": user,
                     "session_id": session_id,
                     "view_date": today,
+                    "identity_key": identity_key,
                     "watch_ms": watch_ms,
                     "last_seen_at": now_datetime(),
                 }
@@ -258,9 +274,41 @@ def track_view_impl(**kwargs):
             data={"short_id": short_id},
         )
 
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), "track_view failed")
+    except Exception as ex:
         frappe.db.rollback()
+
+        if is_duplicate_entry_error(ex):
+            try:
+                existing_name = frappe.db.get_value(
+                    "AOS Short View",
+                    filters,
+                    "name",
+                )
+
+                if existing_name:
+                    doc = frappe.get_doc("AOS Short View", existing_name)
+                    new_watch_ms = max(doc.watch_ms or 0, watch_ms)
+
+                    if new_watch_ms != doc.watch_ms:
+                        doc.watch_ms = new_watch_ms
+                        doc.last_seen_at = now_datetime()
+                        doc.save(ignore_permissions=True)
+
+                    frappe.db.commit()
+
+                    return ok(
+                        "View tracked.",
+                        data={"short_id": short_id},
+                    )
+
+            except Exception:
+                frappe.log_error(
+                    frappe.get_traceback(),
+                    "track_view duplicate recovery failed",
+                )
+                frappe.db.rollback()
+
+        frappe.log_error(frappe.get_traceback(), "track_view failed")
         return fail("Failed to track view", code="INTERNAL_ERROR")
 
 

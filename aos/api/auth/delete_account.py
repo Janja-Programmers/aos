@@ -62,6 +62,7 @@ def _deactivate_push_tokens(user: str):
         UPDATE `tabAOS Push Token`
         SET
             is_active = 0,
+            active_device_key = NULL,
             last_used_at = %s
         WHERE user = %s
         """,

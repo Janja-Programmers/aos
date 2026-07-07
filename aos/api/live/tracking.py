@@ -27,6 +27,7 @@ from frappe.utils import now_datetime
 from aos.api.shared.auth import current_user
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.validators import require_id
 from aos.services.live_analytics_service import LiveAnalyticsService
 
@@ -444,20 +445,47 @@ def track_join_impl(**kwargs):
             },
         )
 
-    except frappe.ValidationError as ex:
+    except Exception as ex:
         frappe.db.rollback()
 
-        return fail(
-            str(ex),
-            code="VALIDATION_ERROR",
-        )
+        if is_duplicate_entry_error(ex):
+            existing = _get_active_view_by_session(
+                live_id=live_id,
+                session_id=session_id,
+                viewer=viewer,
+            )
 
-    except Exception:
+            if existing:
+                metrics = _sync_view_metrics(live_id)
+                viewer_count = int(metrics.get("viewer_count") or 0)
+                publish_viewer_count(live_id, viewer_count)
+
+                live.reload()
+
+                return ok(
+                    "Already joined.",
+                    data={
+                        "view_id": existing.name,
+                        "viewer_count": viewer_count,
+                        "is_new_session": False,
+                        "live": serialize_live(
+                            live,
+                            viewer=viewer,
+                            session_id=session_id,
+                        ),
+                    },
+                )
+
+        if isinstance(ex, frappe.ValidationError):
+            return fail(
+                str(ex),
+                code="VALIDATION_ERROR",
+            )
+
         frappe.log_error(
             frappe.get_traceback(),
             "Track Join Failed",
         )
-        frappe.db.rollback()
 
         return fail(
             "Failed to track join.",

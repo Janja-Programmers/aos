@@ -65,6 +65,14 @@
    "fieldname": "last_seen_at",
    "fieldtype": "Datetime",
    "label": "Last Seen At"
+  },
+  {
+   "fieldname": "identity_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "read_only": 1,
+   "label": "Identity Key",
+   "no_copy": 1
   }
  ],
  "grid_page_length": 50,

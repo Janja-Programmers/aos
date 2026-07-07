@@ -15,6 +15,7 @@ class AOSShortView(Document):
     def validate(self):
         self._set_defaults()
         self._validate_identity()
+        self._sync_identity_key()
         self._validate_short()
 
     def before_insert(self):
@@ -37,6 +38,17 @@ class AOSShortView(Document):
     def _validate_identity(self):
         if not self.user and not self.session_id:
             frappe.throw("User or session_id is required")
+
+    def _sync_identity_key(self):
+        if self.user:
+            self.identity_key = f"user:{self.user}"
+            return
+
+        if self.session_id:
+            self.identity_key = f"session:{self.session_id}"
+            return
+
+        self.identity_key = None
 
     def _validate_short(self):
         if not self.short:

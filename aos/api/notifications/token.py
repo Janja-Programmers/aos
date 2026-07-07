@@ -7,6 +7,7 @@ from frappe.utils import now_datetime
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.db import is_duplicate_entry_error
 
 from .constants import (
     REGISTER_PUSH_TOKEN_LIMIT_PER_MINUTE_PER_USER,
@@ -19,6 +20,13 @@ VALID_DEVICE_TYPES = {"android", "ios", "web"}
 
 def get_token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _active_device_key(*, user: str, device_id: str | None) -> str | None:
+    device_id = str(device_id or "").strip()
+    if not device_id:
+        return None
+    return f"{user}|{device_id}"
 
 
 def _update_push_token(
@@ -40,6 +48,7 @@ def _update_push_token(
             "device_type": device_type,
             "device_id": device_id,
             "is_active": 1,
+            "active_device_key": _active_device_key(user=user, device_id=device_id),
             "last_used_at": now_datetime(),
         },
         update_modified=False,
@@ -87,6 +96,7 @@ def _deactivate_other_tokens_for_device(
         UPDATE `tabAOS Push Token`
         SET
             is_active = 0,
+            active_device_key = NULL,
             last_used_at = %s
         WHERE
             user = %s
@@ -207,6 +217,7 @@ def register_push_token_impl(**kwargs):
                 "device_type": device_type,
                 "device_id": device_id,
                 "is_active": 1,
+                "active_device_key": _active_device_key(user=current_user, device_id=device_id),
                 "last_used_at": now_datetime(),
             }
         )
@@ -219,7 +230,19 @@ def register_push_token_impl(**kwargs):
             data={"id": doc.name},
         )
 
-    except frappe.UniqueValidationError:
+    except Exception as ex:
+        if not is_duplicate_entry_error(ex):
+            frappe.log_error(
+                frappe.get_traceback(),
+                f"AOS Register Push Token Failed: {ex}",
+            )
+            frappe.db.rollback()
+
+            return fail(
+                "Failed to register push token.",
+                code="INTERNAL_ERROR",
+            )
+
         frappe.db.rollback()
 
         try:
@@ -253,6 +276,34 @@ def register_push_token_impl(**kwargs):
                     data={"id": existing_token},
                 )
 
+            existing_device = None
+            if device_id:
+                existing_device = frappe.db.get_value(
+                    "AOS Push Token",
+                    {
+                        "user": current_user,
+                        "device_id": device_id,
+                    },
+                    "name",
+                )
+
+            if existing_device:
+                _update_push_token(
+                    name=existing_device,
+                    user=current_user,
+                    token=token,
+                    token_hash=token_hash,
+                    device_type=device_type,
+                    device_id=device_id,
+                )
+
+                frappe.db.commit()
+
+                return ok(
+                    "Push token updated.",
+                    data={"id": existing_device},
+                )
+
         except Exception:
             frappe.log_error(
                 frappe.get_traceback(),
@@ -264,17 +315,6 @@ def register_push_token_impl(**kwargs):
             code="INTERNAL_ERROR",
         )
 
-    except Exception as e:
-        frappe.log_error(
-            frappe.get_traceback(),
-            f"AOS Register Push Token Failed: {e}",
-        )
-        frappe.db.rollback()
-
-        return fail(
-            "Failed to register push token.",
-            code="INTERNAL_ERROR",
-        )
 
 
 # DEACTIVATE TOKEN
@@ -322,6 +362,7 @@ def deactivate_push_token_impl(**kwargs):
             existing,
             {
                 "is_active": 0,
+                "active_device_key": None,
                 "last_used_at": now_datetime(),
             },
             update_modified=False,

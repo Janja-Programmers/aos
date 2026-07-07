@@ -85,6 +85,14 @@
    "fieldtype": "Check",
    "label": "Is Active",
    "read_only": 1
+  },
+  {
+   "fieldname": "active_identity_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "read_only": 1,
+   "label": "Active Identity Key",
+   "no_copy": 1
   }
  ],
  "grid_page_length": 50,

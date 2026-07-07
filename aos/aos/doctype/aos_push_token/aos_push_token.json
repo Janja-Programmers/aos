@@ -67,6 +67,14 @@
    "label": "Token Hash",
    "reqd": 1,
    "unique": 1
+  },
+  {
+   "fieldname": "active_device_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "read_only": 1,
+   "label": "Active Device Key",
+   "no_copy": 1
   }
  ],
  "grid_page_length": 50,

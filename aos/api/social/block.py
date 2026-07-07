@@ -27,6 +27,7 @@ from aos.api.shared.blocking import (
 )
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.user_display import get_user_display_map
 
 from .activity import record_block_user_activity
@@ -161,12 +162,36 @@ def block_user_impl(**kwargs):
             },
         )
 
-    except frappe.ValidationError as ex:
+    except Exception as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
 
-    except Exception:
-        frappe.db.rollback()
+        if is_duplicate_entry_error(ex):
+            existing_active = frappe.db.get_value(
+                USER_BLOCK_DOCTYPE,
+                {
+                    "blocker_user": current_user,
+                    "blocked_user": target_user,
+                    "status": BLOCK_STATUS_ACTIVE,
+                },
+                "name",
+            )
+
+            if existing_active:
+                return ok(
+                    "User already blocked.",
+                    data={
+                        "id": existing_active,
+                        "status": "blocked",
+                        **get_block_status(
+                            current_user=current_user,
+                            target_user=target_user,
+                        ),
+                    },
+                )
+
+        if isinstance(ex, frappe.ValidationError):
+            return fail(str(ex), code="VALIDATION_ERROR")
+
         frappe.log_error(frappe.get_traceback(), "AOS Block User Failed")
         return fail("Failed to block user.", code="INTERNAL_ERROR")
 

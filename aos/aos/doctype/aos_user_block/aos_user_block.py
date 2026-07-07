@@ -18,6 +18,7 @@ class AOSUserBlock(Document):
         self._set_defaults()
         self._validate_status()
         self._validate_users()
+        self._sync_active_pair_key()
         self._validate_unique_active_block()
 
     def _set_defaults(self):
@@ -62,6 +63,18 @@ class AOSUserBlock(Document):
 
         if is_account_deleted(user):
             frappe.throw(f"{label} has been deleted.")
+
+    def _sync_active_pair_key(self):
+        """Populate DB-enforced active-only uniqueness key.
+
+        MariaDB unique indexes allow multiple NULL values, so inactive
+        historical rows keep a NULL key while the active row owns the pair.
+        """
+        if self.status == ACTIVE_STATUS and self.blocker_user and self.blocked_user:
+            self.active_pair_key = f"{self.blocker_user}|{self.blocked_user}"
+            return
+
+        self.active_pair_key = None
 
     def _validate_unique_active_block(self):
         if self.status != ACTIVE_STATUS:

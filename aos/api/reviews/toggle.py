@@ -7,6 +7,7 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.db import is_duplicate_entry_error
 
 from .constants import TOGGLE_REACTION_LIMIT_PER_MINUTE_PER_USER
 from aos.aos.doctype.aos_review_reaction.aos_review_reaction import (
@@ -109,9 +110,31 @@ def toggle_reaction_impl(**kwargs):
             },
         )
 
-    except frappe.ValidationError as ex:
-        return fail(str(ex), code="VALIDATION_ERROR")
+    except Exception as ex:
+        if is_duplicate_entry_error(ex):
+            frappe.db.rollback()
 
-    except Exception:
+            existing_reaction = frappe.db.get_value(
+                "AOS Review Reaction",
+                {
+                    "review": review,
+                    "user": current_user,
+                },
+                "reaction",
+            )
+
+            update_review_reaction_counts(review)
+
+            return ok(
+                "Reaction already exists.",
+                data={
+                    "status": "added",
+                    "reaction": existing_reaction or reaction,
+                },
+            )
+
+        if isinstance(ex, frappe.ValidationError):
+            return fail(str(ex), code="VALIDATION_ERROR")
+
         frappe.log_error(frappe.get_traceback(), "AOS Toggle Reaction Failed")
         return fail("Failed to toggle reaction.", code="INTERNAL_ERROR")

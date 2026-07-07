@@ -38,6 +38,8 @@ class AOSPushToken(Document):
         if not self.last_used_at:
             self.last_used_at = now_datetime()
 
+        self._sync_active_device_key()
+
     def before_save(self):
         """
         Ensure hash consistency + update timestamp.
@@ -46,6 +48,21 @@ class AOSPushToken(Document):
             self.token_hash = get_token_hash(self.token)
 
         self.last_used_at = now_datetime()
+        self._sync_active_device_key()
+
+    def _sync_active_device_key(self):
+        """Populate DB-enforced active device uniqueness key.
+
+        Only active rows with a non-empty device_id receive a key. Multiple
+        inactive rows, or rows without device_id, are allowed.
+        """
+        device_id = str(self.device_id or "").strip()
+
+        if bool(self.is_active) and self.user and device_id:
+            self.active_device_key = f"{self.user}|{device_id}"
+            return
+
+        self.active_device_key = None
 
     def deactivate(self):
         """
@@ -53,10 +70,14 @@ class AOSPushToken(Document):
         """
         if self.is_active:
             self.db_set("is_active", 0, update_modified=False)
+            self.db_set("active_device_key", None, update_modified=False)
 
     def activate(self):
         """
         Reactivate token.
         """
         if not self.is_active:
+            self.is_active = 1
+            self._sync_active_device_key()
             self.db_set("is_active", 1, update_modified=False)
+            self.db_set("active_device_key", self.active_device_key, update_modified=False)

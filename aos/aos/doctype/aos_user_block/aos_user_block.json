@@ -68,6 +68,14 @@
    "fieldname": "reason",
    "fieldtype": "Small Text",
    "label": "Reason"
+  },
+  {
+   "fieldname": "active_pair_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "read_only": 1,
+   "label": "Active Pair Key",
+   "no_copy": 1
   }
  ],
  "grid_page_length": 50,

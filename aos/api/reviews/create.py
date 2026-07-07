@@ -9,6 +9,7 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.db import is_duplicate_entry_error
 from aos.services.moderation_service import enqueue_review_moderation
 
 from .constants import CREATE_REVIEW_LIMIT_PER_MINUTE_PER_USER
@@ -156,11 +157,37 @@ def create_review_impl(**kwargs):
             },
         )
 
-    except frappe.ValidationError as ex:
+    except Exception as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
 
-    except Exception:
-        frappe.db.rollback()
+        if is_duplicate_entry_error(ex):
+            existing_review = frappe.db.get_value(
+                "AOS Review",
+                {
+                    "ad": ad,
+                    "reviewer": current_user,
+                },
+                ["name", "status"],
+                as_dict=True,
+            )
+
+            return fail(
+                "You have already reviewed this ad.",
+                code="ALREADY_REVIEWED",
+                data={
+                    "id": existing_review.name if existing_review else None,
+                    "status": existing_review.status if existing_review else None,
+                    "review_viewer_state": {
+                        "can_review": False,
+                        "reason": "ALREADY_REVIEWED",
+                        "has_reviewed": True,
+                        "has_communicated": True,
+                    },
+                },
+            )
+
+        if isinstance(ex, frappe.ValidationError):
+            return fail(str(ex), code="VALIDATION_ERROR")
+
         frappe.log_error(frappe.get_traceback(), "AOS Create Review Failed")
         return fail("Failed to create review.", code="INTERNAL_ERROR")

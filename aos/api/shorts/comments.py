@@ -19,6 +19,7 @@ from frappe.utils import cint
 from aos.api.shared.auth import require_login, current_user
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.formatters import humanize_count
 from aos.api.shared.validators import require_id
 
@@ -589,13 +590,31 @@ def toggle_comment_like_impl(**kwargs):
             },
         )
 
-    except frappe.ValidationError as ex:
+    except Exception as ex:
         frappe.db.rollback()
-        return fail(str(ex), code="VALIDATION_ERROR")
 
-    except Exception:
+        if is_duplicate_entry_error(ex):
+            like_count = _get_comment_like_count(comment_id)
+
+            return ok(
+                "Comment already liked.",
+                data={
+                    "comment_id": comment_id,
+                    "liked": True,
+                    "viewer_state": {
+                        "is_liked": True,
+                    },
+                    "metrics": {
+                        "like_count": like_count,
+                        "like_count_display": humanize_count(like_count),
+                    },
+                },
+            )
+
+        if isinstance(ex, frappe.ValidationError):
+            return fail(str(ex), code="VALIDATION_ERROR")
+
         frappe.log_error(frappe.get_traceback(), "toggle_comment_like failed")
-        frappe.db.rollback()
         return fail("Failed to toggle comment like", code="INTERNAL_ERROR")
 
 

@@ -21,6 +21,7 @@ class AOSLiveStreamView(Document):
 
     def validate(self):
         self._normalize_values()
+        self._sync_active_identity_key()
         self._validate_required_fields()
         self._validate_optional_user()
         self._validate_immutable_identity()
@@ -44,6 +45,18 @@ class AOSLiveStreamView(Document):
         self.is_active = int(
             bool(self.is_active)
         )
+
+    def _sync_active_identity_key(self):
+        """Populate DB-enforced active-session uniqueness key.
+
+        The key is set only while a session is active. Closed sessions keep
+        NULL, which lets a viewer rejoin later without violating uniqueness.
+        """
+        if bool(self.is_active) and self.session_id:
+            self.active_identity_key = self.session_id
+            return
+
+        self.active_identity_key = None
 
     # VALIDATIONS
     def _validate_required_fields(self):

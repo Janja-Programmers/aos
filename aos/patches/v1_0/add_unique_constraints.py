@@ -1,7 +1,13 @@
+from __future__ import annotations
+
+import hashlib
+from collections.abc import Iterable
+
 import frappe
+from frappe.utils import now_datetime
 
 
-UNIQUE_CONSTRAINTS = [
+BASE_UNIQUE_CONSTRAINTS = [
     {
         "doctype": "AOS Follow",
         "fields": ["follower_user", "following_user"],
@@ -40,93 +46,596 @@ UNIQUE_CONSTRAINTS = [
 ]
 
 
+USER_ACTION_UNIQUE_CONSTRAINTS = [
+    {
+        "doctype": "AOS Short Comment Like",
+        "fields": ["comment", "user"],
+        "constraint_name": "unique_aos_short_comment_like_user",
+    },
+    {
+        "doctype": "AOS Review",
+        "fields": ["ad", "reviewer"],
+        "constraint_name": "unique_aos_review_ad_reviewer",
+    },
+    {
+        "doctype": "AOS Review Reaction",
+        "fields": ["review", "user"],
+        "constraint_name": "unique_aos_review_reaction_user",
+    },
+    {
+        "doctype": "AOS User Block",
+        "fields": ["active_pair_key"],
+        "constraint_name": "unique_aos_user_block_active_pair",
+    },
+    {
+        "doctype": "AOS Live Stream View",
+        "fields": ["live_stream", "active_identity_key"],
+        "constraint_name": "unique_aos_live_stream_view_active",
+    },
+    {
+        "doctype": "AOS Short View",
+        "fields": ["short", "view_date", "identity_key"],
+        "constraint_name": "unique_aos_short_view_identity_day",
+    },
+    {
+        "doctype": "AOS Push Token",
+        "fields": ["active_device_key"],
+        "constraint_name": "unique_aos_push_token_active_device",
+    },
+]
+
+
+UNIQUE_CONSTRAINTS = [
+    *BASE_UNIQUE_CONSTRAINTS,
+    *USER_ACTION_UNIQUE_CONSTRAINTS,
+]
+
+
 def execute():
+    _dedupe_short_comment_likes()
+    _dedupe_reviews()
+    _dedupe_review_reactions()
+    _normalize_user_block_active_keys()
+    _normalize_live_view_active_keys()
+    _normalize_short_view_identity_keys()
+    _normalize_push_token_active_device_keys()
+
     for constraint in UNIQUE_CONSTRAINTS:
-        doctype = constraint["doctype"]
-        fields = constraint["fields"]
-        constraint_name = constraint["constraint_name"]
+        _add_unique_index(
+            doctype=constraint["doctype"],
+            fields=constraint["fields"],
+            constraint_name=constraint["constraint_name"],
+        )
 
-        if not frappe.db.exists("DocType", doctype):
-            frappe.log_error(
-                title="Unique Constraint Patch Skipped",
-                message=f"DocType {doctype} does not exist. Skipping.",
+
+# NORMALIZATION / DEDUPE
+
+def _dedupe_short_comment_likes():
+    affected_comments = _delete_duplicate_docs(
+        doctype="AOS Short Comment Like",
+        fields=["comment", "user"],
+        order_by="modified desc, creation desc, name desc",
+    )
+
+    if affected_comments:
+        _sync_short_comment_like_counts(affected_comments)
+
+
+def _dedupe_reviews():
+    affected_ads = _delete_duplicate_docs(
+        doctype="AOS Review",
+        fields=["ad", "reviewer"],
+        order_by="FIELD(status, 'Approved', 'Pending', 'Rejected'), modified desc, creation desc, name desc",
+    )
+
+    if affected_ads:
+        _sync_review_metrics(affected_ads)
+
+
+def _dedupe_review_reactions():
+    affected_reviews = _delete_duplicate_docs(
+        doctype="AOS Review Reaction",
+        fields=["review", "user"],
+        order_by="modified desc, creation desc, name desc",
+    )
+
+    if affected_reviews:
+        _sync_review_reaction_counts(affected_reviews)
+
+
+def _normalize_user_block_active_keys():
+    doctype = "AOS User Block"
+    if not _doctype_exists(doctype) or not _column_exists(doctype, "active_pair_key"):
+        return
+
+    rows = frappe.db.sql(
+        """
+        SELECT blocker_user, blocked_user, GROUP_CONCAT(name ORDER BY modified DESC, creation DESC, name DESC) AS names
+        FROM `tabAOS User Block`
+        WHERE status = 'Active'
+          AND blocker_user IS NOT NULL
+          AND blocker_user != ''
+          AND blocked_user IS NOT NULL
+          AND blocked_user != ''
+        GROUP BY blocker_user, blocked_user
+        HAVING COUNT(*) > 1
+        """,
+        as_dict=True,
+    )
+
+    for row in rows:
+        names = _split_names(row.names)
+        stale_names = names[1:]
+        if not stale_names:
+            continue
+
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS User Block`
+            SET status = 'Unblocked', unblocked_at = %s, active_pair_key = NULL
+            WHERE name IN %(names)s
+            """,
+            {"names": tuple(stale_names), "unblocked_at": now_datetime()},
+        )
+
+    frappe.db.sql(
+        """
+        UPDATE `tabAOS User Block`
+        SET active_pair_key = CASE
+            WHEN status = 'Active'
+                 AND blocker_user IS NOT NULL
+                 AND blocker_user != ''
+                 AND blocked_user IS NOT NULL
+                 AND blocked_user != ''
+            THEN CONCAT(blocker_user, '|', blocked_user)
+            ELSE NULL
+        END
+        """
+    )
+
+
+def _normalize_live_view_active_keys():
+    doctype = "AOS Live Stream View"
+    if not _doctype_exists(doctype) or not _column_exists(doctype, "active_identity_key"):
+        return
+
+    rows = frappe.db.sql(
+        """
+        SELECT live_stream, session_id, GROUP_CONCAT(name ORDER BY modified DESC, creation DESC, name DESC) AS names
+        FROM `tabAOS Live Stream View`
+        WHERE is_active = 1
+          AND live_stream IS NOT NULL
+          AND live_stream != ''
+          AND session_id IS NOT NULL
+          AND session_id != ''
+        GROUP BY live_stream, session_id
+        HAVING COUNT(*) > 1
+        """,
+        as_dict=True,
+    )
+
+    for row in rows:
+        names = _split_names(row.names)
+        stale_names = names[1:]
+        if not stale_names:
+            continue
+
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Live Stream View`
+            SET
+                is_active = 0,
+                left_at = COALESCE(left_at, last_seen_at, joined_at, %(now)s),
+                last_seen_at = COALESCE(last_seen_at, left_at, joined_at, %(now)s),
+                active_identity_key = NULL
+            WHERE name IN %(names)s
+            """,
+            {
+                "names": tuple(stale_names),
+                "now": now_datetime(),
+            },
+        )
+
+    frappe.db.sql(
+        """
+        UPDATE `tabAOS Live Stream View`
+        SET active_identity_key = CASE
+            WHEN is_active = 1
+                 AND session_id IS NOT NULL
+                 AND session_id != ''
+            THEN session_id
+            ELSE NULL
+        END
+        """
+    )
+
+
+def _normalize_short_view_identity_keys():
+    doctype = "AOS Short View"
+    if not _doctype_exists(doctype) or not _column_exists(doctype, "identity_key"):
+        return
+
+    frappe.db.sql(
+        """
+        UPDATE `tabAOS Short View`
+        SET identity_key = CASE
+            WHEN user IS NOT NULL AND user != '' THEN CONCAT('user:', user)
+            WHEN session_id IS NOT NULL AND session_id != '' THEN CONCAT('session:', session_id)
+            ELSE NULL
+        END
+        """
+    )
+
+    rows = frappe.db.sql(
+        """
+        SELECT short, view_date, identity_key, GROUP_CONCAT(name ORDER BY watch_ms DESC, modified DESC, creation DESC, name DESC) AS names
+        FROM `tabAOS Short View`
+        WHERE identity_key IS NOT NULL
+          AND identity_key != ''
+        GROUP BY short, view_date, identity_key
+        HAVING COUNT(*) > 1
+        """,
+        as_dict=True,
+    )
+
+    affected_shorts: set[str] = set()
+
+    for row in rows:
+        names = _split_names(row.names)
+        keeper = names[0] if names else None
+        stale_names = names[1:]
+        if not keeper or not stale_names:
+            continue
+
+        stats = frappe.db.sql(
+            """
+            SELECT
+                MAX(COALESCE(watch_ms, 0)) AS watch_ms,
+                MAX(qualified) AS qualified,
+                MAX(last_seen_at) AS last_seen_at
+            FROM `tabAOS Short View`
+            WHERE name IN %(names)s
+            """,
+            {"names": tuple(names)},
+            as_dict=True,
+        )[0]
+
+        frappe.db.set_value(
+            "AOS Short View",
+            keeper,
+            {
+                "watch_ms": int(stats.watch_ms or 0),
+                "qualified": int(stats.qualified or 0),
+                "last_seen_at": stats.last_seen_at,
+            },
+            update_modified=False,
+        )
+
+        frappe.db.sql(
+            "DELETE FROM `tabAOS Short View` WHERE name IN %(names)s",
+            {"names": tuple(stale_names)},
+        )
+
+        if row.short:
+            affected_shorts.add(row.short)
+
+    if affected_shorts:
+        _sync_short_view_counts(affected_shorts)
+
+
+def _normalize_push_token_active_device_keys():
+    doctype = "AOS Push Token"
+    if not _doctype_exists(doctype):
+        return
+
+    rows = frappe.db.sql(
+        """
+        SELECT name, token
+        FROM `tabAOS Push Token`
+        WHERE (token_hash IS NULL OR token_hash = '')
+          AND token IS NOT NULL
+          AND token != ''
+        """,
+        as_dict=True,
+    )
+
+    for row in rows:
+        frappe.db.set_value(
+            "AOS Push Token",
+            row.name,
+            "token_hash",
+            hashlib.sha256(str(row.token).encode()).hexdigest(),
+            update_modified=False,
+        )
+
+    _dedupe_push_token_hashes()
+
+    if not _column_exists(doctype, "active_device_key"):
+        return
+
+    rows = frappe.db.sql(
+        """
+        SELECT user, device_id, GROUP_CONCAT(name ORDER BY last_used_at DESC, modified DESC, creation DESC, name DESC) AS names
+        FROM `tabAOS Push Token`
+        WHERE is_active = 1
+          AND user IS NOT NULL
+          AND user != ''
+          AND device_id IS NOT NULL
+          AND device_id != ''
+        GROUP BY user, device_id
+        HAVING COUNT(*) > 1
+        """,
+        as_dict=True,
+    )
+
+    for row in rows:
+        names = _split_names(row.names)
+        stale_names = names[1:]
+        if not stale_names:
+            continue
+
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Push Token`
+            SET is_active = 0, active_device_key = NULL, last_used_at = %s
+            WHERE name IN %(names)s
+            """,
+            {"names": tuple(stale_names), "last_used_at": now_datetime()},
+        )
+
+    frappe.db.sql(
+        """
+        UPDATE `tabAOS Push Token`
+        SET active_device_key = CASE
+            WHEN is_active = 1
+                 AND user IS NOT NULL
+                 AND user != ''
+                 AND device_id IS NOT NULL
+                 AND device_id != ''
+            THEN CONCAT(user, '|', device_id)
+            ELSE NULL
+        END
+        """
+    )
+
+
+def _dedupe_push_token_hashes():
+    if not _doctype_exists("AOS Push Token"):
+        return
+
+    rows = frappe.db.sql(
+        """
+        SELECT token_hash, GROUP_CONCAT(name ORDER BY is_active DESC, last_used_at DESC, modified DESC, creation DESC, name DESC) AS names
+        FROM `tabAOS Push Token`
+        WHERE token_hash IS NOT NULL
+          AND token_hash != ''
+        GROUP BY token_hash
+        HAVING COUNT(*) > 1
+        """,
+        as_dict=True,
+    )
+
+    for row in rows:
+        names = _split_names(row.names)
+        stale_names = names[1:]
+        if not stale_names:
+            continue
+
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Push Token`
+            SET is_active = 0, active_device_key = NULL, last_used_at = %s
+            WHERE name IN %(names)s
+            """,
+            {"names": tuple(stale_names), "last_used_at": now_datetime()},
+        )
+
+
+# SHARED HELPERS
+
+def _delete_duplicate_docs(*, doctype: str, fields: list[str], order_by: str) -> set[str]:
+    if not _doctype_exists(doctype):
+        return set()
+
+    field_sql = ", ".join(f"`{field}`" for field in fields)
+    not_empty_sql = " AND ".join(
+        f"`{field}` IS NOT NULL AND `{field}` != ''" for field in fields
+    )
+
+    rows = frappe.db.sql(
+        f"""
+        SELECT {field_sql}, GROUP_CONCAT(name ORDER BY {order_by}) AS names
+        FROM `tab{doctype}`
+        WHERE {not_empty_sql}
+        GROUP BY {field_sql}
+        HAVING COUNT(*) > 1
+        """,
+        as_dict=True,
+    )
+
+    affected_primary_values: set[str] = set()
+
+    for row in rows:
+        names = _split_names(row.names)
+        stale_names = names[1:]
+        if not stale_names:
+            continue
+
+        primary_value = row.get(fields[0])
+        if primary_value:
+            affected_primary_values.add(primary_value)
+
+        for name in stale_names:
+            frappe.delete_doc(
+                doctype,
+                name,
+                ignore_permissions=True,
+                force=True,
             )
-            continue
 
-        _validate_fields_exist(doctype, fields)
+    return affected_primary_values
 
-        if _unique_index_exists(doctype, constraint_name):
-            continue
 
-        _throw_if_duplicates_exist(doctype, fields)
-
-        frappe.db.add_unique(
-            doctype,
-            fields,
-            constraint_name=constraint_name,
+def _add_unique_index(*, doctype: str, fields: list[str], constraint_name: str):
+    if not _doctype_exists(doctype):
+        frappe.log_error(
+            title="Unique Constraint Patch Skipped",
+            message=f"DocType {doctype} does not exist. Skipping {constraint_name}.",
         )
+        return
+
+    _validate_columns(doctype, fields)
+
+    if _unique_index_exists(doctype, constraint_name):
+        return
+
+    frappe.db.add_unique(
+        doctype,
+        fields,
+        constraint_name=constraint_name,
+    )
 
 
-def _validate_fields_exist(doctype: str, fields: list[str]) -> None:
-    meta = frappe.get_meta(doctype)
-    valid_fields = {field.fieldname for field in meta.fields}
-    valid_fields.add("name")
-
-    missing_fields = [field for field in fields if field not in valid_fields]
-
-    if missing_fields:
+def _validate_columns(doctype: str, fields: list[str]):
+    missing = [field for field in fields if not _column_exists(doctype, field)]
+    if missing:
         frappe.throw(
-            f"Cannot add unique constraint on {doctype}. "
-            f"These fields do not exist: {', '.join(missing_fields)}"
+            f"Cannot add unique constraint on {doctype}. Missing columns: {', '.join(missing)}"
         )
+
+
+def _doctype_exists(doctype: str) -> bool:
+    return bool(frappe.db.exists("DocType", doctype))
+
+
+def _column_exists(doctype: str, fieldname: str) -> bool:
+    return bool(frappe.db.has_column(doctype, fieldname))
 
 
 def _unique_index_exists(doctype: str, constraint_name: str) -> bool:
-    table_name = f"tab{doctype}"
-
-    existing = frappe.db.sql(
-        """
-        SELECT INDEX_NAME
-        FROM information_schema.STATISTICS
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_NAME = %s
-          AND INDEX_NAME = %s
-          AND NON_UNIQUE = 0
-        LIMIT 1
-        """,
-        (table_name, constraint_name),
-        as_dict=True,
+    return bool(
+        frappe.db.sql(
+            """
+            SELECT INDEX_NAME
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = %s
+              AND INDEX_NAME = %s
+              AND NON_UNIQUE = 0
+            LIMIT 1
+            """,
+            (f"tab{doctype}", constraint_name),
+            as_dict=True,
+        )
     )
 
-    return bool(existing)
+
+def _split_names(value: str | None) -> list[str]:
+    return [name for name in str(value or "").split(",") if name]
 
 
-def _throw_if_duplicates_exist(doctype: str, fields: list[str]) -> None:
-    table = f"tab{doctype}"
-    field_sql = ", ".join(f"`{field}`" for field in fields)
+def _sync_short_comment_like_counts(comment_ids: Iterable[str]):
+    for comment_id in set(comment_ids):
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Short Comment` c
+            SET like_count = (
+                SELECT COUNT(*)
+                FROM `tabAOS Short Comment Like` l
+                WHERE l.comment = c.name
+            )
+            WHERE c.name = %s
+            """,
+            (comment_id,),
+        )
 
-    duplicates = frappe.db.sql(
-        f"""
-        SELECT {field_sql}, COUNT(*) AS duplicate_count
-        FROM `{table}`
-        GROUP BY {field_sql}
-        HAVING COUNT(*) > 1
-        LIMIT 10
-        """,
-        as_dict=True,
-    )
 
-    if not duplicates:
-        return
+def _sync_review_reaction_counts(review_ids: Iterable[str]):
+    for review_id in set(review_ids):
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Review` r
+            SET
+                like_count = (
+                    SELECT COUNT(*)
+                    FROM `tabAOS Review Reaction` rr
+                    WHERE rr.review = r.name
+                      AND rr.reaction = 'Like'
+                ),
+                dislike_count = (
+                    SELECT COUNT(*)
+                    FROM `tabAOS Review Reaction` rr
+                    WHERE rr.review = r.name
+                      AND rr.reaction = 'Dislike'
+                )
+            WHERE r.name = %s
+            """,
+            (review_id,),
+        )
 
-    duplicate_summary = "\n".join(
-        f"- {', '.join(f'{field}={row.get(field)}' for field in fields)} "
-        f"duplicate_count={row.get('duplicate_count')}"
-        for row in duplicates
-    )
 
-    frappe.throw(
-        f"Cannot add unique constraint on {doctype} for fields "
-        f"{', '.join(fields)} because duplicate records already exist.\n\n"
-        f"Duplicate examples:\n{duplicate_summary}"
-    )
+def _sync_review_metrics(ad_ids: Iterable[str]):
+    for ad_id in set(ad_ids):
+        result = frappe.db.sql(
+            """
+            SELECT AVG(rating) AS avg_rating, COUNT(*) AS total_reviews
+            FROM `tabAOS Review`
+            WHERE ad = %s
+              AND status = 'Approved'
+            """,
+            (ad_id,),
+            as_dict=True,
+        )[0]
+
+        frappe.db.set_value(
+            "AOS Ad",
+            ad_id,
+            {
+                "average_rating": round(result.avg_rating or 0, 2),
+                "total_reviews": int(result.total_reviews or 0),
+            },
+            update_modified=False,
+        )
+
+        seller = frappe.db.get_value("AOS Ad", ad_id, "seller")
+        if not seller:
+            continue
+
+        result = frappe.db.sql(
+            """
+            SELECT AVG(r.rating) AS avg_rating, COUNT(r.name) AS total_reviews
+            FROM `tabAOS Review` r
+            INNER JOIN `tabAOS Ad` a ON a.name = r.ad
+            WHERE a.seller = %s
+              AND r.status = 'Approved'
+            """,
+            (seller,),
+            as_dict=True,
+        )[0]
+
+        frappe.db.set_value(
+            "AOS Seller",
+            seller,
+            {
+                "rating": round(result.avg_rating or 0, 2),
+                "total_reviews": int(result.total_reviews or 0),
+            },
+            update_modified=False,
+        )
+
+
+def _sync_short_view_counts(short_ids: Iterable[str]):
+    for short_id in set(short_ids):
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Short` s
+            SET view_count = (
+                SELECT COUNT(*)
+                FROM `tabAOS Short View` v
+                WHERE v.short = s.name
+                  AND v.qualified = 1
+            )
+            WHERE s.name = %s
+            """,
+            (short_id,),
+        )
