@@ -14,6 +14,11 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.sql_safety import (
+    require_dotted_sql_identifier,
+    safe_like_contains,
+    safe_like_prefix,
+)
 from aos.api.shared.formatters import humanize_count, to_non_negative_int
 from aos.api.shared.user_display import get_user_display_map
 
@@ -148,14 +153,11 @@ def _get_start(kwargs) -> int:
 
 
 def _search_like(query: str) -> str:
-    # Escape SQL LIKE wildcards so user input is treated as text.
-    escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return f"%{escaped}%"
+    return safe_like_contains(query)
 
 
 def _prefix_like(query: str) -> str:
-    escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return f"{escaped}%"
+    return safe_like_prefix(query)
 
 
 def _base_where_sql() -> str:
@@ -174,6 +176,8 @@ def _base_where_sql() -> str:
 
 
 def _not_blocked_sql(*, target_expr: str) -> str:
+    target_expr = require_dotted_sql_identifier(target_expr, label="blocked-user target expression")
+
     return f"""
         NOT EXISTS (
             SELECT 1

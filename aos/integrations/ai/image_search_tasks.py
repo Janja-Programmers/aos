@@ -456,8 +456,9 @@ def _query_indexable_active_ads(*, page_length: int, start: int) -> List[Dict[st
         WHERE ad.status = 'Active'
             AND (COALESCE(img.media, '') != '' OR COALESCE(img.image, '') != '')
         ORDER BY ad.modified DESC
-        LIMIT {page_length} OFFSET {start}
+        LIMIT %s OFFSET %s
         """,
+        (page_length, start),
         as_dict=True,
     )
 
@@ -485,8 +486,9 @@ def _query_unindexable_ads(*, page_length: int, start: int) -> List[Dict[str, An
         HAVING COALESCE(ad.status, '') != 'Active'
             OR COUNT(img.name) = 0
         ORDER BY ad.modified DESC
-        LIMIT {page_length} OFFSET {start}
+        LIMIT %s OFFSET %s
         """,
+        (page_length, start),
         as_dict=True,
     )
 
@@ -691,8 +693,9 @@ def delete_vectors_for_non_active_ads(
             FROM `tabAOS Ad` ad
             WHERE COALESCE(ad.status, '') != 'Active'
             ORDER BY ad.modified DESC
-            LIMIT {page_length} OFFSET {offset}
+            LIMIT %s OFFSET %s
             """,
+            (page_length, offset),
             as_dict=True,
         )
         if not rows:

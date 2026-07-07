@@ -16,6 +16,7 @@ from aos.api.shared.auth import require_login, current_user
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.validators import require_id
+from aos.api.shared.sql_safety import clean_safe_docnames
 
 from aos.api.shorts.validators import validate_limit, validate_content_mode
 from aos.api.shorts.constants import (
@@ -65,9 +66,10 @@ def _get_optional_viewer() -> str | None:
 
 
 def _short_candidate_sql(short_ids: list[str]) -> tuple[str, str]:
-    cleaned = [str(short_id).strip() for short_id in short_ids or [] if str(short_id or "").strip()]
+    cleaned = clean_safe_docnames(short_ids)
     if not cleaned:
         return "", ""
+
     escaped = ", ".join(frappe.db.escape(short_id) for short_id in cleaned)
     return f"AND s.name in ({escaped})", f"FIELD(s.name, {escaped}) ASC"
 
@@ -581,11 +583,13 @@ def feed_for_you_impl(**kwargs):
         candidate_order_sql = ""
         if not cursor:
             try:
-                candidate_short_ids = short_feed_candidates(
-                    viewer=viewer,
-                    content_mode=kwargs.get("content_mode") or kwargs.get("mode"),
-                    limit=limit + 1,
-                    offset=0,
+                candidate_short_ids = clean_safe_docnames(
+                    short_feed_candidates(
+                        viewer=viewer,
+                        content_mode=kwargs.get("content_mode") or kwargs.get("mode"),
+                        limit=limit + 1,
+                        offset=0,
+                    )
                 )
                 if candidate_short_ids:
                     candidate_clause, candidate_order_sql = _short_candidate_sql(candidate_short_ids)

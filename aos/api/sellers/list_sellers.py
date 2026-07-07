@@ -31,6 +31,7 @@ from aos.api.shared.rate_limit import (
     request_ip,
 )
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.sql_safety import safe_like_contains
 from aos.api.shared.user_display import get_user_display_map
 from aos.api.social.relationship import build_relationship_status
 from aos.api.maps.validators import (
@@ -260,18 +261,18 @@ def list_sellers_impl(**kwargs):
             conditions.append(
                 """
                 (
-                    u.full_name LIKE %s
-                    OR s.business_category LIKE %s
-                    OR s.about_business LIKE %s
-                    OR s.location_name LIKE %s
-                    OR s.display_address LIKE %s
-                    OR s.locality LIKE %s
-                    OR s.region LIKE %s
+                    u.full_name LIKE %s ESCAPE '\\'
+                    OR s.business_category LIKE %s ESCAPE '\\'
+                    OR s.about_business LIKE %s ESCAPE '\\'
+                    OR s.location_name LIKE %s ESCAPE '\\'
+                    OR s.display_address LIKE %s ESCAPE '\\'
+                    OR s.locality LIKE %s ESCAPE '\\'
+                    OR s.region LIKE %s ESCAPE '\\'
                 )
                 """
             )
 
-            search_value = f"%{search}%"
+            search_value = safe_like_contains(search)
 
             params.extend(
                 [

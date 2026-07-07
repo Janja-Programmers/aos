@@ -19,6 +19,7 @@ from typing import Any
 from frappe.utils import cint, flt
 
 from aos.api.shared.auth import current_user
+from aos.api.shared.sql_safety import require_dotted_sql_identifier
 from aos.api.shared.user_display import get_user_display
 from aos.api.shared.formatters import humanize_count
 from aos.api.shorts.constants import (
@@ -156,6 +157,9 @@ def build_cursor_where_clause(
     name_field: str,
     cursor: str | None,
 ) -> tuple[str, tuple]:
+    created_field = require_dotted_sql_identifier(created_field, label="cursor created field")
+    name_field = require_dotted_sql_identifier(name_field, label="cursor name field")
+
     created_on, name = parse_time_id_cursor(cursor)
     if not created_on or not name:
         return "", ()
@@ -213,6 +217,10 @@ def build_ranked_cursor_where_clause(
     Keyset WHERE clause for feeds ordered by:
     score_field DESC, created_field DESC, name_field DESC
     """
+    score_field = require_dotted_sql_identifier(score_field, label="cursor score field")
+    created_field = require_dotted_sql_identifier(created_field, label="cursor created field")
+    name_field = require_dotted_sql_identifier(name_field, label="cursor name field")
+
     ranking_score, created_on, name = parse_ranked_cursor(cursor)
 
     if ranking_score is None or not created_on or not name:

@@ -17,6 +17,7 @@ from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.validators import require_id
 from aos.api.shared.formatters import humanize_count
+from aos.api.shared.sql_safety import require_allowed_sql_identifier
 from aos.services.minio_service import MinioService
 
 from aos.api.shorts.constants import (
@@ -44,10 +45,16 @@ from aos.api.shorts.management import (
 )
 
 RANKING_TASK = "aos.api.shorts.tasks.update_short_score_task"
+_ALLOWED_ACTION_ALIASES = {"sv", "lk", "rp"}
 
 
 def _select_short_rows_with_action_sql(action_alias: str) -> str:
     """Add action creation/name fields to the common short SELECT."""
+    action_alias = require_allowed_sql_identifier(
+        action_alias,
+        allowed=_ALLOWED_ACTION_ALIASES,
+        label="short action alias",
+    )
     base_sql = _select_short_rows_sql()
     marker = "\n        FROM `tabAOS Short` s"
     action_fields = (

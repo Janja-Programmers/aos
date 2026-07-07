@@ -22,6 +22,7 @@ from aos.api.shared.market_context import resolve_market_context
 from aos.api.shared.utils import get_active_wishlist_ad_ids
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.sql_safety import clean_safe_docnames, safe_like_contains
 from aos.utils.aos_settings import get_aos_settings_snapshot
 from aos.services.search_ranking_service import search_ad_candidates
 
@@ -56,11 +57,11 @@ def _safe_float(value: Any) -> Optional[float]:
 
 
 def _search_order_sql(ad_ids: list[str]) -> str:
-    if not ad_ids:
+    safe_ad_ids = clean_safe_docnames(ad_ids)
+    if not safe_ad_ids:
         return ""
-    escaped = ", ".join(frappe.db.escape(str(ad_id)) for ad_id in ad_ids if str(ad_id or "").strip())
-    if not escaped:
-        return ""
+
+    escaped = ", ".join(frappe.db.escape(ad_id) for ad_id in safe_ad_ids)
     return f"FIELD(a.name, {escaped})"
 
 
@@ -141,16 +142,18 @@ def list_ads_impl(**kwargs):
 
     if q and len(q) >= 2:
         try:
-            candidate_ad_ids = search_ad_candidates(
-                q=q,
-                filters={
-                    "country": country,
-                    "location": location,
-                    "category": category,
-                    "seller": seller,
-                },
-                limit=limit,
-                offset=offset,
+            candidate_ad_ids = clean_safe_docnames(
+                search_ad_candidates(
+                    q=q,
+                    filters={
+                        "country": country,
+                        "location": location,
+                        "category": category,
+                        "seller": seller,
+                    },
+                    limit=limit,
+                    offset=offset,
+                )
             )
             used_search_service = True
             candidate_order_sql = _search_order_sql(candidate_ad_ids)
@@ -220,8 +223,8 @@ def list_ads_impl(**kwargs):
         conditions.append("a.name in %(candidate_ad_ids)s")
         values["candidate_ad_ids"] = tuple(candidate_ad_ids)
     elif q and len(q) >= 2:
-        conditions.append("a.title like %(q)s")
-        values["q"] = f"%{q}%"
+        conditions.append("a.title LIKE %(q)s ESCAPE '\\'")
+        values["q"] = safe_like_contains(q)
 
     # Price type
     if price_type:

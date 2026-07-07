@@ -13,6 +13,7 @@ from aos.api.shared.auth import require_login, current_user
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.validators import require_id
+from aos.api.shared.sql_safety import safe_like_contains
 from aos.api.shared.formatters import humanize_count
 from aos.services.video_processing_service import create_video_processing_job
 
@@ -653,7 +654,7 @@ def search_sounds_impl(**kwargs):
 
     viewer = _get_optional_viewer()
     limit = validate_limit(kwargs.get("limit"), SOUND_DEFAULT_LIMIT, SOUND_MAX_LIMIT)
-    like = f"%{q}%"
+    like = safe_like_contains(q)
 
     try:
         rows = frappe.db.sql(
@@ -664,7 +665,7 @@ def search_sounds_impl(**kwargs):
                 owner, created_from_short, creation
             FROM `tabAOS Sound`
             WHERE status = 'active'
-              AND (title LIKE %s OR artist LIKE %s)
+              AND (title LIKE %s ESCAPE '\\' OR artist LIKE %s ESCAPE '\\')
             ORDER BY creation DESC, name DESC
             LIMIT %s
             """,

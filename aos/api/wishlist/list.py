@@ -9,6 +9,7 @@ from aos.api.shared.auth import require_login
 from aos.api.shared.market_context import resolve_market_context
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.sql_safety import safe_like_contains
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
 from aos.api.ads.category_filters import resolve_category_filter_values
@@ -162,8 +163,8 @@ def list_wishlist_impl(**kwargs):
 
     # Search
     if q and len(q) >= 2:
-        conditions.append("a.title like %(q)s")
-        values["q"] = f"%{q}%"
+        conditions.append("a.title LIKE %(q)s ESCAPE '\\'")
+        values["q"] = safe_like_contains(q)
 
     # Price type
     if price_type:
