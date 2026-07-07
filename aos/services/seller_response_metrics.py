@@ -288,7 +288,7 @@ def enqueue_seller_response_metrics_refresh(
             queue="short",
             user=normalized_user,
             enqueue_after_commit=True,
-            job_name=(
+            job_id=(
                 "seller-response-metrics:"
                 f"{normalized_user}"
             ),

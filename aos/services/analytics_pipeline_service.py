@@ -212,7 +212,7 @@ def enqueue_analytics_ingest_dispatch(analytics_job_id: str) -> None:
         queue=config.queue,
         timeout=config.dispatcher_timeout_seconds,
         enqueue_after_commit=True,
-        job_name=f"dispatch-analytics-ingest:{analytics_job_id}",
+        job_id=f"dispatch-analytics-ingest:{analytics_job_id}",
     )
 
 

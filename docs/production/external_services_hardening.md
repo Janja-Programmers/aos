@@ -121,9 +121,9 @@ bench --site aos-staging.duckdns.org execute aos.tasks.service_hardening.cleanup
 
 ## Reserved enqueue keyword rule
 
-Never use `job_id=` for application-level job names in `frappe.enqueue` calls. Frappe/RQ reserves it for the Redis job ID.
+Use `job_id=` only for the Frappe/RQ Redis job identifier. Do not use it as an application-level argument passed to the task function.
 
-Use feature-specific kwargs instead:
+Use feature-specific kwargs for application IDs, and a stable `job_id` for queue deduplication:
 
 ```python
 frappe.enqueue(
@@ -131,7 +131,7 @@ frappe.enqueue(
     video_job_id=job.name,
     queue="long",
     enqueue_after_commit=True,
-    job_name=f"dispatch-video-processing:{job.name}",
+    job_id=f"dispatch-video-processing:{job.name}",
 )
 ```
 

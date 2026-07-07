@@ -225,7 +225,7 @@ def _enqueue_call_timeout(call_id: str):
             CALL_TIMEOUT_JOB_PATH,
             queue=CALL_TIMEOUT_JOB_QUEUE,
             timeout=CALL_TIMEOUT_SECONDS + CALL_TIMEOUT_JOB_EXTRA_BUFFER_SECONDS,
-            job_name=f"aos_call_timeout:{call_id}",
+            job_id=f"aos_call_timeout:{call_id}",
             enqueue_after_commit=True,
             call_id=call_id,
             delay_seconds=CALL_TIMEOUT_SECONDS,

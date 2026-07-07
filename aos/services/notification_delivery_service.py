@@ -211,7 +211,7 @@ def enqueue_notification_delivery_dispatch(delivery_job_id: str) -> None:
         queue=config.queue,
         timeout=config.dispatcher_timeout_seconds,
         enqueue_after_commit=True,
-        job_name=f"dispatch-notification-delivery:{delivery_job_id}",
+        job_id=f"dispatch-notification-delivery:{delivery_job_id}",
     )
 
 

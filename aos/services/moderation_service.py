@@ -193,7 +193,7 @@ def enqueue_moderation_dispatch(moderation_job_id: str) -> None:
         queue=config.queue,
         timeout=config.dispatcher_timeout_seconds,
         enqueue_after_commit=True,
-        job_name=f"dispatch-moderation:{moderation_job_id}",
+        job_id=f"dispatch-moderation:{moderation_job_id}",
     )
 
 

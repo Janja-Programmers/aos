@@ -178,7 +178,7 @@ def enqueue_dispatch(job_id: str) -> None:
         queue=config.queue,
         timeout=config.dispatcher_timeout_seconds,
         enqueue_after_commit=True,
-        job_name=f"dispatch-video-processing:{job_id}",
+        job_id=f"dispatch-video-processing:{job_id}",
     )
 
 def dispatch_video_processing_job(job_id: str) -> object:

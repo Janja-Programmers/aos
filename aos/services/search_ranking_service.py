@@ -160,7 +160,7 @@ def enqueue_search_index_dispatch(search_job_id: str) -> None:
         queue=config.queue,
         timeout=config.dispatcher_timeout_seconds,
         enqueue_after_commit=True,
-        job_name=f"dispatch-search-index:{search_job_id}",
+        job_id=f"dispatch-search-index:{search_job_id}",
     )
 
 
