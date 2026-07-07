@@ -38,6 +38,9 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
         email = f"{self.prefix}-signup@example.com"
         country, language, currency = self.preference_defaults()
 
+        # Registration is a guest flow. Running it as Administrator in CI makes
+        # market resolution use Administrator's missing AOS preference instead
+        # of the explicit signup country/currency.
         frappe.set_user("Guest")
 
         with (

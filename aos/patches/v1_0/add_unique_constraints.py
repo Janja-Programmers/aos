@@ -255,6 +255,8 @@ def _normalize_short_view_identity_keys():
     if not _doctype_exists(doctype) or not _column_exists(doctype, "identity_key"):
         return
 
+    affected_shorts = _dedupe_short_views_by_computed_identity()
+
     frappe.db.sql(
         """
         UPDATE `tabAOS Short View`
@@ -266,13 +268,47 @@ def _normalize_short_view_identity_keys():
         """
     )
 
+    if affected_shorts:
+        _sync_short_view_counts(affected_shorts)
+
+
+def _dedupe_short_views_by_computed_identity() -> set[str]:
+    """Dedupe legacy short views before writing identity_key.
+
+    Existing sites may already have the unique index while older rows still
+    carry NULL identity_key values. MariaDB allows duplicate NULL values in a
+    unique index, so the migration must collapse duplicates by the *computed*
+    identity before it updates identity_key. Updating first could violate the
+    unique index on partially migrated sites.
+    """
+
     rows = frappe.db.sql(
         """
-        SELECT short, view_date, identity_key, GROUP_CONCAT(name ORDER BY watch_ms DESC, modified DESC, creation DESC, name DESC) AS names
+        SELECT
+            short,
+            view_date,
+            CASE
+                WHEN user IS NOT NULL AND user != '' THEN CONCAT('user:', user)
+                WHEN session_id IS NOT NULL AND session_id != '' THEN CONCAT('session:', session_id)
+                ELSE NULL
+            END AS computed_identity_key,
+            GROUP_CONCAT(name ORDER BY watch_ms DESC, modified DESC, creation DESC, name DESC) AS names
         FROM `tabAOS Short View`
-        WHERE identity_key IS NOT NULL
-          AND identity_key != ''
-        GROUP BY short, view_date, identity_key
+        WHERE short IS NOT NULL
+          AND short != ''
+          AND view_date IS NOT NULL
+          AND (
+              (user IS NOT NULL AND user != '')
+              OR (session_id IS NOT NULL AND session_id != '')
+          )
+        GROUP BY
+            short,
+            view_date,
+            CASE
+                WHEN user IS NOT NULL AND user != '' THEN CONCAT('user:', user)
+                WHEN session_id IS NOT NULL AND session_id != '' THEN CONCAT('session:', session_id)
+                ELSE NULL
+            END
         HAVING COUNT(*) > 1
         """,
         as_dict=True,
@@ -319,8 +355,7 @@ def _normalize_short_view_identity_keys():
         if row.short:
             affected_shorts.add(row.short)
 
-    if affected_shorts:
-        _sync_short_view_counts(affected_shorts)
+    return affected_shorts
 
 
 def _normalize_push_token_active_device_keys():
