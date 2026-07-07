@@ -1,0 +1,205 @@
+from __future__ import annotations
+
+from unittest.mock import patch
+
+import frappe
+from frappe.tests.utils import FrappeTestCase
+
+from aos.api.diagnostics import get_operational_health_status
+from aos.utils.operational_health import validate_operational_health
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int = 200, payload: dict | None = None):
+        self.status_code = status_code
+        self._payload = payload if payload is not None else {"ok": True, "ready": True, "service": "fake"}
+
+    def json(self):
+        return self._payload
+
+
+class _FakeStorageClient:
+    def list_buckets(self):
+        return [object(), object()]
+
+
+class _FakeStorageConfig:
+    endpoint = "127.0.0.1:9100"
+    public_bucket = "aos-public"
+    private_bucket = "aos-private"
+    bucket = "shorts"
+
+
+class _FakeStorage:
+    config = _FakeStorageConfig()
+    client = _FakeStorageClient()
+
+
+class _FakeCache:
+    def ping(self):
+        return True
+
+
+class TestOperationalHealth(FrappeTestCase):
+    """Focused tests for admin-only operational health diagnostics."""
+
+    def setUp(self):
+        frappe.local.response = {}
+
+    def _valid_env(self) -> dict[str, str]:
+        return {
+            "AOS_API_DOMAIN": "api.africaonlinestores.example-prod.com",
+            "AOS_MAPS_DOMAIN": "maps.africaonlinestores.example-prod.com",
+            "AOS_MINIO_DOMAIN": "files.africaonlinestores.example-prod.com",
+            "MINIO_ENDPOINT": "127.0.0.1:9100",
+            "MINIO_ROOT_USER": "aos_minio_prod_user",
+            "MINIO_ROOT_PASSWORD": "minio-prod-secret-value-0123456789abcdef",
+            "MINIO_PUBLIC_BASE_URL": "https://files.africaonlinestores.example-prod.com",
+            "AOS_PUBLIC_BUCKET": "aos-public",
+            "AOS_PRIVATE_BUCKET": "aos-private",
+            "AOS_MINIO_BUCKET": "shorts",
+            "LIVEKIT_ENDPOINT": "wss://live.africaonlinestores.example-prod.com",
+            "LIVEKIT_API_KEY": "aos_livekit_prod_key",
+            "LIVEKIT_API_SECRET": "livekit-prod-secret-value-0123456789abcdef",
+            "VIDEO_SERVICE_URL": "http://127.0.0.1:8130",
+            "VIDEO_SERVICE_SECRET": "video-dispatch-secret-value-0123456789abcdef",
+            "VIDEO_SERVICE_CALLBACK_SECRET": "video-callback-secret-value-0123456789abcdef",
+            "VIDEO_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.video_processing.handle_callback",
+            "MODERATION_ENABLED": "true",
+            "MODERATION_SERVICE_URL": "http://127.0.0.1:8140",
+            "MODERATION_SERVICE_SECRET": "moderation-dispatch-secret-value-0123456789abcdef",
+            "MODERATION_SERVICE_CALLBACK_SECRET": "moderation-callback-secret-value-0123456789abcdef",
+            "MODERATION_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.moderation.handle_callback",
+            "SEARCH_RANKING_ENABLED": "true",
+            "SEARCH_RANKING_SERVICE_URL": "http://127.0.0.1:8150",
+            "SEARCH_RANKING_SERVICE_SECRET": "search-dispatch-secret-value-0123456789abcdef",
+            "SEARCH_RANKING_SERVICE_CALLBACK_SECRET": "search-callback-secret-value-0123456789abcdef",
+            "SEARCH_RANKING_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.search_ranking.handle_callback",
+            "ANALYTICS_PIPELINE_ENABLED": "true",
+            "ANALYTICS_SERVICE_URL": "http://127.0.0.1:8170",
+            "ANALYTICS_SERVICE_SECRET": "analytics-dispatch-secret-value-0123456789abcdef",
+            "ANALYTICS_SERVICE_CALLBACK_SECRET": "analytics-callback-secret-value-0123456789abcdef",
+            "ANALYTICS_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.analytics_pipeline.handle_callback",
+            "NOTIFICATION_DELIVERY_ENABLED": "true",
+            "NOTIFICATION_DRY_RUN": "false",
+            "NOTIFICATION_SERVICE_URL": "http://127.0.0.1:8160",
+            "NOTIFICATION_SERVICE_SECRET": "notification-dispatch-secret-value-0123456789abcdef",
+            "NOTIFICATION_SERVICE_CALLBACK_SECRET": "notification-callback-secret-value-0123456789abcdef",
+            "NOTIFICATION_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.notification_delivery.handle_callback",
+            "NOTIFICATION_FIREBASE_SERVICE_ACCOUNT_HOST_PATH": "/tmp/aos-test-firebase.json",
+            "TRANSLATION_SERVICE_URL": "http://127.0.0.1:8100",
+            "IMAGE_SEARCH_SERVICE_URL": "http://127.0.0.1:8110",
+            "BACKGROUND_REMOVAL_SERVICE_URL": "http://127.0.0.1:8120",
+            "IMAGE_SEARCH_QDRANT_URL": "http://qdrant:6333",
+            "TILESERVER_PUBLIC_URL": "https://maps.africaonlinestores.example-prod.com/",
+        }
+
+    def _valid_site_config(self) -> dict[str, str]:
+        return {
+            "photon_base_url": "http://127.0.0.1:2322",
+            "nominatim_base_url": "http://127.0.0.1:8081",
+            "valhalla_base_url": "http://127.0.0.1:8002",
+        }
+
+    def _healthy_get(self, url: str, timeout: int = 3):
+        payload = {"ok": True, "ready": True, "service": "fake-service", "environment": "test"}
+        return _FakeResponse(200, payload)
+
+    def _report_text(self, report: dict) -> str:
+        return str(report)
+
+    def test_operational_health_all_services_ready_and_redacted(self):
+        env = self._valid_env()
+        with (
+            patch("aos.utils.operational_health.frappe.cache", return_value=_FakeCache()),
+            patch("aos.utils.operational_health.os.path.exists", return_value=True),
+        ):
+            report = validate_operational_health(
+                env=env,
+                site_config=self._valid_site_config(),
+                http_get=self._healthy_get,
+                storage_factory=_FakeStorage,
+            )
+
+        self.assertTrue(report.get("ready"), report)
+        names = {check.get("name") for check in report.get("checks", [])}
+        self.assertIn("production_config", names)
+        self.assertIn("minio_storage", names)
+        self.assertIn("frappe_redis_cache", names)
+        self.assertIn("firebase_credentials", names)
+        self.assertIn("livekit_health", names)
+        self.assertIn("video_processing_health", names)
+        self.assertIn("video_processing_ready", names)
+        self.assertIn("tileserver_health", names)
+
+        serialized = self._report_text(report)
+        for secret in [
+            env["MINIO_ROOT_PASSWORD"],
+            env["LIVEKIT_API_SECRET"],
+            env["VIDEO_SERVICE_SECRET"],
+            env["NOTIFICATION_SERVICE_CALLBACK_SECRET"],
+        ]:
+            self.assertNotIn(secret, serialized)
+        self.assertNotIn("firebase-service-account", serialized)
+
+    def test_operational_health_marks_unreachable_service_unhealthy_without_leaking_exception(self):
+        env = self._valid_env()
+
+        def failing_get(url: str, timeout: int = 3):
+            if ":8130" in url:
+                raise RuntimeError("token=super-secret-value should-not-leak")
+            return self._healthy_get(url, timeout=timeout)
+
+        with (
+            patch("aos.utils.operational_health.frappe.cache", return_value=_FakeCache()),
+            patch("aos.utils.operational_health.os.path.exists", return_value=True),
+        ):
+            report = validate_operational_health(
+                env=env,
+                site_config=self._valid_site_config(),
+                http_get=failing_get,
+                storage_factory=_FakeStorage,
+            )
+
+        self.assertFalse(report.get("ready"), report)
+        video_checks = [
+            check for check in report.get("checks", [])
+            if str(check.get("name", "")).startswith("video_processing")
+        ]
+        self.assertTrue(video_checks)
+        self.assertIn("unhealthy", {check.get("status") for check in video_checks})
+        serialized = self._report_text(report)
+        self.assertNotIn("super-secret-value", serialized)
+        self.assertNotIn("should-not-leak", serialized)
+
+    def test_disabled_optional_service_is_skipped(self):
+        env = self._valid_env()
+        env["MODERATION_ENABLED"] = "false"
+        with (
+            patch("aos.utils.operational_health.frappe.cache", return_value=_FakeCache()),
+            patch("aos.utils.operational_health.os.path.exists", return_value=True),
+        ):
+            report = validate_operational_health(
+                env=env,
+                site_config=self._valid_site_config(),
+                http_get=self._healthy_get,
+                storage_factory=_FakeStorage,
+            )
+
+        moderation = [check for check in report.get("checks", []) if check.get("name") == "moderation"]
+        self.assertEqual(len(moderation), 1)
+        self.assertEqual(moderation[0].get("status"), "skipped")
+
+    def test_admin_diagnostic_requires_system_manager(self):
+        frappe.set_user("Guest")
+        response = get_operational_health_status()
+        self.assertFalse(response.get("ok"), response)
+        self.assertEqual(response.get("code"), "PERMISSION_DENIED")
+
+    def test_admin_diagnostic_returns_redacted_report_for_system_manager(self):
+        frappe.set_user("Administrator")
+        expected = {"ready": True, "summary": {"checks": 1, "healthy": 1, "degraded": 0, "unhealthy": 0, "skipped": 0}, "checks": []}
+        with patch("aos.api.diagnostics.validate_operational_health", return_value=expected):
+            response = get_operational_health_status()
+        self.assertTrue(response.get("ok"), response)
+        self.assertEqual(response.get("data"), expected)
