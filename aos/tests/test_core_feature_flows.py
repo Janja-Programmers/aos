@@ -38,6 +38,8 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
         email = f"{self.prefix}-signup@example.com"
         country, language, currency = self.preference_defaults()
 
+        frappe.set_user("Guest")
+
         with (
             patch("aos.api.auth.register.rate_limit", return_value=None),
             patch("aos.api.auth.register.generate_otp", return_value="123456"),
@@ -122,6 +124,9 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
 
         with (
             patch("aos.api.ads.create.rate_limit", return_value=None),
+            patch("aos.api.ads.create.validate_ad_media_for_use", return_value=(image_media, None)),
+            patch("aos.api.ads.create.attach_ad_media", return_value=(image_media, None)),
+            patch("aos.api.ads.create.get_media_public_url", return_value=image_media.public_url),
             patch("aos.api.ads.create.enqueue_ad_moderation", return_value=SimpleNamespace(name="MOD-TEST", status="Queued")),
             patch("aos.api.ads.create.record_ad_posted_activity"),
         ):
@@ -247,7 +252,10 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(block_response.get("ok"), block_response)
         frappe.set_user(sender)
 
-        with patch("aos.api.chat.message.rate_limit", return_value=None):
+        with (
+            patch("aos.api.chat.message.rate_limit", return_value=None),
+            patch("aos.api.chat.message.MediaService", return_value=Mock()),
+        ):
             response = send_message_impl(conversation_id=conv.name, content="Hello")
 
         self.assertFalse(response.get("ok"), response)
