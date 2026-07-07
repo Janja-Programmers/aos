@@ -118,8 +118,14 @@ class TestUserActionUniqueness(FrappeTestCase):
         session_id = f"{self.prefix}-short-session"
         frappe.set_user(user)
 
-        first = track_view_impl(short_id=short.name, watch_ms=1000, session_id=session_id)
-        second = track_view_impl(short_id=short.name, watch_ms=2500, session_id=session_id)
+        from unittest.mock import patch
+
+        with (
+            patch("aos.api.shorts.tracking.emit_analytics_event"),
+            patch("aos.api.shorts.tracking.frappe.enqueue"),
+        ):
+            first = track_view_impl(short_id=short.name, watch_ms=1000, session_id=session_id)
+            second = track_view_impl(short_id=short.name, watch_ms=2500, session_id=session_id)
 
         self.assertTrue(first.get("ok"), first)
         self.assertTrue(second.get("ok"), second)

@@ -101,6 +101,21 @@ def _json_loads(value: str | None, default: Any):
         return default
 
 
+def _save_analytics_job(job, *, commit: bool = True) -> object:
+    """Persist an analytics job without revalidating historical link fields.
+
+    Analytics events are historical and may point to users/documents that are
+    deleted after the event was queued but before the dispatcher/callback runs.
+    Link validation should not make background dispatch fail for those stale
+    references; the immutable event payload still carries the original IDs.
+    """
+    job.flags.ignore_links = True
+    job.save(ignore_permissions=True)
+    if commit:
+        frappe.db.commit()
+    return job
+
+
 def _clean(value: Any, *, max_len: int = 180) -> str:
     text = str(value or "").strip()
     if len(text) > max_len:
@@ -237,21 +252,18 @@ def dispatch_analytics_ingest_job(analytics_job_id: str) -> object:
         job.status = "Cancelled"
         job.last_error = "Analytics pipeline is disabled"
         job.completed_at = now_datetime()
-        job.save(ignore_permissions=True)
-        frappe.db.commit()
+        _save_analytics_job(job)
         return job
 
     job.status = "Dispatching"
     job.attempt_count = int(job.attempt_count or 0) + 1
     job.last_error = None
     job.dispatched_at = now_datetime()
-    job.save(ignore_permissions=True)
-    frappe.db.commit()
+    _save_analytics_job(job)
 
     payload = build_analytics_ingest_payload(job)
     job.request_payload = _json_dumps(payload)
-    job.save(ignore_permissions=True)
-    frappe.db.commit()
+    _save_analytics_job(job)
 
     body = _json_bytes(payload)
     headers = {
@@ -274,8 +286,7 @@ def dispatch_analytics_ingest_job(analytics_job_id: str) -> object:
         job.started_at = now_datetime()
         job.response_payload = _json_dumps(response_payload)
         job.last_error = None
-        job.save(ignore_permissions=True)
-        frappe.db.commit()
+        _save_analytics_job(job)
         return job
 
     except Exception as exc:
@@ -313,16 +324,14 @@ def handle_analytics_ingest_callback(payload: dict[str, Any]) -> object:
         job.status = "Ingested"
         job.completed_at = now_datetime()
         job.last_error = None
-        job.save(ignore_permissions=True)
-        frappe.db.commit()
+        _save_analytics_job(job)
         return job
 
     if incoming_status == "skipped":
         job.status = "Skipped"
         job.completed_at = now_datetime()
         job.last_error = None
-        job.save(ignore_permissions=True)
-        frappe.db.commit()
+        _save_analytics_job(job)
         return job
 
     if incoming_status == "failed":
@@ -344,6 +353,5 @@ def mark_analytics_ingest_job_failed(job_id: str, error: str, *, response_payloa
         job.callback_received_at = now_datetime()
     if int(job.attempt_count or 0) >= int(job.max_attempts or 3):
         job.completed_at = now_datetime()
-    job.save(ignore_permissions=True)
-    frappe.db.commit()
+    _save_analytics_job(job)
     return job
