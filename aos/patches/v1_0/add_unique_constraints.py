@@ -172,7 +172,7 @@ def _normalize_user_block_active_keys():
         frappe.db.sql(
             """
             UPDATE `tabAOS User Block`
-            SET status = 'Unblocked', unblocked_at = %s, active_pair_key = NULL
+            SET status = 'Unblocked', unblocked_at = %(unblocked_at)s, active_pair_key = NULL
             WHERE name IN %(names)s
             """,
             {"names": tuple(stale_names), "unblocked_at": now_datetime()},
@@ -412,7 +412,7 @@ def _normalize_push_token_active_device_keys():
         frappe.db.sql(
             """
             UPDATE `tabAOS Push Token`
-            SET is_active = 0, active_device_key = NULL, last_used_at = %s
+            SET is_active = 0, active_device_key = NULL, last_used_at = %(last_used_at)s
             WHERE name IN %(names)s
             """,
             {"names": tuple(stale_names), "last_used_at": now_datetime()},
@@ -459,7 +459,7 @@ def _dedupe_push_token_hashes():
         frappe.db.sql(
             """
             UPDATE `tabAOS Push Token`
-            SET is_active = 0, active_device_key = NULL, last_used_at = %s
+            SET is_active = 0, active_device_key = NULL, last_used_at = %(last_used_at)s
             WHERE name IN %(names)s
             """,
             {"names": tuple(stale_names), "last_used_at": now_datetime()},
