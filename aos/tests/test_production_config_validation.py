@@ -150,8 +150,8 @@ class TestProductionConfigValidation(FrappeTestCase):
                 assert_production_config_ready()
 
     def test_admin_diagnostic_requires_system_manager(self):
-        with patch("aos.api.diagnostics.frappe.session", type("Session", (), {"user": "guest@example.com"})()):
-            with patch("aos.api.diagnostics.frappe.get_roles", return_value=[]):
+        with patch("aos.api.diagnostics.status.frappe.session", type("Session", (), {"user": "guest@example.com"})()):
+            with patch("aos.api.diagnostics.status.frappe.get_roles", return_value=[]):
                 response = get_production_config_status()
 
         self.assertFalse(response["ok"])
@@ -160,9 +160,9 @@ class TestProductionConfigValidation(FrappeTestCase):
 
     def test_admin_diagnostic_returns_redacted_report_for_system_manager(self):
         report = {"ready": True, "summary": {"errors": 0, "warnings": 0}, "errors": [], "warnings": []}
-        with patch("aos.api.diagnostics.frappe.session", type("Session", (), {"user": "admin@example.com"})()):
-            with patch("aos.api.diagnostics.frappe.get_roles", return_value=["System Manager"]):
-                with patch("aos.api.diagnostics.validate_production_config", return_value=report):
+        with patch("aos.api.diagnostics.status.frappe.session", type("Session", (), {"user": "admin@example.com"})()):
+            with patch("aos.api.diagnostics.status.frappe.get_roles", return_value=["System Manager"]):
+                with patch("aos.api.diagnostics.status.validate_production_config", return_value=report):
                     response = get_production_config_status()
 
         self.assertTrue(response["ok"])

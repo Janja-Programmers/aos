@@ -229,7 +229,7 @@ class TestOperationalHealth(FrappeTestCase):
     def test_admin_diagnostic_returns_redacted_report_for_system_manager(self):
         frappe.set_user("Administrator")
         expected = {"ready": True, "summary": {"checks": 1, "healthy": 1, "degraded": 0, "unhealthy": 0, "skipped": 0}, "checks": []}
-        with patch("aos.api.diagnostics.validate_operational_health", return_value=expected):
+        with patch("aos.api.diagnostics.status.validate_operational_health", return_value=expected):
             response = get_operational_health_status()
         self.assertTrue(response.get("ok"), response)
         self.assertEqual(response.get("data"), expected)

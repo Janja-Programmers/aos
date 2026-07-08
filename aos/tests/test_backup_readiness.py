@@ -166,7 +166,7 @@ class TestBackupReadiness(FrappeTestCase):
             "summary": {"checks": 1, "healthy": 1, "degraded": 0, "unhealthy": 0, "skipped": 0},
             "checks": [],
         }
-        with patch("aos.api.diagnostics.validate_backup_readiness", return_value=expected):
+        with patch("aos.api.diagnostics.status.validate_backup_readiness", return_value=expected):
             response = get_backup_readiness_status()
         self.assertTrue(response.get("ok"), response)
         self.assertEqual(response.get("data"), expected)

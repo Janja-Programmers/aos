@@ -164,7 +164,7 @@ class TestJobMonitoring(FrappeTestCase):
             "summary": {"checks": 1, "healthy": 1, "degraded": 0, "unhealthy": 0, "skipped": 0},
             "checks": [],
         }
-        with patch("aos.api.diagnostics.validate_job_monitoring", return_value=expected):
+        with patch("aos.api.diagnostics.status.validate_job_monitoring", return_value=expected):
             response = get_job_monitoring_status()
         self.assertTrue(response.get("ok"), response)
         self.assertEqual(response.get("data"), expected)
