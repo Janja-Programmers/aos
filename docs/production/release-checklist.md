@@ -86,6 +86,18 @@
 - [ ] Tile style and vector tiles load over HTTPS
 - [ ] Nominatim and Valhalla are not publicly exposed
 
+
+## Load testing
+
+- [ ] `infra/load-testing/k6/smoke.js` passes against staging
+- [ ] Ads, shorts, maps, chat, live, media, notifications component scripts pass at agreed VUs/duration
+- [ ] Mixed production rehearsal passes at agreed VUs/duration
+- [ ] No new 5xx tracebacks appear during load
+- [ ] `aos.utils.operational_health.operational_health_summary` returns `ready=true` after load
+- [ ] `aos.utils.job_monitoring.job_monitoring_summary` returns `ready=true` after load and cool-down
+- [ ] Any expected 429/rate-limit behavior is documented
+- [ ] k6 summary and test parameters are archived with the release notes
+
 ## Post-deployment
 
 - [ ] Error logs checked
