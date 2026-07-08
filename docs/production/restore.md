@@ -12,7 +12,24 @@ Install Docker, Frappe Bench, Nginx, Certbot, the AOS repository, and the same a
 
 Create `/etc/aos/backup.env`, repository `.env`, Frappe site configuration, TLS certificates, DNS, and firewall rules. Do not blindly copy expired certificates or obsolete secrets.
 
-## 3. Verify the selected backup
+## 3. Retrieve and verify the selected backup
+
+If the local backup disk is unavailable, retrieve the backup from offsite storage first. Preserve the directory layout as `/var/backups/aos/<timestamp>/`.
+
+For rsync/SSH storage:
+
+```bash
+rsync -a backup-user@backup-host:/srv/aos-backups/<timestamp>/ /var/backups/aos/<timestamp>/
+```
+
+For S3-compatible storage:
+
+```bash
+aws s3 sync s3://aos-production-backups/aos-backups/<timestamp>/ /var/backups/aos/<timestamp>/ \
+  --endpoint-url https://s3.example.com
+```
+
+Then verify the selected backup:
 
 ```bash
 ./infra/backup/verify-backup.sh /var/backups/aos/<timestamp>

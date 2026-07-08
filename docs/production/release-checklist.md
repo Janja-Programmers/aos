@@ -29,6 +29,7 @@
 - [ ] Restore rehearsal marker written with `infra/backup/restore-rehearsal-checklist.sh --mark-passed`
 - [ ] Backup ID recorded
 - [ ] Off-server encrypted backup copy confirmed
+- [ ] `offsite_backup_scope` is healthy and the sync marker matches the latest backup
 - [ ] Previous Git commit/image digests recorded
 - [ ] Rollback operator and decision criteria assigned
 

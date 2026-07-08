@@ -24,6 +24,7 @@ BackupStatus = str
 DEFAULT_BACKUP_ENV_FILE = "/etc/aos/backup.env"
 DEFAULT_MAX_BACKUP_AGE_HOURS = 26
 DEFAULT_RESTORE_REHEARSAL_MAX_AGE_DAYS = 30
+DEFAULT_OFFSITE_MAX_SYNC_AGE_HOURS = 26
 
 REQUIRED_BACKUP_ENV_KEYS: tuple[str, ...] = (
     "AOS_REPO_ROOT",
@@ -34,6 +35,7 @@ REQUIRED_BACKUP_ENV_KEYS: tuple[str, ...] = (
 
 BACKUP_SCRIPT_PATHS: tuple[str, ...] = (
     "infra/backup/backup.sh",
+    "infra/backup/offsite-copy.sh",
     "infra/backup/restore.sh",
     "infra/backup/verify-backup.sh",
     "infra/backup/restore-rehearsal-checklist.sh",
@@ -360,21 +362,116 @@ def _scope_checks(env: Mapping[str, str]) -> list[dict[str, Any]]:
         details={"configuration_backup_enabled": include_config},
     )
 
-    remote_copy = bool(_clean(env.get("REMOTE_COPY_COMMAND"))) or _bool_value(env.get("OFFSITE_BACKUP_CONFIGURED"), False)
-    _check(
-        checks,
-        name="offsite_backup_scope",
-        category="backup_scope",
-        status="healthy" if remote_copy else "degraded",
-        message=(
-            "An off-server backup copy mechanism is configured."
-            if remote_copy
-            else "No off-server backup copy mechanism is configured."
-        ),
-        details={"offsite_backup_configured": remote_copy},
-    )
     return checks
 
+
+
+def _latest_backup_name(env: Mapping[str, str]) -> str | None:
+    backup_root = _clean(env.get("BACKUP_ROOT"))
+    if not backup_root:
+        return None
+    backup_dirs = _list_backup_dirs(backup_root)
+    return backup_dirs[0].name if backup_dirs else None
+
+
+def _offsite_mode(env: Mapping[str, str]) -> str:
+    mode = _clean(env.get("OFFSITE_BACKUP_MODE")).lower()
+    if mode:
+        return mode
+    if _clean(env.get("REMOTE_COPY_COMMAND")):
+        return "custom"
+    if _bool_value(env.get("OFFSITE_BACKUP_ENABLED"), False):
+        return "rsync"
+    if _bool_value(env.get("OFFSITE_BACKUP_CONFIGURED"), False):
+        return "external"
+    return "disabled"
+
+
+def _offsite_marker_path(env: Mapping[str, str]) -> Path:
+    marker = _clean(env.get("OFFSITE_SYNC_MARKER"))
+    if marker:
+        return Path(marker)
+    backup_root = _clean(env.get("BACKUP_ROOT")) or "/var/backups/aos"
+    return Path(backup_root) / "offsite-sync-passed.env"
+
+
+def _offsite_config_missing(env: Mapping[str, str], mode: str) -> list[str]:
+    if mode in {"disabled", "none"}:
+        return []
+    if mode == "rsync":
+        return [] if _clean(env.get("OFFSITE_RSYNC_TARGET")) else ["OFFSITE_RSYNC_TARGET"]
+    if mode == "s3":
+        missing = []
+        if not _clean(env.get("OFFSITE_S3_BUCKET")):
+            missing.append("OFFSITE_S3_BUCKET")
+        return missing
+    if mode == "custom":
+        return [] if _clean(env.get("REMOTE_COPY_COMMAND")) else ["REMOTE_COPY_COMMAND"]
+    if mode == "external":
+        return []
+    return ["OFFSITE_BACKUP_MODE"]
+
+
+def _read_marker_env(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    try:
+        return _parse_env_file(str(path))
+    except Exception:
+        return {}
+
+
+def _offsite_backup_check(env: Mapping[str, str], *, now: datetime, max_sync_age_hours: int) -> dict[str, Any]:
+    mode = _offsite_mode(env)
+    configured = mode not in {"disabled", "none"}
+    latest_backup = _latest_backup_name(env)
+    marker_path = _offsite_marker_path(env)
+    marker_env = _read_marker_env(marker_path)
+    marker_time = _parse_marker_time(marker_path) if marker_path.exists() else None
+    marker_age_hours = _age_hours(marker_time, now)
+    marker_backup_id = _clean(marker_env.get("OFFSITE_BACKUP_ID"))
+    marker_mode = _clean(marker_env.get("OFFSITE_BACKUP_MODE"))
+    marker_backup_matches_latest = bool(
+        latest_backup and marker_backup_id and marker_backup_id == latest_backup
+    )
+    missing = _offsite_config_missing(env, mode)
+
+    if not configured:
+        status = "degraded"
+        message = "No off-server backup copy mechanism is configured."
+    elif missing:
+        status = "unhealthy"
+        message = "Offsite backup is enabled but required configuration is missing."
+    elif not marker_path.exists():
+        status = "unhealthy"
+        message = "Offsite backup is configured but no sync marker was found."
+    elif marker_age_hours is None or marker_age_hours > max_sync_age_hours:
+        status = "unhealthy"
+        message = "Offsite backup sync marker is stale or missing a valid timestamp."
+    elif latest_backup and marker_backup_id and marker_backup_id != latest_backup:
+        status = "unhealthy"
+        message = "Latest local backup has not been confirmed offsite."
+    else:
+        status = "healthy"
+        message = "A recent off-server backup copy has been verified."
+
+    return {
+        "name": "offsite_backup_scope",
+        "category": "backup_scope",
+        "status": status,
+        "message": message,
+        "details": {
+            "offsite_backup_configured": configured,
+            "offsite_backup_mode": mode if mode in {"rsync", "s3", "custom", "external"} else "disabled",
+            "missing_keys": _safe_keys(missing),
+            "sync_marker_present": marker_path.exists(),
+            "sync_marker_age_hours": marker_age_hours,
+            "max_sync_age_hours": max_sync_age_hours,
+            "latest_backup": latest_backup,
+            "marker_backup_matches_latest": marker_backup_matches_latest,
+            "marker_mode": marker_mode if marker_mode in {"rsync", "s3", "custom", "external"} else (marker_mode or None),
+        },
+    }
 
 def _latest_backup_check(env: Mapping[str, str], *, now: datetime, max_backup_age_hours: int) -> dict[str, Any]:
     backup_root = _clean(env.get("BACKUP_ROOT"))
@@ -537,6 +634,7 @@ def validate_backup_readiness(
     backup_env_path: str | None = None,
     max_backup_age_hours: int = DEFAULT_MAX_BACKUP_AGE_HOURS,
     restore_rehearsal_max_age_days: int = DEFAULT_RESTORE_REHEARSAL_MAX_AGE_DAYS,
+    offsite_max_sync_age_hours: int = DEFAULT_OFFSITE_MAX_SYNC_AGE_HOURS,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Return a redacted backup/restore readiness report for AOS."""
@@ -550,6 +648,8 @@ def validate_backup_readiness(
 
     max_age_hours = max(1, min(cint(max_backup_age_hours) or DEFAULT_MAX_BACKUP_AGE_HOURS, 24 * 14))
     max_rehearsal_days = max(1, min(cint(restore_rehearsal_max_age_days) or DEFAULT_RESTORE_REHEARSAL_MAX_AGE_DAYS, 365))
+    configured_offsite_age = _safe_int(env.get("OFFSITE_MAX_SYNC_AGE_HOURS"), offsite_max_sync_age_hours)
+    max_offsite_hours = max(1, min(configured_offsite_age or DEFAULT_OFFSITE_MAX_SYNC_AGE_HOURS, 24 * 30))
 
     checks: list[dict[str, Any]] = []
     checks.append(_env_check(env, env_error, env_path))
@@ -558,6 +658,7 @@ def validate_backup_readiness(
         checks.append(_script_check(env))
         checks.extend(_scope_checks(env))
         checks.append(_latest_backup_check(env, now=current_time, max_backup_age_hours=max_age_hours))
+        checks.append(_offsite_backup_check(env, now=current_time, max_sync_age_hours=max_offsite_hours))
         checks.append(_restore_rehearsal_check(env, now=current_time, max_age_days=max_rehearsal_days))
 
     counts = {

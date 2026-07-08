@@ -35,13 +35,22 @@ INCLUDE_QDRANT_DATA=true
 INCLUDE_MAP_ARTIFACTS=true
 ```
 
-Set one of these for off-server backup coverage:
+Configure one off-server backup mode. Prefer the built-in helper modes because readiness can verify the sync marker:
 
 ```bash
-REMOTE_COPY_COMMAND=/usr/local/sbin/upload-aos-backup
-# or
-OFFSITE_BACKUP_CONFIGURED=true
+# SSH/rsync, for example Hetzner Storage Box or another backup server
+OFFSITE_BACKUP_MODE=rsync
+OFFSITE_RSYNC_TARGET=backup-user@backup-host:/srv/aos-backups
+OFFSITE_RSYNC_SSH_KEY=/etc/aos/backup_rsync_ed25519
+
+# or S3-compatible storage
+OFFSITE_BACKUP_MODE=s3
+OFFSITE_S3_BUCKET=aos-production-backups
+OFFSITE_S3_PREFIX=aos-backups
+OFFSITE_S3_ENDPOINT_URL=https://s3.example.com
 ```
+
+See `docs/production/offsite-backups.md` for setup and restore examples.
 
 ## 2. Create and verify a backup
 
@@ -56,7 +65,7 @@ Then verify the generated artifact:
 /home/aos/aos/infra/backup/verify-backup.sh /var/backups/aos/<timestamp>
 ```
 
-The backup script also writes `VERIFIED_AT_UTC` after checksum/archive validation succeeds.
+The backup script also writes `VERIFIED_AT_UTC` after checksum/archive validation succeeds. If offsite backups are enabled, it then copies the verified artifact off-server and writes `OFFSITE_SYNC_MARKER`.
 
 ## 3. Run backup-readiness diagnostic
 
@@ -73,7 +82,7 @@ Admin API endpoint:
 /api/method/aos.api.diagnostics.get_backup_readiness_status
 ```
 
-The diagnostic is redacted. It reports whether backup env, scripts, latest backup artifact, MinIO coverage, configuration coverage, offsite copy configuration, and restore rehearsal evidence are present without exposing secrets or file contents.
+The diagnostic is redacted. It reports whether backup env, scripts, latest backup artifact, MinIO coverage, configuration coverage, a recent offsite sync marker, and restore rehearsal evidence are present without exposing secrets or file contents.
 
 ## 4. Restore rehearsal on a clean test site/server
 

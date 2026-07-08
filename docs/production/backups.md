@@ -46,9 +46,17 @@ sudo -u aos AOS_BACKUP_ENV_FILE=/etc/aos/backup.env \
 
 Test an actual restore on a separate server regularly. Checksum verification alone does not prove that the application can be recovered.
 
-## Encryption and remote storage
+## Encryption and offsite storage
 
 Use an encrypted transport and encrypted destination. The backup can contain API secrets, private user files, database credentials, and personal information. Restrict access and audit downloads.
+
+Built-in offsite modes are documented in `docs/production/offsite-backups.md`:
+
+- `OFFSITE_BACKUP_MODE=rsync` for SSH/rsync destinations such as Hetzner Storage Box or another backup server.
+- `OFFSITE_BACKUP_MODE=s3` for S3-compatible storage.
+- `OFFSITE_BACKUP_MODE=custom` for an audited wrapper command.
+
+`infra/backup/backup.sh` calls `infra/backup/offsite-copy.sh` after local verification succeeds. The offsite helper writes `OFFSITE_SYNC_MARKER`, which the backup-readiness diagnostic uses to confirm that a recent off-server copy exists.
 
 
 ## Backup readiness diagnostic

@@ -152,9 +152,11 @@ log "Generating checksums"
 "$SCRIPT_DIR/verify-backup.sh" "$BACKUP_DIR"
 date -u +%FT%TZ > "$BACKUP_DIR/VERIFIED_AT_UTC"
 
-if [[ -n "$REMOTE_COPY_COMMAND" ]]; then
-  log "Copying backup to remote storage"
-  "$REMOTE_COPY_COMMAND" "$BACKUP_DIR"
+OFFSITE_BACKUP_MODE="${OFFSITE_BACKUP_MODE:-}"
+OFFSITE_BACKUP_ENABLED="${OFFSITE_BACKUP_ENABLED:-false}"
+if [[ -n "$REMOTE_COPY_COMMAND" || -n "$OFFSITE_BACKUP_MODE" || "${OFFSITE_BACKUP_ENABLED,,}" =~ ^(1|true|yes|on)$ ]]; then
+  log "Copying backup to offsite storage"
+  "$SCRIPT_DIR/offsite-copy.sh" "$BACKUP_DIR"
 fi
 
 log "Applying retention policy: ${BACKUP_RETENTION_DAYS} days"

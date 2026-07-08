@@ -20,7 +20,16 @@ class TestBackupReadiness(FrappeTestCase):
         frappe.local.response = {}
         self.now = datetime(2026, 7, 8, 10, 0, 0, tzinfo=timezone.utc)
 
-    def _make_layout(self, *, include_minio: bool = True, restore_marker_age_days: int = 0):
+    def _make_layout(
+        self,
+        *,
+        include_minio: bool = True,
+        restore_marker_age_days: int = 0,
+        include_offsite_marker: bool = True,
+        offsite_marker_age_hours: int = 1,
+        offsite_backup_id: str = "20260708T090000Z",
+        offsite_mode: str = "rsync",
+    ):
         temp = tempfile.TemporaryDirectory()
         root = Path(temp.name)
         repo = root / "repo"
@@ -35,6 +44,7 @@ class TestBackupReadiness(FrappeTestCase):
 
         for rel in [
             "infra/backup/backup.sh",
+            "infra/backup/offsite-copy.sh",
             "infra/backup/restore.sh",
             "infra/backup/verify-backup.sh",
             "infra/backup/restore-rehearsal-checklist.sh",
@@ -69,6 +79,21 @@ class TestBackupReadiness(FrappeTestCase):
             encoding="utf-8",
         )
 
+        offsite_marker = backup_root / "offsite-sync-passed.env"
+        if include_offsite_marker:
+            offsite_time = self.now - timedelta(hours=offsite_marker_age_hours)
+            offsite_marker.write_text(
+                "\n".join(
+                    [
+                        f"OFFSITE_SYNC_PASSED_AT_UTC={offsite_time.strftime('%Y-%m-%dT%H:%M:%SZ')}",
+                        f"OFFSITE_BACKUP_ID={offsite_backup_id}",
+                        f"OFFSITE_BACKUP_MODE={offsite_mode}",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
         env = {
             "AOS_REPO_ROOT": str(repo),
             "FRAPPE_BENCH_ROOT": str(bench),
@@ -76,7 +101,9 @@ class TestBackupReadiness(FrappeTestCase):
             "BACKUP_ROOT": str(backup_root),
             "INCLUDE_MINIO_DATA": "true",
             "INCLUDE_CONFIGURATION": "true",
-            "OFFSITE_BACKUP_CONFIGURED": "true",
+            "OFFSITE_BACKUP_MODE": offsite_mode,
+            "OFFSITE_RSYNC_TARGET": "backup@example.com:/srv/aos-backups",
+            "OFFSITE_SYNC_MARKER": str(offsite_marker),
             "RESTORE_REHEARSAL_MARKER": str(marker),
             "MINIO_ROOT_PASSWORD": "super-secret-value",
         }
@@ -95,8 +122,12 @@ class TestBackupReadiness(FrappeTestCase):
         self.assertIn("frappe_backup_scope", names)
         self.assertIn("minio_backup_scope", names)
         self.assertIn("configuration_backup_scope", names)
+        self.assertIn("offsite_backup_scope", names)
         self.assertIn("latest_backup_artifact", names)
         self.assertIn("restore_rehearsal", names)
+        offsite = [check for check in report.get("checks", []) if check.get("name") == "offsite_backup_scope"][0]
+        self.assertEqual(offsite.get("status"), "healthy", report)
+        self.assertTrue((offsite.get("details") or {}).get("marker_backup_matches_latest"), report)
         serialized = str(report)
         self.assertNotIn("super-secret-value", serialized)
         self.assertNotIn("db_password", serialized)
@@ -152,6 +183,67 @@ class TestBackupReadiness(FrappeTestCase):
         self.assertFalse(report.get("ready"), report)
         latest = [check for check in report.get("checks", []) if check.get("name") == "latest_backup_artifact"]
         self.assertEqual(latest[0].get("status"), "unhealthy")
+
+
+    def test_missing_offsite_marker_makes_report_unready_when_configured(self):
+        temp, env, _backup_dir = self._make_layout(include_offsite_marker=False)
+        self.addCleanup(temp.cleanup)
+
+        report = validate_backup_readiness(backup_env=env, now=self.now)
+
+        self.assertFalse(report.get("ready"), report)
+        statuses = {check.get("name"): check.get("status") for check in report.get("checks", [])}
+        self.assertEqual(statuses.get("offsite_backup_scope"), "unhealthy")
+        serialized = str(report)
+        self.assertNotIn("backup@example.com", serialized)
+
+    def test_stale_offsite_marker_makes_report_unready(self):
+        temp, env, _backup_dir = self._make_layout(offsite_marker_age_hours=72)
+        self.addCleanup(temp.cleanup)
+
+        report = validate_backup_readiness(backup_env=env, now=self.now, offsite_max_sync_age_hours=26)
+
+        self.assertFalse(report.get("ready"), report)
+        offsite = [check for check in report.get("checks", []) if check.get("name") == "offsite_backup_scope"][0]
+        self.assertEqual(offsite.get("status"), "unhealthy", report)
+
+    def test_offsite_marker_must_match_latest_backup_when_marker_has_backup_id(self):
+        temp, env, _backup_dir = self._make_layout(offsite_backup_id="20260707T090000Z")
+        self.addCleanup(temp.cleanup)
+
+        report = validate_backup_readiness(backup_env=env, now=self.now)
+
+        self.assertFalse(report.get("ready"), report)
+        offsite = [check for check in report.get("checks", []) if check.get("name") == "offsite_backup_scope"][0]
+        self.assertEqual(offsite.get("status"), "unhealthy", report)
+        self.assertFalse((offsite.get("details") or {}).get("marker_backup_matches_latest"), report)
+
+    def test_s3_offsite_configuration_is_accepted_with_fresh_marker(self):
+        temp, env, _backup_dir = self._make_layout(offsite_mode="s3")
+        self.addCleanup(temp.cleanup)
+        env.pop("OFFSITE_RSYNC_TARGET", None)
+        env["OFFSITE_S3_BUCKET"] = "aos-production-backups"
+        env["OFFSITE_S3_ENDPOINT_URL"] = "https://s3.example.test"
+
+        report = validate_backup_readiness(backup_env=env, now=self.now)
+
+        self.assertTrue(report.get("ready"), report)
+        offsite = [check for check in report.get("checks", []) if check.get("name") == "offsite_backup_scope"][0]
+        self.assertEqual(offsite.get("status"), "healthy", report)
+        self.assertEqual((offsite.get("details") or {}).get("offsite_backup_mode"), "s3")
+        self.assertNotIn("s3.example.test", str(report))
+
+    def test_missing_rsync_target_makes_configured_offsite_unready(self):
+        temp, env, _backup_dir = self._make_layout()
+        self.addCleanup(temp.cleanup)
+        env.pop("OFFSITE_RSYNC_TARGET", None)
+
+        report = validate_backup_readiness(backup_env=env, now=self.now)
+
+        self.assertFalse(report.get("ready"), report)
+        offsite = [check for check in report.get("checks", []) if check.get("name") == "offsite_backup_scope"][0]
+        self.assertEqual(offsite.get("status"), "unhealthy", report)
+        self.assertIn("OFFSITE_RSYNC_TARGET", str(offsite))
 
     def test_admin_diagnostic_requires_system_manager(self):
         frappe.set_user("Guest")
