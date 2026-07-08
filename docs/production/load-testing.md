@@ -302,7 +302,7 @@ p99 HTTP duration < 3–4s for most scripts
 AOS-specific interpretation:
 
 - 2xx is expected for successful calls.
-- 401/403/404/422 can be acceptable only where the script explicitly allows them for missing seed records, permissions, or validation checks.
+- Some defensive 4xx responses are expected during safe load tests, for example invalid credentials, missing optional seed records, validation responses, conflicts, permission responses, and rate limits. The shared k6 helper marks 401/403/404/409/422/429 as expected for k6's built-in `http_req_failed` metric, while the AOS-specific `record()` helper still enforces endpoint-level allow-lists through `aos_business_failures`.
 - 429 can be acceptable during intentional burst tests because it proves rate limits are working.
 - 5xx is never acceptable and is counted as an unexpected error.
 

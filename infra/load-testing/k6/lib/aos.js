@@ -2,6 +2,21 @@ import http from 'k6/http';
 import { check, fail } from 'k6';
 import { Rate } from 'k6/metrics';
 
+// k6 treats all 4xx responses as http_req_failed by default.
+// AOS load tests intentionally allow some defensive 4xx responses, such as
+// invalid credentials, validation failures, not-found seed data, conflicts, and
+// rate limits. Business correctness is enforced by record() and the custom
+// aos_business_failures/aos_unexpected_errors metrics below.
+http.setResponseCallback(http.expectedStatuses(
+  { min: 200, max: 399 },
+  401,
+  403,
+  404,
+  409,
+  422,
+  429,
+));
+
 export const unexpectedErrors = new Rate('aos_unexpected_errors');
 export const businessFailures = new Rate('aos_business_failures');
 
