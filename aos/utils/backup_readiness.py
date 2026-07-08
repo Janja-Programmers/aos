@@ -407,8 +407,23 @@ def _latest_backup_check(env: Mapping[str, str], *, now: datetime, max_backup_ag
     config_dir = latest / "config"
 
     has_database = bool(list(frappe_dir.glob("*database.sql*")))
-    has_public_files = bool([p for p in frappe_dir.glob("*files.tar*") if "private-files" not in p.name])
-    has_private_files = bool(list(frappe_dir.glob("*private-files.tar*")))
+    # Frappe's native backup uses .tgz for file archives, while some
+    # older/manual backup layouts may use .tar or .tar.gz. Accept all of
+    # those forms so readiness matches the artifact created by backup.sh.
+    public_file_archives = [
+        path
+        for path in frappe_dir.iterdir()
+        if path.is_file()
+        and "private-files" not in path.name
+        and re.search(r"(?:^|-)files\.(?:tgz|tar|tar\.gz)$", path.name)
+    ]
+    private_file_archives = [
+        path
+        for path in frappe_dir.iterdir()
+        if path.is_file() and re.search(r"(?:^|-)private-files\.(?:tgz|tar|tar\.gz)$", path.name)
+    ]
+    has_public_files = bool(public_file_archives)
+    has_private_files = bool(private_file_archives)
     has_checksums = _file_exists(latest / "SHA256SUMS")
     has_metadata = _file_exists(latest / "metadata.env")
     has_verification_marker = _file_exists(latest / "VERIFIED_AT_UTC")

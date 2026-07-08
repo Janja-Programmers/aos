@@ -54,8 +54,9 @@ class TestBackupReadiness(FrappeTestCase):
         (backup_dir / "SHA256SUMS").write_text("placeholder  metadata.env\n", encoding="utf-8")
         (backup_dir / "VERIFIED_AT_UTC").write_text("2026-07-08T09:01:00Z\n", encoding="utf-8")
         (backup_dir / "frappe" / "20260708_090000-database.sql.gz").write_text("db", encoding="utf-8")
-        (backup_dir / "frappe" / "20260708_090000-files.tar").write_text("public", encoding="utf-8")
-        (backup_dir / "frappe" / "20260708_090000-private-files.tar").write_text("private", encoding="utf-8")
+        # Match Frappe native backup naming used by backup.sh.
+        (backup_dir / "frappe" / "20260708_090000-files.tgz").write_text("public", encoding="utf-8")
+        (backup_dir / "frappe" / "20260708_090000-private-files.tgz").write_text("private", encoding="utf-8")
         if include_minio:
             (backup_dir / "docker" / "minio_data.tar.gz").write_text("minio", encoding="utf-8")
         (backup_dir / "config" / "aos.env").write_text("MINIO_ROOT_PASSWORD=super-secret-value\n", encoding="utf-8")
@@ -100,6 +101,19 @@ class TestBackupReadiness(FrappeTestCase):
         self.assertNotIn("super-secret-value", serialized)
         self.assertNotIn("db_password", serialized)
         self.assertNotIn("MINIO_ROOT_PASSWORD", serialized)
+
+
+    def test_frappe_native_tgz_file_archives_are_detected(self):
+        temp, env, _backup_dir = self._make_layout()
+        self.addCleanup(temp.cleanup)
+
+        report = validate_backup_readiness(backup_env=env, now=self.now)
+
+        latest = [check for check in report.get("checks", []) if check.get("name") == "latest_backup_artifact"][0]
+        details = latest.get("details") or {}
+        self.assertEqual(latest.get("status"), "healthy", report)
+        self.assertTrue(details.get("has_public_files_backup"), report)
+        self.assertTrue(details.get("has_private_files_backup"), report)
 
     def test_missing_minio_archive_makes_report_unready(self):
         temp, env, _backup_dir = self._make_layout(include_minio=False)
