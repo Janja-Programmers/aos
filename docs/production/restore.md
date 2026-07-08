@@ -59,3 +59,18 @@ bench --site <site> execute aos.integrations.ai.image_search_tasks.rebuild_image
 ```
 
 Do not switch production DNS until verification is complete.
+
+
+## Restore rehearsal marker
+
+After restoring into a clean staging/test server and verifying the restored app, run:
+
+```bash
+sudo -u aos AOS_BACKUP_ENV_FILE=/etc/aos/backup.env \
+  ./infra/backup/restore-rehearsal-checklist.sh \
+  --backup /var/backups/aos/<timestamp> \
+  --run-tests \
+  --mark-passed
+```
+
+This records a restore rehearsal marker used by `aos.utils.backup_readiness.backup_readiness_summary`.

@@ -150,6 +150,7 @@ log "Generating checksums"
 )
 
 "$SCRIPT_DIR/verify-backup.sh" "$BACKUP_DIR"
+date -u +%FT%TZ > "$BACKUP_DIR/VERIFIED_AT_UTC"
 
 if [[ -n "$REMOTE_COPY_COMMAND" ]]; then
   log "Copying backup to remote storage"

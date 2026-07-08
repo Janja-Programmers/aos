@@ -23,8 +23,12 @@
 ## Backup and rollback
 
 - [ ] Fresh backup completed
-- [ ] Backup verification passed
+- [ ] Backup verification passed with `infra/backup/verify-backup.sh`
+- [ ] `bench --site <site> execute aos.utils.backup_readiness.backup_readiness_summary` returns `ready=true`
+- [ ] Restore rehearsal completed on a clean staging/test site
+- [ ] Restore rehearsal marker written with `infra/backup/restore-rehearsal-checklist.sh --mark-passed`
 - [ ] Backup ID recorded
+- [ ] Off-server encrypted backup copy confirmed
 - [ ] Previous Git commit/image digests recorded
 - [ ] Rollback operator and decision criteria assigned
 

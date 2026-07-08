@@ -8,6 +8,7 @@ from aos.api.shared.responses import fail, ok
 from aos.utils.production_config import validate_production_config
 from aos.utils.operational_health import validate_operational_health
 from aos.utils.job_monitoring import validate_job_monitoring
+from aos.utils.backup_readiness import validate_backup_readiness
 
 
 def _is_admin_user(user: str | None = None) -> bool:
@@ -61,4 +62,17 @@ def get_job_monitoring_status():
 
     report = validate_job_monitoring()
     return ok("Job monitoring validation complete.", report)
+
+@frappe.whitelist(methods=["GET", "POST"])
+def get_backup_readiness_status():
+    """Return a redacted backup/restore-readiness report for admins only."""
+
+    if not _is_admin_user():
+        return fail(
+            "Only a System Manager can view backup readiness diagnostics.",
+            code="PERMISSION_DENIED",
+        )
+
+    report = validate_backup_readiness()
+    return ok("Backup readiness validation complete.", report)
 

@@ -49,3 +49,17 @@ Test an actual restore on a separate server regularly. Checksum verification alo
 ## Encryption and remote storage
 
 Use an encrypted transport and encrypted destination. The backup can contain API secrets, private user files, database credentials, and personal information. Restrict access and audit downloads.
+
+
+## Backup readiness diagnostic
+
+Run the redacted AOS backup-readiness diagnostic after backups are configured:
+
+```bash
+cd /home/aos/frappe-bench
+bench --site <site> execute aos.utils.backup_readiness.backup_readiness_summary
+```
+
+The report checks backup env, required scripts, Frappe DB/files scope, MinIO coverage, configuration coverage, latest backup completeness, off-server copy configuration, and restore rehearsal evidence.
+
+See `docs/production/backup-restore-verification.md` for the full restore rehearsal process.
