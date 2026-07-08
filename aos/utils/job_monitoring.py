@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import frappe
+
+from aos.api.shared.public_errors import is_sensitive_exception_message
 from frappe.utils import add_to_date, cint, now_datetime
 
 from aos.utils import aos_config
@@ -132,7 +134,11 @@ def _limited_names(values: list[Any] | tuple[Any, ...], limit: int = 5) -> list[
     safe: list[str] = []
     for value in list(values or [])[: max(0, limit)]:
         text = _clean(value)
-        if text:
+        if not text:
+            continue
+        if is_sensitive_exception_message(text):
+            safe.append("[redacted]")
+        else:
             safe.append(text[:140])
     return safe
 
