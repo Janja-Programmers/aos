@@ -19,21 +19,24 @@ class TestAuthSharedHardening(AOSFeatureTestMixin, FrappeTestCase):
     def setUp(self):
         self.prefix = self.make_prefix("auth-hardening")
         self.created_users: list[str] = []
+        self._original_login_manager = getattr(frappe.local, "login_manager", None)
         frappe.local.response = {}
         frappe.set_user("Administrator")
 
     def tearDown(self):
+        if self._original_login_manager is not None:
+            frappe.local.login_manager = self._original_login_manager
         self.cleanup_feature_rows()
         frappe.set_user("Administrator")
 
     def _install_fake_login_manager(self, *, sid: str = "sid-test-value"):
-        def _post_login():
+        def _post_login(*_args, **_kwargs):
             frappe.session.sid = sid
 
         frappe.local.login_manager = SimpleNamespace(
             authenticate=Mock(),
             post_login=Mock(side_effect=_post_login),
-            logout=Mock(side_effect=lambda: frappe.set_user("Guest")),
+            logout=Mock(side_effect=lambda *_args, **_kwargs: frappe.set_user("Guest")),
         )
         return frappe.local.login_manager
 
@@ -104,7 +107,8 @@ class TestAuthSharedHardening(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(wrong.get("error"), "INVALID_CREDENTIALS")
         self.assertEqual(unknown.get("message"), wrong.get("message"))
         self.assertNotIn("sid", str(unknown))
-        self.assertNotIn("password", str(wrong).lower())
+        self.assertNotIn(user, str(wrong))
+        self.assertNotIn("WrongPass123!", str(wrong))
 
     def test_login_rejects_old_identifier_aliases_and_missing_client_type(self):
         user = self.make_user("strict-contract")

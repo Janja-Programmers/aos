@@ -21,7 +21,7 @@ Failure:
 ```json
 {
   "ok": false,
-  "message": "Invalid email or password.",
+  "message": "Invalid credentials.",
   "error": "INVALID_CREDENTIALS",
   "data": {}
 }
@@ -110,7 +110,7 @@ Common failures:
 | 403 | `ACCOUNT_DELETED` / `ACCOUNT_DELETED_RESTORABLE` | Account is deleted and must use restore flow. |
 | 422 | `VALIDATION_ERROR` | Missing/invalid identifier, password, or client_type. |
 | 429 | `RATE_LIMIT` | Per-IP or per-identifier auth throttle exceeded. |
-| 503 | `CONFIG_ERROR` | Required default country/language/currency is invalid or missing. |
+| 503 | `CONFIG_ERROR` | Required country/language/currency defaults are invalid or no matching master data exists. |
 
 Security notes:
 
@@ -152,9 +152,9 @@ Failures:
 | 403 | `ACCOUNT_DISABLED` | User is disabled. |
 | 403 | `ACCOUNT_SUSPENDED` | AOS Profile account status is suspended. |
 | 403 | `ACCOUNT_DELETED` / `ACCOUNT_DELETED_RESTORABLE` | Account is deleted. |
-| 503 | `CONFIG_ERROR` | Account is missing preference and system defaults are invalid. |
+| 503 | `CONFIG_ERROR` | Account is missing preference and system defaults/master-data fallback are invalid. |
 
-`/me` repairs authenticated accounts that have a valid Frappe `User` but are missing `AOS Profile` or `AOS User Preference`, using AOS Settings defaults. It does not return internal `tabUser` fields or raw Frappe session internals.
+`/me` repairs authenticated accounts that have a valid Frappe `User` but are missing `AOS Profile` or `AOS User Preference`, using AOS Settings defaults first, then safe existing Country/Language/Currency master-data fallback. It does not return internal `tabUser` fields or raw Frappe session internals.
 
 ## POST `aos.api.auth.logout`
 

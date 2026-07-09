@@ -19,7 +19,7 @@ from .serializers import serialize_auth_payload
 from .validators import normalize_identifier, validate_client_type, validate_login_inputs
 
 
-GENERIC_LOGIN_FAILURE = "Invalid email or password."
+GENERIC_LOGIN_FAILURE = "Invalid credentials."
 
 
 def _should_return_sid(client_type: str) -> bool:

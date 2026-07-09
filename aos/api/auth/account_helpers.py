@@ -14,6 +14,9 @@ from aos.utils.aos_settings import get_aos_settings_snapshot
 
 DEFAULT_LANGUAGE_CODE = "en"
 DEFAULT_CURRENCY_CODE = "USD"
+DEFAULT_COUNTRY_CANDIDATES = ("Kenya", "United States")
+DEFAULT_LANGUAGE_CANDIDATES = ("en", "English")
+DEFAULT_CURRENCY_CANDIDATES = ("USD", "KES")
 
 
 def _clear_preference_cache(user: str) -> None:
@@ -45,15 +48,23 @@ def ensure_aos_profile(user: str):
     return profile
 
 
+def _first_existing_doc(doctype: str, candidates: tuple[str, ...]) -> str | None:
+    for candidate in candidates:
+        if frappe.db.exists(doctype, candidate):
+            return candidate
+    return frappe.db.get_value(doctype, {}, "name")
+
+
 def _resolve_default_country(country: str | None):
     if country:
         return resolve_country(country)
 
     settings = get_aos_settings_snapshot()
-    if not settings.default_country:
+    configured = settings.default_country or _first_existing_doc("Country", DEFAULT_COUNTRY_CANDIDATES)
+    if not configured:
         return None, fail("Default country not configured.", error="CONFIG_ERROR")
 
-    country_name, error = resolve_country(settings.default_country)
+    country_name, error = resolve_country(configured)
     if error:
         return None, fail("System default country is invalid.", error="CONFIG_ERROR")
     return country_name, None
@@ -64,7 +75,11 @@ def _resolve_default_currency(currency: str | None):
         return resolve_currency(currency)
 
     settings = get_aos_settings_snapshot()
-    configured = settings.default_currency or DEFAULT_CURRENCY_CODE
+    configured = (
+        settings.default_currency
+        or _first_existing_doc("Currency", DEFAULT_CURRENCY_CANDIDATES)
+        or DEFAULT_CURRENCY_CODE
+    )
     currency_name, error = resolve_currency(configured)
     if error:
         return None, fail("System default currency is invalid.", error="CONFIG_ERROR")
@@ -76,7 +91,11 @@ def _resolve_default_language(language: str | None):
         return resolve_language(language)
 
     settings = get_aos_settings_snapshot()
-    configured = settings.default_language or DEFAULT_LANGUAGE_CODE
+    configured = (
+        settings.default_language
+        or _first_existing_doc("Language", DEFAULT_LANGUAGE_CANDIDATES)
+        or DEFAULT_LANGUAGE_CODE
+    )
     language_name, error = resolve_language(configured)
     if error:
         return None, fail("System default language is invalid.", error="CONFIG_ERROR")
