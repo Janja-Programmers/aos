@@ -5,6 +5,13 @@ from aos.api.shared.responses import fail
 from .verification import MAX_ATTEMPTS, RESEND_COOLDOWN_SECONDS, otp_hash, compute_expiry, generate_otp, send_otp_email
 
 
+PUBLIC_OTP_INVALID_MESSAGE = "Invalid or expired OTP."
+
+
+def public_otp_invalid():
+    return fail(PUBLIC_OTP_INVALID_MESSAGE, error="OTP_INVALID")
+
+
 def enforce_resend_cooldown(ver):
     """Return a fail() response if still in cooldown, else None."""
     if getattr(ver, "last_sent_at", None):
@@ -19,8 +26,8 @@ def enforce_resend_cooldown(ver):
     return None
 
 
-def issue_otp(ver, *, email: str, full_name: str = "", purpose: str):
-    """Generate a new OTP, persist it on the verification doc and send it."""
+def persist_otp(ver) -> str:
+    """Generate and persist a fresh OTP without sending email."""
     otp = generate_otp()
     ver.otp_hash = otp_hash(otp)
     ver.expires_at = compute_expiry()
@@ -28,6 +35,19 @@ def issue_otp(ver, *, email: str, full_name: str = "", purpose: str):
     ver.attempts = 0
     ver.last_sent_at = now_datetime()
     ver.save(ignore_permissions=True)
+    return otp
+
+
+def issue_otp(ver, *, email: str, full_name: str = "", purpose: str, commit_before_send: bool = False):
+    """Generate a new OTP, persist it, optionally commit, then send it.
+
+    ``commit_before_send`` is used by public auth flows so an emailed OTP always
+    corresponds to durable DB state. If email delivery fails after commit, the
+    user can safely request another OTP.
+    """
+    otp = persist_otp(ver)
+    if commit_before_send:
+        frappe.db.commit()
 
     send_otp_email(email=email, otp=otp, full_name=full_name or "", purpose=purpose)
     return otp
@@ -39,7 +59,7 @@ def verify_otp(ver, otp: str, *, consume: bool = False):
     Returns a fail() response on error, otherwise None.
     If consume=True, marks the OTP as used on success.
     """
-    otp = (otp or "").strip()
+    otp = otp.strip() if isinstance(otp, str) else ""
 
     if int(ver.is_used or 0) == 1:
         return fail("OTP already used. Please request a new OTP.", error="OTP_USED")
@@ -58,5 +78,17 @@ def verify_otp(ver, otp: str, *, consume: bool = False):
     if consume:
         ver.is_used = 1
         ver.save(ignore_permissions=True)
+
+    return None
+
+
+def verify_public_otp(ver, otp: str, *, consume: bool = False):
+    """Verify public unauthenticated OTP without leaking OTP record state."""
+    if not ver:
+        return public_otp_invalid()
+
+    err = verify_otp(ver, otp, consume=consume)
+    if err:
+        return public_otp_invalid()
 
     return None

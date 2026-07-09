@@ -16,7 +16,8 @@ from .constants import (
     LOGIN_LIMIT_PER_HOUR_PER_IP,
 )
 from .serializers import serialize_auth_payload
-from .validators import normalize_identifier, validate_client_type, validate_login_inputs
+from .validators import require_identifier, require_password, validate_client_type, optional_bootstrap_inputs
+from .verification import has_pending_email_verification
 
 
 GENERIC_LOGIN_FAILURE = "Invalid credentials."
@@ -26,7 +27,7 @@ def _should_return_sid(client_type: str) -> bool:
     return client_type == "mobile"
 
 
-def _rate_limit_login(identifier: str):
+def _rate_limit_login(identifier: str | None = None):
     rl = rate_limit(
         key=rate_limit_key("auth", "login", "ip", request_ip()),
         ttl_seconds=60 * 60,
@@ -36,13 +37,15 @@ def _rate_limit_login(identifier: str):
     if rl:
         return rl
 
-    # Identifier is normalized, bounded, and hashed by rate_limit_key().
-    return rate_limit(
-        key=rate_limit_key("auth", "login", "identifier", identifier or "blank"),
-        ttl_seconds=60 * 60,
-        limit=LOGIN_LIMIT_PER_HOUR_PER_EMAIL,
-        message="Too many login attempts. Please try again later.",
-    )
+    if identifier:
+        return rate_limit(
+            key=rate_limit_key("auth", "login", "identifier", identifier),
+            ttl_seconds=60 * 60,
+            limit=LOGIN_LIMIT_PER_HOUR_PER_EMAIL,
+            message="Too many login attempts. Please try again later.",
+        )
+
+    return None
 
 
 def _check_password_without_login(user_name: str, password: str):
@@ -56,6 +59,26 @@ def _check_password_without_login(user_name: str, password: str):
         return fail("Login failed. Please try again.", error="LOGIN_FAILED")
 
 
+def _inactive_account_error_after_password_proof(user_name: str):
+    """Return account-state failure only after ownership has been proven."""
+    state = get_account_state(user_name)
+    if state.get("is_deleted"):
+        return deleted_account_response(restorable=bool(state.get("can_restore")))
+
+    active_err = ensure_account_active(user_name)
+    if active_err:
+        return active_err
+
+    enabled = frappe.db.get_value("User", user_name, "enabled")
+    if int(enabled or 0) == 1:
+        return None
+
+    if has_pending_email_verification(user_name):
+        return fail("Please verify your email to continue.", error="EMAIL_NOT_VERIFIED")
+
+    return fail("Account disabled.", error="ACCOUNT_DISABLED")
+
+
 def login_impl(**kwargs):
     """Production login.
 
@@ -63,60 +86,51 @@ def login_impl(**kwargs):
         {"identifier": "email-or-username", "password": "...", "client_type": "mobile|web"}
     """
 
-    identifier = normalize_identifier(kwargs.get("identifier") or "")
-    password = kwargs.get("password") if isinstance(kwargs.get("password"), str) else ""
+    raw_identifier = kwargs.get("identifier")
+    identifier, identifier_err = require_identifier(raw_identifier)
 
-    rl = _rate_limit_login(identifier)
+    rl = _rate_limit_login(identifier if identifier_err is None else None)
     if rl:
         safe_log_auth_event("AOS Login Rate Limited", identifier=identifier, reason="rate_limit")
         return rl
 
-    validation_err = validate_login_inputs(identifier, password)
-    if validation_err:
-        safe_log_auth_event("AOS Login Malformed", identifier=identifier, reason="validation")
-        return validation_err
+    if identifier_err:
+        safe_log_auth_event("AOS Login Malformed", reason="identifier_validation")
+        return identifier_err
+
+    password, password_err = require_password(kwargs.get("password"))
+    if password_err:
+        safe_log_auth_event("AOS Login Malformed", identifier=identifier, reason="password_validation")
+        return password_err
 
     client_type, client_type_err = validate_client_type(kwargs.get("client_type"))
     if client_type_err:
         safe_log_auth_event("AOS Login Malformed", identifier=identifier, reason="client_type")
         return client_type_err
 
+    bootstrap_inputs, bootstrap_err = optional_bootstrap_inputs(kwargs)
+    if bootstrap_err:
+        safe_log_auth_event("AOS Login Malformed", identifier=identifier, reason="bootstrap_validation")
+        return bootstrap_err
+
     user_name = user_exists_by_identifier(identifier)
     if not user_name:
         safe_log_auth_event("AOS Login Failed", identifier=identifier, reason="unknown_user")
-        # Do not leak account existence.
         return fail(GENERIC_LOGIN_FAILURE, error="INVALID_CREDENTIALS")
 
-    state = get_account_state(user_name)
-    if state.get("is_deleted"):
-        # Deleted accounts have a separate restore flow and intentionally return a
-        # specific error so the app can route to restore UX.
-        safe_log_auth_event("AOS Deleted Account Login", identifier=identifier, user=user_name, reason="deleted")
-        return deleted_account_response(restorable=bool(state.get("can_restore")))
-
-    active_err = ensure_account_active(user_name)
-    if active_err:
-        safe_log_auth_event("AOS Inactive Account Login", identifier=identifier, user=user_name, reason="inactive")
-        return active_err
-
+    # Password proof must happen before disclosing deleted/disabled/suspended
+    # account state. This prevents account-state enumeration.
     password_err = _check_password_without_login(user_name, password)
     if password_err:
         safe_log_auth_event("AOS Login Failed", identifier=identifier, user=user_name, reason="bad_password")
         return password_err
 
-    enabled = frappe.db.get_value("User", user_name, "enabled")
-    if int(enabled or 0) != 1:
-        # Only disclosed after the correct password is presented, avoiding
-        # enumeration for random identifiers.
-        safe_log_auth_event("AOS Disabled User Login", identifier=identifier, user=user_name, reason="disabled")
-        return fail("Please verify your email to continue.", error="EMAIL_NOT_VERIFIED", http_status=403)
+    inactive_err = _inactive_account_error_after_password_proof(user_name)
+    if inactive_err:
+        safe_log_auth_event("AOS Inactive Account Login", identifier=identifier, user=user_name, reason=inactive_err.get("error"))
+        return inactive_err
 
-    pref, pref_err = ensure_auth_bootstrap(
-        user_name,
-        country=kwargs.get("country"),
-        currency=kwargs.get("currency"),
-        language=kwargs.get("language"),
-    )
+    pref, pref_err = ensure_auth_bootstrap(user_name, **bootstrap_inputs)
     if pref_err:
         return pref_err
 
@@ -148,11 +162,7 @@ def login_impl(**kwargs):
 
 
 def me_impl(**_):
-    """Fetch the current authenticated session bootstrap payload.
-
-    Requires an active Frappe session via Cookie: sid=<sid>. Guest receives a
-    controlled SESSION_INVALID failure.
-    """
+    """Fetch the current authenticated session bootstrap payload."""
 
     user_name = getattr(frappe.session, "user", None) or "Guest"
 
@@ -170,7 +180,7 @@ def me_impl(**_):
 
         enabled = frappe.db.get_value("User", user_name, "enabled")
         if int(enabled or 0) != 1:
-            return fail("Account disabled.", error="ACCOUNT_DISABLED", http_status=403)
+            return fail("Account disabled.", error="ACCOUNT_DISABLED")
 
         pref, pref_err = ensure_auth_bootstrap(user_name)
         if pref_err:

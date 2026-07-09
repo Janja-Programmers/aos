@@ -31,8 +31,8 @@ from .constants import (
     RESTORE_VERIFY_LIMIT_PER_HOUR_PER_EMAIL,
     RESTORE_VERIFY_LIMIT_PER_HOUR_PER_IP,
 )
-from .otp_service import enforce_resend_cooldown, issue_otp, verify_otp
-from .validators import normalize_email, validate_email
+from .otp_service import enforce_resend_cooldown, issue_otp, public_otp_invalid, verify_public_otp
+from .validators import optional_string, require_email, require_otp, require_string
 from .verification import ensure_ver_doc, get_ver_doc
 
 
@@ -45,11 +45,8 @@ RESTORE_REQUEST_GENERIC_MESSAGE = (
 )
 
 
-def _normalize_reason(value: str) -> str:
-    reason = (value or "").strip()
-    if len(reason) > DELETE_REASON_MAX_LEN:
-        reason = reason[:DELETE_REASON_MAX_LEN]
-    return reason
+def _normalize_reason(value: str | None):
+    return optional_string(value, "reason", max_length=DELETE_REASON_MAX_LEN)
 
 
 def _deactivate_push_tokens(user: str):
@@ -160,14 +157,20 @@ def delete_account_impl(**kwargs):
     if rl2:
         return rl2
 
-    confirmation = (kwargs.get("confirmation") or "").strip()
+    confirmation, confirmation_err = require_string(kwargs.get("confirmation"), "confirmation", max_length=16)
+    if confirmation_err:
+        return confirmation_err
     if confirmation != DELETE_CONFIRMATION_TEXT:
         return fail(
             "Please type DELETE to confirm account deletion.",
             error="VALIDATION_ERROR",
+            data={"field": "confirmation"},
         )
 
-    reason = _normalize_reason(kwargs.get("reason") or "")
+    reason, reason_err = _normalize_reason(kwargs.get("reason"))
+    if reason_err:
+        return reason_err
+    reason = reason or ""
 
     try:
         if is_account_deleted(current_user):
@@ -217,9 +220,7 @@ def request_restore_account_impl(**kwargs):
 
     Guest endpoint. Response is intentionally generic to reduce account enumeration.
     """
-    email = normalize_email(kwargs.get("email") or "")
-
-    err = validate_email(email)
+    email, err = require_email(kwargs.get("email"))
     if err:
         return err
 
@@ -263,9 +264,8 @@ def request_restore_account_impl(**kwargs):
             email=email,
             full_name=user.first_name or user.full_name or "",
             purpose=RESTORE_PURPOSE,
+            commit_before_send=True,
         )
-
-        frappe.db.commit()
         return ok(RESTORE_REQUEST_GENERIC_MESSAGE)
 
     except Exception:
@@ -276,8 +276,13 @@ def request_restore_account_impl(**kwargs):
 
 def restore_account_impl(**kwargs):
     """Restore a soft-deleted account after account_restore OTP verification."""
-    email = normalize_email(kwargs.get("email") or "")
-    otp = (kwargs.get("otp") or "").strip()
+    email, email_err = require_email(kwargs.get("email"))
+    if email_err:
+        return email_err
+
+    otp, otp_err = require_otp(kwargs.get("otp"))
+    if otp_err:
+        return otp_err
 
     rl = rate_limit(
         key=rate_limit_key("auth", "restore_verify", "identifier", email or "blank"),
@@ -297,18 +302,16 @@ def restore_account_impl(**kwargs):
     if rl2:
         return rl2
 
-    err = validate_email(email)
-    if err:
-        return err
-
-    if not otp:
-        return fail("OTP is required.", error="VALIDATION_ERROR", data={"field": "otp"})
-
     try:
         user_name = frappe.db.get_value("User", {"email": email}, "name")
 
         if not user_name:
-            return fail("Invalid OTP.", error="OTP_INVALID")
+            return public_otp_invalid()
+
+        ver = get_ver_doc(user_name, purpose=RESTORE_PURPOSE)
+        otp_err = verify_public_otp(ver, otp, consume=True)
+        if otp_err:
+            return otp_err
 
         state = get_account_state(user_name)
         if not state.get("is_deleted"):
@@ -319,16 +322,7 @@ def restore_account_impl(**kwargs):
                 "This account can no longer be restored.",
                 error="RESTORE_EXPIRED",
                 data={"can_restore": False},
-                http_status=410,
             )
-
-        ver = get_ver_doc(user_name, purpose=RESTORE_PURPOSE)
-        if not ver:
-            return fail("OTP not found. Please request a new OTP.", error="OTP_NOT_FOUND")
-
-        otp_err = verify_otp(ver, otp, consume=True)
-        if otp_err:
-            return otp_err
 
         _mark_profile_active(user_name)
         restore_summary = restore_deleted_account_features(user_name)

@@ -153,7 +153,7 @@ def http_status_for_code(code: str, default: int = 400) -> int:
 
 def ok(message: str, data: Any = None):
     _set_http_status(200)
-    return {"ok": True, "message": str(message or "OK."), "data": data or {}}
+    return {"ok": True, "message": str(message or "OK."), "data": {} if data is None else data}
 
 
 def fail(
@@ -170,5 +170,5 @@ def fail(
         "ok": False,
         "message": str(message or "Request failed."),
         "error": public_error,
-        "data": data or {},
+        "data": {} if data is None else data,
     }

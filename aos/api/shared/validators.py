@@ -7,6 +7,18 @@ from aos.api.shared.auth import current_user
 
 
 # COUNTRY / LANGUAGE / CURRENCY
+def _clean_optional_string(value, field: str):
+    if value is None:
+        return "", None
+    if not isinstance(value, str):
+        return "", fail(
+            f"{field} must be a string.",
+            error="VALIDATION_ERROR",
+            data={"field": field},
+        )
+    return value.strip(), None
+
+
 def resolve_country(value: str | None):
     """Resolve a country input to Country.name.
 
@@ -15,7 +27,9 @@ def resolve_country(value: str | None):
         - Country.code (e.g. "KE")
     """
 
-    value = (value or "").strip()
+    value, err = _clean_optional_string(value, "country")
+    if err:
+        return None, err
     if not value:
         return None, None
 
@@ -38,7 +52,9 @@ def resolve_country(value: str | None):
 def resolve_language(value: str | None):
     """Resolve a language input to Language.name."""
 
-    value = (value or "").strip()
+    value, err = _clean_optional_string(value, "language")
+    if err:
+        return None, err
     if not value:
         return None, None
 
@@ -63,7 +79,9 @@ def resolve_language(value: str | None):
 def resolve_currency(value: str | None):
     """Resolve a currency input to Currency.name."""
 
-    value = (value or "").strip()
+    value, err = _clean_optional_string(value, "currency")
+    if err:
+        return None, err
     if not value:
         return None, None
 

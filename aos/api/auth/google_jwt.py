@@ -23,6 +23,11 @@ GOOGLE_JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs"
 GOOGLE_ISSUERS = {"accounts.google.com", "https://accounts.google.com"}
 
 
+def _string_claim(payload: dict, key: str) -> str:
+    value = payload.get(key)
+    return value.strip() if isinstance(value, str) else ""
+
+
 def _b64url_decode(data: str) -> bytes:
     data = data.strip()
     pad = '=' * ((4 - len(data) % 4) % 4)
@@ -73,7 +78,9 @@ def verify_google_id_token(id_token: str, allowed_audiences: List[str]) -> Dict[
     Returns the decoded claims dict on success.
     Raises ValueError with a short code on failure (e.g. TOKEN_INVALID, TOKEN_EXPIRED, AUD_INVALID).
     """
-    id_token = (id_token or "").strip()
+    if not isinstance(id_token, str):
+        raise ValueError("TOKEN_MISSING")
+    id_token = id_token.strip()
     if not id_token:
         raise ValueError("TOKEN_MISSING")
 
@@ -88,8 +95,8 @@ def verify_google_id_token(id_token: str, allowed_audiences: List[str]) -> Dict[
     except Exception:
         raise ValueError("TOKEN_DECODE_FAILED")
 
-    alg = (header.get("alg") or "").strip()
-    kid = (header.get("kid") or "").strip()
+    alg = _string_claim(header, "alg")
+    kid = _string_claim(header, "kid")
     if alg != "RS256" or not kid:
         raise ValueError("TOKEN_HEADER_INVALID")
 
@@ -122,7 +129,7 @@ def verify_google_id_token(id_token: str, allowed_audiences: List[str]) -> Dict[
         raise ValueError("SIGNATURE_INVALID")
 
     # Validate claims
-    iss = (payload.get("iss") or "").strip()
+    iss = _string_claim(payload, "iss")
     aud = payload.get("aud")
     exp = payload.get("exp")
 
@@ -145,7 +152,7 @@ def verify_google_id_token(id_token: str, allowed_audiences: List[str]) -> Dict[
     except Exception:
         raise ValueError("EXP_INVALID")
 
-    email = (payload.get("email") or "").strip().lower()
+    email = _string_claim(payload, "email").lower()
     if not email:
         raise ValueError("EMAIL_MISSING")
 

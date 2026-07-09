@@ -12,6 +12,11 @@ RESEND_COOLDOWN_SECONDS = 60
 RESET_TOKEN_TTL_MINUTES = 15  # token issued after OTP verification for password reset
 
 
+EMAIL_VERIFICATION_PURPOSE = "email_verification"
+PASSWORD_RESET_PURPOSE = "password_reset"
+ACCOUNT_RESTORE_PURPOSE = "account_restore"
+
+
 def generate_otp() -> str:
     """Generate a 6-digit OTP using a cryptographically secure RNG."""
     return f"{secrets.randbelow(900000) + 100000}"
@@ -34,7 +39,7 @@ def generate_reset_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-def get_ver_doc(user_name: str, purpose: str = "email_verification"):
+def get_ver_doc(user_name: str, purpose: str = EMAIL_VERIFICATION_PURPOSE):
     """Fetch OTP doc for a user + purpose."""
     name = frappe.db.get_value(
         "AOS Email Verification",
@@ -47,7 +52,11 @@ def get_ver_doc(user_name: str, purpose: str = "email_verification"):
 
 
 def ensure_ver_doc(user_name: str, email: str, purpose: str):
-    """Get or create OTP doc for a user + purpose."""
+    """Get or create OTP doc for a user + purpose.
+
+    The DocType autoname is user-purpose, so concurrent duplicate creation is
+    safely collapsed to the existing row.
+    """
     ver = get_ver_doc(user_name, purpose=purpose)
     if ver:
         return ver
@@ -67,15 +76,30 @@ def ensure_ver_doc(user_name: str, email: str, purpose: str):
             "reset_token_expires_at": None,
         }
     )
-    doc.insert(ignore_permissions=True)
-    return doc
+
+    try:
+        doc.insert(ignore_permissions=True)
+        return doc
+    except frappe.DuplicateEntryError:
+        existing = get_ver_doc(user_name, purpose=purpose)
+        if existing:
+            return existing
+        raise
 
 
-def send_otp_email(email: str, otp: str, full_name: str = "", purpose: str = "email_verification"):
-    if purpose == "password_reset":
+def has_pending_email_verification(user_name: str) -> bool:
+    """Return whether a disabled user is specifically pending email verification."""
+    ver = get_ver_doc(user_name, purpose=EMAIL_VERIFICATION_PURPOSE)
+    if not ver:
+        return False
+    return int(getattr(ver, "is_used", 0) or 0) == 0
+
+
+def send_otp_email(email: str, otp: str, full_name: str = "", purpose: str = EMAIL_VERIFICATION_PURPOSE):
+    if purpose == PASSWORD_RESET_PURPOSE:
         subject = "Your Africa Online Stores password reset code"
         action = "reset your password"
-    elif purpose == "account_restore":
+    elif purpose == ACCOUNT_RESTORE_PURPOSE:
         subject = "Your Africa Online Stores account restore code"
         action = "restore your account"
     else:
@@ -89,5 +113,4 @@ def send_otp_email(email: str, otp: str, full_name: str = "", purpose: str = "em
         <h2 style=\"letter-spacing:2px\">{otp}</h2>
         <p>This code expires in {OTP_TTL_MINUTES} minutes.</p>
     """
-    # Keep now=True for simplicity; consider enqueueing for better API latency.
     frappe.sendmail(recipients=[email], subject=subject, message=message, now=True)

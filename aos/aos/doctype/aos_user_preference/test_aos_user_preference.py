@@ -73,3 +73,31 @@ class IntegrationTestAOSUserPreference(AOSFeatureTestMixin, IntegrationTestCase)
 
         with self.assertRaises(frappe.ValidationError):
             invalid.insert(ignore_permissions=True)
+
+    def test_database_contract_enforces_one_preference_per_user(self):
+        user = self.make_user("unique-pref", with_preference=False)
+        country, language, currency = self.preference_defaults()
+
+        first = frappe.get_doc(
+            {
+                "doctype": "AOS User Preference",
+                "user": user,
+                "country": country,
+                "language": language,
+                "currency": currency,
+            }
+        )
+        first.insert(ignore_permissions=True)
+
+        duplicate = frappe.get_doc(
+            {
+                "doctype": "AOS User Preference",
+                "user": user,
+                "country": country,
+                "language": language,
+                "currency": currency,
+            }
+        )
+
+        with self.assertRaises(frappe.DuplicateEntryError):
+            duplicate.insert(ignore_permissions=True)

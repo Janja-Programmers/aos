@@ -10,7 +10,7 @@ from aos.api.shared.responses import ok, fail
 
 from .account_helpers import ensure_aos_profile, ensure_user_preference, safe_log_auth_event
 from .constants import REGISTER_LIMIT_PER_HOUR_PER_IP
-from .validators import normalize_email, normalize_name, validate_registration_inputs
+from .validators import optional_bootstrap_inputs, validate_registration_inputs
 from .verification import (
     compute_expiry,
     ensure_ver_doc,
@@ -21,10 +21,6 @@ from .verification import (
 
 
 def register_impl(**kwargs):
-    email = normalize_email(kwargs.get("email") or "")
-    full_name = normalize_name(kwargs.get("full_name") or "")
-    password = kwargs.get("password") if isinstance(kwargs.get("password"), str) else ""
-
     # Rate limit by IP. Request body fields are not part of this key.
     rl = rate_limit(
         key=rate_limit_key("auth", "register", "ip", request_ip()),
@@ -33,17 +29,27 @@ def register_impl(**kwargs):
         message="Too many registration attempts. Please try again later.",
     )
     if rl:
-        safe_log_auth_event("AOS Register Rate Limited", identifier=email, reason="rate_limit")
+        safe_log_auth_event("AOS Register Rate Limited", reason="rate_limit")
         return rl
 
-    err = validate_registration_inputs(email, password, full_name)
+    values, err = validate_registration_inputs(
+        kwargs.get("email"),
+        kwargs.get("password"),
+        kwargs.get("full_name"),
+    )
     if err:
-        safe_log_auth_event("AOS Register Malformed", identifier=email, reason="validation")
+        safe_log_auth_event("AOS Register Malformed", reason="validation")
         return err
 
-    # Prevent duplicate accounts.
-    # If the old account is deleted, do not create a new User with the same email.
-    # The same User must be restored instead to keep old AOS links safe.
+    bootstrap_inputs, bootstrap_err = optional_bootstrap_inputs(kwargs)
+    if bootstrap_err:
+        safe_log_auth_event("AOS Register Malformed", identifier=values["email"], reason="bootstrap_validation")
+        return bootstrap_err
+
+    email = values["email"]
+    full_name = values["full_name"]
+    password = values["password"]
+
     existing_user = frappe.db.get_value("User", {"email": email}, "name")
     if existing_user:
         state = get_account_state(existing_user)
@@ -52,7 +58,6 @@ def register_impl(**kwargs):
                 "This account was previously deleted. Please restore it instead.",
                 error="ACCOUNT_DELETED_RESTORABLE",
                 data={"can_restore": bool(state.get("can_restore"))},
-                http_status=403,
             )
 
         return fail("An account with this email already exists.", error="ALREADY_EXISTS")
@@ -66,31 +71,21 @@ def register_impl(**kwargs):
         user.enabled = 0
         user.user_type = "Website User"
         user.send_welcome_email = 0
-
-        # Set password during insert, not after insert.
-        # This prevents Frappe from sending a "password changed" email on signup.
         user.new_password = password
         user.flags.ignore_password_policy = True
         user.flags.no_welcome_mail = True
         user.insert(ignore_permissions=True)
 
         ensure_aos_profile(user.name)
-        pref, pref_err = ensure_user_preference(
-            user.name,
-            country=kwargs.get("country"),
-            language=kwargs.get("language"),
-            currency=kwargs.get("currency"),
-        )
+        pref, pref_err = ensure_user_preference(user.name, **bootstrap_inputs)
         if pref_err:
             frappe.db.rollback()
             return pref_err
 
         otp = generate_otp()
-        expires_at = compute_expiry()
-
         ver = ensure_ver_doc(user.name, email=email, purpose="email_verification")
         ver.otp_hash = otp_hash(otp)
-        ver.expires_at = expires_at
+        ver.expires_at = compute_expiry()
         ver.is_used = 0
         ver.attempts = 0
         ver.last_sent_at = frappe.utils.now_datetime()
@@ -98,17 +93,21 @@ def register_impl(**kwargs):
         ver.reset_token_expires_at = None
         ver.save(ignore_permissions=True)
 
-        send_otp_email(
-            email=email,
-            otp=otp,
-            full_name=full_name,
-            purpose="email_verification",
-        )
-
+        # Commit before sending so the emailed OTP always matches durable state.
         frappe.db.commit()
-        return ok("OTP sent to email. Please verify to activate account.")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Register Failed")
         frappe.db.rollback()
         return fail("Registration failed. Please try again.", error="REGISTER_FAILED")
+
+    try:
+        send_otp_email(email=email, otp=otp, full_name=full_name, purpose="email_verification")
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "AOS Register OTP Email Failed")
+        return fail(
+            "Account created, but verification email could not be sent. Please request a new OTP.",
+            error="SERVICE_UNAVAILABLE",
+        )
+
+    return ok("OTP sent to email. Please verify to activate account.")

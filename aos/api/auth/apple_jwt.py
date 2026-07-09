@@ -23,6 +23,11 @@ APPLE_JWKS_URL = "https://appleid.apple.com/auth/keys"
 APPLE_ISSUER = "https://appleid.apple.com"
 
 
+def _string_claim(payload: dict, key: str) -> str:
+    value = payload.get(key)
+    return value.strip() if isinstance(value, str) else ""
+
+
 def _b64url_decode(data: str) -> bytes:
     data = data.strip()
     pad = "=" * ((4 - len(data) % 4) % 4)
@@ -84,7 +89,9 @@ def verify_apple_id_token(id_token: str, audience: str) -> Dict[str, Any]:
     Raises ValueError with short codes on failure.
     """
 
-    id_token = (id_token or "").strip()
+    if not isinstance(id_token, str):
+        raise ValueError("TOKEN_MISSING")
+    id_token = id_token.strip()
     if not id_token:
         raise ValueError("TOKEN_MISSING")
 
@@ -100,8 +107,8 @@ def verify_apple_id_token(id_token: str, audience: str) -> Dict[str, Any]:
     except Exception:
         raise ValueError("TOKEN_DECODE_FAILED")
 
-    alg = (header.get("alg") or "").strip()
-    kid = (header.get("kid") or "").strip()
+    alg = _string_claim(header, "alg")
+    kid = _string_claim(header, "kid")
 
     if alg != "RS256" or not kid:
         raise ValueError("TOKEN_HEADER_INVALID")
@@ -142,7 +149,7 @@ def verify_apple_id_token(id_token: str, audience: str) -> Dict[str, Any]:
         raise ValueError("SIGNATURE_INVALID")
 
     # Validate claims
-    iss = (payload.get("iss") or "").strip()
+    iss = _string_claim(payload, "iss")
     aud = payload.get("aud")
     exp = payload.get("exp")
 
