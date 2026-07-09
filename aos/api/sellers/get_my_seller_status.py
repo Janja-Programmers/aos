@@ -71,5 +71,5 @@ def get_my_seller_status_impl(**kwargs):
         )
         return fail(
             "Failed to fetch seller status.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

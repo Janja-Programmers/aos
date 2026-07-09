@@ -44,7 +44,7 @@ def validate_call_exists(call_id: str):
     call = get_call_row(call_id)
 
     if not call:
-        return None, fail("Call not found.", code="NOT_FOUND")
+        return None, fail("Call not found.", error="NOT_FOUND")
 
     return call, None
 
@@ -53,7 +53,7 @@ def validate_conversation_exists(conv_id: str):
     conv = get_conversation_row(conv_id)
 
     if not conv:
-        return None, fail("Conversation not found.", code="NOT_FOUND")
+        return None, fail("Conversation not found.", error="NOT_FOUND")
 
     return conv, None
 
@@ -61,14 +61,14 @@ def validate_conversation_exists(conv_id: str):
 # USER VALIDATION
 def validate_user_in_call(call, user: str):
     if not call or user not in (call.caller, call.receiver):
-        return fail("Not allowed.", code="PERMISSION_DENIED")
+        return fail("Not allowed.", error="PERMISSION_DENIED")
 
     return None
 
 
 def validate_user_in_conversation(conv, user: str):
     if not conv or user not in (conv.participant_1, conv.participant_2):
-        return fail("Not allowed.", code="PERMISSION_DENIED")
+        return fail("Not allowed.", error="PERMISSION_DENIED")
 
     return None
 
@@ -91,7 +91,7 @@ def validate_is_caller(call, user: str):
     if not call or call.caller != user:
         return fail(
             "Only caller can perform this action.",
-            code="PERMISSION_DENIED",
+            error="PERMISSION_DENIED",
         )
 
     return None
@@ -101,7 +101,7 @@ def validate_is_receiver(call, user: str):
     if not call or call.receiver != user:
         return fail(
             "Only receiver can perform this action.",
-            code="PERMISSION_DENIED",
+            error="PERMISSION_DENIED",
         )
 
     return None
@@ -110,45 +110,45 @@ def validate_is_receiver(call, user: str):
 # STATE VALIDATION
 def validate_call_active(call):
     if not call or not call.is_active:
-        return fail("Call is no longer active.", code="INVALID_STATE")
+        return fail("Call is no longer active.", error="INVALID_STATE")
 
     if call.status in TERMINAL_CALL_STATUSES:
-        return fail("Call is no longer active.", code="INVALID_STATE")
+        return fail("Call is no longer active.", error="INVALID_STATE")
 
     return None
 
 
 def validate_can_mark_ringing(call):
     if not call or call.status not in ("initiated", "ringing"):
-        return fail("Call cannot be marked as ringing.", code="INVALID_STATE")
+        return fail("Call cannot be marked as ringing.", error="INVALID_STATE")
 
     return None
 
 
 def validate_can_accept(call):
     if not call or call.status not in ("initiated", "ringing"):
-        return fail("Call cannot be accepted.", code="INVALID_STATE")
+        return fail("Call cannot be accepted.", error="INVALID_STATE")
 
     return None
 
 
 def validate_can_reject(call):
     if not call or call.status not in ("initiated", "ringing"):
-        return fail("Call cannot be rejected.", code="INVALID_STATE")
+        return fail("Call cannot be rejected.", error="INVALID_STATE")
 
     return None
 
 
 def validate_can_cancel(call):
     if not call or call.status not in ("initiated", "ringing"):
-        return fail("Call cannot be cancelled.", code="INVALID_STATE")
+        return fail("Call cannot be cancelled.", error="INVALID_STATE")
 
     return None
 
 
 def validate_can_end(call):
     if not call or call.status != "ongoing":
-        return fail("Call cannot be ended.", code="INVALID_STATE")
+        return fail("Call cannot be ended.", error="INVALID_STATE")
 
     return None
 
@@ -166,7 +166,7 @@ def validate_no_active_call_for_conversation(conv_id: str):
     if exists:
         return fail(
             "There is already an active call for this conversation.",
-            code="ACTIVE_CALL_EXISTS",
+            error="ACTIVE_CALL_EXISTS",
         )
 
     return None

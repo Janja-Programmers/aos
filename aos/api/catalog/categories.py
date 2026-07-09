@@ -110,5 +110,5 @@ def get_categories_impl(**_):
 
         return fail(
             "Failed to fetch categories.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

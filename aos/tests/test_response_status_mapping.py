@@ -98,28 +98,29 @@ class TestResponseStatusMapping(FrappeTestCase):
                 self.assertEqual(http_status_for_code(code), 502)
 
     def test_fail_sets_mapped_status(self):
-        response = fail("Map failed.", code="MAP_SERVICE_ERROR")
+        response = fail("Map failed.", error="MAP_SERVICE_ERROR")
         self.assertFalse(response["ok"])
-        self.assertEqual(response["code"], "MAP_SERVICE_ERROR")
+        self.assertEqual(response["error"], "MAP_SERVICE_ERROR")
+        self.assertNotIn("code", response)
         self.assertEqual(frappe.local.response.get("http_status_code"), 503)
 
     def test_explicit_http_status_override_wins(self):
-        response = fail("Custom.", code="VALIDATION_ERROR", http_status=400)
+        response = fail("Custom.", error="VALIDATION_ERROR", http_status=400)
         self.assertFalse(response["ok"])
         self.assertEqual(frappe.local.response.get("http_status_code"), 400)
 
-    def test_unknown_code_defaults_to_bad_request(self):
-        response = fail("Unknown.", code="SOME_UNKNOWN_CODE")
+    def test_unknown_error_defaults_to_bad_request(self):
+        response = fail("Unknown.", error="SOME_UNKNOWN_CODE")
         self.assertFalse(response["ok"])
         self.assertEqual(frappe.local.response.get("http_status_code"), 400)
 
     def test_all_literal_api_error_codes_are_mapped(self):
-        used_codes = self._literal_fail_codes_used_by_app()
+        used_codes = self._literal_fail_errors_used_by_app()
         missing = sorted(code for code in used_codes if code not in DEFAULT_HTTP_STATUS_MAP)
-        self.assertFalse(missing, f"Unmapped API error codes: {', '.join(missing)}")
+        self.assertFalse(missing, f"Unmapped API error values: {', '.join(missing)}")
 
     @staticmethod
-    def _literal_fail_codes_used_by_app() -> set[str]:
+    def _literal_fail_errors_used_by_app() -> set[str]:
         app_root = Path(__file__).resolve().parents[1]
         codes: set[str] = set()
 
@@ -135,7 +136,7 @@ class TestResponseStatusMapping(FrappeTestCase):
                 if not isinstance(node, ast.Call):
                     continue
                 for keyword in node.keywords:
-                    if keyword.arg != "code":
+                    if keyword.arg != "error":
                         continue
                     value = keyword.value
                     if isinstance(value, ast.Constant) and isinstance(value.value, str):

@@ -53,7 +53,7 @@ def get_seller_impl(**kwargs):
     if not seller:
         return fail(
             "Seller is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     ip = request_ip()
@@ -74,7 +74,7 @@ def get_seller_impl(**kwargs):
         ):
             return fail(
                 "Seller not found.",
-                code="NOT_FOUND",
+                error="NOT_FOUND",
             )
 
         seller_doc = frappe.get_doc(
@@ -85,7 +85,7 @@ def get_seller_impl(**kwargs):
         if seller_doc.status != "Active":
             return fail(
                 "Seller not available.",
-                code="NOT_FOUND",
+                error="NOT_FOUND",
             )
 
         user_doc = frappe.get_doc(
@@ -306,7 +306,7 @@ def get_seller_impl(**kwargs):
 
         return fail(
             "Failed to fetch seller.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 

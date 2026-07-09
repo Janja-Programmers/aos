@@ -18,13 +18,13 @@ def validate_full_name(value: str):
     value = (value or "").strip()
 
     if not value:
-        return None, fail("Full name is required.", code="VALIDATION_ERROR")
+        return None, fail("Full name is required.", error="VALIDATION_ERROR")
 
     if len(value) < FULL_NAME_MIN_LEN:
-        return None, fail("Full name is too short.", code="VALIDATION_ERROR")
+        return None, fail("Full name is too short.", error="VALIDATION_ERROR")
 
     if len(value) > FULL_NAME_MAX_LEN:
-        return None, fail("Full name is too long.", code="VALIDATION_ERROR")
+        return None, fail("Full name is too long.", error="VALIDATION_ERROR")
 
     value = re.sub(r"\s+", " ", value)
 
@@ -41,7 +41,7 @@ def validate_bio(value: str):
     if len(value) > BIO_MAX_LEN:
         return None, fail(
             f"Bio is too long. Maximum is {BIO_MAX_LEN} characters.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     return value, None

@@ -640,7 +640,7 @@ def feed_for_you_impl(**kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "feed_for_you failed")
-        return fail("Failed to fetch feed", code="INTERNAL_ERROR")
+        return fail("Failed to fetch feed", error="INTERNAL_ERROR")
 
 
 # FEED: FOLLOWING
@@ -705,7 +705,7 @@ def feed_following_impl(**kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "feed_following failed")
-        return fail("Failed to fetch following feed", code="INTERNAL_ERROR")
+        return fail("Failed to fetch following feed", error="INTERNAL_ERROR")
 
 
 # FEED: BY AD
@@ -770,4 +770,4 @@ def feed_by_ad_impl(**kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "feed_by_ad failed")
-        return fail("Failed to fetch ad feed", code="INTERNAL_ERROR")
+        return fail("Failed to fetch ad feed", error="INTERNAL_ERROR")

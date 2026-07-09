@@ -24,10 +24,10 @@ DEFAULT_CALLBACK_MAX_AGE_SECONDS = 300
 class CallbackSecurityError(Exception):
     """Raised when a public callback request fails security validation."""
 
-    def __init__(self, message: str, code: str = "UNAUTHORIZED", http_status: int = 401):
+    def __init__(self, message: str, error: str = "UNAUTHORIZED", http_status: int = 401):
         super().__init__(message)
         self.message = message
-        self.code = code
+        self.error = error
         self.http_status = int(http_status)
 
 
@@ -115,13 +115,13 @@ def read_signed_json_callback_payload(
             pass
         raise CallbackSecurityError(
             "Callback authentication is not configured.",
-            code="CALLBACK_AUTH_NOT_CONFIGURED",
+            error="CALLBACK_AUTH_NOT_CONFIGURED",
             http_status=503,
         )
 
     raw_body = _request_body()
     if not raw_body or not raw_body.strip():
-        raise CallbackSecurityError("Missing callback body.", code="VALIDATION_ERROR", http_status=400)
+        raise CallbackSecurityError("Missing callback body.", error="VALIDATION_ERROR", http_status=400)
 
     signature = _header(signature_header)
     if not signature:
@@ -139,9 +139,9 @@ def read_signed_json_callback_payload(
     try:
         payload = json.loads(raw_body.decode("utf-8"))
     except Exception as exc:
-        raise CallbackSecurityError("Invalid JSON callback body.", code="VALIDATION_ERROR", http_status=400) from exc
+        raise CallbackSecurityError("Invalid JSON callback body.", error="VALIDATION_ERROR", http_status=400) from exc
 
     if not isinstance(payload, dict):
-        raise CallbackSecurityError("Callback body must be a JSON object.", code="VALIDATION_ERROR", http_status=400)
+        raise CallbackSecurityError("Callback body must be a JSON object.", error="VALIDATION_ERROR", http_status=400)
 
     return payload

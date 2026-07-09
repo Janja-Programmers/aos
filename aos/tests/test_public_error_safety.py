@@ -49,13 +49,13 @@ class TestPublicErrorSafety(FrappeTestCase):
             response = safe_fail_from_exception(
                 exc,
                 fallback="Invalid request.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
                 log_title="AOS Public Error Safety Test",
             )
 
         self.assertFalse(response["ok"])
         self.assertEqual(response["message"], "Invalid request.")
-        self.assertEqual(response["code"], "VALIDATION_ERROR")
+        self.assertEqual(response["error"], "VALIDATION_ERROR")
         self.assertEqual(frappe.local.response.get("http_status_code"), 422)
         self.assertTrue(log_error.called)
 

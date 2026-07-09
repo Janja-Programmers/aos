@@ -69,13 +69,13 @@ def _apply_active_safe_updates(doc, updates: Dict[str, Any]):
     if "title" in updates:
         title = _clean_str(updates.get("title"))
         if not title:
-            return fail("Title cannot be empty.", code="VALIDATION_ERROR")
+            return fail("Title cannot be empty.", error="VALIDATION_ERROR")
         doc.title = title
 
     if "description" in updates:
         desc = _clean_str(updates.get("description"))
         if not desc:
-            return fail("Description cannot be empty.", code="VALIDATION_ERROR")
+            return fail("Description cannot be empty.", error="VALIDATION_ERROR")
         doc.description = desc
 
     if "price_type" in updates:
@@ -87,25 +87,25 @@ def _apply_active_safe_updates(doc, updates: Dict[str, Any]):
     if "price" in updates:
         v = _to_float_or_none(updates.get("price"))
         if v == "INVALID":
-            return fail("Invalid price.", code="VALIDATION_ERROR")
+            return fail("Invalid price.", error="VALIDATION_ERROR")
         doc.price = v
 
     if "offer_price" in updates:
         v = _to_float_or_none(updates.get("offer_price"))
         if v == "INVALID":
-            return fail("Invalid offer_price.", code="VALIDATION_ERROR")
+            return fail("Invalid offer_price.", error="VALIDATION_ERROR")
         doc.offer_price = v
 
     if "offer_start_date" in updates:
         d = _to_date_or_none(updates.get("offer_start_date"))
         if d == "INVALID":
-            return fail("Invalid offer_start_date.", code="VALIDATION_ERROR")
+            return fail("Invalid offer_start_date.", error="VALIDATION_ERROR")
         doc.offer_start_date = d
 
     if "offer_end_date" in updates:
         d = _to_date_or_none(updates.get("offer_end_date"))
         if d == "INVALID":
-            return fail("Invalid offer_end_date.", code="VALIDATION_ERROR")
+            return fail("Invalid offer_end_date.", error="VALIDATION_ERROR")
         doc.offer_end_date = d
 
     return None
@@ -137,7 +137,7 @@ def update_ad_impl(**kwargs):
     ad_id = _clean_str(kwargs.get("ad_id") or kwargs.get("id"))
 
     if not ad_id:
-        return fail("Ad id is required.", code="VALIDATION_ERROR")
+        return fail("Ad id is required.", error="VALIDATION_ERROR")
 
     row = frappe.db.get_value(
         "AOS Ad",
@@ -147,7 +147,7 @@ def update_ad_impl(**kwargs):
     )
 
     if not row:
-        return fail("Ad not found.", code="NOT_FOUND")
+        return fail("Ad not found.", error="NOT_FOUND")
 
     seller_user = frappe.db.get_value(
         "AOS Seller",
@@ -156,14 +156,14 @@ def update_ad_impl(**kwargs):
     )
 
     if seller_user != user:
-        return fail("You don't have permission to edit this ad.", code="FORBIDDEN")
+        return fail("You don't have permission to edit this ad.", error="FORBIDDEN")
 
     status = _clean_str(row.status)
 
     if status in _BLOCKED_STATUSES:
         return fail(
             "This ad cannot be edited in its current status.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     try:
@@ -177,7 +177,7 @@ def update_ad_impl(**kwargs):
             }
 
             if not updates:
-                return fail("No editable fields provided.", code="VALIDATION_ERROR")
+                return fail("No editable fields provided.", error="VALIDATION_ERROR")
 
             e = _apply_active_safe_updates(doc, updates)
             if e:
@@ -218,11 +218,11 @@ def update_ad_impl(**kwargs):
             if len(images_rows) > _MAX_IMAGES:
                 return fail(
                     f"Maximum {_MAX_IMAGES} images allowed.",
-                    code="VALIDATION_ERROR",
+                    error="VALIDATION_ERROR",
                 )
 
             if not images_rows:
-                return fail("At least one image is required.", code="VALIDATION_ERROR")
+                return fail("At least one image is required.", error="VALIDATION_ERROR")
 
             video_media_id = normalize_media_id(
                 kwargs.get("video_media")
@@ -250,10 +250,10 @@ def update_ad_impl(**kwargs):
                 media_id = normalize_media_id(row_img.get("media") or row_img.get("media_id"))
 
                 if not media_id:
-                    return fail(f"Image media id is required on row {index}.", code="VALIDATION_ERROR")
+                    return fail(f"Image media id is required on row {index}.", error="VALIDATION_ERROR")
 
                 if media_id in seen_media:
-                    return fail("Duplicate image selected.", code="VALIDATION_ERROR")
+                    return fail("Duplicate image selected.", error="VALIDATION_ERROR")
 
                 media_doc, e = validate_ad_media_for_use(
                     media_id=media_id,
@@ -276,7 +276,7 @@ def update_ad_impl(**kwargs):
                     primary_count += 1
 
             if primary_count != 1:
-                return fail("Exactly one primary image is required.", code="VALIDATION_ERROR")
+                return fail("Exactly one primary image is required.", error="VALIDATION_ERROR")
 
             # Core fields
             doc.title = title
@@ -351,14 +351,14 @@ def update_ad_impl(**kwargs):
 
         return fail(
             "This ad cannot be edited in its current status.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     except frappe.DoesNotExistError:
-        return fail("Ad not found.", code="NOT_FOUND")
+        return fail("Ad not found.", error="NOT_FOUND")
 
     except frappe.ValidationError as ex:
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -368,5 +368,5 @@ def update_ad_impl(**kwargs):
 
         return fail(
             "Failed to update ad.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

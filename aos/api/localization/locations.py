@@ -70,5 +70,5 @@ def get_locations_impl(**kwargs):
 
         return fail(
             "Failed to fetch locations.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

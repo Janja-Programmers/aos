@@ -133,13 +133,13 @@ def register_push_token_impl(**kwargs):
 
     # VALIDATION
     if not token:
-        return fail("token is required.", code="VALIDATION_ERROR")
+        return fail("token is required.", error="VALIDATION_ERROR")
 
     if not device_type:
-        return fail("device_type is required.", code="VALIDATION_ERROR")
+        return fail("device_type is required.", error="VALIDATION_ERROR")
 
     if device_type not in VALID_DEVICE_TYPES:
-        return fail("Invalid device_type.", code="VALIDATION_ERROR")
+        return fail("Invalid device_type.", error="VALIDATION_ERROR")
 
     try:
         token_hash = get_token_hash(token)
@@ -240,7 +240,7 @@ def register_push_token_impl(**kwargs):
 
             return fail(
                 "Failed to register push token.",
-                code="INTERNAL_ERROR",
+                error="INTERNAL_ERROR",
             )
 
         frappe.db.rollback()
@@ -312,7 +312,7 @@ def register_push_token_impl(**kwargs):
 
         return fail(
             "Failed to register push token.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -335,7 +335,7 @@ def deactivate_push_token_impl(**kwargs):
     token = (kwargs.get("token") or "").strip()
 
     if not token:
-        return fail("token is required.", code="VALIDATION_ERROR")
+        return fail("token is required.", error="VALIDATION_ERROR")
 
     try:
         token_hash = get_token_hash(token)
@@ -381,5 +381,5 @@ def deactivate_push_token_impl(**kwargs):
 
         return fail(
             "Failed to deactivate push token.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

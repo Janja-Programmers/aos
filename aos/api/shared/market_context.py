@@ -54,7 +54,7 @@ def resolve_market_country(country: str | None = None):
         if not pref or not pref.get("country"):
             return None, fail(
                 "User preference not configured.",
-                code="CONFIG_ERROR",
+                error="CONFIG_ERROR",
             )
 
         return pref["country"], None
@@ -72,7 +72,7 @@ def resolve_market_country(country: str | None = None):
     if not settings.default_country:
         return None, fail(
             "Default country not configured.",
-            code="CONFIG_ERROR",
+            error="CONFIG_ERROR",
         )
 
     # Validate default exists
@@ -80,7 +80,7 @@ def resolve_market_country(country: str | None = None):
     if error:
         return None, fail(
             "System default country is invalid.",
-            code="CONFIG_ERROR",
+            error="CONFIG_ERROR",
         )
 
     return country_name, None
@@ -106,7 +106,7 @@ def resolve_market_currency(currency: str | None = None):
         if not pref or not pref.get("currency"):
             return None, fail(
                 "User currency preference not configured.",
-                code="CONFIG_ERROR",
+                error="CONFIG_ERROR",
             )
 
         return pref["currency"], None
@@ -118,7 +118,7 @@ def resolve_market_currency(currency: str | None = None):
         if not frappe.db.exists("Currency", currency):
             return None, fail(
                 "Invalid currency.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         return currency, None
@@ -129,13 +129,13 @@ def resolve_market_currency(currency: str | None = None):
     if not settings.default_currency:
         return None, fail(
             "Default currency not configured.",
-            code="CONFIG_ERROR",
+            error="CONFIG_ERROR",
         )
 
     if not frappe.db.exists("Currency", settings.default_currency):
         return None, fail(
             "System default currency is invalid.",
-            code="CONFIG_ERROR",
+            error="CONFIG_ERROR",
         )
 
     return settings.default_currency, None

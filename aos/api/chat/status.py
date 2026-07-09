@@ -209,19 +209,19 @@ def mark_delivered_impl(**kwargs):
     conv_id = kwargs.get("conversation_id")
 
     if not conv_id:
-        return fail("conversation_id is required.", code="VALIDATION_ERROR")
+        return fail("conversation_id is required.", error="VALIDATION_ERROR")
 
     try:
         conv = _get_conversation_row(conv_id)
         if not conv:
-            return fail("Conversation not found.", code="NOT_FOUND")
+            return fail("Conversation not found.", error="NOT_FOUND")
 
         if not _validate_participant(conv, current_user):
-            return fail("Not allowed.", code="PERMISSION_DENIED")
+            return fail("Not allowed.", error="PERMISSION_DENIED")
 
         other_user = _get_other_user(conv, current_user)
         if not other_user:
-            return fail("Conversation participant not found.", code="NOT_FOUND")
+            return fail("Conversation participant not found.", error="NOT_FOUND")
 
         now = now_datetime()
 
@@ -269,7 +269,7 @@ def mark_delivered_impl(**kwargs):
             "AOS Mark Delivered Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to update delivered status.", code="INTERNAL_ERROR")
+        return fail("Failed to update delivered status.", error="INTERNAL_ERROR")
 
 
 # mark_read
@@ -290,19 +290,19 @@ def mark_read_impl(**kwargs):
     conv_id = kwargs.get("conversation_id")
 
     if not conv_id:
-        return fail("conversation_id is required.", code="VALIDATION_ERROR")
+        return fail("conversation_id is required.", error="VALIDATION_ERROR")
 
     try:
         conv = _get_conversation_row(conv_id)
         if not conv:
-            return fail("Conversation not found.", code="NOT_FOUND")
+            return fail("Conversation not found.", error="NOT_FOUND")
 
         if not _validate_participant(conv, current_user):
-            return fail("Not allowed.", code="PERMISSION_DENIED")
+            return fail("Not allowed.", error="PERMISSION_DENIED")
 
         other_user = _get_other_user(conv, current_user)
         if not other_user:
-            return fail("Conversation participant not found.", code="NOT_FOUND")
+            return fail("Conversation participant not found.", error="NOT_FOUND")
 
         unread_field = _get_unread_field_for_reader(conv, current_user)
         now = now_datetime()
@@ -358,4 +358,4 @@ def mark_read_impl(**kwargs):
             "AOS Mark Read Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to update read status.", code="INTERNAL_ERROR")
+        return fail("Failed to update read status.", error="INTERNAL_ERROR")

@@ -80,13 +80,13 @@ def _get_short_for_share(short_id: str, *, viewer: str | None):
     )
 
     if not short:
-        return None, fail("Short not found.", code="NOT_FOUND")
+        return None, fail("Short not found.", error="NOT_FOUND")
 
     if short.status != "ready" or short.visibility_status != "visible":
-        return None, fail("Short not found.", code="NOT_FOUND")
+        return None, fail("Short not found.", error="NOT_FOUND")
 
     if not can_view_short(short, current_user=viewer):
-        return None, fail("Short not found.", code="NOT_FOUND")
+        return None, fail("Short not found.", error="NOT_FOUND")
 
     return short, None
 
@@ -94,7 +94,7 @@ def _get_short_for_share(short_id: str, *, viewer: str | None):
 def _normalize_channel(channel: str | None) -> tuple[str | None, object | None]:
     channel = (channel or "copy_link").strip().lower()
     if channel not in VALID_SHARE_CHANNELS:
-        return None, fail("Invalid share channel.", code="VALIDATION_ERROR")
+        return None, fail("Invalid share channel.", error="VALIDATION_ERROR")
     return channel, None
 
 
@@ -181,7 +181,7 @@ def create_short_share_link_impl(**kwargs):
         if not viewer and not session_id:
             return fail(
                 "session_id is required for guest share links.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         short, err = _get_short_for_share(short_id, viewer=viewer)
@@ -213,12 +213,12 @@ def create_short_share_link_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "create_short_share_link failed")
         frappe.db.rollback()
-        return fail("Failed to create share link", code="INTERNAL_ERROR")
+        return fail("Failed to create share link", error="INTERNAL_ERROR")
 
 
 def share_short_to_chat_impl(**kwargs):
@@ -255,10 +255,10 @@ def share_short_to_chat_impl(**kwargs):
 
         conv = _get_conversation_row(conversation_id)
         if not conv:
-            return fail("Conversation not found.", code="NOT_FOUND")
+            return fail("Conversation not found.", error="NOT_FOUND")
 
         if user not in (conv.participant_1, conv.participant_2):
-            return fail("Not allowed.", code="PERMISSION_DENIED")
+            return fail("Not allowed.", error="PERMISSION_DENIED")
 
         receiver = _get_receiver(conv, user)
 
@@ -375,9 +375,9 @@ def share_short_to_chat_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "share_short_to_chat failed")
         frappe.db.rollback()
-        return fail("Failed to share short to chat", code="INTERNAL_ERROR")
+        return fail("Failed to share short to chat", error="INTERNAL_ERROR")

@@ -68,7 +68,7 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
         self.created_users.append(email)
         self.assertTrue(first.get("ok"), first)
         self.assertFalse(second.get("ok"), second)
-        self.assertEqual(second.get("code"), "ALREADY_EXISTS")
+        self.assertEqual(second.get("error"), "ALREADY_EXISTS")
         self.assertTrue(frappe.db.exists("User", email))
         self.assertTrue(frappe.db.exists("AOS Profile", email))
         self.assertTrue(frappe.db.exists("AOS User Preference", {"user": email}))
@@ -262,7 +262,7 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
             response = send_message_impl(conversation_id=conv.name, content="Hello")
 
         self.assertFalse(response.get("ok"), response)
-        self.assertEqual(response.get("code"), "USER_BLOCKED")
+        self.assertEqual(response.get("error"), "USER_BLOCKED")
         self.assertEqual(frappe.db.count("AOS Message", {"conversation": conv.name, "sender": sender}), 0)
 
     def test_live_start_and_join_return_livekit_session_payloads(self):

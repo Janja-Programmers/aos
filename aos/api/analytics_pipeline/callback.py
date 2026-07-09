@@ -18,7 +18,7 @@ SIGNATURE_HEADER = "X-AOS-Analytics-Callback-Signature"
 def _security_failure(exc: CallbackSecurityError):
     return fail(
         safe_exception_message(exc, "Callback authentication failed."),
-        code=exc.code,
+        error=exc.error,
         http_status=exc.http_status,
     )
 
@@ -43,4 +43,4 @@ def handle_callback_impl(**kwargs):
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS analytics callback failed")
-        return fail("Failed to handle analytics callback.", code="ANALYTICS_CALLBACK_FAILED")
+        return fail("Failed to handle analytics callback.", error="ANALYTICS_CALLBACK_FAILED")

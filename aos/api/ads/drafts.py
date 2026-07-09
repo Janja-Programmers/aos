@@ -550,13 +550,13 @@ def upsert_ad_draft_impl(**kwargs):
     if payload is None:
         return fail(
             "payload_json is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if not isinstance(payload, dict):
         return fail(
             "payload_json must be a JSON object.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     hints = _compute_hints(payload)
@@ -571,13 +571,13 @@ def upsert_ad_draft_impl(**kwargs):
             if not doc:
                 return fail(
                     "Draft not found.",
-                    code="NOT_FOUND",
+                    error="NOT_FOUND",
                 )
 
             if doc.status != "Draft":
                 return fail(
                     "Only Draft items can be updated.",
-                    code="VALIDATION_ERROR",
+                    error="VALIDATION_ERROR",
                 )
 
         else:
@@ -629,7 +629,7 @@ def upsert_ad_draft_impl(**kwargs):
 
         return fail(
             "Failed to save draft.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -727,7 +727,7 @@ def list_my_ad_drafts_impl(**kwargs):
 
         return fail(
             "Failed to fetch drafts.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -758,7 +758,7 @@ def get_my_ad_draft_impl(**kwargs):
     if not draft_id:
         return fail(
             "draft_id is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     doc = _get_owned_draft(
@@ -769,7 +769,7 @@ def get_my_ad_draft_impl(**kwargs):
     if not doc:
         return fail(
             "Draft not found.",
-            code="NOT_FOUND",
+            error="NOT_FOUND",
         )
 
     payload = _as_dict_payload(
@@ -819,7 +819,7 @@ def abandon_ad_draft_impl(**kwargs):
     if not draft_id:
         return fail(
             "draft_id is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     doc = _get_owned_draft(
@@ -830,13 +830,13 @@ def abandon_ad_draft_impl(**kwargs):
     if not doc:
         return fail(
             "Draft not found.",
-            code="NOT_FOUND",
+            error="NOT_FOUND",
         )
 
     if doc.status != "Draft":
         return fail(
             "Only Draft items can be abandoned.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     try:
@@ -863,7 +863,7 @@ def abandon_ad_draft_impl(**kwargs):
 
         return fail(
             "Failed to abandon draft.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -896,7 +896,7 @@ def submit_ad_draft_impl(**kwargs):
     if not draft_id:
         return fail(
             "draft_id is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     doc = _get_owned_draft(
@@ -907,13 +907,13 @@ def submit_ad_draft_impl(**kwargs):
     if not doc:
         return fail(
             "Draft not found.",
-            code="NOT_FOUND",
+            error="NOT_FOUND",
         )
 
     if doc.status != "Draft":
         return fail(
             "Only Draft items can be submitted.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     payload = _as_dict_payload(
@@ -923,7 +923,7 @@ def submit_ad_draft_impl(**kwargs):
     if not payload:
         return fail(
             "Draft payload invalid.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     result = create_ad_impl(**payload)
@@ -961,7 +961,7 @@ def submit_ad_draft_impl(**kwargs):
 
         return fail(
             "Ad created but failed to update draft.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
             data={
                 "submitted_ad": ad_id
             },

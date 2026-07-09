@@ -22,7 +22,7 @@ def _clean_text(value) -> str:
 
 def _validate_reason(reason: str):
     if not reason:
-        return fail("Reason is required.", code="VALIDATION_ERROR")
+        return fail("Reason is required.", error="VALIDATION_ERROR")
 
     reason_doc = frappe.db.get_value(
         "AOS Report Reason",
@@ -32,10 +32,10 @@ def _validate_reason(reason: str):
     )
 
     if not reason_doc:
-        return fail("Invalid report reason.", code="VALIDATION_ERROR")
+        return fail("Invalid report reason.", error="VALIDATION_ERROR")
 
     if not int(reason_doc.is_active or 0):
-        return fail("Selected report reason is inactive.", code="VALIDATION_ERROR")
+        return fail("Selected report reason is inactive.", error="VALIDATION_ERROR")
 
     return None
 
@@ -68,7 +68,7 @@ def report_short_impl(**kwargs):
     if len(details) > SHORT_REPORT_DETAILS_MAX_LEN:
         return fail(
             f"Details are too long. Maximum is {SHORT_REPORT_DETAILS_MAX_LEN} characters.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     short = frappe.db.get_value(
@@ -79,16 +79,16 @@ def report_short_impl(**kwargs):
     )
 
     if not short:
-        return fail("Short not found.", code="NOT_FOUND")
+        return fail("Short not found.", error="NOT_FOUND")
 
     if short.owner == current_user:
-        return fail("You cannot report your own short.", code="VALIDATION_ERROR")
+        return fail("You cannot report your own short.", error="VALIDATION_ERROR")
 
     if short.status != "ready" or short.visibility_status != "visible":
-        return fail("Short not found.", code="NOT_FOUND")
+        return fail("Short not found.", error="NOT_FOUND")
 
     if not can_view_short(short, current_user=current_user):
-        return fail("Short not found.", code="NOT_FOUND")
+        return fail("Short not found.", error="NOT_FOUND")
 
     if frappe.db.exists(
         "AOS Short Report",
@@ -98,7 +98,7 @@ def report_short_impl(**kwargs):
             "status": ["!=", "Rejected"],
         },
     ):
-        return fail("You have already reported this short.", code="VALIDATION_ERROR")
+        return fail("You have already reported this short.", error="VALIDATION_ERROR")
 
     try:
         report = frappe.new_doc("AOS Short Report")
@@ -127,9 +127,9 @@ def report_short_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Report Short Failed")
         frappe.db.rollback()
-        return fail("Failed to submit report.", code="INTERNAL_ERROR")
+        return fail("Failed to submit report.", error="INTERNAL_ERROR")

@@ -1,8 +1,8 @@
 """Profile image media helpers.
 
-Profile images are public AOS Media Object records. ``User.user_image`` remains
-as a compatibility/cache URL for Frappe and existing mobile serializers, while
-``AOS Profile.profile_image_media`` stores the media relationship.
+Profile images are public AOS Media Object records. ``AOS Profile.profile_image_media``
+stores the media relationship; ``User.user_image`` is kept as the Frappe profile
+image URL mirror used by safe user serializers.
 """
 
 from __future__ import annotations
@@ -43,16 +43,16 @@ def looks_like_media_id(value: Any) -> bool:
 
 def response_from_media_exception(exc: Exception):
     if isinstance(exc, MediaNotFoundError):
-        return fail("Profile image media not found.", code="NOT_FOUND")
+        return fail("Profile image media not found.", error="NOT_FOUND")
 
     if isinstance(exc, MediaPermissionError):
-        return fail(safe_exception_message(exc, "Not allowed."), code="FORBIDDEN")
+        return fail(safe_exception_message(exc, "Not allowed."), error="FORBIDDEN")
 
     if isinstance(exc, MediaValidationError):
-        return fail(safe_exception_message(exc, "Invalid profile image media."), code="VALIDATION_ERROR")
+        return fail(safe_exception_message(exc, "Invalid profile image media."), error="VALIDATION_ERROR")
 
     frappe.log_error(frappe.get_traceback(), "AOS Profile Image Media Failed")
-    return fail("Failed to validate profile image media.", code="INTERNAL_ERROR")
+    return fail("Failed to validate profile image media.", error="INTERNAL_ERROR")
 
 
 def get_profile_image_media_id(user: str) -> str:
@@ -104,7 +104,7 @@ def validate_profile_image_media_for_use(*, media_id: Any, user: str):
     media_id = normalize_media_id(media_id)
 
     if not media_id:
-        return None, "", fail("Profile image media id is required.", code="VALIDATION_ERROR")
+        return None, "", fail("Profile image media id is required.", error="VALIDATION_ERROR")
 
     service = MediaService()
 
@@ -113,18 +113,18 @@ def validate_profile_image_media_for_use(*, media_id: Any, user: str):
         service.assert_user_can_manage(doc, user)
 
         if doc.status == "Deleted":
-            return None, "", fail("Profile image media not found.", code="NOT_FOUND")
+            return None, "", fail("Profile image media not found.", error="NOT_FOUND")
 
         if doc.purpose != PROFILE_IMAGE_PURPOSE:
             return None, "", fail(
                 "Profile image media has the wrong purpose.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         if doc.visibility != "Public":
             return None, "", fail(
                 "Profile image media must be public.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         if doc.status == "Uploaded":
@@ -136,7 +136,7 @@ def validate_profile_image_media_for_use(*, media_id: Any, user: str):
 
         return None, "", fail(
             "Profile image media cannot be used in its current state.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     except Exception as exc:

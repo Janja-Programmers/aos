@@ -118,7 +118,7 @@ def list_sellers_impl(**kwargs):
         if sort and sort not in VALID_SORTS:
             return fail(
                 "sort must be nearest when provided.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         geo_context, geo_error = _get_geo_context(
@@ -130,7 +130,7 @@ def list_sellers_impl(**kwargs):
         if sort == "nearest" and not geo_context:
             return fail(
                 "latitude and longitude are required when sort is nearest.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         country_code, country_code_error = (
@@ -505,7 +505,7 @@ def list_sellers_impl(**kwargs):
 
         return fail(
             "Failed to fetch sellers.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -755,13 +755,13 @@ def _validate_follow_filter(
     if follow_filter not in VALID_FOLLOW_FILTERS:
         return fail(
             "follow_filter must be following or not_following.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if not is_logged_in:
         return fail(
             "Login is required to filter sellers by follow status.",
-            code="AUTH_REQUIRED",
+            error="AUTH_REQUIRED",
         )
 
     return None
@@ -791,7 +791,7 @@ def _get_boolean_filter(
             None,
             fail(
                 f"{field_label} must be true or false.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -863,7 +863,7 @@ def _get_country_code_filter(
             None,
             fail(
                 "country_code must be a valid 2-letter country code.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -908,7 +908,7 @@ def _get_geo_context(
             None,
             fail(
                 "latitude and longitude are required for nearby seller discovery.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -938,7 +938,7 @@ def _get_geo_context(
             None,
             fail(
                 "Location is outside the supported AOS Maps coverage area.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -966,7 +966,7 @@ def _get_geo_context(
             None,
             fail(
                 "Nearby seller search area is outside the supported AOS Maps coverage area.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -993,7 +993,7 @@ def _parse_radius_km(
             None,
             fail(
                 "radius_km must be a valid number.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -1002,7 +1002,7 @@ def _parse_radius_km(
             None,
             fail(
                 "radius_km must be a finite number.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -1011,7 +1011,7 @@ def _parse_radius_km(
             None,
             fail(
                 f"radius_km must be at least {NEARBY_SELLERS_MIN_RADIUS_KM}.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -1020,7 +1020,7 @@ def _parse_radius_km(
             None,
             fail(
                 f"radius_km cannot exceed {NEARBY_SELLERS_MAX_RADIUS_KM}.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -1043,7 +1043,7 @@ def _parse_coordinate(
             None,
             fail(
                 f"{label} must be a valid number.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -1052,7 +1052,7 @@ def _parse_coordinate(
             None,
             fail(
                 f"{label} must be a finite number.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -1061,7 +1061,7 @@ def _parse_coordinate(
             None,
             fail(
                 f"{label} must be between {minimum:g} and {maximum:g}.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 

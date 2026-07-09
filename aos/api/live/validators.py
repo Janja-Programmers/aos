@@ -170,7 +170,7 @@ def get_enabled_user_row(
     if not is_authenticated_user(user):
         return None, fail(
             "Login required.",
-            code="AUTH_REQUIRED",
+            error="AUTH_REQUIRED",
         )
 
     user_row = frappe.db.get_value(
@@ -186,13 +186,13 @@ def get_enabled_user_row(
     if not user_row:
         return None, fail(
             "User not found.",
-            code="NOT_FOUND",
+            error="NOT_FOUND",
         )
 
     if not bool(user_row.enabled):
         return None, fail(
             "User account is disabled.",
-            code="INVALID_STATE",
+            error="INVALID_STATE",
         )
 
     return user_row, None
@@ -215,7 +215,7 @@ def validate_live_exists(
     if not live:
         return None, fail(
             "Live stream not found.",
-            code="NOT_FOUND",
+            error="NOT_FOUND",
         )
 
     return live, None
@@ -233,7 +233,7 @@ def validate_live_active(
     ):
         return fail(
             "Live stream is not active.",
-            code="INVALID_STATE",
+            error="INVALID_STATE",
         )
 
     return None
@@ -248,7 +248,7 @@ def validate_live_not_ended(
     if live.status == ENDED_STATUS:
         return fail(
             "Live stream has ended.",
-            code="INVALID_STATE",
+            error="INVALID_STATE",
         )
 
     return None
@@ -264,13 +264,13 @@ def validate_user_is_host(
     if not is_authenticated_user(user):
         return fail(
             "Login required.",
-            code="AUTH_REQUIRED",
+            error="AUTH_REQUIRED",
         )
 
     if live.host_user != user:
         return fail(
             "Only the host can perform this action.",
-            code="PERMISSION_DENIED",
+            error="PERMISSION_DENIED",
         )
 
     return None
@@ -315,7 +315,7 @@ def validate_view_identity(
     if not session_id:
         return fail(
             "Session id is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if not is_authenticated_user(user):
@@ -343,7 +343,7 @@ def validate_no_active_view_session(
     if not session_id:
         return fail(
             "Session id is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     filters = {
@@ -365,7 +365,7 @@ def validate_no_active_view_session(
     if exists:
         return fail(
             "Active view session already exists.",
-            code="INVALID_STATE",
+            error="INVALID_STATE",
         )
 
     return None
@@ -392,7 +392,7 @@ def validate_active_view_session(
     if not session_id:
         return None, fail(
             "Session id is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     filters = {
@@ -425,7 +425,7 @@ def validate_active_view_session(
     if not view:
         return None, fail(
             "Active view session not found.",
-            code="NOT_FOUND",
+            error="NOT_FOUND",
         )
 
     return view, None
@@ -456,7 +456,7 @@ def validate_live_participant_session(
     if not is_authenticated_user(user):
         return fail(
             "Login required.",
-            code="AUTH_REQUIRED",
+            error="AUTH_REQUIRED",
         )
 
     if live.host_user == user:
@@ -469,7 +469,7 @@ def validate_live_participant_session(
     if not session_id:
         return fail(
             "session_id is required for viewers.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     _, err = validate_active_view_session(
@@ -496,7 +496,7 @@ def validate_cohost_exists(
     if not cohost:
         return None, fail(
             "Co-host request not found.",
-            code="NOT_FOUND",
+            error="NOT_FOUND",
         )
 
     return cohost, None
@@ -512,7 +512,7 @@ def validate_cohost_belongs_to_live(
     if cohost.live_stream != live_id:
         return fail(
             "Co-host request does not belong to this live stream.",
-            code="INVALID_STATE",
+            error="INVALID_STATE",
         )
 
     return None
@@ -534,13 +534,13 @@ def validate_user_is_active_viewer(
     if not is_authenticated_user(user):
         return None, fail(
             "A logged-in viewer is required.",
-            code="AUTH_REQUIRED",
+            error="AUTH_REQUIRED",
         )
 
     if live.host_user == user:
         return None, fail(
             "The live host cannot be a co-host candidate.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     _, err = get_enabled_user_row(
@@ -556,7 +556,7 @@ def validate_user_is_active_viewer(
     if not session_id:
         return None, fail(
             "session_id is required for the co-host candidate.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     view, err = validate_active_view_session(
@@ -568,7 +568,7 @@ def validate_user_is_active_viewer(
     if err:
         return None, fail(
             "The co-host candidate must be actively watching this live.",
-            code="INVALID_STATE",
+            error="INVALID_STATE",
         )
 
     return view, None
@@ -600,7 +600,7 @@ def validate_cohost_pending(
     if cohost.status != COHOST_STATUS_PENDING:
         return fail(
             "Co-host request is no longer pending.",
-            code="INVALID_STATE",
+            error="INVALID_STATE",
         )
 
     return None
@@ -615,7 +615,7 @@ def validate_cohost_accepted(
     if cohost.status != COHOST_STATUS_ACCEPTED:
         return fail(
             "Co-host request has not been accepted.",
-            code="INVALID_STATE",
+            error="INVALID_STATE",
         )
 
     return None
@@ -633,7 +633,7 @@ def validate_cohost_active(
     ):
         return fail(
             "Co-host session is not active.",
-            code="INVALID_STATE",
+            error="INVALID_STATE",
         )
 
     return None
@@ -648,7 +648,7 @@ def validate_cohost_not_terminal(
     if cohost.status in COHOST_TERMINAL_STATUSES:
         return fail(
             "Co-host workflow has already ended.",
-            code="INVALID_STATE",
+            error="INVALID_STATE",
         )
 
     return None
@@ -674,7 +674,7 @@ def validate_cohost_request_not_expired(
     ) <= now_datetime():
         return fail(
             "Co-host request has expired.",
-            code="EXPIRED",
+            error="EXPIRED",
         )
 
     return None
@@ -726,7 +726,7 @@ def validate_no_duplicate_cohost_workflow(
     if existing:
         return existing, fail(
             "This viewer already has an unresolved co-host workflow.",
-            code="ALREADY_EXISTS",
+            error="ALREADY_EXISTS",
         )
 
     return None, None
@@ -770,7 +770,7 @@ def validate_available_cohost_slot(
     ):
         return fail(
             "This live stream already has an accepted or active co-host.",
-            code="COHOST_SLOT_UNAVAILABLE",
+            error="COHOST_SLOT_UNAVAILABLE",
         )
 
     return None
@@ -795,7 +795,7 @@ def validate_user_can_respond_to_cohost(
     if not is_authenticated_user(user):
         return fail(
             "Login required.",
-            code="AUTH_REQUIRED",
+            error="AUTH_REQUIRED",
         )
 
     if (
@@ -805,7 +805,7 @@ def validate_user_can_respond_to_cohost(
         if cohost.user != user:
             return fail(
                 "Only the invited viewer can respond to this invitation.",
-                code="PERMISSION_DENIED",
+                error="PERMISSION_DENIED",
             )
 
         return None
@@ -817,14 +817,14 @@ def validate_user_can_respond_to_cohost(
         if live.host_user != user:
             return fail(
                 "Only the live host can respond to this co-host request.",
-                code="PERMISSION_DENIED",
+                error="PERMISSION_DENIED",
             )
 
         return None
 
     return fail(
         "Invalid co-host request type.",
-        code="INVALID_STATE",
+        error="INVALID_STATE",
     )
 
 
@@ -846,7 +846,7 @@ def validate_user_can_cancel_cohost(
     if not is_authenticated_user(user):
         return fail(
             "Login required.",
-            code="AUTH_REQUIRED",
+            error="AUTH_REQUIRED",
         )
 
     if (
@@ -856,7 +856,7 @@ def validate_user_can_cancel_cohost(
         if live.host_user != user:
             return fail(
                 "Only the live host can cancel this invitation.",
-                code="PERMISSION_DENIED",
+                error="PERMISSION_DENIED",
             )
 
         return None
@@ -868,14 +868,14 @@ def validate_user_can_cancel_cohost(
         if cohost.user != user:
             return fail(
                 "Only the requesting viewer can cancel this request.",
-                code="PERMISSION_DENIED",
+                error="PERMISSION_DENIED",
             )
 
         return None
 
     return fail(
         "Invalid co-host request type.",
-        code="INVALID_STATE",
+        error="INVALID_STATE",
     )
 
 
@@ -890,13 +890,13 @@ def validate_user_can_activate_cohost(
     if not is_authenticated_user(user):
         return fail(
             "Login required.",
-            code="AUTH_REQUIRED",
+            error="AUTH_REQUIRED",
         )
 
     if cohost.user != user:
         return fail(
             "Only the accepted co-host can activate this session.",
-            code="PERMISSION_DENIED",
+            error="PERMISSION_DENIED",
         )
 
     return None
@@ -918,7 +918,7 @@ def validate_user_can_end_cohost(
     if not is_authenticated_user(user):
         return fail(
             "Login required.",
-            code="AUTH_REQUIRED",
+            error="AUTH_REQUIRED",
         )
 
     if user == cohost.user:
@@ -929,7 +929,7 @@ def validate_user_can_end_cohost(
 
     return fail(
         "You are not allowed to end this co-host session.",
-        code="PERMISSION_DENIED",
+        error="PERMISSION_DENIED",
     )
 
 
@@ -946,7 +946,7 @@ def validate_cohost_session_ownership(
     if cohost.user != user:
         return fail(
             "Co-host workflow does not belong to this user.",
-            code="PERMISSION_DENIED",
+            error="PERMISSION_DENIED",
         )
 
     session_id = normalize_session_id(
@@ -956,13 +956,13 @@ def validate_cohost_session_ownership(
     if not session_id:
         return fail(
             "session_id is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if cohost.session_id != session_id:
         return fail(
             "Invalid co-host viewer session.",
-            code="PERMISSION_DENIED",
+            error="PERMISSION_DENIED",
         )
 
     return None

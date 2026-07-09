@@ -52,22 +52,22 @@ def create_review_impl(**kwargs):
     ) or []
 
     if not ad:
-        return fail("Ad is required.", code="VALIDATION_ERROR")
+        return fail("Ad is required.", error="VALIDATION_ERROR")
 
     if rating is None:
-        return fail("Rating is required.", code="VALIDATION_ERROR")
+        return fail("Rating is required.", error="VALIDATION_ERROR")
 
     if not comment:
-        return fail("Comment is required.", code="VALIDATION_ERROR")
+        return fail("Comment is required.", error="VALIDATION_ERROR")
 
     # Validate rating range
     try:
         rating = float(rating)
     except Exception:
-        return fail("Invalid rating.", code="VALIDATION_ERROR")
+        return fail("Invalid rating.", error="VALIDATION_ERROR")
 
     if rating < 1 or rating > 5:
-        return fail("Rating must be between 1 and 5.", code="VALIDATION_ERROR")
+        return fail("Rating must be between 1 and 5.", error="VALIDATION_ERROR")
 
     image_media_ids, err = normalize_review_image_inputs(images)
     if err:
@@ -88,7 +88,7 @@ def create_review_impl(**kwargs):
     )
 
     if not ad_doc or ad_doc.status != "Active":
-        return fail("Ad not found.", code="NOT_FOUND")
+        return fail("Ad not found.", error="NOT_FOUND")
 
     eligibility = get_review_eligibility_for_ad(
         ad_doc=ad_doc,
@@ -100,7 +100,7 @@ def create_review_impl(**kwargs):
 
         return fail(
             message,
-            code=code,
+            error=code,
             data={
                 "review_viewer_state": eligibility,
             },
@@ -174,7 +174,7 @@ def create_review_impl(**kwargs):
 
             return fail(
                 "You have already reviewed this ad.",
-                code="ALREADY_REVIEWED",
+                error="ALREADY_REVIEWED",
                 data={
                     "id": existing_review.name if existing_review else None,
                     "status": existing_review.status if existing_review else None,
@@ -188,7 +188,7 @@ def create_review_impl(**kwargs):
             )
 
         if isinstance(ex, frappe.ValidationError):
-            return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+            return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
         frappe.log_error(frappe.get_traceback(), "AOS Create Review Failed")
-        return fail("Failed to create review.", code="INTERNAL_ERROR")
+        return fail("Failed to create review.", error="INTERNAL_ERROR")

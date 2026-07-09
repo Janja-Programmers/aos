@@ -293,19 +293,19 @@ def send_typing_event_impl(**kwargs):
     is_typing = _as_bool(kwargs.get("is_typing"))
 
     if not conv_id:
-        return fail("conversation_id is required.", code="VALIDATION_ERROR")
+        return fail("conversation_id is required.", error="VALIDATION_ERROR")
 
     try:
         conv_row = _get_conversation_participants(conv_id)
         if not conv_row:
-            return fail("Conversation not found.", code="NOT_FOUND")
+            return fail("Conversation not found.", error="NOT_FOUND")
 
         if not _validate_participant(conv_row, current_user):
-            return fail("Not allowed.", code="PERMISSION_DENIED")
+            return fail("Not allowed.", error="PERMISSION_DENIED")
 
         receiver = _get_other_participant(conv_row, current_user)
         if not receiver:
-            return fail("Receiver not found.", code="NOT_FOUND")
+            return fail("Receiver not found.", error="NOT_FOUND")
 
         # Typing is also user activity.
         touch_user_activity(current_user)
@@ -338,4 +338,4 @@ def send_typing_event_impl(**kwargs):
             frappe.get_traceback(),
             "AOS Typing Event Failed",
         )
-        return fail("Failed to send typing event.", code="INTERNAL_ERROR")
+        return fail("Failed to send typing event.", error="INTERNAL_ERROR")

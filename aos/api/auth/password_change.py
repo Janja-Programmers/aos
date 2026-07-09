@@ -2,7 +2,7 @@ import frappe
 from frappe.utils.password import check_password, update_password
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.rate_limit import rate_limit, request_ip
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
 from aos.api.shared.responses import ok, fail
 
 from .constants import (
@@ -23,16 +23,16 @@ def change_password_impl(**kwargs):
     confirm_password = kwargs.get("confirm_password") or ""
 
     if not current_password:
-        return fail("Current password is required.", code="VALIDATION_ERROR")
+        return fail("Current password is required.", error="VALIDATION_ERROR")
 
     if not new_password or not confirm_password:
         return fail(
             "New password and confirm password are required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if new_password != confirm_password:
-        return fail("Passwords do not match.", code="PASSWORD_MISMATCH")
+        return fail("Passwords do not match.", error="PASSWORD_MISMATCH")
 
     pw_err = validate_password_strength(new_password)
 
@@ -41,7 +41,7 @@ def change_password_impl(**kwargs):
 
     # Rate limit by active authenticated user.
     rl = rate_limit(
-        key=f"aos:change_pw:user:{current_user}",
+        key=rate_limit_key("auth", "change_password", "user", current_user),
         ttl_seconds=60 * 60,
         limit=CHANGE_PASSWORD_LIMIT_PER_HOUR_PER_USER,
         message="Too many attempts. Please try again later.",
@@ -52,7 +52,7 @@ def change_password_impl(**kwargs):
 
     # Rate limit by IP.
     rl2 = rate_limit(
-        key=f"aos:change_pw:ip:{request_ip()}",
+        key=rate_limit_key("auth", "change_password", "ip", request_ip()),
         ttl_seconds=60 * 60,
         limit=CHANGE_PASSWORD_LIMIT_PER_HOUR_PER_IP,
         message="Too many attempts. Please try again later.",
@@ -66,7 +66,7 @@ def change_password_impl(**kwargs):
         check_password(current_user, current_password)
 
     except frappe.AuthenticationError:
-        return fail("Current password is incorrect.", code="FORBIDDEN")
+        return fail("Current password is incorrect.", error="FORBIDDEN")
 
     except Exception:
         frappe.log_error(
@@ -76,7 +76,7 @@ def change_password_impl(**kwargs):
 
         return fail(
             "Could not change password. Please try again.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
             http_status=500,
         )
 
@@ -92,7 +92,7 @@ def change_password_impl(**kwargs):
 
         return fail(
             "Could not change password. Please try again.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
             http_status=500,
         )
 

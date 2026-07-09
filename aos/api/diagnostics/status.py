@@ -33,7 +33,7 @@ def is_admin_user(user: str | None = None) -> bool:
 def _require_admin_or_fail(message: str) -> dict | None:
     if is_admin_user():
         return None
-    return fail(message, code="PERMISSION_DENIED")
+    return fail(message, error="PERMISSION_DENIED")
 
 
 def get_production_config_status_impl(**kwargs):

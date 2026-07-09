@@ -109,7 +109,7 @@ def search_users_impl(**kwargs):
             frappe.get_traceback(),
             "AOS Search Users Failed",
         )
-        return fail("Failed to search users.", code="INTERNAL_ERROR")
+        return fail("Failed to search users.", error="INTERNAL_ERROR")
 
 
 # HELPERS
@@ -119,13 +119,13 @@ def _normalize_query(value):
     if len(query) < USER_SEARCH_MIN_LEN:
         return None, fail(
             f"Search query must be at least {USER_SEARCH_MIN_LEN} characters.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if len(query) > USER_SEARCH_MAX_LEN:
         return None, fail(
             f"Search query is too long. Maximum is {USER_SEARCH_MAX_LEN} characters.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     return query, None

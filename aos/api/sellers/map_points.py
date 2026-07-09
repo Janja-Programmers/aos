@@ -224,7 +224,7 @@ def list_seller_map_points_impl(**kwargs):
 
         return fail(
             "Failed to fetch seller map points.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -279,7 +279,7 @@ def _validate_viewport(
             None,
             fail(
                 "north must be greater than south.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -288,7 +288,7 @@ def _validate_viewport(
             None,
             fail(
                 "east must be greater than west.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -309,7 +309,7 @@ def _validate_viewport(
             None,
             fail(
                 "Viewport is outside the supported AOS Maps coverage area.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -324,7 +324,7 @@ def _validate_viewport(
             None,
             fail(
                 "Viewport is outside the supported AOS Maps coverage area.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -341,7 +341,7 @@ def _validate_viewport(
             None,
             fail(
                 "Viewport is too large for this zoom level.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -350,7 +350,7 @@ def _validate_viewport(
             None,
             fail(
                 "Viewport is too large.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -414,7 +414,7 @@ def _parse_optional_boolean(
             None,
             fail(
                 f"{field_label} must be true or false.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -435,7 +435,7 @@ def _parse_float(
             None,
             fail(
                 f"{label} is required.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -446,7 +446,7 @@ def _parse_float(
             None,
             fail(
                 f"{label} must be a valid number.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -455,7 +455,7 @@ def _parse_float(
             None,
             fail(
                 f"{label} must be a finite number.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -464,7 +464,7 @@ def _parse_float(
             None,
             fail(
                 f"{label} must be between {minimum:g} and {maximum:g}.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 

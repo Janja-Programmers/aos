@@ -126,17 +126,17 @@ def get_or_create_conversation_impl(**kwargs):
     other_user = kwargs.get("user")
 
     if not other_user:
-        return fail("User is required.", code="VALIDATION_ERROR")
+        return fail("User is required.", error="VALIDATION_ERROR")
 
     if other_user == current_user:
         return fail(
             "Cannot start conversation with yourself.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     try:
         if not frappe.db.exists("User", other_user):
-            return fail("User not found.", code="NOT_FOUND")
+            return fail("User not found.", error="NOT_FOUND")
 
         block_err = ensure_not_blocked(
             current_user=current_user,
@@ -204,7 +204,7 @@ def get_or_create_conversation_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -214,7 +214,7 @@ def get_or_create_conversation_impl(**kwargs):
         frappe.db.rollback()
         return fail(
             "Failed to create conversation.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -391,7 +391,7 @@ def list_conversations_impl(**kwargs):
 
         return fail(
             "Failed to fetch conversations.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -415,7 +415,7 @@ def delete_conversation_impl(**kwargs):
     if not conv_id:
         return fail(
             "conversation_id is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     try:
@@ -429,7 +429,7 @@ def delete_conversation_impl(**kwargs):
         if not conv:
             return fail(
                 "Conversation not found.",
-                code="NOT_FOUND",
+                error="NOT_FOUND",
             )
 
         if current_user not in (
@@ -438,7 +438,7 @@ def delete_conversation_impl(**kwargs):
         ):
             return fail(
                 "Not allowed.",
-                code="PERMISSION_DENIED",
+                error="PERMISSION_DENIED",
             )
 
         field = (
@@ -469,5 +469,5 @@ def delete_conversation_impl(**kwargs):
 
         return fail(
             "Failed to delete conversation.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

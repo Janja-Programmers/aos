@@ -35,7 +35,7 @@ def track_event_impl(**kwargs):
 
     event = _extract_event(kwargs)
     if not str(event.get("event_type") or "").strip():
-        return fail("event_type is required.", code="VALIDATION_ERROR")
+        return fail("event_type is required.", error="VALIDATION_ERROR")
 
     try:
         job = create_analytics_ingest_job(
@@ -49,7 +49,7 @@ def track_event_impl(**kwargs):
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "track_event failed")
-        return fail("Failed to queue analytics event", code="INTERNAL_ERROR")
+        return fail("Failed to queue analytics event", error="INTERNAL_ERROR")
 
 
 def track_events_impl(**kwargs):
@@ -64,7 +64,7 @@ def track_events_impl(**kwargs):
 
     events = kwargs.get("events")
     if not isinstance(events, list) or not events:
-        return fail("events must be a non-empty list.", code="VALIDATION_ERROR")
+        return fail("events must be a non-empty list.", error="VALIDATION_ERROR")
 
     user = current_user()
     normalized = []
@@ -78,7 +78,7 @@ def track_events_impl(**kwargs):
         normalized.append(item)
 
     if not normalized:
-        return fail("No valid events supplied.", code="VALIDATION_ERROR")
+        return fail("No valid events supplied.", error="VALIDATION_ERROR")
 
     try:
         job = create_analytics_ingest_job(
@@ -92,4 +92,4 @@ def track_events_impl(**kwargs):
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "track_events failed")
-        return fail("Failed to queue analytics events", code="INTERNAL_ERROR")
+        return fail("Failed to queue analytics events", error="INTERNAL_ERROR")

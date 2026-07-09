@@ -64,17 +64,17 @@ def get_relationship_status_impl(**kwargs):
     target_user = kwargs.get("target_user")
 
     if not target_user:
-        return fail("Target user is required.", code="VALIDATION_ERROR")
+        return fail("Target user is required.", error="VALIDATION_ERROR")
 
     try:
         if not frappe.db.exists("User", target_user):
-            return fail("User not found.", code="NOT_FOUND")
+            return fail("User not found.", error="NOT_FOUND")
 
         if not frappe.db.exists("AOS Profile", current_user):
-            return fail("Current user profile not found.", code="PROFILE_NOT_FOUND")
+            return fail("Current user profile not found.", error="PROFILE_NOT_FOUND")
 
         if not frappe.db.exists("AOS Profile", target_user):
-            return fail("User profile not found.", code="PROFILE_NOT_FOUND")
+            return fail("User profile not found.", error="PROFILE_NOT_FOUND")
 
         data = build_relationship_status(
             current_user=current_user,
@@ -91,7 +91,7 @@ def get_relationship_status_impl(**kwargs):
             frappe.get_traceback(),
             "AOS Get Relationship Status Failed",
         )
-        return fail("Failed to get relationship status.", code="INTERNAL_ERROR")
+        return fail("Failed to get relationship status.", error="INTERNAL_ERROR")
 
 
 def build_relationship_status(*, current_user: str, target_user: str) -> dict:

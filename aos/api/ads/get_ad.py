@@ -34,7 +34,7 @@ def get_ad_impl(**kwargs):
     ad_id = str(kwargs.get("ad_id") or "").strip()
 
     if not ad_id:
-        return fail("Ad id is required.", code="VALIDATION_ERROR")
+        return fail("Ad id is required.", error="VALIDATION_ERROR")
 
     # Market Context
     _country, display_currency, error = resolve_market_context(
@@ -105,7 +105,7 @@ def get_ad_impl(**kwargs):
         )
 
         if not rows:
-            return fail("Ad not found.", code="NOT_FOUND")
+            return fail("Ad not found.", error="NOT_FOUND")
 
         row = rows[0]
 
@@ -119,7 +119,7 @@ def get_ad_impl(**kwargs):
 
         return fail(
             "Failed to fetch ad.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
     # Images

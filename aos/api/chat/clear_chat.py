@@ -67,16 +67,16 @@ def clear_chat_impl(**kwargs):
     conv_id = kwargs.get("conversation_id")
 
     if not conv_id:
-        return fail("conversation_id is required.", code="VALIDATION_ERROR")
+        return fail("conversation_id is required.", error="VALIDATION_ERROR")
 
     try:
         conv = _get_conversation(conv_id)
 
         if not conv:
-            return fail("Conversation not found.", code="NOT_FOUND")
+            return fail("Conversation not found.", error="NOT_FOUND")
 
         if current_user not in (conv.participant_1, conv.participant_2):
-            return fail("Not allowed.", code="PERMISSION_DENIED")
+            return fail("Not allowed.", error="PERMISSION_DENIED")
 
         delete_field = get_deleted_for_user_field(conv, current_user)
         delete_at_field = get_deleted_for_user_at_field(conv, current_user)
@@ -128,7 +128,7 @@ def clear_chat_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -136,4 +136,4 @@ def clear_chat_impl(**kwargs):
             "AOS Clear Chat Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to clear chat.", code="INTERNAL_ERROR")
+        return fail("Failed to clear chat.", error="INTERNAL_ERROR")

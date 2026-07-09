@@ -94,7 +94,7 @@ def set_my_seller_location_impl(**kwargs):
         if not seller_name:
             return fail(
                 "Seller profile not found.",
-                code="NOT_FOUND",
+                error="NOT_FOUND",
             )
 
         seller_doc = frappe.get_doc(
@@ -105,7 +105,7 @@ def set_my_seller_location_impl(**kwargs):
         if seller_doc.status != "Active":
             return fail(
                 "Seller profile is not available.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         latitude = validate_latitude(
@@ -200,12 +200,12 @@ def set_my_seller_location_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except NominatimClientError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Map service is temporarily unavailable.", code="MAP_SERVICE_ERROR", log_title="AOS Map Service Error")
+        return safe_fail_from_exception(ex, fallback="Map service is temporarily unavailable.", error="MAP_SERVICE_ERROR", log_title="AOS Map Service Error")
 
     except Exception:
         frappe.db.rollback()
@@ -217,7 +217,7 @@ def set_my_seller_location_impl(**kwargs):
 
         return fail(
             "Failed to save seller location.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 

@@ -478,7 +478,7 @@ def track_join_impl(**kwargs):
                 )
 
         if isinstance(ex, frappe.ValidationError):
-            return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+            return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
         frappe.log_error(
             frappe.get_traceback(),
@@ -487,7 +487,7 @@ def track_join_impl(**kwargs):
 
         return fail(
             "Failed to track join.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -593,7 +593,7 @@ def track_leave_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -604,5 +604,5 @@ def track_leave_impl(**kwargs):
 
         return fail(
             "Failed to track leave.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

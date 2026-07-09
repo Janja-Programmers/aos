@@ -103,7 +103,7 @@ def create_ad_impl(**kwargs):
     if not location_country or location_country != market_country:
         return fail(
             "Invalid location for your market.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     # Resolve user preference
@@ -116,7 +116,7 @@ def create_ad_impl(**kwargs):
     if not pref_currency:
         return fail(
             "User currency preference not configured.",
-            code="CONFIG_ERROR",
+            error="CONFIG_ERROR",
         )
 
     # Resolve seller
@@ -125,13 +125,13 @@ def create_ad_impl(**kwargs):
     if not seller:
         return fail(
             "Unable to resolve seller account.",
-            code="CONFIG_ERROR",
+            error="CONFIG_ERROR",
         )
 
     if seller.status != "Active":
         return fail(
             "Your seller account is currently suspended.",
-            code="ACCOUNT_SUSPENDED",
+            error="ACCOUNT_SUSPENDED",
         )
 
     # Sanitize details
@@ -143,11 +143,11 @@ def create_ad_impl(**kwargs):
     if len(images_rows) > _MAX_IMAGES:
         return fail(
             f"Maximum {_MAX_IMAGES} images allowed.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if not images_rows:
-        return fail("At least one image is required.", code="VALIDATION_ERROR")
+        return fail("At least one image is required.", error="VALIDATION_ERROR")
 
     # Validate video media. New clients should pass `video_media`; `video` is
     # accepted only when it contains a media id for migration convenience.
@@ -177,10 +177,10 @@ def create_ad_impl(**kwargs):
         media_id = normalize_media_id(row.get("media") or row.get("media_id"))
 
         if not media_id:
-            return fail(f"Image media id is required on row {index}.", code="VALIDATION_ERROR")
+            return fail(f"Image media id is required on row {index}.", error="VALIDATION_ERROR")
 
         if media_id in seen_media:
-            return fail("Duplicate image selected.", code="VALIDATION_ERROR")
+            return fail("Duplicate image selected.", error="VALIDATION_ERROR")
 
         media_doc, e = validate_ad_media_for_use(
             media_id=media_id,
@@ -202,7 +202,7 @@ def create_ad_impl(**kwargs):
             primary_count += 1
 
     if primary_count != 1:
-        return fail("Exactly one primary image is required.", code="VALIDATION_ERROR")
+        return fail("Exactly one primary image is required.", error="VALIDATION_ERROR")
 
     # Pricing
     price_type = kwargs.get("price_type")
@@ -220,7 +220,7 @@ def create_ad_impl(**kwargs):
         except Exception:
             return fail(
                 "Invalid offer_start_date.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
     if offer_end_date:
@@ -229,20 +229,20 @@ def create_ad_impl(**kwargs):
         except Exception:
             return fail(
                 "Invalid offer_end_date.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
     if offer_price is not None and offer_price <= 0:
         return fail(
             "offer_price must be greater than 0.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if offer_start_date and offer_end_date:
         if offer_start_date > offer_end_date:
             return fail(
                 "offer_start_date cannot be greater than offer_end_date.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
     # Create Ad
@@ -358,7 +358,7 @@ def create_ad_impl(**kwargs):
 
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
 
@@ -371,5 +371,5 @@ def create_ad_impl(**kwargs):
 
         return fail(
             "Failed to create ad.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

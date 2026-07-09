@@ -92,10 +92,10 @@ def get_short_analytics_impl(**kwargs):
     try:
         short = _get_short_summary(short_id)
         if not short:
-            return fail("Short not found.", code="NOT_FOUND")
+            return fail("Short not found.", error="NOT_FOUND")
 
         if short.owner != user and not _is_staff(user):
-            return fail("Not allowed.", code="FORBIDDEN")
+            return fail("Not allowed.", error="FORBIDDEN")
 
         daily = _get_daily_rows(
             where_clause="m.short = %s AND m.date BETWEEN %s AND %s",
@@ -117,7 +117,7 @@ def get_short_analytics_impl(**kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "get_short_analytics failed")
-        return fail("Failed to fetch short analytics", code="INTERNAL_ERROR")
+        return fail("Failed to fetch short analytics", error="INTERNAL_ERROR")
 
 
 def my_shorts_analytics_impl(**kwargs):
@@ -153,10 +153,10 @@ def user_short_analytics_impl(**kwargs):
         return err
 
     if target_user != user and not _is_staff(user):
-        return fail("Not allowed.", code="FORBIDDEN")
+        return fail("Not allowed.", error="FORBIDDEN")
 
     if not frappe.db.exists("User", target_user):
-        return fail("User not found.", code="NOT_FOUND")
+        return fail("User not found.", error="NOT_FOUND")
 
     return _creator_analytics_response(
         viewer=user,
@@ -173,7 +173,7 @@ def general_short_analytics_impl(**kwargs):
         return err
 
     if not _is_staff(user):
-        return fail("Not allowed.", code="FORBIDDEN")
+        return fail("Not allowed.", error="FORBIDDEN")
 
     rl = rate_limit(
         key=f"aos:shorts:analytics:general:user:{user}",
@@ -236,7 +236,7 @@ def general_short_analytics_impl(**kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "general_short_analytics failed")
-        return fail("Failed to fetch general shorts analytics", code="INTERNAL_ERROR")
+        return fail("Failed to fetch general shorts analytics", error="INTERNAL_ERROR")
 
 
 # CREATOR ANALYTICS
@@ -309,7 +309,7 @@ def _creator_analytics_response(
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "creator short analytics failed")
-        return fail("Failed to fetch user shorts analytics", code="INTERNAL_ERROR")
+        return fail("Failed to fetch user shorts analytics", error="INTERNAL_ERROR")
 
 
 # DATE / ACCESS HELPERS
@@ -323,18 +323,18 @@ def _normalize_date_range(date_from=None, date_to=None):
             else add_days(normalized_to, -(ANALYTICS_DEFAULT_RANGE_DAYS - 1))
         )
     except Exception:
-        return None, None, fail("Invalid date range.", code="VALIDATION_ERROR")
+        return None, None, fail("Invalid date range.", error="VALIDATION_ERROR")
 
     if normalized_from > normalized_to:
         return None, None, fail(
             "date_from cannot be after date_to.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if date_diff(normalized_to, normalized_from) > ANALYTICS_MAX_RANGE_DAYS:
         return None, None, fail(
             f"Analytics range cannot exceed {ANALYTICS_MAX_RANGE_DAYS} days.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     return normalized_from, normalized_to, None

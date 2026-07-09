@@ -13,12 +13,12 @@ def delete_saved_search_impl(**kwargs):
 
     search_id = kwargs.get("id")
     if not search_id:
-        return fail("Search id required.", code="VALIDATION_ERROR")
+        return fail("Search id required.", error="VALIDATION_ERROR")
 
     doc = frappe.get_doc(_DT, search_id)
 
     if doc.user != user:
-        return fail("Forbidden.", code="FORBIDDEN")
+        return fail("Forbidden.", error="FORBIDDEN")
 
     doc.is_active = 0
     doc.save(ignore_permissions=True)

@@ -30,7 +30,7 @@ def resolve_country(value: str | None):
 
     return None, fail(
         "Invalid country.",
-        code="VALIDATION_ERROR",
+        error="VALIDATION_ERROR",
         data={"field": "country"},
     )
 
@@ -55,7 +55,7 @@ def resolve_language(value: str | None):
 
     return None, fail(
         "Invalid language.",
-        code="VALIDATION_ERROR",
+        error="VALIDATION_ERROR",
         data={"field": "language"},
     )
 
@@ -80,7 +80,7 @@ def resolve_currency(value: str | None):
 
     return None, fail(
         "Invalid currency.",
-        code="VALIDATION_ERROR",
+        error="VALIDATION_ERROR",
         data={"field": "currency"},
     )
 
@@ -103,14 +103,14 @@ def resolve_location(location: str | None, *, country: str | None = None):
     if not location_doc:
         return None, fail(
             "Invalid location.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
             data={"field": "location"},
         )
 
     if not location_doc.is_active:
         return None, fail(
             "Selected location is inactive.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
             data={"field": "location"},
         )
 
@@ -122,7 +122,7 @@ def resolve_location(location: str | None, *, country: str | None = None):
         if location_doc.country != country_name:
             return None, fail(
                 "Location does not belong to the selected country.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
                 data={"field": "location"},
             )
 
@@ -137,7 +137,7 @@ def require_id(value: str | None, field: str):
     if not value:
         return None, fail(
             f"{field} is required",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
             data={"field": field},
         )
 
@@ -155,7 +155,7 @@ def require_session_for_guest(session_id: str | None):
     if user == "Guest" and not session_id:
         return None, fail(
             "Session ID required for guest users",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
             data={"field": "session_id"},
         )
 
@@ -174,7 +174,7 @@ def normalize_watch_ms(watch_ms):
     except Exception:
         return None, fail(
             "Invalid watch time",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
             data={"field": "watch_ms"},
         )
 

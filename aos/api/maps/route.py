@@ -201,10 +201,10 @@ def _calculate_route_response(
         )
 
     except frappe.ValidationError as ex:
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except ValhallaClientError as ex:
-        return safe_fail_from_exception(ex, fallback="Map service is temporarily unavailable.", code="MAP_SERVICE_ERROR", log_title="AOS Map Service Error")
+        return safe_fail_from_exception(ex, fallback="Map service is temporarily unavailable.", error="MAP_SERVICE_ERROR", log_title="AOS Map Service Error")
 
     except Exception:
         frappe.log_error(
@@ -214,7 +214,7 @@ def _calculate_route_response(
 
         return fail(
             "Failed to calculate route.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 

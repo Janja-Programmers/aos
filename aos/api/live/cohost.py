@@ -558,7 +558,7 @@ def invite_live_cohost_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -569,7 +569,7 @@ def invite_live_cohost_impl(**kwargs):
 
         return fail(
             "Failed to invite co-host.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -723,7 +723,7 @@ def request_live_cohost_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -734,7 +734,7 @@ def request_live_cohost_impl(**kwargs):
 
         return fail(
             "Failed to request co-host access.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -772,7 +772,7 @@ def respond_live_cohost_impl(**kwargs):
     if action not in VALID_RESPONSE_ACTIONS:
         return fail(
             "action must be accept or reject.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     reason = _normalize_text(
@@ -819,7 +819,7 @@ def respond_live_cohost_impl(**kwargs):
 
             return fail(
                 "Co-host request has expired.",
-                code="EXPIRED",
+                error="EXPIRED",
             )
 
         err = validate_cohost_pending(
@@ -950,7 +950,7 @@ def respond_live_cohost_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -961,7 +961,7 @@ def respond_live_cohost_impl(**kwargs):
 
         return fail(
             "Failed to respond to co-host request.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -1035,7 +1035,7 @@ def cancel_live_cohost_impl(**kwargs):
         if cohost.status not in CANCELLABLE_STATUSES:
             return fail(
                 "This co-host workflow cannot be cancelled.",
-                code="INVALID_STATE",
+                error="INVALID_STATE",
             )
 
         err = validate_user_can_cancel_cohost(
@@ -1081,7 +1081,7 @@ def cancel_live_cohost_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -1092,7 +1092,7 @@ def cancel_live_cohost_impl(**kwargs):
 
         return fail(
             "Failed to cancel co-host workflow.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -1188,13 +1188,13 @@ def activate_live_cohost_impl(**kwargs):
         if not session_id:
             return fail(
                 "session_id is required.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         if cohost.session_id != session_id:
             return fail(
                 "Invalid co-host session.",
-                code="PERMISSION_DENIED",
+                error="PERMISSION_DENIED",
             )
 
         _, err = validate_user_is_cohost_candidate(
@@ -1284,7 +1284,7 @@ def activate_live_cohost_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -1295,7 +1295,7 @@ def activate_live_cohost_impl(**kwargs):
 
         return fail(
             "Failed to activate co-host session.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -1461,7 +1461,7 @@ def end_live_cohost_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -1472,7 +1472,7 @@ def end_live_cohost_impl(**kwargs):
 
         return fail(
             "Failed to end co-host session.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -1530,7 +1530,7 @@ def get_live_cohost_impl(**kwargs):
         if not is_authorized:
             return fail(
                 "You are not allowed to view this co-host workflow.",
-                code="PERMISSION_DENIED",
+                error="PERMISSION_DENIED",
             )
 
         if _is_pending_expired(
@@ -1553,7 +1553,7 @@ def get_live_cohost_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -1563,7 +1563,7 @@ def get_live_cohost_impl(**kwargs):
 
         return fail(
             "Failed to fetch co-host workflow.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -1604,7 +1604,7 @@ def list_live_cohosts_impl(**kwargs):
     ):
         return fail(
             "Invalid co-host status filter.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     try:
@@ -1663,7 +1663,7 @@ def list_live_cohosts_impl(**kwargs):
     except ValueError:
         return fail(
             "Invalid pagination values.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     except Exception:
@@ -1674,5 +1674,5 @@ def list_live_cohosts_impl(**kwargs):
 
         return fail(
             "Failed to fetch co-host workflows.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

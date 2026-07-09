@@ -79,7 +79,7 @@ def safe_fail_from_exception(
     exc: Exception,
     *,
     fallback: str,
-    code: str = "VALIDATION_ERROR",
+    error: str = "VALIDATION_ERROR",
     http_status: int | None = None,
     log_title: str | None = None,
 ):
@@ -92,6 +92,6 @@ def safe_fail_from_exception(
         log_exception(log_title)
     return fail(
         safe_exception_message(exc, fallback),
-        code=code,
+        error=error,
         http_status=http_status,
     )

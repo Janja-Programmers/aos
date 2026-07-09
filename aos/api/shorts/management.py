@@ -408,10 +408,10 @@ def get_short_impl(**kwargs):
 
         if not is_owner:
             if doc.status != "ready" or doc.visibility_status != "visible":
-                return fail("Short not available.", code="NOT_FOUND")
+                return fail("Short not available.", error="NOT_FOUND")
 
             if not can_view_short(doc, current_user=viewer):
-                return fail("Short not available.", code="NOT_FOUND")
+                return fail("Short not available.", error="NOT_FOUND")
 
         rows = frappe.db.sql(
             f"""
@@ -424,7 +424,7 @@ def get_short_impl(**kwargs):
         )
 
         if not rows:
-            return fail("Short not found.", code="NOT_FOUND")
+            return fail("Short not found.", error="NOT_FOUND")
 
         item = _serialize_rows_with_viewer_state(rows[:1], viewer=viewer)[0]
 
@@ -434,11 +434,11 @@ def get_short_impl(**kwargs):
         )
 
     except frappe.DoesNotExistError:
-        return fail("Short not found.", code="NOT_FOUND")
+        return fail("Short not found.", error="NOT_FOUND")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "get_short failed")
-        return fail("Failed to fetch short", code="INTERNAL_ERROR")
+        return fail("Failed to fetch short", error="INTERNAL_ERROR")
 
 
 # MY SHORTS
@@ -522,7 +522,7 @@ def my_shorts_impl(**kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "my_shorts failed")
-        return fail("Failed to fetch my shorts", code="INTERNAL_ERROR")
+        return fail("Failed to fetch my shorts", error="INTERNAL_ERROR")
 
 
 # USER SHORTS / PROFILE SHORTS
@@ -551,7 +551,7 @@ def user_shorts_impl(**kwargs):
         return err
 
     if not frappe.db.exists("User", target_user):
-        return fail("User not found.", code="NOT_FOUND")
+        return fail("User not found.", error="NOT_FOUND")
 
     viewer = _get_optional_viewer()
     is_owner = bool(viewer and viewer == target_user)
@@ -646,7 +646,7 @@ def user_shorts_impl(**kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "user_shorts failed")
-        return fail("Failed to fetch user shorts", code="INTERNAL_ERROR")
+        return fail("Failed to fetch user shorts", error="INTERNAL_ERROR")
 
 
 # DELETE SHORT (SOFT)
@@ -663,7 +663,7 @@ def delete_short_impl(**kwargs):
         doc = frappe.get_doc("AOS Short", short_id)
 
         if doc.owner != user:
-            return fail("Not allowed.", code="FORBIDDEN")
+            return fail("Not allowed.", error="FORBIDDEN")
 
         doc.visibility_status = "deleted"
         doc.status = "deleted"
@@ -676,12 +676,12 @@ def delete_short_impl(**kwargs):
         )
 
     except frappe.DoesNotExistError:
-        return fail("Short not found.", code="NOT_FOUND")
+        return fail("Short not found.", error="NOT_FOUND")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "delete_short failed")
         frappe.db.rollback()
-        return fail("Failed to delete short", code="INTERNAL_ERROR")
+        return fail("Failed to delete short", error="INTERNAL_ERROR")
 
 
 # RETRY PROCESSING
@@ -698,12 +698,12 @@ def retry_processing_impl(**kwargs):
         doc = frappe.get_doc("AOS Short", short_id)
 
         if doc.owner != user:
-            return fail("Not allowed.", code="FORBIDDEN")
+            return fail("Not allowed.", error="FORBIDDEN")
 
         if doc.status != "failed":
             return fail(
                 "Only failed shorts can be retried.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         # Reset state
@@ -725,9 +725,9 @@ def retry_processing_impl(**kwargs):
         )
 
     except frappe.DoesNotExistError:
-        return fail("Short not found.", code="NOT_FOUND")
+        return fail("Short not found.", error="NOT_FOUND")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "retry_processing failed")
         frappe.db.rollback()
-        return fail("Failed to retry processing", code="INTERNAL_ERROR")
+        return fail("Failed to retry processing", error="INTERNAL_ERROR")

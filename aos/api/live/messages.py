@@ -202,7 +202,7 @@ def _get_live_message(
     if not message:
         return None, fail(
             "Live message not found.",
-            code="NOT_FOUND",
+            error="NOT_FOUND",
         )
 
     return message, None
@@ -215,7 +215,7 @@ def _validate_comment_message(
     if message.message_kind != COMMENT_KIND:
         return fail(
             "Only comment messages can be used for this action.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if message.message_type not in {
@@ -224,7 +224,7 @@ def _validate_comment_message(
     }:
         return fail(
             "Invalid comment message type.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     return None
@@ -236,7 +236,7 @@ def _validate_message_active(
     if message.status != ACTIVE_STATUS:
         return fail(
             "Live message is not active.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     return None
@@ -249,7 +249,7 @@ def _validate_message_belongs_to_live(
     if message.live_stream != live_id:
         return fail(
             "Live message does not belong to this live stream.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     return None
@@ -270,7 +270,7 @@ def _validate_user_can_delete_message(
     if message.message_kind != COMMENT_KIND:
         return fail(
             "Only viewer comments can be deleted through this endpoint.",
-            code="FORBIDDEN",
+            error="FORBIDDEN",
         )
 
     if message.user == user:
@@ -281,7 +281,7 @@ def _validate_user_can_delete_message(
 
     return fail(
         "You are not allowed to delete this comment.",
-        code="FORBIDDEN",
+        error="FORBIDDEN",
     )
 
 
@@ -588,7 +588,7 @@ def add_live_message_impl(**kwargs):
     if not content:
         return fail(
             "content is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     try:
@@ -644,7 +644,7 @@ def add_live_message_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -655,7 +655,7 @@ def add_live_message_impl(**kwargs):
 
         return fail(
             "Failed to add message.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -699,7 +699,7 @@ def reply_live_message_impl(**kwargs):
     if not content:
         return fail(
             "content is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     try:
@@ -782,7 +782,7 @@ def reply_live_message_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -793,7 +793,7 @@ def reply_live_message_impl(**kwargs):
 
         return fail(
             "Failed to add reply.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -880,7 +880,7 @@ def list_live_messages_impl(**kwargs):
     except ValueError:
         return fail(
             "Invalid pagination values.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     except Exception:
@@ -891,7 +891,7 @@ def list_live_messages_impl(**kwargs):
 
         return fail(
             "Failed to fetch live messages.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -975,7 +975,7 @@ def list_live_replies_impl(**kwargs):
     except ValueError:
         return fail(
             "Invalid pagination values.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     except Exception:
@@ -986,7 +986,7 @@ def list_live_replies_impl(**kwargs):
 
         return fail(
             "Failed to fetch live replies.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -1243,7 +1243,7 @@ def delete_live_message_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -1254,5 +1254,5 @@ def delete_live_message_impl(**kwargs):
 
         return fail(
             "Failed to delete message.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

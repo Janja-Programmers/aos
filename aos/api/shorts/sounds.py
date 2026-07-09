@@ -94,11 +94,11 @@ def _normalize_bool(value, *, default: int = 0) -> int:
 
 def _media_error_response(exc: Exception):
     if isinstance(exc, MediaNotFoundError):
-        return safe_fail_from_exception(exc, fallback="Media not found.", code="NOT_FOUND")
+        return safe_fail_from_exception(exc, fallback="Media not found.", error="NOT_FOUND")
     if isinstance(exc, MediaPermissionError):
-        return safe_fail_from_exception(exc, fallback="Not allowed.", code="FORBIDDEN")
+        return safe_fail_from_exception(exc, fallback="Not allowed.", error="FORBIDDEN")
     if isinstance(exc, MediaValidationError):
-        return safe_fail_from_exception(exc, fallback="Invalid media.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(exc, fallback="Invalid media.", error="VALIDATION_ERROR")
     return None
 
 
@@ -174,13 +174,13 @@ def validate_existing_short_sound_for_mode(*, short_id: str, content_mode: str):
     if sound.get("status") != "active":
         return fail(
             "Shop shorts can only use active commercial-safe sounds.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if not int(sound.get("is_commercial_safe") or 0):
         return fail(
             "Shop shorts can only use commercial-safe sounds.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     return None
@@ -318,10 +318,10 @@ def _validate_sound_for_short(*, short: Any, sound_id: str):
         as_dict=True,
     )
     if not sound:
-        return None, fail("Sound not found.", code="NOT_FOUND")
+        return None, fail("Sound not found.", error="NOT_FOUND")
 
     if sound.status != "active":
-        return None, fail("Sound is not active.", code="VALIDATION_ERROR")
+        return None, fail("Sound is not active.", error="VALIDATION_ERROR")
 
     content_mode = getattr(short, "content_mode", None)
     if isinstance(short, dict):
@@ -330,7 +330,7 @@ def _validate_sound_for_short(*, short: Any, sound_id: str):
     if content_mode == SHORT_CONTENT_MODE_SHOP and not int(sound.is_commercial_safe or 0):
         return None, fail(
             "Shop shorts can only use commercial-safe sounds.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     return sound, None
@@ -480,7 +480,7 @@ def create_sound_impl(**kwargs):
 
     staff = _is_staff(user)
     if source_type in {SOUND_SOURCE_TYPE_LIBRARY, SOUND_SOURCE_TYPE_COMMERCIAL} and not staff:
-        return fail("Only staff can create library/commercial sounds.", code="FORBIDDEN")
+        return fail("Only staff can create library/commercial sounds.", error="FORBIDDEN")
 
     is_commercial_safe = _normalize_bool(kwargs.get("is_commercial_safe"), default=0)
     if source_type == SOUND_SOURCE_TYPE_COMMERCIAL:
@@ -497,14 +497,14 @@ def create_sound_impl(**kwargs):
             media_err = _media_error_response(exc)
             if media_err:
                 return media_err
-            return fail("Upload not completed or file missing.", code="FILE_MISSING")
+            return fail("Upload not completed or file missing.", error="FILE_MISSING")
 
         if media_doc.purpose != "sound_upload":
-            return fail("Sound media has the wrong purpose.", code="VALIDATION_ERROR")
+            return fail("Sound media has the wrong purpose.", error="VALIDATION_ERROR")
         if media_doc.visibility != "Public":
-            return fail("Sound media must be public.", code="VALIDATION_ERROR")
+            return fail("Sound media must be public.", error="VALIDATION_ERROR")
         if media_doc.status != "Uploaded":
-            return fail("Sound media must be uploaded before creating a sound.", code="VALIDATION_ERROR")
+            return fail("Sound media must be uploaded before creating a sound.", error="VALIDATION_ERROR")
 
         file_key = media_doc.object_key
         file_url = media_doc.public_url or media_service.get_url(media_id=media_doc.name, user=user)
@@ -562,11 +562,11 @@ def create_sound_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
     except Exception:
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "create_sound failed")
-        return fail("Failed to create sound.", code="INTERNAL_ERROR")
+        return fail("Failed to create sound.", error="INTERNAL_ERROR")
 
 
 # SOUND BROWSING
@@ -636,7 +636,7 @@ def list_sounds_impl(**kwargs):
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "list_sounds failed")
-        return fail("Failed to fetch sounds", code="INTERNAL_ERROR")
+        return fail("Failed to fetch sounds", error="INTERNAL_ERROR")
 
 
 def search_sounds_impl(**kwargs):
@@ -651,7 +651,7 @@ def search_sounds_impl(**kwargs):
 
     q = str(kwargs.get("q") or kwargs.get("query") or "").strip()
     if not q:
-        return fail("Search query is required.", code="VALIDATION_ERROR")
+        return fail("Search query is required.", error="VALIDATION_ERROR")
 
     viewer = _get_optional_viewer()
     limit = validate_limit(kwargs.get("limit"), SOUND_DEFAULT_LIMIT, SOUND_MAX_LIMIT)
@@ -676,7 +676,7 @@ def search_sounds_impl(**kwargs):
         return ok("Sounds fetched.", data={"items": _serialize_sound_rows(rows, viewer=viewer)})
     except Exception:
         frappe.log_error(frappe.get_traceback(), "search_sounds failed")
-        return fail("Failed to search sounds", code="INTERNAL_ERROR")
+        return fail("Failed to search sounds", error="INTERNAL_ERROR")
 
 
 def get_sound_impl(**kwargs):
@@ -708,13 +708,13 @@ def get_sound_impl(**kwargs):
             as_dict=True,
         )
         if not row or row.status != "active":
-            return fail("Sound not found.", code="NOT_FOUND")
+            return fail("Sound not found.", error="NOT_FOUND")
 
         favorites = _load_favorite_sound_ids(viewer, [sound_id])
         return ok("Sound fetched.", data={"sound": serialize_sound_row(row, viewer=viewer, favorited_sound_ids=favorites)})
     except Exception:
         frappe.log_error(frappe.get_traceback(), "get_sound failed")
-        return fail("Failed to fetch sound", code="INTERNAL_ERROR")
+        return fail("Failed to fetch sound", error="INTERNAL_ERROR")
 
 
 def favorite_sound_impl(**kwargs):
@@ -738,7 +738,7 @@ def favorite_sound_impl(**kwargs):
     try:
         sound = frappe.db.get_value("AOS Sound", sound_id, ["name", "status"], as_dict=True)
         if not sound or sound.status != "active":
-            return fail("Sound not found.", code="NOT_FOUND")
+            return fail("Sound not found.", error="NOT_FOUND")
 
         existing = frappe.get_all(
             "AOS Sound Favorite",
@@ -772,11 +772,11 @@ def favorite_sound_impl(**kwargs):
         )
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
     except Exception:
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "favorite_sound failed")
-        return fail("Failed to toggle favorite sound", code="INTERNAL_ERROR")
+        return fail("Failed to toggle favorite sound", error="INTERNAL_ERROR")
 
 
 def my_favorite_sounds_impl(**kwargs):
@@ -833,7 +833,7 @@ def my_favorite_sounds_impl(**kwargs):
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "my_favorite_sounds failed")
-        return fail("Failed to fetch favorite sounds", code="INTERNAL_ERROR")
+        return fail("Failed to fetch favorite sounds", error="INTERNAL_ERROR")
 
 
 def sound_shorts_impl(**kwargs):
@@ -850,7 +850,7 @@ def sound_shorts_impl(**kwargs):
     viewer = _get_optional_viewer()
 
     if not frappe.db.exists("AOS Sound", {"name": sound_id, "status": "active"}):
-        return fail("Sound not found.", code="NOT_FOUND")
+        return fail("Sound not found.", error="NOT_FOUND")
 
     where_cursor, params_cursor = build_cursor_where_clause(
         created_field="s.creation",
@@ -909,7 +909,7 @@ def sound_shorts_impl(**kwargs):
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "sound_shorts failed")
-        return fail("Failed to fetch sound shorts", code="INTERNAL_ERROR")
+        return fail("Failed to fetch sound shorts", error="INTERNAL_ERROR")
 
 
 # SHORT SOUND LINKING
@@ -939,10 +939,10 @@ def change_short_sound_impl(**kwargs):
     try:
         short = frappe.get_doc("AOS Short", short_id)
         if short.owner != user:
-            return fail("Not allowed.", code="FORBIDDEN")
+            return fail("Not allowed.", error="FORBIDDEN")
 
         if short.status == "deleted" or short.visibility_status == "deleted":
-            return fail("Cannot change sound on a deleted short.", code="VALIDATION_ERROR")
+            return fail("Cannot change sound on a deleted short.", error="VALIDATION_ERROR")
 
         sound = set_short_sound(
             short_id=short_id,
@@ -963,13 +963,13 @@ def change_short_sound_impl(**kwargs):
         )
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
     except frappe.DoesNotExistError:
-        return fail("Short not found.", code="NOT_FOUND")
+        return fail("Short not found.", error="NOT_FOUND")
     except Exception:
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "change_short_sound failed")
-        return fail("Failed to change short sound", code="INTERNAL_ERROR")
+        return fail("Failed to change short sound", error="INTERNAL_ERROR")
 
 
 def remove_short_sound_impl(**kwargs):
@@ -984,10 +984,10 @@ def remove_short_sound_impl(**kwargs):
     try:
         short = frappe.get_doc("AOS Short", short_id)
         if short.owner != user:
-            return fail("Not allowed.", code="FORBIDDEN")
+            return fail("Not allowed.", error="FORBIDDEN")
 
         if short.status == "deleted" or short.visibility_status == "deleted":
-            return fail("Cannot remove sound from a deleted short.", code="VALIDATION_ERROR")
+            return fail("Cannot remove sound from a deleted short.", error="VALIDATION_ERROR")
 
         remove_short_sound_link(short_id)
         frappe.db.commit()
@@ -1001,8 +1001,8 @@ def remove_short_sound_impl(**kwargs):
             },
         )
     except frappe.DoesNotExistError:
-        return fail("Short not found.", code="NOT_FOUND")
+        return fail("Short not found.", error="NOT_FOUND")
     except Exception:
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "remove_short_sound failed")
-        return fail("Failed to remove short sound", code="INTERNAL_ERROR")
+        return fail("Failed to remove short sound", error="INTERNAL_ERROR")

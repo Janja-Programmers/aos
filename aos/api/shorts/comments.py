@@ -110,21 +110,21 @@ def _ensure_commentable_short(
     )
 
     if not short:
-        return None, fail("Short not found.", code="NOT_FOUND")
+        return None, fail("Short not found.", error="NOT_FOUND")
 
     is_owner = bool(viewer and short.owner == viewer)
 
     if not is_owner:
         if short.status != "ready" or short.visibility_status != "visible":
-            return None, fail("Short not available.", code="NOT_FOUND")
+            return None, fail("Short not available.", error="NOT_FOUND")
 
         if not can_view_short(short, current_user=viewer):
-            return None, fail("Short not available.", code="NOT_FOUND")
+            return None, fail("Short not available.", error="NOT_FOUND")
 
     if require_comments_allowed and not cint(short.allow_comments):
         return None, fail(
             "Comments are disabled for this short.",
-            code="COMMENTS_DISABLED",
+            error="COMMENTS_DISABLED",
         )
 
     return short, None
@@ -147,10 +147,10 @@ def _ensure_active_comment(
     )
 
     if not comment:
-        return None, None, fail("Comment not found.", code="NOT_FOUND")
+        return None, None, fail("Comment not found.", error="NOT_FOUND")
 
     if comment.status != "active":
-        return None, None, fail("Comment not available.", code="NOT_FOUND")
+        return None, None, fail("Comment not available.", error="NOT_FOUND")
 
     short, err = _ensure_commentable_short(
         comment.short,
@@ -376,12 +376,12 @@ def add_comment_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "add_comment failed")
         frappe.db.rollback()
-        return fail("Failed to add comment", code="INTERNAL_ERROR")
+        return fail("Failed to add comment", error="INTERNAL_ERROR")
 
 
 # REPLY COMMENT
@@ -414,7 +414,7 @@ def reply_comment_impl(**kwargs):
         parent = frappe.get_doc("AOS Short Comment", parent_comment_id)
 
         if parent.status != "active":
-            return fail("Comment not available.", code="NOT_FOUND")
+            return fail("Comment not available.", error="NOT_FOUND")
 
         short, err = _ensure_commentable_short(
             parent.short,
@@ -490,16 +490,16 @@ def reply_comment_impl(**kwargs):
         )
 
     except frappe.DoesNotExistError:
-        return fail("Comment not found.", code="NOT_FOUND")
+        return fail("Comment not found.", error="NOT_FOUND")
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "reply_comment failed")
         frappe.db.rollback()
-        return fail("Failed to reply", code="INTERNAL_ERROR")
+        return fail("Failed to reply", error="INTERNAL_ERROR")
 
 
 # TOGGLE COMMENT LIKE
@@ -613,10 +613,10 @@ def toggle_comment_like_impl(**kwargs):
             )
 
         if isinstance(ex, frappe.ValidationError):
-            return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+            return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
         frappe.log_error(frappe.get_traceback(), "toggle_comment_like failed")
-        return fail("Failed to toggle comment like", code="INTERNAL_ERROR")
+        return fail("Failed to toggle comment like", error="INTERNAL_ERROR")
 
 
 # LIST COMMENTS (TOP LEVEL)
@@ -725,7 +725,7 @@ def list_comments_impl(**kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "list_comments failed")
-        return fail("Failed to fetch comments", code="INTERNAL_ERROR")
+        return fail("Failed to fetch comments", error="INTERNAL_ERROR")
 
 
 # LIST REPLIES
@@ -762,7 +762,7 @@ def list_replies_impl(**kwargs):
         )
 
         if not root or root.status != "active":
-            return fail("Comment not found.", code="NOT_FOUND")
+            return fail("Comment not found.", error="NOT_FOUND")
 
         viewer = _get_optional_viewer()
 
@@ -847,7 +847,7 @@ def list_replies_impl(**kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "list_replies failed")
-        return fail("Failed to fetch replies", code="INTERNAL_ERROR")
+        return fail("Failed to fetch replies", error="INTERNAL_ERROR")
 
 
 # DELETE COMMENT (SOFT + CASCADE)
@@ -864,13 +864,13 @@ def delete_comment_impl(**kwargs):
         doc = frappe.get_doc("AOS Short Comment", comment_id)
 
         if doc.status != "active":
-            return fail("Comment not found.", code="NOT_FOUND")
+            return fail("Comment not found.", error="NOT_FOUND")
 
         short_owner = _get_short_owner(doc.short)
 
         # Comment owner OR short owner can delete.
         if doc.user != user and short_owner != user:
-            return fail("Not allowed.", code="FORBIDDEN")
+            return fail("Not allowed.", error="FORBIDDEN")
 
         short_id = doc.short
 
@@ -933,9 +933,9 @@ def delete_comment_impl(**kwargs):
         )
 
     except frappe.DoesNotExistError:
-        return fail("Comment not found.", code="NOT_FOUND")
+        return fail("Comment not found.", error="NOT_FOUND")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "delete_comment failed")
         frappe.db.rollback()
-        return fail("Failed to delete comment", code="INTERNAL_ERROR")
+        return fail("Failed to delete comment", error="INTERNAL_ERROR")

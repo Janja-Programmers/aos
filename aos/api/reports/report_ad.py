@@ -30,10 +30,10 @@ def report_ad_impl(**kwargs):
     details = kwargs.get("details")
 
     if not ad:
-        return fail("Ad is required.", code="VALIDATION_ERROR")
+        return fail("Ad is required.", error="VALIDATION_ERROR")
 
     if not reason:
-        return fail("Reason is required.", code="VALIDATION_ERROR")
+        return fail("Reason is required.", error="VALIDATION_ERROR")
 
     ad_doc = frappe.db.get_value(
         "AOS Ad",
@@ -43,16 +43,16 @@ def report_ad_impl(**kwargs):
     )
 
     if not ad_doc:
-        return fail("Ad not found.", code="NOT_FOUND")
+        return fail("Ad not found.", error="NOT_FOUND")
 
     if ad_doc.status in ("Deleted", "Suspended"):
-        return fail("Ad not available.", code="NOT_FOUND")
+        return fail("Ad not available.", error="NOT_FOUND")
 
     # Prevent reporting own ad
     seller_user = frappe.db.get_value("AOS Seller", ad_doc.seller, "user")
 
     if seller_user == current_user:
-        return fail("You cannot report your own ad.", code="VALIDATION_ERROR")
+        return fail("You cannot report your own ad.", error="VALIDATION_ERROR")
 
     # Prevent duplicate report
     if frappe.db.exists(
@@ -62,7 +62,7 @@ def report_ad_impl(**kwargs):
             "reported_by": current_user,
         },
     ):
-        return fail("You have already reported this ad.", code="VALIDATION_ERROR")
+        return fail("You have already reported this ad.", error="VALIDATION_ERROR")
 
     try:
         report = frappe.new_doc("AOS Ad Report")
@@ -87,8 +87,8 @@ def report_ad_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Create Report Failed")
-        return fail("Failed to submit report.", code="INTERNAL_ERROR")
+        return fail("Failed to submit report.", error="INTERNAL_ERROR")

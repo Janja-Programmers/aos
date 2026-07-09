@@ -31,7 +31,7 @@ def _validate_limit(value):
     limit = _to_int(value, DEFAULT_ACTIVITY_LIMIT)
 
     if limit <= 0:
-        return None, fail("Limit must be greater than zero.", code="VALIDATION_ERROR")
+        return None, fail("Limit must be greater than zero.", error="VALIDATION_ERROR")
 
     if limit > MAX_ACTIVITY_LIMIT:
         limit = MAX_ACTIVITY_LIMIT
@@ -51,7 +51,7 @@ def _normalize_group(value: str | None):
         return None, None
 
     if len(value) > ACTIVITY_GROUP_MAX_LEN:
-        return None, fail("Activity group is too long.", code="VALIDATION_ERROR")
+        return None, fail("Activity group is too long.", error="VALIDATION_ERROR")
 
     return ActivityService.normalize_group(value), None
 
@@ -63,7 +63,7 @@ def _normalize_type(value: str | None):
         return None, None
 
     if len(value) > ACTIVITY_TYPE_MAX_LEN:
-        return None, fail("Activity type is too long.", code="VALIDATION_ERROR")
+        return None, fail("Activity type is too long.", error="VALIDATION_ERROR")
 
     return ActivityService.normalize_type(value), None
 
@@ -162,7 +162,7 @@ def list_activity_impl(**kwargs):
             frappe.get_traceback(),
             "AOS List Activity Failed",
         )
-        return fail("Failed to fetch activity.", code="INTERNAL_ERROR")
+        return fail("Failed to fetch activity.", error="INTERNAL_ERROR")
 
 
 def hide_activity_impl(**kwargs):
@@ -182,7 +182,7 @@ def hide_activity_impl(**kwargs):
 
     activity_id = (kwargs.get("activity_id") or kwargs.get("id") or "").strip()
     if not activity_id:
-        return fail("Activity ID is required.", code="VALIDATION_ERROR")
+        return fail("Activity ID is required.", error="VALIDATION_ERROR")
 
     try:
         hidden = ActivityService.hide_activity(
@@ -191,7 +191,7 @@ def hide_activity_impl(**kwargs):
         )
 
         if not hidden:
-            return fail("Activity not found.", code="NOT_FOUND")
+            return fail("Activity not found.", error="NOT_FOUND")
 
         frappe.db.commit()
         return ok("Activity hidden.", data={"id": activity_id})
@@ -202,7 +202,7 @@ def hide_activity_impl(**kwargs):
             "AOS Hide Activity Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to hide activity.", code="INTERNAL_ERROR")
+        return fail("Failed to hide activity.", error="INTERNAL_ERROR")
 
 
 def clear_activity_impl(**kwargs):
@@ -256,4 +256,4 @@ def clear_activity_impl(**kwargs):
             "AOS Clear Activity Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to clear activity.", code="INTERNAL_ERROR")
+        return fail("Failed to clear activity.", error="INTERNAL_ERROR")

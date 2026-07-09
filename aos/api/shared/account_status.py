@@ -1,7 +1,7 @@
 """Shared account-status helpers.
 
 AOS uses recoverable soft deletion:
-- User.enabled blocks login.
+- User.enabled blocks login/session use.
 - AOS Profile.account_status / is_deleted stores app-level account state.
 """
 
@@ -40,7 +40,8 @@ def _select_existing_profile_fields(fieldnames: list[str]) -> list[str]:
 def get_account_state(user: str) -> dict[str, Any]:
     """Return soft-delete/account-status state for a user.
 
-    Missing status fields are treated as an active legacy account.
+    Missing status fields are treated as active so existing account rows can
+    be repaired by the auth bootstrap path rather than being locked out forever.
     """
     user = (user or "").strip()
 
@@ -49,6 +50,7 @@ def get_account_state(user: str) -> dict[str, Any]:
             "exists": False,
             "account_status": ACCOUNT_STATUS_ACTIVE,
             "is_deleted": False,
+            "is_suspended": False,
             "can_restore": False,
             "restore_deadline": None,
         }
@@ -58,6 +60,7 @@ def get_account_state(user: str) -> dict[str, Any]:
             "exists": False,
             "account_status": ACCOUNT_STATUS_ACTIVE,
             "is_deleted": False,
+            "is_suspended": False,
             "can_restore": False,
             "restore_deadline": None,
         }
@@ -77,6 +80,7 @@ def get_account_state(user: str) -> dict[str, Any]:
             "exists": True,
             "account_status": ACCOUNT_STATUS_ACTIVE,
             "is_deleted": False,
+            "is_suspended": False,
             "can_restore": False,
             "restore_deadline": None,
         }
@@ -90,6 +94,7 @@ def get_account_state(user: str) -> dict[str, Any]:
 
     status = profile.get("account_status") or ACCOUNT_STATUS_ACTIVE
     is_deleted = bool(int(profile.get("is_deleted") or 0)) or status == ACCOUNT_STATUS_DELETED
+    is_suspended = status == ACCOUNT_STATUS_SUSPENDED
     restore_deadline = profile.get("restore_deadline")
 
     can_restore = bool(is_deleted)
@@ -100,6 +105,7 @@ def get_account_state(user: str) -> dict[str, Any]:
         "exists": True,
         "account_status": status,
         "is_deleted": is_deleted,
+        "is_suspended": is_suspended,
         "can_restore": can_restore,
         "restore_deadline": restore_deadline,
         "deleted_at": profile.get("deleted_at"),
@@ -121,17 +127,20 @@ def deleted_account_response(*, restorable: bool | None = None):
 
     return fail(
         DELETED_ACCOUNT_MESSAGE,
-        code="ACCOUNT_DELETED_RESTORABLE" if can_restore else "ACCOUNT_DELETED",
+        error="ACCOUNT_DELETED_RESTORABLE" if can_restore else "ACCOUNT_DELETED",
         data={"can_restore": can_restore},
         http_status=403,
     )
 
 
 def ensure_account_active(user: str):
-    """Return fail response if account is deleted/blocked, else None."""
+    """Return fail response if account is deleted/suspended, else None."""
     state = get_account_state(user)
 
     if state.get("is_deleted"):
         return deleted_account_response(restorable=bool(state.get("can_restore")))
+
+    if state.get("is_suspended"):
+        return fail("Account suspended.", error="ACCOUNT_SUSPENDED", http_status=403)
 
     return None

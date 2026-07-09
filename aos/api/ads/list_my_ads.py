@@ -158,4 +158,4 @@ def list_my_ads_impl(**kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS My Ads Failed")
-        return fail("Failed to fetch ads.", code="INTERNAL_ERROR")
+        return fail("Failed to fetch ads.", error="INTERNAL_ERROR")

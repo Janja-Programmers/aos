@@ -121,10 +121,10 @@ def _validate_conversation_membership(
     )
 
     if not conv:
-        return fail("Conversation not found.", code="NOT_FOUND")
+        return fail("Conversation not found.", error="NOT_FOUND")
 
     if current_user not in (conv.participant_1, conv.participant_2):
-        return fail("Not allowed.", code="PERMISSION_DENIED")
+        return fail("Not allowed.", error="PERMISSION_DENIED")
 
     return None
 
@@ -559,13 +559,13 @@ def _validate_group_boundary_call(
     call = _fetch_call_by_id(call_id)
 
     if not call:
-        return None, fail(f"{label} call not found.", code="NOT_FOUND")
+        return None, fail(f"{label} call not found.", error="NOT_FOUND")
 
     if not _user_in_call(call, current_user):
-        return None, fail("Not allowed.", code="PERMISSION_DENIED")
+        return None, fail("Not allowed.", error="PERMISSION_DENIED")
 
     if not _user_can_see_call(call, current_user):
-        return None, fail(f"{label} call not found.", code="NOT_FOUND")
+        return None, fail(f"{label} call not found.", error="NOT_FOUND")
 
     return call, None
 
@@ -745,12 +745,12 @@ def list_calls_impl(**kwargs):
 
     # Validate filter type
     if filter_type not in ("all", "incoming", "outgoing", "missed"):
-        return fail("Invalid type.", code="VALIDATION_ERROR")
+        return fail("Invalid type.", error="VALIDATION_ERROR")
 
     if bool(cursor_created_at) != bool(cursor_name):
         return fail(
             "cursor_created_at and cursor_name must be provided together.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     try:
@@ -784,7 +784,7 @@ def list_calls_impl(**kwargs):
             frappe.get_traceback(),
             "AOS List Calls Failed",
         )
-        return fail("Failed to fetch calls.", code="INTERNAL_ERROR")
+        return fail("Failed to fetch calls.", error="INTERNAL_ERROR")
 
 
 # GET CALL GROUP DETAILS
@@ -806,10 +806,10 @@ def get_call_group_details_impl(**kwargs):
     oldest_call_id = _clean_str(kwargs.get("oldest_call_id"))
 
     if not latest_call_id:
-        return fail("latest_call_id is required.", code="VALIDATION_ERROR")
+        return fail("latest_call_id is required.", error="VALIDATION_ERROR")
 
     if not oldest_call_id:
-        return fail("oldest_call_id is required.", code="VALIDATION_ERROR")
+        return fail("oldest_call_id is required.", error="VALIDATION_ERROR")
 
     try:
         latest_call, err = _validate_group_boundary_call(
@@ -834,7 +834,7 @@ def get_call_group_details_impl(**kwargs):
         expected_key = _group_compare_key(latest_serialized)
 
         if expected_key != _group_compare_key(oldest_serialized):
-            return fail("Invalid call group.", code="VALIDATION_ERROR")
+            return fail("Invalid call group.", error="VALIDATION_ERROR")
 
         rows = _fetch_calls_between_boundaries(
             current_user=current_user,
@@ -856,13 +856,13 @@ def get_call_group_details_impl(**kwargs):
                 break
 
         if not calls:
-            return fail("Invalid call group.", code="VALIDATION_ERROR")
+            return fail("Invalid call group.", error="VALIDATION_ERROR")
 
         if calls[0].get("call_id") != latest_call_id:
-            return fail("Invalid call group boundary.", code="VALIDATION_ERROR")
+            return fail("Invalid call group boundary.", error="VALIDATION_ERROR")
 
         if calls[-1].get("call_id") != oldest_call_id:
-            return fail("Invalid call group boundary.", code="VALIDATION_ERROR")
+            return fail("Invalid call group boundary.", error="VALIDATION_ERROR")
 
         latest = calls[0]
 
@@ -895,7 +895,7 @@ def get_call_group_details_impl(**kwargs):
             frappe.get_traceback(),
             "AOS Get Call Group Details Failed",
         )
-        return fail("Failed to fetch call group.", code="INTERNAL_ERROR")
+        return fail("Failed to fetch call group.", error="INTERNAL_ERROR")
 
 
 # DELETE CALL LOGS
@@ -916,12 +916,12 @@ def delete_call_logs_impl(**kwargs):
     call_ids = _normalize_call_ids(kwargs.get("call_ids"))
 
     if not call_ids:
-        return fail("call_ids is required.", code="VALIDATION_ERROR")
+        return fail("call_ids is required.", error="VALIDATION_ERROR")
 
     if len(call_ids) > MAX_DELETE_CALL_LOGS_BATCH_SIZE:
         return fail(
             f"You can delete at most {MAX_DELETE_CALL_LOGS_BATCH_SIZE} call logs at once.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     try:
@@ -945,7 +945,7 @@ def delete_call_logs_impl(**kwargs):
             "AOS Delete Call Logs Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to delete call logs.", code="INTERNAL_ERROR")
+        return fail("Failed to delete call logs.", error="INTERNAL_ERROR")
 
 
 # CLEAR CALL HISTORY
@@ -983,4 +983,4 @@ def clear_call_history_impl(**kwargs):
             "AOS Clear Call History Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to clear call history.", code="INTERNAL_ERROR")
+        return fail("Failed to clear call history.", error="INTERNAL_ERROR")

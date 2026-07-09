@@ -6,7 +6,7 @@ from aos.api.shared.account_status import (
     deleted_account_response,
     is_account_deleted,
 )
-from aos.api.shared.rate_limit import rate_limit, request_ip
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
 from aos.api.shared.responses import ok, fail
 
 from .constants import (
@@ -15,7 +15,7 @@ from .constants import (
     FORGOT_RESET_LIMIT_PER_HOUR_PER_EMAIL,
 )
 
-from .validators import normalize_email, validate_password_strength
+from .validators import normalize_email, validate_email, validate_password_strength
 
 from .verification import (
     compute_reset_token_expiry,
@@ -44,12 +44,13 @@ def _deleted_account_block(user_name: str):
 def forgot_password_request_impl(**kwargs):
     email = normalize_email(kwargs.get("email") or "")
 
-    if not email:
-        return fail("Email is required.", code="VALIDATION_ERROR")
+    email_err = validate_email(email)
+    if email_err:
+        return email_err
 
     # Rate limit by email
     rl = rate_limit(
-        key=f"aos:fp:req:email:{email}",
+        key=rate_limit_key("auth", "forgot_password_request", "identifier", email or "blank"),
         ttl_seconds=60 * 60,
         limit=FORGOT_REQUEST_LIMIT_PER_HOUR_PER_EMAIL,
         message="Too many requests. Please try again later.",
@@ -59,7 +60,7 @@ def forgot_password_request_impl(**kwargs):
 
     # Rate limit by IP
     rl2 = rate_limit(
-        key=f"aos:fp:req:ip:{request_ip()}",
+        key=rate_limit_key("auth", "forgot_password_request", "ip", request_ip()),
         ttl_seconds=60 * 60,
         limit=FORGOT_REQUEST_LIMIT_PER_HOUR_PER_EMAIL,
         message="Too many requests. Please try again later.",
@@ -107,7 +108,7 @@ def forgot_password_verify_otp_impl(**kwargs):
     otp = (kwargs.get("otp") or "").strip()
 
     rl = rate_limit(
-        key=f"aos:fp:verify:email:{email}",
+        key=rate_limit_key("auth", "forgot_password_verify", "identifier", email or "blank"),
         ttl_seconds=60 * 60,
         limit=FORGOT_VERIFY_LIMIT_PER_HOUR_PER_EMAIL,
         message="Too many attempts. Please try again later.",
@@ -115,13 +116,16 @@ def forgot_password_verify_otp_impl(**kwargs):
     if rl:
         return rl
 
-    if not email or not otp:
-        return fail("Email and OTP are required.", code="VALIDATION_ERROR")
+    email_err = validate_email(email)
+    if email_err:
+        return email_err
+    if not otp:
+        return fail("OTP is required.", error="VALIDATION_ERROR", data={"field": "otp"})
 
     user_name = frappe.db.get_value("User", {"email": email}, "name")
 
     if not user_name:
-        return fail("Invalid OTP.", code="OTP_INVALID")
+        return fail("Invalid OTP.", error="OTP_INVALID")
 
     deleted_err = _deleted_account_block(user_name)
     if deleted_err:
@@ -130,7 +134,7 @@ def forgot_password_verify_otp_impl(**kwargs):
     ver = get_ver_doc(user_name, purpose=PURPOSE)
 
     if not ver:
-        return fail("OTP not found. Please request a new OTP.", code="OTP_NOT_FOUND")
+        return fail("OTP not found. Please request a new OTP.", error="OTP_NOT_FOUND")
 
     err = verify_otp(ver, otp, consume=True)
 
@@ -157,7 +161,7 @@ def forgot_password_reset_impl(**kwargs):
     confirm_password = kwargs.get("confirm_password") or ""
 
     rl = rate_limit(
-        key=f"aos:fp:reset:email:{email}",
+        key=rate_limit_key("auth", "forgot_password_reset", "identifier", email or "blank"),
         ttl_seconds=60 * 60,
         limit=FORGOT_RESET_LIMIT_PER_HOUR_PER_EMAIL,
         message="Too many attempts. Please try again later.",
@@ -166,17 +170,20 @@ def forgot_password_reset_impl(**kwargs):
     if rl:
         return rl
 
-    if not email or not reset_token:
-        return fail("Email and reset token are required.", code="VALIDATION_ERROR")
+    email_err = validate_email(email)
+    if email_err:
+        return email_err
+    if not reset_token:
+        return fail("Reset token is required.", error="VALIDATION_ERROR", data={"field": "reset_token"})
 
     if not new_password or not confirm_password:
         return fail(
             "New password and confirm password are required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if new_password != confirm_password:
-        return fail("Passwords do not match.", code="PASSWORD_MISMATCH")
+        return fail("Passwords do not match.", error="PASSWORD_MISMATCH")
 
     pw_err = validate_password_strength(new_password)
 
@@ -186,7 +193,7 @@ def forgot_password_reset_impl(**kwargs):
     user_name = frappe.db.get_value("User", {"email": email}, "name")
 
     if not user_name:
-        return fail("Invalid reset token.", code="TOKEN_INVALID")
+        return fail("Invalid reset token.", error="TOKEN_INVALID")
 
     deleted_err = _deleted_account_block(user_name)
     if deleted_err:
@@ -195,16 +202,16 @@ def forgot_password_reset_impl(**kwargs):
     ver = get_ver_doc(user_name, purpose=PURPOSE)
 
     if not ver or not getattr(ver, "reset_token_hash", None):
-        return fail("Invalid reset token.", code="TOKEN_INVALID")
+        return fail("Invalid reset token.", error="TOKEN_INVALID")
 
     if not ver.reset_token_expires_at or now_datetime() > ver.reset_token_expires_at:
         return fail(
             "Reset token expired. Please request a new OTP.",
-            code="TOKEN_EXPIRED",
+            error="TOKEN_EXPIRED",
         )
 
     if otp_hash(reset_token) != ver.reset_token_hash:
-        return fail("Invalid reset token.", code="TOKEN_INVALID")
+        return fail("Invalid reset token.", error="TOKEN_INVALID")
 
     # Update password
     user = frappe.get_doc("User", user_name)

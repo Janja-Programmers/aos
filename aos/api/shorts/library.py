@@ -144,13 +144,13 @@ def toggle_save_short_impl(**kwargs):
         )
 
         if not short:
-            return fail("Short not found.", code="NOT_FOUND")
+            return fail("Short not found.", error="NOT_FOUND")
 
         if short.status != "ready" or short.visibility_status != "visible":
-            return fail("Short is not available for saving.", code="VALIDATION_ERROR")
+            return fail("Short is not available for saving.", error="VALIDATION_ERROR")
 
         if not can_view_short(short, current_user=user):
-            return fail("Short not found.", code="NOT_FOUND")
+            return fail("Short not found.", error="NOT_FOUND")
 
         existing = frappe.get_all(
             "AOS Short Save",
@@ -200,12 +200,12 @@ def toggle_save_short_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "toggle_save_short failed")
         frappe.db.rollback()
-        return fail("Failed to toggle save", code="INTERNAL_ERROR")
+        return fail("Failed to toggle save", error="INTERNAL_ERROR")
 
 
 def saved_shorts_impl(**kwargs):
@@ -257,7 +257,7 @@ def saved_shorts_impl(**kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "saved_shorts failed")
-        return fail("Failed to fetch saved shorts", code="INTERNAL_ERROR")
+        return fail("Failed to fetch saved shorts", error="INTERNAL_ERROR")
 
 
 def liked_shorts_impl(**kwargs):
@@ -309,7 +309,7 @@ def liked_shorts_impl(**kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "liked_shorts failed")
-        return fail("Failed to fetch liked shorts", code="INTERNAL_ERROR")
+        return fail("Failed to fetch liked shorts", error="INTERNAL_ERROR")
 
 
 def download_short_impl(**kwargs):
@@ -333,7 +333,7 @@ def download_short_impl(**kwargs):
         if not viewer and not session_id:
             return fail(
                 "session_id is required for guest downloads.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         short = frappe.db.get_value(
@@ -352,31 +352,31 @@ def download_short_impl(**kwargs):
         )
 
         if not short:
-            return fail("Short not found.", code="NOT_FOUND")
+            return fail("Short not found.", error="NOT_FOUND")
 
         is_owner = bool(viewer and viewer == short.owner)
 
         if short.status != "ready":
-            return fail("Short is not ready for download.", code="VALIDATION_ERROR")
+            return fail("Short is not ready for download.", error="VALIDATION_ERROR")
 
         if not is_owner:
             if short.visibility_status != "visible":
-                return fail("Short not found.", code="NOT_FOUND")
+                return fail("Short not found.", error="NOT_FOUND")
 
             if not can_view_short(short, current_user=viewer):
-                return fail("Short not found.", code="NOT_FOUND")
+                return fail("Short not found.", error="NOT_FOUND")
 
             if not int(short.allow_downloads or 0):
-                return fail("Downloads are disabled for this short.", code="FORBIDDEN")
+                return fail("Downloads are disabled for this short.", error="FORBIDDEN")
 
         download_file_key = short.processed_file_key
 
         if not download_file_key:
-            return fail("Download file is not available.", code="NOT_FOUND")
+            return fail("Download file is not available.", error="NOT_FOUND")
 
         service = MinioService()
         if not service.file_exists(download_file_key):
-            return fail("Download file is missing.", code="NOT_FOUND")
+            return fail("Download file is missing.", error="NOT_FOUND")
 
         expiry_minutes = 15
         download_url = service.get_presigned_download_url(
@@ -425,12 +425,12 @@ def download_short_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "download_short failed")
         frappe.db.rollback()
-        return fail("Failed to generate download URL", code="INTERNAL_ERROR")
+        return fail("Failed to generate download URL", error="INTERNAL_ERROR")
 
 
 
@@ -480,19 +480,19 @@ def toggle_repost_impl(**kwargs):
             )
 
             if not short:
-                return fail("Short not found.", code="NOT_FOUND")
+                return fail("Short not found.", error="NOT_FOUND")
 
             if short.owner == user:
-                return fail("You cannot repost your own short.", code="VALIDATION_ERROR")
+                return fail("You cannot repost your own short.", error="VALIDATION_ERROR")
 
             if short.status != "ready" or short.visibility_status != "visible":
                 return fail(
                     "Short is not available for reposting.",
-                    code="VALIDATION_ERROR",
+                    error="VALIDATION_ERROR",
                 )
 
             if not can_view_short(short, current_user=user):
-                return fail("Short not found.", code="NOT_FOUND")
+                return fail("Short not found.", error="NOT_FOUND")
 
             frappe.get_doc(
                 {
@@ -531,12 +531,12 @@ def toggle_repost_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "toggle_repost failed")
         frappe.db.rollback()
-        return fail("Failed to toggle repost", code="INTERNAL_ERROR")
+        return fail("Failed to toggle repost", error="INTERNAL_ERROR")
 
 
 def reposted_shorts_impl(**kwargs):
@@ -550,7 +550,7 @@ def reposted_shorts_impl(**kwargs):
         target_user = user
 
     if not frappe.db.exists("User", target_user):
-        return fail("User not found.", code="NOT_FOUND")
+        return fail("User not found.", error="NOT_FOUND")
 
     limit = validate_limit(
         kwargs.get("limit"),
@@ -617,4 +617,4 @@ def reposted_shorts_impl(**kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "reposted_shorts failed")
-        return fail("Failed to fetch reposted shorts", code="INTERNAL_ERROR")
+        return fail("Failed to fetch reposted shorts", error="INTERNAL_ERROR")

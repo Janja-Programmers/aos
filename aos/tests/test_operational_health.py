@@ -224,7 +224,7 @@ class TestOperationalHealth(FrappeTestCase):
         frappe.set_user("Guest")
         response = get_operational_health_status()
         self.assertFalse(response.get("ok"), response)
-        self.assertEqual(response.get("code"), "PERMISSION_DENIED")
+        self.assertEqual(response.get("error"), "PERMISSION_DENIED")
 
     def test_admin_diagnostic_returns_redacted_report_for_system_manager(self):
         frappe.set_user("Administrator")

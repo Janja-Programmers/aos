@@ -85,7 +85,7 @@ def _format_duration(seconds: int) -> str:
 
 def _validate_call_type(call_type: str):
     if call_type not in ("audio", "video"):
-        return fail("Invalid call_type.", code="VALIDATION_ERROR")
+        return fail("Invalid call_type.", error="VALIDATION_ERROR")
 
     return None
 
@@ -258,7 +258,7 @@ def initiate_call_impl(**kwargs):
     call_type = (kwargs.get("call_type") or "audio").strip().lower()
 
     if not conv_id:
-        return fail("conversation_id is required.", code="VALIDATION_ERROR")
+        return fail("conversation_id is required.", error="VALIDATION_ERROR")
 
     call_type_error = _validate_call_type(call_type)
     if call_type_error:
@@ -353,7 +353,7 @@ def initiate_call_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -361,7 +361,7 @@ def initiate_call_impl(**kwargs):
             "AOS Initiate Call Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to initiate call.", code="INTERNAL_ERROR")
+        return fail("Failed to initiate call.", error="INTERNAL_ERROR")
 
 
 # MARK CALL RINGING
@@ -382,7 +382,7 @@ def mark_call_ringing_impl(**kwargs):
     call_id = kwargs.get("call_id")
 
     if not call_id:
-        return fail("call_id is required.", code="VALIDATION_ERROR")
+        return fail("call_id is required.", error="VALIDATION_ERROR")
 
     try:
         call, err = validate_call_exists(call_id)
@@ -425,7 +425,7 @@ def mark_call_ringing_impl(**kwargs):
         )
 
         if frappe.db._cursor.rowcount == 0:
-            return fail("Call cannot be marked as ringing.", code="INVALID_STATE")
+            return fail("Call cannot be marked as ringing.", error="INVALID_STATE")
 
         call = _reload_call(call_id)
 
@@ -446,7 +446,7 @@ def mark_call_ringing_impl(**kwargs):
             "AOS Mark Ringing Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to mark call as ringing.", code="INTERNAL_ERROR")
+        return fail("Failed to mark call as ringing.", error="INTERNAL_ERROR")
 
 
 # ACCEPT CALL
@@ -467,7 +467,7 @@ def accept_call_impl(**kwargs):
     call_id = kwargs.get("call_id")
 
     if not call_id:
-        return fail("call_id is required.", code="VALIDATION_ERROR")
+        return fail("call_id is required.", error="VALIDATION_ERROR")
 
     try:
         call, err = validate_call_exists(call_id)
@@ -503,7 +503,7 @@ def accept_call_impl(**kwargs):
         )
 
         if frappe.db._cursor.rowcount == 0:
-            return fail("Call cannot be accepted.", code="INVALID_STATE")
+            return fail("Call cannot be accepted.", error="INVALID_STATE")
 
         call = _reload_call(call_id)
 
@@ -545,7 +545,7 @@ def accept_call_impl(**kwargs):
             "AOS Accept Call Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to accept call.", code="INTERNAL_ERROR")
+        return fail("Failed to accept call.", error="INTERNAL_ERROR")
 
 
 # REJECT CALL
@@ -566,7 +566,7 @@ def reject_call_impl(**kwargs):
     call_id = kwargs.get("call_id")
 
     if not call_id:
-        return fail("call_id is required.", code="VALIDATION_ERROR")
+        return fail("call_id is required.", error="VALIDATION_ERROR")
 
     try:
         call, err = validate_call_exists(call_id)
@@ -603,7 +603,7 @@ def reject_call_impl(**kwargs):
         )
 
         if frappe.db._cursor.rowcount == 0:
-            return fail("Call cannot be rejected.", code="INVALID_STATE")
+            return fail("Call cannot be rejected.", error="INVALID_STATE")
 
         call = _reload_call(call_id)
 
@@ -631,7 +631,7 @@ def reject_call_impl(**kwargs):
             "AOS Reject Call Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to reject call.", code="INTERNAL_ERROR")
+        return fail("Failed to reject call.", error="INTERNAL_ERROR")
 
 
 # CANCEL CALL
@@ -652,7 +652,7 @@ def cancel_call_impl(**kwargs):
     call_id = kwargs.get("call_id")
 
     if not call_id:
-        return fail("call_id is required.", code="VALIDATION_ERROR")
+        return fail("call_id is required.", error="VALIDATION_ERROR")
 
     try:
         call, err = validate_call_exists(call_id)
@@ -685,7 +685,7 @@ def cancel_call_impl(**kwargs):
         )
 
         if frappe.db._cursor.rowcount == 0:
-            return fail("Call cannot be cancelled.", code="INVALID_STATE")
+            return fail("Call cannot be cancelled.", error="INVALID_STATE")
 
         call = _reload_call(call_id)
 
@@ -711,7 +711,7 @@ def cancel_call_impl(**kwargs):
             "AOS Cancel Call Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to cancel call.", code="INTERNAL_ERROR")
+        return fail("Failed to cancel call.", error="INTERNAL_ERROR")
 
 
 # END CALL
@@ -732,7 +732,7 @@ def end_call_impl(**kwargs):
     call_id = kwargs.get("call_id")
 
     if not call_id:
-        return fail("call_id is required.", code="VALIDATION_ERROR")
+        return fail("call_id is required.", error="VALIDATION_ERROR")
 
     try:
         call, err = validate_call_exists(call_id)
@@ -770,7 +770,7 @@ def end_call_impl(**kwargs):
         )
 
         if frappe.db._cursor.rowcount == 0:
-            return fail("Call cannot be ended.", code="INVALID_STATE")
+            return fail("Call cannot be ended.", error="INVALID_STATE")
 
         call = _reload_call(call_id)
 
@@ -798,7 +798,7 @@ def end_call_impl(**kwargs):
             "AOS End Call Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to end call.", code="INTERNAL_ERROR")
+        return fail("Failed to end call.", error="INTERNAL_ERROR")
 
 
 # REQUEST VIDEO UPGRADE
@@ -819,7 +819,7 @@ def request_video_upgrade_impl(**kwargs):
     call_id = kwargs.get("call_id")
 
     if not call_id:
-        return fail("call_id is required.", code="VALIDATION_ERROR")
+        return fail("call_id is required.", error="VALIDATION_ERROR")
 
     try:
         call, err = validate_call_exists(call_id)
@@ -833,19 +833,19 @@ def request_video_upgrade_impl(**kwargs):
         if call.status != "ongoing":
             return fail(
                 "Video upgrade can only be requested during an ongoing call.",
-                code="INVALID_STATE",
+                error="INVALID_STATE",
             )
 
         if call.call_type != "audio":
             return fail(
                 "Only audio calls can be upgraded to video.",
-                code="INVALID_STATE",
+                error="INVALID_STATE",
             )
 
         if (call.video_upgrade_status or "none") == "requested":
             return fail(
                 "A video upgrade request is already pending.",
-                code="INVALID_STATE",
+                error="INVALID_STATE",
             )
 
         now = now_datetime()
@@ -870,7 +870,7 @@ def request_video_upgrade_impl(**kwargs):
         if frappe.db._cursor.rowcount == 0:
             return fail(
                 "Video upgrade cannot be requested.",
-                code="INVALID_STATE",
+                error="INVALID_STATE",
             )
 
         call = _reload_call(call_id)
@@ -891,7 +891,7 @@ def request_video_upgrade_impl(**kwargs):
             "AOS Request Video Upgrade Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to request video upgrade.", code="INTERNAL_ERROR")
+        return fail("Failed to request video upgrade.", error="INTERNAL_ERROR")
 
 
 # RESPOND VIDEO UPGRADE
@@ -913,12 +913,12 @@ def respond_video_upgrade_impl(**kwargs):
     action = _normalize_video_upgrade_action(kwargs.get("action"))
 
     if not call_id:
-        return fail("call_id is required.", code="VALIDATION_ERROR")
+        return fail("call_id is required.", error="VALIDATION_ERROR")
 
     if action not in ("accepted", "declined"):
         return fail(
             "action must be accepted or declined.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     try:
@@ -933,31 +933,31 @@ def respond_video_upgrade_impl(**kwargs):
         if call.status != "ongoing":
             return fail(
                 "Video upgrade can only be answered during an ongoing call.",
-                code="INVALID_STATE",
+                error="INVALID_STATE",
             )
 
         if call.call_type != "audio":
             return fail(
                 "This call is not awaiting an audio-to-video upgrade.",
-                code="INVALID_STATE",
+                error="INVALID_STATE",
             )
 
         if (call.video_upgrade_status or "none") != "requested":
             return fail(
                 "No video upgrade request is pending.",
-                code="INVALID_STATE",
+                error="INVALID_STATE",
             )
 
         if not call.video_upgrade_requested_by:
             return fail(
                 "Invalid video upgrade request.",
-                code="INVALID_STATE",
+                error="INVALID_STATE",
             )
 
         if call.video_upgrade_requested_by == current_user:
             return fail(
                 "You cannot respond to your own video upgrade request.",
-                code="PERMISSION_DENIED",
+                error="PERMISSION_DENIED",
             )
 
         now = now_datetime()
@@ -983,7 +983,7 @@ def respond_video_upgrade_impl(**kwargs):
             if frappe.db._cursor.rowcount == 0:
                 return fail(
                     "Video upgrade cannot be accepted.",
-                    code="INVALID_STATE",
+                    error="INVALID_STATE",
                 )
 
             call = _reload_call(call_id)
@@ -1017,7 +1017,7 @@ def respond_video_upgrade_impl(**kwargs):
         if frappe.db._cursor.rowcount == 0:
             return fail(
                 "Video upgrade cannot be declined.",
-                code="INVALID_STATE",
+                error="INVALID_STATE",
             )
 
         call = _reload_call(call_id)
@@ -1038,4 +1038,4 @@ def respond_video_upgrade_impl(**kwargs):
             "AOS Respond Video Upgrade Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to respond to video upgrade.", code="INTERNAL_ERROR")
+        return fail("Failed to respond to video upgrade.", error="INTERNAL_ERROR")

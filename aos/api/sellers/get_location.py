@@ -103,7 +103,7 @@ def _get_current_seller_location():
         if not seller:
             return fail(
                 "Seller profile not found.",
-                code="NOT_FOUND",
+                error="NOT_FOUND",
             )
 
         return ok(
@@ -126,7 +126,7 @@ def _get_current_seller_location():
 
         return fail(
             "Failed to fetch seller location.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -163,7 +163,7 @@ def _get_public_seller_location(
         if not seller:
             return fail(
                 "Seller not found.",
-                code="NOT_FOUND",
+                error="NOT_FOUND",
             )
 
         viewer = current_user()
@@ -194,7 +194,7 @@ def _get_public_seller_location(
 
         return fail(
             "Failed to fetch seller location.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 

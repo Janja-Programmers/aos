@@ -194,12 +194,12 @@ def delete_messages_impl(**kwargs):
     delete_scope = (kwargs.get("delete_scope") or "me").strip().lower()
 
     if not message_ids:
-        return fail("message_ids is required.", code="VALIDATION_ERROR")
+        return fail("message_ids is required.", error="VALIDATION_ERROR")
 
     if delete_scope not in VALID_DELETE_SCOPES:
         return fail(
             "delete_scope must be either 'me' or 'everyone'.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     try:
@@ -209,7 +209,7 @@ def delete_messages_impl(**kwargs):
         messages = _fetch_messages(message_ids)
 
         if not messages:
-            return fail("Messages not found.", code="NOT_FOUND")
+            return fail("Messages not found.", error="NOT_FOUND")
 
         found_ids = {m.name for m in messages}
         missing_ids = [mid for mid in message_ids if mid not in found_ids]
@@ -217,7 +217,7 @@ def delete_messages_impl(**kwargs):
         if missing_ids:
             return fail(
                 "One or more messages were not found.",
-                code="NOT_FOUND",
+                error="NOT_FOUND",
                 data={"missing_message_ids": missing_ids},
             )
 
@@ -226,16 +226,16 @@ def delete_messages_impl(**kwargs):
         if not conversation_id:
             return fail(
                 "All messages must belong to the same conversation.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         conv = _get_conversation(conversation_id)
 
         if not conv:
-            return fail("Conversation not found.", code="NOT_FOUND")
+            return fail("Conversation not found.", error="NOT_FOUND")
 
         if current_user not in (conv.participant_1, conv.participant_2):
-            return fail("Not allowed.", code="PERMISSION_DENIED")
+            return fail("Not allowed.", error="PERMISSION_DENIED")
 
         now = now_datetime()
 
@@ -281,14 +281,14 @@ def delete_messages_impl(**kwargs):
             if msg.message_type == "system":
                 return fail(
                     "System messages cannot be deleted for everyone.",
-                    code="VALIDATION_ERROR",
+                    error="VALIDATION_ERROR",
                     data={"message_id": msg.name},
                 )
 
             if msg.sender != current_user:
                 return fail(
                     "You can only delete your own messages for everyone.",
-                    code="PERMISSION_DENIED",
+                    error="PERMISSION_DENIED",
                     data={"message_id": msg.name},
                 )
 
@@ -354,7 +354,7 @@ def delete_messages_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -362,4 +362,4 @@ def delete_messages_impl(**kwargs):
             "AOS Delete Messages Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to delete messages.", code="INTERNAL_ERROR")
+        return fail("Failed to delete messages.", error="INTERNAL_ERROR")

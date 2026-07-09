@@ -522,19 +522,19 @@ def _validate_short_reference(
     short_row = _get_short_reference(short)
 
     if not short_row:
-        return fail("Invalid short reference.", code="VALIDATION_ERROR")
+        return fail("Invalid short reference.", error="VALIDATION_ERROR")
 
     if short_row.status != "ready" or short_row.visibility_status != "visible":
-        return fail("Short is not available.", code="VALIDATION_ERROR")
+        return fail("Short is not available.", error="VALIDATION_ERROR")
 
     if not _can_view_short(short_row, current_user=viewer):
-        return fail("Short is not available.", code="VALIDATION_ERROR")
+        return fail("Short is not available.", error="VALIDATION_ERROR")
 
     for recipient in recipients or []:
         if not _can_view_short(short_row, current_user=recipient):
             return fail(
                 "This short cannot be shared with one or more recipients.",
-                code="FORBIDDEN",
+                error="FORBIDDEN",
             )
 
     return None
@@ -648,7 +648,7 @@ def _validate_ad_reference(ad: str | None):
         return None
 
     if not frappe.db.exists("AOS Ad", ad):
-        return fail("Invalid ad reference.", code="VALIDATION_ERROR")
+        return fail("Invalid ad reference.", error="VALIDATION_ERROR")
 
     return None
 
@@ -675,12 +675,12 @@ def _validate_reply_to_message(
     )
 
     if not replied:
-        return fail("Reply message not found.", code="NOT_FOUND")
+        return fail("Reply message not found.", error="NOT_FOUND")
 
     if replied.conversation != conversation_id:
         return fail(
             "You can only reply to a message in the same conversation.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     return None
@@ -1016,14 +1016,14 @@ def _prepare_chat_attachments(
     """Validate chat attachment payloads and return normalized rows."""
 
     if not isinstance(attachments, list):
-        return [], fail("attachments must be a list.", code="VALIDATION_ERROR")
+        return [], fail("attachments must be a list.", error="VALIDATION_ERROR")
 
     service = MediaService()
     prepared: List[Dict[str, Any]] = []
 
     for index, att in enumerate(attachments):
         if not isinstance(att, dict):
-            return [], fail("Invalid attachment payload.", code="VALIDATION_ERROR")
+            return [], fail("Invalid attachment payload.", error="VALIDATION_ERROR")
 
         media_id = (
             att.get("media")
@@ -1036,9 +1036,9 @@ def _prepare_chat_attachments(
             if att.get("file"):
                 return [], fail(
                     "Chat attachments must be uploaded as media_id using purpose chat_attachment.",
-                    code="VALIDATION_ERROR",
+                    error="VALIDATION_ERROR",
                 )
-            return [], fail("Attachment media_id is required.", code="VALIDATION_ERROR")
+            return [], fail("Attachment media_id is required.", error="VALIDATION_ERROR")
 
         try:
             media_doc = service.assert_media_ready_for_attach(
@@ -1047,11 +1047,11 @@ def _prepare_chat_attachments(
                 purpose="chat_attachment",
             )
         except MediaNotFoundError as exc:
-            return [], safe_fail_from_exception(exc, fallback="Resource not found.", code="NOT_FOUND")
+            return [], safe_fail_from_exception(exc, fallback="Resource not found.", error="NOT_FOUND")
         except MediaPermissionError as exc:
-            return [], safe_fail_from_exception(exc, fallback="Not allowed.", code="FORBIDDEN")
+            return [], safe_fail_from_exception(exc, fallback="Not allowed.", error="FORBIDDEN")
         except MediaValidationError as exc:
-            return [], safe_fail_from_exception(exc, fallback="Invalid request.", code="VALIDATION_ERROR")
+            return [], safe_fail_from_exception(exc, fallback="Invalid request.", error="VALIDATION_ERROR")
 
         file_type = (
             att.get("file_type")
@@ -1097,7 +1097,7 @@ def send_message_impl(**kwargs):
     reply_to_message = kwargs.get("reply_to_message")
 
     if not conv_id:
-        return fail("conversation_id is required.", code="VALIDATION_ERROR")
+        return fail("conversation_id is required.", error="VALIDATION_ERROR")
 
     prepared_attachments, attachment_error = _prepare_chat_attachments(
         attachments=attachments,
@@ -1109,15 +1109,15 @@ def send_message_impl(**kwargs):
     try:
         conv = _get_conversation_row(conv_id)
         if not conv:
-            return fail("Conversation not found.", code="NOT_FOUND")
+            return fail("Conversation not found.", error="NOT_FOUND")
 
         if not _validate_sender(conv, current_user):
-            return fail("Not allowed.", code="PERMISSION_DENIED")
+            return fail("Not allowed.", error="PERMISSION_DENIED")
 
         if not content and not attachments and not ad and not short:
             return fail(
                 "Message must have content, attachments, an ad, or a short.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         ad_error = _validate_ad_reference(ad)
@@ -1331,7 +1331,7 @@ def send_message_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -1339,7 +1339,7 @@ def send_message_impl(**kwargs):
             "AOS Send Message Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to send message.", code="INTERNAL_ERROR")
+        return fail("Failed to send message.", error="INTERNAL_ERROR")
 
 
 # list_messages
@@ -1369,15 +1369,15 @@ def list_messages_impl(**kwargs):
     before = kwargs.get("before")
 
     if not conv_id:
-        return fail("conversation_id is required.", code="VALIDATION_ERROR")
+        return fail("conversation_id is required.", error="VALIDATION_ERROR")
 
     try:
         conv = _get_conversation_row(conv_id)
         if not conv:
-            return fail("Conversation not found.", code="NOT_FOUND")
+            return fail("Conversation not found.", error="NOT_FOUND")
 
         if current_user not in (conv.participant_1, conv.participant_2):
-            return fail("Not allowed.", code="PERMISSION_DENIED")
+            return fail("Not allowed.", error="PERMISSION_DENIED")
 
         delete_condition = get_user_delete_sql_condition(conv, current_user)
 
@@ -1396,7 +1396,7 @@ def list_messages_impl(**kwargs):
             )
 
             if not before_creation:
-                return fail("Invalid 'before' message.", code="VALIDATION_ERROR")
+                return fail("Invalid 'before' message.", error="VALIDATION_ERROR")
 
             before_condition = "AND creation < %(before_creation)s"
             params["before_creation"] = before_creation
@@ -1538,4 +1538,4 @@ def list_messages_impl(**kwargs):
             frappe.get_traceback(),
             "AOS List Messages Failed",
         )
-        return fail("Failed to fetch messages.", code="INTERNAL_ERROR")
+        return fail("Failed to fetch messages.", error="INTERNAL_ERROR")

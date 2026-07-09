@@ -43,16 +43,16 @@ def response_from_media_exception(exc: Exception, *, index: int | None = None):
     prefix = f"Review image {index + 1}: " if index is not None else ""
 
     if isinstance(exc, MediaNotFoundError):
-        return fail(f"{prefix}media not found.", code="NOT_FOUND")
+        return fail(f"{prefix}media not found.", error="NOT_FOUND")
 
     if isinstance(exc, MediaPermissionError):
-        return fail(prefix + safe_exception_message(exc, "Not allowed."), code="FORBIDDEN")
+        return fail(prefix + safe_exception_message(exc, "Not allowed."), error="FORBIDDEN")
 
     if isinstance(exc, MediaValidationError):
-        return fail(prefix + safe_exception_message(exc, "Invalid review image media."), code="VALIDATION_ERROR")
+        return fail(prefix + safe_exception_message(exc, "Invalid review image media."), error="VALIDATION_ERROR")
 
     frappe.log_error(frappe.get_traceback(), "AOS Review Image Media Failed")
-    return fail(f"{prefix}failed to validate media.", code="INTERNAL_ERROR")
+    return fail(f"{prefix}failed to validate media.", error="INTERNAL_ERROR")
 
 
 def get_public_media_url(media_id: Any) -> str:
@@ -91,7 +91,7 @@ def validate_review_image_media_for_use(*, media_id: Any, user: str, index: int 
     media_id = normalize_media_id(media_id)
 
     if not media_id:
-        return None, "", fail("Review image media id is required.", code="VALIDATION_ERROR")
+        return None, "", fail("Review image media id is required.", error="VALIDATION_ERROR")
 
     service = MediaService()
 
@@ -100,24 +100,24 @@ def validate_review_image_media_for_use(*, media_id: Any, user: str, index: int 
         service.assert_user_can_manage(doc, user)
 
         if doc.status == "Deleted":
-            return None, "", fail("Review image media not found.", code="NOT_FOUND")
+            return None, "", fail("Review image media not found.", error="NOT_FOUND")
 
         if doc.purpose != REVIEW_IMAGE_PURPOSE:
             return None, "", fail(
                 "Review image media has the wrong purpose.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         if doc.visibility != "Public":
             return None, "", fail(
                 "Review image media must be public.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         if doc.status != "Uploaded":
             return None, "", fail(
                 "Review image media cannot be used in its current state.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         return doc, _review_image_media_url(doc), None
@@ -135,7 +135,7 @@ def normalize_review_image_inputs(images: Any) -> Tuple[List[str], Any | None]:
         return [], None
 
     if not isinstance(images, list):
-        return [], fail("Images must be a list.", code="VALIDATION_ERROR")
+        return [], fail("Images must be a list.", error="VALIDATION_ERROR")
 
     media_ids: List[str] = []
     seen: set[str] = set()
@@ -149,20 +149,20 @@ def normalize_review_image_inputs(images: Any) -> Tuple[List[str], Any | None]:
         if not looks_like_media_id(media_id):
             return [], fail(
                 f"Review image {index + 1} must be uploaded media_id. Upload with purpose=review_image first.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         if media_id in seen:
             return [], fail(
                 f"Review image {index + 1} is duplicated.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         seen.add(media_id)
         media_ids.append(media_id)
 
     if len(media_ids) > 5:
-        return [], fail("Maximum 5 images allowed.", code="VALIDATION_ERROR")
+        return [], fail("Maximum 5 images allowed.", error="VALIDATION_ERROR")
 
     return media_ids, None
 
@@ -194,11 +194,11 @@ def attach_review_image_media(*, media_id: Any, user: str, review_id: str):
         if doc.status != "Uploaded":
             return None, fail(
                 "Review image media must be uploaded before it can be attached.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         if doc.purpose != REVIEW_IMAGE_PURPOSE:
-            return None, fail("Review image media has the wrong purpose.", code="VALIDATION_ERROR")
+            return None, fail("Review image media has the wrong purpose.", error="VALIDATION_ERROR")
 
         doc.status = "Attached"
         doc.attached_doctype = REVIEW_DOCTYPE

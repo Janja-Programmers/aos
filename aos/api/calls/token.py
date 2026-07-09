@@ -121,7 +121,7 @@ def get_call_token_impl(**kwargs):
     call_id = kwargs.get("call_id")
 
     if not call_id:
-        return fail("call_id is required.", code="VALIDATION_ERROR")
+        return fail("call_id is required.", error="VALIDATION_ERROR")
 
     try:
         call, err = validate_call_exists(call_id)
@@ -164,4 +164,4 @@ def get_call_token_impl(**kwargs):
             frappe.get_traceback(),
             "AOS Get Call Token Failed",
         )
-        return fail("Failed to generate token.", code="INTERNAL_ERROR")
+        return fail("Failed to generate token.", error="INTERNAL_ERROR")

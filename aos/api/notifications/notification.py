@@ -101,7 +101,7 @@ def _resolve_category(value):
                     "Invalid notification category. "
                     f"Allowed values are: {allowed_categories}."
                 ),
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -121,7 +121,7 @@ def _resolve_limit(value):
             None,
             fail(
                 "limit must be a valid integer.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -133,7 +133,7 @@ def _resolve_limit(value):
                     "limit must be between 1 and "
                     f"{NOTIFICATION_MAX_LIMIT}."
                 ),
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             ),
         )
 
@@ -233,7 +233,7 @@ def list_notifications_impl(**kwargs):
                         "Invalid 'before' notification for the "
                         "selected category."
                     ),
-                    code="VALIDATION_ERROR",
+                    error="VALIDATION_ERROR",
                 )
 
             filters["creation"] = ("<", before_creation)
@@ -289,7 +289,7 @@ def list_notifications_impl(**kwargs):
 
         return fail(
             "Failed to fetch notifications.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -315,7 +315,7 @@ def mark_notification_read_impl(**kwargs):
     if not notification_id:
         return fail(
             "notification_id is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     try:
@@ -330,7 +330,7 @@ def mark_notification_read_impl(**kwargs):
         if not exists:
             return fail(
                 "Notification not found.",
-                code="NOT_FOUND",
+                error="NOT_FOUND",
             )
 
         frappe.db.set_value(
@@ -357,7 +357,7 @@ def mark_notification_read_impl(**kwargs):
 
         return fail(
             "Failed to update notification.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -398,7 +398,7 @@ def mark_all_notifications_read_impl(**kwargs):
 
         return fail(
             "Failed to update notifications.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -424,7 +424,7 @@ def delete_notification_impl(**kwargs):
     if not notification_id:
         return fail(
             "notification_id is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     try:
@@ -439,7 +439,7 @@ def delete_notification_impl(**kwargs):
         if not exists:
             return fail(
                 "Notification not found.",
-                code="NOT_FOUND",
+                error="NOT_FOUND",
             )
 
         frappe.delete_doc(
@@ -464,7 +464,7 @@ def delete_notification_impl(**kwargs):
 
         return fail(
             "Failed to delete notification.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -529,5 +529,5 @@ def clear_notifications_impl(**kwargs):
 
         return fail(
             "Failed to clear notifications.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

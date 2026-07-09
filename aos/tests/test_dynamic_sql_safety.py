@@ -123,7 +123,7 @@ class TestDynamicSqlSafety(FrappeTestCase):
             response = ads_list.list_ads_impl(sort="recent; DROP TABLE `tabAOS Ad`; --")
 
         self.assertFalse(response.get("ok"))
-        self.assertEqual(response.get("code"), "VALIDATION_ERROR")
+        self.assertEqual(response.get("error"), "VALIDATION_ERROR")
         self.assertEqual(frappe.local.response.get("http_status_code"), 422)
 
     def test_wishlist_invalid_sort_is_rejected_before_sql(self):
@@ -137,7 +137,7 @@ class TestDynamicSqlSafety(FrappeTestCase):
             response = wishlist_list.list_wishlist_impl(sort="recent; DROP TABLE `tabAOS Wishlist`; --")
 
         self.assertFalse(response.get("ok"))
-        self.assertEqual(response.get("code"), "VALIDATION_ERROR")
+        self.assertEqual(response.get("error"), "VALIDATION_ERROR")
         self.assertEqual(frappe.local.response.get("http_status_code"), 422)
 
     def test_seller_search_escapes_like_wildcards(self):

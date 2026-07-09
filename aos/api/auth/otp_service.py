@@ -13,7 +13,7 @@ def enforce_resend_cooldown(ver):
             wait = int(RESEND_COOLDOWN_SECONDS - delta)
             return fail(
                 f"Please wait {wait}s before requesting another OTP.",
-                code="COOLDOWN",
+                error="COOLDOWN",
                 data={"wait_seconds": wait},
             )
     return None
@@ -42,18 +42,18 @@ def verify_otp(ver, otp: str, *, consume: bool = False):
     otp = (otp or "").strip()
 
     if int(ver.is_used or 0) == 1:
-        return fail("OTP already used. Please request a new OTP.", code="OTP_USED")
+        return fail("OTP already used. Please request a new OTP.", error="OTP_USED")
 
     if not getattr(ver, "expires_at", None) or now_datetime() > ver.expires_at:
-        return fail("OTP expired. Please request a new OTP.", code="OTP_EXPIRED")
+        return fail("OTP expired. Please request a new OTP.", error="OTP_EXPIRED")
 
     if int(ver.attempts or 0) >= MAX_ATTEMPTS:
-        return fail("Too many attempts. Please request a new OTP.", code="OTP_MAX_ATTEMPTS")
+        return fail("Too many attempts. Please request a new OTP.", error="OTP_MAX_ATTEMPTS")
 
     if otp_hash(otp) != ver.otp_hash:
         ver.attempts = int(ver.attempts or 0) + 1
         ver.save(ignore_permissions=True)
-        return fail("Invalid OTP.", code="OTP_INVALID")
+        return fail("Invalid OTP.", error="OTP_INVALID")
 
     if consume:
         ver.is_used = 1

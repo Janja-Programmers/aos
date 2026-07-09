@@ -110,12 +110,12 @@ def _get_existing_star(*, message_id: str, user: str) -> str | None:
 
 def _validate_message_can_be_starred(msg, current_user: str):
     if current_user not in (msg.participant_1, msg.participant_2):
-        return fail("Not allowed.", code="PERMISSION_DENIED")
+        return fail("Not allowed.", error="PERMISSION_DENIED")
 
     if _is_deleted_for_everyone(msg):
         return fail(
             "Deleted messages cannot be starred.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     delete_field = get_deleted_for_user_field(msg, current_user)
@@ -123,7 +123,7 @@ def _validate_message_can_be_starred(msg, current_user: str):
     if bool(getattr(msg, delete_field, 0)):
         return fail(
             "You cannot star a message deleted for you.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     return None
@@ -250,13 +250,13 @@ def toggle_message_star_impl(**kwargs):
     message_id = kwargs.get("message_id")
 
     if not message_id:
-        return fail("message_id is required.", code="VALIDATION_ERROR")
+        return fail("message_id is required.", error="VALIDATION_ERROR")
 
     try:
         msg = _get_message_with_conversation(message_id)
 
         if not msg:
-            return fail("Message not found.", code="NOT_FOUND")
+            return fail("Message not found.", error="NOT_FOUND")
 
         validation_error = _validate_message_can_be_starred(msg, current_user)
         if validation_error:
@@ -311,7 +311,7 @@ def toggle_message_star_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -319,7 +319,7 @@ def toggle_message_star_impl(**kwargs):
             "AOS Toggle Message Star Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to update message star.", code="INTERNAL_ERROR")
+        return fail("Failed to update message star.", error="INTERNAL_ERROR")
 
 
 def _get_before_star_creation(*, before: str | None, current_user: str):
@@ -408,7 +408,7 @@ def list_starred_messages_impl(**kwargs):
 
         if before:
             if not before_creation:
-                return fail("Invalid 'before' cursor.", code="VALIDATION_ERROR")
+                return fail("Invalid 'before' cursor.", error="VALIDATION_ERROR")
 
             filters_sql.append("s.creation < %(before_creation)s")
             params["before_creation"] = before_creation
@@ -479,4 +479,4 @@ def list_starred_messages_impl(**kwargs):
             frappe.get_traceback(),
             "AOS List Starred Messages Failed",
         )
-        return fail("Failed to fetch starred messages.", code="INTERNAL_ERROR")
+        return fail("Failed to fetch starred messages.", error="INTERNAL_ERROR")

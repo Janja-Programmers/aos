@@ -60,10 +60,10 @@ def get_profile_impl(**kwargs):
 
     try:
         if not frappe.db.exists("User", target_user):
-            return fail("User not found.", code="NOT_FOUND")
+            return fail("User not found.", error="NOT_FOUND")
 
         if not frappe.db.exists("AOS Profile", target_user):
-            return fail("User profile not found.", code="PROFILE_NOT_FOUND")
+            return fail("User profile not found.", error="PROFILE_NOT_FOUND")
 
         if target_user != current_user:
             block = get_block_status(
@@ -73,7 +73,7 @@ def get_profile_impl(**kwargs):
             if block.get("has_blocked_me"):
                 return fail(
                     "Profile is unavailable.",
-                    code="PROFILE_UNAVAILABLE",
+                    error="PROFILE_UNAVAILABLE",
                     data=block,
                     http_status=403,
                 )
@@ -89,7 +89,7 @@ def get_profile_impl(**kwargs):
         )
 
     except frappe.DoesNotExistError:
-        return fail("User not found.", code="NOT_FOUND")
+        return fail("User not found.", error="NOT_FOUND")
 
     except Exception:
         frappe.log_error(
@@ -99,7 +99,7 @@ def get_profile_impl(**kwargs):
 
         return fail(
             "Failed to fetch profile.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -127,7 +127,7 @@ def update_profile_impl(**kwargs):
     if not incoming:
         return fail(
             "No editable fields provided.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     try:
@@ -184,7 +184,7 @@ def update_profile_impl(**kwargs):
             else:
                 return fail(
                     "Profile image must be uploaded using media_id with purpose=profile_image.",
-                    code="VALIDATION_ERROR",
+                    error="VALIDATION_ERROR",
                 )
 
         user_doc.save(ignore_permissions=True)
@@ -200,7 +200,7 @@ def update_profile_impl(**kwargs):
         )
 
     except frappe.DoesNotExistError:
-        return fail("User not found.", code="NOT_FOUND")
+        return fail("User not found.", error="NOT_FOUND")
 
     except Exception:
         frappe.log_error(
@@ -210,5 +210,5 @@ def update_profile_impl(**kwargs):
 
         return fail(
             "Failed to update profile.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

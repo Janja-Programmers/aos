@@ -40,7 +40,7 @@ def get_my_ad_impl(**kwargs):
     ad_id = str(kwargs.get("ad_id") or "").strip()
 
     if not ad_id:
-        return fail("Ad id is required.", code="VALIDATION_ERROR")
+        return fail("Ad id is required.", error="VALIDATION_ERROR")
 
     # Resolve seller
     seller = frappe.db.get_value(
@@ -50,7 +50,7 @@ def get_my_ad_impl(**kwargs):
     )
 
     if not seller:
-        return fail("Seller profile not found.", code="FORBIDDEN")
+        return fail("Seller profile not found.", error="FORBIDDEN")
 
     # Verify ownership
     row = frappe.db.get_value(
@@ -61,12 +61,12 @@ def get_my_ad_impl(**kwargs):
     )
 
     if not row:
-        return fail("Ad not found.", code="NOT_FOUND")
+        return fail("Ad not found.", error="NOT_FOUND")
 
     if row.seller != seller:
         return fail(
             "You do not have permission to view this ad.",
-            code="FORBIDDEN",
+            error="FORBIDDEN",
         )
 
     try:
@@ -80,7 +80,7 @@ def get_my_ad_impl(**kwargs):
         )
 
     except frappe.DoesNotExistError:
-        return fail("Ad not found.", code="NOT_FOUND")
+        return fail("Ad not found.", error="NOT_FOUND")
 
     except Exception:
         frappe.log_error(
@@ -89,5 +89,5 @@ def get_my_ad_impl(**kwargs):
         )
         return fail(
             "Failed to fetch ad.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

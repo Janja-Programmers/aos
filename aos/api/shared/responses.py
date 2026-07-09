@@ -3,10 +3,13 @@
 All whitelisted endpoints should return a consistent JSON shape:
 
   ok():   { ok: true,  message: str, data: any }
-  fail(): { ok: false, message: str, code: str, data: any }
+  fail(): { ok: false, message: str, error: str, data: any }
 
-Also sets frappe.local.response["http_status_code"] so mobile clients can rely on
-HTTP semantics in addition to the JSON body.
+``error`` is the only public machine-readable failure key. Clients must branch
+on ``error``.
+
+The helpers also set frappe.local.response["http_status_code"] so clients and
+edge infrastructure can rely on HTTP semantics in addition to the JSON body.
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ DEFAULT_HTTP_STATUS_MAP: dict[str, int] = {
     "EMAIL_MISSING": 422,
     "FILE_MISSING": 404,
     "INVALID_AD": 422,
+    "INVALID_IDENTIFIER": 422,
     "OTP_INVALID": 400,
     "PASSWORD_MISMATCH": 422,
     "UNSUPPORTED_FILE_TYPE": 415,
@@ -129,6 +133,14 @@ def _set_http_status(status: int) -> None:
         pass
 
 
+def normalize_error_code(code: str | None) -> str:
+    """Normalize public AOS error codes to a safe, stable token."""
+
+    value = str(code or "INTERNAL_ERROR").strip().upper()
+    value = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in value)
+    return value or "INTERNAL_ERROR"
+
+
 def http_status_for_code(code: str, default: int = 400) -> int:
     """Return the HTTP status for an AOS error code.
 
@@ -136,21 +148,27 @@ def http_status_for_code(code: str, default: int = 400) -> int:
     deterministic client-error response instead of a misleading 500.
     """
 
-    return int(DEFAULT_HTTP_STATUS_MAP.get(str(code or "").strip(), default))
+    return int(DEFAULT_HTTP_STATUS_MAP.get(normalize_error_code(code), default))
 
 
 def ok(message: str, data: Any = None):
     _set_http_status(200)
-    return {"ok": True, "message": message, "data": data}
+    return {"ok": True, "message": str(message or "OK."), "data": data or {}}
 
 
 def fail(
     message: str,
     *,
-    code: str = "INTERNAL_ERROR",
+    error: str = "INTERNAL_ERROR",
     data: Any = None,
     http_status: int | None = None,
 ):
-    status = int(http_status or http_status_for_code(code))
+    public_error = normalize_error_code(error)
+    status = int(http_status or http_status_for_code(public_error))
     _set_http_status(status)
-    return {"ok": False, "message": message, "code": code, "data": data}
+    return {
+        "ok": False,
+        "message": str(message or "Request failed."),
+        "error": public_error,
+        "data": data or {},
+    }

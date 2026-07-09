@@ -7,7 +7,7 @@ from aos.services.media.media_purposes import list_media_purposes
 def require_media_id(value):
     media_id = str(value or "").strip()
     if not media_id:
-        return None, fail("Media id is required.", code="VALIDATION_ERROR")
+        return None, fail("Media id is required.", error="VALIDATION_ERROR")
     return media_id, None
 
 
@@ -30,7 +30,7 @@ def require_upload_init_payload(kwargs: dict):
     if missing:
         return None, fail(
             "Missing required upload fields.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
             data={"fields": missing},
         )
 
@@ -45,6 +45,6 @@ def require_upload_init_payload(kwargs: dict):
 def invalid_purpose_response():
     return fail(
         "Invalid media purpose.",
-        code="VALIDATION_ERROR",
+        error="VALIDATION_ERROR",
         data={"allowed_purposes": list_media_purposes()},
     )

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import frappe
 
-from aos.api.shared.auth import require_login
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.auth.account_helpers import _clear_preference_cache
+from aos.api.shared.auth import require_authenticated_user
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.public_errors import safe_fail_from_exception
 
@@ -19,12 +20,12 @@ from .constants import UPDATE_PREF_LIMIT_PER_MINUTE_PER_USER
 def update_my_preference_impl(**kwargs):
     """Update current user's market preferences."""
 
-    current_user, err = require_login()
+    current_user, err = require_authenticated_user()
     if err:
         return err
 
     rl = rate_limit(
-        key=f"aos:preferences:update:user:{current_user}",
+        key=rate_limit_key("accounts", "preferences", "update", "user", current_user),
         ttl_seconds=60,
         limit=UPDATE_PREF_LIMIT_PER_MINUTE_PER_USER,
         message="Too many updates. Please slow down.",
@@ -37,10 +38,9 @@ def update_my_preference_impl(**kwargs):
     currency_input = kwargs.get("currency")
 
     if not country_input or not language_input or not currency_input:
-        return fail("All fields are required.", code="VALIDATION_ERROR")
+        return fail("All fields are required.", error="VALIDATION_ERROR")
 
     try:
-        # Resolve inputs
         country_id, err = resolve_country(country_input)
         if err:
             return err
@@ -53,7 +53,6 @@ def update_my_preference_impl(**kwargs):
         if err:
             return err
 
-        # Fetch preference record
         pref = frappe.db.get_value(
             "AOS User Preference",
             {"user": current_user},
@@ -63,39 +62,24 @@ def update_my_preference_impl(**kwargs):
 
         old_country = pref.country if pref else None
 
-        # Resolve seller for market lock check
-        seller = frappe.db.get_value(
-            "AOS Seller",
-            {"user": current_user},
-            "name",
-        )
+        seller = frappe.db.get_value("AOS Seller", {"user": current_user}, "name")
 
-        # MARKET LOCK LOGIC
         if old_country and old_country != country_id:
-            has_ads = False
-
-            if seller:
-                has_ads = bool(
-                    frappe.db.exists(
-                        "AOS Ad",
-                        {"seller": seller},
-                    )
-                )
-
+            has_ads = bool(seller and frappe.db.exists("AOS Ad", {"seller": seller}))
             if has_ads:
                 return fail(
                     "You cannot change your market after creating ads.",
-                    code="MARKET_LOCKED",
+                    error="MARKET_LOCKED",
                 )
 
-        # Save Preference
         if pref:
             doc = frappe.get_doc("AOS User Preference", pref.name)
             doc.country = country_id
             doc.language = language_id
             doc.currency = currency_id
+            # ``ignore_permissions=True`` is justified: current_user owns this
+            # singleton preference and already passed session/account checks.
             doc.save(ignore_permissions=True)
-
         else:
             doc = frappe.new_doc("AOS User Preference")
             doc.user = current_user
@@ -104,6 +88,7 @@ def update_my_preference_impl(**kwargs):
             doc.currency = currency_id
             doc.insert(ignore_permissions=True)
 
+        _clear_preference_cache(current_user)
         frappe.db.commit()
 
         return ok(
@@ -116,15 +101,8 @@ def update_my_preference_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Update Preference Failed",
-        )
-
-        return fail(
-            "Failed to update preference.",
-            code="INTERNAL_ERROR",
-        )
+        frappe.log_error(frappe.get_traceback(), "AOS Update Preference Failed")
+        return fail("Failed to update preference.", error="INTERNAL_ERROR")

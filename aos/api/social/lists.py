@@ -132,7 +132,7 @@ def get_following_impl(**kwargs):
             frappe.get_traceback(),
             "AOS Get Following Failed",
         )
-        return fail("Failed to fetch following.", code="INTERNAL_ERROR")
+        return fail("Failed to fetch following.", error="INTERNAL_ERROR")
 
 
 def get_followers_impl(**kwargs):
@@ -232,7 +232,7 @@ def get_followers_impl(**kwargs):
             frappe.get_traceback(),
             "AOS Get Followers Failed",
         )
-        return fail("Failed to fetch followers.", code="INTERNAL_ERROR")
+        return fail("Failed to fetch followers.", error="INTERNAL_ERROR")
 
 
 def get_friends_impl(**kwargs):
@@ -336,7 +336,7 @@ def get_friends_impl(**kwargs):
             frappe.get_traceback(),
             "AOS Get Friends Failed",
         )
-        return fail("Failed to fetch friends.", code="INTERNAL_ERROR")
+        return fail("Failed to fetch friends.", error="INTERNAL_ERROR")
 
 
 # HELPERS
@@ -422,13 +422,13 @@ def _get_search(kwargs) -> tuple[str | None, dict | None]:
     if len(search) < SOCIAL_LIST_SEARCH_MIN_LEN:
         return None, fail(
             f"Search must be at least {SOCIAL_LIST_SEARCH_MIN_LEN} characters.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if len(search) > SOCIAL_LIST_SEARCH_MAX_LEN:
         return None, fail(
             f"Search is too long. Maximum is {SOCIAL_LIST_SEARCH_MAX_LEN} characters.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     return search, None

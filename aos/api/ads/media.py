@@ -39,16 +39,16 @@ def normalize_media_id(value: Any) -> str:
 
 def response_from_media_exception(exc: Exception, *, kind: str):
     if isinstance(exc, MediaNotFoundError):
-        return fail(f"{kind} media not found.", code="NOT_FOUND")
+        return fail(f"{kind} media not found.", error="NOT_FOUND")
 
     if isinstance(exc, MediaPermissionError):
-        return fail(safe_exception_message(exc, "Not allowed."), code="FORBIDDEN")
+        return fail(safe_exception_message(exc, "Not allowed."), error="FORBIDDEN")
 
     if isinstance(exc, MediaValidationError):
-        return fail(safe_exception_message(exc, f"Invalid {kind.lower()} media."), code="VALIDATION_ERROR")
+        return fail(safe_exception_message(exc, f"Invalid {kind.lower()} media."), error="VALIDATION_ERROR")
 
     frappe.log_error(frappe.get_traceback(), f"AOS Ads {kind} Media Failed")
-    return fail(f"Failed to validate {kind.lower()} media.", code="INTERNAL_ERROR")
+    return fail(f"Failed to validate {kind.lower()} media.", error="INTERNAL_ERROR")
 
 
 def get_media_public_url(media_id: Any) -> str:
@@ -105,7 +105,7 @@ def validate_ad_media_for_use(
     media_id = normalize_media_id(media_id)
 
     if not media_id:
-        return None, fail(f"{kind} media id is required.", code="VALIDATION_ERROR")
+        return None, fail(f"{kind} media id is required.", error="VALIDATION_ERROR")
 
     service = MediaService()
 
@@ -114,13 +114,13 @@ def validate_ad_media_for_use(
         service.assert_user_can_manage(doc, user)
 
         if doc.status == "Deleted":
-            return None, fail(f"{kind} media not found.", code="NOT_FOUND")
+            return None, fail(f"{kind} media not found.", error="NOT_FOUND")
 
         if doc.purpose != purpose:
-            return None, fail(f"{kind} media has the wrong purpose.", code="VALIDATION_ERROR")
+            return None, fail(f"{kind} media has the wrong purpose.", error="VALIDATION_ERROR")
 
         if doc.visibility != "Public":
-            return None, fail(f"{kind} media must be public.", code="VALIDATION_ERROR")
+            return None, fail(f"{kind} media must be public.", error="VALIDATION_ERROR")
 
         if doc.status == "Uploaded":
             return doc, None
@@ -129,7 +129,7 @@ def validate_ad_media_for_use(
             if doc.attached_doctype == "AOS Ad" and doc.attached_name == ad_name:
                 return doc, None
 
-        return None, fail(f"{kind} media cannot be used in its current state.", code="VALIDATION_ERROR")
+        return None, fail(f"{kind} media cannot be used in its current state.", error="VALIDATION_ERROR")
 
     except Exception as exc:
         return None, response_from_media_exception(exc, kind=kind)
@@ -157,13 +157,13 @@ def attach_ad_media(
         if doc.status == "Attached":
             if doc.attached_doctype == "AOS Ad" and doc.attached_name == ad_name:
                 return doc, None
-            return None, fail("Media is already attached.", code="VALIDATION_ERROR")
+            return None, fail("Media is already attached.", error="VALIDATION_ERROR")
 
         if doc.status != "Uploaded":
-            return None, fail("Media must be uploaded before it can be attached.", code="VALIDATION_ERROR")
+            return None, fail("Media must be uploaded before it can be attached.", error="VALIDATION_ERROR")
 
         if doc.purpose != purpose:
-            return None, fail("Media has the wrong purpose.", code="VALIDATION_ERROR")
+            return None, fail("Media has the wrong purpose.", error="VALIDATION_ERROR")
 
         doc.status = "Attached"
         doc.attached_doctype = "AOS Ad"

@@ -48,7 +48,7 @@ def update_my_seller_impl(**kwargs):
         if not seller:
             return fail(
                 "Seller profile not found.",
-                code="NOT_FOUND",
+                error="NOT_FOUND",
             )
 
         seller_doc = frappe.get_doc(
@@ -59,7 +59,7 @@ def update_my_seller_impl(**kwargs):
         if seller_doc.status != "Active":
             return fail(
                 "Seller profile is not available.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         if "business_category" in kwargs:
@@ -109,7 +109,7 @@ def update_my_seller_impl(**kwargs):
             else:
                 return fail(
                     "Shop banner must be uploaded using media_id with purpose=seller_banner.",
-                    code="VALIDATION_ERROR",
+                    error="VALIDATION_ERROR",
                 )
 
         if "operating_hours" in kwargs:
@@ -136,7 +136,7 @@ def update_my_seller_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.db.rollback()
@@ -148,5 +148,5 @@ def update_my_seller_impl(**kwargs):
 
         return fail(
             "Failed to update seller profile.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

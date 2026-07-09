@@ -41,7 +41,7 @@ def get_my_verification_impl(**kwargs):
         if not profile:
             return fail(
                 "Profile not found.",
-                code="PROFILE_NOT_FOUND",
+                error="PROFILE_NOT_FOUND",
             )
 
         verification = frappe.db.get_value(
@@ -89,5 +89,5 @@ def get_my_verification_impl(**kwargs):
         )
         return fail(
             "Failed to fetch verification status.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

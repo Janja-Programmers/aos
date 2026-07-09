@@ -23,7 +23,7 @@ def related_ads_impl(**kwargs):
 
     try:
         if not frappe.db.exists("AOS Ad", ad_id):
-            return fail("Ad not found.", code="NOT_FOUND")
+            return fail("Ad not found.", error="NOT_FOUND")
 
         source = frappe.get_doc("AOS Ad", ad_id)
         if source.status != "Active":
@@ -55,4 +55,4 @@ def related_ads_impl(**kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Related ads search/ranking failed")
-        return fail("Failed to fetch related ads.", code="INTERNAL_ERROR")
+        return fail("Failed to fetch related ads.", error="INTERNAL_ERROR")

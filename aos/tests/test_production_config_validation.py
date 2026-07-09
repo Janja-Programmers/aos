@@ -155,7 +155,7 @@ class TestProductionConfigValidation(FrappeTestCase):
                 response = get_production_config_status()
 
         self.assertFalse(response["ok"])
-        self.assertEqual(response["code"], "PERMISSION_DENIED")
+        self.assertEqual(response["error"], "PERMISSION_DENIED")
         self.assertEqual(frappe.local.response.get("http_status_code"), 403)
 
     def test_admin_diagnostic_returns_redacted_report_for_system_manager(self):

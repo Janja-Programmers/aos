@@ -86,23 +86,23 @@ def validate_basic_fields(title: Any, location: Any, category: Any, description:
     description = (str(description or "").strip())
 
     if not title:
-        return None, None, None, None, fail("Title is required.", code="VALIDATION_ERROR")
+        return None, None, None, None, fail("Title is required.", error="VALIDATION_ERROR")
     if not location:
-        return None, None, None, None, fail("Location is required.", code="VALIDATION_ERROR")
+        return None, None, None, None, fail("Location is required.", error="VALIDATION_ERROR")
     if not category:
-        return None, None, None, None, fail("Category is required.", code="VALIDATION_ERROR")
+        return None, None, None, None, fail("Category is required.", error="VALIDATION_ERROR")
     if not description:
-        return None, None, None, None, fail("Description is required.", code="VALIDATION_ERROR")
+        return None, None, None, None, fail("Description is required.", error="VALIDATION_ERROR")
 
     # Ensure category exists
     if not frappe.db.exists("AOS Category", category):
-        return None, None, None, None, fail("Category not found.", code="NOT_FOUND")
+        return None, None, None, None, fail("Category not found.", error="NOT_FOUND")
 
     # Optional: enforce active category if field exists
     try:
         is_active = frappe.db.get_value("AOS Category", category, "is_active")
         if is_active is not None and int(is_active or 0) != 1:
-            return None, None, None, None, fail("Category is inactive.", code="VALIDATION_ERROR")
+            return None, None, None, None, fail("Category is inactive.", error="VALIDATION_ERROR")
     except Exception:
         pass
 

@@ -93,12 +93,12 @@ def _get_message_for_translation(message_id: str):
 
 def _validate_message_can_be_translated(msg, current_user: str):
 	if current_user not in (msg.participant_1, msg.participant_2):
-		return fail("Not allowed.", code="PERMISSION_DENIED")
+		return fail("Not allowed.", error="PERMISSION_DENIED")
 
 	if _is_deleted_for_everyone(msg):
 		return fail(
 			"Deleted messages cannot be translated.",
-			code="VALIDATION_ERROR",
+			error="VALIDATION_ERROR",
 		)
 
 	delete_field = get_deleted_for_user_field(msg, current_user)
@@ -106,13 +106,13 @@ def _validate_message_can_be_translated(msg, current_user: str):
 	if bool(getattr(msg, delete_field, 0)):
 		return fail(
 			"You cannot translate a message deleted for you.",
-			code="VALIDATION_ERROR",
+			error="VALIDATION_ERROR",
 		)
 
 	if msg.message_type not in TRANSLATABLE_MESSAGE_TYPES:
 		return fail(
 			"This message type cannot be translated.",
-			code="VALIDATION_ERROR",
+			error="VALIDATION_ERROR",
 		)
 
 	content = _clean_text(msg.content)
@@ -120,7 +120,7 @@ def _validate_message_can_be_translated(msg, current_user: str):
 	if not content:
 		return fail(
 			"This message has no text to translate.",
-			code="VALIDATION_ERROR",
+			error="VALIDATION_ERROR",
 		)
 
 	return None
@@ -250,16 +250,16 @@ def translate_message_impl(**kwargs):
 	force_refresh = bool(int(kwargs.get("force_refresh") or 0))
 
 	if not message_id:
-		return fail("message_id is required.", code="VALIDATION_ERROR")
+		return fail("message_id is required.", error="VALIDATION_ERROR")
 
 	if not target_language:
-		return fail("target_language is required.", code="VALIDATION_ERROR")
+		return fail("target_language is required.", error="VALIDATION_ERROR")
 
 	try:
 		msg = _get_message_for_translation(message_id)
 
 		if not msg:
-			return fail("Message not found.", code="NOT_FOUND")
+			return fail("Message not found.", error="NOT_FOUND")
 
 		validation_error = _validate_message_can_be_translated(msg, current_user)
 		if validation_error:
@@ -361,18 +361,18 @@ def translate_message_impl(**kwargs):
 
 		return fail(
 			"Failed to cache translation. Please try again.",
-			code="INTERNAL_ERROR",
+			error="INTERNAL_ERROR",
 		)
 
 	except TranslationValidationError as ex:
-		return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+		return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
 	except TranslationUnavailableError as ex:
-		return safe_fail_from_exception(ex, fallback="Translation service is unavailable.", code="TRANSLATION_UNAVAILABLE", log_title="AOS Translation Unavailable")
+		return safe_fail_from_exception(ex, fallback="Translation service is unavailable.", error="TRANSLATION_UNAVAILABLE", log_title="AOS Translation Unavailable")
 
 	except frappe.ValidationError as ex:
 		frappe.db.rollback()
-		return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+		return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
 	except Exception:
 		frappe.log_error(
@@ -380,4 +380,4 @@ def translate_message_impl(**kwargs):
 			"AOS Translate Message Failed",
 		)
 		frappe.db.rollback()
-		return fail("Failed to translate message.", code="INTERNAL_ERROR")
+		return fail("Failed to translate message.", error="INTERNAL_ERROR")

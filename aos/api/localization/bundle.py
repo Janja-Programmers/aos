@@ -97,5 +97,5 @@ def get_locale_bundle_impl(**_):
 
         return fail(
             "Failed to load locale bundle.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

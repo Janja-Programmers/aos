@@ -176,50 +176,50 @@ def edit_message_impl(**kwargs):
     content = (kwargs.get("content") or "").strip()
 
     if not message_id:
-        return fail("message_id is required.", code="VALIDATION_ERROR")
+        return fail("message_id is required.", error="VALIDATION_ERROR")
 
     if not content:
-        return fail("content is required.", code="VALIDATION_ERROR")
+        return fail("content is required.", error="VALIDATION_ERROR")
 
     try:
         rows = _get_message_for_edit(message_id)
 
         if not rows:
-            return fail("Message not found.", code="NOT_FOUND")
+            return fail("Message not found.", error="NOT_FOUND")
 
         msg = rows[0]
 
         if current_user not in (msg.participant_1, msg.participant_2):
-            return fail("Not allowed.", code="PERMISSION_DENIED")
+            return fail("Not allowed.", error="PERMISSION_DENIED")
 
         if msg.sender != current_user:
             return fail(
                 "You can only edit your own messages.",
-                code="PERMISSION_DENIED",
+                error="PERMISSION_DENIED",
             )
 
         if _is_deleted_for_everyone(msg):
             return fail(
                 "Deleted messages cannot be edited.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         if _is_deleted_for_current_user(msg, current_user):
             return fail(
                 "You cannot edit a message you deleted for yourself.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         if msg.message_type not in EDITABLE_MESSAGE_TYPES:
             return fail(
                 "This message type cannot be edited.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         if msg.message_type == "ad" and not msg.ad:
             return fail(
                 "Invalid ad message.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         old_content = (msg.content or "").strip()
@@ -227,7 +227,7 @@ def edit_message_impl(**kwargs):
         if old_content == content:
             return fail(
                 "Message content has not changed.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         now = now_datetime()
@@ -283,7 +283,7 @@ def edit_message_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -291,4 +291,4 @@ def edit_message_impl(**kwargs):
             "AOS Edit Message Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to edit message.", code="INTERNAL_ERROR")
+        return fail("Failed to edit message.", error="INTERNAL_ERROR")

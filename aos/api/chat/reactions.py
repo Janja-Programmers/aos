@@ -98,12 +98,12 @@ def _get_existing_reaction(*, message_id: str, user: str):
 
 def _validate_message_can_be_reacted_to(msg, current_user: str):
     if current_user not in (msg.participant_1, msg.participant_2):
-        return fail("Not allowed.", code="PERMISSION_DENIED")
+        return fail("Not allowed.", error="PERMISSION_DENIED")
 
     if bool(msg.deleted_for_everyone):
         return fail(
             "Deleted messages cannot be reacted to.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     delete_field = get_deleted_for_user_field(msg, current_user)
@@ -111,13 +111,13 @@ def _validate_message_can_be_reacted_to(msg, current_user: str):
     if bool(getattr(msg, delete_field, 0)):
         return fail(
             "You cannot react to a message deleted for you.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if msg.message_type == "system":
         return fail(
             "System messages cannot be reacted to.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     return None
@@ -130,7 +130,7 @@ def _validate_emoji(emoji: str | None):
     if len(emoji) > MAX_EMOJI_LENGTH:
         return fail(
             f"Emoji cannot exceed {MAX_EMOJI_LENGTH} characters.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     return None
@@ -335,7 +335,7 @@ def toggle_message_reaction_impl(**kwargs):
     emoji = _clean_emoji(kwargs.get("emoji"))
 
     if not message_id:
-        return fail("message_id is required.", code="VALIDATION_ERROR")
+        return fail("message_id is required.", error="VALIDATION_ERROR")
 
     emoji_error = _validate_emoji(emoji)
     if emoji_error:
@@ -345,7 +345,7 @@ def toggle_message_reaction_impl(**kwargs):
         msg = _get_message_with_conversation(message_id)
 
         if not msg:
-            return fail("Message not found.", code="NOT_FOUND")
+            return fail("Message not found.", error="NOT_FOUND")
 
         validation_error = _validate_message_can_be_reacted_to(
             msg,
@@ -441,12 +441,12 @@ def toggle_message_reaction_impl(**kwargs):
         frappe.db.rollback()
         return fail(
             "Reaction already exists. Please retry.",
-            code="CONFLICT",
+            error="CONFLICT",
         )
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -454,4 +454,4 @@ def toggle_message_reaction_impl(**kwargs):
             "AOS Toggle Message Reaction Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to update message reaction.", code="INTERNAL_ERROR")
+        return fail("Failed to update message reaction.", error="INTERNAL_ERROR")

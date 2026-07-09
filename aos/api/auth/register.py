@@ -1,18 +1,20 @@
+"""Account registration implementation."""
+
+from __future__ import annotations
+
 import frappe
 
 from aos.api.shared.account_status import get_account_state
-from aos.api.shared.rate_limit import rate_limit, request_ip
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
 from aos.api.shared.responses import ok, fail
-from aos.api.shared.market_context import resolve_market_context
-from aos.api.shared.validators import resolve_language
-from aos.utils.aos_settings import get_aos_settings_snapshot
 
+from .account_helpers import ensure_aos_profile, ensure_user_preference, safe_log_auth_event
 from .constants import REGISTER_LIMIT_PER_HOUR_PER_IP
 from .validators import normalize_email, normalize_name, validate_registration_inputs
 from .verification import (
     compute_expiry,
-    generate_otp,
     ensure_ver_doc,
+    generate_otp,
     otp_hash,
     send_otp_email,
 )
@@ -21,25 +23,22 @@ from .verification import (
 def register_impl(**kwargs):
     email = normalize_email(kwargs.get("email") or "")
     full_name = normalize_name(kwargs.get("full_name") or "")
-    password = kwargs.get("password") or ""
+    password = kwargs.get("password") if isinstance(kwargs.get("password"), str) else ""
 
-    country = kwargs.get("country")
-    language = kwargs.get("language")
-    currency = kwargs.get("currency")
-
-    # Rate limit by IP
+    # Rate limit by IP. Request body fields are not part of this key.
     rl = rate_limit(
-        key=f"aos:reg:ip:{request_ip()}",
+        key=rate_limit_key("auth", "register", "ip", request_ip()),
         ttl_seconds=60 * 60,
         limit=REGISTER_LIMIT_PER_HOUR_PER_IP,
         message="Too many registration attempts. Please try again later.",
     )
     if rl:
+        safe_log_auth_event("AOS Register Rate Limited", identifier=email, reason="rate_limit")
         return rl
 
-    # Validate inputs
     err = validate_registration_inputs(email, password, full_name)
     if err:
+        safe_log_auth_event("AOS Register Malformed", identifier=email, reason="validation")
         return err
 
     # Prevent duplicate accounts.
@@ -51,33 +50,16 @@ def register_impl(**kwargs):
         if state.get("is_deleted"):
             return fail(
                 "This account was previously deleted. Please restore it instead.",
-                code="ACCOUNT_DELETED_RESTORABLE",
+                error="ACCOUNT_DELETED_RESTORABLE",
                 data={"can_restore": bool(state.get("can_restore"))},
                 http_status=403,
             )
 
-        return fail("An account with this email already exists.", code="ALREADY_EXISTS")
-
-    # Resolve preference values
-    country_name, currency_code, err = resolve_market_context(country=country, currency=currency)
-    if err:
-        return err
-
-    if language:
-        language_name, err = resolve_language(language)
-        if err:
-            return err
-    else:
-        settings = get_aos_settings_snapshot()
-        if not settings.default_language:
-            return fail(
-                "Default language not configured.",
-                code="CONFIG_ERROR",
-            )
-        language_name = settings.default_language
+        return fail("An account with this email already exists.", error="ALREADY_EXISTS")
 
     try:
-        # Create disabled user
+        # Create disabled user. ``ignore_permissions=True`` is required because
+        # guest signup must be able to create exactly its own Website User.
         user = frappe.new_doc("User")
         user.email = email
         user.first_name = full_name
@@ -92,22 +74,17 @@ def register_impl(**kwargs):
         user.flags.no_welcome_mail = True
         user.insert(ignore_permissions=True)
 
-        # Create User Profile
-        profile = frappe.new_doc("AOS Profile")
-        profile.user = user.name
-        profile.account_status = "Active"
-        profile.is_deleted = 0
-        profile.insert(ignore_permissions=True)
+        ensure_aos_profile(user.name)
+        pref, pref_err = ensure_user_preference(
+            user.name,
+            country=kwargs.get("country"),
+            language=kwargs.get("language"),
+            currency=kwargs.get("currency"),
+        )
+        if pref_err:
+            frappe.db.rollback()
+            return pref_err
 
-        # Create User Preference
-        pref = frappe.new_doc("AOS User Preference")
-        pref.user = user.name
-        pref.country = country_name
-        pref.language = language_name
-        pref.currency = currency_code
-        pref.insert(ignore_permissions=True)
-
-        # OTP record
         otp = generate_otp()
         expires_at = compute_expiry()
 
@@ -129,13 +106,9 @@ def register_impl(**kwargs):
         )
 
         frappe.db.commit()
-
         return ok("OTP sent to email. Please verify to activate account.")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Register Failed")
         frappe.db.rollback()
-        return fail(
-            "Registration failed. Please try again.",
-            code="REGISTER_FAILED",
-        )
+        return fail("Registration failed. Please try again.", error="REGISTER_FAILED")

@@ -84,7 +84,7 @@ def _normalize_audience(value) -> tuple[str | None, object | None]:
     audience = str(audience).strip().lower()
 
     if audience not in VALID_SHORT_AUDIENCES:
-        return None, fail("Invalid audience.", code="VALIDATION_ERROR")
+        return None, fail("Invalid audience.", error="VALIDATION_ERROR")
 
     return audience, None
 
@@ -125,11 +125,11 @@ def _normalize_bool(value, *, default: int = 1) -> int:
 def _media_error_response(exc: Exception):
     """Convert media service exceptions to stable API responses."""
     if isinstance(exc, MediaNotFoundError):
-        return safe_fail_from_exception(exc, fallback="Media not found.", code="NOT_FOUND")
+        return safe_fail_from_exception(exc, fallback="Media not found.", error="NOT_FOUND")
     if isinstance(exc, MediaPermissionError):
-        return safe_fail_from_exception(exc, fallback="Not allowed.", code="FORBIDDEN")
+        return safe_fail_from_exception(exc, fallback="Not allowed.", error="FORBIDDEN")
     if isinstance(exc, MediaValidationError):
-        return safe_fail_from_exception(exc, fallback="Invalid media.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(exc, fallback="Invalid media.", error="VALIDATION_ERROR")
     return None
 
 
@@ -193,16 +193,16 @@ def create_short_impl(**kwargs):
             media_err = _media_error_response(exc)
             if media_err:
                 return media_err
-            return fail("Upload not completed or file missing.", code="FILE_MISSING")
+            return fail("Upload not completed or file missing.", error="FILE_MISSING")
 
         if media_doc.purpose != "short_video_raw":
-            return fail("Raw short video media has the wrong purpose.", code="VALIDATION_ERROR")
+            return fail("Raw short video media has the wrong purpose.", error="VALIDATION_ERROR")
 
         if media_doc.visibility != "Private":
-            return fail("Raw short video media must be private.", code="VALIDATION_ERROR")
+            return fail("Raw short video media must be private.", error="VALIDATION_ERROR")
 
         if media_doc.status != "Uploaded":
-            return fail("Raw short video media must be uploaded before creating a short.", code="VALIDATION_ERROR")
+            return fail("Raw short video media must be uploaded before creating a short.", error="VALIDATION_ERROR")
 
         doc = frappe.get_doc(
             {
@@ -250,11 +250,11 @@ def create_short_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
     except Exception:
         frappe.log_error(frappe.get_traceback(), "create_short failed")
         frappe.db.rollback()
-        return fail("Failed to create short.", code="INTERNAL_ERROR")
+        return fail("Failed to create short.", error="INTERNAL_ERROR")
 
 
 # UPDATE METADATA
@@ -295,13 +295,13 @@ def update_short_metadata_impl(**kwargs):
         doc = frappe.get_doc("AOS Short", short_id)
 
         if doc.owner != user:
-            return fail("Not allowed.", code="FORBIDDEN")
+            return fail("Not allowed.", error="FORBIDDEN")
 
         # Only allow publishing when processing is complete
         if doc.status != "ready":
             return fail(
                 "Short not ready for publishing.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         was_visible = doc.visibility_status == "visible"
@@ -318,7 +318,7 @@ def update_short_metadata_impl(**kwargs):
             if not seller:
                 return fail(
                     "Seller profile is required to publish shop shorts.",
-                    code="SELLER_REQUIRED",
+                    error="SELLER_REQUIRED",
                 )
 
             ad_id, err = require_id(kwargs.get("ad_id"), "ad_id")
@@ -330,13 +330,13 @@ def update_short_metadata_impl(**kwargs):
             if ad.status != "Active":
                 return fail(
                     "Shorts can only be attached to active ads.",
-                    code="VALIDATION_ERROR",
+                    error="VALIDATION_ERROR",
                 )
 
             if ad.seller != seller:
                 return fail(
                     "Not allowed to attach to this ad.",
-                    code="FORBIDDEN",
+                    error="FORBIDDEN",
                 )
 
             doc.seller = seller
@@ -412,9 +412,9 @@ def update_short_metadata_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "update_short_metadata failed")
         frappe.db.rollback()
-        return fail("Failed to update short", code="INTERNAL_ERROR")
+        return fail("Failed to update short", error="INTERNAL_ERROR")

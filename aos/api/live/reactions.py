@@ -117,13 +117,13 @@ def send_reaction_impl(**kwargs):
     if not reaction_type:
         return fail(
             "reaction_type is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if reaction_type not in VALID_REACTION_TYPES:
         return fail(
             "Invalid reaction_type.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     session_id = _normalize_session_id(
@@ -187,7 +187,7 @@ def send_reaction_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -198,5 +198,5 @@ def send_reaction_impl(**kwargs):
 
         return fail(
             "Failed to send reaction.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

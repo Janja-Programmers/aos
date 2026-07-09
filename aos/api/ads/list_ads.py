@@ -108,33 +108,33 @@ def list_ads_impl(**kwargs):
 
     # Validation
     if seller and not frappe.db.exists("AOS Seller", seller):
-        return fail("Seller not found.", code="VALIDATION_ERROR")
+        return fail("Seller not found.", error="VALIDATION_ERROR")
 
     if sort not in ALLOWED_SORTS:
         return fail(
             "Invalid sort.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
             data={"allowed": sorted(ALLOWED_SORTS)},
         )
 
     if price_type and price_type not in ALLOWED_PRICE_TYPES:
         return fail(
             "Invalid price_type.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
             data={"allowed": sorted(ALLOWED_PRICE_TYPES)},
         )
 
     if promotion_type and promotion_type not in ALLOWED_PROMOTIONS:
         return fail(
             "Invalid promotion_type.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
             data={"allowed": sorted(ALLOWED_PROMOTIONS)},
         )
 
     if price_min is not None and price_max is not None and price_min > price_max:
         return fail(
             "price_min cannot be greater than price_max.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     limit = max(1, min(_safe_int(kwargs.get("limit"), 20), 50))
@@ -465,5 +465,5 @@ def list_ads_impl(**kwargs):
 
         return fail(
             "Failed to fetch ads.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

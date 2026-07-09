@@ -194,13 +194,13 @@ def get_category_schema_impl(**kwargs):
     category = kwargs.get("category")
 
     if not category:
-        return fail("Category is required.", code="VALIDATION_ERROR")
+        return fail("Category is required.", error="VALIDATION_ERROR")
 
     try:
         chain = _get_category_chain(category)
 
         if not chain:
-            return fail("Category not found.", code="NOT_FOUND")
+            return fail("Category not found.", error="NOT_FOUND")
 
         leaf = chain[0]
 
@@ -221,7 +221,7 @@ def get_category_schema_impl(**kwargs):
         return ok("Category schema fetched.", data=data)
 
     except frappe.DoesNotExistError:
-        return fail("Category not found.", code="NOT_FOUND")
+        return fail("Category not found.", error="NOT_FOUND")
 
     except Exception:
         frappe.log_error(
@@ -231,5 +231,5 @@ def get_category_schema_impl(**kwargs):
 
         return fail(
             "Failed to fetch category schema.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

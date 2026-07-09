@@ -14,7 +14,7 @@ from aos.api.shared.account_status import (
     is_account_deleted,
 )
 from aos.api.shared.auth import require_login
-from aos.api.shared.rate_limit import rate_limit, request_ip
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
 from aos.api.shared.responses import ok, fail
 
 from aos.services.account_deletion_service import (
@@ -143,7 +143,7 @@ def delete_account_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:delete_account:user:{current_user}",
+        key=rate_limit_key("auth", "delete_account", "user", current_user),
         ttl_seconds=60 * 60,
         limit=DELETE_ACCOUNT_LIMIT_PER_HOUR_PER_USER,
         message="Too many delete-account attempts. Please try again later.",
@@ -152,7 +152,7 @@ def delete_account_impl(**kwargs):
         return rl
 
     rl2 = rate_limit(
-        key=f"aos:delete_account:ip:{request_ip()}",
+        key=rate_limit_key("auth", "delete_account", "ip", request_ip()),
         ttl_seconds=60 * 60,
         limit=DELETE_ACCOUNT_LIMIT_PER_HOUR_PER_IP,
         message="Too many delete-account attempts. Please try again later.",
@@ -164,7 +164,7 @@ def delete_account_impl(**kwargs):
     if confirmation != DELETE_CONFIRMATION_TEXT:
         return fail(
             "Please type DELETE to confirm account deletion.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     reason = _normalize_reason(kwargs.get("reason") or "")
@@ -176,7 +176,7 @@ def delete_account_impl(**kwargs):
             return ok("Account already deleted.")
 
         if not frappe.db.exists("AOS Profile", current_user):
-            return fail("User profile not found.", code="PROFILE_NOT_FOUND", http_status=404)
+            return fail("User profile not found.", error="PROFILE_NOT_FOUND", http_status=404)
 
         _mark_profile_deleted(user=current_user, reason=reason)
         cleanup_summary = cleanup_deleted_account_features(current_user)
@@ -207,7 +207,7 @@ def delete_account_impl(**kwargs):
         frappe.db.rollback()
         return fail(
             "Failed to delete account. Please try again.",
-            code="DELETE_ACCOUNT_FAILED",
+            error="DELETE_ACCOUNT_FAILED",
             http_status=500,
         )
 
@@ -219,15 +219,12 @@ def request_restore_account_impl(**kwargs):
     """
     email = normalize_email(kwargs.get("email") or "")
 
-    if not email:
-        return fail("Email is required.", code="VALIDATION_ERROR")
-
     err = validate_email(email)
     if err:
         return err
 
     rl = rate_limit(
-        key=f"aos:restore:req:email:{email}",
+        key=rate_limit_key("auth", "restore_request", "identifier", email or "blank"),
         ttl_seconds=60 * 60,
         limit=RESTORE_REQUEST_LIMIT_PER_HOUR_PER_EMAIL,
         message="Too many restore requests. Please try again later.",
@@ -236,7 +233,7 @@ def request_restore_account_impl(**kwargs):
         return rl
 
     rl2 = rate_limit(
-        key=f"aos:restore:req:ip:{request_ip()}",
+        key=rate_limit_key("auth", "restore_request", "ip", request_ip()),
         ttl_seconds=60 * 60,
         limit=RESTORE_REQUEST_LIMIT_PER_HOUR_PER_IP,
         message="Too many restore requests. Please try again later.",
@@ -283,7 +280,7 @@ def restore_account_impl(**kwargs):
     otp = (kwargs.get("otp") or "").strip()
 
     rl = rate_limit(
-        key=f"aos:restore:verify:email:{email}",
+        key=rate_limit_key("auth", "restore_verify", "identifier", email or "blank"),
         ttl_seconds=60 * 60,
         limit=RESTORE_VERIFY_LIMIT_PER_HOUR_PER_EMAIL,
         message="Too many restore attempts. Please try again later.",
@@ -292,7 +289,7 @@ def restore_account_impl(**kwargs):
         return rl
 
     rl2 = rate_limit(
-        key=f"aos:restore:verify:ip:{request_ip()}",
+        key=rate_limit_key("auth", "restore_verify", "ip", request_ip()),
         ttl_seconds=60 * 60,
         limit=RESTORE_VERIFY_LIMIT_PER_HOUR_PER_IP,
         message="Too many restore attempts. Please try again later.",
@@ -300,34 +297,34 @@ def restore_account_impl(**kwargs):
     if rl2:
         return rl2
 
-    if not email or not otp:
-        return fail("Email and OTP are required.", code="VALIDATION_ERROR")
-
     err = validate_email(email)
     if err:
         return err
+
+    if not otp:
+        return fail("OTP is required.", error="VALIDATION_ERROR", data={"field": "otp"})
 
     try:
         user_name = frappe.db.get_value("User", {"email": email}, "name")
 
         if not user_name:
-            return fail("Invalid OTP.", code="OTP_INVALID")
+            return fail("Invalid OTP.", error="OTP_INVALID")
 
         state = get_account_state(user_name)
         if not state.get("is_deleted"):
-            return fail("Account is not deleted.", code="ACCOUNT_NOT_DELETED")
+            return fail("Account is not deleted.", error="ACCOUNT_NOT_DELETED")
 
         if not can_restore_account(user_name):
             return fail(
                 "This account can no longer be restored.",
-                code="RESTORE_EXPIRED",
+                error="RESTORE_EXPIRED",
                 data={"can_restore": False},
                 http_status=410,
             )
 
         ver = get_ver_doc(user_name, purpose=RESTORE_PURPOSE)
         if not ver:
-            return fail("OTP not found. Please request a new OTP.", code="OTP_NOT_FOUND")
+            return fail("OTP not found. Please request a new OTP.", error="OTP_NOT_FOUND")
 
         otp_err = verify_otp(ver, otp, consume=True)
         if otp_err:
@@ -359,6 +356,6 @@ def restore_account_impl(**kwargs):
         frappe.db.rollback()
         return fail(
             "Failed to restore account. Please try again.",
-            code="RESTORE_ACCOUNT_FAILED",
+            error="RESTORE_ACCOUNT_FAILED",
             http_status=500,
         )

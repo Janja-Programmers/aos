@@ -31,7 +31,7 @@ def toggle_wishlist_impl(**kwargs):
     ad_id = str(kwargs.get("ad_id") or "").strip()
 
     if not ad_id:
-        return fail("Ad id is required.", code="VALIDATION_ERROR")
+        return fail("Ad id is required.", error="VALIDATION_ERROR")
 
     today = getdate(nowdate())
 
@@ -50,20 +50,20 @@ def toggle_wishlist_impl(**kwargs):
         )
 
         if not ad:
-            return fail("Ad not found.", code="NOT_FOUND")
+            return fail("Ad not found.", error="NOT_FOUND")
 
         # Ad must be active
         if ad.status != "Active":
             return fail(
                 "Only active ads can be added to wishlist.",
-                code="INVALID_AD",
+                error="INVALID_AD",
             )
 
         # Ad must not be expired
         if ad.expires_on and getdate(ad.expires_on) < today:
             return fail(
                 "This ad has expired.",
-                code="EXPIRED_AD",
+                error="EXPIRED_AD",
             )
 
         # Seller must be active
@@ -76,7 +76,7 @@ def toggle_wishlist_impl(**kwargs):
         if seller_status != "Active":
             return fail(
                 "This seller is not available.",
-                code="SELLER_INACTIVE",
+                error="SELLER_INACTIVE",
             )
 
         docname = f"{user}-{ad_id}"
@@ -129,5 +129,5 @@ def toggle_wishlist_impl(**kwargs):
 
         return fail(
             "Failed to update wishlist.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

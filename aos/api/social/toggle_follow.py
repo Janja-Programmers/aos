@@ -43,20 +43,20 @@ def toggle_follow_impl(**kwargs):
     target_user = kwargs.get("target_user")
 
     if not target_user:
-        return fail("Target user is required.", code="VALIDATION_ERROR")
+        return fail("Target user is required.", error="VALIDATION_ERROR")
 
     if target_user == current_user:
-        return fail("You cannot follow yourself.", code="VALIDATION_ERROR")
+        return fail("You cannot follow yourself.", error="VALIDATION_ERROR")
 
     try:
         if not frappe.db.exists("User", target_user):
-            return fail("User not found.", code="NOT_FOUND")
+            return fail("User not found.", error="NOT_FOUND")
 
         if not frappe.db.exists("AOS Profile", current_user):
-            return fail("Current user profile not found.", code="PROFILE_NOT_FOUND")
+            return fail("Current user profile not found.", error="PROFILE_NOT_FOUND")
 
         if not frappe.db.exists("AOS Profile", target_user):
-            return fail("User profile not found.", code="PROFILE_NOT_FOUND")
+            return fail("User profile not found.", error="PROFILE_NOT_FOUND")
 
         block_err = ensure_not_blocked(
             current_user=current_user,
@@ -172,7 +172,7 @@ def toggle_follow_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -180,7 +180,7 @@ def toggle_follow_impl(**kwargs):
             "AOS Toggle Follow Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to toggle follow.", code="INTERNAL_ERROR")
+        return fail("Failed to toggle follow.", error="INTERNAL_ERROR")
 
 
 def _delete_follow_direct(*, current_user: str, target_user: str):

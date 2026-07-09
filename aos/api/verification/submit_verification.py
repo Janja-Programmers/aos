@@ -43,7 +43,7 @@ def submit_verification_impl(**kwargs):
         if not frappe.db.exists("AOS Profile", current_user):
             return fail(
                 "Profile not found.",
-                code="PROFILE_NOT_FOUND",
+                error="PROFILE_NOT_FOUND",
             )
 
         profile = frappe.get_doc("AOS Profile", current_user)
@@ -51,7 +51,7 @@ def submit_verification_impl(**kwargs):
         if profile.is_verified:
             return fail(
                 "Account is already verified.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         verification_type = kwargs.get("verification_type")
@@ -90,13 +90,13 @@ def submit_verification_impl(**kwargs):
             if verification.status in ["Pending", "Reviewing"]:
                 return fail(
                     "Verification request already in progress.",
-                    code="VALIDATION_ERROR",
+                    error="VALIDATION_ERROR",
                 )
 
             if verification.status not in ["Rejected", "Revoked"]:
                 return fail(
                     "Verification request cannot be submitted.",
-                    code="VALIDATION_ERROR",
+                    error="VALIDATION_ERROR",
                 )
 
             verification.rejection_reason = None
@@ -177,7 +177,7 @@ def submit_verification_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -189,5 +189,5 @@ def submit_verification_impl(**kwargs):
 
         return fail(
             "Failed to submit verification.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

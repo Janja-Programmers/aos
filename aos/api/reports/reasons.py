@@ -36,4 +36,4 @@ def list_report_reasons_impl(**kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS List Report Reasons Failed")
-        return fail("Failed to fetch reasons.", code="INTERNAL_ERROR")
+        return fail("Failed to fetch reasons.", error="INTERNAL_ERROR")

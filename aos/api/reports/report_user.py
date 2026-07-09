@@ -31,10 +31,10 @@ def _truthy(value: Any) -> bool:
 
 def _validate_target_user(*, current_user: str, target_user: str):
     if not target_user:
-        return fail("Target user is required.", code="VALIDATION_ERROR")
+        return fail("Target user is required.", error="VALIDATION_ERROR")
 
     if target_user == current_user:
-        return fail("You cannot report yourself.", code="VALIDATION_ERROR")
+        return fail("You cannot report yourself.", error="VALIDATION_ERROR")
 
     user = frappe.db.get_value(
         "User",
@@ -44,23 +44,23 @@ def _validate_target_user(*, current_user: str, target_user: str):
     )
 
     if not user:
-        return fail("User not found.", code="NOT_FOUND")
+        return fail("User not found.", error="NOT_FOUND")
 
     if int(user.enabled or 0) != 1:
-        return fail("User not found.", code="NOT_FOUND")
+        return fail("User not found.", error="NOT_FOUND")
 
     if is_account_deleted(target_user):
-        return fail("User not found.", code="NOT_FOUND")
+        return fail("User not found.", error="NOT_FOUND")
 
     if not frappe.db.exists("AOS Profile", target_user):
-        return fail("User profile not found.", code="PROFILE_NOT_FOUND")
+        return fail("User profile not found.", error="PROFILE_NOT_FOUND")
 
     return None
 
 
 def _validate_reason(reason: str):
     if not reason:
-        return fail("Reason is required.", code="VALIDATION_ERROR")
+        return fail("Reason is required.", error="VALIDATION_ERROR")
 
     reason_doc = frappe.db.get_value(
         "AOS Report Reason",
@@ -70,10 +70,10 @@ def _validate_reason(reason: str):
     )
 
     if not reason_doc:
-        return fail("Invalid report reason.", code="VALIDATION_ERROR")
+        return fail("Invalid report reason.", error="VALIDATION_ERROR")
 
     if not int(reason_doc.is_active or 0):
-        return fail("Selected report reason is inactive.", code="VALIDATION_ERROR")
+        return fail("Selected report reason is inactive.", error="VALIDATION_ERROR")
 
     return None
 
@@ -115,7 +115,7 @@ def report_user_impl(**kwargs):
     if len(details) > USER_REPORT_DETAILS_MAX_LEN:
         return fail(
             f"Details are too long. Maximum is {USER_REPORT_DETAILS_MAX_LEN} characters.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if frappe.db.exists(
@@ -126,7 +126,7 @@ def report_user_impl(**kwargs):
             "status": ["!=", "Rejected"],
         },
     ):
-        return fail("You have already reported this user.", code="VALIDATION_ERROR")
+        return fail("You have already reported this user.", error="VALIDATION_ERROR")
 
     try:
         report = frappe.new_doc("AOS User Report")
@@ -167,7 +167,7 @@ def report_user_impl(**kwargs):
             if not block_response.get("ok"):
                 response_data["block_error"] = {
                     "message": block_response.get("message"),
-                    "code": block_response.get("code"),
+                    "error": block_response.get("error"),
                 }
 
         return ok(
@@ -176,8 +176,8 @@ def report_user_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Report User Failed")
-        return fail("Failed to submit report.", code="INTERNAL_ERROR")
+        return fail("Failed to submit report.", error="INTERNAL_ERROR")

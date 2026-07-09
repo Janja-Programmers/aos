@@ -36,10 +36,10 @@ def toggle_reaction_impl(**kwargs):
     reaction = str(kwargs.get("reaction") or "").strip()
 
     if not review:
-        return fail("Review is required.", code="VALIDATION_ERROR")
+        return fail("Review is required.", error="VALIDATION_ERROR")
 
     if reaction not in {"Like", "Dislike"}:
-        return fail("Invalid reaction.", code="VALIDATION_ERROR")
+        return fail("Invalid reaction.", error="VALIDATION_ERROR")
 
     review_doc = frappe.db.get_value(
         "AOS Review",
@@ -49,16 +49,16 @@ def toggle_reaction_impl(**kwargs):
     )
 
     if not review_doc or review_doc.status != "Approved":
-        return fail("Review not found.", code="NOT_FOUND")
+        return fail("Review not found.", error="NOT_FOUND")
 
     # Make sure the reviewed ad still exists and is visible.
     ad_status = frappe.db.get_value("AOS Ad", review_doc.ad, "status")
 
     if ad_status != "Active":
-        return fail("Review not found.", code="NOT_FOUND")
+        return fail("Review not found.", error="NOT_FOUND")
 
     if review_doc.reviewer == current_user:
-        return fail("You cannot react to your own review.", code="VALIDATION_ERROR")
+        return fail("You cannot react to your own review.", error="VALIDATION_ERROR")
 
     try:
         existing = frappe.get_all(
@@ -135,7 +135,7 @@ def toggle_reaction_impl(**kwargs):
             )
 
         if isinstance(ex, frappe.ValidationError):
-            return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+            return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
         frappe.log_error(frappe.get_traceback(), "AOS Toggle Reaction Failed")
-        return fail("Failed to toggle reaction.", code="INTERNAL_ERROR")
+        return fail("Failed to toggle reaction.", error="INTERNAL_ERROR")

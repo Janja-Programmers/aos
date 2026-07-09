@@ -42,16 +42,16 @@ def looks_like_media_id(value: Any) -> bool:
 
 def response_from_media_exception(exc: Exception):
     if isinstance(exc, MediaNotFoundError):
-        return fail("Live cover media not found.", code="NOT_FOUND")
+        return fail("Live cover media not found.", error="NOT_FOUND")
 
     if isinstance(exc, MediaPermissionError):
-        return fail(safe_exception_message(exc, "Not allowed."), code="FORBIDDEN")
+        return fail(safe_exception_message(exc, "Not allowed."), error="FORBIDDEN")
 
     if isinstance(exc, MediaValidationError):
-        return fail(safe_exception_message(exc, "Invalid live cover media."), code="VALIDATION_ERROR")
+        return fail(safe_exception_message(exc, "Invalid live cover media."), error="VALIDATION_ERROR")
 
     frappe.log_error(frappe.get_traceback(), "AOS Live Cover Media Failed")
-    return fail("Failed to validate live cover media.", code="INTERNAL_ERROR")
+    return fail("Failed to validate live cover media.", error="INTERNAL_ERROR")
 
 
 def get_live_cover_media_id(live_id: str) -> str:
@@ -100,7 +100,7 @@ def validate_live_cover_media_for_use(*, media_id: Any, user: str, live_id: str 
     media_id = normalize_media_id(media_id)
 
     if not media_id:
-        return None, "", fail("Live cover media id is required.", code="VALIDATION_ERROR")
+        return None, "", fail("Live cover media id is required.", error="VALIDATION_ERROR")
 
     service = MediaService()
 
@@ -109,18 +109,18 @@ def validate_live_cover_media_for_use(*, media_id: Any, user: str, live_id: str 
         service.assert_user_can_manage(doc, user)
 
         if doc.status == "Deleted":
-            return None, "", fail("Live cover media not found.", code="NOT_FOUND")
+            return None, "", fail("Live cover media not found.", error="NOT_FOUND")
 
         if doc.purpose != LIVE_COVER_PURPOSE:
             return None, "", fail(
                 "Live cover media has the wrong purpose.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         if doc.visibility != "Public":
             return None, "", fail(
                 "Live cover media must be public.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         if doc.status == "Uploaded":
@@ -132,7 +132,7 @@ def validate_live_cover_media_for_use(*, media_id: Any, user: str, live_id: str 
 
         return None, "", fail(
             "Live cover media cannot be used in its current state.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     except Exception as exc:

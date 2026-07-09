@@ -48,11 +48,11 @@ def delete_media_impl(**kwargs):
         )
 
     except MediaNotFoundError as exc:
-        return safe_fail_from_exception(exc, fallback="Resource not found.", code="NOT_FOUND")
+        return safe_fail_from_exception(exc, fallback="Resource not found.", error="NOT_FOUND")
     except MediaPermissionError as exc:
-        return safe_fail_from_exception(exc, fallback="Not allowed.", code="FORBIDDEN")
+        return safe_fail_from_exception(exc, fallback="Not allowed.", error="FORBIDDEN")
     except MediaValidationError as exc:
-        return safe_fail_from_exception(exc, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(exc, fallback="Invalid request.", error="VALIDATION_ERROR")
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Media Delete Failed")
-        return fail("Failed to delete media.", code="INTERNAL_ERROR")
+        return fail("Failed to delete media.", error="INTERNAL_ERROR")

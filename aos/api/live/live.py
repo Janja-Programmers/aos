@@ -245,7 +245,7 @@ def _validate_viewer_session(
     if not session_id:
         return fail(
             "session_id is required for viewers.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     return None
@@ -651,7 +651,7 @@ def start_live_impl(**kwargs):
     if not title:
         return fail(
             "title is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     _, err = validate_user_can_go_live(
@@ -781,7 +781,7 @@ def start_live_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -792,7 +792,7 @@ def start_live_impl(**kwargs):
 
         return fail(
             "Failed to start live.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -881,7 +881,7 @@ def join_live_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -892,7 +892,7 @@ def join_live_impl(**kwargs):
 
         return fail(
             "Failed to join live.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -988,7 +988,7 @@ def end_live_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -999,7 +999,7 @@ def end_live_impl(**kwargs):
 
         return fail(
             "Failed to end live.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -1040,7 +1040,7 @@ def get_live_impl(**kwargs):
         if not live:
             return fail(
                 "Live not found.",
-                code="NOT_FOUND",
+                error="NOT_FOUND",
             )
 
         return ok(
@@ -1062,7 +1062,7 @@ def get_live_impl(**kwargs):
 
         return fail(
             "Failed to fetch live.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -1143,7 +1143,7 @@ def list_live_streams_impl(**kwargs):
     except ValueError:
         return fail(
             "Invalid pagination values.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     except Exception:
@@ -1154,5 +1154,5 @@ def list_live_streams_impl(**kwargs):
 
         return fail(
             "Failed to fetch live streams.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

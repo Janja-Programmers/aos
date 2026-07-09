@@ -18,7 +18,7 @@ SIGNATURE_HEADER = "X-AOS-Notification-Callback-Signature"
 def _security_failure(exc: CallbackSecurityError):
     return fail(
         safe_exception_message(exc, "Callback authentication failed."),
-        code=exc.code,
+        error=exc.error,
         http_status=exc.http_status,
     )
 
@@ -49,4 +49,4 @@ def handle_callback_impl(**kwargs):
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Notification delivery callback failed")
-        return fail("Notification delivery callback failed.", code="CALLBACK_FAILED")
+        return fail("Notification delivery callback failed.", error="CALLBACK_FAILED")

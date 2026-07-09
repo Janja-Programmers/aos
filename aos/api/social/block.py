@@ -191,10 +191,10 @@ def block_user_impl(**kwargs):
                 )
 
         if isinstance(ex, frappe.ValidationError):
-            return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+            return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
         frappe.log_error(frappe.get_traceback(), "AOS Block User Failed")
-        return fail("Failed to block user.", code="INTERNAL_ERROR")
+        return fail("Failed to block user.", error="INTERNAL_ERROR")
 
 
 def unblock_user_impl(**kwargs):
@@ -265,7 +265,7 @@ def unblock_user_impl(**kwargs):
     except Exception:
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "AOS Unblock User Failed")
-        return fail("Failed to unblock user.", code="INTERNAL_ERROR")
+        return fail("Failed to unblock user.", error="INTERNAL_ERROR")
 
 
 def get_block_status_impl(**kwargs):
@@ -381,7 +381,7 @@ def list_blocked_users_impl(**kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS List Blocked Users Failed")
-        return fail("Failed to fetch blocked users.", code="INTERNAL_ERROR")
+        return fail("Failed to fetch blocked users.", error="INTERNAL_ERROR")
 
 
 def _validate_target_user(
@@ -394,23 +394,23 @@ def _validate_target_user(
     target_user = str(target_user or "").strip()
 
     if not target_user:
-        return None, fail("Target user is required.", code="VALIDATION_ERROR")
+        return None, fail("Target user is required.", error="VALIDATION_ERROR")
 
     if target_user == current_user:
-        return None, fail("You cannot block yourself.", code="VALIDATION_ERROR")
+        return None, fail("You cannot block yourself.", error="VALIDATION_ERROR")
 
     if not frappe.db.exists("User", target_user):
-        return None, fail("User not found.", code="NOT_FOUND")
+        return None, fail("User not found.", error="NOT_FOUND")
 
     if not frappe.db.exists("AOS Profile", target_user):
-        return None, fail("User profile not found.", code="PROFILE_NOT_FOUND")
+        return None, fail("User profile not found.", error="PROFILE_NOT_FOUND")
 
     enabled = frappe.db.get_value("User", target_user, "enabled")
     if not allow_disabled_target and int(enabled or 0) != 1:
-        return None, fail("User is disabled.", code="ACCOUNT_DISABLED", http_status=403)
+        return None, fail("User is disabled.", error="ACCOUNT_DISABLED", http_status=403)
 
     if not allow_deleted_target and is_account_deleted(target_user):
-        return None, fail("User not found.", code="NOT_FOUND")
+        return None, fail("User not found.", error="NOT_FOUND")
 
     return target_user, None
 
@@ -421,7 +421,7 @@ def _normalize_reason(value: Any):
     if len(reason) > BLOCK_REASON_MAX_LEN:
         return None, fail(
             f"Reason is too long. Maximum is {BLOCK_REASON_MAX_LEN} characters.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     return reason, None

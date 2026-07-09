@@ -72,7 +72,7 @@ def remove_background_impl(**kwargs):
 
     media_id = str(kwargs.get("media_id") or kwargs.get("id") or "").strip()
     if not media_id:
-        return fail("Media id is required.", code="VALIDATION_ERROR")
+        return fail("Media id is required.", error="VALIDATION_ERROR")
 
     result_purpose = str(
         kwargs.get("result_purpose")
@@ -143,17 +143,17 @@ def remove_background_impl(**kwargs):
         )
 
     except UnidentifiedImageError:
-        return fail("Only valid image files are supported.", code="UNSUPPORTED_FILE_TYPE")
+        return fail("Only valid image files are supported.", error="UNSUPPORTED_FILE_TYPE")
     except MediaNotFoundError as exc:
-        return safe_fail_from_exception(exc, fallback="Resource not found.", code="NOT_FOUND")
+        return safe_fail_from_exception(exc, fallback="Resource not found.", error="NOT_FOUND")
     except MediaPermissionError as exc:
-        return safe_fail_from_exception(exc, fallback="Not allowed.", code="FORBIDDEN")
+        return safe_fail_from_exception(exc, fallback="Not allowed.", error="FORBIDDEN")
     except (MediaValidationError, RemoveBackgroundValidationError) as exc:
-        return safe_fail_from_exception(exc, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(exc, fallback="Invalid request.", error="VALIDATION_ERROR")
     except BackgroundRemovalValidationError as exc:
-        return safe_fail_from_exception(exc, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(exc, fallback="Invalid request.", error="VALIDATION_ERROR")
     except BackgroundRemovalProcessingError as exc:
-        return safe_fail_from_exception(exc, fallback="Could not remove background from this image.", code="BACKGROUND_REMOVAL_FAILED", http_status=422, log_title="AOS Background Removal Processing Failed")
+        return safe_fail_from_exception(exc, fallback="Could not remove background from this image.", error="BACKGROUND_REMOVAL_FAILED", http_status=422, log_title="AOS Background Removal Processing Failed")
     except BackgroundRemovalUnavailableError as exc:
         frappe.log_error(
             f"Background removal unavailable for media {media_id}: {exc}",
@@ -162,13 +162,13 @@ def remove_background_impl(**kwargs):
         return safe_fail_from_exception(
             exc,
             fallback="Background removal is temporarily unavailable. Please try again later.",
-            code="BACKGROUND_REMOVAL_UNAVAILABLE",
+            error="BACKGROUND_REMOVAL_UNAVAILABLE",
             http_status=503,
             log_title="AOS Background Removal Unavailable",
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Media Remove Background Failed")
-        return fail("Failed to remove background.", code="INTERNAL_ERROR")
+        return fail("Failed to remove background.", error="INTERNAL_ERROR")
 
 
 def _validate_source_media(source) -> None:

@@ -53,12 +53,12 @@ def _ensure_trackable_short(short_id: str, *, viewer: str | None = None):
     )
 
     if not short:
-        return fail("Short not found.", code="NOT_FOUND")
+        return fail("Short not found.", error="NOT_FOUND")
 
     if short.status != "ready" or short.visibility_status != "visible":
         return fail(
             "Short is not available for tracking.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     viewer = viewer or current_user()
@@ -66,7 +66,7 @@ def _ensure_trackable_short(short_id: str, *, viewer: str | None = None):
         viewer = None
 
     if not can_view_short(short, current_user=viewer):
-        return fail("Short not found.", code="NOT_FOUND")
+        return fail("Short not found.", error="NOT_FOUND")
 
     return None
 
@@ -140,7 +140,7 @@ def track_impression_impl(**kwargs):
     except Exception:
         frappe.log_error(frappe.get_traceback(), "track_impression failed")
         frappe.db.rollback()
-        return fail("Failed to track impression", code="INTERNAL_ERROR")
+        return fail("Failed to track impression", error="INTERNAL_ERROR")
 
 
 # TRACK VIEW
@@ -310,7 +310,7 @@ def track_view_impl(**kwargs):
                 frappe.db.rollback()
 
         frappe.log_error(frappe.get_traceback(), "track_view failed")
-        return fail("Failed to track view", code="INTERNAL_ERROR")
+        return fail("Failed to track view", error="INTERNAL_ERROR")
 
 
 # TRACK SHARE
@@ -400,9 +400,9 @@ def track_share_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "track_share failed")
         frappe.db.rollback()
-        return fail("Failed to track share", code="INTERNAL_ERROR")
+        return fail("Failed to track share", error="INTERNAL_ERROR")

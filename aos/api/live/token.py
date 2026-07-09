@@ -150,7 +150,7 @@ def _validate_token_session(
     if not session_id:
         return fail(
             "session_id is required for viewers.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     _, err = validate_active_view_session(
@@ -176,32 +176,32 @@ def _validate_cohost_token_eligibility(
     if cohost.live_stream != live.name:
         return fail(
             "Co-host workflow does not belong to this live stream.",
-            code="INVALID_STATE",
+            error="INVALID_STATE",
         )
 
     if cohost.user != user:
         return fail(
             "Only the co-host candidate can request this token.",
-            code="PERMISSION_DENIED",
+            error="PERMISSION_DENIED",
         )
 
     if cohost.status not in COHOST_TOKEN_STATUSES:
         return fail(
             "The co-host workflow must be accepted before a token "
             "can be generated.",
-            code="INVALID_STATE",
+            error="INVALID_STATE",
         )
 
     if not session_id:
         return fail(
             "session_id is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if cohost.session_id != session_id:
         return fail(
             "The supplied session does not match the co-host workflow.",
-            code="PERMISSION_DENIED",
+            error="PERMISSION_DENIED",
         )
 
     _, err = validate_active_view_session(
@@ -226,7 +226,7 @@ def _validate_cohost_token_eligibility(
     ):
         return fail(
             "The co-host LiveKit identity is invalid.",
-            code="INVALID_STATE",
+            error="INVALID_STATE",
         )
 
     return None
@@ -371,7 +371,7 @@ def get_live_token_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -382,7 +382,7 @@ def get_live_token_impl(**kwargs):
 
         return fail(
             "Failed to generate token.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )
 
 
@@ -461,7 +461,7 @@ def get_live_cohost_token_impl(**kwargs):
         ):
             return fail(
                 "Generated identity does not match the co-host workflow.",
-                code="INVALID_STATE",
+                error="INVALID_STATE",
             )
 
         return ok(
@@ -483,7 +483,7 @@ def get_live_cohost_token_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -494,5 +494,5 @@ def get_live_cohost_token_impl(**kwargs):
 
         return fail(
             "Failed to generate co-host token.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

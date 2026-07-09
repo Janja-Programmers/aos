@@ -68,7 +68,7 @@ def remove_my_seller_location_impl(**kwargs):
         if not seller_name:
             return fail(
                 "Seller profile not found.",
-                code="NOT_FOUND",
+                error="NOT_FOUND",
             )
 
         seller_doc = frappe.get_doc(
@@ -79,7 +79,7 @@ def remove_my_seller_location_impl(**kwargs):
         if seller_doc.status != "Active":
             return fail(
                 "Seller profile is not available.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         for fieldname in LOCATION_FIELDS:
@@ -109,7 +109,7 @@ def remove_my_seller_location_impl(**kwargs):
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.db.rollback()
@@ -121,5 +121,5 @@ def remove_my_seller_location_impl(**kwargs):
 
         return fail(
             "Failed to remove seller location.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

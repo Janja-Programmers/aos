@@ -92,7 +92,7 @@ def ensure_not_blocked(*, current_user: str | None, target_user: str | None, act
 
     return fail(
         _blocked_message(status=status, action=action),
-        code="USER_BLOCKED",
+        error="USER_BLOCKED",
         data=status,
         http_status=403,
     )

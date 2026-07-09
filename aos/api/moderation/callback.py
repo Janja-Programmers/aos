@@ -20,7 +20,7 @@ SIGNATURE_HEADER = "X-AOS-Moderation-Callback-Signature"
 def _security_failure(exc: CallbackSecurityError):
     return fail(
         safe_exception_message(exc, "Callback authentication failed."),
-        code=exc.code,
+        error=exc.error,
         http_status=exc.http_status,
     )
 
@@ -51,4 +51,4 @@ def handle_callback_impl(**kwargs):
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Moderation callback failed")
-        return fail("Moderation callback failed.", code="MODERATION_CALLBACK_FAILED")
+        return fail("Moderation callback failed.", error="MODERATION_CALLBACK_FAILED")

@@ -150,12 +150,12 @@ def _fetch_source_attachments(message_id: str) -> List[frappe._dict]:
 
 def _validate_source_message_can_be_forwarded(source, current_user: str):
     if current_user not in (source.participant_1, source.participant_2):
-        return fail("Not allowed.", code="PERMISSION_DENIED")
+        return fail("Not allowed.", error="PERMISSION_DENIED")
 
     if _is_deleted_for_everyone(source):
         return fail(
             "Deleted messages cannot be forwarded.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     delete_field = get_deleted_for_user_field(source, current_user)
@@ -163,13 +163,13 @@ def _validate_source_message_can_be_forwarded(source, current_user: str):
     if bool(getattr(source, delete_field, 0)):
         return fail(
             "You cannot forward a message deleted for you.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if source.message_type == "system":
         return fail(
             "System messages cannot be forwarded.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     return None
@@ -190,7 +190,7 @@ def _validate_target_conversations(
     if missing:
         return fail(
             "One or more target conversations were not found.",
-            code="NOT_FOUND",
+            error="NOT_FOUND",
             data={"missing_conversation_ids": missing},
         )
 
@@ -205,7 +205,7 @@ def _validate_target_conversations(
     if not_allowed:
         return fail(
             "You are not allowed to forward to one or more conversations.",
-            code="PERMISSION_DENIED",
+            error="PERMISSION_DENIED",
             data={"conversation_ids": not_allowed},
         )
 
@@ -438,19 +438,19 @@ def forward_message_impl(**kwargs):
     target_conversation_ids = _normalize_target_conversation_ids(kwargs)
 
     if not message_id:
-        return fail("message_id is required.", code="VALIDATION_ERROR")
+        return fail("message_id is required.", error="VALIDATION_ERROR")
 
     if not target_conversation_ids:
         return fail(
             "target_conversation_id or target_conversation_ids is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     try:
         source = _get_source_message(message_id)
 
         if not source:
-            return fail("Message not found.", code="NOT_FOUND")
+            return fail("Message not found.", error="NOT_FOUND")
 
         source_error = _validate_source_message_can_be_forwarded(
             source,
@@ -562,7 +562,7 @@ def forward_message_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
@@ -570,4 +570,4 @@ def forward_message_impl(**kwargs):
             "AOS Forward Message Failed",
         )
         frappe.db.rollback()
-        return fail("Failed to forward message.", code="INTERNAL_ERROR")
+        return fail("Failed to forward message.", error="INTERNAL_ERROR")

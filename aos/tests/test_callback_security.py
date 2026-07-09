@@ -76,7 +76,7 @@ class TestCallbackSecurity(FrappeTestCase):
         body = self._body({"job_id": "JOB-001", "status": "ready"})
         with self.assertRaises(CallbackSecurityError) as ctx:
             self._read_payload(body, {"X-AOS-Callback-Timestamp": self.timestamp})
-        self.assertEqual(ctx.exception.code, "UNAUTHORIZED")
+        self.assertEqual(ctx.exception.error, "UNAUTHORIZED")
 
     def test_invalid_signature_fails(self):
         body = self._body({"job_id": "JOB-001", "status": "ready"})
@@ -108,7 +108,7 @@ class TestCallbackSecurity(FrappeTestCase):
                         verify_signature=video_processing_service.verify_signature,
                         max_age_seconds=300,
                     )
-        self.assertEqual(ctx.exception.code, "CALLBACK_AUTH_NOT_CONFIGURED")
+        self.assertEqual(ctx.exception.error, "CALLBACK_AUTH_NOT_CONFIGURED")
         log_error.assert_called_once_with(
             "Missing callback secret for test callback.",
             "AOS callback auth misconfigured",
@@ -123,7 +123,7 @@ class TestCallbackSecurity(FrappeTestCase):
                     "X-Test-Signature": "sha256=unused",
                 },
             )
-        self.assertEqual(ctx.exception.code, "VALIDATION_ERROR")
+        self.assertEqual(ctx.exception.error, "VALIDATION_ERROR")
 
     def test_expired_timestamp_fails(self):
         body = self._body({"job_id": "JOB-001", "status": "ready"})
@@ -146,7 +146,7 @@ class TestCallbackSecurity(FrappeTestCase):
                     response = video_callback.handle_callback_impl(job_id="JOB-001", status="ready")
 
         self.assertFalse(response["ok"])
-        self.assertEqual(response["code"], "VALIDATION_ERROR")
+        self.assertEqual(response["error"], "VALIDATION_ERROR")
         handler.assert_not_called()
 
     def test_service_signature_verifiers_fail_closed_without_secret(self):

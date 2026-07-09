@@ -92,7 +92,7 @@ def _has_allowed_image_extension(filename: str) -> bool:
 
 def _validate_uploaded_image(image_file: Any):
     if not image_file:
-        return fail("Image file is required.", code="VALIDATION_ERROR")
+        return fail("Image file is required.", error="VALIDATION_ERROR")
 
     filename = _filename(image_file)
     content_type = _content_type(image_file)
@@ -107,7 +107,7 @@ def _validate_uploaded_image(image_file: Any):
 
     return fail(
         "Please upload a valid image file.",
-        code="VALIDATION_ERROR",
+        error="VALIDATION_ERROR",
         data={"field": "image"},
     )
 
@@ -257,7 +257,7 @@ def search_ads_by_image_impl(**kwargs):
     except ImageSearchValidationError as exc:
         return fail(
             _norm(exc) or "Invalid image search request.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     except ImageSearchUnavailableError:
@@ -267,7 +267,7 @@ def search_ads_by_image_impl(**kwargs):
         )
         return fail(
             "Image search is temporarily unavailable. Please try again later.",
-            code="IMAGE_SEARCH_UNAVAILABLE",
+            error="IMAGE_SEARCH_UNAVAILABLE",
             http_status=503,
         )
 
@@ -278,7 +278,7 @@ def search_ads_by_image_impl(**kwargs):
         )
         return fail(
             "Image search failed. Please try again later.",
-            code="IMAGE_SEARCH_FAILED",
+            error="IMAGE_SEARCH_FAILED",
             http_status=502,
         )
 
@@ -289,5 +289,5 @@ def search_ads_by_image_impl(**kwargs):
         )
         return fail(
             "Failed to search ads.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

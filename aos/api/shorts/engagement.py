@@ -67,16 +67,16 @@ def toggle_like_impl(**kwargs):
         )
 
         if not short:
-            return fail("Short not found.", code="NOT_FOUND")
+            return fail("Short not found.", error="NOT_FOUND")
 
         if short.status != "ready" or short.visibility_status != "visible":
             return fail(
                 "Short is not available for likes.",
-                code="VALIDATION_ERROR",
+                error="VALIDATION_ERROR",
             )
 
         if not can_view_short(short, current_user=user):
-            return fail("Short not found.", code="NOT_FOUND")
+            return fail("Short not found.", error="NOT_FOUND")
 
         # CHECK EXISTING LIKE
         existing = frappe.get_all(
@@ -164,9 +164,9 @@ def toggle_like_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "toggle_like failed")
         frappe.db.rollback()
-        return fail("Failed to toggle like", code="INTERNAL_ERROR")
+        return fail("Failed to toggle like", error="INTERNAL_ERROR")

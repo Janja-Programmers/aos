@@ -30,9 +30,9 @@ def save_search_impl(**kwargs):
     params = kwargs.get("params_json")
 
     if not title:
-        return fail("Title is required.", code="VALIDATION_ERROR")
+        return fail("Title is required.", error="VALIDATION_ERROR")
     if not isinstance(params, dict):
-        return fail("params_json must be an object.", code="VALIDATION_ERROR")
+        return fail("params_json must be an object.", error="VALIDATION_ERROR")
 
     fingerprint = generate_fingerprint(params)
 

@@ -24,7 +24,7 @@ def get_review_viewer_state_impl(**kwargs):
     ad = str(kwargs.get("ad") or "").strip()
 
     if not ad:
-        return fail("Ad is required.", code="VALIDATION_ERROR")
+        return fail("Ad is required.", error="VALIDATION_ERROR")
 
     ad_doc = frappe.db.get_value(
         "AOS Ad",
@@ -34,7 +34,7 @@ def get_review_viewer_state_impl(**kwargs):
     )
 
     if not ad_doc or ad_doc.status != "Active":
-        return fail("Ad not found.", code="NOT_FOUND")
+        return fail("Ad not found.", error="NOT_FOUND")
 
     current_user = optional_active_user()
 

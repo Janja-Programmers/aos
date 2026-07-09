@@ -148,7 +148,7 @@ def set_ad_status_impl(**kwargs):
     if not ad_id:
         return fail(
             "Ad id is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     action = _clean_str(
@@ -158,13 +158,13 @@ def set_ad_status_impl(**kwargs):
     if not action:
         return fail(
             "Action is required.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     if action not in _ACTIONS:
         return fail(
             "Invalid action.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     row = frappe.db.get_value(
@@ -182,7 +182,7 @@ def set_ad_status_impl(**kwargs):
     if not row:
         return fail(
             "Ad not found.",
-            code="NOT_FOUND",
+            error="NOT_FOUND",
         )
 
     seller_user = frappe.db.get_value(
@@ -194,7 +194,7 @@ def set_ad_status_impl(**kwargs):
     if seller_user != user:
         return fail(
             "You don't have permission to change this ad.",
-            code="FORBIDDEN",
+            error="FORBIDDEN",
         )
 
     current_status = _clean_str(row.status)
@@ -207,7 +207,7 @@ def set_ad_status_impl(**kwargs):
     if message:
         return fail(
             message,
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
         )
 
     try:
@@ -255,13 +255,13 @@ def set_ad_status_impl(**kwargs):
 
         return fail(
             "Ad not found.",
-            code="NOT_FOUND",
+            error="NOT_FOUND",
         )
 
     except frappe.ValidationError as ex:
         frappe.db.rollback()
 
-        return safe_fail_from_exception(ex, fallback="Invalid request.", code="VALIDATION_ERROR")
+        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.db.rollback()
@@ -273,5 +273,5 @@ def set_ad_status_impl(**kwargs):
 
         return fail(
             "Failed to update ad status.",
-            code="INTERNAL_ERROR",
+            error="INTERNAL_ERROR",
         )

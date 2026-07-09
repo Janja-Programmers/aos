@@ -28,15 +28,15 @@ def list_reviews_impl(**kwargs):
         limit = max(1, min(int(kwargs.get("limit") or 20), 50))
         offset = max(0, int(kwargs.get("offset") or 0))
     except Exception:
-        return fail("Invalid pagination values.", code="VALIDATION_ERROR")
+        return fail("Invalid pagination values.", error="VALIDATION_ERROR")
 
     if not ad:
-        return fail("Ad is required.", code="VALIDATION_ERROR")
+        return fail("Ad is required.", error="VALIDATION_ERROR")
 
     if sort not in ALLOWED_SORTS:
         return fail(
             "Invalid sort.",
-            code="VALIDATION_ERROR",
+            error="VALIDATION_ERROR",
             data={"allowed": sorted(ALLOWED_SORTS)},
         )
 
@@ -49,7 +49,7 @@ def list_reviews_impl(**kwargs):
                 raise ValueError
 
         except Exception:
-            return fail("Invalid rating filter.", code="VALIDATION_ERROR")
+            return fail("Invalid rating filter.", error="VALIDATION_ERROR")
 
     ad_doc = frappe.db.get_value(
         "AOS Ad",
@@ -59,7 +59,7 @@ def list_reviews_impl(**kwargs):
     )
 
     if not ad_doc or ad_doc.status != "Active":
-        return fail("Ad not found.", code="NOT_FOUND")
+        return fail("Ad not found.", error="NOT_FOUND")
 
     try:
         # Rating distribution (5★–1★)
@@ -222,4 +222,4 @@ def list_reviews_impl(**kwargs):
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS List Reviews Failed")
-        return fail("Failed to fetch reviews.", code="INTERNAL_ERROR")
+        return fail("Failed to fetch reviews.", error="INTERNAL_ERROR")

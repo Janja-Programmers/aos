@@ -56,12 +56,12 @@ def apple_login(**kwargs):
     return apple_login_impl(**kwargs)
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True, methods=["GET"])
 def me(**kwargs):
     return me_impl(**kwargs)
 
 
-@frappe.whitelist(methods=["POST"])
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def logout(**kwargs):
     return logout_impl(**kwargs)
 
