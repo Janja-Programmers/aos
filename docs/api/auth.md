@@ -1,5 +1,7 @@
 # AOS Auth and Session API Contract
 
+> Public auth endpoints are versioned. Use `aos.api.v1.auth.*`. Unversioned `aos.api.auth.*` methods are internal and are not supported as public HTTP endpoints.
+
 This document describes the production auth/session/shared contract for the AOS backend auth hardening pass.
 
 ## Global response shape
@@ -85,7 +87,7 @@ AOS currently uses Frappe sessions.
 - `/me` never returns `sid` in JSON.
 - Logout is idempotent. Logging out while already logged out returns success.
 
-## POST `aos.api.auth.login`
+## POST `aos.api.v1.auth.login`
 
 Authentication: guest allowed.
 
@@ -166,7 +168,7 @@ Security notes:
 - `EMAIL_NOT_VERIFIED` is returned only when there is actual pending email-verification evidence.
 - Passwords, session IDs, reset tokens, cookies, and authorization headers must not be logged.
 
-## GET `aos.api.auth.me`
+## GET `aos.api.v1.auth.me`
 
 Authentication: active session required, but guest requests are allowed to reach the endpoint so the API can return a stable JSON failure.
 
@@ -203,7 +205,7 @@ Failures:
 
 `/me` repairs authenticated accounts that have a valid Frappe `User` but are missing `AOS Profile` or `AOS User Preference`, using AOS Settings defaults first, then safe existing Country/Language/Currency master-data fallback.
 
-## POST `aos.api.auth.logout`
+## POST `aos.api.v1.auth.logout`
 
 Authentication: guest allowed.
 
@@ -229,7 +231,7 @@ Already logged out:
 }
 ```
 
-## POST `aos.api.auth.register`
+## POST `aos.api.v1.auth.register`
 
 Authentication: guest allowed.
 
@@ -258,7 +260,7 @@ Success:
 
 Registration creates a disabled Frappe Website User, AOS Profile, AOS User Preference, and email-verification OTP record. The user/profile/preference/OTP state is committed before the OTP email is sent so the emailed OTP corresponds to durable database state.
 
-## POST `aos.api.auth.verify_email_otp`
+## POST `aos.api.v1.auth.verify_email_otp`
 
 Authentication: guest allowed.
 
@@ -292,7 +294,7 @@ Public OTP failures intentionally return the same generic failure for nonexisten
 }
 ```
 
-## POST `aos.api.auth.resend_email_otp`
+## POST `aos.api.v1.auth.resend_email_otp`
 
 Authentication: guest allowed.
 
@@ -318,7 +320,7 @@ The endpoint intentionally uses a generic success message for unknown accounts, 
 
 ## Password reset endpoints
 
-### POST `aos.api.auth.forgot_password_request`
+### POST `aos.api.v1.auth.forgot_password_request`
 
 Authentication: guest allowed.
 
@@ -342,7 +344,7 @@ Success/generic response:
 
 Deleted accounts receive the same generic response and must use the restore-account flow.
 
-### POST `aos.api.auth.forgot_password_verify_otp`
+### POST `aos.api.v1.auth.forgot_password_verify_otp`
 
 Authentication: guest allowed.
 
@@ -369,7 +371,7 @@ Success:
 
 Public OTP failures return `OTP_INVALID` with `Invalid or expired OTP.`.
 
-### POST `aos.api.auth.forgot_password_reset`
+### POST `aos.api.v1.auth.forgot_password_reset`
 
 Authentication: guest allowed.
 
@@ -394,7 +396,7 @@ Success:
 }
 ```
 
-## POST `aos.api.auth.change_password`
+## POST `aos.api.v1.auth.change_password`
 
 Authentication: active session required.
 
@@ -420,7 +422,7 @@ Success:
 
 ## Account delete/restore endpoints
 
-### POST `aos.api.auth.delete_account`
+### POST `aos.api.v1.auth.delete_account`
 
 Authentication: active session required.
 
@@ -435,7 +437,7 @@ Request:
 
 `confirmation` must be the exact string `DELETE`.
 
-### POST `aos.api.auth.request_restore_account`
+### POST `aos.api.v1.auth.request_restore_account`
 
 Authentication: guest allowed.
 
@@ -457,7 +459,7 @@ Response is generic:
 }
 ```
 
-### POST `aos.api.auth.restore_account`
+### POST `aos.api.v1.auth.restore_account`
 
 Authentication: guest allowed.
 
@@ -474,8 +476,8 @@ Public missing/wrong/expired restore OTP failures return `OTP_INVALID`.
 
 ## Social login endpoints
 
-- `POST aos.api.auth.google_login`
-- `POST aos.api.auth.apple_login`
+- `POST aos.api.v1.auth.google_login`
+- `POST aos.api.v1.auth.apple_login`
 
 Both require:
 
@@ -541,12 +543,12 @@ Run focused auth/shared tests:
 ```bash
 bench --site <site-name> run-tests --app aos --module aos.api.shared.tests.test_responses
 bench --site <site-name> run-tests --app aos --module aos.api.shared.tests.test_auth_helpers
-bench --site <site-name> run-tests --app aos --module aos.api.auth.tests.test_session_api
-bench --site <site-name> run-tests --app aos --module aos.api.auth.tests.test_register_api
-bench --site <site-name> run-tests --app aos --module aos.api.auth.tests.test_otp_api
-bench --site <site-name> run-tests --app aos --module aos.api.auth.tests.test_password_reset_api
-bench --site <site-name> run-tests --app aos --module aos.api.auth.tests.test_delete_restore_api
-bench --site <site-name> run-tests --app aos --module aos.api.auth.tests.test_social_login_api
+bench --site <site-name> run-tests --app aos --module aos.api.v1.auth.tests.test_session_api
+bench --site <site-name> run-tests --app aos --module aos.api.v1.auth.tests.test_register_api
+bench --site <site-name> run-tests --app aos --module aos.api.v1.auth.tests.test_otp_api
+bench --site <site-name> run-tests --app aos --module aos.api.v1.auth.tests.test_password_reset_api
+bench --site <site-name> run-tests --app aos --module aos.api.v1.auth.tests.test_delete_restore_api
+bench --site <site-name> run-tests --app aos --module aos.api.v1.auth.tests.test_social_login_api
 bench --site <site-name> run-tests --app aos --module aos.tests.test_auth_database_contracts
 bench --site <site-name> run-tests --app aos --doctype "AOS User Preference"
 bench --site <site-name> run-tests --app aos --doctype "AOS Email Verification"

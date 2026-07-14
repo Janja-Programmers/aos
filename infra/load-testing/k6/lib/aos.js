@@ -153,7 +153,7 @@ export function record(response, label, options = {}) {
 export function login(email = __ENV.USER_EMAIL, password = __ENV.USER_PASSWORD) {
   if (!email || !password) return null;
 
-  const response = postMethod('aos.api.auth.login', { email, password }, null, { flow: 'auth' });
+  const response = postMethod('aos.api.v1.auth.login', { email, password }, null, { flow: 'auth' });
   const ok = record(response, 'auth.login', {
     allowStatuses: [401, 403, 422, 429],
     allowCodes: ['INVALID_CREDENTIALS', 'NOT_VERIFIED', 'VALIDATION_ERROR', 'RATE_LIMITED'],

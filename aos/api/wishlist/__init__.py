@@ -1,23 +1,5 @@
-"""Wishlist endpoints.
+"""Internal Wishlist API implementation package.
 
-Structure:
-- Whitelisted wrappers here
-- Business logic in sibling modules
+Public whitelisted endpoints are exposed under aos.api.v1.wishlist.
+Do not add public Frappe endpoint wrappers here.
 """
-
-import frappe
-
-from .toggle import toggle_wishlist_impl
-from .list import list_wishlist_impl
-
-
-@frappe.whitelist(methods=["POST"])
-def toggle_wishlist(**kwargs):
-    """Add or remove an Ad from the current user's wishlist."""
-    return toggle_wishlist_impl(**kwargs)
-
-
-@frappe.whitelist()
-def list_wishlist(**kwargs):
-    """List current user's wishlist (Active only)."""
-    return list_wishlist_impl(**kwargs)

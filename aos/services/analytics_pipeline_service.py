@@ -52,9 +52,9 @@ def get_analytics_pipeline_config() -> AnalyticsPipelineConfig:
     if not callback_url:
         domain = get_env("AOS_API_DOMAIN")
         if domain:
-            callback_url = f"https://{domain}/api/method/aos.api.analytics_pipeline.handle_callback"
+            callback_url = f"https://{domain}/api/method/aos.api.v1.analytics_pipeline.handle_callback"
         else:
-            callback_url = "http://127.0.0.1:8000/api/method/aos.api.analytics_pipeline.handle_callback"
+            callback_url = "http://127.0.0.1:8000/api/method/aos.api.v1.analytics_pipeline.handle_callback"
 
     return AnalyticsPipelineConfig(
         service_url=service_url,

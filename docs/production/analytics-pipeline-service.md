@@ -25,7 +25,7 @@ curl http://127.0.0.1:8170/ready
 ## Smoke test
 
 ```bash
-curl -X POST "https://api.example.com/api/method/aos.api.analytics_pipeline.track_event" \
+curl -X POST "https://api.example.com/api/method/aos.api.v1.analytics_pipeline.track_event" \
   -H "Content-Type: application/json" \
   -d '{"event_type":"smoke_test","event_group":"system","source":"manual"}'
 ```

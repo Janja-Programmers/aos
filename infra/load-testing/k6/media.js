@@ -12,7 +12,7 @@ export const options = {
   vus: intEnv('VUS', 3),
   duration: __ENV.DURATION || '2m',
   thresholds: commonThresholds({
-    'http_req_duration{method:aos.api.media.init_upload}': ['p(95)<1200'],
+    'http_req_duration{method:aos.api.v1.media.init_upload}': ['p(95)<1200'],
   }),
 };
 
@@ -29,7 +29,7 @@ export default function () {
   if (!sid) return;
 
   group('media upload init', () => {
-    record(postMethod('aos.api.media.init_upload', {
+    record(postMethod('aos.api.v1.media.init_upload', {
       purpose: __ENV.MEDIA_PURPOSE || 'ad_image',
       filename: `k6-load-${__VU}-${__ITER}-${Date.now()}.jpg`,
       content_type: __ENV.MEDIA_CONTENT_TYPE || 'image/jpeg',

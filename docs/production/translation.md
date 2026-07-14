@@ -203,7 +203,7 @@ print(
 Use a message that belongs to a conversation the logged-in user can access:
 
 ```bash
-curl -X POST "https://<site>/api/method/aos.api.chat.translate_message" \
+curl -X POST "https://<site>/api/method/aos.api.v1.chat.translate_message" \
   -H "Cookie: sid=YOUR_SID" \
   -F "message_id=MSG-YYYY-XXXXX" \
   -F "target_language=swh_Latn"

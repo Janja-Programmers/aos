@@ -5,7 +5,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.api.diagnostics import get_operational_health_status
+from aos.api.v1.diagnostics import get_operational_health_status
 from aos.utils.operational_health import validate_operational_health
 
 
@@ -64,28 +64,28 @@ class TestOperationalHealth(FrappeTestCase):
             "VIDEO_SERVICE_URL": "http://127.0.0.1:8130",
             "VIDEO_SERVICE_SECRET": "video-dispatch-secret-value-0123456789abcdef",
             "VIDEO_SERVICE_CALLBACK_SECRET": "video-callback-secret-value-0123456789abcdef",
-            "VIDEO_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.video_processing.handle_callback",
+            "VIDEO_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.v1.video_processing.handle_callback",
             "MODERATION_ENABLED": "true",
             "MODERATION_SERVICE_URL": "http://127.0.0.1:8140",
             "MODERATION_SERVICE_SECRET": "moderation-dispatch-secret-value-0123456789abcdef",
             "MODERATION_SERVICE_CALLBACK_SECRET": "moderation-callback-secret-value-0123456789abcdef",
-            "MODERATION_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.moderation.handle_callback",
+            "MODERATION_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.v1.moderation.handle_callback",
             "SEARCH_RANKING_ENABLED": "true",
             "SEARCH_RANKING_SERVICE_URL": "http://127.0.0.1:8150",
             "SEARCH_RANKING_SERVICE_SECRET": "search-dispatch-secret-value-0123456789abcdef",
             "SEARCH_RANKING_SERVICE_CALLBACK_SECRET": "search-callback-secret-value-0123456789abcdef",
-            "SEARCH_RANKING_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.search_ranking.handle_callback",
+            "SEARCH_RANKING_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.v1.search_ranking.handle_callback",
             "ANALYTICS_PIPELINE_ENABLED": "true",
             "ANALYTICS_SERVICE_URL": "http://127.0.0.1:8170",
             "ANALYTICS_SERVICE_SECRET": "analytics-dispatch-secret-value-0123456789abcdef",
             "ANALYTICS_SERVICE_CALLBACK_SECRET": "analytics-callback-secret-value-0123456789abcdef",
-            "ANALYTICS_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.analytics_pipeline.handle_callback",
+            "ANALYTICS_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.v1.analytics_pipeline.handle_callback",
             "NOTIFICATION_DELIVERY_ENABLED": "true",
             "NOTIFICATION_DRY_RUN": "false",
             "NOTIFICATION_SERVICE_URL": "http://127.0.0.1:8160",
             "NOTIFICATION_SERVICE_SECRET": "notification-dispatch-secret-value-0123456789abcdef",
             "NOTIFICATION_SERVICE_CALLBACK_SECRET": "notification-callback-secret-value-0123456789abcdef",
-            "NOTIFICATION_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.notification_delivery.handle_callback",
+            "NOTIFICATION_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.v1.notification_delivery.handle_callback",
             "NOTIFICATION_FIREBASE_SERVICE_ACCOUNT_HOST_PATH": "/tmp/aos-test-firebase.json",
             "TRANSLATION_SERVICE_URL": "http://127.0.0.1:8100",
             "IMAGE_SEARCH_SERVICE_URL": "http://127.0.0.1:8110",

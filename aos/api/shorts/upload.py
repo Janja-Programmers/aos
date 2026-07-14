@@ -1,8 +1,8 @@
 """
 Short creation and metadata APIs.
 
-Uploads are now generic-only through ``aos.api.media.init_upload`` and
-``aos.api.media.confirm_upload``. This module accepts uploaded media IDs and
+Uploads are now generic-only through ``aos.api.v1.media.init_upload`` and
+``aos.api.v1.media.confirm_upload``. This module accepts uploaded media IDs and
 creates the Short business record / queues processing.
 """
 
@@ -139,10 +139,10 @@ def create_short_impl(**kwargs):
     """Create a short from an uploaded raw-video media object.
 
     Required client flow:
-    1. aos.api.media.init_upload with purpose=short_video_raw
+    1. aos.api.v1.media.init_upload with purpose=short_video_raw
     2. PUT video to the returned upload_url
-    3. aos.api.media.confirm_upload with media_id
-    4. aos.api.shorts.create_short with raw_video_media/media_id
+    3. aos.api.v1.media.confirm_upload with media_id
+    4. aos.api.v1.shorts.create_short with raw_video_media/media_id
 
     This replaces the old shorts-specific init_upload/confirm_upload endpoints.
     """

@@ -148,7 +148,7 @@ def sanitize_images(images: Any) -> List[Dict[str, Any]]:
     """Normalize ad image payloads.
 
     Clients must send `media` or `media_id` values created by
-    `aos.api.media.init_upload` + `confirm_upload`. URL strings are ignored.
+    `aos.api.v1.media.init_upload` + `confirm_upload`. URL strings are ignored.
     """
 
     items = normalize_list_payload(images)

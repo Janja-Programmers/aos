@@ -45,7 +45,7 @@ search-ranking-worker
 
 - `aos.services.search_ranking_service.enqueue_ad_search_index`
 - `aos.services.search_ranking_service.enqueue_short_search_index`
-- `aos.api.search_ranking.handle_callback`
+- `aos.api.v1.search_ranking.handle_callback`
 - `aos.tasks.search_ranking.dispatch_search_index_job`
 - `aos.tasks.search_ranking.refresh_search_indexes`
 

@@ -435,10 +435,10 @@ def create_sound_impl(**kwargs):
     """Create a reusable sound from uploaded sound media.
 
     Required client flow:
-    1. aos.api.media.init_upload with purpose=sound_upload
+    1. aos.api.v1.media.init_upload with purpose=sound_upload
     2. PUT audio to the returned upload_url
-    3. aos.api.media.confirm_upload with media_id
-    4. aos.api.shorts.create_sound with sound_media/media_id and metadata
+    3. aos.api.v1.media.confirm_upload with media_id
+    4. aos.api.v1.shorts.create_sound with sound_media/media_id and metadata
     """
     user, err = require_login()
     if err:

@@ -81,7 +81,7 @@ MODERATION_FAIL_OPEN=false
 MODERATION_SERVICE_URL=http://127.0.0.1:8140
 MODERATION_SERVICE_SECRET=...
 MODERATION_SERVICE_CALLBACK_SECRET=...
-MODERATION_CALLBACK_URL=https://api.example.com/api/method/aos.api.moderation.handle_callback
+MODERATION_CALLBACK_URL=https://api.example.com/api/method/aos.api.v1.moderation.handle_callback
 MODERATION_REDIS_URL=redis://moderation-redis:6379/0
 MODERATION_QUEUE_NAME=moderation
 ```

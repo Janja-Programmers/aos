@@ -1,8 +1,8 @@
 """MinIO-backed background removal API.
 
 New flow:
-- frontend uploads source image through aos.api.media.init_upload/confirm_upload
-- frontend calls aos.api.media.remove_background with media_id
+- frontend uploads source image through aos.api.v1.media.init_upload/confirm_upload
+- frontend calls aos.api.v1.media.remove_background with media_id
 - backend downloads source bytes from MinIO
 - backend calls the private background-removal service
 - backend uploads result PNG to MinIO as a new AOS Media Object

@@ -87,7 +87,7 @@ curl -X POST http://127.0.0.1:8120/remove-background \
 file /tmp/aos-removed-bg.png
 ```
 
-Use this when the Flutter image editor reports background-removal failures. If direct service testing works but the app fails, inspect media object ownership, rate limits, and `aos.api.media.remove_background` logs.
+Use this when the Flutter image editor reports background-removal failures. If direct service testing works but the app fails, inspect media object ownership, rate limits, and `aos.api.v1.media.remove_background` logs.
 
 ## Translation service check
 

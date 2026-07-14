@@ -1,15 +1,5 @@
-"""Notification delivery service callback endpoint.
+"""Internal Notification Delivery API implementation package.
 
-Structure:
-- Whitelisted wrappers here
-- Business logic in sibling modules
+Public whitelisted endpoints are exposed under aos.api.v1.notification_delivery.
+Do not add public Frappe endpoint wrappers here.
 """
-
-import frappe
-
-from .callback import handle_callback_impl
-
-
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-def handle_callback(**kwargs):
-    return handle_callback_impl(**kwargs)

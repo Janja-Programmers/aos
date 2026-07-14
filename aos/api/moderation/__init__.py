@@ -1,12 +1,5 @@
-"""Content moderation API wrappers."""
+"""Internal Moderation API implementation package.
 
-from __future__ import annotations
-
-import frappe
-
-from .callback import handle_callback_impl
-
-
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-def handle_callback(**kwargs):
-    return handle_callback_impl(**kwargs)
+Public whitelisted endpoints are exposed under aos.api.v1.moderation.
+Do not add public Frappe endpoint wrappers here.
+"""

@@ -62,9 +62,9 @@ def get_video_processing_config() -> VideoProcessingConfig:
     if not callback_url:
         domain = get_env("AOS_API_DOMAIN")
         if domain:
-            callback_url = f"https://{domain}/api/method/aos.api.video_processing.handle_callback"
+            callback_url = f"https://{domain}/api/method/aos.api.v1.video_processing.handle_callback"
         else:
-            callback_url = "http://127.0.0.1:8000/api/method/aos.api.video_processing.handle_callback"
+            callback_url = "http://127.0.0.1:8000/api/method/aos.api.v1.video_processing.handle_callback"
 
     return VideoProcessingConfig(
         service_url=service_url,

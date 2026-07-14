@@ -53,9 +53,9 @@ def get_search_ranking_config() -> SearchRankingConfig:
     if not callback_url:
         domain = get_env("AOS_API_DOMAIN")
         if domain:
-            callback_url = f"https://{domain}/api/method/aos.api.search_ranking.handle_callback"
+            callback_url = f"https://{domain}/api/method/aos.api.v1.search_ranking.handle_callback"
         else:
-            callback_url = "http://127.0.0.1:8000/api/method/aos.api.search_ranking.handle_callback"
+            callback_url = "http://127.0.0.1:8000/api/method/aos.api.v1.search_ranking.handle_callback"
     return SearchRankingConfig(
         service_url=service_url,
         service_secret=get_env("SEARCH_RANKING_SERVICE_SECRET", "") or "",

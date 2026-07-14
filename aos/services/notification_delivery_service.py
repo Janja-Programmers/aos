@@ -51,9 +51,9 @@ def get_notification_delivery_config() -> NotificationDeliveryConfig:
     if not callback_url:
         domain = get_env("AOS_API_DOMAIN")
         if domain:
-            callback_url = f"https://{domain}/api/method/aos.api.notification_delivery.handle_callback"
+            callback_url = f"https://{domain}/api/method/aos.api.v1.notification_delivery.handle_callback"
         else:
-            callback_url = "http://127.0.0.1:8000/api/method/aos.api.notification_delivery.handle_callback"
+            callback_url = "http://127.0.0.1:8000/api/method/aos.api.v1.notification_delivery.handle_callback"
 
     return NotificationDeliveryConfig(
         service_url=service_url,

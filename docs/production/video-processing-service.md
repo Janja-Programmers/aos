@@ -25,14 +25,14 @@ The video service owns heavy execution:
 
 ## Runtime flow
 
-1. Flutter uploads `short_video_raw` using `aos.api.media.init_upload` and `confirm_upload`.
-2. Flutter calls `aos.api.shorts.create_short` with `raw_video_media`.
+1. Flutter uploads `short_video_raw` using `aos.api.v1.media.init_upload` and `confirm_upload`.
+2. Flutter calls `aos.api.v1.shorts.create_short` with `raw_video_media`.
 3. Frappe creates `AOS Short` and `AOS Video Processing Job`.
 4. Frappe enqueues `aos.tasks.video_processing.dispatch_video_processing_job` to Frappe Redis Queue.
 5. The dispatcher posts the job to `aos-video-api`.
 6. `aos-video-api` enqueues the FFmpeg job into the video service Redis/RQ queue.
 7. `aos-video-worker` processes the video and uploads outputs to MinIO.
-8. `aos-video-worker` calls `aos.api.video_processing.handle_callback`.
+8. `aos-video-worker` calls `aos.api.v1.video_processing.handle_callback`.
 9. Frappe updates `AOS Short`, creates thumbnail media metadata, and marks the job ready/failed.
 
 ## Docker services
@@ -47,7 +47,7 @@ The video service owns heavy execution:
 VIDEO_SERVICE_URL=http://127.0.0.1:8130
 VIDEO_SERVICE_SECRET=change-this-long-random-video-dispatch-secret
 VIDEO_SERVICE_CALLBACK_SECRET=change-this-long-random-video-callback-secret
-VIDEO_CALLBACK_URL=https://api.example.com/api/method/aos.api.video_processing.handle_callback
+VIDEO_CALLBACK_URL=https://api.example.com/api/method/aos.api.v1.video_processing.handle_callback
 VIDEO_REDIS_URL=redis://video-redis:6379/0
 VIDEO_QUEUE_NAME=video
 VIDEO_MINIO_ENDPOINT=minio:9000

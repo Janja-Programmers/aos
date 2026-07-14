@@ -171,16 +171,16 @@ curl 'http://127.0.0.1:8080/data/kenya.json'
 ## Manual API checks
 
 ```text
-/api/method/aos.api.maps.autocomplete_places
-/api/method/aos.api.maps.search_places
-/api/method/aos.api.maps.reverse_geocode
-/api/method/aos.api.maps.get_route
-/api/method/aos.api.maps.refresh_route
-/api/method/aos.api.sellers.list_sellers
-/api/method/aos.api.sellers.list_seller_map_points
-/api/method/aos.api.sellers.set_my_seller_location
-/api/method/aos.api.sellers.get_seller_location
-/api/method/aos.api.sellers.remove_my_seller_location
+/api/method/aos.api.v1.maps.autocomplete_places
+/api/method/aos.api.v1.maps.search_places
+/api/method/aos.api.v1.maps.reverse_geocode
+/api/method/aos.api.v1.maps.get_route
+/api/method/aos.api.v1.maps.refresh_route
+/api/method/aos.api.v1.sellers.list_sellers
+/api/method/aos.api.v1.sellers.list_seller_map_points
+/api/method/aos.api.v1.sellers.set_my_seller_location
+/api/method/aos.api.v1.sellers.get_seller_location
+/api/method/aos.api.v1.sellers.remove_my_seller_location
 ```
 
 Confirm:

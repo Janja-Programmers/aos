@@ -79,7 +79,7 @@ bench --site <site> execute aos.utils.backup_readiness.backup_readiness_summary
 Admin API endpoint:
 
 ```text
-/api/method/aos.api.diagnostics.get_backup_readiness_status
+/api/method/aos.api.v1.diagnostics.get_backup_readiness_status
 ```
 
 The diagnostic is redacted. It reports whether backup env, scripts, latest backup artifact, MinIO coverage, configuration coverage, a recent offsite sync marker, and restore rehearsal evidence are present without exposing secrets or file contents.

@@ -5,7 +5,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.api.diagnostics import get_job_monitoring_status
+from aos.api.v1.diagnostics import get_job_monitoring_status
 from aos.utils.job_monitoring import validate_job_monitoring
 
 

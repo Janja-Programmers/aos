@@ -8,9 +8,9 @@ This audit records the remaining intentional media/file references after the AOS
 
 New AOS-owned uploads must use `AOS Media Object` and must be created through:
 
-- `aos.api.media.init_upload`
+- `aos.api.v1.media.init_upload`
 - direct PUT to MinIO presigned URL
-- `aos.api.media.confirm_upload`
+- `aos.api.v1.media.confirm_upload`
 
 Feature payloads should submit `media_id` / feature-specific media fields, not `/files/...` URLs or Frappe `File` names.
 
@@ -59,5 +59,5 @@ AOS-owned media APIs do not use Frappe `File` for business uploads. Frappe may s
 
 - Do not accept `/files/...` or `/private/files/...` for new AOS-owned user uploads.
 - Keep public URL cache fields for fast UI rendering, but generate them from media objects.
-- Private media must be accessed through `aos.api.media.get_media_url`, which returns signed URLs after permission checks.
+- Private media must be accessed through `aos.api.v1.media.get_media_url`, which returns signed URLs after permission checks.
 - For chat attachments, signed URL access must be based on conversation membership, not only media ownership.

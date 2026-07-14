@@ -9,7 +9,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.api.diagnostics import get_backup_readiness_status
+from aos.api.v1.diagnostics import get_backup_readiness_status
 from aos.utils.backup_readiness import validate_backup_readiness
 
 

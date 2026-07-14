@@ -1,23 +1,5 @@
-"""Verification endpoints.
+"""Internal Verification API implementation package.
 
-Structure:
-- Whitelisted wrappers here
-- Business logic in sibling modules
+Public whitelisted endpoints are exposed under aos.api.v1.verification.
+Do not add public Frappe endpoint wrappers here.
 """
-
-import frappe
-
-from .submit_verification import submit_verification_impl
-from .get_my_verification import get_my_verification_impl
-
-
-@frappe.whitelist(methods=["POST"])
-def submit_verification(**kwargs):
-    """Submit or resubmit an account verification request."""
-    return submit_verification_impl(**kwargs)
-
-
-@frappe.whitelist()
-def get_my_verification(**kwargs):
-    """Get logged-in user's verification status."""
-    return get_my_verification_impl(**kwargs)
