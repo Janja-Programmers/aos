@@ -18,7 +18,7 @@
     "oauth_section",
     "google_oauth_client_ids",
     "column_break_auth_oauth",
-    "apple_bundle_id",
+    "apple_oauth_client_ids",
     "media_tab",
     "media_upload_section",
     "media_presigned_upload_expiry_minutes",
@@ -115,9 +115,10 @@
       "fieldtype": "Column Break"
     },
     {
-      "fieldname": "apple_bundle_id",
-      "fieldtype": "Data",
-      "label": "Apple Bundle ID"
+      "fieldname": "apple_oauth_client_ids",
+      "fieldtype": "Small Text",
+      "label": "Apple OAuth Client IDs",
+      "description": "Allowed Apple token audiences/client IDs, one per line or comma-separated. Include the iOS Bundle ID and web Service ID."
     },
     {
       "fieldname": "media_tab",
@@ -255,7 +256,7 @@
   "index_web_pages_for_search": 1,
   "issingle": 1,
   "links": [],
-  "modified": "2026-07-01 17:00:00.000000",
+  "modified": "2026-07-14 11:30:00.000000",
   "modified_by": "Administrator",
   "module": "AOS",
   "name": "AOS Settings",

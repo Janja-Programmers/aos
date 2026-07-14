@@ -490,6 +490,13 @@ Optional `country`, `currency`, and `language` are strict strings if supplied.
 
 Both endpoints use the same sid behavior as password login. Existing disabled users are not silently re-enabled by social login. A valid social token can create a new enabled Website User, AOS Profile, and AOS User Preference. New social-user bootstrap is atomic: if User/Profile/Preference creation fails, the request rolls back and does not leave a partial enabled account or create a session. Existing users are not deleted or rolled back if preference repair fails; the endpoint returns a safe failure response instead.
 
+Apple token verification uses the production `AOS Settings.apple_oauth_client_ids` allowlist. Configure every valid Apple token audience here, one per line or comma-separated. For AOS this should include the mobile iOS Bundle ID and the web Service ID, for example:
+
+```text
+com.africaonlinestores.app
+com.africaonlinestores.web
+```
+
 ## Database contracts
 
 Auth-related database constraints/indexes:

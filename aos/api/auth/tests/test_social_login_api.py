@@ -58,7 +58,7 @@ class TestAuthSocialLoginAPI(AOSFeatureTestMixin, FrappeTestCase):
     def _patch_apple_success(self, email: str):
         return (
             patch("aos.api.auth.apple_login.rate_limit", return_value=None),
-            patch("aos.api.auth.apple_login._get_apple_bundle_id", return_value="com.aos.test"),
+            patch("aos.api.auth.apple_login._get_apple_audiences", return_value=["com.aos.ios", "com.aos.web"]),
             patch("aos.api.auth.apple_login.verify_apple_id_token", return_value=self._apple_claims(email)),
         )
 
@@ -238,8 +238,8 @@ class TestAuthSocialLoginAPI(AOSFeatureTestMixin, FrappeTestCase):
 
         frappe.local.response = {}
         with patch("aos.api.auth.apple_login.rate_limit", return_value=None), patch(
-            "aos.api.auth.apple_login._get_apple_bundle_id",
-            return_value="",
+            "aos.api.auth.apple_login._get_apple_audiences",
+            return_value=[],
         ):
             apple_response = apple_login_impl(id_token="apple-token", client_type="mobile")
         apple_status = frappe.local.response.get("http_status_code")

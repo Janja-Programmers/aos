@@ -7,12 +7,18 @@ import frappe
 from aos.api.shared.account_status import ensure_account_active, get_account_state
 from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
 from aos.api.shared.responses import ok, fail
-from aos.utils.aos_settings import get_apple_bundle_id
+from aos.utils.aos_settings import get_apple_oauth_client_ids
 
 from .constants import APPLE_LOGIN_LIMIT_PER_HOUR_PER_IP
 from .account_helpers import ensure_aos_profile, ensure_user_preference, safe_log_auth_event
 from .serializers import serialize_auth_payload
-from .validators import optional_bootstrap_inputs, require_email, require_string, require_token, validate_client_type
+from .validators import (
+    optional_bootstrap_inputs,
+    require_email,
+    require_string,
+    require_token,
+    validate_client_type,
+)
 from .apple_jwt import verify_apple_id_token
 
 
@@ -20,9 +26,9 @@ def _include_sid(client_type: str) -> bool:
     return client_type == "mobile"
 
 
-def _get_apple_bundle_id():
-    """Read Apple Bundle ID from the AOS Settings snapshot."""
-    return get_apple_bundle_id()
+def _get_apple_audiences() -> list[str]:
+    """Read allowed Apple OAuth audiences from the AOS Settings snapshot."""
+    return get_apple_oauth_client_ids()
 
 
 def _bootstrap_new_apple_user(email: str, bootstrap_inputs: dict):
@@ -73,7 +79,12 @@ def _ensure_existing_apple_user_ready(user_name: str, email: str, bootstrap_inpu
 
     enabled = frappe.db.get_value("User", user_name, "enabled")
     if int(enabled or 0) != 1:
-        safe_log_auth_event("AOS Social Login Disabled User", identifier=email, user=user_name, reason="disabled")
+        safe_log_auth_event(
+            "AOS Social Login Disabled User",
+            identifier=email,
+            user=user_name,
+            reason="disabled",
+        )
         return fail("Account disabled.", error="ACCOUNT_DISABLED", http_status=403)
 
     pref, pref_err = ensure_user_preference(user_name, **bootstrap_inputs)
@@ -115,14 +126,14 @@ def apple_login_impl(**kwargs):
     if rl:
         return rl
 
-    bundle_id = _get_apple_bundle_id()
-    if not bundle_id:
-        return fail("Apple Bundle ID not configured.", error="CONFIG_ERROR")
+    apple_audiences = _get_apple_audiences()
+    if not apple_audiences:
+        return fail("Apple OAuth client IDs not configured.", error="CONFIG_ERROR")
 
     try:
         claims = verify_apple_id_token(
             id_token=id_token,
-            audience=bundle_id,
+            audiences=apple_audiences,
         )
 
     except ValueError as e:

@@ -27,7 +27,7 @@ class AOSSettingsSnapshot:
 
     # Authentication public app identifiers
     google_oauth_client_ids: str | None
-    apple_bundle_id: str | None
+    apple_oauth_client_ids: str | None
 
     # Media
     media_presigned_upload_expiry_minutes: int
@@ -98,11 +98,11 @@ def _get_field(doc: object, fieldname: str, default: object = None) -> object:
 
 def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
     cache = frappe.cache()
-    key = "aos:settings:snapshot:v6"
+    key = "aos:settings:snapshot:v7"
 
     if use_cache:
         cached = cache.get_value(key)
-        if isinstance(cached, dict) and cached.get("_schema") == "v6":
+        if isinstance(cached, dict) and cached.get("_schema") == "v7":
             payload = dict(cached)
             payload.pop("_schema", None)
             return AOSSettingsSnapshot(**payload)
@@ -145,7 +145,9 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
         google_oauth_client_ids=_text_or_none(
             _get_field(settings, "google_oauth_client_ids")
         ),
-        apple_bundle_id=_text_or_none(_get_field(settings, "apple_bundle_id")),
+        apple_oauth_client_ids=_text_or_none(
+            _get_field(settings, "apple_oauth_client_ids")
+        ),
 
         # Media
         media_presigned_upload_expiry_minutes=_clamp_int(
@@ -213,7 +215,7 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
     )
 
     try:
-        cached_payload = {"_schema": "v6", **snap.__dict__}
+        cached_payload = {"_schema": "v7", **snap.__dict__}
         cache.set_value(key, cached_payload, expires_in_sec=60 * 5)
     except Exception:
         pass
@@ -221,13 +223,17 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
     return snap
 
 
-def parse_google_oauth_client_ids(raw: str | None) -> list[str]:
-    client_ids: list[str] = []
+def _parse_config_list(raw: str | None) -> list[str]:
+    values: list[str] = []
     for line in str(raw or "").replace(",", "\n").splitlines():
         value = line.strip()
         if value:
-            client_ids.append(value)
-    return client_ids
+            values.append(value)
+    return list(dict.fromkeys(values))
+
+
+def parse_google_oauth_client_ids(raw: str | None) -> list[str]:
+    return _parse_config_list(raw)
 
 
 def get_google_oauth_client_ids() -> list[str]:
@@ -238,9 +244,13 @@ def get_google_oauth_client_ids() -> list[str]:
     return parse_google_oauth_client_ids(snap.google_oauth_client_ids)
 
 
-def get_apple_bundle_id() -> str:
+def parse_apple_oauth_client_ids(raw: str | None) -> list[str]:
+    return _parse_config_list(raw)
+
+
+def get_apple_oauth_client_ids() -> list[str]:
     try:
         snap = get_aos_settings_snapshot()
     except Exception:
-        return ""
-    return snap.apple_bundle_id or ""
+        return []
+    return parse_apple_oauth_client_ids(snap.apple_oauth_client_ids)

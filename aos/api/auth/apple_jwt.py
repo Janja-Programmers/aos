@@ -80,7 +80,7 @@ def _rsa_key_from_jwk(jwk: Dict[str, Any]):
     return public_numbers.public_key()
 
 
-def verify_apple_id_token(id_token: str, audience: str) -> Dict[str, Any]:
+def verify_apple_id_token(id_token: str, audiences: list[str]) -> Dict[str, Any]:
     """
     Verify an Apple identity token (JWT).
 
@@ -156,10 +156,15 @@ def verify_apple_id_token(id_token: str, audience: str) -> Dict[str, Any]:
     if iss != APPLE_ISSUER:
         raise ValueError("ISS_INVALID")
 
-    if not audience:
+    allowed_audiences = {
+        item.strip()
+        for item in audiences
+        if isinstance(item, str) and item.strip()
+    }
+    if not allowed_audiences:
         raise ValueError("AUDIENCE_NOT_CONFIGURED")
 
-    if aud != audience:
+    if aud not in allowed_audiences:
         raise ValueError("AUD_INVALID")
 
     try:
