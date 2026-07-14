@@ -543,12 +543,12 @@ Run focused auth/shared tests:
 ```bash
 bench --site <site-name> run-tests --app aos --module aos.api.shared.tests.test_responses
 bench --site <site-name> run-tests --app aos --module aos.api.shared.tests.test_auth_helpers
-bench --site <site-name> run-tests --app aos --module aos.api.v1.auth.tests.test_session_api
-bench --site <site-name> run-tests --app aos --module aos.api.v1.auth.tests.test_register_api
-bench --site <site-name> run-tests --app aos --module aos.api.v1.auth.tests.test_otp_api
-bench --site <site-name> run-tests --app aos --module aos.api.v1.auth.tests.test_password_reset_api
-bench --site <site-name> run-tests --app aos --module aos.api.v1.auth.tests.test_delete_restore_api
-bench --site <site-name> run-tests --app aos --module aos.api.v1.auth.tests.test_social_login_api
+bench --site <site-name> run-tests --app aos --module aos.api.auth.tests.test_session_api
+bench --site <site-name> run-tests --app aos --module aos.api.auth.tests.test_register_api
+bench --site <site-name> run-tests --app aos --module aos.api.auth.tests.test_otp_api
+bench --site <site-name> run-tests --app aos --module aos.api.auth.tests.test_password_reset_api
+bench --site <site-name> run-tests --app aos --module aos.api.auth.tests.test_delete_restore_api
+bench --site <site-name> run-tests --app aos --module aos.api.auth.tests.test_social_login_api
 bench --site <site-name> run-tests --app aos --module aos.tests.test_auth_database_contracts
 bench --site <site-name> run-tests --app aos --doctype "AOS User Preference"
 bench --site <site-name> run-tests --app aos --doctype "AOS Email Verification"
