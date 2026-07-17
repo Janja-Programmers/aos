@@ -372,6 +372,21 @@ def serialize_ad_list_item(
 
     return {
         "id": ad_doc.name,
+        "price": _to_float(getattr(ad_doc, "price", None)),
+        "currency": _norm(getattr(ad_doc, "currency", display_currency)),
+        "display_price": current_price,
+        "display_currency": display_currency,
+        "requested_display_currency": _norm(getattr(ad_doc, "requested_display_currency", display_currency)),
+        "price_conversion": {
+            "requested_currency": _norm(getattr(ad_doc, "requested_display_currency", display_currency)),
+            "display_currency": display_currency,
+            "source_currency": _norm(getattr(ad_doc, "currency", display_currency)),
+            "target_currency": _norm(getattr(ad_doc, "requested_display_currency", display_currency)),
+            "converted": bool(getattr(ad_doc, "conversion_available", 1)) and display_currency != _norm(getattr(ad_doc, "currency", display_currency)),
+            "available": bool(getattr(ad_doc, "conversion_available", 1)),
+            "rate": _to_float(getattr(ad_doc, "conversion_rate", None)) if bool(getattr(ad_doc, "conversion_available", 1)) else None,
+            "reason": None if bool(getattr(ad_doc, "conversion_available", 1)) else "MISSING_EXCHANGE_RATE",
+        },
         "title": _norm(
             getattr(
                 ad_doc,

@@ -8,10 +8,12 @@ from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.public_errors import safe_fail_from_exception
 
-from aos.api.shared.validators import (
-    resolve_country,
-    resolve_language,
-    resolve_currency,
+from aos.services.localization_service import (
+    is_country_locked,
+    serialize_preference,
+    validate_country,
+    validate_currency,
+    validate_language,
 )
 
 from .constants import UPDATE_PREF_LIMIT_PER_MINUTE_PER_USER
@@ -37,67 +39,51 @@ def update_my_preference_impl(**kwargs):
     language_input = kwargs.get("language")
     currency_input = kwargs.get("currency")
 
-    if not country_input or not language_input or not currency_input:
-        return fail("All fields are required.", error="VALIDATION_ERROR")
+    if all(value in (None, "") for value in (country_input, language_input, currency_input)):
+        return fail("At least one preference field is required.", error="VALIDATION_ERROR")
 
     try:
-        country_id, err = resolve_country(country_input)
-        if err:
-            return err
-
-        language_id, err = resolve_language(language_input)
-        if err:
-            return err
-
-        currency_id, err = resolve_currency(currency_input)
-        if err:
-            return err
-
         pref = frappe.db.get_value(
             "AOS User Preference",
             {"user": current_user},
-            ["name", "country"],
+            ["name", "country", "currency", "language"],
             as_dict=True,
         )
 
-        old_country = pref.country if pref else None
+        if not pref:
+            from aos.api.auth.account_helpers import ensure_user_preference
+            doc, err = ensure_user_preference(current_user)
+            if err:
+                return err
+            pref = frappe._dict(name=doc.name, country=doc.country, currency=doc.currency, language=doc.language)
 
-        seller = frappe.db.get_value("AOS Seller", {"user": current_user}, "name")
+        country_id, err = validate_country(country_input) if country_input not in (None, "") else (pref.country, None)
+        if err:
+            return err
+        currency_id, err = validate_currency(currency_input) if currency_input not in (None, "") else (pref.currency, None)
+        if err:
+            return err
+        language_id, err = validate_language(language_input) if language_input not in (None, "") else (pref.language, None)
+        if err:
+            return err
 
-        if old_country and old_country != country_id:
-            has_ads = bool(seller and frappe.db.exists("AOS Ad", {"seller": seller}))
-            if has_ads:
+        if pref.country != country_id:
+            if is_country_locked(current_user):
                 return fail(
                     "You cannot change your market after creating ads.",
                     error="MARKET_LOCKED",
                 )
 
-        if pref:
-            doc = frappe.get_doc("AOS User Preference", pref.name)
-            doc.country = country_id
-            doc.language = language_id
-            doc.currency = currency_id
-            # ``ignore_permissions=True`` is justified: current_user owns this
-            # singleton preference and already passed session/account checks.
-            doc.save(ignore_permissions=True)
-        else:
-            doc = frappe.new_doc("AOS User Preference")
-            doc.user = current_user
-            doc.country = country_id
-            doc.language = language_id
-            doc.currency = currency_id
-            doc.insert(ignore_permissions=True)
+        doc = frappe.get_doc("AOS User Preference", pref.name)
+        doc.country, doc.language, doc.currency = country_id, language_id, currency_id
+        doc.save(ignore_permissions=True)
 
         _clear_preference_cache(current_user)
         frappe.db.commit()
 
         return ok(
             "Preference updated successfully.",
-            data={
-                "country": doc.country,
-                "language": doc.language,
-                "currency": doc.currency,
-            },
+            data=serialize_preference(doc, is_country_locked=is_country_locked(current_user)),
         )
 
     except frappe.ValidationError as ex:

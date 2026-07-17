@@ -14,6 +14,9 @@ from aos.api.localization.bundle import (
 from aos.api.localization.locations import (
     get_locations_impl as _get_locations_impl,
 )
+from aos.api.localization.context import (
+    resolve_preference_context_impl as _resolve_preference_context_impl,
+)
 
 @frappe.whitelist(allow_guest=True)
 def get_locale_bundle(**kwargs):
@@ -25,3 +28,9 @@ def get_locale_bundle(**kwargs):
 def get_locations(**kwargs):
     """Execute the v1 localization.get_locations endpoint."""
     return _get_locations_impl(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def resolve_preference_context(**kwargs):
+    """Resolve independent effective localization preferences for this request."""
+    return _resolve_preference_context_impl(**kwargs)

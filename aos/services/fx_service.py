@@ -12,6 +12,7 @@ from typing import Dict
 import frappe
 
 from aos.utils.aos_settings import get_aos_settings_snapshot
+from aos.services.currency_conversion import convert_amount
 
 
 CACHE_KEY = "aos:fx:rates:v1"
@@ -77,16 +78,12 @@ def convert(
 
     rates = _load_rates()
 
-    # Treat base currency as 1
-    rate_source = 1.0 if from_currency == base else rates.get(from_currency)
-    rate_target = 1.0 if to_currency == base else rates.get(to_currency)
-
-    if not rate_source or not rate_target:
-        # Missing rate → do not crash, fallback
-        return amount
-
-    try:
-        converted = amount * (rate_target / rate_source)
-        return float(round(converted, 6))
-    except Exception:
-        return amount
+    result = convert_amount(
+        amount,
+        from_currency,
+        to_currency,
+        rates.get(from_currency),
+        rates.get(to_currency),
+        base_currency=base,
+    )
+    return result.amount

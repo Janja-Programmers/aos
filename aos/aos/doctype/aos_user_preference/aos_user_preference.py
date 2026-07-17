@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import frappe
 from frappe.model.document import Document
+from aos.services.localization_service import validate_country, validate_currency, validate_language
 
 
 class AOSUserPreference(Document):
@@ -27,11 +28,7 @@ class AOSUserPreference(Document):
             frappe.throw("Invalid user.", frappe.ValidationError)
 
     def _validate_links(self):
-        if not frappe.db.exists("Country", self.country):
-            frappe.throw("Invalid country.", frappe.ValidationError)
-
-        if not frappe.db.exists("Language", self.language):
-            frappe.throw("Invalid language.", frappe.ValidationError)
-
-        if not frappe.db.exists("Currency", self.currency):
-            frappe.throw("Invalid currency.", frappe.ValidationError)
+        for value, validator, label in ((self.country, validate_country, "country"), (self.currency, validate_currency, "currency"), (self.language, validate_language, "language")):
+            _resolved, error = validator(value)
+            if error:
+                frappe.throw(f"Invalid or disabled {label}.", frappe.ValidationError)

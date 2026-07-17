@@ -258,7 +258,7 @@ Success:
 }
 ```
 
-Registration creates a disabled Frappe Website User, AOS Profile, AOS User Preference, and email-verification OTP record. The user/profile/preference/OTP state is committed before the OTP email is sent so the emailed OTP corresponds to durable database state.
+Registration creates a disabled Frappe Website User, AOS Profile, AOS User Preference, and email-verification OTP record. Country, currency, and language inputs are validated independently. Missing values use the same guest request context as localization: trusted country headers and `Accept-Language` are considered before validated AOS Settings defaults. Google/Apple new-user bootstrap and login `/me` repair use this canonical resolver. There are no hardcoded country/currency/language fallbacks. The user/profile/preference/OTP state is committed before the OTP email is sent so the emailed OTP corresponds to durable database state.
 
 ## POST `aos.api.v1.auth.verify_email_otp`
 

@@ -14,6 +14,9 @@ from dataclasses import dataclass
 import frappe
 
 
+AOS_SETTINGS_CACHE_KEY = "aos:settings:snapshot:v7"
+
+
 @dataclass(frozen=True)
 class AOSSettingsSnapshot:
     # Localization
@@ -98,7 +101,7 @@ def _get_field(doc: object, fieldname: str, default: object = None) -> object:
 
 def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
     cache = frappe.cache()
-    key = "aos:settings:snapshot:v7"
+    key = AOS_SETTINGS_CACHE_KEY
 
     if use_cache:
         cached = cache.get_value(key)
@@ -221,6 +224,16 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
         pass
 
     return snap
+
+
+def clear_aos_settings_cache() -> None:
+    """Invalidate settings-derived localization and FX state after updates."""
+    cache = frappe.cache()
+    for key in (AOS_SETTINGS_CACHE_KEY, "aos:fx:rates:v1"):
+        try:
+            cache.delete_value(key)
+        except Exception:
+            pass
 
 
 def _parse_config_list(raw: str | None) -> list[str]:

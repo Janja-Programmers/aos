@@ -58,13 +58,15 @@
       "fieldname": "default_country",
       "fieldtype": "Link",
       "label": "Default Country",
-      "options": "Country"
+      "options": "Country",
+      "reqd": 1
     },
     {
       "fieldname": "default_language",
       "fieldtype": "Link",
       "label": "Default Language",
-      "options": "Language"
+      "options": "Language",
+      "reqd": 1
     },
     {
       "fieldname": "column_break_ohud",
@@ -74,7 +76,8 @@
       "fieldname": "default_currency",
       "fieldtype": "Link",
       "label": "Default Currency",
-      "options": "Currency"
+      "options": "Currency",
+      "reqd": 1
     },
     {
       "fieldname": "foreign_exchange_section",

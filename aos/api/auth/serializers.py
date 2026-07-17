@@ -7,6 +7,7 @@ from typing import Any
 import frappe
 
 from aos.api.shared.account_status import get_account_state
+from aos.services.localization_service import is_country_locked, serialize_preference as serialize_localization_preference
 
 
 SAFE_USER_FIELDS = ["name", "email", "full_name", "first_name", "last_name", "user_image", "enabled"]
@@ -40,11 +41,9 @@ def serialize_preference(user: str) -> dict[str, Any]:
         as_dict=True,
     ) or {}
 
-    return {
-        "country": pref.get("country"),
-        "language": pref.get("language"),
-        "currency": pref.get("currency"),
-    }
+    if not pref:
+        return {}
+    return serialize_localization_preference(pref, is_country_locked=is_country_locked(user))
 
 
 def serialize_roles(user: str) -> list[str]:
@@ -91,4 +90,3 @@ def serialize_auth_payload(user: str, *, sid: str | None = None, include_sid: bo
         "roles": serialize_roles(user),
         "seller": serialize_seller_summary(user),
     }
-

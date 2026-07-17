@@ -8,31 +8,7 @@ from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
 
 from .constants import GET_PREF_LIMIT_PER_MINUTE_PER_USER
-
-
-def _serialize_preference_doc(doc):
-    country = frappe.get_doc("Country", doc.country)
-    language = frappe.get_doc("Language", doc.language)
-    currency = frappe.get_doc("Currency", doc.currency)
-
-    return {
-        "country": {
-            "id": doc.country,
-            "name": country.country_name,
-            "code": country.code,
-        },
-        "language": {
-            "id": doc.language,
-            "name": language.language_name,
-            "code": language.name,
-        },
-        "currency": {
-            "id": doc.currency,
-            "name": currency.currency_name,
-            "code": currency.name,
-            "symbol": currency.symbol,
-        },
-    }
+from aos.services.localization_service import is_country_locked, serialize_preference
 
 
 def get_my_preference_impl(**_):
@@ -60,7 +36,7 @@ def get_my_preference_impl(**_):
         if pref_err:
             return pref_err
 
-        return ok("Preferences loaded.", data=_serialize_preference_doc(doc))
+        return ok("Preferences loaded.", data=serialize_preference(doc, is_country_locked=is_country_locked(current_user)))
 
     except frappe.DoesNotExistError:
         return fail("Preference data invalid.", error="DATA_ERROR")

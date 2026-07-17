@@ -211,6 +211,24 @@ class TestAuthSocialLoginAPI(AOSFeatureTestMixin, FrappeTestCase):
             self.assertTrue(frappe.db.exists("AOS Profile", email))
             self.assertTrue(frappe.db.exists("AOS User Preference", {"user": email}))
 
+    def test_google_and_apple_signup_resolve_missing_preferences_from_request_context(self):
+        google_email = f"{self.prefix}-google-context@example.com"
+        apple_email = f"{self.prefix}-apple-context@example.com"
+        country, language, currency = self.preference_defaults()
+        self._install_fake_login_manager()
+        header_values = {"X-Country-Code": frappe.db.get_value("Country", country, "code") or "", "Accept-Language": frappe.db.get_value("Language", language, "language_code") or ""}
+        with patch("aos.api.localization.context._header", side_effect=lambda name: header_values.get(name, "")):
+            with self._patch_google_success(google_email)[0], self._patch_google_success(google_email)[1], self._patch_google_success(google_email)[2]:
+                google_response = google_login_impl(id_token="google-token", client_type="mobile", currency=currency)
+            frappe.set_user("Administrator")
+            with self._patch_apple_success(apple_email)[0], self._patch_apple_success(apple_email)[1], self._patch_apple_success(apple_email)[2]:
+                apple_response = apple_login_impl(id_token="apple-token", client_type="mobile", currency=currency)
+        for email, response in ((google_email, google_response), (apple_email, apple_response)):
+            self.created_users.append(email)
+            self.assertTrue(response.get("ok"), response)
+            preference = frappe.db.get_value("AOS User Preference", {"user": email}, ["country", "currency", "language"], as_dict=True)
+            self.assertEqual((preference.country, preference.currency, preference.language), (country, currency, language))
+
     def test_google_and_apple_web_response_omits_sid(self):
         google_email = f"{self.prefix}-google-web@example.com"
         apple_email = f"{self.prefix}-apple-web@example.com"

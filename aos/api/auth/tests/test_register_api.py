@@ -67,5 +67,58 @@ class TestAuthRegisterAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(frappe.db.exists("User", email))
         self.assertTrue(frappe.db.exists("AOS Profile", email))
         self.assertTrue(frappe.db.exists("AOS User Preference", {"user": email}))
+        preference = frappe.db.get_value("AOS User Preference", {"user": email}, ["country", "currency", "language"], as_dict=True)
+        self.assertEqual(preference.country, country)
+        self.assertEqual(preference.currency, currency)
+        self.assertEqual(preference.language, language)
         self.assertTrue(frappe.db.exists("AOS Email Verification", {"user": email, "purpose": "email_verification"}))
         send_email.assert_called_once()
+
+    def test_register_missing_preferences_uses_settings_defaults(self):
+        email = f"{self.prefix}-defaults@example.com"
+        country, language, currency = self.preference_defaults()
+        with (
+            patch("aos.api.auth.register.rate_limit", return_value=None),
+            patch("aos.api.auth.register.generate_otp", return_value="123456"),
+            patch("aos.api.auth.register.send_otp_email"),
+        ):
+            response = register_impl(email=email, full_name="Default Signup", password="StrongPass123!")
+        self.created_users.append(email)
+        self.assertTrue(response.get("ok"), response)
+        preference = frappe.db.get_value("AOS User Preference", {"user": email}, ["country", "currency", "language"], as_dict=True)
+        self.assertEqual((preference.country, preference.language, preference.currency), (country, language, currency))
+
+    def test_register_missing_language_uses_accept_language(self):
+        email = f"{self.prefix}-header-language@example.com"
+        country, _default_language, currency = self.preference_defaults()
+        filters = {"enabled": 1} if frappe.get_meta("Language").has_field("enabled") else {}
+        language = frappe.db.get_value("Language", filters, ["name", "language_code"], as_dict=True)
+        if not language or not language.language_code:
+            self.skipTest("An enabled language code is required")
+        with (
+            patch("aos.api.localization.context._header", side_effect=lambda name: f"{language.language_code}-XX,{language.language_code};q=0.9" if name == "Accept-Language" else ""),
+            patch("aos.api.auth.register.rate_limit", return_value=None),
+            patch("aos.api.auth.register.generate_otp", return_value="123456"),
+            patch("aos.api.auth.register.send_otp_email"),
+        ):
+            response = register_impl(email=email, full_name="Header Language", password="StrongPass123!", country=country, currency=currency)
+        self.created_users.append(email)
+        self.assertTrue(response.get("ok"), response)
+        self.assertEqual(frappe.db.get_value("AOS User Preference", {"user": email}, "language"), language.name)
+
+    def test_register_missing_country_uses_valid_country_header(self):
+        email = f"{self.prefix}-header-country@example.com"
+        _country, language, currency = self.preference_defaults()
+        country = frappe.db.get_value("Country", {"code": ["is", "set"]}, ["name", "code"], as_dict=True)
+        if not country:
+            self.skipTest("A coded country is required")
+        with (
+            patch("aos.api.localization.context._header", side_effect=lambda name: country.code if name in {"X-Country-Code", "CF-IPCountry"} else ""),
+            patch("aos.api.auth.register.rate_limit", return_value=None),
+            patch("aos.api.auth.register.generate_otp", return_value="123456"),
+            patch("aos.api.auth.register.send_otp_email"),
+        ):
+            response = register_impl(email=email, full_name="Header Country", password="StrongPass123!", language=language, currency=currency)
+        self.created_users.append(email)
+        self.assertTrue(response.get("ok"), response)
+        self.assertEqual(frappe.db.get_value("AOS User Preference", {"user": email}, "country"), country.name)

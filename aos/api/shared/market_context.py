@@ -4,8 +4,7 @@ import frappe
 
 from aos.api.shared.auth import current_user
 from aos.api.shared.responses import fail
-from aos.api.shared.validators import resolve_country
-from aos.utils.aos_settings import get_aos_settings_snapshot
+from aos.services.localization_service import get_default_preferences, validate_country, validate_currency
 
 
 # INTERNAL HELPERS
@@ -23,7 +22,7 @@ def _get_user_preference(user: str):
     pref = frappe.db.get_value(
         "AOS User Preference",
         {"user": user},
-        ["country", "currency"],
+        ["country", "currency", "language"],
         as_dict=True,
     )
 
@@ -61,29 +60,14 @@ def resolve_market_country(country: str | None = None):
 
     # Guest → use request param if provided
     if country:
-        country_name, error = resolve_country(country)
+        country_name, error = validate_country(country)
         if error:
             return None, error
         return country_name, None
 
     # Fallback → AOS Settings default
-    settings = get_aos_settings_snapshot()
-
-    if not settings.default_country:
-        return None, fail(
-            "Default country not configured.",
-            error="CONFIG_ERROR",
-        )
-
-    # Validate default exists
-    country_name, error = resolve_country(settings.default_country)
-    if error:
-        return None, fail(
-            "System default country is invalid.",
-            error="CONFIG_ERROR",
-        )
-
-    return country_name, None
+    defaults, error = get_default_preferences()
+    return (defaults["country"], None) if defaults else (None, error)
 
 # CURRENCY
 def resolve_market_currency(currency: str | None = None):
@@ -113,32 +97,11 @@ def resolve_market_currency(currency: str | None = None):
 
     # Guest → use request param if provided
     if currency:
-        currency = currency.strip()
-
-        if not frappe.db.exists("Currency", currency):
-            return None, fail(
-                "Invalid currency.",
-                error="VALIDATION_ERROR",
-            )
-
-        return currency, None
+        return validate_currency(currency)
 
     # Fallback → AOS Settings default
-    settings = get_aos_settings_snapshot()
-
-    if not settings.default_currency:
-        return None, fail(
-            "Default currency not configured.",
-            error="CONFIG_ERROR",
-        )
-
-    if not frappe.db.exists("Currency", settings.default_currency):
-        return None, fail(
-            "System default currency is invalid.",
-            error="CONFIG_ERROR",
-        )
-
-    return settings.default_currency, None
+    defaults, error = get_default_preferences()
+    return (defaults["currency"], None) if defaults else (None, error)
 
 # COMBINED
 def resolve_market_context(

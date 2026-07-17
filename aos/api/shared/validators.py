@@ -27,80 +27,22 @@ def resolve_country(value: str | None):
         - Country.code (e.g. "KE")
     """
 
-    value, err = _clean_optional_string(value, "country")
-    if err:
-        return None, err
-    if not value:
-        return None, None
-
-    # Direct match (Country.name)
-    if frappe.db.exists("Country", value):
-        return value, None
-
-    # Match by ISO code
-    country_name = frappe.db.get_value("Country", {"code": value}, "name")
-    if country_name:
-        return country_name, None
-
-    return None, fail(
-        "Invalid country.",
-        error="VALIDATION_ERROR",
-        data={"field": "country"},
-    )
+    from aos.services.localization_service import validate_country
+    return validate_country(value, required=False)
 
 
 def resolve_language(value: str | None):
     """Resolve a language input to Language.name."""
 
-    value, err = _clean_optional_string(value, "language")
-    if err:
-        return None, err
-    if not value:
-        return None, None
-
-    if frappe.db.exists("Language", value):
-        return value, None
-
-    language_name = frappe.db.get_value(
-        "Language",
-        {"language_name": value},
-        "name",
-    )
-    if language_name:
-        return language_name, None
-
-    return None, fail(
-        "Invalid language.",
-        error="VALIDATION_ERROR",
-        data={"field": "language"},
-    )
+    from aos.services.localization_service import validate_language
+    return validate_language(value, required=False)
 
 
 def resolve_currency(value: str | None):
     """Resolve a currency input to Currency.name."""
 
-    value, err = _clean_optional_string(value, "currency")
-    if err:
-        return None, err
-    if not value:
-        return None, None
-
-    if frappe.db.exists("Currency", value):
-        return value, None
-
-    currency_name = frappe.db.get_value(
-        "Currency",
-        {"symbol": value},
-        "name",
-    )
-    if currency_name:
-        return currency_name, None
-
-    return None, fail(
-        "Invalid currency.",
-        error="VALIDATION_ERROR",
-        data={"field": "currency"},
-    )
+    from aos.services.localization_service import validate_currency
+    return validate_currency(value, required=False)
 
 
 # LOCATION
@@ -121,14 +63,14 @@ def resolve_location(location: str | None, *, country: str | None = None):
     if not location_doc:
         return None, fail(
             "Invalid location.",
-            error="VALIDATION_ERROR",
+            error="INVALID_LOCATION",
             data={"field": "location"},
         )
 
     if not location_doc.is_active:
         return None, fail(
             "Selected location is inactive.",
-            error="VALIDATION_ERROR",
+            error="INVALID_LOCATION",
             data={"field": "location"},
         )
 
@@ -140,7 +82,7 @@ def resolve_location(location: str | None, *, country: str | None = None):
         if location_doc.country != country_name:
             return None, fail(
                 "Location does not belong to the selected country.",
-                error="VALIDATION_ERROR",
+                error="INVALID_LOCATION",
                 data={"field": "location"},
             )
 

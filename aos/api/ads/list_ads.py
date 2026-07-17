@@ -25,6 +25,7 @@ from aos.api.shared.responses import fail, ok
 from aos.api.shared.sql_safety import clean_safe_docnames, safe_like_contains
 from aos.utils.aos_settings import get_aos_settings_snapshot
 from aos.services.search_ranking_service import search_ad_candidates
+from aos.services.currency_conversion import sql_conversion_expressions
 
 from .constants import LIST_ADS_LIMIT_PER_MINUTE_PER_IP
 from .category_filters import resolve_category_filter_values
@@ -83,6 +84,8 @@ def list_ads_impl(**kwargs):
     )
     if error:
         return error
+
+    base_currency = get_aos_settings_snapshot().base_currency
 
     user = current_user()
     today = getdate(nowdate())
@@ -190,6 +193,7 @@ def list_ads_impl(**kwargs):
         "country": country,
         "today": today,
         "display_currency": display_currency,
+        "base_currency": base_currency,
     }
 
     # Seller filter
@@ -251,23 +255,17 @@ def list_ads_impl(**kwargs):
         AND (a.offer_end_date IS NULL OR a.offer_end_date >= %(today)s)
     """
 
-    conversion_ratio = """
-        (
-            IFNULL(er_target.rate_vs_base,1)
-            /
-            IFNULL(er_source.rate_vs_base,1)
-        )
-    """
-
-    original_price_sql = f"(a.price * {conversion_ratio})"
-
-    current_price_sql = f"""
+    native_current_price_sql = f"""
         CASE
             WHEN {offer_active_sql}
-            THEN (a.offer_price * {conversion_ratio})
-            ELSE (a.price * {conversion_ratio})
+            THEN a.offer_price
+            ELSE a.price
         END
     """
+    original_conversion = sql_conversion_expressions(amount_sql="a.price")
+    current_conversion = sql_conversion_expressions(amount_sql=native_current_price_sql)
+    original_price_sql = original_conversion["amount"]
+    current_price_sql = current_conversion["amount"]
 
     if promotion_type in {"offer", "flash_sale", "deal"}:
         conditions.append(f"({offer_active_sql})")
@@ -284,10 +282,12 @@ def list_ads_impl(**kwargs):
 
     # Price range filters
     if price_min is not None:
+        conditions.append(f"({original_conversion['available']}) = 1")
         conditions.append(f"{current_price_sql} >= %(price_min)s")
         values["price_min"] = price_min
 
     if price_max is not None:
+        conditions.append(f"({original_conversion['available']}) = 1")
         conditions.append(f"{current_price_sql} <= %(price_max)s")
         values["price_max"] = price_max
 
@@ -337,7 +337,7 @@ def list_ads_impl(**kwargs):
         order_by = (
             f"{geo_boost}, "
             f"{verified_boost}, "
-            f"{current_price_sql} ASC, "
+            f"{original_conversion['available']} DESC, {current_price_sql} ASC, "
             "a.creation DESC"
         )
 
@@ -345,7 +345,7 @@ def list_ads_impl(**kwargs):
         order_by = (
             f"{geo_boost}, "
             f"{verified_boost}, "
-            f"{current_price_sql} DESC, "
+            f"{original_conversion['available']} DESC, {current_price_sql} DESC, "
             "a.creation DESC"
         )
 
@@ -363,7 +363,10 @@ def list_ads_impl(**kwargs):
             a.category,
             a.seller,
             a.currency,
-            %(display_currency)s as display_currency,
+            {original_conversion["currency"]} as display_currency,
+            %(display_currency)s as requested_display_currency,
+            {original_conversion["available"]} as conversion_available,
+            {original_conversion["rate"]} as conversion_rate,
             a.price_type,
             a.price,
             a.offer_price,

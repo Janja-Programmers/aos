@@ -11,6 +11,7 @@ from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.sql_safety import safe_like_contains
 from aos.utils.aos_settings import get_aos_settings_snapshot
+from aos.services.currency_conversion import sql_conversion_expressions
 
 from aos.api.ads.category_filters import resolve_category_filter_values
 from aos.api.ads.serializers import serialize_ad_list_item
@@ -67,6 +68,8 @@ def list_wishlist_impl(**kwargs):
     )
     if error:
         return error
+
+    base_currency = get_aos_settings_snapshot().base_currency
 
     today = getdate(nowdate())
 
@@ -134,6 +137,7 @@ def list_wishlist_impl(**kwargs):
         "country": country,
         "today": today,
         "display_currency": display_currency,
+        "base_currency": base_currency,
     }
 
     # Seller filter
@@ -191,23 +195,17 @@ def list_wishlist_impl(**kwargs):
         AND (a.offer_end_date IS NULL OR a.offer_end_date >= %(today)s)
     """
 
-    conversion_ratio = """
-        (
-            IFNULL(er_target.rate_vs_base, 1)
-            /
-            IFNULL(er_source.rate_vs_base, 1)
-        )
-    """
-
-    original_price_sql = f"(a.price * {conversion_ratio})"
-
-    current_price_sql = f"""
+    native_current_price_sql = f"""
         CASE
             WHEN {offer_active_sql}
-            THEN (a.offer_price * {conversion_ratio})
-            ELSE (a.price * {conversion_ratio})
+            THEN a.offer_price
+            ELSE a.price
         END
     """
+    original_conversion = sql_conversion_expressions(amount_sql="a.price")
+    current_conversion = sql_conversion_expressions(amount_sql=native_current_price_sql)
+    original_price_sql = original_conversion["amount"]
+    current_price_sql = current_conversion["amount"]
 
     if promotion_type in {"offer", "flash_sale", "deal"}:
         conditions.append(f"({offer_active_sql})")
@@ -223,10 +221,12 @@ def list_wishlist_impl(**kwargs):
 
     # Price range filters
     if price_min is not None:
+        conditions.append(f"({original_conversion['available']}) = 1")
         conditions.append(f"{current_price_sql} >= %(price_min)s")
         values["price_min"] = price_min
 
     if price_max is not None:
+        conditions.append(f"({original_conversion['available']}) = 1")
         conditions.append(f"{current_price_sql} <= %(price_max)s")
         values["price_max"] = price_max
 
@@ -276,7 +276,7 @@ def list_wishlist_impl(**kwargs):
         order_by = (
             f"{geo_boost}, "
             f"{verified_boost}, "
-            f"{current_price_sql} ASC, "
+            f"{original_conversion['available']} DESC, {current_price_sql} ASC, "
             "w.creation DESC"
         )
 
@@ -284,7 +284,7 @@ def list_wishlist_impl(**kwargs):
         order_by = (
             f"{geo_boost}, "
             f"{verified_boost}, "
-            f"{current_price_sql} DESC, "
+            f"{original_conversion['available']} DESC, {current_price_sql} DESC, "
             "w.creation DESC"
         )
 
@@ -299,7 +299,10 @@ def list_wishlist_impl(**kwargs):
             a.category,
             a.seller,
             a.currency,
-            %(display_currency)s as display_currency,
+            {original_conversion["currency"]} as display_currency,
+            %(display_currency)s as requested_display_currency,
+            {original_conversion["available"]} as conversion_available,
+            {original_conversion["rate"]} as conversion_rate,
             a.price_type,
             a.price,
             a.price_unit,

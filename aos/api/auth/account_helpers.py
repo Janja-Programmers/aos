@@ -8,15 +8,7 @@ import hashlib
 import frappe
 
 from aos.api.shared.responses import fail
-from aos.api.shared.validators import resolve_country, resolve_currency, resolve_language
-from aos.utils.aos_settings import get_aos_settings_snapshot
-
-
-DEFAULT_LANGUAGE_CODE = "en"
-DEFAULT_CURRENCY_CODE = "USD"
-DEFAULT_COUNTRY_CANDIDATES = ("Kenya", "United States")
-DEFAULT_LANGUAGE_CANDIDATES = ("en", "English")
-DEFAULT_CURRENCY_CANDIDATES = ("USD", "KES")
+from aos.api.localization.context import resolve_guest_preference_context
 
 
 def _clear_preference_cache(user: str) -> None:
@@ -48,60 +40,6 @@ def ensure_aos_profile(user: str):
     return profile
 
 
-def _first_existing_doc(doctype: str, candidates: tuple[str, ...]) -> str | None:
-    for candidate in candidates:
-        if frappe.db.exists(doctype, candidate):
-            return candidate
-    return frappe.db.get_value(doctype, {}, "name")
-
-
-def _resolve_default_country(country: str | None):
-    if country:
-        return resolve_country(country)
-
-    settings = get_aos_settings_snapshot()
-    configured = settings.default_country or _first_existing_doc("Country", DEFAULT_COUNTRY_CANDIDATES)
-    if not configured:
-        return None, fail("Default country not configured.", error="CONFIG_ERROR")
-
-    country_name, error = resolve_country(configured)
-    if error:
-        return None, fail("System default country is invalid.", error="CONFIG_ERROR")
-    return country_name, None
-
-
-def _resolve_default_currency(currency: str | None):
-    if currency:
-        return resolve_currency(currency)
-
-    settings = get_aos_settings_snapshot()
-    configured = (
-        settings.default_currency
-        or _first_existing_doc("Currency", DEFAULT_CURRENCY_CANDIDATES)
-        or DEFAULT_CURRENCY_CODE
-    )
-    currency_name, error = resolve_currency(configured)
-    if error:
-        return None, fail("System default currency is invalid.", error="CONFIG_ERROR")
-    return currency_name, None
-
-
-def _resolve_default_language(language: str | None):
-    if language:
-        return resolve_language(language)
-
-    settings = get_aos_settings_snapshot()
-    configured = (
-        settings.default_language
-        or _first_existing_doc("Language", DEFAULT_LANGUAGE_CANDIDATES)
-        or DEFAULT_LANGUAGE_CODE
-    )
-    language_name, error = resolve_language(configured)
-    if error:
-        return None, fail("System default language is invalid.", error="CONFIG_ERROR")
-    return language_name, None
-
-
 def ensure_user_preference(
     user: str,
     *,
@@ -113,9 +51,10 @@ def ensure_user_preference(
 
     The helper repairs authenticated account rows missing required AOS preferences
     and makes login/me stable instead of crashing. Explicit request values are validated;
-    otherwise configured AOS defaults are used. ``ignore_permissions=True`` is
-    intentional because only auth/session/account code calls this after the user
-    has been authenticated or immediately after creating the same user account.
+    otherwise request-aware localization context is used before configured
+    AOS defaults. ``ignore_permissions=True`` is intentional because only
+    auth/session/account code calls this after the user has been authenticated
+    or immediately after creating the same user account.
     """
 
     if not user:
@@ -125,24 +64,20 @@ def ensure_user_preference(
     if pref_name:
         return frappe.get_doc("AOS User Preference", pref_name), None
 
-    country_name, error = _resolve_default_country(country)
-    if error:
-        return None, error
-
-    currency_name, error = _resolve_default_currency(currency)
-    if error:
-        return None, error
-
-    language_name, error = _resolve_default_language(language)
+    resolved, error = resolve_guest_preference_context(
+        country=country,
+        currency=currency,
+        language=language,
+    )
     if error:
         return None, error
 
     try:
         pref = frappe.new_doc("AOS User Preference")
         pref.user = user
-        pref.country = country_name
-        pref.currency = currency_name
-        pref.language = language_name
+        pref.country = resolved["country"]
+        pref.currency = resolved["currency"]
+        pref.language = resolved["language"]
         pref.insert(ignore_permissions=True)
         _clear_preference_cache(user)
         return pref, None

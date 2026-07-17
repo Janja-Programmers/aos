@@ -18,6 +18,8 @@ from .constants import GET_AD_LIMIT_PER_HOUR_PER_IP
 from .serializers import serialize_ad_detail
 from .activity import record_ad_view_activity
 from aos.services.analytics_pipeline_service import emit_analytics_event
+from aos.services.currency_conversion import sql_conversion_expressions
+from aos.utils.aos_settings import get_aos_settings_snapshot
 
 
 def get_ad_impl(**kwargs):
@@ -46,6 +48,7 @@ def get_ad_impl(**kwargs):
 
     user = current_user()
     today = getdate(nowdate())
+    base_currency = get_aos_settings_snapshot().base_currency
 
     # Offer Logic
     offer_active_sql = """
@@ -55,31 +58,26 @@ def get_ad_impl(**kwargs):
         AND (a.offer_end_date IS NULL OR a.offer_end_date >= %(today)s)
     """
 
-    conversion_ratio = """
-        (
-            IFNULL(er_target.rate_vs_base, 1)
-            /
-            IFNULL(er_source.rate_vs_base, 1)
-        )
-    """
-
-    original_price_sql = f"(a.price * {conversion_ratio})"
-
-    current_price_sql = f"""
+    native_current_price_sql = f"""
         CASE
             WHEN {offer_active_sql}
-            THEN (a.offer_price * {conversion_ratio})
-            ELSE (a.price * {conversion_ratio})
+            THEN a.offer_price
+            ELSE a.price
         END
     """
+    original_conversion = sql_conversion_expressions(amount_sql="a.price")
+    current_conversion = sql_conversion_expressions(amount_sql=native_current_price_sql)
 
     # SQL Query
     sql = f"""
         SELECT
             a.*,
-            %(display_currency)s as display_currency,
-            {original_price_sql} as original_price_converted,
-            {current_price_sql} as current_price
+            {original_conversion["currency"]} as display_currency,
+            %(display_currency)s as requested_display_currency,
+            {original_conversion["available"]} as conversion_available,
+            {original_conversion["rate"]} as conversion_rate,
+            {original_conversion["amount"]} as original_price_converted,
+            {current_conversion["amount"]} as current_price
         FROM `tabAOS Ad` a
         INNER JOIN `tabAOS Seller` s ON s.name = a.seller
         LEFT JOIN `tabAOS Exchange Rate` er_source
@@ -100,6 +98,7 @@ def get_ad_impl(**kwargs):
                 "ad_id": ad_id,
                 "today": today,
                 "display_currency": display_currency,
+                "base_currency": base_currency,
             },
             as_dict=True,
         )

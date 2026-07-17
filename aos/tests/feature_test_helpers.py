@@ -126,8 +126,9 @@ class AOSFeatureTestMixin:
     def make_location(self, *, country: str | None = None) -> str:
         country = country or self.preference_defaults()[0]
         location = f"{self.prefix} Location"
-        if not frappe.db.exists("AOS Location", location):
-            frappe.get_doc(
+        name = frappe.db.get_value("AOS Location", {"country": country, "location": location}, "name")
+        if not name:
+            doc = frappe.get_doc(
                 {
                     "doctype": "AOS Location",
                     "location": location,
@@ -135,8 +136,9 @@ class AOSFeatureTestMixin:
                     "is_active": 1,
                 }
             ).insert(ignore_permissions=True)
+            name = doc.name
         frappe.db.commit()
-        return location
+        return str(name)
 
     def make_media(
         self,
