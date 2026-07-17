@@ -69,7 +69,7 @@ def validate_language(value: Any, *, required: bool = True):
 
 
 def accept_language_candidates(header: str | None) -> list[str]:
-    """Return quality-ordered exact and primary language tags."""
+    """Return quality-ordered exact tags, followed by primary fallbacks. """
     parsed: list[tuple[float, int, str]] = []
     for position, item in enumerate(str(header or "").split(",")):
         parts = [part.strip() for part in item.split(";") if part.strip()]
@@ -85,11 +85,19 @@ def accept_language_candidates(header: str | None) -> list[str]:
                     quality = 0.0
         if quality > 0:
             parsed.append((quality, position, tag))
+
+    ordered = sorted(parsed, key=lambda row: (-row[0], row[1]))
     result: list[str] = []
-    for _quality, _position, tag in sorted(parsed, key=lambda row: (-row[0], row[1])):
-        for candidate in (tag, tag.split("-", 1)[0]):
-            if candidate and candidate not in result:
-                result.append(candidate)
+
+    for _quality, _position, tag in ordered:
+        if tag not in result:
+            result.append(tag)
+
+    for _quality, _position, tag in ordered:
+        primary = tag.split("-", 1)[0]
+        if primary and primary not in result:
+            result.append(primary)
+
     return result
 
 

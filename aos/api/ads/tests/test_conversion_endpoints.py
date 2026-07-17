@@ -73,7 +73,7 @@ class TestConversionEndpoints(AOSFeatureTestMixin, FrappeTestCase):
         self._set_rate(self.target, None)
         with self._patches("aos.api.ads.get_ad", self.target)[0], self._patches("aos.api.ads.get_ad", self.target)[1], self._patches("aos.api.ads.get_ad", self.target)[2]:
             response = get_ad_impl(ad_id=self.ad.name)
-        item = response["data"]
+        item = response["data"]["item"]
         self.assertEqual((item["display_price"], item["display_currency"]), (100, self.base))
         self.assertFalse(item["price_conversion"]["available"])
 
