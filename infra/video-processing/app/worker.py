@@ -97,7 +97,13 @@ def _upload_file(
 
 
 def _run(cmd: list[str], error_message: str, *, timeout: int = 1800) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    # Commands are internal argv lists and never use a shell.
+    result = subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
     if result.returncode != 0:
         stderr = (result.stderr or "").strip()
         stdout = (result.stdout or "").strip()
