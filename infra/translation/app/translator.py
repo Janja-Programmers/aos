@@ -3,9 +3,7 @@ from __future__ import annotations
 import os
 import threading
 from dataclasses import dataclass
-
-import ctranslate2
-from transformers import AutoTokenizer
+from typing import Any
 
 from .languages import LanguageInfo, normalize_language_code
 
@@ -42,12 +40,17 @@ class ValidationError(TranslationError):
 class TranslatorRuntime:
     def __init__(self, config: TranslationConfig):
         self.config = config
-        self._translator: ctranslate2.Translator | None = None
-        self._tokenizer = None
+        self._translator: Any | None = None
+        self._tokenizer: Any | None = None
         self._lock = threading.Lock()
 
     def load(self) -> None:
         with self._lock:
+            # Keep health/config imports model-free; runtime compatibility CI
+            # separately installs and imports the full production dependency set.
+            import ctranslate2
+            from transformers import AutoTokenizer
+
             if self._translator is None:
                 if not os.path.isdir(self.config.model_path):
                     raise TranslationError(

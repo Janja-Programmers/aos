@@ -8,10 +8,11 @@
 # Do not confuse this with Docker Hub's official `photon` image, which is
 # VMware Photon OS and not the Photon geocoder.
 
-FROM eclipse-temurin:21-jre-jammy
+FROM eclipse-temurin:21-jre-jammy@sha256:d63bd8d9b171999cbed8576f2c76e874dd4856791a358536e5c4d407e77edc13
 
 ARG PHOTON_VERSION=1.2.0
 ARG PHOTON_JAR_URL=https://github.com/komoot/photon/releases/download/1.2.0/photon-1.2.0.jar
+ARG PHOTON_JAR_SHA256=3455a6c2c9828393c2506d23540015b3b220cf00f4a9bb2c39e8007971cbe8c7
 
 LABEL org.opencontainers.image.title="AOS Photon Geocoder"
 LABEL org.opencontainers.image.description="AOS packaged image for Komoot Photon geocoder"
@@ -46,6 +47,7 @@ RUN set -eux; \
 
 RUN set -eux; \
     curl -fsSL "${PHOTON_JAR_URL}" -o "${PHOTON_HOME}/photon.jar"; \
+    echo "${PHOTON_JAR_SHA256}  ${PHOTON_HOME}/photon.jar" | sha256sum -c -; \
     test -s "${PHOTON_HOME}/photon.jar"; \
     chown photon:photon "${PHOTON_HOME}/photon.jar"
 

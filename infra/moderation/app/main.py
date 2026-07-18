@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from rq import Retry
 
 from app.config import get_settings
@@ -22,6 +22,15 @@ class ModerationJobRequest(BaseModel):
 
 
 app = FastAPI(title="AOS Content Moderation Service", version="1.0.0")
+
+
+@app.exception_handler(ValidationError)
+async def validation_error_handler(_request: Request, exc: ValidationError):
+    """Return FastAPI's stable 422 shape for explicit model validation."""
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={"detail": [{key: error[key] for key in ("loc", "msg", "type")} for error in exc.errors()]},
+    )
 
 
 @app.get("/health")

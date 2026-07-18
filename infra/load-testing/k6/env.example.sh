@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Copy this to env.local.sh, replace values, then: source infra/load-testing/k6/env.local.sh
 # Never commit real passwords, admin credentials, or production secrets.
 

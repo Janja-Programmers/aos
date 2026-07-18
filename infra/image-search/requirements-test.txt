@@ -1,0 +1,6 @@
+fastapi==0.139.2
+pydantic==2.13.4
+python-multipart==0.0.32
+Pillow==12.3.0
+requests==2.34.2
+qdrant-client==1.18.0

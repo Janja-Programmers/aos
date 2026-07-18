@@ -83,7 +83,6 @@ Run from the repository root on the deployment server:
 ./infra/maps/scripts/build-kenya-tiles.sh
 ./infra/maps/scripts/build-valhalla.sh
 ./infra/maps/scripts/import-nominatim.sh --rebuild
-./infra/maps/scripts/import-photon.sh --rebuild
 ./infra/maps/scripts/verify-map-data.sh
 ```
 
@@ -91,9 +90,19 @@ Then start services and run runtime checks:
 
 ```bash
 docker compose config
-docker compose up -d tileserver valhalla nominatim photon
+docker compose up -d tileserver valhalla nominatim
 ./infra/maps/scripts/verify-map-data.sh --services
 ```
+
+Photon is deliberately not part of the maintained Compose stack until the
+locally built image is published and its immutable registry digest is reviewed.
+The source Dockerfile remains under `infra/maps/photon/`; see
+`ARTIFACTS_MANIFEST.md` for the checksum-verified build procedure.
+
+Do not run `import-photon.sh` as part of the maintained production sequence
+while that service is absent. After publishing the image, independently verify
+its manifest digest, restore the digest-pinned Compose service/volume, and only
+then run the existing import script and Photon-specific checks.
 
 ## Photon autocomplete
 
@@ -203,9 +212,10 @@ Before marking a maps release complete:
 Kenya MBTiles exists and validates as SQLite.
 Valhalla routing artifacts exist.
 Nominatim volume exists and service is healthy.
-Photon volume exists, is non-empty, and service is healthy.
+Photon is explicitly disabled, or its published digest is verified and its
+volume/service health checks pass.
 Tile style loads over HTTPS through the maps domain.
-Nominatim, Photon, and Valhalla are not publicly exposed.
+Nominatim, any enabled Photon service, and Valhalla are not publicly exposed.
 Seller near-me and viewport APIs have rate limits.
 Route endpoints require login.
 ```

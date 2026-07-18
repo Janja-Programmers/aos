@@ -1,0 +1,95 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: pip
+    directory: /
+    schedule: &weekly-python
+      interval: weekly
+      day: tuesday
+    groups: &python-groups
+      python-dependencies:
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: pip
+    directory: /ci/requirements
+    schedule: *weekly-python
+    groups: *python-groups
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: pip
+    directory: /infra/analytics-pipeline
+    schedule: *weekly-python
+    groups: *python-groups
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: pip
+    directory: /infra/background-removal
+    schedule: *weekly-python
+    groups: *python-groups
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: pip
+    directory: /infra/image-search
+    schedule: *weekly-python
+    groups: *python-groups
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: pip
+    directory: /infra/moderation
+    schedule: *weekly-python
+    groups: *python-groups
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: pip
+    directory: /infra/notification-delivery
+    schedule: *weekly-python
+    groups: *python-groups
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: pip
+    directory: /infra/search-ranking
+    schedule: *weekly-python
+    groups: *python-groups
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: pip
+    directory: /infra/translation
+    schedule: *weekly-python
+    groups: *python-groups
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: pip
+    directory: /infra/video-processing
+    schedule: *weekly-python
+    groups: *python-groups
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /infra/analytics-pipeline
+      - /infra/background-removal
+      - /infra/image-search
+      - /infra/maps/photon
+      - /infra/moderation
+      - /infra/notification-delivery
+      - /infra/search-ranking
+      - /infra/translation
+      - /infra/video-processing
+    schedule:
+      interval: weekly
+      day: wednesday
+    groups:
+      docker-images:
+        patterns: ["*"]
+    open-pull-requests-limit: 5

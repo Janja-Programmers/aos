@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.14.6-slim-bookworm@sha256:86f975aca15cf04a40b399eebede9aea7c82eae084d1f1a0a6ef6bcaae871a30
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -9,8 +9,9 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+COPY requirements.lock /app/requirements.lock
+RUN python -m pip install --no-cache-dir --require-hashes -r /app/requirements.lock \
+    && python -m pip check
 
 COPY app /app/app
 

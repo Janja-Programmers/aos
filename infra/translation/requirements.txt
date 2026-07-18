@@ -1,6 +1,6 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-ctranslate2==4.4.0
-transformers==4.48.0
-sentencepiece==0.2.0
-pydantic==2.10.5
+fastapi==0.139.2
+uvicorn[standard]==0.51.0
+ctranslate2==4.8.1
+transformers==4.57.6
+sentencepiece==0.2.2
+pydantic==2.13.4

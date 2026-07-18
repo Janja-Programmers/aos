@@ -1,0 +1,11 @@
+# Verified 2026-07-18 with checksum-pinned crane 0.21.7.
+ghcr.io/valhalla/valhalla-scripted verified-sha256=bb3e89c0e8d3fb35e9278e23a1f7fdbcbf76d29c1edbf7effad829e1ee26b6ed
+livekit/livekit-server:v1.9.12 verified-sha256=2c13cbf2edcbf13ea7b20d05c10b394d04d8fb3fe358269cff845a90b4de9576
+maptiler/tileserver-gl verified-sha256=3a9ccdb24820b6814c8119bcc8a4376c39867cb0ffe69d62919ef898b90c2427
+mediagis/nominatim:5.3 verified-sha256=7923a8e67197fc6d4f4ecb7c0e8bbedffeddcfdf4519596fe946e46a28f5a9f8
+minio/minio:RELEASE.2025-09-07T16-13-09Z verified-sha256=14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+qdrant/qdrant:v1.17.1 verified-sha256=94728574965d17c6485dd361aa3c0818b325b9016dac5ea6afec7b4b2700865f
+redis:7.4.5-alpine verified-sha256=bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+# Additional CI/runtime manifests verified with the same crane binary.
+mariadb:11.8.5 verified-sha256=345fa26d595e8c7fe298e0c4098ed400356f502458769c8902229b3437d6da2b
+python:3.14.6-slim-bookworm verified-sha256=86f975aca15cf04a40b399eebede9aea7c82eae084d1f1a0a6ef6bcaae871a30
