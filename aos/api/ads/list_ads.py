@@ -296,16 +296,13 @@ def list_ads_impl(**kwargs):
     # Sorting
     verified_boost = "COALESCE(p.is_verified, 0) DESC"
     country_boost = "CASE WHEN a.country = %(country)s THEN 0 ELSE 1 END"
-    location_boost = ""
+    geo_boost_parts = [country_boost]
 
     if location:
         values["location"] = location
-        location_boost = "CASE WHEN a.location = %(location)s THEN 0 ELSE 1 END"
-
-    geo_boost_parts = [country_boost]
-
-    if location_boost:
-        geo_boost_parts.append(location_boost)
+        geo_boost_parts.append(
+            "CASE WHEN a.location = %(location)s THEN 0 ELSE 1 END"
+        )
 
     geo_boost = ", ".join(geo_boost_parts)
 
