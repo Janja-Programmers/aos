@@ -88,9 +88,17 @@ Security updates remain visible and are not automatically merged or deployed.
 ## Findings policy and known limits
 
 Semgrep metrics, version checks, and external uploads are disabled. The CI gate
-fails on ERROR findings. pip-audit has no ignore list. A temporary advisory
-acceptance would require a reviewed allowlist recording advisory ID, package,
-justification, owner, expiration, and removal condition; none exists now.
+fails on ERROR findings. pip-audit applies only the exact, validated entries in
+`ci/vulnerability-exceptions.json`. Each entry records its advisory, package,
+locked version, affected lock, justification, owner, expiration, and removal
+condition; expired, duplicate, malformed, or lock-mismatched entries fail CI.
+
+The current four entries expire on 2026-08-01 and apply only to Semgrep
+1.170.0's CI-tool dependencies: Click 8.1.8 and MCP 1.23.3. Semgrep 1.170.0
+is the newest available release and hard-pins those versions. AOS runs an
+offline local-rule scan: it does not call `click.edit()`, enable MCP tasks,
+or start MCP SSE, Streamable HTTP, or WebSocket transports. Remove the entries
+as soon as a Semgrep release permits Click 8.3.3 and MCP 1.28.1 or newer.
 
 The secret scan keeps hexadecimal and base64 entropy detection enabled. Its
 committed baseline stores reviewed hashes only; new, stale, or unreviewed
