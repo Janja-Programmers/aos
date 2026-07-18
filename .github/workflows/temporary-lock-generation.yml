@@ -23,21 +23,10 @@ jobs:
           python-version: 3.14.6
       - name: Install pinned lock compiler
         run: python -m pip install "uv==0.11.28"
-      - name: Resolve fixed versions and regenerate every lock
+      - name: Resolve fixed Transformers version and regenerate every lock
         run: |
           python - <<'PY'
           from pathlib import Path
-
-          security = Path("ci/requirements/security.in")
-          security.write_text(
-              """click>=8.3.3
-          detect-secrets==1.5.0
-          mcp>=1.28.1
-          pip-audit==2.10.1
-          semgrep>=1.170.0
-          """,
-              encoding="utf-8",
-          )
 
           translation = Path("infra/translation/requirements.txt")
           text = translation.read_text(encoding="utf-8")
@@ -53,32 +42,14 @@ jobs:
           import re
           from pathlib import Path
 
-          def locked_version(path: str, package: str) -> str:
-              text = Path(path).read_text(encoding="utf-8")
-              match = re.search(rf"(?m)^{re.escape(package)}==([^ \\\n]+)", text)
-              if not match:
-                  raise SystemExit(f"Could not find locked version for {package} in {path}")
-              return match.group(1)
-
-          click = locked_version("ci/requirements/security.lock", "click")
-          mcp = locked_version("ci/requirements/security.lock", "mcp")
-          semgrep = locked_version("ci/requirements/security.lock", "semgrep")
-          transformers = locked_version("infra/translation/requirements.lock", "transformers")
-
-          Path("ci/requirements/security.in").write_text(
-              (
-                  f"click=={click}\n"
-                  "detect-secrets==1.5.0\n"
-                  f"mcp=={mcp}\n"
-                  "pip-audit==2.10.1\n"
-                  f"semgrep=={semgrep}\n"
-              ),
-              encoding="utf-8",
-          )
+          lock = Path("infra/translation/requirements.lock").read_text(encoding="utf-8")
+          match = re.search(r"(?m)^transformers==([^ \\\n]+)", lock)
+          if not match:
+              raise SystemExit("Could not find the resolved Transformers version.")
 
           translation = Path("infra/translation/requirements.txt")
           text = translation.read_text(encoding="utf-8")
-          text = text.replace("transformers>=5.3.0", f"transformers=={transformers}")
+          text = text.replace("transformers>=5.3.0", f"transformers=={match.group(1)}")
           translation.write_text(text, encoding="utf-8")
           PY
 
