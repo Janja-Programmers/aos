@@ -228,8 +228,9 @@ jobs:
         run: |
           source ci/versions.env
           python -m venv "${RUNNER_TEMP}/bench-cli"
-          "${RUNNER_TEMP}/bench-cli/bin/pip" install "frappe-bench==${FRAPPE_BENCH_VERSION}"
-          test "$("${RUNNER_TEMP}/bench-cli/bin/bench" --version)" = "${FRAPPE_BENCH_VERSION}"
+          "${RUNNER_TEMP}/bench-cli/bin/pip" install             "frappe-bench==${FRAPPE_BENCH_VERSION}" "uv==0.11.28"
+          export PATH="${RUNNER_TEMP}/bench-cli/bin:${PATH}"
+          test "$(bench --version)" = "${FRAPPE_BENCH_VERSION}"
           echo "${RUNNER_TEMP}/bench-cli/bin" >>"${GITHUB_PATH}"
           git init "${RUNNER_TEMP}/frappe-source"
           git -C "${RUNNER_TEMP}/frappe-source" remote add origin https://github.com/frappe/frappe.git
