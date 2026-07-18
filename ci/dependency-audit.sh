@@ -32,8 +32,23 @@ for relative in "${inputs[@]}"; do
     input="${CI_ROOT}/${relative}"
     [[ -f "${input}" ]] || die "Audit input is missing: ${relative}"
     report_name="${relative//\//_}.json"
-    if ! "${venv}/bin/pip-audit" --disable-pip --progress-spinner off \
-        --format json --output "${report_dir}/${report_name}" --requirement "${input}"; then
+    mapfile -t ignored_advisories < <(
+        "${python_executable}" "${CI_ROOT}/ci/audit_exceptions.py" \
+            --root "${CI_ROOT}" \
+            --exceptions "${CI_ROOT}/ci/vulnerability-exceptions.json" \
+            --lock "${relative}"
+    )
+    audit_args=(
+        --disable-pip
+        --progress-spinner off
+        --format json
+        --output "${report_dir}/${report_name}"
+        --requirement "${input}"
+    )
+    for advisory in "${ignored_advisories[@]}"; do
+        audit_args+=(--ignore-vuln "${advisory}")
+    done
+    if ! "${venv}/bin/pip-audit" "${audit_args[@]}"; then
         printf 'Vulnerability audit failed for %s. See its JSON artifact.\n' "${relative}" >&2
         status=1
     fi
