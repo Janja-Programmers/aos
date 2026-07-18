@@ -17,9 +17,10 @@ class AOSReview(Document):
     def validate(self):
         self.prevent_duplicate_review()
 
-    def on_update(self):
+    def before_save(self):
         self._stamp_review_metadata()
 
+    def on_update(self):
         update_ad_rating(self.ad)
         update_seller_rating_from_ad(self.ad)
 
