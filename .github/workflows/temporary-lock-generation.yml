@@ -1,0 +1,100 @@
+name: Temporary lock generation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/temporary-lock-generation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate-lock-patch:
+    name: generate-lock-patch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install exact Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: 3.14.6
+      - name: Install pinned lock compiler
+        run: python -m pip install "uv==0.11.28"
+      - name: Resolve fixed versions and regenerate every lock
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          security = Path("ci/requirements/security.in")
+          security.write_text(
+              """click>=8.3.3
+          detect-secrets==1.5.0
+          mcp>=1.28.1
+          pip-audit==2.10.1
+          semgrep>=1.170.0
+          """,
+              encoding="utf-8",
+          )
+
+          translation = Path("infra/translation/requirements.txt")
+          text = translation.read_text(encoding="utf-8")
+          old = "transformers==4.57.6"
+          if text.count(old) != 1:
+              raise SystemExit(f"Expected exactly one {old!r} pin")
+          translation.write_text(text.replace(old, "transformers>=5.3.0"), encoding="utf-8")
+          PY
+
+          ci/update-locks.sh
+
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          def locked_version(path: str, package: str) -> str:
+              text = Path(path).read_text(encoding="utf-8")
+              match = re.search(rf"(?m)^{re.escape(package)}==([^ \\\n]+)", text)
+              if not match:
+                  raise SystemExit(f"Could not find locked version for {package} in {path}")
+              return match.group(1)
+
+          click = locked_version("ci/requirements/security.lock", "click")
+          mcp = locked_version("ci/requirements/security.lock", "mcp")
+          semgrep = locked_version("ci/requirements/security.lock", "semgrep")
+          transformers = locked_version("infra/translation/requirements.lock", "transformers")
+
+          Path("ci/requirements/security.in").write_text(
+              (
+                  f"click=={click}\n"
+                  "detect-secrets==1.5.0\n"
+                  f"mcp=={mcp}\n"
+                  "pip-audit==2.10.1\n"
+                  f"semgrep=={semgrep}\n"
+              ),
+              encoding="utf-8",
+          )
+
+          translation = Path("infra/translation/requirements.txt")
+          text = translation.read_text(encoding="utf-8")
+          text = text.replace("transformers>=5.3.0", f"transformers=={transformers}")
+          translation.write_text(text, encoding="utf-8")
+          PY
+
+          ci/update-locks.sh
+          git diff --check
+          mkdir -p "${RUNNER_TEMP}/lock-generation"
+          git diff --binary >"${RUNNER_TEMP}/lock-generation/lock-refresh.patch"
+          git diff --name-only >"${RUNNER_TEMP}/lock-generation/changed-files.txt"
+          test -s "${RUNNER_TEMP}/lock-generation/lock-refresh.patch"
+      - name: Audit regenerated locks
+        run: AOS_CI_ARTIFACTS="${RUNNER_TEMP}/lock-generation/audit" ci/dependency-audit.sh
+      - name: Upload generated lock patch
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: temporary-lock-generation
+          path: ${{ runner.temp }}/lock-generation
+          if-no-files-found: warn
+          retention-days: 1
