@@ -11,12 +11,14 @@ class AOSAdReport(Document):
         self.prevent_duplicate_reports()
         self.validate_admin_action()
 
+    def before_save(self):
+        self._stamp_review_metadata()
+
     def after_insert(self):
         self._recompute_ad_total_reports()
 
     def on_update(self):
         self.apply_admin_action()
-        self._stamp_review_metadata()
         self._recompute_ad_total_reports_if_needed()
 
     def on_trash(self):
