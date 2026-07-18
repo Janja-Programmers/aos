@@ -75,7 +75,7 @@ PY
 
 # Remove previous bad files first.
 for stack in "${STACKS[@]}"; do
-  rm -rf "$OUT_DIR/$stack"
+  rm -rf "${OUT_DIR:?}/${stack}"
 done
 
 for stack in "${STACKS[@]}"; do

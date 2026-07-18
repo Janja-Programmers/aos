@@ -12,7 +12,7 @@ x-common-security: &common-security
 
 services:
   qdrant:
-    image: qdrant/qdrant:v1.17.1
+    image: qdrant/qdrant:v1.17.1@sha256:94728574965d17c6485dd361aa3c0818b325b9016dac5ea6afec7b4b2700865f
     container_name: aos-qdrant
     restart: unless-stopped
 
@@ -47,7 +47,7 @@ services:
       - aos_net
 
   minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     container_name: aos-minio
     restart: unless-stopped
 
@@ -87,7 +87,7 @@ services:
       - aos_net
 
   video-redis:
-    image: redis:7.4-alpine
+    image: redis:7.4.5-alpine@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
     container_name: aos-video-redis
     restart: unless-stopped
 
@@ -123,7 +123,7 @@ services:
 
 
   moderation-redis:
-    image: redis:7.4-alpine
+    image: redis:7.4.5-alpine@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
     container_name: aos-moderation-redis
     restart: unless-stopped
 
@@ -160,7 +160,7 @@ services:
 
 
   search-ranking-redis:
-    image: redis:7.4-alpine
+    image: redis:7.4.5-alpine@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
     container_name: aos-search-ranking-redis
     restart: unless-stopped
 
@@ -195,7 +195,7 @@ services:
       - aos_net
 
   notification-redis:
-    image: redis:7.4-alpine
+    image: redis:7.4.5-alpine@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
     container_name: aos-notification-redis
     restart: unless-stopped
 
@@ -230,7 +230,7 @@ services:
       - aos_net
 
   analytics-redis:
-    image: redis:7.4-alpine
+    image: redis:7.4.5-alpine@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
     container_name: aos-analytics-redis
     restart: unless-stopped
 
@@ -265,7 +265,7 @@ services:
       - aos_net
 
   livekit:
-    image: livekit/livekit-server:v1.9.12
+    image: livekit/livekit-server:v1.9.12@sha256:2c13cbf2edcbf13ea7b20d05c10b394d04d8fb3fe358269cff845a90b4de9576
     container_name: aos-livekit
     restart: unless-stopped
 
@@ -537,6 +537,13 @@ services:
       video-redis:
         condition: service_healthy
 
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import os, redis; redis.Redis.from_url(os.environ[\"VIDEO_REDIS_URL\"]).ping()'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
     mem_limit: "${VIDEO_WORKER_MEMORY_LIMIT:-3g}"
     cpus: "${VIDEO_WORKER_CPU_LIMIT:-2.00}"
     pids_limit: "${VIDEO_WORKER_PIDS_LIMIT:-1024}"
@@ -643,6 +650,13 @@ services:
       moderation-redis:
         condition: service_healthy
 
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import os, redis; redis.Redis.from_url(os.environ[\"MODERATION_REDIS_URL\"]).ping()'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
     mem_limit: "${MODERATION_WORKER_MEMORY_LIMIT:-1g}"
     cpus: "${MODERATION_WORKER_CPU_LIMIT:-1.00}"
     pids_limit: "${MODERATION_WORKER_PIDS_LIMIT:-512}"
@@ -733,6 +747,13 @@ services:
     depends_on:
       search-ranking-redis:
         condition: service_healthy
+
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import os, redis; redis.Redis.from_url(os.environ[\"SEARCH_RANKING_REDIS_URL\"]).ping()'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
     mem_limit: "${SEARCH_RANKING_WORKER_MEMORY_LIMIT:-1g}"
     cpus: "${SEARCH_RANKING_WORKER_CPU_LIMIT:-1.00}"
@@ -827,6 +848,13 @@ services:
       notification-redis:
         condition: service_healthy
 
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import os, redis; redis.Redis.from_url(os.environ[\"NOTIFICATION_REDIS_URL\"]).ping()'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
     mem_limit: "${NOTIFICATION_WORKER_MEMORY_LIMIT:-1g}"
     cpus: "${NOTIFICATION_WORKER_CPU_LIMIT:-1.00}"
     pids_limit: "${NOTIFICATION_WORKER_PIDS_LIMIT:-512}"
@@ -912,6 +940,13 @@ services:
       analytics-redis:
         condition: service_healthy
 
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import os, redis; redis.Redis.from_url(os.environ[\"ANALYTICS_REDIS_URL\"]).ping()'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
     mem_limit: "${ANALYTICS_WORKER_MEMORY_LIMIT:-1g}"
     cpus: "${ANALYTICS_WORKER_CPU_LIMIT:-1.00}"
     pids_limit: "${ANALYTICS_WORKER_PIDS_LIMIT:-512}"
@@ -971,7 +1006,7 @@ services:
       - aos_net
 
   nominatim:
-    image: mediagis/nominatim:5.3
+    image: mediagis/nominatim:5.3@sha256:7923a8e67197fc6d4f4ecb7c0e8bbedffeddcfdf4519596fe946e46a28f5a9f8
     container_name: aos-nominatim
     restart: unless-stopped
 
@@ -1016,47 +1051,9 @@ services:
     networks:
       - aos_net
 
-  photon:
-    image: ${PHOTON_IMAGE:?PHOTON_IMAGE is required}
-    container_name: aos-photon
-    restart: unless-stopped
-
-    # Photon runtime serves an already prepared photon_data directory.
-    # Keep the service private and access it only through AOS backend APIs.
-    ports:
-      - "${PHOTON_BIND_ADDRESS:-127.0.0.1}:${PHOTON_PORT:-2322}:2322"
-
-    environment:
-      PHOTON_DATA_DIR: /photon/photon_data
-      PHOTON_LISTEN_IP: 0.0.0.0
-      PHOTON_PORT: 2322
-
-    volumes:
-      - photon_data:/photon/photon_data:rw
-
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-f",
-          "http://127.0.0.1:2322/api?q=Nairobi&limit=1",
-        ]
-      interval: 30s
-      timeout: 15s
-      retries: 10
-      start_period: 2m
-
-    mem_limit: "${PHOTON_MEMORY_LIMIT:-3g}"
-    cpus: "${PHOTON_CPU_LIMIT:-2.00}"
-    pids_limit: "${PHOTON_PIDS_LIMIT:-1024}"
-
-    stop_grace_period: 60s
-    logging: *common-logging
-    <<: *common-security
-
-    networks:
-      - aos_net
+  # Photon is intentionally absent until the locally built geocoder image is
+  # published and a registry-verified immutable digest is approved. See
+  # ARTIFACTS_MANIFEST.md; sentinel digests are rejected by CI.
 
   valhalla:
     image: ${VALHALLA_IMAGE:?VALHALLA_IMAGE must be pinned to an immutable digest}
@@ -1118,10 +1115,6 @@ volumes:
   nominatim_data:
     external: true
     name: aos_nominatim_data
-
-  photon_data:
-    external: true
-    name: aos_photon_data
 
   video_redis_data:
     external: true

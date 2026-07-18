@@ -1,4 +1,4 @@
-FROM python:3.12-slim-bookworm
+FROM python:3.14.6-slim-bookworm@sha256:86f975aca15cf04a40b399eebede9aea7c82eae084d1f1a0a6ef6bcaae871a30
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -13,10 +13,10 @@ RUN apt-get update \
         patchelf \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /app/requirements.txt
+COPY requirements.lock /app/requirements.lock
 
-RUN pip install --upgrade pip \
-    && pip install -r /app/requirements.txt \
+RUN python -m pip install --no-cache-dir --require-hashes -r /app/requirements.lock \
+    && python -m pip check \
     && python - <<'PY'
 import glob
 import os

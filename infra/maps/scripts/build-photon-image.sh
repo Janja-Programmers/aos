@@ -9,22 +9,23 @@ MANIFEST_FILE="${MAP_MANIFEST_FILE:-${ROOT_DIR}/infra/maps/manifest.env}"
 
 # Load .env first because deployment/runtime values live there on staging.
 if [[ -f "${ENV_FILE}" ]]; then
-    # shellcheck disable=SC1090
     set -a
+    # shellcheck disable=SC1090
     source "${ENV_FILE}"
     set +a
 fi
 
 # Load manifest second only when present, because local dev may not have it.
 if [[ -f "${MANIFEST_FILE}" ]]; then
-    # shellcheck disable=SC1090
     set -a
+    # shellcheck disable=SC1090
     source "${MANIFEST_FILE}"
     set +a
 fi
 
 PHOTON_VERSION="${PHOTON_VERSION:-1.2.0}"
 PHOTON_IMAGE="${PHOTON_IMAGE:-aos-photon:1.2.0}"
+PHOTON_JAR_SHA256="${PHOTON_JAR_SHA256:-3455a6c2c9828393c2506d23540015b3b220cf00f4a9bb2c39e8007971cbe8c7}"
 
 DOCKERFILE="${ROOT_DIR}/infra/maps/photon/Dockerfile"
 CONTEXT_DIR="${ROOT_DIR}/infra/maps/photon"
@@ -57,6 +58,7 @@ echo
 docker build \
     --build-arg "PHOTON_VERSION=${PHOTON_VERSION}" \
     --build-arg "PHOTON_JAR_URL=https://github.com/komoot/photon/releases/download/${PHOTON_VERSION}/photon-${PHOTON_VERSION}.jar" \
+    --build-arg "PHOTON_JAR_SHA256=${PHOTON_JAR_SHA256}" \
     -t "${PHOTON_IMAGE}" \
     -f "${DOCKERFILE}" \
     "${CONTEXT_DIR}"

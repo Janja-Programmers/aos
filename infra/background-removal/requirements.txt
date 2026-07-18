@@ -1,9 +1,15 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-pydantic==2.10.5
-python-multipart==0.0.20
+fastapi==0.139.2
+uvicorn[standard]==0.51.0
+pydantic==2.13.4
+python-multipart==0.0.32
 
 # Background-removal runtime. Keep these in this service only.
 # Do not add rembg/onnxruntime to the Frappe backend pyproject.toml.
-Pillow>=12.1.0,<13.0.0
-rembg[cpu]==2.0.76
+Pillow==12.3.0
+rembg[cpu]==2.0.77
+# rembg -> pymatting leaves Numba/Numpy too loose. These exact versions are
+# the reviewed CPython 3.14-compatible pair and prevent an invalid old Numba
+# resolver choice.
+numba==0.66.0
+numpy==2.4.6
+onnxruntime==1.27.0

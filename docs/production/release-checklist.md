@@ -1,5 +1,22 @@
 # AOS Production Release Checklist
 
+## Checkpoint 1 CI gate
+
+- [ ] `CI / Required Gate` passed for the exact release commit
+- [ ] Python is exactly `3.14.6` and root metadata remains `>=3.14,<3.15`
+- [ ] Frappe checkout equals `f33ac3f00ab818e21b25ddbec93efb653fd9aa1b`
+- [ ] Bench is exactly `5.31.0`
+- [ ] All eight FastAPI unit-test and production-compatibility matrix entries passed
+- [ ] Disposable Frappe site migration and complete AOS tests passed
+- [ ] Dependency, secret, Semgrep, Compose, and infrastructure gates passed
+- [ ] CI artifacts were reviewed when any prior attempt failed
+- [ ] Dependabot changes passed Python 3.14 and Frappe compatibility before merge
+- [ ] No `NOT RUN` or `FAIL` entry remains in the release evidence
+
+Checkpoint 1 never deploys. A passing gate authorizes release review only; the
+Checkpoint 2 deployment and production-secret process must be separately
+approved before production changes.
+
 ## Code and repository
 
 - [ ] Reviewed commit is pushed and tagged
@@ -11,6 +28,7 @@
 ## Images and configuration
 
 - [ ] Valhalla, Planetiler, and other production images are pinned
+- [ ] Photon remains disabled or has a newly published, independently verified immutable registry digest
 - [ ] `docker compose config` succeeds
 - [ ] No placeholder secret remains
 - [ ] Internal services bind to `127.0.0.1`

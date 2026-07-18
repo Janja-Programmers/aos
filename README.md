@@ -18,6 +18,11 @@ bench install-app aos
 
 # ⚙️ System Requirements
 
+The selected backend runtime is exactly Python `3.14.6`; application metadata
+accepts Python `>=3.14,<3.15`. The CI-pinned framework is stable Frappe
+`v16.27.1` at commit `f33ac3f00ab818e21b25ddbec93efb653fd9aa1b`,
+with Frappe Bench `5.31.0` and Node `24.18.0`.
+
 Install required system packages:
 
 ```bash
@@ -577,10 +582,35 @@ Tools used:
 
 # 🔄 CI
 
-GitHub Actions workflows:
+The existing GitHub Actions CI and linter workflows have been consolidated into
+one hardened Checkpoint 1 workflow. It targets Python `3.14.6`, stable Frappe
+`v16.27.1` at commit
+`f33ac3f00ab818e21b25ddbec93efb653fd9aa1b`, Bench `5.31.0`, and Node
+`24.18.0`. Runtime and service-image pins are recorded in `ci/versions.env`.
 
-- CI → installs app and runs tests
-- Linters → static analysis
+CI covers repository quality, secret/hygiene scanning, vulnerability auditing,
+pinned Semgrep rules, isolated tests and complete production dependency checks
+for all eight FastAPI services, a disposable full Frappe site test, Compose
+validation, and infrastructure validation. The stable branch-protection check
+is `CI / Required Gate`.
+
+The correction archive does not claim those configured jobs have passed merely
+because they exist. See `TEST_RESULTS.md` for the local evidence and any
+fail-closed `NOT RUN` gates. In particular, branch protection should be enabled
+only after the archive is pushed and the first complete GitHub-hosted gate is
+green.
+
+```bash
+make help
+make fast
+make fastapi
+make compat
+make full-ci
+```
+
+See `docs/development/testing.md` for single-service and Frappe commands and
+`docs/production/ci-cd.md` for job, pin-update, artifact, and branch-protection
+details. This checkpoint deliberately performs no deployment.
 
 ---
 

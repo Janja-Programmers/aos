@@ -204,7 +204,7 @@ class AOSAd(Document):
         self._validate_offer()
         self._validate_content_quality()
 
-    def on_update(self):
+    def before_save(self):
         self._stamp_review_metadata()
 
     def after_insert(self):

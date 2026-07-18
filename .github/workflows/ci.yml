@@ -1,105 +1,379 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
-  group: main-aos-${{ github.event.number }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
 jobs:
-  tests:
-    runs-on: ubuntu-latest
+  repository-quality:
+    name: repository-quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install exact Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: 3.14.6
+      - name: Run non-mutating repository checks
+        run: |
+          mkdir -p "${RUNNER_TEMP}/aos-artifacts/quality"
+          AOS_CI_ARTIFACTS="${RUNNER_TEMP}/aos-artifacts" ci/repository-quality.sh \
+            2>&1 | tee "${RUNNER_TEMP}/aos-artifacts/quality/checks.log"
+      - name: Upload repository-quality report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: repository-quality
+          path: ${{ runner.temp }}/aos-artifacts/quality
+          if-no-files-found: error
+          retention-days: 14
+
+  repository-hygiene-and-secrets:
+    name: repository-hygiene-and-secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Install exact Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: 3.14.6
+      - name: Scan tracked files and working tree
+        run: AOS_CI_ARTIFACTS="${RUNNER_TEMP}/aos-artifacts" ci/repository-hygiene-and-secrets.sh
+      - name: Upload sanitized scanner report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: repository-hygiene-and-secrets
+          path: ${{ runner.temp }}/aos-artifacts/detect-secrets.json
+          if-no-files-found: error
+          retention-days: 14
+
+  dependency-vulnerability-audit:
+    name: dependency-vulnerability-audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install exact Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: 3.14.6
+      - name: Audit every production and CI lock
+        run: AOS_CI_ARTIFACTS="${RUNNER_TEMP}/aos-artifacts" ci/dependency-audit.sh
+      - name: Upload machine-readable audit reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-vulnerability-audit
+          path: ${{ runner.temp }}/aos-artifacts/pip-audit
+          if-no-files-found: error
+          retention-days: 14
+
+  semgrep:
+    name: semgrep
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install exact Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: 3.14.6
+      - name: Run pinned local Semgrep rules
+        run: AOS_CI_ARTIFACTS="${RUNNER_TEMP}/aos-artifacts" ci/semgrep.sh
+      - name: Upload Semgrep JSON
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: semgrep
+          path: ${{ runner.temp }}/aos-artifacts/semgrep.json
+          if-no-files-found: error
+          retention-days: 14
+
+  fastapi-unit-tests:
+    name: fastapi-unit-tests (${{ matrix.service }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     strategy:
       fail-fast: false
-    name: Server
+      matrix:
+        service:
+          - analytics-pipeline
+          - background-removal
+          - image-search
+          - moderation
+          - notification-delivery
+          - search-ranking
+          - translation
+          - video-processing
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install exact Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: 3.14.6
+      - name: Run isolated unit tests
+        run: AOS_CI_ARTIFACTS="${RUNNER_TEMP}/aos-artifacts" ci/run-fastapi-tests.sh "${{ matrix.service }}"
+      - name: Upload JUnit and coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fastapi-${{ matrix.service }}
+          path: ${{ runner.temp }}/aos-artifacts/fastapi/${{ matrix.service }}
+          if-no-files-found: error
+          retention-days: 14
 
+  python314-runtime-compatibility:
+    name: python314-runtime-compatibility (${{ matrix.service }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - analytics-pipeline
+          - background-removal
+          - image-search
+          - moderation
+          - notification-delivery
+          - search-ranking
+          - translation
+          - video-processing
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install exact Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: 3.14.6
+      - name: Install complete production dependency set
+        run: AOS_CI_ARTIFACTS="${RUNNER_TEMP}/aos-artifacts" ci/check-python314-compatibility.sh "${{ matrix.service }}"
+      - name: Upload compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python314-${{ matrix.service }}
+          path: ${{ runner.temp }}/aos-artifacts/compatibility/${{ matrix.service }}
+          if-no-files-found: error
+          retention-days: 14
+
+  frappe-tests:
+    name: frappe-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
     services:
-      redis-cache:
-        image: redis:alpine
-        ports:
-          - 13000:6379
-      redis-queue:
-        image: redis:alpine
-        ports:
-          - 11000:6379
       mariadb:
-        image: mariadb:11.8
+        image: mariadb:11.8.5@sha256:345fa26d595e8c7fe298e0c4098ed400356f502458769c8902229b3437d6da2b
         env:
-          MYSQL_ROOT_PASSWORD: root
+          MARIADB_ROOT_PASSWORD: ci-placeholder-password
         ports:
           - 3306:3306
-        options: --health-cmd="mariadb-admin ping" --health-interval=5s --health-timeout=2s --health-retries=3
-
+        options: >-
+          --health-cmd="mariadb-admin ping --silent"
+          --health-interval=5s --health-timeout=3s --health-retries=20
+      redis-cache:
+        image: redis:7.4.5-alpine@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+        ports:
+          - 13000:6379
+        options: --health-cmd="redis-cli ping" --health-interval=5s --health-timeout=3s --health-retries=20
+      redis-queue:
+        image: redis:7.4.5-alpine@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+        ports:
+          - 11000:6379
+        options: --health-cmd="redis-cli ping" --health-interval=5s --health-timeout=3s --health-retries=20
     steps:
-      - name: Clone
-        uses: actions/checkout@v6
-
-      - name: Find tests
-        run: |
-          echo "Finding tests"
-          grep -rn "def test" > /dev/null
-
-      - name: Setup Python
-        uses: actions/setup-python@v6
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install exact Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
-          python-version: '3.14'
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
+          python-version: 3.14.6
+      - name: Install compatible Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
-          check-latest: true
-
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-            ${{ runner.os }}-
-
-      - name: Get yarn cache directory path
-        id: yarn-cache-dir-path
-        run: 'echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT'
-
-      - uses: actions/cache@v4
-        id: yarn-cache
-        with:
-          path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
-          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-
-
-      - name: Install MariaDB Client
+          node-version: 24.18.0
+      - name: Verify manifest toolchain
+        run: ci/assert-toolchain.sh
+      - name: Verify official Frappe and Bench tags and metadata
+        run: ci/verify-upstream-pins.sh
+      - name: Install system prerequisites
         run: |
-          sudo apt update
-          sudo apt-get install mariadb-client
-
-      - name: Setup
+          sudo apt-get update
+          sudo apt-get install --yes mariadb-client libmariadb-dev redis-tools
+          npm install --global yarn@1.22.22
+      - name: Install pinned Bench and Frappe
+        env:
+          CI: "Yes"
         run: |
-          pip install frappe-bench
-          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
-
-      - name: Install
-        working-directory: /home/runner/frappe-bench
+          source ci/versions.env
+          python -m venv "${RUNNER_TEMP}/bench-cli"
+          "${RUNNER_TEMP}/bench-cli/bin/pip" install             "frappe-bench==${FRAPPE_BENCH_VERSION}" "uv==0.11.28"
+          export PATH="${RUNNER_TEMP}/bench-cli/bin:${PATH}"
+          test "$(bench --version)" = "${FRAPPE_BENCH_VERSION}"
+          echo "${RUNNER_TEMP}/bench-cli/bin" >>"${GITHUB_PATH}"
+          git init "${RUNNER_TEMP}/frappe-source"
+          git -C "${RUNNER_TEMP}/frappe-source" remote add origin https://github.com/frappe/frappe.git
+          git -C "${RUNNER_TEMP}/frappe-source" fetch --depth 1 origin "${FRAPPE_REF}"
+          git -C "${RUNNER_TEMP}/frappe-source" checkout --detach FETCH_HEAD
+          "${RUNNER_TEMP}/bench-cli/bin/bench" init "${RUNNER_TEMP}/frappe-bench" \
+            --frappe-path "${RUNNER_TEMP}/frappe-source" --skip-assets \
+            --skip-redis-config-generation --python "$(command -v python)"
+          test "$(git -C "${RUNNER_TEMP}/frappe-bench/apps/frappe" rev-parse HEAD)" = "${FRAPPE_REF}"
+      - name: Create disposable site and install AOS
+        env:
+          CI: "Yes"
+          CI_DB_ROOT_PASSWORD: ci-placeholder-password
+          CI_SITE_ADMIN_PASSWORD: ci-placeholder-password
         run: |
-          bench get-app aos $GITHUB_WORKSPACE
+          cd "${RUNNER_TEMP}/frappe-bench"
+          bench set-config -g db_host 127.0.0.1
+          bench set-config -g redis_cache redis://127.0.0.1:13000
+          bench set-config -g redis_queue redis://127.0.0.1:11000
+          bench get-app aos "${GITHUB_WORKSPACE}"
           bench setup requirements --dev
-          bench new-site --db-root-password root --admin-password admin test_site
-          bench --site test_site install-app aos
-          bench build
+          bench new-site ci-site --db-root-password "${CI_DB_ROOT_PASSWORD}" \
+            --admin-password "${CI_SITE_ADMIN_PASSWORD}" --no-mariadb-socket
+          bench --site ci-site install-app aos
+          bench --site ci-site set-config allow_tests 1 --parse
+          bench --site ci-site migrate
+      - name: Assert collection and run complete Frappe suite
         env:
-          CI: 'Yes'
-
-      - name: Run Tests
-        working-directory: /home/runner/frappe-bench
+          CI: "Yes"
         run: |
-          bench --site test_site set-config allow_tests true
-          bench --site test_site run-tests --app aos
+          python ci/assert_frappe_tests.py
+          mkdir -p "${RUNNER_TEMP}/aos-artifacts/frappe"
+          cd "${RUNNER_TEMP}/frappe-bench"
+          bench --site ci-site run-tests --app aos 2>&1 | tee "${RUNNER_TEMP}/frappe-tests.raw.log"
+          grep -Eq 'Ran [1-9][0-9]* tests?' "${RUNNER_TEMP}/frappe-tests.raw.log"
+      - name: Sanitize Frappe logs
+        if: always()
+        run: |
+          mkdir -p "${RUNNER_TEMP}/aos-artifacts/frappe"
+          if test -f "${RUNNER_TEMP}/frappe-tests.raw.log"; then
+            python ci/sanitize_logs.py "${RUNNER_TEMP}/frappe-tests.raw.log" \
+              "${RUNNER_TEMP}/aos-artifacts/frappe/frappe-tests.log"
+          else
+            printf 'Frappe test execution did not begin.\n' >"${RUNNER_TEMP}/aos-artifacts/frappe/status.txt"
+          fi
+      - name: Upload sanitized Frappe log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frappe-tests
+          path: ${{ runner.temp }}/aos-artifacts/frappe
+          if-no-files-found: error
+          retention-days: 14
+
+  compose-validation:
+    name: compose-validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install exact Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: 3.14.6
+      - name: Install pinned Compose and registry-manifest tools
+        run: |
+          ci/install-compose-tools.sh "${RUNNER_TEMP}/aos-compose-tools"
+          echo "${RUNNER_TEMP}/aos-compose-tools/bin" >>"${GITHUB_PATH}"
+          echo "AOS_COMPOSE_BIN=${RUNNER_TEMP}/aos-compose-tools/bin/docker-compose" >>"${GITHUB_ENV}"
+      - name: Validate without starting services
+        run: AOS_CI_ARTIFACTS="${RUNNER_TEMP}/aos-artifacts" ci/validate-compose.sh
+      - name: Upload rendered synthetic configuration
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: compose-validation
+          path: ${{ runner.temp }}/aos-artifacts/compose
+          if-no-files-found: error
+          retention-days: 14
+
+  infrastructure-validation:
+    name: infrastructure-validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install exact Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: 3.14.6
+      - name: Install validation binaries
+        run: |
+          ci/install-infra-tools.sh "${RUNNER_TEMP}/aos-infra-tools"
+          echo "${RUNNER_TEMP}/aos-infra-tools/bin" >>"${GITHUB_PATH}"
+          echo "NGINX_MIME_TYPES=${RUNNER_TEMP}/aos-infra-tools/nginx/conf/mime.types" >>"${GITHUB_ENV}"
+      - name: Validate maintained infrastructure
+        run: |
+          mkdir -p "${RUNNER_TEMP}/aos-artifacts/infrastructure"
+          ci/validate-infrastructure.sh 2>&1 | tee "${RUNNER_TEMP}/aos-artifacts/infrastructure/validation.log"
+      - name: Upload validation log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: infrastructure-validation
+          path: ${{ runner.temp }}/aos-artifacts/infrastructure
+          if-no-files-found: error
+          retention-days: 14
+
+  required-gate:
+    name: CI / Required Gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    if: always()
+    needs:
+      - repository-quality
+      - repository-hygiene-and-secrets
+      - dependency-vulnerability-audit
+      - semgrep
+      - fastapi-unit-tests
+      - python314-runtime-compatibility
+      - frappe-tests
+      - compose-validation
+      - infrastructure-validation
+    steps:
+      - name: Install exact Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: 3.14.6
+      - name: Fail closed on every non-success result
         env:
-          TYPE: server
+          REQUIRED_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+
+          results = {name: job["result"] for name, job in json.loads(os.environ["REQUIRED_RESULTS"]).items()}
+          failures = {name: result for name, result in results.items() if result != "success"}
+          print("Required job results:", json.dumps(results, sort_keys=True))
+          if failures:
+              print("Required gate failed closed:", json.dumps(failures, sort_keys=True), file=sys.stderr)
+              raise SystemExit(1)
+          PY

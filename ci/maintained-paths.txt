@@ -1,0 +1,9 @@
+infra/backup/backup.sh
+infra/backup/offsite-copy.sh
+infra/backup/restore.sh
+infra/backup/verify-backup.sh
+infra/maps/scripts/prepare-kenya.sh
+infra/nginx/install.sh
+infra/nginx/issue-certificates.sh
+infra/systemd/aos-backup.service
+infra/systemd/aos-backup.timer
