@@ -10,6 +10,7 @@ from app import worker
 def settings():
 	return SimpleNamespace(
 		max_duration_seconds=180,
+		minio_public_base_url="https://files.invalid",
 		output_bucket="processed",
 		output_base_path="shorts",
 		thumbnail_bucket="media",
