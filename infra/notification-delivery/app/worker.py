@@ -107,7 +107,7 @@ def _init_firebase() -> None:
         return
     if _FIREBASE_INITIALIZED:
         return
-    if firebase_admin is None or credentials is None:
+    if any(module is None for module in (firebase_admin, credentials)):
         raise NotificationDeliveryError("firebase-admin is not installed")
 
     service_account_path = Path(settings.firebase_service_account_path)
