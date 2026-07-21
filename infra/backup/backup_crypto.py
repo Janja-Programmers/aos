@@ -345,7 +345,7 @@ def encrypt_backup(
 			# - the target must be executable.
 			# - group/world-writable executables are rejected.
 			# - shell execution is explicitly disabled.
-			age_proc = subprocess.Popen(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+			age_proc = subprocess.Popen(  # nosemgrep: tmp.aos-ci-1001.semgrep-rules.vAIKml.community.python.lang.security.audit.dangerous-subprocess-use-audit
 				[
 					age_binary,
 					"--encrypt",
@@ -572,7 +572,7 @@ def decrypt_backup(
 			# - the target must be executable.
 			# - group/world-writable executables are rejected.
 			# - shell execution is explicitly disabled.
-			age_proc = subprocess.Popen(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+			age_proc = subprocess.Popen(  # nosemgrep: tmp.aos-ci-1001.semgrep-rules.vAIKml.community.python.lang.security.audit.dangerous-subprocess-use-audit
 				[
 					age_binary,
 					"--decrypt",
