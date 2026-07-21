@@ -25,6 +25,8 @@ def test_work_happy_path_is_separate_from_callback(monkeypatch):
 
 def test_work_failure_raises(monkeypatch):
 	monkeypatch.setattr(worker, "get_redis", object)
-	monkeypatch.setattr(worker, "upsert_ad", lambda *_args: (_ for _ in ()).throw(RuntimeError("redis failed")))
+	monkeypatch.setattr(
+		worker, "upsert_ad", lambda *_args: (_ for _ in ()).throw(RuntimeError("redis failed"))
+	)
 	with pytest.raises(RuntimeError, match="redis failed"):
 		worker._perform_search_work(payload())

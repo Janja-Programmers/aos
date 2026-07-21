@@ -134,7 +134,6 @@ def create_video_processing_job(
 		raise VideoProcessingError("Short raw video media must be private")
 	if media.status != "Attached":
 		raise VideoProcessingError("Short raw video media must be attached")
-
 	is_ready_reprocess = bool(force and short.status == "ready")
 	if is_ready_reprocess:
 		if hasattr(short, "audio_mix_status"):
@@ -151,6 +150,7 @@ def create_video_processing_job(
 		if hasattr(short, "audio_mix_error"):
 			short.audio_mix_error = None
 	short.save(ignore_permissions=True)
+	MediaService().mark_processing(media_id=raw_media_id, system=True)
 
 	config = get_video_processing_config()
 	job = frappe.get_doc(
@@ -384,6 +384,12 @@ def handle_video_processing_callback(payload: dict[str, Any]) -> object:
 
 def mark_video_job_ready(job, payload: dict[str, Any]) -> object:
 	short = frappe.get_doc("AOS Short", job.short)
+	try:
+		duration_seconds = float(payload.get("duration_seconds") or 0)
+	except (TypeError, ValueError) as exc:
+		raise VideoProcessingError("Processed video duration is invalid") from exc
+	if duration_seconds <= 0 or duration_seconds > get_max_short_duration_seconds():
+		raise VideoProcessingError("Processed video duration is outside the allowed limit")
 	thumbnail_media_id = None
 	thumbnail = payload.get("thumbnail") if isinstance(payload.get("thumbnail"), dict) else None
 	if thumbnail and thumbnail.get("bucket") and thumbnail.get("object_key"):
@@ -393,7 +399,7 @@ def mark_video_job_ready(job, payload: dict[str, Any]) -> object:
 	short.playback_url = str(payload.get("playback_url") or "")
 	short.processed_file_url = str(payload.get("processed_file_url") or "")
 	short.processed_file_key = str(payload.get("processed_file_key") or "")
-	short.duration_seconds = float(payload.get("duration_seconds") or 0)
+	short.duration_seconds = duration_seconds
 	if thumbnail_media_id and short.meta.has_field("thumbnail_media"):
 		short.thumbnail_media = thumbnail_media_id
 	if thumbnail and thumbnail.get("url"):
@@ -418,6 +424,7 @@ def mark_video_job_ready(job, payload: dict[str, Any]) -> object:
 	job.duration_seconds = short.duration_seconds
 	job.response_payload = json.dumps(payload, default=str)
 	job.save(ignore_permissions=True)
+	MediaService().mark_processing_completed(media_id=job.raw_video_media)
 	mark_outbox_callback(
 		job_doctype="AOS Video Processing Job",
 		job_name=job.name,
@@ -440,6 +447,7 @@ def _create_thumbnail_media_from_existing_object(short, thumbnail: dict[str, Any
 		etag=str(thumbnail.get("etag") or ""),
 		width=int(thumbnail.get("width") or 0) or None,
 		height=int(thumbnail.get("height") or 0) or None,
+		derived_from_media=str(getattr(short, "raw_video_media", "") or "") or None,
 	)
 	service.attach_media(
 		media_id=doc.name,
@@ -478,6 +486,7 @@ def mark_video_job_failed(
 	job.completed_at = now_datetime()
 	job.last_error = error_text
 	job.save(ignore_permissions=True)
+	MediaService().mark_processing_failed(media_id=job.raw_video_media, reason=error_text)
 	if not dispatch_failure:
 		mark_outbox_callback(
 			job_doctype="AOS Video Processing Job",

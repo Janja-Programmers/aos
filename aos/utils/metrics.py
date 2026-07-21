@@ -22,6 +22,10 @@ _DURATIONS: Counter[tuple[str, str]] = Counter()
 _DURATION_SUM: Counter[tuple[str, str]] = Counter()
 _EXCEPTIONS: Counter[str] = Counter()
 _RATE_LIMIT_REJECTIONS: Counter[str] = Counter()
+_MEDIA_EVENTS: Counter[tuple[str, str, str]] = Counter()
+_MEDIA_BYTES: Counter[str] = Counter()
+_MEDIA_DURATION_COUNT: Counter[str] = Counter()
+_MEDIA_DURATION_SUM: Counter[str] = Counter()
 _BUCKETS = (0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
 _DURATION_BUCKETS: Counter[tuple[str, str, float]] = Counter()
 _ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"}
@@ -35,6 +39,10 @@ _REDIS_KEYS = {
 	"exceptions": f"{_METRIC_PREFIX}:exceptions",
 	"rate_limits": f"{_METRIC_PREFIX}:rate_limits",
 	"outbox_events": f"{_METRIC_PREFIX}:outbox_events",
+	"media_events": f"{_METRIC_PREFIX}:media:events",
+	"media_bytes": f"{_METRIC_PREFIX}:media:bytes",
+	"media_duration_count": f"{_METRIC_PREFIX}:media:duration_count",
+	"media_duration_sum": f"{_METRIC_PREFIX}:media:duration_sum",
 }
 
 
@@ -97,6 +105,112 @@ def record_outbox_event(service_type: str, event: str, amount: int = 1) -> None:
 	if service not in _ALLOWED_OUTBOX_SERVICES or event_name not in _ALLOWED_OUTBOX_EVENTS:
 		return
 	_redis_increment(_REDIS_KEYS["outbox_events"], f"{service}|{event_name}", max(1, int(amount or 1)))
+
+
+_ALLOWED_MEDIA_PURPOSES = {
+	"ad_image", "ad_video", "review_image", "seller_banner", "live_cover",
+	"profile_image", "category_icon", "chat_attachment", "verification_document",
+	"background_removal_source", "short_video_raw", "short_thumbnail", "sound_upload", "unknown",
+}
+_ALLOWED_MEDIA_EVENTS = {
+	"upload_initiated", "upload_completed", "upload_rejected", "upload_failed",
+	"attachment_completed", "replacement_completed", "delete_requested", "delete_completed",
+	"delete_failed", "cleanup_completed", "processing_started", "processing_completed",
+	"processing_failed", "storage_operation",
+}
+_ALLOWED_MEDIA_OUTCOMES = {"success", "rejected", "retryable_failure", "failure"}
+
+
+def record_media_event(
+	*,
+	event: str,
+	purpose: str,
+	outcome: str = "success",
+	bytes_count: int | None = None,
+	duration_seconds: float | None = None,
+) -> None:
+	"""Record bounded Media metrics; never use IDs, paths, filenames, or errors as labels."""
+	event_name = str(event or "").strip().lower()
+	purpose_name = str(purpose or "unknown").strip().lower()
+	outcome_name = str(outcome or "success").strip().lower()
+	if event_name not in _ALLOWED_MEDIA_EVENTS:
+		return
+	if purpose_name not in _ALLOWED_MEDIA_PURPOSES:
+		purpose_name = "unknown"
+	if outcome_name not in _ALLOWED_MEDIA_OUTCOMES:
+		outcome_name = "failure"
+	field = f"{event_name}|{purpose_name}|{outcome_name}"
+	ok = _redis_increment(_REDIS_KEYS["media_events"], field)
+	if bytes_count is not None:
+		ok = _redis_increment(
+			_REDIS_KEYS["media_bytes"], purpose_name, max(0, int(bytes_count or 0))
+		) and ok
+	if duration_seconds is not None:
+		duration = max(0.0, float(duration_seconds or 0.0))
+		ok = _redis_increment(_REDIS_KEYS["media_duration_count"], event_name) and ok
+		ok = _redis_increment(_REDIS_KEYS["media_duration_sum"], event_name, duration) and ok
+	if not ok and _allow_process_fallback():
+		with _LOCK:
+			_MEDIA_EVENTS[(event_name, purpose_name, outcome_name)] += 1
+			if bytes_count is not None:
+				_MEDIA_BYTES[purpose_name] += max(0, int(bytes_count or 0))
+			if duration_seconds is not None:
+				_MEDIA_DURATION_COUNT[event_name] += 1
+				_MEDIA_DURATION_SUM[event_name] += max(0.0, float(duration_seconds or 0.0))
+
+
+def _safe_media_metrics(lines: list[str]) -> None:
+	try:
+		cache = _redis_cache()
+		raw_events = _decode_hash(cache.hgetall(_REDIS_KEYS["media_events"]))
+		raw_bytes = _decode_hash(cache.hgetall(_REDIS_KEYS["media_bytes"]))
+		raw_counts = _decode_hash(cache.hgetall(_REDIS_KEYS["media_duration_count"]))
+		raw_sums = _decode_hash(cache.hgetall(_REDIS_KEYS["media_duration_sum"]))
+	except Exception:
+		with _LOCK:
+			raw_events = {"|".join(key): value for key, value in _MEDIA_EVENTS.items()}
+			raw_bytes = dict(_MEDIA_BYTES)
+			raw_counts = dict(_MEDIA_DURATION_COUNT)
+			raw_sums = dict(_MEDIA_DURATION_SUM)
+	lines.extend([
+		"# HELP aos_media_events_total Media lifecycle events by bounded purpose and outcome.",
+		"# TYPE aos_media_events_total counter",
+	])
+	for key, value in sorted(raw_events.items()):
+		parts = key.split("|")
+		if len(parts) != 3:
+			continue
+		event_name, purpose_name, outcome_name = parts
+		if (
+			event_name not in _ALLOWED_MEDIA_EVENTS
+			or purpose_name not in _ALLOWED_MEDIA_PURPOSES
+			or outcome_name not in _ALLOWED_MEDIA_OUTCOMES
+		):
+			continue
+		lines.append(_line(
+			"aos_media_events_total", int(value),
+			{"event": event_name, "purpose": purpose_name, "outcome": outcome_name},
+		))
+	lines.extend([
+		"# HELP aos_media_bytes_total Verified media bytes by bounded purpose.",
+		"# TYPE aos_media_bytes_total counter",
+	])
+	for purpose_name, value in sorted(raw_bytes.items()):
+		if purpose_name in _ALLOWED_MEDIA_PURPOSES:
+			lines.append(_line("aos_media_bytes_total", int(value), {"purpose": purpose_name}))
+	lines.extend([
+		"# HELP aos_media_operation_duration_seconds Media operation duration by bounded event.",
+		"# TYPE aos_media_operation_duration_seconds summary",
+	])
+	for event_name, count in sorted(raw_counts.items()):
+		if event_name not in _ALLOWED_MEDIA_EVENTS:
+			continue
+		labels = {"event": event_name}
+		lines.append(_line(
+			"aos_media_operation_duration_seconds_sum",
+			f"{float(raw_sums.get(event_name, 0.0)):.6f}", labels,
+		))
+		lines.append(_line("aos_media_operation_duration_seconds_count", int(count), labels))
 
 
 def _surface() -> str:
@@ -530,6 +644,7 @@ def render_metrics() -> str:
 	_safe_dependency_metrics(lines)
 	_safe_backup_metrics(lines)
 	_safe_config_metrics(lines)
+	_safe_media_metrics(lines)
 	try:
 		free = shutil.disk_usage(os.getenv("AOS_DISK_METRICS_PATH", "/")).free
 	except Exception:

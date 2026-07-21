@@ -29,14 +29,16 @@ def test_work_happy_path_is_separate_from_callback(monkeypatch):
 
 
 def test_provider_transport_uncertainty_is_not_blindly_retried(monkeypatch):
-	monkeypatch.setattr(worker, "_send_push", lambda _payload: (_ for _ in ()).throw(TimeoutError("provider timeout")))
+	monkeypatch.setattr(
+		worker, "_send_push", lambda _payload: (_ for _ in ()).throw(TimeoutError("provider timeout"))
+	)
 	with pytest.raises(TimeoutError):
 		worker._perform_notification_work(
-		{
-			"job_id": "job-2",
-			"callback_url": "https://callback.invalid/notification",
-			"tokens": [{"token": "synthetic-token"}],
-		}
+			{
+				"job_id": "job-2",
+				"callback_url": "https://callback.invalid/notification",
+				"tokens": [{"token": "synthetic-token"}],
+			}
 		)
 
 
@@ -50,9 +52,7 @@ def test_persisted_provider_success_prevents_duplicate_push_send(monkeypatch, re
 			"success_count": 1,
 			"failure_count": 0,
 			"inactive_token_hashes": [],
-			"provider_responses": [
-				{"success_count": 1, "provider_acceptance_ids": ["provider-id-hash"]}
-			],
+			"provider_responses": [{"success_count": 1, "provider_acceptance_ids": ["provider-id-hash"]}],
 			"error": None,
 		}
 

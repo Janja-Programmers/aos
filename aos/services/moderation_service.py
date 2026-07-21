@@ -136,7 +136,6 @@ def build_media_item(media_id: str, *, field: str = "media") -> dict[str, Any]:
 		"content_type": media.content_type,
 		"size_bytes": int(media.size_bytes or 0),
 		"visibility": media.visibility,
-		"public_url": getattr(media, "public_url", "") or "",
 		"width": int(getattr(media, "width", 0) or 0),
 		"height": int(getattr(media, "height", 0) or 0),
 		"duration_seconds": float(getattr(media, "duration_seconds", 0) or 0),

@@ -190,6 +190,11 @@ class MinioConfig:
     public_bucket: str
     private_bucket: str
     base_path: str
+    connect_timeout_seconds: int
+    read_timeout_seconds: int
+    max_retries: int
+    retry_backoff_ms: int
+    download_expiry_minutes: int
 
 
 def get_minio_config() -> MinioConfig:
@@ -243,6 +248,36 @@ def get_minio_config() -> MinioConfig:
             get_first_env("AOS_MINIO_BASE_PATH", "MINIO_BASE_PATH", default="shorts")
             or "shorts"
         ).strip().strip("/"),
+        connect_timeout_seconds=get_env_int(
+            "AOS_STORAGE_CONNECT_TIMEOUT_SECONDS",
+            3,
+            min_value=1,
+            max_value=30,
+        ),
+        read_timeout_seconds=get_env_int(
+            "AOS_STORAGE_READ_TIMEOUT_SECONDS",
+            15,
+            min_value=1,
+            max_value=300,
+        ),
+        max_retries=get_env_int(
+            "AOS_STORAGE_MAX_RETRIES",
+            2,
+            min_value=0,
+            max_value=5,
+        ),
+        retry_backoff_ms=get_env_int(
+            "AOS_STORAGE_RETRY_BACKOFF_MS",
+            200,
+            min_value=0,
+            max_value=5000,
+        ),
+        download_expiry_minutes=get_env_int(
+            "AOS_MEDIA_DOWNLOAD_EXPIRY_MINUTES",
+            10,
+            min_value=1,
+            max_value=60,
+        ),
     )
 
 

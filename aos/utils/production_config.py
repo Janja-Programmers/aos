@@ -624,6 +624,28 @@ def _check_storage(issues: list[dict[str, Any]], env: Mapping[str, Any] | None) 
 				remediation=f"Remove slashes from {key} and use AOS_MINIO_BASE_PATH for paths.",
 			)
 
+	for key, default, minimum, maximum, label in (
+		("AOS_STORAGE_CONNECT_TIMEOUT_SECONDS", 3, 1, 30, "storage connect timeout"),
+		("AOS_STORAGE_READ_TIMEOUT_SECONDS", 15, 1, 300, "storage read timeout"),
+		("AOS_STORAGE_MAX_RETRIES", 2, 0, 5, "storage retry count"),
+		("AOS_STORAGE_RETRY_BACKOFF_MS", 200, 0, 5000, "storage retry backoff"),
+		("AOS_MEDIA_DOWNLOAD_EXPIRY_MINUTES", 10, 1, 60, "private download expiry"),
+		("AOS_MEDIA_INITIALIZED_RETENTION_HOURS", 24, 1, 168, "upload-init retention"),
+		("AOS_MEDIA_UNATTACHED_RETENTION_DAYS", 7, 1, 90, "unattached retention"),
+		("AOS_MEDIA_DELETE_RETRY_HOURS", 1, 1, 24, "delete retry interval"),
+		("AOS_MEDIA_CLEANUP_BATCH_LIMIT", 100, 10, 1000, "cleanup batch limit"),
+	):
+		_value, valid = _bounded_int_env(env, key, default, minimum=minimum, maximum=maximum)
+		if not valid:
+			_redacted_issue(
+				issues,
+				severity="error",
+				category="storage",
+				key=key,
+				message=f"{label} must be an integer between {minimum} and {maximum}.",
+				remediation=f"Set {key} to a reviewed bounded value.",
+			)
+
 
 def _check_livekit(issues: list[dict[str, Any]], env: Mapping[str, Any] | None) -> None:
 	endpoint, endpoint_key = _env_value(env, "LIVEKIT_ENDPOINT", "AOS_LIVEKIT_ENDPOINT")

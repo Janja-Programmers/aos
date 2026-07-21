@@ -115,6 +115,8 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
             filename="avatar.jpg",
             content_type="image/jpeg",
             size_bytes=1024,
+            checksum_sha256=None,
+            idempotency_key=None,
         )
 
     def test_ads_create_with_uploaded_image_creates_reviewing_ad_and_seller(self):

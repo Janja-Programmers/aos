@@ -62,7 +62,9 @@ def test_real_redis_rq_separates_work_from_callback_delivery(monkeypatch):
 	assert decision.outcome == "enqueued"
 	SimpleWorker([queue], connection=redis).work(burst=True, max_jobs=1, with_scheduler=False)
 	work_job = queue.fetch_job(decision.job.id)
-	assert str(getattr(work_job.get_status(refresh=True), "value", work_job.get_status())).lower() == "finished"
+	assert (
+		str(getattr(work_job.get_status(refresh=True), "value", work_job.get_status())).lower() == "finished"
+	)
 	record = load_result(redis, "notification_delivery", stable_id)
 	assert record["work_state"] == "work_complete"
 	assert record["callback_status"] == "pending"
@@ -81,7 +83,11 @@ def test_real_redis_rq_separates_work_from_callback_delivery(monkeypatch):
 
 	# Prove the retry uses RQ's scheduled registry rather than a direct manual
 	# callback invocation. Requeue the scheduled retry after repairing transport.
-	monkeypatch.setattr(worker, "_callback", lambda *_args, **_kwargs: SimpleNamespace(status_code=200, json=lambda: {"ok": True}))
+	monkeypatch.setattr(
+		worker,
+		"_callback",
+		lambda *_args, **_kwargs: SimpleNamespace(status_code=200, json=lambda: {"ok": True}),
+	)
 	registry.requeue(callback_job_id)
 	SimpleWorker([queue], connection=redis).work(burst=True, max_jobs=1, with_scheduler=False)
 	completed = load_result(redis, "notification_delivery", stable_id)
@@ -117,8 +123,8 @@ def test_real_redis_rq_retries_transient_work_before_terminal_result(monkeypatch
 	monkeypatch.setattr(
 		worker,
 		"_callback",
-		lambda *_args, **_kwargs: redis.incr(callback_counter) and SimpleNamespace(
-			status_code=200, json=lambda: {"ok": True}
+		lambda *_args, **_kwargs: (
+			redis.incr(callback_counter) and SimpleNamespace(status_code=200, json=lambda: {"ok": True})
 		),
 	)
 	payload = {

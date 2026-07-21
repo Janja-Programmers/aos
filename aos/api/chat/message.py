@@ -200,7 +200,6 @@ def _serialize_attachments_bulk(
                 "width",
                 "height",
                 "duration_seconds",
-                "public_url",
             ],
         )
         media_map = {media.name: media for media in media_rows}

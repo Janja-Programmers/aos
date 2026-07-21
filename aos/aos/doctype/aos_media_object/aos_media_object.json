@@ -14,12 +14,19 @@
   "bucket",
   "object_key",
   "public_url",
+  "column_break_storage_upload",
+  "upload_bucket",
+  "upload_object_key",
+  "upload_expires_at",
+  "staging_cleanup_required",
   "file_section",
   "original_filename",
   "content_type",
+  "expected_size_bytes",
   "size_bytes",
   "column_break_file_meta",
   "etag",
+  "expected_checksum",
   "checksum",
   "width",
   "height",
@@ -30,8 +37,27 @@
   "attached_field",
   "column_break_attachment_dates",
   "uploaded_at",
+  "completed_at",
   "attached_at",
-  "deleted_at"
+  "orphaned_at",
+  "replaced_at",
+  "deleted_at",
+  "lifecycle_section",
+  "idempotency_key_hash",
+  "failure_code",
+  "failure_reason",
+  "failed_at",
+  "delete_requested_at",
+  "column_break_lifecycle",
+  "retry_count",
+  "last_storage_error",
+  "last_storage_attempt_at",
+  "processing_started_at",
+  "processing_completed_at",
+  "processing_error",
+  "relationship_section",
+  "derived_from_media",
+  "replaced_by_media"
  ],
  "fields": [
   {
@@ -67,7 +93,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Initialized\nUploaded\nAttached\nOrphaned\nDelete Pending\nDeleted",
+   "options": "Initialized\nUploaded\nProcessing\nReady\nAttached\nFailed\nOrphaned\nReplaced\nDelete Pending\nDeleted",
    "reqd": 1,
    "search_index": 1
   },
@@ -110,6 +136,36 @@
    "read_only": 1
   },
   {
+   "fieldname": "column_break_storage_upload",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "upload_bucket",
+   "fieldtype": "Data",
+   "label": "Upload Bucket",
+   "read_only": 1
+  },
+  {
+   "fieldname": "upload_object_key",
+   "fieldtype": "Data",
+   "label": "Upload Object Key",
+   "read_only": 1
+  },
+  {
+   "fieldname": "upload_expires_at",
+   "fieldtype": "Datetime",
+   "label": "Upload Expires At",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "staging_cleanup_required",
+   "fieldtype": "Check",
+   "label": "Staging Cleanup Required",
+   "read_only": 1
+  },
+  {
    "fieldname": "file_section",
    "fieldtype": "Section Break",
    "label": "File Metadata"
@@ -127,6 +183,13 @@
   },
   {
    "default": "0",
+   "fieldname": "expected_size_bytes",
+   "fieldtype": "Int",
+   "label": "Expected Size Bytes",
+   "read_only": 1
+  },
+  {
+   "default": "0",
    "fieldname": "size_bytes",
    "fieldtype": "Int",
    "label": "Size Bytes"
@@ -139,6 +202,12 @@
    "fieldname": "etag",
    "fieldtype": "Data",
    "label": "ETag"
+  },
+  {
+   "fieldname": "expected_checksum",
+   "fieldtype": "Data",
+   "label": "Expected SHA-256",
+   "read_only": 1
   },
   {
    "fieldname": "checksum",
@@ -195,9 +264,27 @@
    "read_only": 1
   },
   {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At",
+   "read_only": 1
+  },
+  {
    "fieldname": "attached_at",
    "fieldtype": "Datetime",
    "label": "Attached At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "orphaned_at",
+   "fieldtype": "Datetime",
+   "label": "Orphaned At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "replaced_at",
+   "fieldtype": "Datetime",
+   "label": "Replaced At",
    "read_only": 1
   },
   {
@@ -205,12 +292,111 @@
    "fieldtype": "Datetime",
    "label": "Deleted At",
    "read_only": 1
+  },
+  {
+   "fieldname": "lifecycle_section",
+   "fieldtype": "Section Break",
+   "label": "Lifecycle and Reliability"
+  },
+  {
+   "fieldname": "idempotency_key_hash",
+   "fieldtype": "Data",
+   "label": "Idempotency Key Hash",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "failure_code",
+   "fieldtype": "Data",
+   "label": "Failure Code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "failure_reason",
+   "fieldtype": "Small Text",
+   "label": "Failure Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "failed_at",
+   "fieldtype": "Datetime",
+   "label": "Failed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "delete_requested_at",
+   "fieldtype": "Datetime",
+   "label": "Delete Requested At",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_lifecycle",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "retry_count",
+   "fieldtype": "Int",
+   "label": "Retry Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_storage_error",
+   "fieldtype": "Data",
+   "label": "Last Storage Error Category",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_storage_attempt_at",
+   "fieldtype": "Datetime",
+   "label": "Last Storage Attempt At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "processing_started_at",
+   "fieldtype": "Datetime",
+   "label": "Processing Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "processing_completed_at",
+   "fieldtype": "Datetime",
+   "label": "Processing Completed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "processing_error",
+   "fieldtype": "Small Text",
+   "label": "Processing Error",
+   "read_only": 1
+  },
+  {
+   "fieldname": "relationship_section",
+   "fieldtype": "Section Break",
+   "label": "Derived and Replacement Relationships"
+  },
+  {
+   "fieldname": "derived_from_media",
+   "fieldtype": "Link",
+   "label": "Derived From Media",
+   "options": "AOS Media Object",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "replaced_by_media",
+   "fieldtype": "Link",
+   "label": "Replaced By Media",
+   "options": "AOS Media Object",
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-01 02:00:00.000000",
+ "modified": "2026-07-21 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Media Object",

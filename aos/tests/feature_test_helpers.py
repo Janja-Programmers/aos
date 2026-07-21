@@ -147,9 +147,13 @@ class AOSFeatureTestMixin:
         purpose: str,
         content_type: str = "image/jpeg",
         filename: str = "image.jpg",
-        visibility: str = "Public",
+        visibility: str | None = None,
         status: str = "Uploaded",
     ):
+        from aos.services.media.media_purposes import get_media_purpose
+
+        policy = get_media_purpose(purpose)
+        resolved_visibility = visibility or (policy.visibility if policy else "Public")
         media = frappe.get_doc(
             {
                 "doctype": "AOS Media Object",
@@ -159,10 +163,14 @@ class AOSFeatureTestMixin:
                 "original_filename": filename,
                 "content_type": content_type,
                 "size_bytes": 1024,
-                "visibility": visibility,
+                "visibility": resolved_visibility,
                 "purpose": purpose,
                 "status": status,
-                "public_url": f"https://cdn.example.test/{self.prefix}/{filename}",
+                "public_url": (
+                    f"https://cdn.example.test/{self.prefix}/{filename}"
+                    if resolved_visibility == "Public"
+                    else ""
+                ),
             }
         )
         media.insert(ignore_permissions=True)
@@ -257,9 +265,10 @@ class AOSFeatureTestMixin:
     def make_short(self, *, owner: str):
         media = self.make_media(
             owner=owner,
-            purpose="short_raw",
+            purpose="short_video_raw",
             content_type="video/mp4",
             filename="short.mp4",
+            visibility="Private",
         )
         short = frappe.get_doc(
             {

@@ -507,7 +507,7 @@ def create_sound_impl(**kwargs):
             return fail("Sound media must be uploaded before creating a sound.", error="VALIDATION_ERROR")
 
         file_key = media_doc.object_key
-        file_url = media_doc.public_url or media_service.get_url(media_id=media_doc.name, user=user)
+        file_url = media_service.get_url(media_id=media_doc.name, user=user)
 
         doc = frappe.get_doc(
             {

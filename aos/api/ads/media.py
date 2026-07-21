@@ -1,91 +1,44 @@
-"""Ads media helpers for MinIO-backed AOS Media Object usage.
-
-Ads treat `media_id` as the source of truth for images/videos. Cached URL
-fields are generated from AOS Media Object and are not accepted as upload input.
-"""
+"""Ad image/video integration through the canonical Media service."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, Tuple
+from typing import Any
 
-import frappe
-from frappe.utils import now_datetime
-
-from aos.api.shared.responses import fail
-from aos.api.shared.public_errors import safe_exception_message
-from aos.services.media.media_service import (
-    MediaNotFoundError,
-    MediaPermissionError,
-    MediaService,
-    MediaValidationError,
+from aos.api.media.consumer_helpers import (
+    compatibility_media_error,
+    normalize_media_id,
+    public_media_url,
 )
+from aos.api.shared.responses import fail
+from aos.services.media.media_service import MediaService
 
-
-def clean_str(value: Any) -> str:
-    return str(value or "").strip()
-
-
-def normalize_media_id(value: Any) -> str:
-    """Normalize a media id value supplied by mobile clients.
-
-    Supports either a plain string (`MEDIA-...`) or a nested media object with
-    `id`, `media_id`, or `name`.
-    """
-
-    if isinstance(value, dict):
-        value = value.get("media_id") or value.get("id") or value.get("name")
-    return clean_str(value)
+AD_DOCTYPE = "AOS Ad"
 
 
 def response_from_media_exception(exc: Exception, *, kind: str):
-    if isinstance(exc, MediaNotFoundError):
-        return fail(f"{kind} media not found.", error="NOT_FOUND")
-
-    if isinstance(exc, MediaPermissionError):
-        return fail(safe_exception_message(exc, "Not allowed."), error="FORBIDDEN")
-
-    if isinstance(exc, MediaValidationError):
-        return fail(safe_exception_message(exc, f"Invalid {kind.lower()} media."), error="VALIDATION_ERROR")
-
-    frappe.log_error(frappe.get_traceback(), f"AOS Ads {kind} Media Failed")
-    return fail(f"Failed to validate {kind.lower()} media.", error="INTERNAL_ERROR")
+    return compatibility_media_error(
+        exc,
+        label=kind,
+        log_title=f"AOS Ads {kind} Media Failed",
+    )
 
 
 def get_media_public_url(media_id: Any) -> str:
-    media_id = normalize_media_id(media_id)
-    if not media_id:
-        return ""
-
-    row = frappe.db.get_value(
-        "AOS Media Object",
-        media_id,
-        ["name", "status", "visibility", "public_url", "bucket", "object_key"],
-        as_dict=True,
-    )
-
-    if not row or row.status == "Deleted":
-        return ""
-
-    if row.visibility != "Public":
-        return ""
-
-    if clean_str(row.public_url):
-        return clean_str(row.public_url)
-
-    try:
-        return MediaService().get_url(media_id=media_id, user=None)
-    except Exception:
-        return ""
+    return public_media_url(media_id)
 
 
 def get_ad_image_url(row: Any) -> str:
-    media_id = clean_str(getattr(row, "media", None) or (row.get("media") if isinstance(row, dict) else None))
-    return get_media_public_url(media_id)
+    media_id = getattr(row, "media", None)
+    if isinstance(row, dict):
+        media_id = media_id or row.get("media")
+    return public_media_url(media_id)
 
 
 def get_ad_video_url(ad_doc: Any) -> str:
-    media_id = clean_str(getattr(ad_doc, "video_media", None) or (ad_doc.get("video_media") if isinstance(ad_doc, dict) else None))
-    return get_media_public_url(media_id)
+    media_id = getattr(ad_doc, "video_media", None)
+    if isinstance(ad_doc, dict):
+        media_id = media_id or ad_doc.get("video_media")
+    return public_media_url(media_id)
 
 
 def validate_ad_media_for_use(
@@ -95,42 +48,23 @@ def validate_ad_media_for_use(
     purpose: str,
     kind: str,
     ad_name: str | None = None,
-) -> Tuple[object | None, Any | None]:
-    """Validate an uploaded media object can be used by an ad.
-
-    For create, media must be Uploaded and unattached. For edit, already-attached
-    media is allowed only when it is attached to the same ad.
-    """
-
-    media_id = normalize_media_id(media_id)
-
-    if not media_id:
-        return None, fail(f"{kind} media id is required.", error="VALIDATION_ERROR")
-
-    service = MediaService()
+):
+    normalized_id = normalize_media_id(media_id)
+    if not normalized_id:
+        return None, fail(
+            f"{kind} media id is required.",
+            error="VALIDATION_ERROR",
+        )
 
     try:
-        doc = service.get_media_doc(media_id)
-        service.assert_user_can_manage(doc, user)
-
-        if doc.status == "Deleted":
-            return None, fail(f"{kind} media not found.", error="NOT_FOUND")
-
-        if doc.purpose != purpose:
-            return None, fail(f"{kind} media has the wrong purpose.", error="VALIDATION_ERROR")
-
-        if doc.visibility != "Public":
-            return None, fail(f"{kind} media must be public.", error="VALIDATION_ERROR")
-
-        if doc.status == "Uploaded":
-            return doc, None
-
-        if doc.status == "Attached" and ad_name:
-            if doc.attached_doctype == "AOS Ad" and doc.attached_name == ad_name:
-                return doc, None
-
-        return None, fail(f"{kind} media cannot be used in its current state.", error="VALIDATION_ERROR")
-
+        doc = MediaService().validate_media_for_use(
+            media_id=normalized_id,
+            user=user,
+            purpose=purpose,
+            attached_doctype=AD_DOCTYPE if ad_name else None,
+            attached_name=ad_name,
+        )
+        return doc, None
     except Exception as exc:
         return None, response_from_media_exception(exc, kind=kind)
 
@@ -142,47 +76,31 @@ def attach_ad_media(
     purpose: str,
     ad_name: str,
     attached_field: str,
-) -> Tuple[object | None, Any | None]:
-    media_id = normalize_media_id(media_id)
-
-    if not media_id:
+):
+    normalized_id = normalize_media_id(media_id)
+    if not normalized_id:
         return None, None
 
-    service = MediaService()
-
     try:
-        doc = service.get_media_doc(media_id)
-        service.assert_user_can_manage(doc, user)
-
-        if doc.status == "Attached":
-            if doc.attached_doctype == "AOS Ad" and doc.attached_name == ad_name:
-                return doc, None
-            return None, fail("Media is already attached.", error="VALIDATION_ERROR")
-
-        if doc.status != "Uploaded":
-            return None, fail("Media must be uploaded before it can be attached.", error="VALIDATION_ERROR")
-
-        if doc.purpose != purpose:
-            return None, fail("Media has the wrong purpose.", error="VALIDATION_ERROR")
-
-        doc.status = "Attached"
-        doc.attached_doctype = "AOS Ad"
-        doc.attached_name = ad_name
-        doc.attached_field = attached_field
-        doc.attached_at = now_datetime()
-        doc.save(ignore_permissions=True)
+        doc = MediaService().attach_media(
+            media_id=normalized_id,
+            user=user,
+            purpose=purpose,
+            attached_doctype=AD_DOCTYPE,
+            attached_name=ad_name,
+            attached_field=attached_field,
+        )
         return doc, None
-
     except Exception as exc:
         return None, response_from_media_exception(exc, kind="Ad")
 
 
-def serialize_ad_media(media_id: Any, fallback_url: Any = "") -> Dict[str, Any] | None:
-    media_id = normalize_media_id(media_id)
-    if not media_id:
+def serialize_ad_media(media_id: Any, fallback_url: Any = "") -> dict[str, Any] | None:
+    """Serialize the canonical media relation while retaining the old signature."""
+    normalized_id = normalize_media_id(media_id)
+    if not normalized_id:
         return None
-
     return {
-        "media_id": media_id,
-        "url": get_media_public_url(media_id),
+        "media_id": normalized_id,
+        "url": public_media_url(normalized_id),
     }

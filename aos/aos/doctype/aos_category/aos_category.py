@@ -7,16 +7,12 @@ from typing import Any
 
 import frappe
 from frappe import _
-from frappe.utils import now_datetime
 from frappe.utils.nestedset import NestedSet
 
 from aos.services.media.media_service import (
-    MediaNotFoundError,
-    MediaPermissionError,
+    MediaError,
     MediaService,
-    MediaValidationError,
 )
-
 
 CATEGORY_ICON_PURPOSE = "category_icon"
 CATEGORY_ICON_MEDIA_FIELD = "icon_media"
@@ -38,110 +34,81 @@ def _looks_like_media_id(value: Any) -> bool:
 
 
 def _public_media_url(doc) -> str:
-    if _clean(getattr(doc, "public_url", None)):
-        return _clean(doc.public_url)
-    return MediaService().get_url(media_id=doc.name, user=None)
+    return MediaService().get_public_url(doc.name)
 
 
 class AOSCategory(NestedSet):
+    """Category tree with centrally owned, admin-managed icon media."""
+
     def validate(self):
-        # NestedSet/Document does not define a base validate() method in this
-        # Frappe version. Keep category-specific validation here only.
         self._sync_icon_media()
 
-    def _sync_icon_media(self) -> None:
-        """Use category_icon media as source of truth and keep icon as URL cache.
+    def on_update(self):
+        # Preserve NestedSet tree maintenance before finalizing media ownership.
+        super().on_update()
+        self._finalize_icon_media_relationship()
 
-        Category icons are public, admin-managed assets. The old icon field is a
-        URL cache for catalog serializers; icon_media stores the AOS Media
-        Object relationship.
-        """
+    def _sync_icon_media(self) -> None:
         if not hasattr(self, CATEGORY_ICON_MEDIA_FIELD):
             return
 
-        old_media_id = _clean(
-            frappe.db.get_value(self.doctype, self.name, CATEGORY_ICON_MEDIA_FIELD)
-            if self.name and not self.is_new()
-            else ""
+        previous = self.get_doc_before_save()
+        self._previous_icon_media_id = _clean(
+            getattr(previous, CATEGORY_ICON_MEDIA_FIELD, "") if previous else ""
+        )
+        previous_url = _clean(
+            getattr(previous, CATEGORY_ICON_URL_FIELD, "") if previous else ""
         )
 
         media_id = _normalize_media_id(getattr(self, CATEGORY_ICON_MEDIA_FIELD, None))
-
-        # Convenience: allow admins to paste MEDIA-... into the visible icon URL
-        # field. The controller converts it to icon_media and writes the URL.
-        if not media_id and _looks_like_media_id(getattr(self, CATEGORY_ICON_URL_FIELD, None)):
-            media_id = _normalize_media_id(getattr(self, CATEGORY_ICON_URL_FIELD, None))
+        icon_value = _clean(getattr(self, CATEGORY_ICON_URL_FIELD, None))
+        if not media_id and _looks_like_media_id(icon_value):
+            media_id = _normalize_media_id(icon_value)
             setattr(self, CATEGORY_ICON_MEDIA_FIELD, media_id)
 
         if media_id:
             doc = self._validate_icon_media(media_id)
-            icon_url = _public_media_url(doc)
-            setattr(self, CATEGORY_ICON_URL_FIELD, icon_url)
-
-            if old_media_id and old_media_id != media_id:
-                self._mark_previous_icon_delete_pending(old_media_id)
-
-            if doc.status != "Attached":
-                doc.status = "Attached"
-                doc.attached_doctype = self.doctype
-                doc.attached_name = self.name
-                doc.attached_field = CATEGORY_ICON_MEDIA_FIELD
-                doc.attached_at = now_datetime()
-                doc.save(ignore_permissions=True)
+            setattr(self, CATEGORY_ICON_URL_FIELD, _public_media_url(doc))
             return
 
-        # If icon_media was cleared, keep any manually-entered public URL as-is,
-        # but release the previous media relationship so cleanup can remove it.
-        if old_media_id:
-            self._mark_previous_icon_delete_pending(old_media_id)
+        if icon_value and icon_value != previous_url:
+            frappe.throw(
+                _("Category icons must be uploaded through Media and selected by media id.")
+            )
 
     def _validate_icon_media(self, media_id: str):
-        service = MediaService()
-        user = frappe.session.user
-
         try:
-            doc = service.get_media_doc(media_id)
-            service.assert_user_can_manage(doc, user)
-        except MediaNotFoundError:
-            frappe.throw(_("Category icon media not found."))
-        except MediaPermissionError as exc:
-            frappe.throw(_(str(exc) or "You cannot manage this category icon media."))
-        except MediaValidationError as exc:
+            return MediaService().validate_media_for_use(
+                media_id=media_id,
+                user=frappe.session.user,
+                purpose=CATEGORY_ICON_PURPOSE,
+                attached_doctype=self.doctype if not self.is_new() else None,
+                attached_name=self.name if not self.is_new() else None,
+            )
+        except MediaError as exc:
             frappe.throw(_(str(exc) or "Invalid category icon media."))
 
-        if doc.status == "Deleted":
-            frappe.throw(_("Category icon media not found."))
+    def _finalize_icon_media_relationship(self) -> None:
+        media_id = _normalize_media_id(getattr(self, CATEGORY_ICON_MEDIA_FIELD, None))
+        previous_media_id = _clean(getattr(self, "_previous_icon_media_id", ""))
+        service = MediaService()
 
-        if doc.purpose != CATEGORY_ICON_PURPOSE:
-            frappe.throw(_("Category icon media has the wrong purpose."))
+        if media_id:
+            service.attach_media(
+                media_id=media_id,
+                user=frappe.session.user,
+                purpose=CATEGORY_ICON_PURPOSE,
+                attached_doctype=self.doctype,
+                attached_name=self.name,
+                attached_field=CATEGORY_ICON_MEDIA_FIELD,
+                replacing_media_id=previous_media_id,
+            )
 
-        if doc.visibility != "Public":
-            frappe.throw(_("Category icon media must be public."))
-
-        if doc.status == "Uploaded":
-            return doc
-
-        if doc.status == "Attached":
-            if doc.attached_doctype == self.doctype and doc.attached_name == self.name:
-                return doc
-
-        frappe.throw(_("Category icon media cannot be used in its current state."))
-
-    def _mark_previous_icon_delete_pending(self, media_id: str) -> None:
-        try:
-            doc = MediaService().get_media_doc(media_id)
-            if doc.purpose != CATEGORY_ICON_PURPOSE:
-                return
-            if doc.attached_doctype != self.doctype or doc.attached_name != self.name:
-                return
-            if doc.status not in {"Deleted", "Delete Pending"}:
-                doc.status = "Delete Pending"
-                doc.attached_doctype = ""
-                doc.attached_name = ""
-                doc.attached_field = ""
-                doc.save(ignore_permissions=True)
-        except Exception:
-            frappe.log_error(
-                frappe.get_traceback(),
-                "AOS Category Icon Media Release Failed",
+        if previous_media_id and previous_media_id != media_id:
+            service.release_media(
+                media_id=previous_media_id,
+                user=frappe.session.user,
+                attached_doctype=self.doctype,
+                attached_name=self.name,
+                replacement_media_id=media_id or None,
             )

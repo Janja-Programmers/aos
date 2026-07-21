@@ -63,6 +63,7 @@ compose() {
 
 cleanup() {
   local exit_code=$?
+  trap - EXIT INT TERM 2>/dev/null || true
   if ((${#STOPPED_SERVICES[@]})); then
     log "Restarting quiesced services: ${STOPPED_SERVICES[*]}"
     compose start "${STOPPED_SERVICES[*]}" >/dev/null 2>&1 || true

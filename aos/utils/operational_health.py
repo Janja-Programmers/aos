@@ -353,28 +353,19 @@ def _check_storage(
 ) -> None:
 	try:
 		storage = storage_factory()
-		config = getattr(storage, "config", None) or aos_config.get_minio_config()
-		buckets = [
-			_clean(getattr(config, "public_bucket", "")),
-			_clean(getattr(config, "private_bucket", "")),
-			_clean(getattr(config, "bucket", "")),
-		]
-		buckets = [bucket for index, bucket in enumerate(buckets) if bucket and bucket not in buckets[:index]]
-		client = getattr(storage, "client", None)
-		if client is None:
-			raise RuntimeError("MinIO client unavailable")
-		listed = client.list_buckets()
-		bucket_count = len(list(listed or []))
+		report = storage.healthcheck()
+		if not bool(report.get("ok")):
+			raise RuntimeError("Storage readiness failed")
 		_check(
 			checks,
 			name="minio_storage",
 			category="storage",
 			status="healthy",
-			message="Storage service is reachable with configured credentials.",
+			message="Storage service, configured buckets, and public URL are ready.",
 			details={
-				"endpoint": _redacted_url(_clean(getattr(config, "endpoint", ""))),
-				"configured_buckets": buckets,
-				"bucket_count": bucket_count,
+				"latency_ms": int(report.get("latency_ms") or 0),
+				"configured_bucket_count": int(report.get("configured_bucket_count") or 0),
+				"missing_bucket_count": int(report.get("missing_bucket_count") or 0),
 			},
 		)
 	except Exception:
@@ -383,7 +374,7 @@ def _check_storage(
 			name="minio_storage",
 			category="storage",
 			status="unhealthy",
-			message="Storage service is not reachable with configured credentials.",
+			message="Storage service or configured media buckets are not ready.",
 		)
 
 

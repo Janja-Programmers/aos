@@ -313,9 +313,7 @@ def test_signed_uncertainty_resolution_records_operator_reference(monkeypatch):
 			"operator_reference": "incident-2026-001",
 		}
 	)
-	response = TestClient(main.app).post(
-		"/internal/jobs/uncertainty/resolve", content=body, headers=headers
-	)
+	response = TestClient(main.app).post("/internal/jobs/uncertainty/resolve", content=body, headers=headers)
 	assert response.status_code == 202
 	assert response.json()["resolution"] == "confirmed_accepted"
 	assert seen["stable_id"] == "stable-job-1"

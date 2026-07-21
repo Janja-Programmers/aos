@@ -15,6 +15,7 @@ usage() {
 
 cleanup() {
   local code=$?
+  trap - EXIT INT TERM 2>/dev/null || true
   if [[ -n "$TEMP_ROOT" && -d "$TEMP_ROOT" ]]; then
     chmod -R u+rwX,go-rwx "$TEMP_ROOT" 2>/dev/null || true
     rm -rf -- "$TEMP_ROOT"

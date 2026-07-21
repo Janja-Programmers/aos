@@ -257,8 +257,9 @@ def test_callback_response_loss_retries_without_reapplying_work(redis_conn, rq_q
 		queue=rq_queue,
 		service_type=SERVICE_TYPE,
 		payload=payload(),
-		perform_work=lambda _payload: work_calls.append("work")
-			or {"job_id": "service-job-1", "status": "completed"},
+		perform_work=lambda _payload: (
+			work_calls.append("work") or {"job_id": "service-job-1", "status": "completed"}
+		),
 		failure_payload=lambda _payload, category: {
 			"job_id": "service-job-1",
 			"status": "failed",
@@ -468,7 +469,9 @@ def test_operator_work_replay_archives_terminal_result_and_blocks_active_callbac
 		result_ttl_seconds=604800,
 	)
 	assert result["outcome"] == "work_replay_authorized"
-	assert lifecycle.load_result(redis_conn, SERVICE_TYPE, STABLE_ID)["work_state"] == "work_replay_authorized"
+	assert (
+		lifecycle.load_result(redis_conn, SERVICE_TYPE, STABLE_ID)["work_state"] == "work_replay_authorized"
+	)
 	assert rq_queue.fetch_job(record["callback_job_id"]) is None
 
 
@@ -479,7 +482,9 @@ def test_newer_signed_generation_rearms_completed_callback_without_rerunning_wor
 		queue=rq_queue,
 		service_type=SERVICE_TYPE,
 		payload=payload(),
-		perform_work=lambda _payload: work_calls.append("work") or {"job_id": "service-job-1", "status": "ready"},
+		perform_work=lambda _payload: (
+			work_calls.append("work") or {"job_id": "service-job-1", "status": "ready"}
+		),
 		failure_payload=_generic_failure_payload,
 		callback_worker_method="app.worker.deliver_callback_job",
 		result_ttl_seconds=604800,

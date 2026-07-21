@@ -33,6 +33,7 @@ from aos.integrations.ai.background_removal_client import (
     get_background_removal_client_settings,
     remove_background_from_file,
 )
+from aos.services.media.content_validation import sniff_content_type, validate_image_bytes
 from aos.services.media.media_purposes import IMAGE_TYPES, get_media_purpose
 from aos.services.media.media_service import (
     MediaNotFoundError,
@@ -48,6 +49,14 @@ from .constants import REMOVE_BACKGROUND_LIMIT_PER_MINUTE_PER_USER
 # Keep this conservative because background removal can be CPU/RAM heavy.
 # 16MP example: 4000 x 4000.
 MAX_REMOVE_BG_IMAGE_PIXELS = 16_000_000
+BACKGROUND_REMOVAL_OUTPUT_PURPOSES = {
+    "ad_image",
+    "review_image",
+    "seller_banner",
+    "live_cover",
+    "profile_image",
+    "background_removal_source",
+}
 
 
 class RemoveBackgroundValidationError(ValueError):
@@ -93,12 +102,21 @@ def remove_background_impl(**kwargs):
         result_rule = get_media_purpose(result_purpose)
         if not result_rule:
             raise RemoveBackgroundValidationError("Invalid result media purpose.")
+        if result_rule.key not in BACKGROUND_REMOVAL_OUTPUT_PURPOSES:
+            raise RemoveBackgroundValidationError(
+                "Result purpose is not allowed for background removal."
+            )
         if "image/png" not in result_rule.allowed_content_types:
             raise RemoveBackgroundValidationError(
                 "Result purpose must support PNG images."
             )
 
-        source_bytes = service.storage.get_bytes(source.bucket, source.object_key)
+        settings = get_background_removal_client_settings()
+        source_bytes = service.storage.get_bytes(
+            source.bucket,
+            source.object_key,
+            max_bytes=settings.max_image_bytes,
+        )
         _validate_source_size(source_bytes)
         width, height = _validate_image_body(source_bytes)
 
@@ -125,6 +143,7 @@ def remove_background_impl(**kwargs):
             data=result.content,
             width=result_width or width,
             height=result_height or height,
+            derived_from_media=source.name,
         )
 
         url = service.get_url(media_id=result_doc.name, user=current_user)
@@ -156,7 +175,7 @@ def remove_background_impl(**kwargs):
         return safe_fail_from_exception(exc, fallback="Could not remove background from this image.", error="BACKGROUND_REMOVAL_FAILED", http_status=422, log_title="AOS Background Removal Processing Failed")
     except BackgroundRemovalUnavailableError as exc:
         frappe.log_error(
-            f"Background removal unavailable for media {media_id}: {exc}",
+            "background_removal_unavailable",
             "AOS Media Remove Background Unavailable",
         )
         return safe_fail_from_exception(
@@ -200,36 +219,36 @@ def _validate_source_size(source_bytes: bytes) -> None:
 
 
 def _validate_image_body(source_bytes: bytes) -> tuple[int | None, int | None]:
-    """Validate image bytes and return dimensions when Pillow is available."""
+    """Validate source bytes through the canonical image validator."""
 
     if Image is None:
         # The external service still validates the actual image bytes.
         return None, None
-
-    image = Image.open(io.BytesIO(source_bytes))
-    image.load()
-
-    width, height = image.size
-
-    if width <= 0 or height <= 0:
-        raise RemoveBackgroundValidationError("Invalid image dimensions.")
-
+    try:
+        detected = _clean_content_type(sniff_content_type(source_bytes[: 64 * 1024]))
+        width, height = validate_image_bytes(
+            source_bytes,
+            expected_content_type=detected,
+        )
+    except Exception as exc:
+        raise RemoveBackgroundValidationError("Only valid image files are supported.") from exc
     if width * height > MAX_REMOVE_BG_IMAGE_PIXELS:
         raise RemoveBackgroundValidationError("Image is too large.")
-
-    return int(width), int(height)
+    return width, height
 
 
 def _validate_result_image_body(result_bytes: bytes) -> tuple[int | None, int | None]:
-    """Return result PNG dimensions when Pillow is available."""
+    """Validate background-removal output as an actual PNG."""
 
     if Image is None:
         return None, None
-
-    image = Image.open(io.BytesIO(result_bytes or b""))
-    image.load()
-    width, height = image.size
-    return int(width), int(height)
+    try:
+        return validate_image_bytes(
+            result_bytes or b"",
+            expected_content_type="image/png",
+        )
+    except Exception as exc:
+        raise BackgroundRemovalProcessingError("Background removal returned invalid image content.") from exc
 
 
 def _clean_content_type(value: object) -> str:

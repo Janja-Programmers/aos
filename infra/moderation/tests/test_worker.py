@@ -44,6 +44,10 @@ def test_work_happy_path_is_separate_from_callback(monkeypatch):
 
 
 def test_work_failure_raises(monkeypatch):
-	monkeypatch.setattr(worker, "_moderate", lambda _payload: (_ for _ in ()).throw(RuntimeError("ML failed")))
+	monkeypatch.setattr(
+		worker, "_moderate", lambda _payload: (_ for _ in ()).throw(RuntimeError("ML failed"))
+	)
 	with pytest.raises(RuntimeError, match="ML failed"):
-		worker._perform_moderation_work({"job_id": "job-2", "callback_url": "https://callback.invalid/moderation"})
+		worker._perform_moderation_work(
+			{"job_id": "job-2", "callback_url": "https://callback.invalid/moderation"}
+		)
