@@ -1,16 +1,20 @@
 # Testing
 
+## Test ownership and layout
+
+Media-owned API, policy, lifecycle, authorization, storage-contract, and consumer-integration tests live in `aos/api/media/tests/`. Their deterministic binary fixtures live in `aos/api/media/tests/fixtures/`. Cross-feature helpers that are intentionally reusable remain in `aos/tests/`, and DocType invariants remain beside the owning DocType under `aos/aos/doctype/aos_media_object/`. CI enforces this boundary through `ci/assert_frappe_tests.py`.
+
 ## Test layers
 
 ### Pure validation/policy tests
 
-`aos/tests/test_media_content_validation.py`, `test_media_purpose_policies.py`, and `test_media_runtime_config.py` run without Frappe or external services. They cover Unicode/path/null/double-extension handling, signatures, spoofing, malformed images, PDF active content, checksums, purpose inventory, private/public policy, internal-only purposes, roles, bounded limits, and credential-independent signed-URL expiry configuration.
+`aos/api/media/tests/test_content_validation.py`, `test_purpose_policies.py`, and `test_runtime_config.py` run without Frappe or external services. They cover Unicode/path/null/double-extension handling, signatures, spoofing, malformed images, PDF active content, checksums, purpose inventory, private/public policy, internal-only purposes, roles, bounded limits, and credential-independent signed-URL expiry configuration.
 
 ```bash
-PYTHONPATH=. pytest -q \
-  aos/tests/test_media_content_validation.py \
-  aos/tests/test_media_purpose_policies.py \
-  aos/tests/test_media_runtime_config.py
+PYTHONPATH=. python -m unittest \
+  aos.api.media.tests.test_content_validation \
+  aos.api.media.tests.test_purpose_policies \
+  aos.api.media.tests.test_runtime_config
 ```
 
 ### Frappe DocType tests
@@ -19,11 +23,11 @@ PYTHONPATH=. pytest -q \
 
 ### Frappe service tests
 
-`aos/tests/test_media_service.py` injects an in-memory `StorageAdapter`. It covers initiation, private staging, verified promotion, duplicate completion, missing objects, size/checksum mismatch, cross-user completion/deletion, private signed access, cross-resource attachment, attached deletion denial, retriable storage deletion, idempotent delete, expired staging cleanup, and lazy storage initialization. No real MinIO is contacted.
+`aos/api/media/tests/test_service.py` injects an in-memory `StorageAdapter`. It covers initiation, private staging, verified promotion, duplicate completion, missing objects, size/checksum mismatch, cross-user completion/deletion, private signed access, cross-resource attachment, attached deletion denial, retriable storage deletion, idempotent delete, expired staging cleanup, and lazy storage initialization. No real MinIO is contacted.
 
 ### Install and migration safety
 
-`aos/tests/test_category_media_hooks.py` verifies that fixture imports and schema synchronization remain no-ops when a category has no media relationship. Constructing `MediaService` must not read MinIO credentials; storage configuration is resolved only when an operation crosses the storage boundary. This keeps `bench install-app` and `bench migrate` independent of MinIO for metadata-only hooks while preserving explicit failures for real storage operations.
+`aos/api/media/tests/test_category_integration.py` verifies that fixture imports and schema synchronization remain no-ops when a category has no media relationship. Constructing `MediaService` must not read MinIO credentials; storage configuration is resolved only when an operation crosses the storage boundary. This keeps `bench install-app` and `bench migrate` independent of MinIO for metadata-only hooks while preserving explicit failures for real storage operations.
 
 ### Feature integration tests
 

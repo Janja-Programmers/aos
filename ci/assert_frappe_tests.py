@@ -15,6 +15,22 @@ REQUIRED_FOUNDATION_TESTS = {
 }
 FORBIDDEN_FRAPPE_TEST_IMPORTS = {"pytest"}
 
+REQUIRED_MEDIA_TEST_FILES = {
+	"__init__.py",
+	"test_category_integration.py",
+	"test_content_validation.py",
+	"test_purpose_policies.py",
+	"test_runtime_config.py",
+	"test_service.py",
+}
+LEGACY_MEDIA_TEST_FILES = {
+	"test_category_media_hooks.py",
+	"test_media_content_validation.py",
+	"test_media_purpose_policies.py",
+	"test_media_runtime_config.py",
+	"test_media_service.py",
+}
+
 REQUIRED_BEHAVIORAL_TESTS = {
 	"test_outbox_recovery_dispatch_all_services.py": {
 		"test_callback_timeout_redispatches_all_five_services_and_replay_completes",
@@ -89,6 +105,33 @@ def count_tests(root: Path) -> tuple[int, int]:
 def main() -> int:
 	repository = Path(__file__).resolve().parents[1]
 	test_root = repository / "aos"
+	media_test_root = test_root / "api" / "media" / "tests"
+	missing_media_files = (
+		sorted(
+			REQUIRED_MEDIA_TEST_FILES
+			- {path.name for path in media_test_root.iterdir() if path.is_file()}
+		)
+		if media_test_root.is_dir()
+		else sorted(REQUIRED_MEDIA_TEST_FILES)
+	)
+	if missing_media_files:
+		raise SystemExit(
+			"Media feature tests must live under aos/api/media/tests: "
+			+ str(missing_media_files)
+		)
+	legacy_media_paths = sorted(
+		str(path.relative_to(repository))
+		for path in (test_root / "tests").glob("test_*.py")
+		if path.name in LEGACY_MEDIA_TEST_FILES
+	)
+	if legacy_media_paths:
+		raise SystemExit(
+			"Media-owned tests must not live in the generic aos/tests package: "
+			+ str(legacy_media_paths)
+		)
+	media_fixture = media_test_root / "fixtures" / "valid_64x64.png"
+	if not media_fixture.is_file():
+		raise SystemExit(f"Required Media test fixture is missing: {media_fixture}")
 	files, tests = count_tests(test_root)
 	test_paths = sorted(test_root.rglob("test_*.py"))
 	paths = {path.name: path for path in test_paths}

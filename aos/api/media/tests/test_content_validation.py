@@ -14,7 +14,7 @@ from aos.services.media.content_validation import (
 	validate_magic_type,
 )
 
-PNG_64 = (Path(__file__).parent / "fixtures" / "media" / "valid_64x64.png").read_bytes()
+PNG_64 = (Path(__file__).parent / "fixtures" / "valid_64x64.png").read_bytes()
 
 
 class TestMediaContentValidation(TestCase):

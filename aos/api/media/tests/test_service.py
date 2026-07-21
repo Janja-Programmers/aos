@@ -25,7 +25,7 @@ from aos.services.storage.base import (
 )
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
-PNG_64 = (Path(__file__).parent / "fixtures" / "media" / "valid_64x64.png").read_bytes()
+PNG_64 = (Path(__file__).parent / "fixtures" / "valid_64x64.png").read_bytes()
 
 
 @dataclass
