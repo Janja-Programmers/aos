@@ -110,7 +110,8 @@
   {
    "fieldname": "idempotency_key",
    "label": "Idempotency Key",
-   "fieldtype": "Data"
+   "fieldtype": "Data",
+   "unique": 1
   },
   {
    "fieldname": "attempt_count",

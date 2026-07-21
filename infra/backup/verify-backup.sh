@@ -16,9 +16,12 @@ compgen -G "$BACKUP_DIR/frappe/*" >/dev/null || { echo "Frappe backup directory 
   sha256sum --check --strict SHA256SUMS
 )
 
-# Validate gzip/tar archives without extracting them.
+# Validate every supported tar archive without extracting it. tar -tf uses
+# compression auto-detection for .tgz, .tar.gz and .tar.
 while IFS= read -r -d '' archive; do
-  tar -tzf "$archive" >/dev/null
- done < <(find "$BACKUP_DIR" -type f -name '*.tar.gz' -print0)
+  tar -tf "$archive" >/dev/null
+ done < <(find "$BACKUP_DIR" -type f \( -name '*.tgz' -o -name '*.tar.gz' -o -name '*.tar' \) -print0)
+
+python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/backup_artifacts.py" discover "$BACKUP_DIR/frappe" >/dev/null
 
 echo "Backup verified successfully: $BACKUP_DIR"

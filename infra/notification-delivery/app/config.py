@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     job_timeout_seconds: int = 600
     result_ttl_seconds: int = 86400
     failure_ttl_seconds: int = 604800
+    durable_result_ttl_seconds: int = 604800
+    callback_job_timeout_seconds: int = 120
+    callback_max_attempts: int = 8
 
     dry_run: bool = False
     firebase_service_account_path: str = "/run/secrets/firebase-service-account.json"
@@ -54,6 +57,9 @@ def get_settings() -> Settings:
         job_timeout_seconds=_int("NOTIFICATION_JOB_TIMEOUT_SECONDS", 600),
         result_ttl_seconds=_int("NOTIFICATION_RESULT_TTL_SECONDS", 86400),
         failure_ttl_seconds=_int("NOTIFICATION_FAILURE_TTL_SECONDS", 604800),
+        durable_result_ttl_seconds=_int("NOTIFICATION_DURABLE_RESULT_TTL_SECONDS", 604800),
+        callback_job_timeout_seconds=_int("NOTIFICATION_CALLBACK_JOB_TIMEOUT_SECONDS", 120),
+        callback_max_attempts=_int("NOTIFICATION_CALLBACK_MAX_ATTEMPTS", 8),
         dry_run=_bool("NOTIFICATION_DRY_RUN", False),
         firebase_service_account_path=os.environ.get(
             "NOTIFICATION_FIREBASE_SERVICE_ACCOUNT_PATH",

@@ -1,4 +1,11 @@
-# AOS Production Deployment on Hetzner
+# AOS production deployment
+
+The controlled GitHub Environment workflow, immutable release manifest, migration preflight, guarded migration marker, staging-first sequence, and rollback procedure are authoritative in:
+
+- `docs/production/ci-cd.md`
+- `docs/production/runbooks/deployment-and-rollback.md`
+
+The host preparation notes below remain applicable, but releases must use the exact reviewed commit and image digests; do not deploy a floating branch or tag.
 
 ## 1. Prepare the server
 

@@ -36,7 +36,29 @@ git -C "${nginx_source}" checkout -q --detach FETCH_HEAD
 	make install >/dev/null
 )
 ln -sf "${destination}/nginx/sbin/nginx" "${destination}/bin/nginx"
+
+prometheus_archive="${destination}/prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz"
+curl --fail --location --retry 3 --retry-all-errors \
+	"https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz" \
+	-o "${prometheus_archive}"
+printf '%s  %s\n' "${PROMETHEUS_ARCHIVE_SHA256}" "${prometheus_archive}" | sha256sum -c -
+tar --no-same-owner -xzf "${prometheus_archive}" -C "${destination}/src"
+install -m 0755 "${destination}/src/prometheus-${PROMETHEUS_VERSION}.linux-amd64/promtool" \
+	"${destination}/bin/promtool"
+
+alertmanager_archive="${destination}/alertmanager-${ALERTMANAGER_VERSION}.linux-amd64.tar.gz"
+curl --fail --location --retry 3 --retry-all-errors \
+	"https://github.com/prometheus/alertmanager/releases/download/v${ALERTMANAGER_VERSION}/alertmanager-${ALERTMANAGER_VERSION}.linux-amd64.tar.gz" \
+	-o "${alertmanager_archive}"
+printf '%s  %s\n' "${ALERTMANAGER_ARCHIVE_SHA256}" "${alertmanager_archive}" | sha256sum -c -
+tar --no-same-owner -xzf "${alertmanager_archive}" -C "${destination}/src"
+install -m 0755 "${destination}/src/alertmanager-${ALERTMANAGER_VERSION}.linux-amd64/amtool" \
+	"${destination}/bin/amtool"
+
 "${destination}/bin/shellcheck" --version | grep -F "version: ${SHELLCHECK_VERSION}" >/dev/null
 "${destination}/bin/nginx" -v 2>&1 | grep -F "nginx/${NGINX_VERSION}" >/dev/null
-printf 'Pinned ShellCheck %s and Nginx %s tools installed under %s\n' \
-	"${SHELLCHECK_VERSION}" "${NGINX_VERSION}" "${destination}"
+"${destination}/bin/promtool" --version | grep -F "version ${PROMETHEUS_VERSION}" >/dev/null
+"${destination}/bin/amtool" --version | grep -F "version ${ALERTMANAGER_VERSION}" >/dev/null
+printf 'Pinned ShellCheck %s, Nginx %s, Prometheus %s, and Alertmanager %s tools installed under %s\n' \
+	"${SHELLCHECK_VERSION}" "${NGINX_VERSION}" "${PROMETHEUS_VERSION}" \
+	"${ALERTMANAGER_VERSION}" "${destination}"

@@ -16,8 +16,7 @@ def moderation_settings():
 	)
 
 
-def test_worker_happy_path_stubs_storage_and_callback(monkeypatch):
-	callbacks = []
+def test_work_happy_path_is_separate_from_callback(monkeypatch):
 	storage = object()
 	monkeypatch.setattr(worker, "get_settings", moderation_settings)
 	monkeypatch.setattr(worker, "_minio_client", lambda: storage)
@@ -30,9 +29,7 @@ def test_worker_happy_path_stubs_storage_and_callback(monkeypatch):
 			client is storage or pytest.fail("unexpected storage boundary"),
 		),
 	)
-	monkeypatch.setattr(worker, "_callback", lambda url, payload: callbacks.append((url, payload)))
-
-	result = worker.process_moderation_job(
+	result = worker._perform_moderation_work(
 		{
 			"job_id": "job-1",
 			"callback_url": "https://callback.invalid/moderation",
@@ -44,17 +41,9 @@ def test_worker_happy_path_stubs_storage_and_callback(monkeypatch):
 	assert result["status"] == "completed"
 	assert result["decision"] == "allow"
 	assert "image_inspected" in result["labels"]
-	assert callbacks[0][1]["status"] == "completed"
 
 
-def test_worker_failure_reports_failure_and_reraises(monkeypatch):
-	callbacks = []
-	monkeypatch.setattr(
-		worker, "_moderate", lambda _payload: (_ for _ in ()).throw(RuntimeError("ML failed"))
-	)
-	monkeypatch.setattr(worker, "_callback", lambda url, payload: callbacks.append((url, payload)))
+def test_work_failure_raises(monkeypatch):
+	monkeypatch.setattr(worker, "_moderate", lambda _payload: (_ for _ in ()).throw(RuntimeError("ML failed")))
 	with pytest.raises(RuntimeError, match="ML failed"):
-		worker.process_moderation_job(
-			{"job_id": "job-2", "callback_url": "https://callback.invalid/moderation"}
-		)
-	assert callbacks[-1][1]["status"] == "failed"
+		worker._perform_moderation_work({"job_id": "job-2", "callback_url": "https://callback.invalid/moderation"})

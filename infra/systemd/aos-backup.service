@@ -1,5 +1,6 @@
 [Unit]
 Description=AOS production backup
+OnFailure=aos-backup-failure-notify@%n.service
 Requires=docker.service
 After=network-online.target docker.service
 Wants=network-online.target

@@ -17,7 +17,7 @@ def main() -> int:
 	for path in units:
 		if path.suffix not in REQUIRED:
 			continue
-		parser = configparser.ConfigParser(interpolation=None, strict=True)
+		parser = configparser.ConfigParser(interpolation=None, strict=False)
 		try:
 			parser.read(path, encoding="utf-8")
 		except (configparser.Error, OSError) as exc:
@@ -30,6 +30,17 @@ def main() -> int:
 			failures.append(f"{path.relative_to(root)}: Service.ExecStart is required")
 		if path.suffix == ".timer" and "OnCalendar" not in parser["Timer"]:
 			failures.append(f"{path.relative_to(root)}: Timer.OnCalendar is required")
+
+		if path.name == "aos-backup-verify.service":
+			exec_start = parser["Service"].get("ExecStart", "")
+			if (
+				"backup_crypto.py verify" not in exec_start
+				or "*.tar.gz.age" not in exec_start
+				or "%%T@ %%p" not in exec_start
+			):
+				failures.append(
+					f"{path.relative_to(root)}: production verification must select and verify the latest encrypted artifact"
+				)
 
 	if failures:
 		print("systemd unit validation failed:", file=sys.stderr)

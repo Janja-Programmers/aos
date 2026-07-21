@@ -35,9 +35,13 @@ class Settings(BaseSettings):
     job_timeout_seconds: int = 600
     result_ttl_seconds: int = 86400
     failure_ttl_seconds: int = 604800
+    durable_result_ttl_seconds: int = 604800
+    callback_job_timeout_seconds: int = 120
+    callback_max_attempts: int = 8
 
     stream_max_len: int = 500000
     max_events_per_job: int = 200
+    event_dedupe_ttl_seconds: int = 2592000
 
 
 @lru_cache(maxsize=1)
@@ -53,6 +57,10 @@ def get_settings() -> Settings:
         job_timeout_seconds=_int("ANALYTICS_JOB_TIMEOUT_SECONDS", 600),
         result_ttl_seconds=_int("ANALYTICS_RESULT_TTL_SECONDS", 86400),
         failure_ttl_seconds=_int("ANALYTICS_FAILURE_TTL_SECONDS", 604800),
+        durable_result_ttl_seconds=_int("ANALYTICS_DURABLE_RESULT_TTL_SECONDS", 604800),
+        callback_job_timeout_seconds=_int("ANALYTICS_CALLBACK_JOB_TIMEOUT_SECONDS", 120),
+        callback_max_attempts=_int("ANALYTICS_CALLBACK_MAX_ATTEMPTS", 8),
         stream_max_len=_int("ANALYTICS_STREAM_MAX_LEN", 500000),
         max_events_per_job=_int("ANALYTICS_MAX_EVENTS_PER_JOB", 200),
+        event_dedupe_ttl_seconds=_int("ANALYTICS_EVENT_DEDUPE_TTL_SECONDS", 2592000),
     )

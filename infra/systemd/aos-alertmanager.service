@@ -1,0 +1,29 @@
+[Unit]
+Description=AOS private Alertmanager
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=alertmanager
+Group=alertmanager
+Environment=ALERTMANAGER_LISTEN_ADDRESS=127.0.0.1:9093
+EnvironmentFile=-/etc/aos/monitoring.env
+ExecStartPre=/usr/local/bin/amtool check-config /etc/alertmanager/alertmanager.yml
+ExecStart=/usr/local/bin/alertmanager --config.file=/etc/alertmanager/alertmanager.yml --storage.path=/var/lib/aos-alertmanager --web.listen-address=${ALERTMANAGER_LISTEN_ADDRESS}
+ExecStartPost=/usr/bin/curl --fail --silent --show-error --retry 10 --retry-delay 1 http://127.0.0.1:9093/-/ready
+Restart=on-failure
+RestartSec=5s
+StateDirectory=aos-alertmanager
+StateDirectoryMode=0750
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/aos-alertmanager
+MemoryMax=512M
+CPUQuota=100%
+LimitNOFILE=16384
+
+[Install]
+WantedBy=multi-user.target

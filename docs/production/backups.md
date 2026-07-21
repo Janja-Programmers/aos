@@ -1,73 +1,29 @@
-# AOS Backup Policy
+# AOS production backup policy
 
-## Scope
+Production backups contain database data, public/private files, service volumes, configuration, and secrets. They must not remain plaintext on ordinary local storage.
 
-The automated backup covers:
+Canonical procedures are in `docs/production/runbooks/backup-and-restore.md`.
 
-- Frappe/MariaDB database using `bench backup`
-- Frappe public and private files
-- Frappe site configuration
-- MinIO Docker volume
-- Qdrant Docker volume for image-search vectors
-- Optional Nominatim Docker volume
-- Generated MBTiles and Valhalla artifacts
-- Map manifest and production infrastructure configuration
-- Checksums and deployment metadata
+## Enforced policy
 
-Nominatim data is reproducible from the PBF and is disabled by default because its volume can be large. Enable it only when recovery-time requirements justify the storage cost.
+- `BACKUP_LOCAL_RETENTION_MODE=encrypted-artifact`
+- `BACKUP_ENCRYPTION_REQUIRED=true`
+- `BACKUP_ENCRYPTION_METHOD=age`
+- Production requires both native public and private file archives.
+- Plaintext exists only in a restrictive temporary workspace and is removed on success and failure.
+- Retention contains only the verified `.tar.gz.age` artifact and non-secret checksum/metadata sidecars.
+- Offsite copy accepts only the encrypted artifact.
+- Readiness fails for placeholder recipients, unavailable tooling, retained plaintext, invalid encrypted checksums, stale offsite evidence, or insufficient restore-rehearsal evidence.
 
-Qdrant stores image-search vectors. Backing it up improves recovery time, but vectors can also be rebuilt from Active AOS ads and saved ad images using `aos.integrations.ai.image_search_tasks.rebuild_image_search_index`. Background removal has no generated index or persistent service data; processed outputs are normal Frappe files and are covered by the Frappe public/private files backup.
+Development-only plaintext retention must be selected explicitly and is rejected in production.
 
-## Schedule and retention
-
-- Daily backup at approximately 02:30 server time
-- Default local retention: 14 days
-- Keep at least one encrypted off-server copy
-- Keep weekly/monthly snapshots according to business requirements
-
-A backup stored only on the production server is not a disaster-recovery backup.
-
-## Configuration
-
-Install `/etc/aos/backup.env` from `infra/backup/backup.env.example`. Set permissions to `0600` and ownership to `aos:aos`.
-
-## Manual backup
+## Operations
 
 ```bash
 sudo -u aos AOS_BACKUP_ENV_FILE=/etc/aos/backup.env \
   /home/aos/aos/infra/backup/backup.sh
-```
-
-## Verification
-
-```bash
-/home/aos/aos/infra/backup/verify-backup.sh /var/backups/aos/<timestamp>
-```
-
-Test an actual restore on a separate server regularly. Checksum verification alone does not prove that the application can be recovered.
-
-## Encryption and offsite storage
-
-Use an encrypted transport and encrypted destination. The backup can contain API secrets, private user files, database credentials, and personal information. Restrict access and audit downloads.
-
-Built-in offsite modes are documented in `docs/production/offsite-backups.md`:
-
-- `OFFSITE_BACKUP_MODE=rsync` for SSH/rsync destinations such as Hetzner Storage Box or another backup server.
-- `OFFSITE_BACKUP_MODE=s3` for S3-compatible storage.
-- `OFFSITE_BACKUP_MODE=custom` for an audited wrapper command.
-
-`infra/backup/backup.sh` calls `infra/backup/offsite-copy.sh` after local verification succeeds. The offsite helper writes `OFFSITE_SYNC_MARKER`, which the backup-readiness diagnostic uses to confirm that a recent off-server copy exists.
-
-
-## Backup readiness diagnostic
-
-Run the redacted AOS backup-readiness diagnostic after backups are configured:
-
-```bash
 cd /home/aos/frappe-bench
-bench --site <site> execute aos.utils.backup_readiness.backup_readiness_summary
+bench --site <site> execute aos.utils.backup_readiness.assert_backup_readiness_ready
 ```
 
-The report checks backup env, required scripts, Frappe DB/files scope, MinIO coverage, configuration coverage, latest backup completeness, off-server copy configuration, and restore rehearsal evidence.
-
-See `docs/production/backup-restore-verification.md` for the full restore rehearsal process.
+The systemd timer and failure notification unit are documented in the canonical runbook. Never commit recipients, identities, credentials, or generated backup artifacts.

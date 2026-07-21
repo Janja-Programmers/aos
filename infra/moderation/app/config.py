@@ -44,6 +44,9 @@ class Settings:
     job_timeout_seconds: int = _int("MODERATION_JOB_TIMEOUT_SECONDS", 600, min_value=60)
     result_ttl_seconds: int = _int("MODERATION_RESULT_TTL_SECONDS", 86400, min_value=60)
     failure_ttl_seconds: int = _int("MODERATION_FAILURE_TTL_SECONDS", 604800, min_value=60)
+    durable_result_ttl_seconds: int = _int("MODERATION_DURABLE_RESULT_TTL_SECONDS", 604800, min_value=3600)
+    callback_job_timeout_seconds: int = _int("MODERATION_CALLBACK_JOB_TIMEOUT_SECONDS", 120, min_value=30, max_value=900)
+    callback_max_attempts: int = _int("MODERATION_CALLBACK_MAX_ATTEMPTS", 8, min_value=1, max_value=20)
 
     request_secret: str = _clean(os.getenv("MODERATION_SERVICE_SECRET"), "")
     callback_secret: str = _clean(os.getenv("MODERATION_SERVICE_CALLBACK_SECRET"), "")

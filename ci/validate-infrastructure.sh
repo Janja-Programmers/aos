@@ -10,7 +10,7 @@ require_command shellcheck
 require_command nginx
 python_executable="$(python314)"
 
-mapfile -t scripts < <(find "${CI_ROOT}/infra" -type f -name '*.sh' -print | sort)
+mapfile -t scripts < <(find "${CI_ROOT}/infra" "${CI_ROOT}/scripts/deploy" -type f -name '*.sh' -print | sort)
 [[ "${#scripts[@]}" -gt 0 ]] || die "No maintained infrastructure shell scripts were found."
 for script in "${scripts[@]}"; do
 	bash -n "${script}"
@@ -26,6 +26,22 @@ done <"${CI_ROOT}/ci/maintained-paths.txt"
 
 "${python_executable}" "${CI_ROOT}/ci/validate_systemd.py"
 "${python_executable}" "${CI_ROOT}/ci/validate_doc_paths.py"
+"${python_executable}" "${CI_ROOT}/ci/validate_monitoring.py" "${CI_ROOT}"
+"${python_executable}" "${CI_ROOT}/ci/validate_companion_safety.py" "${CI_ROOT}"
+"${python_executable}" "${CI_ROOT}/ci/validate_nginx_policy.py" "${CI_ROOT}"
+"${python_executable}" "${CI_ROOT}/ci/validate_deployment.py" "${CI_ROOT}"
+
+if command -v promtool >/dev/null 2>&1; then
+  promtool check config "${CI_ROOT}/infra/monitoring/prometheus/prometheus.yml.example"
+  promtool check rules "${CI_ROOT}/infra/monitoring/prometheus/alerts.yml"
+else
+  printf 'promtool unavailable; strict repository Prometheus validator completed instead.\n'
+fi
+if command -v amtool >/dev/null 2>&1; then
+  amtool check-config "${CI_ROOT}/infra/monitoring/alertmanager/alertmanager.yml.example"
+else
+  printf 'amtool unavailable; strict repository Alertmanager validator completed instead.\n'
+fi
 
 nginx_root="$(mktemp -d "${AOS_CI_WORKDIR}/nginx.XXXXXX")"
 nginx_mime_types="${NGINX_MIME_TYPES:-/etc/nginx/mime.types}"

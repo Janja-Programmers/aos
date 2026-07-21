@@ -114,6 +114,18 @@ jobs:
     name: fastapi-unit-tests (${{ matrix.service }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      AOS_TEST_REDIS_URL: redis://127.0.0.1:16379/15
+    services:
+      redis:
+        image: redis:7.4.5-alpine@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+        ports:
+          - 16379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     strategy:
       fail-fast: false
       matrix:
@@ -285,6 +297,28 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  production-foundation-unit-tests:
+    name: production-foundation-unit-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install exact Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: 3.14.6
+      - name: Run backup, restore, and encryption tests
+        run: AOS_CI_ARTIFACTS="${RUNNER_TEMP}/aos-artifacts" ci/run-production-foundation-tests.sh
+      - name: Upload production-foundation test evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: production-foundation-unit-tests
+          path: ${{ runner.temp }}/aos-artifacts/production-foundation
+          if-no-files-found: error
+          retention-days: 14
+
   compose-validation:
     name: compose-validation
     runs-on: ubuntu-24.04
@@ -354,6 +388,7 @@ jobs:
       - fastapi-unit-tests
       - python314-runtime-compatibility
       - frappe-tests
+      - production-foundation-unit-tests
       - compose-validation
       - infrastructure-validation
     steps:

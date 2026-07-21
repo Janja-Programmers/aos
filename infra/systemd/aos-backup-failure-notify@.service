@@ -1,0 +1,16 @@
+[Unit]
+Description=Notify operators that AOS backup unit %i failed
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aos
+Group=aos
+Environment=AOS_BACKUP_ENV_FILE=/etc/aos/backup.env
+ExecStart=/home/aos/aos/infra/backup/notify-failure.sh %i
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+TimeoutStartSec=1m

@@ -1,0 +1,1196 @@
+[
+  {
+    "endpoint": "aos.api.metrics.background_jobs",
+    "access": "guest",
+    "policy": "private_metrics_exempt",
+    "rationale": "Bearer-token or loopback protected private scrape endpoint."
+  },
+  {
+    "endpoint": "aos.api.metrics.backup_readiness",
+    "access": "guest",
+    "policy": "private_metrics_exempt",
+    "rationale": "Bearer-token or loopback protected private scrape endpoint."
+  },
+  {
+    "endpoint": "aos.api.metrics.prometheus",
+    "access": "guest",
+    "policy": "private_metrics_exempt",
+    "rationale": "Bearer-token or loopback protected private scrape endpoint."
+  },
+  {
+    "endpoint": "aos.api.v1.accounts.__init__.get_my_preference",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.accounts.__init__.get_profile",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.accounts.__init__.update_my_preference",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.accounts.__init__.update_profile",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.activity.__init__.clear_activity",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.activity.__init__.hide_activity",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.activity.__init__.list_activity",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.ads.__init__.abandon_ad_draft",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.ads.__init__.create_ad",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.ads.__init__.get_ad",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.ads.__init__.get_my_ad",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.ads.__init__.get_my_ad_draft",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.ads.__init__.list_ads",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.ads.__init__.list_my_ad_drafts",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.ads.__init__.list_my_ads",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.ads.__init__.search_ads_by_image",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.ads.__init__.set_ad_status",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.ads.__init__.submit_ad_draft",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.ads.__init__.update_ad",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.ads.__init__.upsert_ad_draft",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.analytics_pipeline.__init__.handle_callback",
+    "access": "guest",
+    "policy": "signed_internal_exempt",
+    "rationale": "Signed worker callback; authenticated by HMAC and kept outside the public edge bucket."
+  },
+  {
+    "endpoint": "aos.api.v1.analytics_pipeline.__init__.track_event",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.analytics_pipeline.__init__.track_events",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.auth.__init__.apple_login",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.auth.__init__.change_password",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.auth.__init__.delete_account",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.auth.__init__.forgot_password_request",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.auth.__init__.forgot_password_reset",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.auth.__init__.forgot_password_verify_otp",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.auth.__init__.google_login",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.auth.__init__.login",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.auth.__init__.logout",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.auth.__init__.me",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.auth.__init__.register",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.auth.__init__.request_restore_account",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.auth.__init__.resend_email_otp",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.auth.__init__.restore_account",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.auth.__init__.verify_email_otp",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.calls.__init__.accept_call",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.calls.__init__.cancel_call",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.calls.__init__.clear_call_history",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.calls.__init__.delete_call_logs",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.calls.__init__.end_call",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.calls.__init__.get_call_group_details",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.calls.__init__.get_call_status",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.calls.__init__.get_call_token",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.calls.__init__.initiate_call",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.calls.__init__.list_calls",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.calls.__init__.mark_call_ringing",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.calls.__init__.reject_call",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.calls.__init__.request_video_upgrade",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.calls.__init__.respond_video_upgrade",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.catalog.__init__.get_categories",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.catalog.__init__.get_category_schema",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.clear_chat",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.delete_conversation",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.delete_messages",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.edit_message",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.forward_message",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.list_conversations",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.list_messages",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.list_starred_messages",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.mark_delivered",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.mark_read",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.open_conversation",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.send_message",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.send_typing_event",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.toggle_message_reaction",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.toggle_message_star",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.translate_message",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.diagnostics.__init__.get_backup_readiness_status",
+    "access": "authenticated",
+    "policy": "private_diagnostics_exempt",
+    "rationale": "System Manager diagnostics; exempt from the edge bucket so readiness remains usable."
+  },
+  {
+    "endpoint": "aos.api.v1.diagnostics.__init__.get_job_monitoring_status",
+    "access": "authenticated",
+    "policy": "private_diagnostics_exempt",
+    "rationale": "System Manager diagnostics; exempt from the edge bucket so readiness remains usable."
+  },
+  {
+    "endpoint": "aos.api.v1.diagnostics.__init__.get_operational_health_status",
+    "access": "authenticated",
+    "policy": "private_diagnostics_exempt",
+    "rationale": "System Manager diagnostics; exempt from the edge bucket so readiness remains usable."
+  },
+  {
+    "endpoint": "aos.api.v1.diagnostics.__init__.get_production_config_status",
+    "access": "authenticated",
+    "policy": "private_diagnostics_exempt",
+    "rationale": "System Manager diagnostics; exempt from the edge bucket so readiness remains usable."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.activate_live_cohost",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.add_live_message",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.cancel_live_cohost",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.delete_live_message",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.end_live",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.end_live_cohost",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.get_live",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.get_live_cohost",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.get_live_cohost_token",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.get_live_token",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.invite_live_cohost",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.join_live",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.list_live_cohosts",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.list_live_messages",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.list_live_replies",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.list_live_streams",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.reply_live_message",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.request_live_cohost",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.respond_live_cohost",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.send_reaction",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.start_live",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.track_join",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.live.__init__.track_leave",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.localization.__init__.get_locale_bundle",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.localization.__init__.get_locations",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.localization.__init__.resolve_preference_context",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.maps.__init__.autocomplete_places",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.maps.__init__.get_route",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.maps.__init__.refresh_route",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.maps.__init__.reverse_geocode",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.maps.__init__.search_places",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.media.__init__.confirm_upload",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.media.__init__.delete_media",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.media.__init__.get_media_url",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.media.__init__.init_upload",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.media.__init__.remove_background",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.moderation.__init__.handle_callback",
+    "access": "guest",
+    "policy": "signed_internal_exempt",
+    "rationale": "Signed worker callback; authenticated by HMAC and kept outside the public edge bucket."
+  },
+  {
+    "endpoint": "aos.api.v1.notification_delivery.__init__.handle_callback",
+    "access": "guest",
+    "policy": "signed_internal_exempt",
+    "rationale": "Signed worker callback; authenticated by HMAC and kept outside the public edge bucket."
+  },
+  {
+    "endpoint": "aos.api.v1.notifications.__init__.clear_notifications",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.notifications.__init__.deactivate_push_token",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.notifications.__init__.delete_notification",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.notifications.__init__.list_notifications",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.notifications.__init__.mark_all_notifications_read",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.notifications.__init__.mark_notification_read",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.notifications.__init__.register_push_token",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.reports.__init__.list_report_reasons",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.reports.__init__.report_ad",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.reports.__init__.report_short",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.reports.__init__.report_user",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.reviews.__init__.create_review",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.reviews.__init__.get_review_viewer_state",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.reviews.__init__.list_reviews",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.reviews.__init__.toggle_reaction",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.saved_search.__init__.delete_saved_search",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.saved_search.__init__.list_saved_searches",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.saved_search.__init__.save_search",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.search_ranking.__init__.handle_callback",
+    "access": "guest",
+    "policy": "signed_internal_exempt",
+    "rationale": "Signed worker callback; authenticated by HMAC and kept outside the public edge bucket."
+  },
+  {
+    "endpoint": "aos.api.v1.search_ranking.__init__.related_ads",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.sellers.__init__.get_my_seller_status",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.sellers.__init__.get_seller",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.sellers.__init__.get_seller_location",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.sellers.__init__.list_seller_map_points",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.sellers.__init__.list_sellers",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.sellers.__init__.remove_my_seller_location",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.sellers.__init__.set_my_seller_location",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.sellers.__init__.update_my_seller",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.add_comment",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.change_short_sound",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.create_short",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.create_short_share_link",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.create_sound",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.delete_comment",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.delete_short",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.download_short",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.favorite_sound",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.feed_by_ad",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.feed_following",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.feed_for_you",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.general_short_analytics",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.get_short",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.get_short_analytics",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.get_sound",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.liked_shorts",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.list_comments",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.list_replies",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.list_sounds",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.my_favorite_sounds",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.my_shorts",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.my_shorts_analytics",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.remove_short_sound",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.reply_comment",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.reposted_shorts",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.retry_processing",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.saved_shorts",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.search_sounds",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.share_short_to_chat",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.sound_shorts",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.toggle_comment_like",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.toggle_like",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.toggle_repost",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.toggle_save_short",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.track_impression",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.track_share",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.track_view",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.update_short_metadata",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.user_short_analytics",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.user_shorts",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.social.__init__.block_user",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.social.__init__.get_block_status",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.social.__init__.get_followers",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.social.__init__.get_following",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.social.__init__.get_friends",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.social.__init__.get_relationship_status",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.social.__init__.list_blocked_users",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.social.__init__.search_users",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.social.__init__.toggle_follow",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.social.__init__.unblock_user",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.verification.__init__.get_my_verification",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.verification.__init__.submit_verification",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.video_processing.__init__.handle_callback",
+    "access": "guest",
+    "policy": "signed_internal_exempt",
+    "rationale": "Signed worker callback; authenticated by HMAC and kept outside the public edge bucket."
+  },
+  {
+    "endpoint": "aos.api.v1.wishlist.__init__.list_wishlist",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.wishlist.__init__.toggle_wishlist",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  }
+]

@@ -1,5 +1,6 @@
 [Unit]
 Description=Verify the most recent AOS backup
+OnFailure=aos-backup-failure-notify@%n.service
 After=local-fs.target
 
 [Service]
@@ -7,7 +8,7 @@ Type=oneshot
 User=aos
 Group=aos
 Environment=AOS_BACKUP_ENV_FILE=/etc/aos/backup.env
-ExecStart=/bin/bash -lc 'source /etc/aos/backup.env; latest=$(find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d | sort | tail -1); test -n "$latest"; /home/aos/aos/infra/backup/verify-backup.sh "$latest"'
+ExecStart=/bin/bash -lc 'source /etc/aos/backup.env; encrypted_root=${ENCRYPTED_BACKUP_ROOT:-$BACKUP_ROOT/encrypted}; latest=$(find "$encrypted_root" -mindepth 1 -maxdepth 1 -type f -name "*.tar.gz.age" -printf "%%T@ %%p\n" | sort -n | tail -1 | cut -d" " -f2-); test -n "$latest"; AOS_BACKUP_ENV_FILE=/etc/aos/backup.env /home/aos/aos/infra/backup/backup_crypto.py verify --input "$latest"'
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

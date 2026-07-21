@@ -55,7 +55,10 @@ def main() -> int:
 			content, encoding="utf-8"
 		)
 	for static in sorted((source / "snippets").glob("*.conf")):
-		shutil.copyfile(static, output / "snippets" / f"aos-{static.name}")
+		if static.name == "rate-limits.conf":
+			shutil.copyfile(static, output / "conf.d" / "aos-rate-limits.conf")
+		else:
+			shutil.copyfile(static, output / "snippets" / f"aos-{static.name}")
 	print(output)
 	return 0
 

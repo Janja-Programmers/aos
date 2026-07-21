@@ -1,125 +1,51 @@
-# AOS Production Release Checklist
+# AOS production release checklist
 
-## Checkpoint 1 CI gate
+## Exact release evidence
 
-- [ ] `CI / Required Gate` passed for the exact release commit
-- [ ] Python is exactly `3.14.6` and root metadata remains `>=3.14,<3.15`
-- [ ] Frappe checkout equals `f33ac3f00ab818e21b25ddbec93efb653fd9aa1b`
-- [ ] Bench is exactly `5.31.0`
-- [ ] All eight FastAPI unit-test and production-compatibility matrix entries passed
-- [ ] Disposable Frappe site migration and complete AOS tests passed
-- [ ] Dependency, secret, Semgrep, Compose, and infrastructure gates passed
-- [ ] CI artifacts were reviewed when any prior attempt failed
-- [ ] Dependabot changes passed Python 3.14 and Frappe compatibility before merge
-- [ ] No `NOT RUN` or `FAIL` entry remains in the release evidence
+- [ ] `CI / Required Gate` passed for the exact commit.
+- [ ] Immutable release manifest records the Git SHA, archive SHA-256, and image digests.
+- [ ] Staging deployment and smoke checks passed first.
+- [ ] Production GitHub Environment approval was granted.
+- [ ] No real secrets, generated files, runtime logs, plaintext backups, or decrypted workspaces are tracked.
 
-Checkpoint 1 never deploys. A passing gate authorizes release review only; the
-Checkpoint 2 deployment and production-secret process must be separately
-approved before production changes.
+## Migration review
 
-## Code and repository
+- [ ] `aos.utils.migration_preflight.assert_migration_preflight_ready` passed.
+- [ ] Pending patches and schema-changing code were manually reviewed.
+- [ ] Previous migration-failure marker is absent/resolved.
+- [ ] Required outbox fields and backfill patch are present.
+- [ ] Disk headroom, long transactions, metadata locks, workers, outbox backlog, and dead letters are acceptable.
+- [ ] Remote deployment uses `scripts/deploy/run-migrate.sh` or an equivalent guarded wrapper.
 
-- [ ] Reviewed commit is pushed and tagged
-- [ ] Working tree is clean
-- [ ] No `.env`, credentials, map artifacts, backups, or compiled caches are tracked
-- [ ] `python -m compileall aos` succeeds
-- [ ] Required migrations are reviewed
+## Backup and restore
 
-## Images and configuration
+- [ ] Latest local retained backup is verified and encrypted.
+- [ ] No plaintext backup set/workspace remains.
+- [ ] Encrypted offsite marker refers to the latest backup.
+- [ ] Full restore rehearsal includes database, public files, private files, representative checksums, migrations, config, health, and job diagnostics.
+- [ ] Rehearsal marker is fresh, atomic, and refers to the latest backup.
+- [ ] Exact backup ID and rollback decision owner are recorded.
 
-- [ ] Valhalla, Planetiler, and other production images are pinned
-- [ ] Photon remains disabled or has a newly published, independently verified immutable registry digest
-- [ ] `docker compose config` succeeds
-- [ ] No placeholder secret remains
-- [ ] Internal services bind to `127.0.0.1`
-- [ ] Image Search, Background Removal, Translation, and Qdrant are not publicly exposed
-- [ ] Image Search `/health` and `/ready` pass
-- [ ] Background Removal `/health` and `/ready` pass
-- [ ] Translation `/health` and `/ready` pass
-- [ ] LiveKit public ports match firewall rules
+## Outbox and workers
 
-## Backup and rollback
+- [ ] Legacy backfill patch completed without duplicates.
+- [ ] Queue depth and oldest queued age are within policy.
+- [ ] No stale claims, overdue published callbacks, or unexplained dead letters remain.
+- [ ] Signed callback routes and bounded callback edge limits are healthy.
 
-- [ ] Fresh backup completed
-- [ ] Backup verification passed with `infra/backup/verify-backup.sh`
-- [ ] `bench --site <site> execute aos.utils.backup_readiness.backup_readiness_summary` returns `ready=true`
-- [ ] Restore rehearsal completed on a clean staging/test site
-- [ ] Restore rehearsal marker written with `infra/backup/restore-rehearsal-checklist.sh --mark-passed`
-- [ ] Backup ID recorded
-- [ ] Off-server encrypted backup copy confirmed
-- [ ] `offsite_backup_scope` is healthy and the sync marker matches the latest backup
-- [ ] Previous Git commit/image digests recorded
-- [ ] Rollback operator and decision criteria assigned
+## Metrics and alerts
 
-## Deployment
-
-- [ ] Application code updated
-- [ ] `bench --site <site> migrate` succeeds
-- [ ] Assets build succeeds
-- [ ] Docker services are healthy
-- [ ] Image-search vector rebuild dry run reviewed
-- [ ] Image-search vector rebuild completed when required
-- [ ] Background-removal service direct test completed
-- [ ] Translation service direct test completed
-- [ ] Translation Frappe client smoke test completed
-- [ ] Nginx configuration test succeeds
-- [ ] TLS certificates are valid
-
-## Manual image-search checks
-
-- [ ] Active ad with images is indexed
-- [ ] Sold/Expired/Deleted ads do not appear in image search
-- [ ] Image search returns serialized AOS ad data plus `image_search` metadata
-- [ ] Image-search service unavailable path returns a friendly temporary error
-
-## Manual background-removal checks
-
-- [ ] User-owned image can be processed through the Frappe endpoint
-- [ ] Processed result is saved as a new PNG AOS Media Object
-- [ ] Original image remains unchanged
-- [ ] Non-image files are rejected
-- [ ] Oversized images are rejected
-- [ ] User cannot process another user's private file
-- [ ] Background-removal service unavailable path returns a friendly temporary error
-
-
-## Manual translation checks
-
-- [ ] Translation container is healthy
-- [ ] Translation model reports loaded from `/ready`
-- [ ] `aos.integrations.ai.translation_client.health_check()` works from bench console
-- [ ] `translate_text()` works from bench console
-- [ ] Chat translate endpoint returns translated content
-- [ ] Translating the same message twice returns `cached: true` on the second request
-- [ ] User cannot translate a message from a conversation they cannot access
-- [ ] Deleted or unsupported message types are rejected
-- [ ] Translation service unavailable path returns a friendly temporary error
-
-## Manual map checks
-
-- [ ] Search endpoint works
-- [ ] Reverse geocoding works
-- [ ] Route endpoint works
-- [ ] Seller can set/remove location
-- [ ] Guest can retrieve active seller location
-- [ ] Tile style and vector tiles load over HTTPS
-- [ ] Nominatim and Valhalla are not publicly exposed
-
-
-## Load testing
-
-- [ ] `infra/load-testing/k6/smoke.js` passes against staging
-- [ ] Ads, shorts, maps, chat, live, media, notifications component scripts pass at agreed VUs/duration
-- [ ] Mixed production rehearsal passes at agreed VUs/duration
-- [ ] No new 5xx tracebacks appear during load
-- [ ] `aos.utils.operational_health.operational_health_summary` returns `ready=true` after load
-- [ ] `aos.utils.job_monitoring.job_monitoring_summary` returns `ready=true` after load and cool-down
-- [ ] Any expected 429/rate-limit behavior is documented
-- [ ] k6 summary and test parameters are archived with the release notes
+- [ ] Redis-backed Frappe metrics aggregate across workers.
+- [ ] Prometheus config and rules pass `promtool`.
+- [ ] Alertmanager config passes `amtool`.
+- [ ] Prometheus reports its Alertmanager target.
+- [ ] Required `up == 0` and critical absent-metric alerts are active for production targets.
+- [ ] Synthetic staging alert routing was verified.
 
 ## Post-deployment
 
-- [ ] Error logs checked
-- [ ] CPU, RAM, disk and latency checked
-- [ ] Backup timer remains active
-- [ ] Deployed commit and completion time recorded
+- [ ] Operational health passes.
+- [ ] Background-job diagnostics pass.
+- [ ] Outbox publisher runs successfully.
+- [ ] Metrics scrape succeeds without sensitive labels.
+- [ ] Prior exact release manifest and verified backup remain available for rollback.

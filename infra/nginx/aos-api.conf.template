@@ -66,6 +66,43 @@ server {
             http://${FRAPPE_SOCKETIO_HOST}:${FRAPPE_SOCKETIO_PORT};
     }
 
+    error_page 429 = @aos_rate_limited;
+
+    location @aos_rate_limited {
+        default_type application/json;
+        return 429 '{"message":{"ok":false,"message":"Too many requests.","error":"RATE_LIMIT","data":{}}}';
+    }
+
+    location ~ ^/api/method/aos\.api\.v1\..*handle_callback$ {
+        # HMAC validation remains mandatory in Frappe. This edge limit bounds
+        # invalid callback floods while allowing normal worker fan-out.
+        limit_req zone=aos_signed_callback burst=200 nodelay;
+        limit_req_status 429;
+
+        include /etc/nginx/snippets/aos-proxy-common.conf;
+        proxy_set_header Host ${FRAPPE_SITE_NAME};
+        proxy_set_header X-Frappe-Site-Name ${FRAPPE_SITE_NAME};
+        proxy_buffering off;
+        proxy_connect_timeout ${NGINX_PROXY_CONNECT_TIMEOUT};
+        proxy_read_timeout ${NGINX_PROXY_READ_TIMEOUT};
+        proxy_send_timeout ${NGINX_PROXY_SEND_TIMEOUT};
+        proxy_pass http://${FRAPPE_WEB_HOST}:${FRAPPE_WEB_PORT};
+    }
+
+    location /api/ {
+        limit_req zone=aos_public_api_baseline burst=40 nodelay;
+        limit_req_status 429;
+
+        include /etc/nginx/snippets/aos-proxy-common.conf;
+        proxy_set_header Host ${FRAPPE_SITE_NAME};
+        proxy_set_header X-Frappe-Site-Name ${FRAPPE_SITE_NAME};
+        proxy_buffering off;
+        proxy_connect_timeout ${NGINX_PROXY_CONNECT_TIMEOUT};
+        proxy_read_timeout ${NGINX_PROXY_READ_TIMEOUT};
+        proxy_send_timeout ${NGINX_PROXY_SEND_TIMEOUT};
+        proxy_pass http://${FRAPPE_WEB_HOST}:${FRAPPE_WEB_PORT};
+    }
+
     location / {
         include /etc/nginx/snippets/aos-proxy-common.conf;
 

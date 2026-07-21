@@ -144,25 +144,24 @@ app_license = "mit"
 # ---------------
 
 scheduler_events = {
-    "cron": {
-        "*/1 * * * *": [
-            "aos.tasks.calls.handle_missed_calls",
-            "aos.tasks.notification_delivery.retry_queued_notification_delivery_jobs",
-            "aos.tasks.analytics_pipeline.retry_queued_analytics_ingest_jobs",
-        ],
-    },
-    "hourly": [
-        "aos.tasks.ads.expire_ads",
-        "aos.tasks.shorts.update_short_ranking",
-        "aos.tasks.shorts.aggregate_short_metrics",
-        "aos.tasks.sellers.refresh_recent_seller_response_metrics",
-        "aos.tasks.media.cleanup_media_objects",
-        "aos.tasks.search_ranking.refresh_search_indexes",
-    ],
-    "daily": [
-        "aos.tasks.fx.update_exchange_rates",
-        "aos.tasks.service_hardening.cleanup_external_service_jobs",
-    ],
+	"cron": {
+		"*/1 * * * *": [
+			"aos.tasks.calls.handle_missed_calls",
+			"aos.tasks.outbox.publish_transactional_outbox",
+		],
+	},
+	"hourly": [
+		"aos.tasks.ads.expire_ads",
+		"aos.tasks.shorts.update_short_ranking",
+		"aos.tasks.shorts.aggregate_short_metrics",
+		"aos.tasks.sellers.refresh_recent_seller_response_metrics",
+		"aos.tasks.media.cleanup_media_objects",
+		"aos.tasks.search_ranking.refresh_search_indexes",
+	],
+	"daily": [
+		"aos.tasks.fx.update_exchange_rates",
+		"aos.tasks.service_hardening.cleanup_external_service_jobs",
+	],
 }
 
 # Testing
@@ -203,8 +202,9 @@ scheduler_events = {
 
 # Request Events
 # ----------------
-# before_request = ["aos.utils.before_request"]
-# after_request = ["aos.utils.after_request"]
+before_request = ["aos.utils.metrics.before_request"]
+after_request = ["aos.utils.metrics.after_request"]
+on_error = ["aos.utils.metrics.on_error"]
 
 # Job Events
 # ----------
@@ -256,22 +256,7 @@ scheduler_events = {
 
 
 fixtures = [
-    {
-        "dt": "AOS Category",
-        "filters": [
-            ["is_active", "=", 1]
-        ]
-    },
-    {
-        "dt": "AOS Ad Attribute",
-        "filters": [
-            ["is_active", "=", 1]
-        ]
-    },
-    {
-        "dt": "AOS Report Reason",
-        "filters": [
-            ["is_active", "=", 1]
-        ]
-    }
+	{"dt": "AOS Category", "filters": [["is_active", "=", 1]]},
+	{"dt": "AOS Ad Attribute", "filters": [["is_active", "=", 1]]},
+	{"dt": "AOS Report Reason", "filters": [["is_active", "=", 1]]},
 ]

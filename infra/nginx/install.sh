@@ -375,6 +375,10 @@ require_file \
   "${NGINX_DIR}/snippets/websocket-map.conf" \
   "WebSocket map configuration"
 
+require_file \
+  "${NGINX_DIR}/snippets/rate-limits.conf" \
+  "API rate-limit configuration"
+
 
 # TLS CERTIFICATES
 domains=(
@@ -450,6 +454,11 @@ install_static_snippet \
   "${NGINX_DIR}/snippets/websocket-map.conf" \
   "${NGINX_CONF_D_DIR}/aos-websocket-map.conf" \
   "WebSocket map configuration"
+
+install_static_snippet \
+  "${NGINX_DIR}/snippets/rate-limits.conf" \
+  "${NGINX_CONF_D_DIR}/aos-rate-limits.conf" \
+  "API rate-limit configuration"
 
 
 # RENDER SITE CONFIGURATIONS

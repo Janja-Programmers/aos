@@ -6,8 +6,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${AOS_BACKUP_ENV_FILE:-/etc/aos/backup.env}"
 
 [[ -f "$ENV_FILE" ]] || { echo "Missing backup configuration: $ENV_FILE" >&2; exit 1; }
+set -a
 # shellcheck disable=SC1090
 source "$ENV_FILE"
+set +a
 
 : "${AOS_REPO_ROOT:?AOS_REPO_ROOT is required}"
 : "${FRAPPE_BENCH_ROOT:?FRAPPE_BENCH_ROOT is required}"
@@ -23,9 +25,31 @@ INCLUDE_NOMINATIM_DATA="${INCLUDE_NOMINATIM_DATA:-false}"
 INCLUDE_MAP_ARTIFACTS="${INCLUDE_MAP_ARTIFACTS:-true}"
 INCLUDE_CONFIGURATION="${INCLUDE_CONFIGURATION:-true}"
 REMOTE_COPY_COMMAND="${REMOTE_COPY_COMMAND:-}"
+AOS_ENVIRONMENT="${AOS_ENVIRONMENT:-development}"
+BACKUP_ENCRYPTION_METHOD="${BACKUP_ENCRYPTION_METHOD:-none}"
+BACKUP_ENCRYPTION_REQUIRED="${BACKUP_ENCRYPTION_REQUIRED:-false}"
+ENCRYPTED_BACKUP_ROOT="${ENCRYPTED_BACKUP_ROOT:-${BACKUP_ROOT}/encrypted}"
+BACKUP_LOCAL_RETENTION_MODE="${BACKUP_LOCAL_RETENTION_MODE:-}"
+PLAINTEXT_WORK_ROOT="${PLAINTEXT_WORK_ROOT:-${BACKUP_ROOT}/.plaintext-work}"
 
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-BACKUP_DIR="${BACKUP_ROOT}/${TIMESTAMP}"
+PRODUCTION_MODE="false"
+[[ "${AOS_ENVIRONMENT,,}" == "production" ]] && PRODUCTION_MODE="true"
+if [[ -z "$BACKUP_LOCAL_RETENTION_MODE" ]]; then
+  [[ "$PRODUCTION_MODE" == "true" ]] && BACKUP_LOCAL_RETENTION_MODE="encrypted-artifact" || BACKUP_LOCAL_RETENTION_MODE="plaintext-development"
+fi
+case "${BACKUP_LOCAL_RETENTION_MODE,,}" in
+  encrypted-artifact)
+    [[ "${BACKUP_ENCRYPTION_METHOD,,}" == "age" ]] || { echo "Encrypted local retention requires BACKUP_ENCRYPTION_METHOD=age." >&2; exit 1; }
+    install -d -m 700 "$PLAINTEXT_WORK_ROOT"
+    BACKUP_DIR="${PLAINTEXT_WORK_ROOT}/${TIMESTAMP}"
+    ;;
+  plaintext-development)
+    [[ "$PRODUCTION_MODE" != "true" ]] || { echo "Production may not retain plaintext backup sets." >&2; exit 1; }
+    BACKUP_DIR="${BACKUP_ROOT}/${TIMESTAMP}"
+    ;;
+  *) echo "Unsupported BACKUP_LOCAL_RETENTION_MODE. Use encrypted-artifact or plaintext-development." >&2; exit 1 ;;
+esac
 WORK_DIR="${BACKUP_DIR}/.work"
 STOPPED_SERVICES=()
 
@@ -44,9 +68,13 @@ cleanup() {
     compose start "${STOPPED_SERVICES[*]}" >/dev/null 2>&1 || true
   fi
   rm -rf "$WORK_DIR"
-  if ((exit_code != 0)); then
-    log "Backup failed; removing incomplete directory $BACKUP_DIR"
-    rm -rf "$BACKUP_DIR"
+  if [[ "${BACKUP_LOCAL_RETENTION_MODE,,}" == "encrypted-artifact" || $exit_code -ne 0 ]]; then
+    if [[ -d "$BACKUP_DIR" ]]; then
+      log "Removing temporary plaintext backup workspace"
+      chmod -R u+rwX,go-rwx "$BACKUP_DIR" 2>/dev/null || true
+      rm -rf -- "$BACKUP_DIR"
+    fi
+    rmdir "$PLAINTEXT_WORK_ROOT" 2>/dev/null || true
   fi
   exit "$exit_code"
 }
@@ -58,6 +86,11 @@ require_cmd tar
 require_cmd sha256sum
 require_cmd find
 require_cmd rsync
+require_cmd python3
+
+# Production encryption configuration is validated before any sensitive backup
+# material is created. The validator never prints recipients or identities.
+"$SCRIPT_DIR/backup_crypto.py" validate
 
 mkdir -p "$BACKUP_DIR" "$WORK_DIR" "$BACKUP_DIR/frappe" "$BACKUP_DIR/docker" "$BACKUP_DIR/config" "$BACKUP_DIR/maps"
 
@@ -79,6 +112,16 @@ compgen -G "$BACKUP_DIR/frappe/*" >/dev/null || {
   echo "No fresh Frappe backup files were found." >&2
   exit 1
 }
+
+mapfile -d '' -t discovered < <("$SCRIPT_DIR/backup_artifacts.py" discover "$BACKUP_DIR/frappe" --format null)
+((${#discovered[@]} == 6)) || { echo "Unexpected backup artifact discovery output." >&2; exit 1; }
+DATABASE_BACKUP_PRESENT=true
+PUBLIC_FILES_BACKUP_PRESENT=$([[ -n "${discovered[3]}" ]] && echo true || echo false)
+PRIVATE_FILES_BACKUP_PRESENT=$([[ -n "${discovered[5]}" ]] && echo true || echo false)
+if [[ "$PRODUCTION_MODE" == "true" ]]; then
+  [[ "$PUBLIC_FILES_BACKUP_PRESENT" == "true" ]] || { echo "Production backup is missing the public-files archive." >&2; exit 1; }
+  [[ "$PRIVATE_FILES_BACKUP_PRESENT" == "true" ]] || { echo "Production backup is missing the private-files archive." >&2; exit 1; }
+fi
 
 archive_volume() {
   local volume="$1"
@@ -137,6 +180,8 @@ HOSTNAME=$(hostname -f 2>/dev/null || hostname)
 FRAPPE_SITE=$FRAPPE_SITE
 AOS_GIT_COMMIT=$(git -C "$AOS_REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)
 AOS_GIT_BRANCH=$(git -C "$AOS_REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
+BACKUP_ENCRYPTION_METHOD=$BACKUP_ENCRYPTION_METHOD
+BACKUP_ENCRYPTION_REQUIRED=$BACKUP_ENCRYPTION_REQUIRED
 INCLUDE_MINIO_DATA=$INCLUDE_MINIO_DATA
 INCLUDE_QDRANT_DATA=$INCLUDE_QDRANT_DATA
 INCLUDE_NOMINATIM_DATA=$INCLUDE_NOMINATIM_DATA
@@ -152,16 +197,63 @@ log "Generating checksums"
 "$SCRIPT_DIR/verify-backup.sh" "$BACKUP_DIR"
 date -u +%FT%TZ > "$BACKUP_DIR/VERIFIED_AT_UTC"
 
+ENCRYPTED_BACKUP_ARTIFACT=""
+if [[ "${BACKUP_ENCRYPTION_METHOD,,}" == "age" ]]; then
+  install -d -m 700 "$ENCRYPTED_BACKUP_ROOT"
+  ENCRYPTED_BACKUP_ARTIFACT="${ENCRYPTED_BACKUP_ROOT}/${TIMESTAMP}.tar.gz.age"
+  log "Encrypting verified backup with age for local encrypted retention"
+  "$SCRIPT_DIR/backup_crypto.py" encrypt --backup-dir "$BACKUP_DIR" --output "$ENCRYPTED_BACKUP_ARTIFACT"
+  "$SCRIPT_DIR/backup_crypto.py" verify --input "$ENCRYPTED_BACKUP_ARTIFACT" >/dev/null
+  encrypted_metadata="${ENCRYPTED_BACKUP_ARTIFACT}.metadata.env"
+  metadata_tmp="${encrypted_metadata}.tmp.$$"
+  cp -- "$encrypted_metadata" "$metadata_tmp"
+  cat >> "$metadata_tmp" <<META
+CREATED_AT_UTC=$TIMESTAMP
+BACKUP_GIT_COMMIT=$(git -C "$AOS_REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)
+DATABASE_BACKUP_PRESENT=$DATABASE_BACKUP_PRESENT
+PUBLIC_FILES_BACKUP_PRESENT=$PUBLIC_FILES_BACKUP_PRESENT
+PRIVATE_FILES_BACKUP_PRESENT=$PRIVATE_FILES_BACKUP_PRESENT
+PLAINTEXT_LOCAL_RETAINED=false
+LOCAL_RETENTION_MODE=encrypted-artifact
+ENCRYPTED_ARTIFACT_VERIFIED=true
+INCLUDE_MINIO_DATA=$INCLUDE_MINIO_DATA
+MINIO_ARCHIVE_PRESENT=$INCLUDE_MINIO_DATA
+INCLUDE_CONFIGURATION=$INCLUDE_CONFIGURATION
+CONFIGURATION_SNAPSHOT_PRESENT=$INCLUDE_CONFIGURATION
+META
+  chmod 600 "$metadata_tmp"
+  mv -f -- "$metadata_tmp" "$encrypted_metadata"
+elif [[ "${BACKUP_LOCAL_RETENTION_MODE,,}" == "encrypted-artifact" ]]; then
+  echo "Encrypted local retention could not produce an encrypted artifact." >&2
+  exit 1
+fi
+
 OFFSITE_BACKUP_MODE="${OFFSITE_BACKUP_MODE:-}"
 OFFSITE_BACKUP_ENABLED="${OFFSITE_BACKUP_ENABLED:-false}"
 if [[ -n "$REMOTE_COPY_COMMAND" || -n "$OFFSITE_BACKUP_MODE" || "${OFFSITE_BACKUP_ENABLED,,}" =~ ^(1|true|yes|on)$ ]]; then
   log "Copying backup to offsite storage"
-  "$SCRIPT_DIR/offsite-copy.sh" "$BACKUP_DIR"
+  "$SCRIPT_DIR/offsite-copy.sh" "$ENCRYPTED_BACKUP_ARTIFACT"
 fi
 
 log "Applying retention policy: ${BACKUP_RETENTION_DAYS} days"
-find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d -mtime "+$BACKUP_RETENTION_DAYS" -print -exec rm -rf {} +
+# Plaintext timestamp sets are development-only. Production workspaces are
+# deleted by the EXIT trap immediately after verified encryption/offsite copy.
+if [[ "${BACKUP_LOCAL_RETENTION_MODE,,}" == "plaintext-development" ]]; then
+  find "$BACKUP_ROOT" -regextype posix-extended -mindepth 1 -maxdepth 1 \
+    -type d -regex '.*/[0-9]{8}T[0-9]{6}Z' -mtime "+$BACKUP_RETENTION_DAYS" \
+    -print -exec rm -rf -- {} +
+fi
+# Encrypted artifacts and their integrity metadata have an independent,
+# explicit retention pass.
+if [[ -d "$ENCRYPTED_BACKUP_ROOT" ]]; then
+  find "$ENCRYPTED_BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type f \
+    \( -name '*.tar.gz.age' -o -name '*.tar.gz.age.sha256' -o -name '*.tar.gz.age.metadata.env' \) \
+    -mtime "+$BACKUP_RETENTION_DAYS" -print -delete
+fi
 
-trap - EXIT INT TERM
+if [[ "${BACKUP_LOCAL_RETENTION_MODE,,}" == "encrypted-artifact" ]]; then
+  log "Backup completed with encrypted-only local retention: $ENCRYPTED_BACKUP_ARTIFACT"
+else
+  log "Development backup completed: $BACKUP_DIR"
+fi
 cleanup
-log "Backup completed: $BACKUP_DIR"

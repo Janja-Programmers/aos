@@ -8,6 +8,8 @@ verification when the raw request body is empty.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import time
 from typing import Any, Callable
@@ -19,6 +21,16 @@ from aos.utils.aos_config import get_env_int
 
 DEFAULT_CALLBACK_TIMESTAMP_HEADER = "X-AOS-Callback-Timestamp"
 DEFAULT_CALLBACK_MAX_AGE_SECONDS = 300
+
+
+def build_signature(secret: str, payload: bytes) -> str:
+	"""Build the companion request signature used by private worker endpoints."""
+	digest = hmac.new(
+		str(secret or "").encode("utf-8"),
+		payload or b"",
+		hashlib.sha256,
+	).hexdigest()
+	return f"sha256={digest}"
 
 
 class CallbackSecurityError(Exception):

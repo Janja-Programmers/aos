@@ -76,6 +76,8 @@ def validate_versions(root: Path, failures: list[str]) -> None:
 		"NODE_VERSION",
 		"SHELLCHECK_VERSION",
 		"NGINX_VERSION",
+		"PROMETHEUS_VERSION",
+		"ALERTMANAGER_VERSION",
 		"COMPOSE_VERSION",
 		"CRANE_VERSION",
 	):
@@ -92,7 +94,13 @@ def validate_versions(root: Path, failures: list[str]) -> None:
 	):
 		if not SHA.fullmatch(values.get(key, "")):
 			failures.append(f"ci/versions.env: {key} must be a full commit SHA")
-	for key in ("SHELLCHECK_ARCHIVE_SHA256", "COMPOSE_BINARY_SHA256", "CRANE_ARCHIVE_SHA256"):
+	for key in (
+		"SHELLCHECK_ARCHIVE_SHA256",
+		"COMPOSE_BINARY_SHA256",
+		"CRANE_ARCHIVE_SHA256",
+		"PROMETHEUS_ARCHIVE_SHA256",
+		"ALERTMANAGER_ARCHIVE_SHA256",
+	):
 		if not re.fullmatch(r"[0-9a-f]{64}", values.get(key, "")):
 			failures.append(f"ci/versions.env: {key} must be a SHA-256")
 	if not re.fullmatch(r"v\d+\.\d+\.\d+", values.get("FRAPPE_RELEASE", "")):

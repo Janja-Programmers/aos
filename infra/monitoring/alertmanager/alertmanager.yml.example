@@ -1,0 +1,20 @@
+global:
+  resolve_timeout: 5m
+route:
+  receiver: operator-placeholder
+  group_by: [alertname, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: ['severity="critical"']
+      receiver: critical-placeholder
+receivers:
+  - name: operator-placeholder
+    webhook_configs:
+      - url: https://alerts.invalid/replace-with-operator-webhook
+        send_resolved: true
+  - name: critical-placeholder
+    webhook_configs:
+      - url: https://alerts.invalid/replace-with-critical-webhook
+        send_resolved: true

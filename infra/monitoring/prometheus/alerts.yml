@@ -1,0 +1,371 @@
+groups:
+  - name: aos-api
+    interval: 30s
+    rules:
+      - alert: AOSApiErrorRateSpike
+        expr: sum(rate(aos_http_requests_total{status_class="5xx"}[5m])) / clamp_min(sum(rate(aos_http_requests_total[5m])), 0.001) > 0.05
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: AOS API 5xx error rate exceeds 5%
+          description: Inspect application logs, dependency readiness, and the deployment diff before retrying traffic.
+          runbook_url: docs/production/runbooks/monitoring-and-alerting.md
+      - alert: AOSApiLatencyDegraded
+        expr: histogram_quantile(0.95, sum by (le) (rate(aos_http_request_duration_seconds_bucket[10m]))) > 1.5
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: AOS API p95 latency exceeds 1.5 seconds
+          description: Check database/Redis latency, queue contention, and recent releases.
+          runbook_url: docs/production/runbooks/monitoring-and-alerting.md
+      - alert: AOSProductionConfigurationUnhealthy
+        expr: aos_production_readiness_status < 1 or aos_missing_required_configuration > 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: Production configuration gate is unhealthy
+          description: Deployment must stop until every required configuration issue is resolved.
+          runbook_url: docs/production/runbooks/secrets-and-configuration.md
+
+      - alert: AOSMetricsBackendUnavailable
+        expr: aos_metrics_backend_ready{job="aos-frappe",environment="production"} < 1
+        for: 3m
+        labels: {severity: critical}
+        annotations:
+          summary: Redis-backed metrics aggregation is unavailable
+          description: HTTP/API counters and latency metrics may be incomplete; check Redis and the configured metrics backend.
+          runbook_url: docs/production/runbooks/monitoring-and-alerting.md
+      - alert: AOSMetricsBackendReadinessAbsent
+        expr: absent_over_time(aos_metrics_backend_ready{job="aos-frappe",environment="production"}[5m])
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: Metrics-backend readiness metric is absent
+          description: Cross-worker HTTP counters cannot be trusted until the Frappe metrics endpoint and Redis aggregation backend recover.
+          runbook_url: docs/production/runbooks/monitoring-and-alerting.md
+
+  - name: aos-dependencies
+    interval: 30s
+    rules:
+      - alert: AOSServiceReadinessFailure
+        expr: min by (dependency) (aos_dependency_ready) < 1
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: A required AOS dependency is not ready
+          description: Follow the dependency-specific checks before restarting or failing over services.
+          runbook_url: docs/production/runbooks/monitoring-and-alerting.md
+      - alert: AOSDatabaseReadinessFailure
+        expr: aos_dependency_ready{dependency="database"} < 1
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: AOS database readiness failed
+          description: Stop migrations and writes; verify MariaDB health, capacity, replication, and credentials.
+          runbook_url: docs/production/runbooks/monitoring-and-alerting.md
+      - alert: AOSRedisReadinessFailure
+        expr: aos_dependency_ready{dependency="redis"} < 1
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: AOS Redis readiness failed
+          description: Verify cache and queue Redis instances before restarting workers.
+          runbook_url: docs/production/runbooks/monitoring-and-alerting.md
+
+  - name: aos-background-jobs
+    interval: 30s
+    rules:
+      - alert: AOSBackgroundQueueBacklog
+        expr: aos_background_queue_depth > 1000
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: AOS outbox queue backlog is elevated
+          description: Check publisher schedules, Redis queues, workers, and downstream service readiness.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSOldestQueuedJobTooOld
+        expr: aos_background_oldest_queued_job_age_seconds > 1800
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: Oldest queued outbox job exceeds 30 minutes
+          description: Recover stale claims and verify all five service categories can dispatch.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSStaleOutboxLeases
+        expr: aos_background_stale_leases > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Stale transactional outbox leases are present
+          description: Run the publisher recovery command and investigate publisher crashes.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSDeadLetterJobsPresent
+        expr: aos_background_dead_letter_jobs > 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: Transactional outbox dead-letter records are present
+          description: Inspect sanitized last-error categories, repair the cause, and replay explicitly.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSRepeatedWorkerFailures
+        expr: sum(increase(aos_background_jobs_failed_total[15m])) > 5 or sum(increase(aos_companion_unhandled_exceptions_total[15m])) > 5
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Companion workers are repeatedly failing
+          description: Correlate service logs with outbox retries without exposing callback payloads.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+
+      - alert: AOSCallbackRedispatchFailures
+        expr: sum(increase(aos_background_outbox_events_total{event="redispatch_failure"}[15m])) > 3
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: Callback recovery redispatch is repeatedly failing
+          description: Companion-service dispatch is unavailable or rejecting recovery generations; inspect service readiness, signed dispatch responses, and callback replay.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+
+      - alert: AOSCompanionCallbackPendingTooLong
+        expr: aos_companion_callback_pending > 0 and aos_companion_callback_oldest_age_seconds > 900
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: Companion work is complete but callback delivery remains pending
+          description: External work is durably complete; inspect the independent callback queue, Frappe callback availability, and operator replay procedure without rerunning work.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSCompanionCallbackDeadLetters
+        expr: sum(increase(aos_companion_callback_jobs_dead_lettered_total[15m])) > 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: Companion callback-delivery jobs entered dead letter
+          description: Repair callback authentication or availability, then replay callback delivery from the persisted terminal work result.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSDispatchUncertaintyUnresolved
+        expr: sum(increase(aos_companion_dispatch_uncertain_total[15m])) > 3
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: Companion dispatch or provider outcomes remain uncertain
+          description: Reconcile stable work IDs through the signed status endpoint; do not mark business work failed or blindly repeat side effects.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSRepeatedReconciliationFailures
+        expr: sum(increase(aos_companion_reconciliation_attempts_total[15m])) > 5
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: Durable worker reconciliation is repeatedly required
+          description: Check companion Redis persistence, RQ workers, signed status endpoints, and callback-delivery queues.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSCompanionHeartbeatStale
+        expr: sum(aos_companion_active_heartbeat_stale) > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Active companion work has a stale heartbeat
+          description: Verify the worker process and stable job status before proposing any replacement generation.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSNotificationDedupeAnomaly
+        expr: increase(aos_companion_side_effect_dedupe_hits_total{service_type="notification_delivery"}[15m]) > 5
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Notification delivery deduplication is repeatedly suppressing re-execution
+          description: Confirm callback outages or dispatch retries are not generating abnormal duplicate delivery attempts.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSAnalyticsDuplicateEventAttempts
+        expr: increase(aos_companion_side_effect_dedupe_hits_total{service_type="analytics_pipeline"}[15m]) > 5
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Analytics duplicate-event attempts are elevated
+          description: Inspect dispatch retries and stable event identities; atomic Redis deduplication is preventing double increments.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSOutboxManualReviewRequired
+        expr: aos_background_manual_review_jobs > 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: Durable outbox reconciliation requires operator review
+          description: Bounded reconciliation was exhausted or companion/Frappe terminal evidence conflicts. Resolve the row explicitly; do not blindly rerun external work.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSCallbackCompleteStateRepair
+        expr: sum(increase(aos_background_outbox_events_total{event="automatic_outbox_repair"}[15m])) > 0
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: Callback-complete evidence required automatic Frappe outbox repair
+          description: Investigate callback response loss or partial legacy state and confirm domain, durable job, and outbox terminal evidence agree.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSCompanionWorkRetryExhaustion
+        expr: sum(increase(aos_companion_work_retry_exhausted_total[15m])) > 3
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: Companion work retries are repeatedly exhausted
+          description: Terminal worker failures are increasing. Inspect bounded error categories and dependency health before authorizing any explicit work replay.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSCallbackRetrySchedulerStalled
+        expr: sum(aos_companion_callback_pending) > 0 and max(aos_companion_callback_oldest_age_seconds) > 900 and sum(increase(aos_companion_callback_jobs_retried_total[15m])) == 0
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: Callback delivery is pending but the retry scheduler is not advancing
+          description: Verify the RQ scheduled registry, scheduler/worker availability, Redis persistence, and deterministic callback job state.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSNotificationOutcomeUncertainty
+        expr: increase(aos_companion_dispatch_uncertain_total{service_type="notification_delivery"}[30m]) > 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: Notification provider outcomes require reconciliation
+          description: Confirm provider acceptance or rejection through the signed operator resolution flow; automatic blind resend is disabled.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSDurableLifecycleIndexCleanupElevated
+        expr: sum(increase(aos_companion_stale_index_cleanup_total[15m])) > 10
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: Companion lifecycle indexes reference missing durable results
+          description: Inspect Redis eviction, TTL configuration, AOF persistence, and callback-result retention before replaying work.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSCompanionLifecycleMetricsAbsent
+        expr: absent_over_time(aos_companion_lifecycle_metrics_ready{job="aos-worker-services",environment="production"}[5m])
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: Companion lifecycle and status observability is absent
+          description: Companion status reconciliation and callback-delivery health cannot be trusted; restore the private metrics/status service and Redis backend.
+          runbook_url: docs/production/runbooks/monitoring-and-alerting.md
+
+  - name: aos-backups
+    interval: 1m
+    rules:
+      - alert: AOSBackupOverdue
+        expr: aos_backup_age_seconds > 93600
+        for: 30m
+        labels: {severity: critical}
+        annotations:
+          summary: Latest verified backup is overdue
+          description: Run an encrypted backup and verify local and offsite artifacts.
+          runbook_url: docs/production/runbooks/backup-and-restore.md
+      - alert: AOSBackupVerificationFailed
+        expr: aos_backup_verification_status < 1
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: Backup verification is failing
+          description: Do not copy or use the backup until checksums and archive structure pass.
+          runbook_url: docs/production/runbooks/backup-and-restore.md
+      - alert: AOSBackupEncryptionDisabled
+        expr: aos_backup_encryption_status < 1
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: Backup encryption is not ready
+          description: Production offsite backup must remain blocked until age encryption validates.
+          runbook_url: docs/production/runbooks/backup-and-restore.md
+      - alert: AOSOffsiteBackupOverdue
+        expr: aos_backup_offsite_status < 1
+        for: 30m
+        labels: {severity: critical}
+        annotations:
+          summary: Encrypted offsite backup evidence is stale or missing
+          description: Verify remote transfer and the encryption method recorded in the marker.
+          runbook_url: docs/production/runbooks/backup-and-restore.md
+      - alert: AOSRestoreRehearsalStale
+        expr: aos_restore_rehearsal_status < 1 or aos_restore_rehearsal_age_seconds > 2592000
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: Full restore rehearsal is stale or invalid
+          description: Restore database, public files, and private files in a non-production environment and run all gates.
+          runbook_url: docs/production/runbooks/backup-and-restore.md
+
+  - name: aos-host
+    interval: 1m
+    rules:
+      - alert: AOSDiskSpaceRisk
+        expr: aos_disk_free_bytes < 10737418240
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: AOS monitored filesystem has less than 10 GiB free
+          description: Check backup retention, logs, container volumes, and database growth before capacity is exhausted.
+          runbook_url: docs/production/runbooks/monitoring-and-alerting.md
+
+  - name: aos-scrape-targets
+    interval: 30s
+    rules:
+      - alert: AOSFrappeMetricsTargetDown
+        expr: up{job="aos-frappe",environment="production"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: Main Frappe metrics target is down
+          description: Verify private metrics routing, token file permissions, TLS, and Frappe web workers.
+          runbook_url: docs/production/runbooks/monitoring-and-alerting.md
+      - alert: AOSBackgroundMetricsTargetDown
+        expr: up{job="aos-background-jobs",environment="production"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: Background-job metrics collector is down
+          description: Restore the private background metrics endpoint before relying on queue alerts.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSRedisExporterDown
+        expr: up{job="aos-redis-exporter",environment="production"} == 0
+        for: 3m
+        labels: {severity: critical}
+        annotations:
+          summary: Redis exporter target is down
+          description: Verify the private Redis exporter process and Redis connectivity.
+          runbook_url: docs/production/runbooks/monitoring-and-alerting.md
+      - alert: AOSDatabaseExporterDown
+        expr: up{job="aos-database-exporter",environment="production"} == 0
+        for: 3m
+        labels: {severity: critical}
+        annotations:
+          summary: Database exporter target is down
+          description: Verify the private MariaDB exporter and its least-privilege monitoring account.
+          runbook_url: docs/production/runbooks/monitoring-and-alerting.md
+      - alert: AOSMinIOMetricsTargetDown
+        expr: up{job="aos-minio",environment="production"} == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: MinIO metrics target is down
+          description: Check MinIO readiness and private metrics authentication configuration.
+          runbook_url: docs/production/runbooks/monitoring-and-alerting.md
+      - alert: AOSWorkerServiceMetricsTargetDown
+        expr: up{job="aos-worker-services",environment="production"} == 0
+        for: 3m
+        labels: {severity: critical}
+        annotations:
+          summary: A companion worker-service metrics target is down
+          description: Inspect the affected service label, container health, Redis queue, and private listener.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md
+      - alert: AOSBackupCollectorDown
+        expr: up{job="aos-backup-readiness",environment="production"} == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: Backup/readiness collector is down
+          description: Backup and rehearsal freshness cannot be trusted until this private target recovers.
+          runbook_url: docs/production/runbooks/backup-and-restore.md
+      - alert: AOSCriticalOperationalMetricsAbsent
+        expr: absent_over_time(aos_production_readiness_status{job="aos-frappe",environment="production"}[5m]) or absent_over_time(aos_background_queue_depth{job="aos-background-jobs",environment="production"}[5m]) or absent_over_time(aos_backup_encryption_status{job="aos-backup-readiness",environment="production"}[10m])
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: Critical AOS operational metrics are absent
+          description: A target may be returning incomplete output; inspect scrape errors and collector logs.
+          runbook_url: docs/production/runbooks/monitoring-and-alerting.md
+      - alert: AOSPublishedCallbackOverdue
+        expr: aos_background_callback_overdue{job="aos-background-jobs",environment="production"} > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Published outbox callbacks are overdue
+          description: The scheduled publisher should recover these rows; verify callback routing and worker result replay.
+          runbook_url: docs/production/runbooks/outbox-and-workers.md

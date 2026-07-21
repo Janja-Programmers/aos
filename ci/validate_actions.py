@@ -65,6 +65,7 @@ def main() -> int:
 		if "pull_request_target" in data.get("on", {}):
 			errors.append(f"{path.relative_to(root)}: pull_request_target is prohibited")
 		jobs = data.get("jobs", {})
+		is_deployment_workflow = path.name in {"deploy.yml", "deploy.yaml"}
 		for job_id, job in jobs.items():
 			validate_permissions(path.relative_to(root), job_id, job.get("permissions"), errors)
 			if "timeout-minutes" not in job:
@@ -73,7 +74,7 @@ def main() -> int:
 				errors.append(f"{path.relative_to(root)}: job {job_id} must use ubuntu-24.04")
 			if "continue-on-error" in job:
 				errors.append(f"{path.relative_to(root)}: job {job_id} uses prohibited continue-on-error")
-			if "environment" in job:
+			if "environment" in job and not is_deployment_workflow:
 				errors.append(
 					f"{path.relative_to(root)}: job {job_id} must not target a deployment environment"
 				)
@@ -82,7 +83,27 @@ def main() -> int:
 					errors.append(
 						f"{path.relative_to(root)}: job {job_id} step uses prohibited continue-on-error"
 					)
-		validate_required_gate(path.relative_to(root), jobs, errors)
+		if is_deployment_workflow:
+			if set(jobs) != {"release", "staging", "production"}:
+				errors.append(
+					f"{path.relative_to(root)}: deployment jobs must be release, staging, production"
+				)
+			if jobs.get("staging", {}).get("environment") != "staging":
+				errors.append(f"{path.relative_to(root)}: staging job must target the staging environment")
+			if jobs.get("production", {}).get("environment") != "production":
+				errors.append(
+					f"{path.relative_to(root)}: production job must target the protected production environment"
+				)
+			production_needs = set(jobs.get("production", {}).get("needs", []))
+			if not {"release", "staging"}.issubset(production_needs):
+				errors.append(f"{path.relative_to(root)}: production must require release and staging")
+			workflow_run = data.get("on", {}).get("workflow_run", {})
+			if "CI" not in workflow_run.get("workflows", []):
+				errors.append(f"{path.relative_to(root)}: deployment must be gated by the CI workflow")
+			if jobs.get("production", {}).get("if") != "github.event_name == 'workflow_run'":
+				errors.append(f"{path.relative_to(root)}: manual dispatch must never reach production")
+		else:
+			validate_required_gate(path.relative_to(root), jobs, errors)
 
 	if errors:
 		print("GitHub Actions policy failed:", file=sys.stderr)

@@ -1,0 +1,502 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "naming_series:",
+ "creation": "2026-07-19 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "service_type",
+  "status",
+  "aggregate_section",
+  "aggregate_doctype",
+  "aggregate_name",
+  "job_doctype",
+  "job_name",
+  "dispatch_section",
+  "dispatch_method",
+  "dispatch_kwargs_json",
+  "queue",
+  "timeout_seconds",
+  "rq_job_id",
+  "idempotency_key",
+  "claim_section",
+  "claimed_by",
+  "claim_token",
+  "claimed_at",
+  "lease_expires_at",
+  "next_attempt_at",
+  "retry_section",
+  "attempt_count",
+  "max_attempts",
+  "last_error",
+  "timing_section",
+  "created_at",
+  "dispatched_at",
+  "published_at",
+  "callback_timeout_seconds",
+  "callback_deadline_at",
+  "callback_timeout_count",
+  "dispatch_uncertain_count",
+  "reconciliation_attempt_count",
+  "duplicate_active_observation_count",
+  "last_reconciliation_at",
+  "last_worker_heartbeat_at",
+  "companion_work_state",
+  "companion_callback_state",
+  "dispatch_generation",
+  "current_dispatch_token",
+  "proposed_dispatch_generation",
+  "proposed_dispatch_token",
+  "pending_dispatch_reason",
+  "active_dispatch_reason",
+  "completed_dispatch_generation",
+  "redispatch_accepted_count",
+  "redispatch_skipped_count",
+  "redispatch_failure_count",
+  "duplicate_active_dispatch_count",
+  "callback_replay_count",
+  "old_generation_rejection_count",
+  "token_mismatch_count",
+  "transaction_rollback_count",
+  "last_callback_at",
+  "last_callback_dispatch_token",
+  "callback_received_at",
+  "completed_at",
+  "callback_status",
+  "companion_authoritative_generation",
+  "reconciliation_max_attempts",
+  "last_reconciliation_outcome",
+  "terminal_result_type",
+  "terminal_result_digest",
+  "manual_review_reason",
+  "work_replay_count"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Naming Series",
+   "options": "OUTBOX-.YYYY.-.#####",
+   "reqd": 1
+  },
+  {
+   "fieldname": "service_type",
+   "fieldtype": "Select",
+   "label": "Service Type",
+   "options": "video_processing\nmoderation\nsearch_indexing\nnotification_delivery\nanalytics_ingestion",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Queued\nClaimed\nDispatched\nPublished\nDispatch Uncertain\nReconciliation Pending\nCompleted\nCompleted With Failure\nFailed\nManual Review\nDead Letter\nCancelled",
+   "default": "Queued",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "aggregate_section",
+   "fieldtype": "Section Break",
+   "label": "Domain and Durable Job"
+  },
+  {
+   "fieldname": "aggregate_doctype",
+   "fieldtype": "Link",
+   "label": "Aggregate DocType",
+   "options": "DocType"
+  },
+  {
+   "fieldname": "aggregate_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Aggregate Name",
+   "options": "aggregate_doctype"
+  },
+  {
+   "fieldname": "job_doctype",
+   "fieldtype": "Link",
+   "label": "Job DocType",
+   "options": "DocType",
+   "reqd": 1
+  },
+  {
+   "fieldname": "job_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Job Name",
+   "options": "job_doctype",
+   "reqd": 1
+  },
+  {
+   "fieldname": "dispatch_section",
+   "fieldtype": "Section Break",
+   "label": "Dispatch"
+  },
+  {
+   "fieldname": "dispatch_method",
+   "fieldtype": "Data",
+   "label": "Dispatch Method",
+   "reqd": 1
+  },
+  {
+   "fieldname": "dispatch_kwargs_json",
+   "fieldtype": "Long Text",
+   "label": "Dispatch Keyword Arguments"
+  },
+  {
+   "fieldname": "queue",
+   "fieldtype": "Data",
+   "label": "Queue",
+   "default": "default"
+  },
+  {
+   "fieldname": "timeout_seconds",
+   "fieldtype": "Int",
+   "label": "Timeout Seconds",
+   "default": "300"
+  },
+  {
+   "fieldname": "rq_job_id",
+   "fieldtype": "Data",
+   "label": "RQ Job ID"
+  },
+  {
+   "fieldname": "idempotency_key",
+   "fieldtype": "Data",
+   "label": "Idempotency Key",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "claim_section",
+   "fieldtype": "Section Break",
+   "label": "Claim Lease"
+  },
+  {
+   "fieldname": "claimed_by",
+   "fieldtype": "Data",
+   "label": "Claimed By"
+  },
+  {
+   "fieldname": "claim_token",
+   "fieldtype": "Data",
+   "label": "Claim Token"
+  },
+  {
+   "fieldname": "claimed_at",
+   "fieldtype": "Datetime",
+   "label": "Claimed At"
+  },
+  {
+   "fieldname": "lease_expires_at",
+   "fieldtype": "Datetime",
+   "label": "Lease Expires At"
+  },
+  {
+   "fieldname": "next_attempt_at",
+   "fieldtype": "Datetime",
+   "label": "Next Attempt At"
+  },
+  {
+   "fieldname": "retry_section",
+   "fieldtype": "Section Break",
+   "label": "Retry"
+  },
+  {
+   "fieldname": "attempt_count",
+   "fieldtype": "Int",
+   "label": "Attempt Count",
+   "default": "0"
+  },
+  {
+   "fieldname": "max_attempts",
+   "fieldtype": "Int",
+   "label": "Maximum Attempts",
+   "default": "5"
+  },
+  {
+   "fieldname": "last_error",
+   "fieldtype": "Small Text",
+   "label": "Last Error"
+  },
+  {
+   "fieldname": "timing_section",
+   "fieldtype": "Section Break",
+   "label": "Timing"
+  },
+  {
+   "fieldname": "created_at",
+   "fieldtype": "Datetime",
+   "label": "Created At"
+  },
+  {
+   "fieldname": "dispatched_at",
+   "fieldtype": "Datetime",
+   "label": "Dispatched At"
+  },
+  {
+   "fieldname": "published_at",
+   "fieldtype": "Datetime",
+   "label": "Published At"
+  },
+  {
+   "fieldname": "callback_timeout_seconds",
+   "fieldtype": "Int",
+   "label": "Callback Timeout (seconds)",
+   "default": "900"
+  },
+  {
+   "fieldname": "callback_deadline_at",
+   "fieldtype": "Datetime",
+   "label": "Callback Deadline At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "callback_timeout_count",
+   "fieldtype": "Int",
+   "label": "Callback Timeout Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "dispatch_generation",
+   "fieldtype": "Int",
+   "label": "Dispatch Generation",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "current_dispatch_token",
+   "fieldtype": "Data",
+   "label": "Current Dispatch Token",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_callback_at",
+   "fieldtype": "Datetime",
+   "label": "Last Callback At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_callback_dispatch_token",
+   "fieldtype": "Data",
+   "label": "Last Callback Dispatch Token",
+   "read_only": 1
+  },
+  {
+   "fieldname": "callback_received_at",
+   "fieldtype": "Datetime",
+   "label": "Callback Received At"
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At"
+  },
+  {
+   "fieldname": "callback_status",
+   "fieldtype": "Data",
+   "label": "Callback Status"
+  },
+  {
+   "fieldname": "pending_dispatch_reason",
+   "fieldtype": "Data",
+   "label": "Pending Dispatch Reason",
+   "read_only": 1,
+   "default": "initial"
+  },
+  {
+   "fieldname": "active_dispatch_reason",
+   "fieldtype": "Data",
+   "label": "Active Dispatch Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completed_dispatch_generation",
+   "fieldtype": "Int",
+   "label": "Completed Dispatch Generation",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "redispatch_accepted_count",
+   "fieldtype": "Int",
+   "label": "Redispatch Accepted Count",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "redispatch_skipped_count",
+   "fieldtype": "Int",
+   "label": "Redispatch Skipped Count",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "redispatch_failure_count",
+   "fieldtype": "Int",
+   "label": "Redispatch Failure Count",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "duplicate_active_dispatch_count",
+   "fieldtype": "Int",
+   "label": "Duplicate Active Dispatch Count",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "callback_replay_count",
+   "fieldtype": "Int",
+   "label": "Callback Replay Count",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "old_generation_rejection_count",
+   "fieldtype": "Int",
+   "label": "Old Generation Rejection Count",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "token_mismatch_count",
+   "fieldtype": "Int",
+   "label": "Token Mismatch Count",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "transaction_rollback_count",
+   "fieldtype": "Int",
+   "label": "Transaction Rollback Count",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "proposed_dispatch_generation",
+   "fieldtype": "Int",
+   "label": "Proposed Dispatch Generation",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "proposed_dispatch_token",
+   "fieldtype": "Data",
+   "label": "Proposed Dispatch Token",
+   "read_only": 1
+  },
+  {
+   "fieldname": "dispatch_uncertain_count",
+   "fieldtype": "Int",
+   "label": "Dispatch Uncertain Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reconciliation_attempt_count",
+   "fieldtype": "Int",
+   "label": "Reconciliation Attempt Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "duplicate_active_observation_count",
+   "fieldtype": "Int",
+   "label": "Duplicate Active Observation Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_reconciliation_at",
+   "fieldtype": "Datetime",
+   "label": "Last Reconciliation At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_worker_heartbeat_at",
+   "fieldtype": "Datetime",
+   "label": "Last Worker Heartbeat At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "companion_work_state",
+   "fieldtype": "Data",
+   "label": "Companion Work State",
+   "read_only": 1
+  },
+  {
+   "fieldname": "companion_callback_state",
+   "fieldtype": "Data",
+   "label": "Companion Callback State",
+   "read_only": 1
+  },
+  {
+   "fieldname": "companion_authoritative_generation",
+   "fieldtype": "Int",
+   "label": "Companion Authoritative Generation",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reconciliation_max_attempts",
+   "fieldtype": "Int",
+   "label": "Reconciliation Maximum Attempts",
+   "default": "10",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_reconciliation_outcome",
+   "fieldtype": "Data",
+   "label": "Last Reconciliation Outcome",
+   "read_only": 1
+  },
+  {
+   "fieldname": "terminal_result_type",
+   "fieldtype": "Data",
+   "label": "Terminal Result Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "terminal_result_digest",
+   "fieldtype": "Data",
+   "label": "Terminal Result Digest",
+   "read_only": 1
+  },
+  {
+   "fieldname": "manual_review_reason",
+   "fieldtype": "Data",
+   "label": "Manual Review Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "work_replay_count",
+   "fieldtype": "Int",
+   "label": "Work Replay Count",
+   "default": "0",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-07-19 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Transactional Outbox",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

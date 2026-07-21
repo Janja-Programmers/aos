@@ -1,0 +1,85 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+  external_labels:
+    environment: production
+
+rule_files:
+  - /etc/prometheus/rules/aos-alerts.yml
+
+alerting:
+  alertmanagers:
+    - scheme: http
+      timeout: 10s
+      static_configs:
+        - targets:
+            - 127.0.0.1:9093
+
+scrape_configs:
+  - job_name: aos-frappe
+    metrics_path: /api/method/aos.api.metrics.prometheus
+    scheme: https
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/aos_metrics_token
+    static_configs:
+      - targets: ["api.internal.invalid"]
+        labels: {environment: production}
+
+  - job_name: aos-background-jobs
+    metrics_path: /api/method/aos.api.metrics.background_jobs
+    scheme: https
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/aos_metrics_token
+    static_configs:
+      - targets: ["api.internal.invalid"]
+        labels: {environment: production}
+
+  - job_name: aos-backup-readiness
+    metrics_path: /api/method/aos.api.metrics.backup_readiness
+    scheme: https
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/aos_metrics_token
+    static_configs:
+      - targets: ["api.internal.invalid"]
+        labels: {environment: production}
+
+  - job_name: aos-redis-exporter
+    static_configs:
+      - targets: ["127.0.0.1:9121"]
+        labels: {environment: production}
+
+  - job_name: aos-database-exporter
+    static_configs:
+      - targets: ["127.0.0.1:9104"]
+        labels: {environment: production}
+
+  - job_name: aos-minio
+    metrics_path: /minio/v2/metrics/cluster
+    static_configs:
+      - targets: ["127.0.0.1:9100"]
+        labels: {environment: production}
+
+  - job_name: aos-worker-services
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/aos_metrics_token
+    static_configs:
+      - targets: ["127.0.0.1:8100"]
+        labels: {environment: production, service: translation}
+      - targets: ["127.0.0.1:8110"]
+        labels: {environment: production, service: image_search}
+      - targets: ["127.0.0.1:8120"]
+        labels: {environment: production, service: background_removal}
+      - targets: ["127.0.0.1:8130"]
+        labels: {environment: production, service: video_processing}
+      - targets: ["127.0.0.1:8140"]
+        labels: {environment: production, service: moderation}
+      - targets: ["127.0.0.1:8150"]
+        labels: {environment: production, service: search_ranking}
+      - targets: ["127.0.0.1:8160"]
+        labels: {environment: production, service: notification_delivery}
+      - targets: ["127.0.0.1:8170"]
+        labels: {environment: production, service: analytics_pipeline}
