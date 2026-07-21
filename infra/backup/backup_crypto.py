@@ -21,10 +21,6 @@ PLACEHOLDER_RE = re.compile(
 AGE_RECIPIENT_RE = re.compile(r"^age1[0-9a-z]{30,}$")
 TRUE_VALUES = {"1", "true", "yes", "on"}
 
-DANGEROUS_SUBPROCESS_RULE = (
-	"python.lang.security.audit.dangerous-subprocess-use-audit."
-	"dangerous-subprocess-use-audit"
-)
 
 
 class BackupCryptoError(RuntimeError):
@@ -345,8 +341,8 @@ def encrypt_backup(
 			# - the target must be executable.
 			# - group/world-writable executables are rejected.
 			# - shell execution is explicitly disabled.
-			age_proc = subprocess.Popen(  # nosemgrep: tmp.aos-ci-1001.semgrep-rules.ac313c.community.python.lang.security.audit.dangerous-subprocess-use-audit
-				[
+			age_proc = subprocess.Popen(  # nosemgrep
+				[  # nosemgrep
 					age_binary,
 					"--encrypt",
 					"--recipient",
@@ -572,8 +568,8 @@ def decrypt_backup(
 			# - the target must be executable.
 			# - group/world-writable executables are rejected.
 			# - shell execution is explicitly disabled.
-			age_proc = subprocess.Popen(  # nosemgrep: tmp.aos-ci-1001.semgrep-rules.ac313c.community.python.lang.security.audit.dangerous-subprocess-use-audit
-				[
+			age_proc = subprocess.Popen(  # nosemgrep
+				[  # nosemgrep
 					age_binary,
 					"--decrypt",
 					"--identity",
