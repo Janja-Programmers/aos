@@ -4,12 +4,13 @@
 
 ### Pure validation/policy tests
 
-`aos/tests/test_media_content_validation.py` and `test_media_purpose_policies.py` run without Frappe or external services. They cover Unicode/path/null/double-extension handling, signatures, spoofing, malformed images, PDF active content, checksums, purpose inventory, private/public policy, internal-only purposes, roles, and bounded limits.
+`aos/tests/test_media_content_validation.py`, `test_media_purpose_policies.py`, and `test_media_runtime_config.py` run without Frappe or external services. They cover Unicode/path/null/double-extension handling, signatures, spoofing, malformed images, PDF active content, checksums, purpose inventory, private/public policy, internal-only purposes, roles, bounded limits, and credential-independent signed-URL expiry configuration.
 
 ```bash
 PYTHONPATH=. pytest -q \
   aos/tests/test_media_content_validation.py \
-  aos/tests/test_media_purpose_policies.py
+  aos/tests/test_media_purpose_policies.py \
+  aos/tests/test_media_runtime_config.py
 ```
 
 ### Frappe DocType tests
@@ -18,7 +19,11 @@ PYTHONPATH=. pytest -q \
 
 ### Frappe service tests
 
-`aos/tests/test_media_service.py` injects an in-memory `StorageAdapter`. It covers initiation, private staging, verified promotion, duplicate completion, missing objects, size/checksum mismatch, cross-user completion/deletion, private signed access, cross-resource attachment, attached deletion denial, retriable storage deletion, idempotent delete, and expired staging cleanup. No real MinIO is contacted.
+`aos/tests/test_media_service.py` injects an in-memory `StorageAdapter`. It covers initiation, private staging, verified promotion, duplicate completion, missing objects, size/checksum mismatch, cross-user completion/deletion, private signed access, cross-resource attachment, attached deletion denial, retriable storage deletion, idempotent delete, expired staging cleanup, and lazy storage initialization. No real MinIO is contacted.
+
+### Install and migration safety
+
+`aos/tests/test_category_media_hooks.py` verifies that fixture imports and schema synchronization remain no-ops when a category has no media relationship. Constructing `MediaService` must not read MinIO credentials; storage configuration is resolved only when an operation crosses the storage boundary. This keeps `bench install-app` and `bench migrate` independent of MinIO for metadata-only hooks while preserving explicit failures for real storage operations.
 
 ### Feature integration tests
 

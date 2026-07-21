@@ -5,6 +5,7 @@ import hashlib
 import uuid
 from dataclasses import dataclass
 from datetime import timedelta
+from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -164,6 +165,19 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
             data=payload,
             content_type=doc.content_type,
         )
+
+    def test_service_construction_does_not_require_storage_configuration(self):
+        with patch(
+            "aos.services.media.media_service.MinioStorage",
+            side_effect=RuntimeError("storage configuration should be lazy"),
+        ) as storage_factory:
+            service = MediaService()
+            storage_factory.assert_not_called()
+
+            with self.assertRaisesRegex(RuntimeError, "storage configuration should be lazy"):
+                _ = service.storage
+
+            storage_factory.assert_called_once_with()
 
     def test_init_confirm_and_duplicate_completion_are_idempotent(self):
         doc = self._init_png(checksum=hashlib.sha256(PNG_64).hexdigest())

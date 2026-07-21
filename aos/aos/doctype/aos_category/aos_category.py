@@ -91,6 +91,10 @@ class AOSCategory(NestedSet):
     def _finalize_icon_media_relationship(self) -> None:
         media_id = _normalize_media_id(getattr(self, CATEGORY_ICON_MEDIA_FIELD, None))
         previous_media_id = _clean(getattr(self, "_previous_icon_media_id", ""))
+
+        if not media_id and not previous_media_id:
+            return
+
         service = MediaService()
 
         if media_id:

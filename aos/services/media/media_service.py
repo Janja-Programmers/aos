@@ -39,7 +39,7 @@ from aos.services.storage.base import (
     StorageValidationError,
 )
 from aos.services.storage.minio_storage import MinioStorage
-from aos.utils.aos_config import get_minio_config
+from aos.utils.aos_config import get_media_download_expiry_minutes
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
 ACTIVE_READABLE_STATUSES = {"Uploaded", "Processing", "Ready", "Attached"}
@@ -80,7 +80,19 @@ class MediaService:
     """Own media authorization, lifecycle, storage identity, and serialization."""
 
     def __init__(self, storage: StorageAdapter | None = None):
-        self.storage = storage or MinioStorage()
+        self._storage = storage
+
+    @property
+    def storage(self) -> StorageAdapter:
+        """Return the configured storage adapter when an operation needs it.
+
+        Missing or invalid object-storage configuration is therefore reported at
+        the actual storage boundary, while install and migrate hooks that do not
+        perform storage I/O remain deterministic and side-effect free.
+        """
+        if self._storage is None:
+            self._storage = MinioStorage()
+        return self._storage
 
     # INIT / CONFIRM
     def init_upload(
@@ -1271,7 +1283,7 @@ class MediaService:
             raise MediaStorageError("Public media URL is unavailable") from exc
 
     def _normalize_download_expiry(self, expiry_minutes: int | None) -> int:
-        config_default = int(getattr(get_minio_config(), "download_expiry_minutes", 10) or 10)
+        config_default = get_media_download_expiry_minutes()
         try:
             minutes = int(expiry_minutes or config_default)
         except (TypeError, ValueError):

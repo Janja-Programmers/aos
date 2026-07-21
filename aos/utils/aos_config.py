@@ -197,6 +197,16 @@ class MinioConfig:
     download_expiry_minutes: int
 
 
+def get_media_download_expiry_minutes() -> int:
+    """Return the bounded private-media URL lifetime without loading credentials."""
+    return get_env_int(
+        "AOS_MEDIA_DOWNLOAD_EXPIRY_MINUTES",
+        10,
+        min_value=1,
+        max_value=60,
+    )
+
+
 def get_minio_config() -> MinioConfig:
     """Resolve MinIO config from .env/env.
 
@@ -272,12 +282,7 @@ def get_minio_config() -> MinioConfig:
             min_value=0,
             max_value=5000,
         ),
-        download_expiry_minutes=get_env_int(
-            "AOS_MEDIA_DOWNLOAD_EXPIRY_MINUTES",
-            10,
-            min_value=1,
-            max_value=60,
-        ),
+        download_expiry_minutes=get_media_download_expiry_minutes(),
     )
 
 
