@@ -80,6 +80,12 @@ class MediaService:
     """Own media authorization, lifecycle, storage identity, and serialization."""
 
     def __init__(self, storage: StorageAdapter | None = None):
+        # Storage configuration is intentionally resolved lazily. MediaService is
+        # instantiated from DocType hooks that also run during app installation,
+        # fixture import, schema synchronization, and migrations. Those code paths
+        # may only need database-level relationship validation (or may be no-ops)
+        # and must not require production MinIO credentials merely to construct the
+        # domain service.
         self._storage = storage
 
     @property

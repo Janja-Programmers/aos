@@ -92,6 +92,9 @@ class AOSCategory(NestedSet):
         media_id = _normalize_media_id(getattr(self, CATEGORY_ICON_MEDIA_FIELD, None))
         previous_media_id = _clean(getattr(self, "_previous_icon_media_id", ""))
 
+        # Fixture import, install, and migration invoke on_update for every
+        # category. Most existing categories have no centrally managed icon,
+        # so avoid constructing or calling the media subsystem for a no-op.
         if not media_id and not previous_media_id:
             return
 

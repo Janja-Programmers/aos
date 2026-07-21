@@ -13,6 +13,8 @@ REQUIRED_FOUNDATION_TESTS = {
 	"test_migration_preflight.py",
 	"test_outbox_final_lifecycle_patch.py",
 }
+FORBIDDEN_FRAPPE_TEST_IMPORTS = {"pytest"}
+
 REQUIRED_BEHAVIORAL_TESTS = {
 	"test_outbox_recovery_dispatch_all_services.py": {
 		"test_callback_timeout_redispatches_all_five_services_and_replay_completes",
@@ -45,13 +47,32 @@ REQUIRED_BEHAVIORAL_TESTS = {
 }
 
 
+def _parse(path: Path) -> ast.Module:
+	return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+
+
 def _test_names(path: Path) -> set[str]:
-	tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+	tree = _parse(path)
 	return {
 		node.name
 		for node in ast.walk(tree)
 		if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
 	}
+
+
+def _forbidden_imports(path: Path) -> set[str]:
+	forbidden: set[str] = set()
+	for node in ast.walk(_parse(path)):
+		if isinstance(node, ast.Import):
+			for alias in node.names:
+				root = alias.name.split(".", maxsplit=1)[0]
+				if root in FORBIDDEN_FRAPPE_TEST_IMPORTS:
+					forbidden.add(root)
+		elif isinstance(node, ast.ImportFrom) and node.module:
+			root = node.module.split(".", maxsplit=1)[0]
+			if root in FORBIDDEN_FRAPPE_TEST_IMPORTS:
+				forbidden.add(root)
+	return forbidden
 
 
 def count_tests(root: Path) -> tuple[int, int]:
@@ -69,7 +90,18 @@ def main() -> int:
 	repository = Path(__file__).resolve().parents[1]
 	test_root = repository / "aos"
 	files, tests = count_tests(test_root)
-	paths = {path.name: path for path in test_root.rglob("test_*.py")}
+	test_paths = sorted(test_root.rglob("test_*.py"))
+	paths = {path.name: path for path in test_paths}
+	unsupported = {
+		str(path.relative_to(repository)): sorted(imports)
+		for path in test_paths
+		if (imports := _forbidden_imports(path))
+	}
+	if unsupported:
+		raise SystemExit(
+			"Frappe-discovered tests must not require pytest-only imports: "
+			+ "; ".join(f"{path}: {imports}" for path, imports in unsupported.items())
+		)
 	missing = sorted(REQUIRED_FOUNDATION_TESTS - paths.keys())
 	if missing:
 		raise SystemExit(f"Required production-foundation Frappe tests are missing: {missing}")
