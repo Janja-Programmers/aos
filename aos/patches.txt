@@ -8,6 +8,7 @@ aos.patches.v1_0.add_auth_indexes
 aos.patches.v1_0.add_unique_constraints
 aos.patches.v1_0.add_seller_location_indexes
 aos.patches.v1_0.add_localization_indexes
+aos.patches.v1_0.harden_localization_indexes
 aos.patches.v1_0.add_outbox_indexes
 aos.patches.v1_0.backfill_transactional_outbox
 aos.patches.v1_0.normalize_outbox_recovery_state

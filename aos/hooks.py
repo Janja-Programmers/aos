@@ -140,6 +140,25 @@ app_license = "mit"
 # 	}
 # }
 
+doc_events = {
+	"Country": {
+		"after_insert": "aos.services.localization_service.localization_master_changed",
+		"on_update": "aos.services.localization_service.localization_master_changed",
+		"on_trash": "aos.services.localization_service.localization_master_changed",
+	},
+	"Currency": {
+		"after_insert": "aos.services.localization_service.localization_master_changed",
+		"on_update": "aos.services.localization_service.localization_master_changed",
+		"on_trash": "aos.services.localization_service.localization_master_changed",
+	},
+	"Language": {
+		"after_insert": "aos.services.localization_service.localization_master_changed",
+		"on_update": "aos.services.localization_service.localization_master_changed",
+		"on_trash": "aos.services.localization_service.localization_master_changed",
+	},
+}
+
+
 # Scheduled Tasks
 # ---------------
 

@@ -1,48 +1,149 @@
 # Localization API v1
 
-AOS treats country, currency, and language as independent preferences. Country scopes marketplace content and valid ad locations; currency controls posting and display conversion; language controls localized UI/content. No preference implies another.
+AOS treats country, currency, and language as independent values. Country scopes marketplace content and valid ad locations, currency controls posting/display conversion, and language controls localized UI/content. One preference never silently changes another.
+
+## Ownership boundary
+
+Localization owns public master data and effective request-context resolution. Persisted authenticated-user settings remain account resources under `aos.api.v1.accounts`.
+
+- Localization: countries, currencies, languages, locations, defaults, guest/request context.
+- Accounts: read and update the current user's saved country, currency, and language.
+- Auth: initialize or repair the same saved preference during registration, login, and `/me` bootstrap.
 
 ## Locale bundle
 
 `GET /api/method/aos.api.v1.localization.get_locale_bundle`
 
-Returns every Frappe `Country`, only enabled Frappe `Currency` and `Language` rows, and validated defaults from `AOS Settings`. Country flags are generated from the two-letter country code. Language `flag` is returned when that core field exists. Invalid or missing defaults produce `CONFIG_ERROR`.
+Returns every Frappe `Country`, only enabled Frappe `Currency` and `Language` rows, and validated defaults from `AOS Settings`.
 
-Each country is `{id,name,code,flag}`; each currency is `{id,code,symbol,name,enabled,is_default}`; each language is `{id,code,name,flag,enabled,is_default}`. `defaults` contains canonical country, currency, and language IDs.
+The endpoint uses a bounded five-minute server cache and bulk master-data queries. Cache entries are invalidated when `Country`, `Currency`, `Language`, or `AOS Settings` changes.
 
-## Resolve preference context
+Response data:
+
+```json
+{
+  "schema_version": "1.1",
+  "cache_ttl_seconds": 300,
+  "countries": [
+    {"id": "Kenya", "name": "Kenya", "code": "KE", "flag": "🇰🇪"}
+  ],
+  "currencies": [
+    {
+      "id": "USD",
+      "code": "USD",
+      "symbol": "$",
+      "name": "US Dollar",
+      "enabled": true,
+      "is_default": true
+    }
+  ],
+  "languages": [
+    {
+      "id": "en",
+      "code": "en",
+      "name": "English",
+      "flag": null,
+      "enabled": true,
+      "is_default": true
+    }
+  ],
+  "defaults": {
+    "country": "Kenya",
+    "currency": "USD",
+    "language": "en"
+  }
+}
+```
+
+Invalid, disabled, or missing defaults fail closed with `CONFIG_ERROR`; an invalid configuration is never cached as a valid bundle.
+
+## Resolve locale context
+
+Preferred endpoint:
+
+`GET|POST /api/method/aos.api.v1.localization.resolve_locale_context`
+
+Compatibility endpoint:
 
 `GET|POST /api/method/aos.api.v1.localization.resolve_preference_context`
 
-Authenticated requests always use `AOS User Preference`. Guest values resolve independently: explicit request value, country proxy header (`X-Country-Code`/`CF-IPCountry`) or browser `Accept-Language` where applicable, then validated AOS defaults. `Accept-Language` is quality ordered and tries both the exact tag and its primary code (`en-US`, then `en`). Disabled and unknown languages are skipped. Invalid explicit inputs are rejected with `INVALID_COUNTRY`, `INVALID_CURRENCY`, `DISABLED_CURRENCY`, `INVALID_LANGUAGE`, or `DISABLED_LANGUAGE`.
+Both call the same implementation.
 
-Registration, Google signup, Apple signup, and missing-preference repair use the same guest resolver for missing fields. Explicit fields remain authoritative; headers fill only missing fields; AOS Settings is the final fallback.
+Authenticated requests always use the stored `AOS User Preference`. Request parameters cannot override authenticated market state. Guest values resolve independently in this order:
 
-The response contains rich `country`, `currency`, and `language` objects plus per-field `sources`: `request`, `geoip`, `accept_language`, `default`, or `user_preference`.
+1. Explicit request value.
+2. `CF-IPCountry`, then `X-Country-Code`, for a missing country.
+3. `Accept-Language`, for a missing language.
+4. Validated `AOS Settings` defaults.
+
+Geo-IP headers are personalization hints only. They never authorize private data access.
+
+`Accept-Language` processing is bounded to 512 characters and 20 entries, validates quality values in the RFC range `0..1`, canonicalizes tags, and tries exact then primary tags (`en-US`, then `en`). Unknown or disabled inferred languages are skipped. Invalid explicit inputs are rejected.
+
+Response data contains rich `country`, `currency`, and `language` objects plus per-field `sources`:
+
+- `request`
+- `geoip`
+- `accept_language`
+- `default`
+- `user_preference`
 
 ## Locations
 
 `GET|POST /api/method/aos.api.v1.localization.get_locations`
 
-Parameters: `country` (name or code; optional only when preference context can resolve it), `q`/`search`, and `limit` (default 20, maximum 100). The response is `{country, locations}`. Only active rows in that country are returned, ordered by sort order, location, then ID. A valid country with no configured locations returns an empty list.
+Parameters:
 
-`AOS Location` is unique by `(country, location)`. The same label may exist in different countries. Ad creation and DocType validation reject inactive, missing, or cross-country locations.
+| Parameter | Required | Rules |
+|---|---:|---|
+| `country` | Conditional | Country name or two-letter code. Authenticated users always use their stored country. |
+| `q` / `search` | No | Maximum 80 characters. |
+| `limit` | No | Default 20; range 1–100. |
+| `offset` / `start` | No | Default 0; range 0–10,000. |
 
-## Accounts and auth
+Only active locations are returned. Ordering is stable: `sort_order`, `location`, then document ID. The query is backed by the production composite index `(country, is_active, sort_order, location)`.
 
-`get_my_preference`, `update_my_preference`, auth responses, and `/me` use the same rich serializer. Updates may contain any non-empty subset of `country`, `currency`, and `language`. Currency and language remain editable when country is market-locked. Country changes return `MARKET_LOCKED` after seller ads exist.
+Response data:
 
-Registration and new Google/Apple signup accept independent `country`, `currency`, and `language` inputs. Missing inputs use validated AOS defaults. Login and `/me` repair missing preference rows using the same rules. `/me` never returns a session ID.
+```json
+{
+  "schema_version": "1.1",
+  "country": {"id": "Kenya", "name": "Kenya", "code": "KE", "flag": "🇰🇪"},
+  "locations": [
+    {"id": "abc123", "name": "Nairobi", "country": "Kenya", "sort_order": 1}
+  ],
+  "pagination": {
+    "limit": 20,
+    "offset": 0,
+    "returned": 1,
+    "has_more": false,
+    "next_offset": null
+  }
+}
+```
 
-## Price conversion fallback
+Stable input failures:
 
-Ad list/detail/wishlist price payloads include `price_conversion` with `source_currency`, `target_currency`, `requested_currency`, `display_currency`, `available`, `converted`, `rate`, and `reason`. Same-currency prices use rate `1` without conversion. Cross-currency conversion occurs only when both positive rate rows exist. If either rate is unavailable, AOS returns the original numeric price in the original currency, sets `available=false`, and returns `reason=MISSING_EXCHANGE_RATE`; it never relabels or partially converts the original amount.
+- `INVALID_COUNTRY`
+- `INVALID_LIMIT`
+- `INVALID_OFFSET`
+- `INVALID_SEARCH_QUERY`
+- `RATE_LIMIT`
+- `CONFIG_ERROR`
 
-## Mobile migration
+## Account preferences
 
-- Replace hardcoded Kenya/currency/language lists with `get_locale_bundle`.
-- Persist and send canonical `id` values, not display names or symbols.
-- Expect rich objects in `/me` and account preference responses.
-- Read `data.locations`; the locations response is no longer a bare array.
-- Handle partial preference updates and the stable errors above.
-- Use `price_conversion.display_currency`; show fallback UX when `available=false`.
+`get_my_preference` and `update_my_preference` remain under `aos.api.v1.accounts`. They use the same validators and serializers as Localization.
+
+Updates may contain any non-empty subset of `country`, `currency`, and `language`. Omitted values are preserved, and row-level locking prevents concurrent partial updates from losing another field change. Currency and language remain editable when country is market-locked. Country changes return `MARKET_LOCKED` once seller ad activity exists.
+
+All user-preference readers use one five-minute cache. Direct DocType writes, account updates, inserts, and deletes invalidate that cache.
+
+## Mobile integration
+
+- Load selectable values from `get_locale_bundle`; do not hardcode countries, currencies, or languages.
+- Persist and send canonical `id` values, not labels, symbols, or emoji flags.
+- Prefer `resolve_locale_context`; retain compatibility with `resolve_preference_context` during migration.
+- Paginate locations using `pagination.next_offset` until `has_more` is false.
+- Read account preference state from `/me` or account endpoints, not the guest resolver.
+- Branch on stable `error` values rather than message text.

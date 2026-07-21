@@ -1,5 +1,10 @@
-# Rate limits for localization endpoints
+"""Public localization endpoint limits and payload bounds."""
 
-# Generous but protective defaults
 LOCALE_BUNDLE_LIMIT_PER_MIN_PER_IP = 120
+RESOLVE_LOCALE_CONTEXT_LIMIT_PER_MIN_PER_IP = 120
 GET_LOCATIONS_LIMIT_PER_MINUTE_PER_IP = 240
+
+LOCATIONS_DEFAULT_LIMIT = 20
+LOCATIONS_MAX_LIMIT = 100
+LOCATIONS_MAX_OFFSET = 10_000
+LOCATIONS_SEARCH_MAX_LENGTH = 80

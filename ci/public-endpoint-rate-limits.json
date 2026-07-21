@@ -612,6 +612,12 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
+    "endpoint": "aos.api.v1.localization.__init__.resolve_locale_context",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Compatibility alias uses the same bounded application rate limit as resolve_preference_context and remains covered by the Nginx guest baseline."
+  },
+  {
     "endpoint": "aos.api.v1.localization.__init__.resolve_preference_context",
     "access": "guest",
     "policy": "baseline_guest",
