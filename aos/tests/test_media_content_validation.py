@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import base64
+from pathlib import Path
 from unittest import TestCase
 
 from aos.services.media.content_validation import (
@@ -14,9 +14,7 @@ from aos.services.media.content_validation import (
 	validate_magic_type,
 )
 
-PNG_64 = base64.b64decode(
-	"iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAZElEQVR4nO3PsQ3AIADAMGBkZub/M3sEg1UpviCZ+9zxZ0sHvGpAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtA+wCQDQC85SihYwAAAABJRU5ErkJggg=="
-)
+PNG_64 = (Path(__file__).parent / "fixtures" / "media" / "valid_64x64.png").read_bytes()
 
 
 class TestMediaContentValidation(TestCase):
