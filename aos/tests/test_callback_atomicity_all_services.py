@@ -28,7 +28,7 @@ from aos.services.transactional_outbox import (
 	_claim_one,
 	authorize_terminal_work_replay,
 )
-from aos.tests.outbox_fixtures import create_durable_job, create_outbox
+from aos.tests.outbox_fixtures import cleanup_committed_records, create_durable_job, create_outbox
 
 
 @dataclass(frozen=True)
@@ -240,19 +240,17 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 
 	def _run_isolated(self, operation: Callable[[], None]) -> None:
 		self._scenario_cleanup_records: list[tuple[str, str]] = []
+		previous_user = frappe.session.user or "Guest"
 		try:
 			operation()
 		finally:
-			frappe.set_user("Administrator")
-			seen: set[tuple[str, str]] = set()
-			for doctype, name in self._scenario_cleanup_records:
-				key = (doctype, name)
-				if key in seen:
-					continue
-				seen.add(key)
-				frappe.db.sql(f"DELETE FROM `tab{doctype}` WHERE name = %s", (name,))
-			frappe.db.commit()
-			self._scenario_cleanup_records = []
+			try:
+				frappe.set_user("Administrator")
+				records = list(self._scenario_cleanup_records)
+				self._scenario_cleanup_records = []
+				cleanup_committed_records(records)
+			finally:
+				frappe.set_user(previous_user)
 
 	def test_valid_success_and_duplicate_success_are_atomic_and_idempotent(self):
 		with patch.dict(os.environ, _ENV, clear=False):

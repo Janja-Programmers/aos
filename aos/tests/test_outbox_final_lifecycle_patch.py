@@ -14,7 +14,7 @@ from aos.services.transactional_outbox import (
 	OutboxConflictError,
 	authorize_terminal_work_replay,
 )
-from aos.tests.outbox_fixtures import create_durable_job, create_outbox
+from aos.tests.outbox_fixtures import cleanup_committed_records, create_durable_job, create_outbox
 
 
 class _AcceptedResponse:
@@ -159,6 +159,8 @@ class TestTerminalWorkReplay(FrappeTestCase):
 	def test_system_manager_work_replay_reopens_same_job_and_outbox(self):
 		fixture = None
 		outbox = None
+		previous_user = frappe.session.user or "Guest"
+		frappe.set_user("Administrator")
 		try:
 			fixture = create_durable_job("analytics_ingestion", status="Failed")
 			with patch("aos.services.transactional_outbox.register_after_commit_publish"):
@@ -195,9 +197,13 @@ class TestTerminalWorkReplay(FrappeTestCase):
 			self.assertEqual(fixture.job.name, job_name)
 			self.assertEqual(fixture.job.status, "Queued")
 		finally:
-			if outbox is not None:
-				frappe.db.delete(OUTBOX_DOCTYPE, {"name": outbox.name})
-			if fixture is not None:
-				for doctype, name in fixture.cleanup_records:
-					frappe.db.delete(doctype, {"name": name})
-			frappe.db.commit()
+			try:
+				frappe.set_user("Administrator")
+				records: list[tuple[str, str]] = []
+				if outbox is not None:
+					records.append((OUTBOX_DOCTYPE, outbox.name))
+				if fixture is not None:
+					records.extend(fixture.cleanup_records)
+				cleanup_committed_records(records)
+			finally:
+				frappe.set_user(previous_user)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -20,6 +21,38 @@ class DurableJobFixture:
 	domain_doctype: str | None = None
 	domain_name: str | None = None
 	cleanup_records: tuple[tuple[str, str], ...] = ()
+
+
+def cleanup_committed_records(
+	records: list[tuple[str, str]] | tuple[tuple[str, str], ...],
+	*,
+	max_attempts: int = 5,
+	base_delay_seconds: float = 0.1,
+) -> None:
+	"""Delete committed test fixtures with bounded deadlock retries."""
+	unique_records: list[tuple[str, str]] = []
+	seen: set[tuple[str, str]] = set()
+	for record in records:
+		if record in seen:
+			continue
+		seen.add(record)
+		unique_records.append(record)
+
+	attempts = max(1, int(max_attempts or 1))
+	for attempt in range(attempts):
+		try:
+			for doctype, name in unique_records:
+				frappe.db.delete(doctype, {"name": name})
+			frappe.db.commit()
+			return
+		except frappe.QueryDeadlockError:
+			frappe.db.rollback()
+			if attempt == attempts - 1:
+				raise
+			time.sleep(base_delay_seconds * (2**attempt))
+		except Exception:
+			frappe.db.rollback()
+			raise
 
 
 def _insert(doc: dict[str, Any], *, ignore_links: bool = False) -> Any:
