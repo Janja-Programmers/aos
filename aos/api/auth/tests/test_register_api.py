@@ -13,6 +13,8 @@ class TestAuthRegisterAPI(AOSFeatureTestMixin, FrappeTestCase):
     def setUp(self):
         self.prefix = self.make_prefix("auth-register")
         self.created_users: list[str] = []
+        frappe.set_user("Administrator")
+        self.configure_test_localization_defaults()
         frappe.set_user("Guest")
 
     def tearDown(self):
@@ -96,7 +98,10 @@ class TestAuthRegisterAPI(AOSFeatureTestMixin, FrappeTestCase):
         if not language or not language.language_code:
             self.skipTest("An enabled language code is required")
         with (
-            patch("aos.api.localization.context._header", side_effect=lambda name: f"{language.language_code}-XX,{language.language_code};q=0.9" if name == "Accept-Language" else ""),
+            patch(
+                "aos.api.auth.account_helpers.accept_language_hint",
+                return_value=f"{language.language_code}-XX,{language.language_code};q=0.9",
+            ),
             patch("aos.api.auth.register.rate_limit", return_value=None),
             patch("aos.api.auth.register.generate_otp", return_value="123456"),
             patch("aos.api.auth.register.send_otp_email"),
@@ -113,7 +118,7 @@ class TestAuthRegisterAPI(AOSFeatureTestMixin, FrappeTestCase):
         if not country:
             self.skipTest("A coded country is required")
         with (
-            patch("aos.api.localization.context._header", side_effect=lambda name: country.code if name in {"X-Country-Code", "CF-IPCountry"} else ""),
+            patch("aos.api.auth.account_helpers.geo_country_hint", return_value=country.code),
             patch("aos.api.auth.register.rate_limit", return_value=None),
             patch("aos.api.auth.register.generate_otp", return_value="123456"),
             patch("aos.api.auth.register.send_otp_email"),

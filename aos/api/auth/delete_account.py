@@ -11,6 +11,7 @@ import frappe
 from aos.api.shared.account_status import can_restore_account, get_account_state
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.responses import fail, ok
 from aos.services.accounts.constants import ACCOUNT_RESTORE_WINDOW_DAYS
 from aos.services.accounts.errors import AccountError
@@ -76,7 +77,12 @@ def delete_account_impl(**kwargs):
         )
     except AccountError as exc:
         frappe.db.rollback()
-        return fail(str(exc), error=exc.code, http_status=exc.http_status)
+        return safe_fail_from_exception(
+            exc,
+            fallback="Account operation could not be completed.",
+            error=exc.code,
+            http_status=exc.http_status,
+        )
     except Exception:
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "AOS Delete Account Failed")
@@ -146,7 +152,12 @@ def restore_account_impl(**kwargs):
         return ok("Account restored successfully. Please login.", data={"can_login": True, "restore": result.get("features", {}), **result})
     except AccountError as exc:
         frappe.db.rollback()
-        return fail(str(exc), error=exc.code, http_status=exc.http_status)
+        return safe_fail_from_exception(
+            exc,
+            fallback="Account operation could not be completed.",
+            error=exc.code,
+            http_status=exc.http_status,
+        )
     except Exception:
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "AOS Restore Account Failed")

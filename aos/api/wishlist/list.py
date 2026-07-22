@@ -61,6 +61,14 @@ def list_wishlist_impl(**kwargs):
     if err:
         return err
 
+    sort = str(kwargs.get("sort") or "recent").strip() or "recent"
+    if sort not in ALLOWED_SORTS:
+        return fail(
+            "Invalid sort.",
+            error="VALIDATION_ERROR",
+            data={"allowed": sorted(ALLOWED_SORTS)},
+        )
+
     # Market Context
     country, display_currency, error = resolve_market_context(
         country=kwargs.get("country"),
@@ -79,8 +87,6 @@ def list_wishlist_impl(**kwargs):
     seller = str(kwargs.get("seller") or "").strip()
     q = str(kwargs.get("q") or "").strip()
 
-    sort = str(kwargs.get("sort") or "recent").strip() or "recent"
-
     price_type = str(kwargs.get("price_type") or "").strip()
     promotion_type = str(kwargs.get("promotion_type") or "").strip()
 
@@ -92,13 +98,6 @@ def list_wishlist_impl(**kwargs):
     # Validation
     if seller and not frappe.db.exists("AOS Seller", seller):
         return fail("Seller not found.", error="VALIDATION_ERROR")
-
-    if sort not in ALLOWED_SORTS:
-        return fail(
-            "Invalid sort.",
-            error="VALIDATION_ERROR",
-            data={"allowed": sorted(ALLOWED_SORTS)},
-        )
 
     if price_type and price_type not in ALLOWED_PRICE_TYPES:
         return fail(

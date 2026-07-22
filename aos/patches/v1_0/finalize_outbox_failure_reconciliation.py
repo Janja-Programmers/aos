@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import frappe
-from frappe.utils import now_datetime
+from frappe.utils import get_datetime, now_datetime
 
 OUTBOX_DOCTYPE = "AOS Transactional Outbox"
 
@@ -15,6 +15,7 @@ def execute(batch_size: int = 500) -> dict[str, int]:
     size = max(50, min(int(batch_size or 500), 2000))
     cursor = ""
     counters = {"scanned": 0, "normalized": 0}
+    normalization_started_at = now_datetime()
     while True:
         rows = frappe.db.sql(
             f"""
@@ -35,6 +36,18 @@ def execute(batch_size: int = 500) -> dict[str, int]:
             break
         for row in rows:
             counters["scanned"] += 1
+            lease_expires_at = row.get("lease_expires_at")
+            has_live_lease = bool(
+                row.get("claim_token")
+                and lease_expires_at
+                and get_datetime(lease_expires_at) >= normalization_started_at
+            )
+            if has_live_lease:
+                # Never rewrite a row currently owned by a publisher. The
+                # active lease holder remains authoritative; normal stale-lease
+                # recovery can handle the row after the lease expires.
+                continue
+
             updates: dict[str, object] = {}
             status = str(row.get("status") or "")
             callback_status = str(row.get("callback_status") or "").lower()

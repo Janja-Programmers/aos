@@ -42,6 +42,44 @@ def _clean(value: Any, limit: int = 1000) -> str:
 	return str(value or "").strip()[:limit]
 
 
+def _row_value(row: Any, fieldname: str, default: Any = None) -> Any:
+	"""Read Frappe dict rows and simple object test doubles uniformly."""
+	if isinstance(row, dict):
+		return row.get(fieldname, default)
+	getter = getattr(row, "get", None)
+	if callable(getter):
+		try:
+			return getter(fieldname, default)
+		except TypeError:
+			value = getter(fieldname)
+			return default if value is None else value
+	return getattr(row, fieldname, default)
+
+
+def _clear_stale_aggregate_link(outbox: Any) -> None:
+	"""Remove aggregate metadata that points at a deleted historical record.
+
+	The durable job correlation remains authoritative. Aggregate links are
+	optional observability metadata and must not make a legacy migration fail
+	when the original domain object was already deleted.
+	"""
+	doctype = getattr(outbox, "aggregate_doctype", None)
+	name = getattr(outbox, "aggregate_name", None)
+	if doctype in (None, "") and name in (None, ""):
+		return
+	if not isinstance(doctype, str) or not isinstance(name, str):
+		return
+	doctype = _clean(doctype, 140)
+	name = _clean(name, 140)
+	if not doctype or not name:
+		outbox.aggregate_doctype = None
+		outbox.aggregate_name = None
+		return
+	if not frappe.db.exists("DocType", doctype) or not frappe.db.exists(doctype, name):
+		outbox.aggregate_doctype = None
+		outbox.aggregate_name = None
+
+
 def _payload_malformed(value: Any) -> bool:
 	text = _clean(value, 100000)
 	if not text:
@@ -61,15 +99,19 @@ def _should_backfill(status: str, attempts: int, maximum: int, spec: LegacyJobSp
 	return status in {"Queued", "Dispatching", "Processing", "Failed"}
 
 
-def _backfill_job(spec: LegacyJobSpec, row: dict[str, Any], counters: dict[str, int]) -> None:
-	status = _clean(row.get("status"), 80)
-	attempts = max(0, int(row.get("attempt_count") or 0))
-	maximum = max(1, int(row.get("max_attempts") or 3))
+def _backfill_job(spec: LegacyJobSpec, row: Any, counters: dict[str, int]) -> None:
+	status = _clean(_row_value(row, "status"), 80)
+	attempts = max(0, int(_row_value(row, "attempt_count") or 0))
+	maximum = max(1, int(_row_value(row, "max_attempts") or 3))
 	if not _should_backfill(status, attempts, maximum, spec):
 		counters["skipped_terminal"] += 1
 		return
 
-	job = frappe.get_doc(spec.doctype, row["name"])
+	job = frappe.get_doc(spec.doctype, _row_value(row, "name"))
+	counters["malformed_payload"] += int(
+		_payload_malformed(getattr(job, "request_payload", None))
+	)
+
 	generated_key = stable_idempotency_key(spec.service_type, spec.doctype, job.name)
 	current_key = _clean(getattr(job, "idempotency_key", None), 200)
 	legacy_service_job_id = (
@@ -90,6 +132,13 @@ def _backfill_job(spec: LegacyJobSpec, row: dict[str, Any], counters: dict[str, 
 		{"job_doctype": spec.doctype, "job_name": job.name},
 		"name",
 	)
+	if existing:
+		# The migration is a creator/backfill, not a live-state reconciler.
+		# Once a durable outbox exists, its status, attempts, lease, and error
+		# history are authoritative and must never be reset by a patch rerun.
+		counters["existing"] += 1
+		return
+
 	outbox = ensure_outbox_for_job(
 		service_type=spec.service_type,
 		job=job,
@@ -117,11 +166,10 @@ def _backfill_job(spec: LegacyJobSpec, row: dict[str, Any], counters: dict[str, 
 	else:
 		outbox.status = "Queued"
 		outbox.next_attempt_at = now_datetime()
+	_clear_stale_aggregate_link(outbox)
 	outbox.save(ignore_permissions=True)
 
-	counters["existing"] += int(bool(existing))
-	counters["created"] += int(not existing)
-	counters["malformed_payload"] += int(_payload_malformed(getattr(job, "request_payload", None)))
+	counters["created"] += 1
 
 
 def execute(batch_size: int = BATCH_SIZE) -> dict[str, int]:
@@ -166,7 +214,7 @@ def execute(batch_size: int = BATCH_SIZE) -> dict[str, int]:
 						f"Transactional outbox backfill failed for {spec.doctype}",
 					)
 					raise
-			cursor = rows[-1]["name"]
+			cursor = _clean(_row_value(rows[-1], "name"), 140)
 	frappe.logger("aos.outbox", allow_site=True).info(
 		"Transactional outbox legacy backfill complete: scanned=%s created=%s existing=%s skipped=%s malformed_payload=%s missing_table=%s",
 		counters["scanned"],

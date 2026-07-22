@@ -12,6 +12,21 @@ LOCATION_MAX_LENGTH = 140
 
 
 class AOSLocation(Document):
+	def _validate_links(self):
+		"""Canonicalize a country code before Frappe validates Link fields.
+
+		``Document.insert`` validates Link fields before the controller's normal
+		``validate`` hook.  Without this override, an accepted ISO country code
+		(e.g. ``ke``) is rejected as a missing ``Country`` document before the
+		localization service can resolve it to the canonical Country name.
+		"""
+
+		country, error = validate_country(self.country)
+		if error:
+			frappe.throw("Invalid country.", frappe.ValidationError)
+		self.country = country
+		super()._validate_links()
+
 	def validate(self):
 		country, error = validate_country(self.country)
 		if error:

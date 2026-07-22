@@ -9,6 +9,7 @@ import frappe
 from aos.api.auth.session_control import SessionRevocationError
 
 from aos.api.shared.auth import require_login
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
 from aos.api.shared.responses import fail, ok
 from aos.services.accounts.errors import AccountError
@@ -46,7 +47,12 @@ def deactivate_account_impl(**kwargs):
         return ok("Account deactivated.", data=data)
     except AccountError as exc:
         frappe.db.rollback()
-        return fail(str(exc), error=exc.code, http_status=exc.http_status)
+        return safe_fail_from_exception(
+            exc,
+            fallback="Account could not be deactivated.",
+            error=exc.code,
+            http_status=exc.http_status,
+        )
     except SessionRevocationError:
         frappe.db.rollback()
         return fail("Account access could not be revoked.", error="INTERNAL_ERROR")

@@ -73,35 +73,144 @@ class AOSFeatureTestMixin:
         ).insert(ignore_permissions=True)
 
     def preference_defaults(self) -> tuple[str, str, str]:
-        country = (
-            frappe.db.get_single_value("AOS Settings", "default_country")
-            or self.first_existing_value("Country", ["Kenya", "United States"])
-            or frappe.db.get_value("Country", {}, "name")
-        )
-        language = (
-            frappe.db.get_single_value("AOS Settings", "default_language")
-            or self.first_existing_value("Language", ["en", "English"])
-            or frappe.db.get_value("Language", {}, "name")
-        )
-        currency = (
-            frappe.db.get_single_value("AOS Settings", "default_currency")
-            or self.first_existing_value("Currency", ["KES", "USD"])
-            or frappe.db.get_value("Currency", {}, "name")
+        from aos.services.localization_service import (
+            validate_country,
+            validate_currency,
+            validate_language,
         )
 
-        missing = [
-            label
-            for label, value in (
-                ("country", country),
-                ("language", language),
-                ("currency", currency),
+        country = self._resolve_test_master(
+            doctype="Country",
+            configured=frappe.db.get_single_value("AOS Settings", "default_country"),
+            preferred=["Kenya", "United States"],
+            validator=validate_country,
+        )
+        language = self._resolve_test_master(
+            doctype="Language",
+            configured=frappe.db.get_single_value("AOS Settings", "default_language"),
+            preferred=["en", "English"],
+            validator=validate_language,
+        )
+        currency = self._resolve_test_master(
+            doctype="Currency",
+            configured=frappe.db.get_single_value("AOS Settings", "default_currency"),
+            preferred=["KES", "USD"],
+            validator=validate_currency,
+        )
+        return country, language, currency
+
+    def configure_test_localization_defaults(self) -> tuple[str, str, str]:
+        """Install valid localization defaults for one test and restore later.
+
+        Fresh Frappe sites intentionally do not infer marketplace defaults. Tests
+        that exercise bootstrap and locale-bundle behavior must therefore create
+        an explicit, reversible fixture instead of depending on a developer's
+        site configuration or on whether a core Currency happens to be enabled.
+        """
+
+        if not hasattr(self, "_localization_settings_originals"):
+            fields = ["default_country", "default_language", "default_currency"]
+            if frappe.get_meta("AOS Settings").has_field("base_currency"):
+                fields.append("base_currency")
+            self._localization_settings_originals = {
+                fieldname: frappe.db.get_single_value("AOS Settings", fieldname)
+                for fieldname in fields
+            }
+
+        try:
+            country, language, currency = self.preference_defaults()
+            settings = frappe.get_single("AOS Settings")
+            settings.reload()
+            settings.default_country = country
+            settings.default_language = language
+            settings.default_currency = currency
+            if settings.meta.has_field("base_currency"):
+                settings.base_currency = currency
+            settings.save(ignore_permissions=True)
+            self._clear_localization_test_caches()
+            return country, language, currency
+        except Exception:
+            self.restore_localization_test_state()
+            raise
+
+    def restore_localization_test_state(self) -> None:
+        originals = getattr(self, "_localization_settings_originals", None)
+        if originals:
+            for fieldname, value in originals.items():
+                frappe.db.set_single_value("AOS Settings", fieldname, value)
+            self._localization_settings_originals = None
+
+        master_originals = getattr(self, "_localization_master_originals", None) or {}
+        for (doctype, name), enabled in master_originals.items():
+            if frappe.db.exists(doctype, name):
+                frappe.db.set_value(
+                    doctype,
+                    name,
+                    "enabled",
+                    enabled,
+                    update_modified=False,
+                )
+        self._localization_master_originals = {}
+        self._clear_localization_test_caches()
+
+    def _resolve_test_master(self, *, doctype: str, configured, preferred: list[str], validator) -> str:
+        candidates: list[str] = []
+        for value in [configured, *preferred]:
+            text = str(value or "").strip()
+            if text and text not in candidates:
+                candidates.append(text)
+
+        enabled_filter = {"enabled": 1} if frappe.get_meta(doctype).has_field("enabled") else {}
+        for value in frappe.get_all(doctype, filters=enabled_filter, pluck="name", limit=0):
+            text = str(value or "").strip()
+            if text and text not in candidates:
+                candidates.append(text)
+
+        for value in candidates:
+            resolved, error = validator(value)
+            if resolved and not error:
+                return str(resolved)
+
+        # A freshly created test site can have all core currencies/languages
+        # disabled. Enable one existing row only for the duration of this test.
+        if frappe.get_meta(doctype).has_field("enabled"):
+            fallback = self.first_existing_value(doctype, preferred) or frappe.db.get_value(
+                doctype,
+                {},
+                "name",
             )
-            if not value
-        ]
-        if missing:
-            self.fail(f"Missing preference fixture values: {', '.join(missing)}")
+            if fallback:
+                key = (doctype, str(fallback))
+                originals = getattr(self, "_localization_master_originals", None)
+                if originals is None:
+                    originals = {}
+                    self._localization_master_originals = originals
+                originals.setdefault(
+                    key,
+                    int(frappe.db.get_value(doctype, fallback, "enabled") or 0),
+                )
+                frappe.db.set_value(
+                    doctype,
+                    fallback,
+                    "enabled",
+                    1,
+                    update_modified=False,
+                )
+                self._clear_localization_test_caches()
+                resolved, error = validator(fallback)
+                if resolved and not error:
+                    return str(resolved)
 
-        return str(country), str(language), str(currency)
+        self.fail(f"No valid enabled {doctype} fixture is available")
+        raise AssertionError("unreachable")
+
+    @staticmethod
+    def _clear_localization_test_caches() -> None:
+        from aos.services.localization_service import clear_localization_cache
+        from aos.utils.aos_settings import clear_aos_settings_cache
+
+        clear_aos_settings_cache()
+        clear_localization_cache()
 
     @staticmethod
     def first_existing_value(doctype: str, names: list[str]) -> str | None:
@@ -386,4 +495,5 @@ class AOSFeatureTestMixin:
             if frappe.db.exists("User", user):
                 frappe.delete_doc("User", user, ignore_permissions=True, force=True)
 
+        self.restore_localization_test_state()
         frappe.db.commit()

@@ -20,6 +20,7 @@ class TestAuthSocialLoginAPI(AOSFeatureTestMixin, FrappeTestCase):
         self._original_login_manager = getattr(frappe.local, "login_manager", None)
         frappe.local.response = {}
         frappe.set_user("Administrator")
+        self.configure_test_localization_defaults()
 
     def tearDown(self):
         if self._original_login_manager is not None:
@@ -112,7 +113,7 @@ class TestAuthSocialLoginAPI(AOSFeatureTestMixin, FrappeTestCase):
         login_manager = self._install_fake_login_manager()
 
         with self._patch_google_success(email)[0], self._patch_google_success(email)[1], self._patch_google_success(email)[2], patch(
-            "aos.api.auth.google_login.ensure_user_preference",
+            "aos.api.auth.google_login.ensure_auth_bootstrap",
             return_value=(None, fail("Default country not configured.", error="CONFIG_ERROR")),
         ):
             response = google_login_impl(id_token="google-token", client_type="mobile", **self._bootstrap_kwargs())
@@ -129,7 +130,7 @@ class TestAuthSocialLoginAPI(AOSFeatureTestMixin, FrappeTestCase):
         login_manager = self._install_fake_login_manager()
 
         with self._patch_apple_success(email)[0], self._patch_apple_success(email)[1], self._patch_apple_success(email)[2], patch(
-            "aos.api.auth.apple_login.ensure_user_preference",
+            "aos.api.auth.apple_login.ensure_auth_bootstrap",
             return_value=(None, fail("Default country not configured.", error="CONFIG_ERROR")),
         ):
             response = apple_login_impl(id_token="apple-token", client_type="mobile", **self._bootstrap_kwargs())
@@ -147,13 +148,13 @@ class TestAuthSocialLoginAPI(AOSFeatureTestMixin, FrappeTestCase):
         login_manager = self._install_fake_login_manager()
 
         with self._patch_google_success(google_user)[0], self._patch_google_success(google_user)[1], self._patch_google_success(google_user)[2], patch(
-            "aos.api.auth.google_login.ensure_user_preference",
+            "aos.api.auth.google_login.ensure_auth_bootstrap",
             return_value=(None, fail("Default country not configured.", error="CONFIG_ERROR")),
         ):
             google_response = google_login_impl(id_token="google-token", client_type="mobile")
 
         with self._patch_apple_success(apple_user)[0], self._patch_apple_success(apple_user)[1], self._patch_apple_success(apple_user)[2], patch(
-            "aos.api.auth.apple_login.ensure_user_preference",
+            "aos.api.auth.apple_login.ensure_auth_bootstrap",
             return_value=(None, fail("Default country not configured.", error="CONFIG_ERROR")),
         ):
             apple_response = apple_login_impl(id_token="apple-token", client_type="mobile")
@@ -216,8 +217,12 @@ class TestAuthSocialLoginAPI(AOSFeatureTestMixin, FrappeTestCase):
         apple_email = f"{self.prefix}-apple-context@example.com"
         country, language, currency = self.preference_defaults()
         self._install_fake_login_manager()
-        header_values = {"X-Country-Code": frappe.db.get_value("Country", country, "code") or "", "Accept-Language": frappe.db.get_value("Language", language, "language_code") or ""}
-        with patch("aos.api.localization.context._header", side_effect=lambda name: header_values.get(name, "")):
+        country_hint = frappe.db.get_value("Country", country, "code") or ""
+        language_hint = frappe.db.get_value("Language", language, "language_code") or ""
+        with (
+            patch("aos.api.auth.account_helpers.geo_country_hint", return_value=country_hint),
+            patch("aos.api.auth.account_helpers.accept_language_hint", return_value=language_hint),
+        ):
             with self._patch_google_success(google_email)[0], self._patch_google_success(google_email)[1], self._patch_google_success(google_email)[2]:
                 google_response = google_login_impl(id_token="google-token", client_type="mobile", currency=currency)
             frappe.set_user("Administrator")

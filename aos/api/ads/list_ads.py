@@ -77,6 +77,14 @@ def list_ads_impl(**kwargs):
     if rl:
         return rl
 
+    sort = str(kwargs.get("sort") or "rating_high").strip() or "rating_high"
+    if sort not in ALLOWED_SORTS:
+        return fail(
+            "Invalid sort.",
+            error="VALIDATION_ERROR",
+            data={"allowed": sorted(ALLOWED_SORTS)},
+        )
+
     # Market Context
     country, display_currency, error = resolve_market_context(
         country=kwargs.get("country"),
@@ -99,8 +107,6 @@ def list_ads_impl(**kwargs):
     candidate_order_sql = ""
     used_search_service = False
 
-    sort = str(kwargs.get("sort") or "rating_high").strip() or "rating_high"
-
     price_type = str(kwargs.get("price_type") or "").strip()
     promotion_type = str(kwargs.get("promotion_type") or "").strip()
 
@@ -112,13 +118,6 @@ def list_ads_impl(**kwargs):
     # Validation
     if seller and not frappe.db.exists("AOS Seller", seller):
         return fail("Seller not found.", error="VALIDATION_ERROR")
-
-    if sort not in ALLOWED_SORTS:
-        return fail(
-            "Invalid sort.",
-            error="VALIDATION_ERROR",
-            data={"allowed": sorted(ALLOWED_SORTS)},
-        )
 
     if price_type and price_type not in ALLOWED_PRICE_TYPES:
         return fail(

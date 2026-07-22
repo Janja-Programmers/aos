@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import frappe
@@ -34,6 +38,14 @@ class _FakeStorage:
     config = _FakeStorageConfig()
     client = _FakeStorageClient()
 
+    def healthcheck(self):
+        return {
+            "ok": True,
+            "latency_ms": 1,
+            "configured_bucket_count": 3,
+            "missing_bucket_count": 0,
+        }
+
 
 class _FakeCache:
     def ping(self):
@@ -45,9 +57,35 @@ class TestOperationalHealth(FrappeTestCase):
 
     def setUp(self):
         frappe.local.response = {}
+        self._firebase_tempdir = tempfile.TemporaryDirectory(prefix="aos-operational-health-")
+        self._firebase_path = Path(self._firebase_tempdir.name) / "firebase-service-account.json"
+        self._firebase_path.write_text(
+            json.dumps(
+                {
+                    "type": "service_account",
+                    "project_id": "aos-production",
+                    "client_email": "firebase-admin@aos-production.invalid",
+                }
+            ),
+            encoding="utf-8",
+        )
+        os.chmod(self._firebase_path, 0o600)
+
+    def tearDown(self):
+        self._firebase_tempdir.cleanup()
+        super().tearDown()
 
     def _valid_env(self) -> dict[str, str]:
         return {
+            "AOS_ENVIRONMENT": "production",
+            "BACKUP_ENCRYPTION_REQUIRED": "true",
+            "BACKUP_ENCRYPTION_METHOD": "age",
+            "BACKUP_LOCAL_RETENTION_MODE": "encrypted-artifact",
+            "BACKUP_AGE_RECIPIENT": "age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+            "AOS_METRICS_TOKEN": "metrics-secret-value-0123456789abcdef",
+            "AOS_ALERTING_ENABLED": "true",
+            "BACKUP_FAILURE_NOTIFICATION_METHOD": "email",
+            "BACKUP_FAILURE_EMAIL_TO": "ops@africaonlinestores.com",
             "AOS_API_DOMAIN": "api.africaonlinestores.example-prod.com",
             "AOS_MAPS_DOMAIN": "maps.africaonlinestores.example-prod.com",
             "AOS_MINIO_DOMAIN": "files.africaonlinestores.example-prod.com",
@@ -86,7 +124,8 @@ class TestOperationalHealth(FrappeTestCase):
             "NOTIFICATION_SERVICE_SECRET": "notification-dispatch-secret-value-0123456789abcdef",
             "NOTIFICATION_SERVICE_CALLBACK_SECRET": "notification-callback-secret-value-0123456789abcdef",
             "NOTIFICATION_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.v1.notification_delivery.handle_callback",
-            "NOTIFICATION_FIREBASE_SERVICE_ACCOUNT_HOST_PATH": "/tmp/aos-test-firebase.json",
+            "NOTIFICATION_FIREBASE_SERVICE_ACCOUNT_PATH": str(self._firebase_path),
+            "NOTIFICATION_FIREBASE_SERVICE_ACCOUNT_HOST_PATH": str(self._firebase_path),
             "TRANSLATION_SERVICE_URL": "http://127.0.0.1:8100",
             "IMAGE_SEARCH_SERVICE_URL": "http://127.0.0.1:8110",
             "BACKGROUND_REMOVAL_SERVICE_URL": "http://127.0.0.1:8120",
@@ -171,7 +210,6 @@ class TestOperationalHealth(FrappeTestCase):
         serialized = self._report_text(report)
         self.assertNotIn("super-secret-value", serialized)
         self.assertNotIn("should-not-leak", serialized)
-
 
     def test_optional_image_search_ready_failure_is_degraded_not_unhealthy(self):
         env = self._valid_env()

@@ -52,7 +52,7 @@ class TestAnalyticsPipelineStaleLinks(FrappeTestCase):
 
         response = SimpleNamespace(
             raise_for_status=lambda: None,
-            json=lambda: {"service_job_id": f"svc-{self.prefix}"},
+            json=lambda: {"service_job_id": f"svc-{self.prefix}", "dispatch_action": "enqueued"},
         )
 
         with patch("aos.services.analytics_pipeline_service.requests.post", return_value=response):

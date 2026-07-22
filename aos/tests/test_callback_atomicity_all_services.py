@@ -126,6 +126,13 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 		outbox.published_at = now_datetime()
 		outbox.callback_deadline_at = add_to_date(now_datetime(), seconds=300, as_datetime=True)
 		outbox.save(ignore_permissions=True)
+		cleanup = getattr(self, "_scenario_cleanup_records", None)
+		if cleanup is not None:
+			cleanup.extend(((OUTBOX_DOCTYPE, outbox.name), *fixture.cleanup_records))
+		# Callback atomicity is tested against durable pre-existing state. A
+		# committed baseline also prevents an inner rollback from erasing the
+		# fixture when another full-suite test has changed transaction state.
+		frappe.db.commit()
 		return fixture, outbox, token
 
 	def _base_payload(self, fixture, outbox, token: str) -> dict[str, Any]:
@@ -224,12 +231,20 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 		return {"job": dict(job or {}), "outbox": dict(outbox_state or {}), "domain": dict(domain or {})}
 
 	def _run_isolated(self, operation: Callable[[], None]) -> None:
-		savepoint = f"callback_test_{uuid.uuid4().hex[:12]}"
-		frappe.db.savepoint(savepoint)
+		self._scenario_cleanup_records: list[tuple[str, str]] = []
 		try:
 			operation()
 		finally:
-			frappe.db.rollback(save_point=savepoint)
+			frappe.set_user("Administrator")
+			seen: set[tuple[str, str]] = set()
+			for doctype, name in self._scenario_cleanup_records:
+				key = (doctype, name)
+				if key in seen:
+					continue
+				seen.add(key)
+				frappe.db.sql(f"DELETE FROM `tab{doctype}` WHERE name = %s", (name,))
+			frappe.db.commit()
+			self._scenario_cleanup_records = []
 
 	def test_valid_success_and_duplicate_success_are_atomic_and_idempotent(self):
 		with patch.dict(os.environ, _ENV, clear=False):

@@ -29,6 +29,7 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
         self.prefix = self.make_prefix("feature")
         self.created_users: list[str] = []
         frappe.set_user("Administrator")
+        self.configure_test_localization_defaults()
 
     def tearDown(self):
         self.cleanup_feature_rows()

@@ -13,9 +13,10 @@ from aos.patches.v1_0.add_unique_constraints import (
     USER_ACTION_UNIQUE_CONSTRAINTS,
     execute as apply_unique_constraints,
 )
+from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
-class TestUserActionUniqueness(FrappeTestCase):
+class TestUserActionUniqueness(AOSFeatureTestMixin, FrappeTestCase):
     """Tests for race-sensitive user-action duplicate protection."""
 
     @classmethod
@@ -53,6 +54,7 @@ class TestUserActionUniqueness(FrappeTestCase):
     def tearDown(self):
         frappe.set_user("Administrator")
         self._delete_test_rows()
+        self.restore_localization_test_state()
         frappe.db.commit()
 
     def test_unique_indexes_exist(self):
@@ -268,11 +270,13 @@ class TestUserActionUniqueness(FrappeTestCase):
             {
                 "doctype": "AOS Media Object",
                 "owner_user": owner,
-                "purpose": "short_raw",
+                "purpose": "short_video_raw",
                 "status": "Uploaded",
-                "visibility": "Public",
+                "visibility": "Private",
                 "bucket": "aos-test",
                 "object_key": f"tests/{self.prefix}/{uuid.uuid4().hex}.mp4",
+                "original_filename": "short.mp4",
+                "content_type": "video/mp4",
                 "size_bytes": 1024,
             }
         )
@@ -352,42 +356,7 @@ class TestUserActionUniqueness(FrappeTestCase):
         ).insert(ignore_permissions=True)
 
     def _preference_defaults(self) -> tuple[str, str, str]:
-        country = (
-            frappe.db.get_single_value("AOS Settings", "default_country")
-            or self._first_existing_value("Country", ["Kenya", "United States"])
-            or frappe.db.get_value("Country", {}, "name")
-        )
-        language = (
-            frappe.db.get_single_value("AOS Settings", "default_language")
-            or self._first_existing_value("Language", ["en", "English"])
-            or frappe.db.get_value("Language", {}, "name")
-        )
-        currency = (
-            frappe.db.get_single_value("AOS Settings", "default_currency")
-            or self._first_existing_value("Currency", ["KES", "USD"])
-            or frappe.db.get_value("Currency", {}, "name")
-        )
-
-        missing = [
-            label
-            for label, value in (
-                ("country", country),
-                ("language", language),
-                ("currency", currency),
-            )
-            if not value
-        ]
-        if missing:
-            self.fail(f"Missing preference fixture values: {', '.join(missing)}")
-
-        return str(country), str(language), str(currency)
-
-    @staticmethod
-    def _first_existing_value(doctype: str, names: list[str]) -> str | None:
-        for name in names:
-            if frappe.db.exists(doctype, name):
-                return name
-        return None
+        return self.preference_defaults()
 
     def _delete_test_rows(self):
         like = f"{self.prefix}%"

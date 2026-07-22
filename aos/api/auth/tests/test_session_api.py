@@ -20,6 +20,7 @@ class TestAuthSessionAPI(AOSFeatureTestMixin, FrappeTestCase):
         self._original_login_manager = getattr(frappe.local, "login_manager", None)
         frappe.local.response = {}
         frappe.set_user("Administrator")
+        self.configure_test_localization_defaults()
 
     def tearDown(self):
         if self._original_login_manager is not None:

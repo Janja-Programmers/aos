@@ -11,7 +11,9 @@ from aos.patches.v1_0.backfill_transactional_outbox import (
 	BATCH_SIZE,
 	SPECS,
 	_backfill_job,
+	_clear_stale_aggregate_link,
 	_payload_malformed,
+	_row_value,
 	_should_backfill,
 	execute,
 )
@@ -44,6 +46,21 @@ class TestOutboxBackfillUnit(FrappeTestCase):
 		self.assertFalse(_payload_malformed(""))
 		self.assertFalse(_payload_malformed('{"ok":true}'))
 		self.assertTrue(_payload_malformed("{secret malformed"))
+
+	def test_row_value_supports_mapping_and_object_rows(self):
+		self.assertEqual(_row_value({"name": "DICT-1"}, "name"), "DICT-1")
+		self.assertEqual(_row_value(SimpleNamespace(name="OBJECT-1"), "name"), "OBJECT-1")
+		self.assertIsNone(_row_value(SimpleNamespace(), "name"))
+
+	def test_deleted_historical_aggregate_is_cleared_before_save(self):
+		outbox = SimpleNamespace(aggregate_doctype="AOS Short", aggregate_name="SHORT-MISSING")
+		with patch(
+			"aos.patches.v1_0.backfill_transactional_outbox.frappe.db.exists",
+			side_effect=lambda doctype, name: doctype == "DocType",
+		):
+			_clear_stale_aggregate_link(outbox)
+		self.assertIsNone(outbox.aggregate_doctype)
+		self.assertIsNone(outbox.aggregate_name)
 
 	def test_deterministic_idempotency_key_for_each_job_type(self):
 		for spec in SPECS:
@@ -87,8 +104,8 @@ class TestOutboxBackfillUnit(FrappeTestCase):
 			self.assertEqual(counters["existing"], 1)
 			self.assertEqual(counters["created"], 0)
 			self.assertEqual(counters["malformed_payload"], 1)
-			ensure.assert_called_once()
-			outbox.save.assert_called_once_with(ignore_permissions=True)
+			ensure.assert_not_called()
+			outbox.save.assert_not_called()
 
 	def test_execute_processes_large_tables_in_bounded_batches(self):
 		spec = SPECS[-1]
@@ -150,6 +167,9 @@ class TestOutboxBackfillDatabase(FrappeTestCase):
 				first = frappe.db.get_value(
 					OUTBOX_DOCTYPE, {"job_doctype": job.doctype, "job_name": job.name}, "name"
 				)
+				existing_outbox = frappe.get_doc(OUTBOX_DOCTYPE, first)
+				existing_outbox.last_error = "EXISTING_OUTBOX_MUST_NOT_BE_REWRITTEN"
+				existing_outbox.save(ignore_permissions=True)
 				_backfill_job(
 					spec,
 					{"name": job.name, "status": "Queued", "attempt_count": 0, "max_attempts": 3},
@@ -159,6 +179,10 @@ class TestOutboxBackfillDatabase(FrappeTestCase):
 					OUTBOX_DOCTYPE, {"job_doctype": job.doctype, "job_name": job.name}, "name"
 				)
 			self.assertEqual(first, second)
+			self.assertEqual(
+				frappe.db.get_value(OUTBOX_DOCTYPE, first, "last_error"),
+				"EXISTING_OUTBOX_MUST_NOT_BE_REWRITTEN",
+			)
 			self.assertEqual(counters["created"], 1)
 			self.assertEqual(counters["existing"], 1)
 			self.assertEqual(counters["malformed_payload"], 2)

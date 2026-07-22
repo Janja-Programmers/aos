@@ -16,6 +16,8 @@ class TestLocalizationAPI(AOSFeatureTestMixin, FrappeTestCase):
 	def setUp(self):
 		self.prefix = self.make_prefix("localization-api")
 		self.created_users: list[str] = []
+		frappe.set_user("Administrator")
+		self.configure_test_localization_defaults()
 		clear_localization_cache()
 		frappe.set_user("Guest")
 

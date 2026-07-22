@@ -40,7 +40,7 @@ class IntegrationTestAOSLocation(IntegrationTestCase):
 				frappe.delete_doc("AOS Location", doc.name, force=True, ignore_permissions=True)
 
 	def test_duplicate_pair_is_rejected_but_other_country_is_allowed(self):
-		countries = frappe.get_all("Country", pluck="name", limit_page_length=2)
+		countries = frappe.get_all("Country", pluck="name", limit=2)
 		if len(countries) < 2:
 			self.skipTest("Two countries required")
 		label = f"Localization Test {frappe.generate_hash(length=8)}"

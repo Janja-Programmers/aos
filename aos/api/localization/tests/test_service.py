@@ -19,14 +19,21 @@ from aos.services.localization_service import (
 	validate_currency,
 	validate_language,
 )
+from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
-class TestLocalizationService(IntegrationTestCase):
+class TestLocalizationService(AOSFeatureTestMixin, IntegrationTestCase):
 	def setUp(self):
+		self.prefix = self.make_prefix("localization-service")
+		self.created_users: list[str] = []
+		frappe.set_user("Administrator")
+		self.configure_test_localization_defaults()
 		clear_localization_cache()
 
 	def tearDown(self):
+		self.cleanup_feature_rows()
 		clear_localization_cache()
+		frappe.set_user("Administrator")
 
 	def test_country_flag_uses_regional_indicators(self):
 		self.assertEqual(country_code_to_flag("KE"), "🇰🇪")

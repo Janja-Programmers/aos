@@ -5,6 +5,7 @@ from __future__ import annotations
 import frappe
 
 from aos.api.shared.auth import require_login
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import fail, ok
 from aos.services.accounts.errors import AccountError
@@ -16,7 +17,12 @@ from .constants import GET_PROFILE_LIMIT_PER_MINUTE_PER_USER, UPDATE_PROFILE_LIM
 
 
 def _failure(exc: AccountError):
-    return fail(str(exc), error=exc.code, http_status=exc.http_status)
+    return safe_fail_from_exception(
+        exc,
+        fallback="Account request could not be completed.",
+        error=exc.code,
+        http_status=exc.http_status,
+    )
 
 
 def get_profile_impl(**kwargs):

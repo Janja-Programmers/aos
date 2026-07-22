@@ -54,8 +54,9 @@ class TestEnqueueJobIds(FrappeTestCase):
 		source = Path(frappe.get_app_path("aos", "services", "transactional_outbox.py")).read_text(
 			encoding="utf-8"
 		)
-		self.assertIn('rq_job_id=f"outbox:{outbox_key}"', source)
-		self.assertIn("job_id=row.rq_job_id", source)
+		self.assertIn('"rq_job_id": f"outbox:{outbox_key}"', source)
+		self.assertIn("row.rq_job_id or f'outbox:{row.idempotency_key}'", source)
+		self.assertIn(":g{int(claim['attempt_count'])}", source)
 		self.assertIn("FOR UPDATE SKIP LOCKED", source)
 
 		service_expectations = {
@@ -67,9 +68,23 @@ class TestEnqueueJobIds(FrappeTestCase):
 		}
 		for filename, service_type in service_expectations.items():
 			with self.subTest(file=filename):
-				service_source = Path(frappe.get_app_path("aos", "services", filename)).read_text(
-					encoding="utf-8"
-				)
+				service_path = Path(frappe.get_app_path("aos", "services", filename))
+				service_source = service_path.read_text(encoding="utf-8")
 				self.assertIn("ensure_outbox_for_job", service_source)
 				self.assertIn(f'service_type="{service_type}"', service_source)
-				self.assertNotIn("job_name=", service_source)
+
+				tree = ast.parse(service_source, filename=str(service_path))
+				direct_enqueue_lines = [
+					node.lineno
+					for node in ast.walk(tree)
+					if isinstance(node, ast.Call)
+					and isinstance(node.func, ast.Attribute)
+					and node.func.attr == "enqueue"
+					and isinstance(node.func.value, ast.Name)
+					and node.func.value.id == "frappe"
+				]
+				self.assertEqual(
+					direct_enqueue_lines,
+					[],
+					f"{filename} must dispatch through the transactional outbox, not frappe.enqueue",
+				)

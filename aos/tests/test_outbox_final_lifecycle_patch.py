@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
-from frappe.utils import now_datetime
+from frappe.utils import add_to_date, now_datetime
 
 from aos.patches.v1_0.finalize_outbox_failure_reconciliation import execute
 from aos.services import analytics_pipeline_service
@@ -91,26 +91,43 @@ class TestFinalizeOutboxFailureReconciliationPatch(FrappeTestCase):
 			uncertain.max_attempts = 4
 			uncertain.save(ignore_permissions=True)
 
+			active_fixture = create_durable_job("analytics_ingestion", status="Processing")
+			with patch("aos.services.transactional_outbox.register_after_commit_publish"):
+				active = create_outbox(active_fixture)
+			active.status = "Dispatch Uncertain"
+			active.attempt_count = 5
+			active.max_attempts = 5
+			active.claimed_by = "active-publisher"
+			active.claim_token = uuid.uuid4().hex
+			active.lease_expires_at = add_to_date(now_datetime(), minutes=5, as_datetime=True)
+			active.save(ignore_permissions=True)
+
 			execute(batch_size=50)
 			claimed.reload()
 			recon.reload()
 			uncertain.reload()
+			active.reload()
 			self.assertEqual(claimed.status, "Queued")
 			self.assertEqual(claimed.companion_authoritative_generation, 4)
 			self.assertEqual(recon.status, "Manual Review")
 			self.assertEqual(recon.manual_review_reason, "LEGACY_RECONCILIATION_ATTEMPTS_EXHAUSTED")
 			self.assertEqual(uncertain.status, "Manual Review")
 			self.assertEqual(uncertain.manual_review_reason, "LEGACY_DISPATCH_UNCERTAINTY_EXHAUSTED")
+			self.assertEqual(active.status, "Dispatch Uncertain")
+			self.assertEqual(active.claimed_by, "active-publisher")
+			self.assertIsNotNone(active.claim_token)
 		finally:
 			frappe.db.rollback(save_point=savepoint)
 
 
 class TestAnalyticsDispatchExceptionSafety(FrappeTestCase):
 	def test_outbox_conflict_before_action_assignment_preserves_original_error(self):
-		savepoint = f"analytics_dispatch_{uuid.uuid4().hex[:12]}"
-		frappe.db.savepoint(savepoint)
+		fixture = None
 		try:
 			fixture = create_durable_job("analytics_ingestion", status="Queued")
+			# The dispatch path commits its durable state before contacting the
+			# companion, so a savepoint cannot be used for test isolation here.
+			frappe.db.commit()
 			with patch.object(analytics_pipeline_service.requests, "post", return_value=_AcceptedResponse()), patch.object(
 				analytics_pipeline_service,
 				"record_companion_dispatch_outcome",
@@ -131,7 +148,11 @@ class TestAnalyticsDispatchExceptionSafety(FrappeTestCase):
 			fixture.job.reload()
 			self.assertNotEqual(fixture.job.last_error, "UnboundLocalError")
 		finally:
-			frappe.db.rollback(save_point=savepoint)
+			if fixture is not None:
+				for doctype, name in fixture.cleanup_records:
+					frappe.db.delete(doctype, {"name": name})
+			frappe.db.commit()
+
 
 
 class TestTerminalWorkReplay(FrappeTestCase):
