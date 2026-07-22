@@ -30,6 +30,7 @@ TEXT_SUFFIXES = {
 }
 SKIP_DIRS = {".git", ".venv", "node_modules", "__pycache__"}
 CONFLICT = re.compile(r"^(<<<<<<< |=======\s*$|>>>>>>> )", re.MULTILINE)
+RAW_DDL = re.compile(r"^\s*(ALTER|CREATE|DROP|TRUNCATE|RENAME)\b", re.IGNORECASE)
 
 
 class UniqueKeyLoader(yaml.SafeLoader):
@@ -91,6 +92,51 @@ def has_debug_statement(path: Path, text: str) -> bool:
 	return False
 
 
+def _attribute_path(node: ast.AST) -> tuple[str, ...]:
+	parts: list[str] = []
+	while isinstance(node, ast.Attribute):
+		parts.append(node.attr)
+		node = node.value
+	if isinstance(node, ast.Name):
+		parts.append(node.id)
+	return tuple(reversed(parts))
+
+
+def _string_template(node: ast.AST | None) -> str | None:
+	if isinstance(node, ast.Constant) and isinstance(node.value, str):
+		return node.value
+	if isinstance(node, ast.JoinedStr):
+		parts: list[str] = []
+		for value in node.values:
+			if isinstance(value, ast.Constant) and isinstance(value.value, str):
+				parts.append(value.value)
+			else:
+				parts.append("{expr}")
+		return "".join(parts)
+	return None
+
+
+def raw_patch_ddl_lines(path: Path, text: str) -> list[int]:
+	if path.suffix != ".py" or "aos/patches" not in path.as_posix():
+		return []
+	try:
+		tree = ast.parse(text, filename=str(path))
+	except SyntaxError:
+		return []
+	lines: list[int] = []
+	for node in ast.walk(tree):
+		if not isinstance(node, ast.Call) or _attribute_path(node.func) != ("frappe", "db", "sql"):
+			continue
+		query_node = node.args[0] if node.args else next(
+			(keyword.value for keyword in node.keywords if keyword.arg == "query"),
+			None,
+		)
+		query = _string_template(query_node)
+		if query and RAW_DDL.search(query):
+			lines.append(node.lineno)
+	return lines
+
+
 def main() -> int:
 	parser = argparse.ArgumentParser()
 	parser.add_argument("root", nargs="?", default=Path(__file__).resolve().parents[1])
@@ -111,6 +157,11 @@ def main() -> int:
 			errors.append(f"{relative}: conflict marker")
 		if has_debug_statement(path, text):
 			errors.append(f"{relative}: debugger statement")
+		for line_number in raw_patch_ddl_lines(path, text):
+			errors.append(
+				f"{relative}:{line_number}: raw DDL through frappe.db.sql; "
+				"use frappe.db.add_index/add_unique or frappe.db.sql_ddl"
+			)
 		# The legacy Frappe app is intentionally not mass-reformatted in this
 		# checkpoint. Conflict/debug/structured-file checks still cover it;
 		# whitespace enforcement applies to all checkpoint-owned/non-app files.
@@ -135,7 +186,7 @@ def main() -> int:
 		for error in errors:
 			print(f"- {error}", file=sys.stderr)
 		return 1
-	print("JSON, TOML, YAML, duplicate keys, conflicts, debug statements, and whitespace: OK")
+	print("JSON, TOML, YAML, duplicate keys, conflicts, debug statements, patch DDL, and whitespace: OK")
 	return 0
 
 

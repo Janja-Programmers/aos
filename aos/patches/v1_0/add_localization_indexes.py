@@ -55,4 +55,4 @@ def _drop_legacy_location_unique_index():
     for row in rows:
         if row.columns_csv == "location":
             safe_name = str(row.INDEX_NAME).replace("`", "``")
-            frappe.db.sql(f"ALTER TABLE `tabAOS Location` DROP INDEX `{safe_name}`")
+            frappe.db.sql_ddl(f"ALTER TABLE `tabAOS Location` DROP INDEX `{safe_name}`")

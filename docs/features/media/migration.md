@@ -16,9 +16,25 @@ The post-model-sync patch `aos.patches.v1_0.harden_media_subsystem` is idempoten
 - backfills completion time from upload time for active records;
 - clears persisted public URLs from private records;
 - preserves legacy initialized storage identities for compatibility;
-- adds owner/purpose/status, attachment, cleanup, expiry, delete-retry, idempotency, and derived-media indexes.
+- adds owner/purpose/status, attachment, cleanup, expiry, delete-retry, idempotency, and derived-media indexes through `frappe.db.add_index`, which safely handles migration DDL and duplicate indexes.
 
 It does not delete or rename existing storage objects.
+
+## Interrupted migration recovery
+
+If an older revision failed with `frappe.exceptions.ImplicitCommitError` while executing `harden_media_subsystem`, deploy the corrected revision and rerun:
+
+```bash
+bench --site <site> migrate
+```
+
+Do not insert a Patch Log row manually and do not use `--skip-failing`. The failed patch was not marked complete, and its data updates are idempotent. The corrected patch creates indexes through Frappe's DDL-safe adapter before running the backfill updates. Confirm the expected indexes afterward with the SQL below, then clear cache and restart normally:
+
+```sql
+SHOW INDEX FROM `tabAOS Media Object`;
+```
+
+Repository validation rejects raw `ALTER`, `CREATE`, `DROP`, `TRUNCATE`, or `RENAME` statements passed to `frappe.db.sql` from patch modules. Use the database adapter's schema APIs (`add_index`, `add_unique`) or `sql_ddl` for narrowly reviewed DDL.
 
 ## Deployment validation
 

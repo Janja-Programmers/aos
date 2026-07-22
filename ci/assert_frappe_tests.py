@@ -21,6 +21,7 @@ REQUIRED_MEDIA_TEST_FILES = {
 	"test_content_validation.py",
 	"test_purpose_policies.py",
 	"test_runtime_config.py",
+	"test_migration_patch.py",
 	"test_service.py",
 }
 

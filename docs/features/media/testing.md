@@ -29,6 +29,8 @@ PYTHONPATH=. python -m unittest \
 
 `aos/api/media/tests/test_category_integration.py` verifies that fixture imports and schema synchronization remain no-ops when a category has no media relationship. Constructing `MediaService` must not read MinIO credentials; storage configuration is resolved only when an operation crosses the storage boundary. This keeps `bench install-app` and `bench migrate` independent of MinIO for metadata-only hooks while preserving explicit failures for real storage operations.
 
+`aos/api/media/tests/test_migration_patch.py` verifies that the Media hardening patch creates all indexes through `frappe.db.add_index`, performs only idempotent `UPDATE` statements through `frappe.db.sql`, and remains a no-op when the DocType table is absent. `ci/validate_repository.py` additionally rejects raw schema DDL routed through `frappe.db.sql` in any patch module.
+
 ### Feature integration tests
 
 Existing feature tests exercise profile, seller, ad, review, Short, live, and chat behavior. Media calls should be mocked only at the storage boundary or where a feature test is intentionally isolated. Keep API response, DB relationship, authorization, and cleanup assertions.
