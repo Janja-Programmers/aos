@@ -84,6 +84,14 @@ _ADAPTERS = (
 	),
 )
 
+_TEST_CALLBACK_SECRET = "callback-test-secret"
+
+
+def _test_dispatch_secret(service: str) -> str:
+	"""Return a deterministic, service-specific synthetic signing value."""
+	return f"{service}-dispatch-{_TEST_CALLBACK_SECRET}"
+
+
 _ENV = {
 	"MODERATION_ENABLED": "true",
 	"MODERATION_FAIL_OPEN": "false",
@@ -91,20 +99,20 @@ _ENV = {
 	"NOTIFICATION_DELIVERY_ENABLED": "true",
 	"ANALYTICS_PIPELINE_ENABLED": "true",
 	"VIDEO_SERVICE_URL": "http://127.0.0.1:18130",
-	"VIDEO_SERVICE_SECRET": "video-dispatch-test-secret",
-	"VIDEO_SERVICE_CALLBACK_SECRET": "callback-test-secret",
+	"VIDEO_SERVICE_SECRET": _test_dispatch_secret("video"),
+	"VIDEO_SERVICE_CALLBACK_SECRET": _TEST_CALLBACK_SECRET,
 	"MODERATION_SERVICE_URL": "http://127.0.0.1:18140",
-	"MODERATION_SERVICE_SECRET": "moderation-dispatch-test-secret",
-	"MODERATION_SERVICE_CALLBACK_SECRET": "callback-test-secret",
+	"MODERATION_SERVICE_SECRET": _test_dispatch_secret("moderation"),
+	"MODERATION_SERVICE_CALLBACK_SECRET": _TEST_CALLBACK_SECRET,
 	"SEARCH_RANKING_SERVICE_URL": "http://127.0.0.1:18150",
-	"SEARCH_RANKING_SERVICE_SECRET": "search_ranking-dispatch-test-secret",
-	"SEARCH_RANKING_SERVICE_CALLBACK_SECRET": "callback-test-secret",
+	"SEARCH_RANKING_SERVICE_SECRET": _test_dispatch_secret("search_ranking"),
+	"SEARCH_RANKING_SERVICE_CALLBACK_SECRET": _TEST_CALLBACK_SECRET,
 	"NOTIFICATION_SERVICE_URL": "http://127.0.0.1:18160",
-	"NOTIFICATION_SERVICE_SECRET": "notification-dispatch-test-secret",
-	"NOTIFICATION_SERVICE_CALLBACK_SECRET": "callback-test-secret",
+	"NOTIFICATION_SERVICE_SECRET": _test_dispatch_secret("notification"),
+	"NOTIFICATION_SERVICE_CALLBACK_SECRET": _TEST_CALLBACK_SECRET,
 	"ANALYTICS_SERVICE_URL": "http://127.0.0.1:18170",
-	"ANALYTICS_SERVICE_SECRET": "analytics-dispatch-test-secret",
-	"ANALYTICS_SERVICE_CALLBACK_SECRET": "callback-test-secret",
+	"ANALYTICS_SERVICE_SECRET": _test_dispatch_secret("analytics"),
+	"ANALYTICS_SERVICE_CALLBACK_SECRET": _TEST_CALLBACK_SECRET,
 }
 
 
