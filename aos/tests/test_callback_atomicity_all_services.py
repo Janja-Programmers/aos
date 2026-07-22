@@ -575,9 +575,10 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 							adapter.api_module,
 							adapter.handler_name,
 							side_effect=RuntimeError(forbidden),
-						):
+						), patch("frappe.log_error") as log_error:
 							response = self._invoke(adapter, payload)
 						self.assertFalse(response["ok"], response)
+						log_error.assert_called_once()
 						serialized = str(response)
 						for value in ("traceback", "SQL", "token=abc", "internal.invalid", "/srv/private"):
 							self.assertNotIn(value, serialized)

@@ -20,6 +20,7 @@ from typing import Any
 
 import frappe
 import requests
+from frappe.exceptions import DoesNotExistError, TimestampMismatchError
 from frappe.utils import add_to_date, now_datetime
 
 from aos.services.callback_correlation import accepted_dispatch_generations
@@ -609,6 +610,7 @@ def recover_overdue_published(
 	extended_active = 0
 	pending_reconciliation = 0
 	manual_review = 0
+	concurrent_updates_skipped = 0
 	filters: dict[str, Any] = {"status": "Published", "callback_deadline_at": ("<", current)}
 	if outbox_name:
 		filters["name"] = _clean(outbox_name, limit=140)
@@ -678,14 +680,30 @@ def recover_overdue_published(
 				else:
 					pending_reconciliation += 1
 			outbox.save(ignore_permissions=True)
+		except (DoesNotExistError, TimestampMismatchError):
+			# Another publisher or callback updated or removed this row after it was read.
+			# Treat that concurrent writer as authoritative and retry naturally on
+			# the next scheduled recovery pass if the row is still overdue.
+			concurrent_updates_skipped += 1
+			continue
 		except Exception as exc:
-			status = _schedule_reconciliation(
-				outbox,
-				now=current,
-				outcome="status_query_failed",
-				error=sanitized_dispatch_error(exc),
-			)
-			outbox.save(ignore_permissions=True)
+			# Reload before recording a status-query failure so a stale document
+			# cannot overwrite a concurrent callback or publisher transition.
+			try:
+				outbox.reload()
+				if outbox.status != "Published" or not outbox.callback_deadline_at or outbox.callback_deadline_at >= current:
+					concurrent_updates_skipped += 1
+					continue
+				status = _schedule_reconciliation(
+					outbox,
+					now=current,
+					outcome="status_query_failed",
+					error=sanitized_dispatch_error(exc),
+				)
+				outbox.save(ignore_permissions=True)
+			except (DoesNotExistError, TimestampMismatchError):
+				concurrent_updates_skipped += 1
+				continue
 			if status == "Manual Review":
 				manual_review += 1
 			else:
@@ -696,6 +714,7 @@ def recover_overdue_published(
 		"extended_active": extended_active,
 		"pending_reconciliation": pending_reconciliation,
 		"manual_review": manual_review,
+		"concurrent_updates_skipped": concurrent_updates_skipped,
 	}
 
 def outbox_dispatch_context(*, job_doctype: str, job_name: str) -> dict[str, Any]:

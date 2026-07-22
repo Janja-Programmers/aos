@@ -7,6 +7,7 @@ from typing import ClassVar
 from unittest.mock import patch
 
 import frappe
+from frappe.exceptions import TimestampMismatchError
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_to_date, now_datetime
 
@@ -106,6 +107,33 @@ class TestTransactionalOutboxRecovery(FrappeTestCase):
         self.assertEqual(outbox.idempotency_key, stable)
         self.assertEqual(outbox.current_dispatch_token, old_token)
         self.assertNotEqual(outbox.proposed_dispatch_token, old_token)
+
+    def test_concurrent_recovery_update_is_skipped_without_failing_publisher(self):
+        _job, outbox = self._job_and_outbox(max_attempts=3)
+        outbox.status = "Published"
+        outbox.attempt_count = 1
+        outbox.dispatch_generation = 1
+        outbox.current_dispatch_token = uuid.uuid4().hex
+        outbox.callback_deadline_at = add_to_date(now_datetime(), seconds=-60, as_datetime=True)
+        outbox.save(ignore_permissions=True)
+
+        outbox_class = outbox.__class__
+        original_save = outbox_class.save
+
+        def concurrent_save(doc, *args, **kwargs):
+            if doc.name == outbox.name:
+                raise TimestampMismatchError("concurrent outbox update")
+            return original_save(doc, *args, **kwargs)
+
+        with patch(
+            "aos.services.transactional_outbox.query_companion_job_status",
+            return_value={"state": "queued", "work_state": "retrying", "callback_state": "not_ready"},
+        ), patch.object(outbox_class, "save", new=concurrent_save):
+            result = recover_overdue_published(now=now_datetime(), outbox_name=outbox.name)
+
+        self.assertEqual(result["concurrent_updates_skipped"], 1)
+        outbox.reload()
+        self.assertEqual(outbox.status, "Published")
 
     def test_dispatch_uncertain_reuses_proposed_generation_and_token(self):
         _job, outbox = self._job_and_outbox(max_attempts=4)

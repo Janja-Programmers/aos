@@ -365,10 +365,13 @@ class TestOutboxRecoveryDispatchAllServices(FrappeTestCase):
 						service_job_id=fixture.job.idempotency_key,
 						dispatch_action="unsupported_noop",
 					)
-					with patch.object(module.requests, "post", return_value=response) as post:
+					with patch.object(module.requests, "post", return_value=response) as post, patch(
+						"frappe.log_error"
+					) as log_error:
 						with self.assertRaises(OutboxError):
 							dispatch_claimed_outbox(outbox.name, str(claim["claim_token"]))
 					post.assert_called_once()
+					log_error.assert_called()
 					outbox.reload()
 					fixture.job.reload()
 					self.assertEqual(outbox.status, "Failed")
