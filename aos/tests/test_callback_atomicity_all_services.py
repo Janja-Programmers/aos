@@ -305,7 +305,9 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 						active = self._snapshot(fixture2, outbox2)
 						old = self._success_payload(adapter, fixture2, outbox2, token2)
 						old["dispatch_generation"] = 0
-						self.assertFalse(self._invoke(adapter, old)["ok"])
+						old_result = self._invoke(adapter, old)
+						self.assertFalse(old_result["ok"])
+						self.assertEqual(old_result["error"], "OLD_GENERATION_CALLBACK")
 						self.assertEqual(self._snapshot(fixture2, outbox2), active)
 						self.assertEqual(
 							int(
@@ -319,7 +321,9 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 
 						wrong = self._success_payload(adapter, fixture2, outbox2, token2)
 						wrong["dispatch_token"] = uuid.uuid4().hex
-						self.assertFalse(self._invoke(adapter, wrong)["ok"])
+						wrong_result = self._invoke(adapter, wrong)
+						self.assertFalse(wrong_result["ok"])
+						self.assertEqual(wrong_result["error"], "CALLBACK_TOKEN_MISMATCH")
 						self.assertEqual(self._snapshot(fixture2, outbox2), active)
 						self.assertEqual(
 							int(

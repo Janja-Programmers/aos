@@ -22,6 +22,8 @@ import frappe
 import requests
 from frappe.utils import add_to_date, now_datetime
 
+from aos.services.callback_correlation import accepted_dispatch_generations
+
 OUTBOX_DOCTYPE = "AOS Transactional Outbox"
 ACTIVE_STATUSES = ("Queued", "Claimed", "Dispatched", "Published", "Dispatch Uncertain", "Reconciliation Pending", "Failed")
 CALLBACK_TIMEOUT_ERROR = "DOWNSTREAM_CALLBACK_DEADLINE_EXCEEDED"
@@ -1235,7 +1237,11 @@ def validate_callback_idempotency(
 		and _constant_equal(supplied_token, proposed_token)
 	)
 	if not matches_active and not matches_proposed:
-		if supplied_generation not in {current_generation, proposed_generation}:
+		accepted_generations = accepted_dispatch_generations(
+			current_generation=current_generation,
+			proposed_generation=proposed_generation,
+		)
+		if supplied_generation not in accepted_generations:
 			raise _callback_conflict(
 				outbox,
 				"Stale callback from an earlier dispatch generation was rejected.",
