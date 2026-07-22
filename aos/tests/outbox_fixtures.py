@@ -57,6 +57,16 @@ def _media_and_short(suffix: str) -> tuple[Any, Any]:
 			"hashtags": "[]",
 		}
 	)
+	# The production upload flow attaches the ready raw video before dispatching
+	# processing. Keep this shared fixture aligned with that lifecycle so Media
+	# completion validation is exercised rather than bypassed.
+	media.status = "Attached"
+	media.attached_doctype = short.doctype
+	media.attached_name = short.name
+	media.attached_field = "raw_video_media"
+	media.attached_at = frappe.utils.now_datetime()
+	media.processing_started_at = frappe.utils.now_datetime()
+	media.save(ignore_permissions=True)
 	return media, short
 
 

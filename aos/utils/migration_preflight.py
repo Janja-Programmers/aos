@@ -125,12 +125,22 @@ def _outbox_check() -> tuple[bool, str, dict[str, Any]]:
     )
     counts = {str(row.status): int(row.total or 0) for row in rows}
     dead = counts.get("Dead Letter", 0)
-    queued = counts.get("Queued", 0) + counts.get("Failed", 0)
+    manual_review = counts.get("Manual Review", 0)
+    queued = sum(
+        counts.get(status, 0)
+        for status in ("Queued", "Failed", "Dispatch Uncertain", "Reconciliation Pending")
+    )
     maximum = max(0, int(os.getenv("AOS_MIGRATION_MAX_OUTBOX_BACKLOG", "5000")))
-    ready = dead == 0 and queued <= maximum
-    return ready, "Outbox backlog is within deployment policy." if ready else "Outbox dead letters or backlog exceed deployment policy.", {
+    ready = dead == 0 and manual_review == 0 and queued <= maximum
+    message = (
+        "Outbox backlog is within deployment policy."
+        if ready
+        else "Outbox terminal-review records or backlog exceed deployment policy."
+    )
+    return ready, message, {
         "queued_retryable_count": queued,
         "dead_letter_count": dead,
+        "manual_review_count": manual_review,
         "maximum_backlog": maximum,
     }
 

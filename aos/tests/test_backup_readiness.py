@@ -54,6 +54,7 @@ class TestBackupReadiness(FrappeTestCase):
 			"infra/backup/restore-rehearsal-checklist.sh",
 			"infra/backup/backup_artifacts.py",
 			"infra/backup/backup_crypto.py",
+			"infra/backup/rehearsal_policy.py",
 		]:
 			script = repo / rel
 			script.parent.mkdir(parents=True, exist_ok=True)
@@ -139,6 +140,7 @@ class TestBackupReadiness(FrappeTestCase):
 			"OFFSITE_RSYNC_TARGET": "backup@example.com:/srv/aos-backups",
 			"OFFSITE_SYNC_MARKER": str(offsite_marker),
 			"RESTORE_REHEARSAL_MARKER": str(marker),
+			"RESTORE_REHEARSAL_REQUIRE_FILES": "true",
 			"MINIO_ROOT_PASSWORD": "super-secret-value",
 		}
 		return temp, env, backup_dir
@@ -452,7 +454,7 @@ class TestBackupReadiness(FrappeTestCase):
 		report = validate_backup_readiness(backup_env=env, now=self.now)
 		rehearsal = next(check for check in report["checks"] if check["name"] == "restore_rehearsal")
 		self.assertEqual(rehearsal["status"], "unhealthy")
-		self.assertIn("private_files_restore_evidence", rehearsal["details"]["errors"])
+		self.assertIn("private_file_restore_evidence", rehearsal["details"]["errors"])
 
 	def test_admin_diagnostic_requires_system_manager(self):
 		frappe.set_user("Guest")

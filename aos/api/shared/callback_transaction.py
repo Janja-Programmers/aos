@@ -8,7 +8,11 @@ from typing import Any
 
 import frappe
 
-from aos.services.transactional_outbox import OUTBOX_DOCTYPE, OutboxConflictError
+from aos.services.transactional_outbox import (
+	OUTBOX_DOCTYPE,
+	OutboxConflictError,
+	_ACTIVE_CALLBACK_CORRELATION,
+)
 
 _COUNTER_FIELDS = {
 	"old_generation_rejection_count",
@@ -132,6 +136,7 @@ def execute_callback_atomically[T](
 	registration_flag_before = _outbox_registration_flag()
 	frappe.db.savepoint(savepoint)
 	correlated_outbox: str | None = None
+	correlation_token = _ACTIVE_CALLBACK_CORRELATION.set(None)
 	try:
 		correlated_outbox = _lock_callback_records(job_doctype, job_name)
 		return operation()
@@ -150,3 +155,5 @@ def execute_callback_atomically[T](
 		except Exception:
 			pass
 		raise
+	finally:
+		_ACTIVE_CALLBACK_CORRELATION.reset(correlation_token)

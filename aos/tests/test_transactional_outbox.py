@@ -189,7 +189,7 @@ class TestTransactionalOutbox(FrappeTestCase):
 		with self.assertRaises(OutboxConflictError):
 			validate_callback_idempotency(job, {"idempotency_key": "wrong-key"})
 
-	def test_max_attempt_failure_transitions_to_dead_letter(self):
+	def test_signed_worker_failure_is_terminal_completed_with_failure(self):
 		savepoint = f"outbox_{uuid.uuid4().hex[:12]}"
 		frappe.db.savepoint(savepoint)
 		try:
@@ -213,7 +213,7 @@ class TestTransactionalOutbox(FrappeTestCase):
 				success=False,
 				error="sanitized downstream failure",
 			)
-			self.assertEqual(result.status, "Dead Letter")
+			self.assertEqual(result.status, "Completed With Failure")
 			self.assertIsNotNone(result.completed_at)
 			self.assertIsNone(result.next_attempt_at)
 		finally:
@@ -292,12 +292,29 @@ class TestTransactionalOutbox(FrappeTestCase):
 				failed_total=0,
 				retried_total=0,
 				dead_lettered_total=0,
+				callback_timeouts_total=0,
+				redispatch_accepted_total=0,
+				redispatch_skipped_total=0,
+				redispatch_failure_total=0,
+				duplicate_active_dispatch_total=0,
+				callback_replay_total=0,
+				old_generation_rejection_total=0,
+				token_mismatch_total=0,
+				transaction_rollback_total=0,
 				duration_seconds_sum=0,
 				duration_seconds_count=0,
 			)
 			for service in SERVICE_TYPES
 		]
-		db.sql.side_effect = [status_rows, [[120]], [[1]], service_rows, lifecycle_rows]
+		db.sql.side_effect = [
+			status_rows,
+			[[120]],
+			[[1]],
+			[[0]],
+			service_rows,
+			lifecycle_rows,
+			[[1]],
+		]
 		with patch("aos.services.transactional_outbox.frappe.db", db):
 			report = outbox_monitoring_summary()
 		self.assertEqual(report["queue_depth"], 6)

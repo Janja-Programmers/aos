@@ -52,13 +52,13 @@ REQUIRED_BEHAVIORAL_TESTS = {
 	"test_outbox_recovery_dispatch_all_services.py": {
 		"test_callback_timeout_redispatches_all_five_services_and_replay_completes",
 		"test_expired_publisher_lease_for_processing_job_redispatches_all_services",
-		"test_callback_timeout_exhaustion_dead_letters_every_service_type",
+		"test_callback_timeout_exhaustion_enters_manual_review_for_every_service_type",
 	},
 	"test_callback_atomicity_all_services.py": {
 		"test_valid_success_and_duplicate_success_are_atomic_and_idempotent",
 		"test_valid_failure_and_duplicate_failure_are_atomic_and_idempotent",
 		"test_service_job_save_and_outbox_save_failures_roll_back_every_service",
-		"test_operator_replay_changes_generation_and_rejects_the_old_callback_for_all_services",
+		"test_operator_work_replay_changes_generation_and_rejects_old_callbacks",
 	},
 	"test_outbox_backfill.py": {
 		"test_each_doctype_backfills_retryable_states_and_skips_terminal_states",

@@ -29,6 +29,7 @@ class TestProductionConfigValidation(FrappeTestCase):
 			"AOS_ENVIRONMENT": "production",
 			"BACKUP_ENCRYPTION_REQUIRED": "true",
 			"BACKUP_ENCRYPTION_METHOD": "age",
+			"BACKUP_LOCAL_RETENTION_MODE": "encrypted-artifact",
 			"BACKUP_AGE_RECIPIENT": "age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
 			"AOS_METRICS_TOKEN": "metrics-secret-value-0123456789abcdef",
 			"AOS_ALERTING_ENABLED": "true",

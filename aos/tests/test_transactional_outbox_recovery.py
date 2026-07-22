@@ -22,7 +22,6 @@ from aos.services.transactional_outbox import (
     mark_outbox_callback,
     publish_outbox_records,
     recover_overdue_published,
-    requeue_dead_letter_outbox,
     validate_callback_idempotency,
 )
 
@@ -85,7 +84,7 @@ class TestTransactionalOutboxRecovery(FrappeTestCase):
             "aos.services.transactional_outbox.query_companion_job_status",
             return_value={"state": "callback_pending", "work_state": "work_complete", "callback_state": "pending"},
         ):
-            result = recover_overdue_published(now=now_datetime())
+            result = recover_overdue_published(now=now_datetime(), outbox_name=outbox.name)
         outbox.reload()
         self.assertEqual(result["requeued"], 1)
         self.assertEqual(outbox.status, "Reconciliation Pending")
@@ -132,23 +131,64 @@ class TestTransactionalOutboxRecovery(FrappeTestCase):
         self.assertEqual(outbox.proposed_dispatch_generation, 1)
         self.assertEqual(outbox.proposed_dispatch_token, proposed_token)
 
-    def test_callback_timeout_exhaustion_dead_letters(self):
+    def test_callback_timeout_exhaustion_enters_callback_resolvable_manual_review(self):
         _job, outbox = self._job_and_outbox(max_attempts=2)
         outbox.status = "Published"
         outbox.attempt_count = 2
         outbox.max_attempts = 2
+        outbox.reconciliation_max_attempts = 1
         outbox.callback_deadline_at = add_to_date(now_datetime(), seconds=-1, as_datetime=True)
         outbox.save(ignore_permissions=True)
         with patch(
             "aos.services.transactional_outbox.query_companion_job_status",
-            return_value={"state": "callback_pending", "work_state": "work_complete", "callback_state": "dead_letter"},
+            return_value={
+                "state": "callback_pending",
+                "work_state": "work_complete",
+                "callback_state": "dead_letter",
+                "dispatch_generation": int(outbox.dispatch_generation or 0),
+            },
         ):
-            result = recover_overdue_published(now=now_datetime())
+            result = recover_overdue_published(
+                now=now_datetime(), outbox_name=outbox.name
+            )
         outbox.reload()
-        self.assertEqual(result["dead_lettered"], 1)
-        self.assertEqual(outbox.status, "Dead Letter")
+        self.assertEqual(result["manual_review"], 1)
+        self.assertEqual(result["dead_lettered"], 0)
+        self.assertEqual(outbox.status, "Manual Review")
         self.assertIsNotNone(outbox.completed_at)
         self.assertIsNone(outbox.next_attempt_at)
+
+    def test_targeted_callback_recovery_does_not_touch_unrelated_rows(self):
+        _job1, outbox1 = self._job_and_outbox()
+        _job2, outbox2 = self._job_and_outbox()
+        for outbox in (outbox1, outbox2):
+            outbox.status = "Published"
+            outbox.attempt_count = 1
+            outbox.dispatch_generation = 1
+            outbox.current_dispatch_token = uuid.uuid4().hex
+            outbox.callback_deadline_at = add_to_date(
+                now_datetime(), seconds=-1, as_datetime=True
+            )
+            outbox.save(ignore_permissions=True)
+
+        with patch(
+            "aos.services.transactional_outbox.query_companion_job_status",
+            return_value={
+                "state": "callback_pending",
+                "work_state": "work_complete",
+                "callback_state": "pending",
+                "dispatch_generation": 1,
+            },
+        ):
+            result = recover_overdue_published(
+                now=now_datetime(), outbox_name=outbox1.name
+            )
+
+        outbox1.reload()
+        outbox2.reload()
+        self.assertEqual(result["requeued"], 1)
+        self.assertEqual(outbox1.status, "Reconciliation Pending")
+        self.assertEqual(outbox2.status, "Published")
 
     def test_old_callback_after_retry_is_rejected_and_success_is_idempotent(self):
         job, outbox = self._job_and_outbox()
@@ -222,7 +262,7 @@ class TestTransactionalOutboxRecovery(FrappeTestCase):
             return object()
 
         with patch("aos.services.transactional_outbox.frappe.enqueue", side_effect=fake_enqueue):
-            result = publish_outbox_records(limit=1, lease_seconds=60)
+            result = publish_outbox_records(limit=1, lease_seconds=60, outbox_name=outbox.name)
         outbox.reload()
         self.assertEqual(result["dispatched"], 1)
         self.assertEqual(outbox.status, "Queued")
@@ -230,32 +270,50 @@ class TestTransactionalOutboxRecovery(FrappeTestCase):
         self.assertEqual(len(calls), 1)
         self.assertIn(f":g{outbox.attempt_count}", calls[0]["job_id"])
 
-    def test_callback_timeout_dead_letter_can_be_operator_replayed(self):
-        _job, outbox = self._job_and_outbox(max_attempts=1)
+    def test_callback_timeout_manual_review_accepts_a_valid_late_callback(self):
+        job, outbox = self._job_and_outbox(max_attempts=1)
+        token = uuid.uuid4().hex
         outbox.status = "Published"
         outbox.attempt_count = 1
         outbox.max_attempts = 1
+        outbox.reconciliation_max_attempts = 1
+        outbox.dispatch_generation = 1
+        outbox.current_dispatch_token = token
         outbox.callback_deadline_at = add_to_date(now_datetime(), seconds=-1, as_datetime=True)
         outbox.save(ignore_permissions=True)
         with patch(
             "aos.services.transactional_outbox.query_companion_job_status",
-            return_value={"state": "callback_pending", "work_state": "work_complete", "callback_state": "dead_letter"},
+            return_value={
+                "state": "callback_pending",
+                "work_state": "work_complete",
+                "callback_state": "dead_letter",
+                "dispatch_generation": 1,
+            },
         ):
-            recover_overdue_published(now=now_datetime())
+            recover_overdue_published(now=now_datetime(), outbox_name=outbox.name)
         outbox.reload()
-        self.assertEqual(outbox.status, "Dead Letter")
-        with patch("aos.services.transactional_outbox.frappe.only_for"):
-            result = requeue_dead_letter_outbox(
-                outbox_name=outbox.name,
-                expected_idempotency_key=outbox.idempotency_key,
-                additional_attempts=2,
-            )
-        self.committed_names.append((OUTBOX_DOCTYPE, outbox.name))
-        self.assertEqual(result["status"], "Queued")
-        outbox.reload()
-        self.assertEqual(outbox.max_attempts, 3)
-        self.assertEqual(outbox.attempt_count, 1)
-        self.assertIsNone(outbox.callback_deadline_at)
+        self.assertEqual(outbox.status, "Manual Review")
+
+        validate_callback_idempotency(
+            job,
+            {
+                "idempotency_key": job.idempotency_key,
+                "dispatch_id": outbox.idempotency_key,
+                "dispatch_generation": 1,
+                "dispatch_token": token,
+                "status": "ingested",
+            },
+            callback_status="ingested",
+        )
+        completed = mark_outbox_callback(
+            job_doctype=job.doctype,
+            job_name=job.name,
+            callback_status="ingested",
+            success=True,
+            dispatch_token=token,
+            dispatch_generation=1,
+        )
+        self.assertEqual(completed.status, "Completed")
 
     def test_two_database_connections_cannot_lock_same_due_row(self):
         """Exercise MariaDB SKIP LOCKED with separate physical connections."""

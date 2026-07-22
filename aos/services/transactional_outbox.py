@@ -409,8 +409,14 @@ def _publisher_owner() -> str:
 	return f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:12]}"
 
 
-def recover_stale_claims(*, now=None) -> int:
+def recover_stale_claims(*, now=None, outbox_name: str | None = None) -> int:
 	current = now or now_datetime()
+	name_filter = " AND name = %s" if outbox_name else ""
+	params: tuple[Any, ...] = (
+		(current, current, _clean(outbox_name, limit=140))
+		if outbox_name
+		else (current, current)
+	)
 	frappe.db.sql(
 		f"""
 	    UPDATE `tab{OUTBOX_DOCTYPE}`
@@ -420,9 +426,9 @@ def recover_stale_claims(*, now=None) -> int:
 	        last_error = 'Publisher claim lease expired before completion',
 	        pending_dispatch_reason = 'publisher_lease_expired'
 	    WHERE lease_expires_at IS NOT NULL
-	      AND lease_expires_at < %s
+	      AND lease_expires_at < %s{name_filter}
 	    """,
-		(current, current),
+		params,
 	)
 	# Frappe's sql return value differs by driver; rowcount is available on the cursor.
 	try:
@@ -590,7 +596,9 @@ def _repair_callback_completed_outbox(outbox: Any, status_data: dict[str, Any], 
 	return outbox.status
 
 
-def recover_overdue_published(*, now=None, limit: int = 1000) -> dict[str, int]:
+def recover_overdue_published(
+	*, now=None, limit: int = 1000, outbox_name: str | None = None
+) -> dict[str, int]:
 	"""Reconcile overdue callbacks while preserving callback eligibility and bounded convergence."""
 	current = now or now_datetime()
 	limit = max(1, min(int(limit or 1000), 5000))
@@ -599,9 +607,12 @@ def recover_overdue_published(*, now=None, limit: int = 1000) -> dict[str, int]:
 	extended_active = 0
 	pending_reconciliation = 0
 	manual_review = 0
+	filters: dict[str, Any] = {"status": "Published", "callback_deadline_at": ("<", current)}
+	if outbox_name:
+		filters["name"] = _clean(outbox_name, limit=140)
 	rows = frappe.get_all(
 		OUTBOX_DOCTYPE,
-		filters={"status": "Published", "callback_deadline_at": ("<", current)},
+		filters=filters,
 		fields=["name"],
 		order_by="callback_deadline_at asc, name asc",
 		limit=limit,
@@ -887,13 +898,15 @@ def _mark_dispatch_uncertain(name: str, token: str, error: str) -> str:
 	return status
 
 
-def publish_outbox_records(*, limit: int = 100, lease_seconds: int = 300) -> dict[str, int]:
+def publish_outbox_records(
+	*, limit: int = 100, lease_seconds: int = 300, outbox_name: str | None = None
+) -> dict[str, int]:
 	"""Claim and enqueue due outbox rows safely across concurrent publishers."""
 
 	limit = max(1, min(int(limit or 100), 1000))
 	owner = _publisher_owner()
-	recovered = recover_stale_claims()
-	callback_recovery = recover_overdue_published(limit=limit)
+	recovered = recover_stale_claims(outbox_name=outbox_name)
+	callback_recovery = recover_overdue_published(limit=limit, outbox_name=outbox_name)
 	frappe.db.commit()
 	claimed = 0
 	dispatched = 0
@@ -901,7 +914,9 @@ def publish_outbox_records(*, limit: int = 100, lease_seconds: int = 300) -> dic
 	dead_lettered = 0
 
 	for _ in range(limit):
-		claim = _claim_one(owner=owner, lease_seconds=lease_seconds)
+		claim = _claim_one(
+			owner=owner, lease_seconds=lease_seconds, outbox_name=outbox_name
+		)
 		frappe.db.commit()  # release the row lock before interacting with Redis
 		if not claim:
 			break
@@ -1486,6 +1501,7 @@ def authorize_terminal_work_replay(
 		"additional_attempts": attempts_to_add,
 	}
 
+
 def outbox_monitoring_summary() -> dict[str, Any]:
 	counts = frappe.db.sql(
 		f"SELECT status, COUNT(*) AS total FROM `tab{OUTBOX_DOCTYPE}` GROUP BY status",
@@ -1497,7 +1513,7 @@ def outbox_monitoring_summary() -> dict[str, Any]:
 		f"""
         SELECT TIMESTAMPDIFF(SECOND, MIN(creation), %s)
         FROM `tab{OUTBOX_DOCTYPE}`
-        WHERE status IN ('Queued', 'Failed')
+        WHERE status IN ('Queued', 'Failed', 'Dispatch Uncertain', 'Reconciliation Pending')
         """,
 		(now,),
 	)[0][0]
@@ -1582,7 +1598,10 @@ def outbox_monitoring_summary() -> dict[str, Any]:
 		}
 	return {
 		"counts_by_status": counts_by_status,
-		"queue_depth": counts_by_status.get("Queued", 0) + counts_by_status.get("Failed", 0),
+		"queue_depth": sum(
+			counts_by_status.get(status, 0)
+			for status in ("Queued", "Failed", "Dispatch Uncertain", "Reconciliation Pending")
+		),
 		"claimed_count": int(
 			frappe.db.sql(
 				f"SELECT COUNT(*) FROM `tab{OUTBOX_DOCTYPE}` WHERE claim_token IS NOT NULL",

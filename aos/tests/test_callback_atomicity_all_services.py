@@ -5,7 +5,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -26,8 +26,7 @@ from aos.services import (
 from aos.services.transactional_outbox import (
 	OUTBOX_DOCTYPE,
 	_claim_one,
-	_mark_enqueue_accepted,
-	requeue_dead_letter_outbox,
+	authorize_terminal_work_replay,
 )
 from aos.tests.outbox_fixtures import create_durable_job, create_outbox
 
@@ -91,10 +90,20 @@ _ENV = {
 	"SEARCH_RANKING_ENABLED": "true",
 	"NOTIFICATION_DELIVERY_ENABLED": "true",
 	"ANALYTICS_PIPELINE_ENABLED": "true",
+	"VIDEO_SERVICE_URL": "http://127.0.0.1:18130",
+	"VIDEO_SERVICE_SECRET": "video-dispatch-test-secret",
 	"VIDEO_SERVICE_CALLBACK_SECRET": "callback-test-secret",
+	"MODERATION_SERVICE_URL": "http://127.0.0.1:18140",
+	"MODERATION_SERVICE_SECRET": "moderation-dispatch-test-secret",
 	"MODERATION_SERVICE_CALLBACK_SECRET": "callback-test-secret",
+	"SEARCH_RANKING_SERVICE_URL": "http://127.0.0.1:18150",
+	"SEARCH_RANKING_SERVICE_SECRET": "search_ranking-dispatch-test-secret",
 	"SEARCH_RANKING_SERVICE_CALLBACK_SECRET": "callback-test-secret",
+	"NOTIFICATION_SERVICE_URL": "http://127.0.0.1:18160",
+	"NOTIFICATION_SERVICE_SECRET": "notification-dispatch-test-secret",
 	"NOTIFICATION_SERVICE_CALLBACK_SECRET": "callback-test-secret",
+	"ANALYTICS_SERVICE_URL": "http://127.0.0.1:18170",
+	"ANALYTICS_SERVICE_SECRET": "analytics-dispatch-test-secret",
 	"ANALYTICS_SERVICE_CALLBACK_SECRET": "callback-test-secret",
 }
 
@@ -417,7 +426,7 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 
 					self._run_isolated(scenario)
 
-	def test_operator_replay_changes_generation_and_rejects_the_old_callback_for_all_services(self):
+	def test_operator_work_replay_changes_generation_and_rejects_old_callbacks(self):
 		with patch.dict(os.environ, _ENV, clear=False):
 			for adapter in _ADAPTERS:
 				with self.subTest(service_type=adapter.service_type):
@@ -430,16 +439,23 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 						old_payload = self._failure_payload(fixture, outbox, old_token)
 						self.assertTrue(self._invoke(adapter, old_payload)["ok"])
 						outbox.reload()
-						self.assertEqual(outbox.status, "Dead Letter")
+						self.assertEqual(outbox.status, "Completed With Failure")
+
+						response = Mock()
+						response.content = b"{}"
+						response.raise_for_status.return_value = None
+						response.json.return_value = {"outcome": "work_replay_authorized"}
 						with (
 							patch("aos.services.transactional_outbox.frappe.only_for"),
 							patch("aos.services.transactional_outbox.frappe.db.commit"),
+							patch("aos.services.transactional_outbox.requests.post", return_value=response),
 						):
-							requeue_dead_letter_outbox(
+							authorize_terminal_work_replay(
 								outbox_name=outbox.name,
 								expected_idempotency_key=outbox.idempotency_key,
 								additional_attempts=2,
 							)
+
 						claim = _claim_one(
 							owner="operator-replay-test",
 							lease_seconds=60,
@@ -447,8 +463,18 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 							outbox_name=outbox.name,
 						)
 						self.assertIsNotNone(claim)
-						_mark_enqueue_accepted(outbox.name, str(claim["claim_token"]))
+						# Simulate the companion accepting the proposed replay correlation.
 						outbox.reload()
+						outbox.status = "Published"
+						outbox.dispatch_generation = int(claim["dispatch_generation"])
+						outbox.current_dispatch_token = str(claim["dispatch_token"])
+						outbox.proposed_dispatch_generation = 0
+						outbox.proposed_dispatch_token = None
+						outbox.claim_token = None
+						outbox.claimed_by = None
+						outbox.claimed_at = None
+						outbox.lease_expires_at = None
+						outbox.save(ignore_permissions=True)
 						self.assertGreater(int(outbox.dispatch_generation), 1)
 						self.assertNotEqual(outbox.current_dispatch_token, old_token)
 						before = self._snapshot(fixture, outbox)

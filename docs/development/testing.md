@@ -46,13 +46,31 @@ failure path. Background removal, image search, and translation have no queue
 or HMAC contract, so their applicable processor/vector/translator boundary is
 tested instead.
 
-To test Frappe against an existing development or disposable site:
+To test Frappe, use a dedicated disposable test site. Do **not** run the full
+application suite against production or an operational staging site: durable
+outbox, callback-recovery, notification, account-lifecycle, and cleanup tests
+intentionally exercise commits, leases, retries, terminal states, and cleanup.
+A shared operational site's pre-existing rows also make global monitoring and
+recovery assertions nondeterministic.
+
+```bash
+cd /path/to/frappe-bench
+bench new-site aos-test.local --mariadb-root-password '<root-password>' \
+  --admin-password '<temporary-admin-password>'
+bench --site aos-test.local install-app aos
+bench --site aos-test.local set-config allow_tests true
+bench --site aos-test.local run-tests --app aos
+bench drop-site aos-test.local --force --no-backup \
+  --mariadb-root-password '<root-password>'
+```
+
+The repository runner can drive the same disposable site:
 
 ```bash
 export AOS_PYTHON=/path/to/python3.14
 export AOS_BENCH_PATH=/path/to/frappe-bench
-export AOS_FRAPPE_SITE=site-name
-export AOS_FRAPPE_RUN_MIGRATE=1  # optional; defaults to no migration locally
+export AOS_FRAPPE_SITE=aos-test.local
+export AOS_FRAPPE_RUN_MIGRATE=1
 make frappe
 ```
 

@@ -47,6 +47,17 @@ class TestJobMonitoring(FrappeTestCase):
         base.update(overrides)
         return base
 
+    def _healthy_outbox_summary(self):
+        return {
+            "queue_depth": 0,
+            "claimed_count": 0,
+            "stale_lease_count": 0,
+            "oldest_queued_age_seconds": 0,
+            "dead_letter_count": 0,
+            "manual_review_count": 0,
+            "by_service": {},
+        }
+
     def test_job_monitoring_all_clear_and_redacted(self):
         secret_error = "token=super-secret-value traceback should not leak"
 
@@ -71,6 +82,7 @@ class TestJobMonitoring(FrappeTestCase):
             service_job_stats_provider=service_provider,
             queue_stats_provider=queue_provider,
             background_error_provider=background_error_provider,
+            outbox_summary_provider=self._healthy_outbox_summary,
         )
 
         self.assertTrue(report.get("ready"), report)
@@ -100,6 +112,7 @@ class TestJobMonitoring(FrappeTestCase):
             service_job_stats_provider=service_provider,
             queue_stats_provider=lambda **kwargs: [self._healthy_queue_stats()],
             background_error_provider=lambda **kwargs: {"error_count": 0, "window_hours": 24, "sample_methods": []},
+            outbox_summary_provider=self._healthy_outbox_summary,
         )
 
         self.assertFalse(report.get("ready"), report)
@@ -128,6 +141,7 @@ class TestJobMonitoring(FrappeTestCase):
             background_error_provider=background_error_provider,
             queue_backlog_warning=1000,
             queue_backlog_unhealthy=10000,
+            outbox_summary_provider=self._healthy_outbox_summary,
         )
 
         self.assertTrue(report.get("ready"), report)
@@ -145,11 +159,36 @@ class TestJobMonitoring(FrappeTestCase):
             background_error_provider=lambda **kwargs: {"error_count": 0, "window_hours": 24, "sample_methods": []},
             queue_backlog_warning=1000,
             queue_backlog_unhealthy=10000,
+            outbox_summary_provider=self._healthy_outbox_summary,
         )
 
         self.assertFalse(report.get("ready"), report)
         queue = [check for check in report.get("checks", []) if check.get("name") == "frappe_queue:long"]
         self.assertEqual(queue[0].get("status"), "unhealthy")
+
+    def test_outbox_manual_review_makes_report_unready(self):
+        def outbox_summary():
+            summary = self._healthy_outbox_summary()
+            summary["manual_review_count"] = 1
+            return summary
+
+        report = validate_job_monitoring(
+            service_job_stats_provider=lambda **kwargs: [self._healthy_service_stats()],
+            queue_stats_provider=lambda **kwargs: [self._healthy_queue_stats()],
+            background_error_provider=lambda **kwargs: {
+                "error_count": 0,
+                "window_hours": 24,
+                "sample_methods": [],
+            },
+            outbox_summary_provider=outbox_summary,
+        )
+
+        self.assertFalse(report.get("ready"), report)
+        outbox = next(
+            check for check in report.get("checks", []) if check.get("name") == "transactional_outbox"
+        )
+        self.assertEqual(outbox.get("status"), "unhealthy")
+        self.assertEqual((outbox.get("details") or {}).get("manual_review_count"), 1)
 
     def test_admin_diagnostic_requires_system_manager(self):
         frappe.set_user("Guest")

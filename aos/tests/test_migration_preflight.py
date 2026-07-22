@@ -71,6 +71,7 @@ class TestMigrationPreflight(FrappeTestCase):
         rows = [
             frappe._dict(status="Queued", total=5001),
             frappe._dict(status="Dead Letter", total=1),
+            frappe._dict(status="Manual Review", total=1),
         ]
         with (
             patch.dict("os.environ", {"AOS_MIGRATION_MAX_OUTBOX_BACKLOG": "5000"}, clear=False),
@@ -79,6 +80,7 @@ class TestMigrationPreflight(FrappeTestCase):
             ready, _message, details = migration_preflight._outbox_check()
         self.assertFalse(ready)
         self.assertEqual(details["dead_letter_count"], 1)
+        self.assertEqual(details["manual_review_count"], 1)
         self.assertEqual(details["queued_retryable_count"], 5001)
 
     def test_preflight_discloses_manual_review_limitation(self):

@@ -663,6 +663,8 @@ def _offsite_backup_check(
 			if marker_mode in {"rsync", "s3", "custom", "external"}
 			else (marker_mode or None),
 			"marker_encryption_method": marker_encryption or None,
+			"marker_artifact_matches_latest": marker_artifact_matches_latest,
+			"marker_checksum_matches_latest": marker_checksum_matches_latest,
 			"production_encryption_required": encryption_required,
 		},
 	}

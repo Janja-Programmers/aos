@@ -154,7 +154,7 @@ class TestOutboxRecoveryDispatchAllServices(FrappeTestCase):
 				"phase": "callback_pending",
 			},
 		):
-			result = recover_overdue_published(now=now_datetime(), limit=10)
+			result = recover_overdue_published(now=now_datetime(), limit=10, outbox_name=outbox.name)
 		self.assertEqual(result["requeued"], 1)
 		frappe.db.set_value(
 			OUTBOX_DOCTYPE,
@@ -395,7 +395,9 @@ class TestOutboxRecoveryDispatchAllServices(FrappeTestCase):
 					outbox.lease_expires_at = add_to_date(now_datetime(), seconds=-60, as_datetime=True)
 					outbox.save(ignore_permissions=True)
 					frappe.db.commit()
-					self.assertGreaterEqual(recover_stale_claims(now=now_datetime()), 1)
+					self.assertEqual(
+						recover_stale_claims(now=now_datetime(), outbox_name=outbox.name), 1
+					)
 					claim = _claim_one(
 						owner="lease-recovery-test",
 						lease_seconds=60,
@@ -466,7 +468,7 @@ class TestOutboxRecoveryDispatchAllServices(FrappeTestCase):
 					self.assertEqual(int(outbox.proposed_dispatch_generation or 0), 0)
 					self.assertFalse(outbox.proposed_dispatch_token)
 
-	def test_callback_timeout_exhaustion_dead_letters_every_service_type(self):
+	def test_callback_timeout_exhaustion_enters_manual_review_for_every_service_type(self):
 		with patch.dict(os.environ, _ENV, clear=False):
 			for service_type in _SERVICE_MODULES:
 				with self.subTest(service_type=service_type):
@@ -476,14 +478,23 @@ class TestOutboxRecoveryDispatchAllServices(FrappeTestCase):
 					self._track(fixture, outbox)
 					self._publish_as_lost_callback(fixture, outbox, attempt=1)
 					outbox.max_attempts = 1
+					outbox.reconciliation_max_attempts = 1
 					outbox.save(ignore_permissions=True)
 					with patch(
 						"aos.services.transactional_outbox.query_companion_job_status",
-						return_value={"state": "callback_pending", "work_state": "work_complete", "callback_state": "dead_letter"},
+						return_value={
+							"state": "callback_pending",
+							"work_state": "work_complete",
+							"callback_state": "dead_letter",
+							"dispatch_generation": int(outbox.dispatch_generation or 0),
+						},
 					):
-						result = recover_overdue_published(now=now_datetime(), limit=10)
+						result = recover_overdue_published(
+							now=now_datetime(), limit=10, outbox_name=outbox.name
+						)
 					frappe.db.commit()
 					outbox.reload()
-					self.assertGreaterEqual(result["dead_lettered"], 1)
-					self.assertEqual(outbox.status, "Dead Letter")
+					self.assertEqual(result["manual_review"], 1)
+					self.assertEqual(result["dead_lettered"], 0)
+					self.assertEqual(outbox.status, "Manual Review")
 					self.assertEqual(outbox.last_error, "DOWNSTREAM_CALLBACK_DEADLINE_EXCEEDED")

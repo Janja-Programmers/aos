@@ -516,6 +516,7 @@ def validate_job_monitoring(
 	service_job_stats_provider: Callable[..., list[dict[str, Any]]] | None = None,
 	queue_stats_provider: Callable[..., list[dict[str, Any]]] | None = None,
 	background_error_provider: Callable[..., dict[str, Any]] | None = None,
+	outbox_summary_provider: Callable[[], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
 	"""Return a redacted job-monitoring report for AOS production operations."""
 
@@ -581,16 +582,23 @@ def validate_job_monitoring(
 	checks.append(_background_error_check_from_stats(error_stats))
 
 	try:
-		from aos.services.transactional_outbox import outbox_monitoring_summary
+		if outbox_summary_provider is None:
+			from aos.services.transactional_outbox import outbox_monitoring_summary
 
-		outbox = outbox_monitoring_summary()
+			outbox_provider = outbox_monitoring_summary
+		else:
+			outbox_provider = outbox_summary_provider
+		outbox = outbox_provider()
 		dead_letters = _safe_int(outbox.get("dead_letter_count"))
+		manual_reviews = _safe_int(outbox.get("manual_review_count"))
 		stale_leases = _safe_int(outbox.get("stale_lease_count"))
 		oldest_age = _safe_int(outbox.get("oldest_queued_age_seconds"))
 		queue_depth = _safe_int(outbox.get("queue_depth"))
-		if dead_letters or stale_leases or oldest_age > stale_minutes * 60:
+		if dead_letters or manual_reviews or stale_leases or oldest_age > stale_minutes * 60:
 			outbox_status = "unhealthy"
-			outbox_message = "Transactional outbox has dead letters, stale leases, or overdue records."
+			outbox_message = (
+				"Transactional outbox has terminal review records, stale leases, or overdue records."
+			)
 		elif queue_depth > backlog_warn:
 			outbox_status = "degraded"
 			outbox_message = "Transactional outbox backlog is elevated."
@@ -609,6 +617,7 @@ def validate_job_monitoring(
 					"stale_lease_count": stale_leases,
 					"oldest_queued_age_seconds": oldest_age,
 					"dead_letter_count": dead_letters,
+					"manual_review_count": manual_reviews,
 					"service_types": sorted((outbox.get("by_service") or {}).keys()),
 				},
 			}
