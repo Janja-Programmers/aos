@@ -751,3 +751,17 @@ def _recalculate_profile_follow_totals(users: set[str]) -> int:
         updated += 1
 
     return updated
+
+
+def deactivate_account_features(user: str) -> dict[str, int]:
+    """End ephemeral/realtime activity without hiding retained public content."""
+    user = str(user or "").strip()
+    if not user:
+        return {}
+    now = now_datetime()
+    return {
+        "active_calls_ended": _end_active_calls(user=user, now=now),
+        "active_live_streams_ended": _end_active_live_streams(user=user, now=now),
+        "live_cohost_rows_closed": _close_live_cohost_rows(user=user, now=now),
+        "notifications_marked_read": _mark_notifications_read(user=user),
+    }

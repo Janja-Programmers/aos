@@ -6,13 +6,23 @@
  "engine": "InnoDB",
  "field_order": [
   "user",
+  "public_id",
+  "display_name",
+  "legal_name",
+  "bio",
+  "phone",
+  "date_of_birth",
+  "gender",
+  "location",
   "profile_image_media",
   "account_status",
   "is_deleted",
   "account_status_column_break",
+  "deactivated_at",
   "deleted_at",
   "restore_deadline",
   "delete_reason",
+  "lifecycle_reason",
   "restored_at",
   "total_followers",
   "column_break_vodm",
@@ -35,6 +45,52 @@
    "unique": 1
   },
   {
+   "fieldname": "public_id",
+   "fieldtype": "Data",
+   "label": "Public Account ID",
+   "read_only": 1,
+   "unique": 1,
+   "search_index": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "display_name",
+   "fieldtype": "Data",
+   "label": "Display Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "legal_name",
+   "fieldtype": "Data",
+   "label": "Legal Name"
+  },
+  {
+   "fieldname": "bio",
+   "fieldtype": "Small Text",
+   "label": "Bio"
+  },
+  {
+   "fieldname": "phone",
+   "fieldtype": "Data",
+   "label": "Phone"
+  },
+  {
+   "fieldname": "date_of_birth",
+   "fieldtype": "Date",
+   "label": "Date of Birth"
+  },
+  {
+   "fieldname": "gender",
+   "fieldtype": "Select",
+   "label": "Gender",
+   "options": "\nMale\nFemale\nOther\nPrefer not to say"
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Data",
+   "label": "Location"
+  },
+  {
    "fieldname": "profile_image_media",
    "fieldtype": "Link",
    "label": "Profile Image Media",
@@ -48,7 +104,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Account Status",
-   "options": "Active\nDeleted\nSuspended"
+   "options": "Active\nDeactivated\nDeleted\nSuspended"
   },
   {
    "default": "0",
@@ -61,6 +117,13 @@
   {
    "fieldname": "account_status_column_break",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "deactivated_at",
+   "fieldtype": "Datetime",
+   "label": "Deactivated At",
+   "read_only": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "deleted_at",
@@ -82,6 +145,12 @@
    "read_only": 1
   },
   {
+   "fieldname": "lifecycle_reason",
+   "fieldtype": "Small Text",
+   "label": "Lifecycle Reason",
+   "read_only": 1
+  },
+  {
    "fieldname": "restored_at",
    "fieldtype": "Datetime",
    "label": "Restored At",
@@ -97,6 +166,10 @@
    "read_only": 1
   },
   {
+   "fieldname": "column_break_vodm",
+   "fieldtype": "Column Break"
+  },
+  {
    "default": "0",
    "fieldname": "total_following",
    "fieldtype": "Int",
@@ -104,10 +177,6 @@
    "label": "Total Following",
    "non_negative": 1,
    "read_only": 1
-  },
-  {
-   "fieldname": "column_break_vodm",
-   "fieldtype": "Column Break"
   },
   {
    "fieldname": "verification_tab",
@@ -143,7 +212,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-06-23 00:00:00.000000",
+ "modified": "2026-07-22 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Profile",

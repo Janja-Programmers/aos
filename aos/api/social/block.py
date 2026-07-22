@@ -30,6 +30,7 @@ from aos.api.shared.responses import fail, ok
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.user_display import get_user_display_map
+from aos.services.accounts.identity import resolve_account_reference
 
 from .activity import record_block_user_activity
 from .constants import (
@@ -359,8 +360,8 @@ def list_blocked_users_impl(**kwargs):
             items.append(
                 {
                     "id": row.name,
-                    "blocked_user": row.blocked_user,
-                    "user": row.blocked_user,
+                    "blocked_user": display.get("user"),
+                    "user": display.get("user"),
                     "reason": row.reason or "",
                     "blocked_at": row.blocked_at,
                     **display,
@@ -391,7 +392,7 @@ def _validate_target_user(
     allow_deleted_target: bool = False,
     allow_disabled_target: bool = False,
 ):
-    target_user = str(target_user or "").strip()
+    target_user = resolve_account_reference(target_user)
 
     if not target_user:
         return None, fail("Target user is required.", error="VALIDATION_ERROR")

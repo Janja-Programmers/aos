@@ -130,9 +130,13 @@ def login_impl(**kwargs):
         safe_log_auth_event("AOS Inactive Account Login", identifier=identifier, user=user_name, reason=inactive_err.get("error"))
         return inactive_err
 
+    profile_missing = not frappe.db.exists("AOS Profile", user_name)
+    preference_missing = not frappe.db.exists("AOS User Preference", {"user": user_name})
     pref, pref_err = ensure_auth_bootstrap(user_name, **bootstrap_inputs)
     if pref_err:
         return pref_err
+    if profile_missing or preference_missing:
+        frappe.db.commit()
 
     try:
         lm = frappe.local.login_manager
@@ -182,9 +186,13 @@ def me_impl(**_):
         if int(enabled or 0) != 1:
             return fail("Account disabled.", error="ACCOUNT_DISABLED")
 
+        profile_missing = not frappe.db.exists("AOS Profile", user_name)
+        preference_missing = not frappe.db.exists("AOS User Preference", {"user": user_name})
         pref, pref_err = ensure_auth_bootstrap(user_name)
         if pref_err:
             return pref_err
+        if profile_missing or preference_missing:
+            frappe.db.commit()
 
         return ok(
             "Session fetched.",

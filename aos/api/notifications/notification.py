@@ -41,7 +41,7 @@ def _serialize_notification(notification):
         "type": notification.type,
         "title": notification.title,
         "body": notification.body,
-        "actor": notification.actor,
+        "actor": actor_display.get("user") if actor_display else None,
         "actor_display_name": (
             actor_display.get("display_name")
             if actor_display

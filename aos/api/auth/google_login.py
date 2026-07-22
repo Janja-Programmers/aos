@@ -10,7 +10,7 @@ from aos.api.shared.responses import ok, fail
 from aos.utils.aos_settings import get_google_oauth_client_ids
 
 from .constants import GOOGLE_LOGIN_LIMIT_PER_HOUR_PER_IP
-from .account_helpers import ensure_aos_profile, ensure_user_preference, safe_log_auth_event
+from .account_helpers import ensure_auth_bootstrap, safe_log_auth_event
 from .serializers import serialize_auth_payload
 from .validators import optional_bootstrap_inputs, optional_string, require_email, require_token, validate_client_type
 from .google_jwt import verify_google_id_token
@@ -44,9 +44,7 @@ def _bootstrap_new_google_user(email: str, full_name: str | None, bootstrap_inpu
         user.insert(ignore_permissions=True)
 
         user_name = user.name
-        ensure_aos_profile(user_name)
-
-        pref, pref_err = ensure_user_preference(user_name, **bootstrap_inputs)
+        pref, pref_err = ensure_auth_bootstrap(user_name, **bootstrap_inputs)
         if pref_err:
             frappe.db.rollback()
             return None, pref_err
@@ -84,7 +82,7 @@ def _ensure_existing_google_user_ready(user_name: str, email: str, bootstrap_inp
         safe_log_auth_event("AOS Social Login Disabled User", identifier=email, user=user_name, reason="disabled")
         return fail("Account disabled.", error="ACCOUNT_DISABLED", http_status=403)
 
-    pref, pref_err = ensure_user_preference(user_name, **bootstrap_inputs)
+    pref, pref_err = ensure_auth_bootstrap(user_name, **bootstrap_inputs)
     if pref_err:
         return pref_err
 

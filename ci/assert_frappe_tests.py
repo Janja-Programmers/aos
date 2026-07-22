@@ -23,6 +23,22 @@ REQUIRED_MEDIA_TEST_FILES = {
 	"test_runtime_config.py",
 	"test_service.py",
 }
+
+REQUIRED_ACCOUNTS_TEST_FILES = {
+    "__init__.py",
+    "test_consumer_privacy.py",
+    "test_identity.py",
+    "test_lifecycle.py",
+    "test_migration.py",
+    "test_preferences.py",
+    "test_profile.py",
+    "test_serializers.py",
+    "test_validation.py",
+}
+LEGACY_ACCOUNTS_TEST_FILES = {
+    "test_accounts.py", "test_account_profile.py", "test_account_preferences.py",
+}
+
 LEGACY_MEDIA_TEST_FILES = {
 	"test_category_media_hooks.py",
 	"test_media_content_validation.py",
@@ -106,6 +122,30 @@ def main() -> int:
 	repository = Path(__file__).resolve().parents[1]
 	test_root = repository / "aos"
 	media_test_root = test_root / "api" / "media" / "tests"
+	accounts_test_root = test_root / "api" / "accounts" / "tests"
+	missing_accounts_files = (
+		sorted(
+			REQUIRED_ACCOUNTS_TEST_FILES
+			- {path.name for path in accounts_test_root.iterdir() if path.is_file()}
+		)
+		if accounts_test_root.is_dir()
+		else sorted(REQUIRED_ACCOUNTS_TEST_FILES)
+	)
+	if missing_accounts_files:
+		raise SystemExit(
+			"Accounts feature tests must live under aos/api/accounts/tests: "
+			+ str(missing_accounts_files)
+		)
+	legacy_accounts_paths = sorted(
+		str(path.relative_to(repository))
+		for path in (test_root / "tests").glob("test_*.py")
+		if path.name in LEGACY_ACCOUNTS_TEST_FILES
+	)
+	if legacy_accounts_paths:
+		raise SystemExit(
+			"Accounts-owned tests must not live in the generic aos/tests package: "
+			+ str(legacy_accounts_paths)
+		)
 	missing_media_files = (
 		sorted(
 			REQUIRED_MEDIA_TEST_FILES

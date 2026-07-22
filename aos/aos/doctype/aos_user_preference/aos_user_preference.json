@@ -7,19 +7,12 @@
  "field_order": [
   "country",
   "language",
+  "location",
   "column_break_zqvg",
   "currency",
   "user"
  ],
  "fields": [
-  {
-   "fieldname": "user",
-   "fieldtype": "Link",
-   "label": "User",
-   "options": "User",
-   "reqd": 1,
-   "unique": 1
-  },
   {
    "fieldname": "country",
    "fieldtype": "Link",
@@ -39,6 +32,16 @@
    "reqd": 1
   },
   {
+   "fieldname": "location",
+   "fieldtype": "Link",
+   "label": "Location",
+   "options": "AOS Location"
+  },
+  {
+   "fieldname": "column_break_zqvg",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "currency",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -48,13 +51,17 @@
    "reqd": 1
   },
   {
-   "fieldname": "column_break_zqvg",
-   "fieldtype": "Column Break"
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User",
+   "reqd": 1,
+   "unique": 1
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-03-04 22:16:44.379350",
+ "modified": "2026-07-22 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS User Preference",

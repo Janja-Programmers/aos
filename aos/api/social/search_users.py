@@ -284,7 +284,7 @@ def _serialize_search_rows(*, rows: list[dict], current_user: str) -> list[dict]
 
         items.append(
             {
-                "user": target_user,
+                "user": display.get("user"),
                 "full_name": display.get("display_name") or row.get("full_name"),
                 "user_image": display.get("avatar"),
                 "is_deleted": False,

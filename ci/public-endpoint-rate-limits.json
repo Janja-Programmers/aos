@@ -18,6 +18,12 @@
     "rationale": "Bearer-token or loopback protected private scrape endpoint."
   },
   {
+    "endpoint": "aos.api.v1.accounts.__init__.deactivate_account",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline and stricter user/IP application limits."
+  },
+  {
     "endpoint": "aos.api.v1.accounts.__init__.get_my_preference",
     "access": "authenticated",
     "policy": "baseline_authenticated",

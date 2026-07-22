@@ -23,6 +23,7 @@ _DURATION_SUM: Counter[tuple[str, str]] = Counter()
 _EXCEPTIONS: Counter[str] = Counter()
 _RATE_LIMIT_REJECTIONS: Counter[str] = Counter()
 _MEDIA_EVENTS: Counter[tuple[str, str, str]] = Counter()
+_ACCOUNT_EVENTS: Counter[tuple[str, str]] = Counter()
 _MEDIA_BYTES: Counter[str] = Counter()
 _MEDIA_DURATION_COUNT: Counter[str] = Counter()
 _MEDIA_DURATION_SUM: Counter[str] = Counter()
@@ -43,6 +44,7 @@ _REDIS_KEYS = {
 	"media_bytes": f"{_METRIC_PREFIX}:media:bytes",
 	"media_duration_count": f"{_METRIC_PREFIX}:media:duration_count",
 	"media_duration_sum": f"{_METRIC_PREFIX}:media:duration_sum",
+	"account_events": f"{_METRIC_PREFIX}:accounts:events",
 }
 
 
@@ -106,6 +108,45 @@ def record_outbox_event(service_type: str, event: str, amount: int = 1) -> None:
 		return
 	_redis_increment(_REDIS_KEYS["outbox_events"], f"{service}|{event_name}", max(1, int(amount or 1)))
 
+
+
+_ALLOWED_ACCOUNT_EVENTS = {
+    "account.profile.read", "account.profile.updated", "account.preference.updated",
+    "account.avatar.replaced", "account.avatar.removed", "account.bootstrap.completed",
+    "account.bootstrap.failed", "account.deactivation.requested", "account.deactivated",
+    "account.deletion.requested", "account.deleted", "account.restored",
+}
+_ALLOWED_ACCOUNT_OUTCOMES = {"success", "rejected", "failure"}
+
+
+def record_account_event(*, event: str, outcome: str = "success", amount: int = 1) -> None:
+    event_name = str(event or "").strip().lower()
+    outcome_name = str(outcome or "success").strip().lower()
+    if event_name not in _ALLOWED_ACCOUNT_EVENTS or outcome_name not in _ALLOWED_ACCOUNT_OUTCOMES:
+        return
+    ok = _redis_increment(_REDIS_KEYS["account_events"], f"{event_name}|{outcome_name}", max(1, int(amount or 1)))
+    if not ok and _allow_process_fallback():
+        with _LOCK:
+            _ACCOUNT_EVENTS[(event_name, outcome_name)] += max(1, int(amount or 1))
+
+
+def _safe_account_metrics(lines: list[str]) -> None:
+    try:
+        raw = _decode_hash(_redis_cache().hgetall(_REDIS_KEYS["account_events"]))
+    except Exception:
+        with _LOCK:
+            raw = {"|".join(key): value for key, value in _ACCOUNT_EVENTS.items()}
+    lines.extend([
+        "# HELP aos_account_events_total Bounded account lifecycle and profile events.",
+        "# TYPE aos_account_events_total counter",
+    ])
+    for key, value in sorted(raw.items()):
+        parts = key.split("|", 1)
+        if len(parts) != 2:
+            continue
+        event_name, outcome_name = parts
+        if event_name in _ALLOWED_ACCOUNT_EVENTS and outcome_name in _ALLOWED_ACCOUNT_OUTCOMES:
+            lines.append(_line("aos_account_events_total", int(value), {"event": event_name, "outcome": outcome_name}))
 
 _ALLOWED_MEDIA_PURPOSES = {
 	"ad_image", "ad_video", "review_image", "seller_banner", "live_cover",
@@ -645,6 +686,7 @@ def render_metrics() -> str:
 	_safe_backup_metrics(lines)
 	_safe_config_metrics(lines)
 	_safe_media_metrics(lines)
+	_safe_account_metrics(lines)
 	try:
 		free = shutil.disk_usage(os.getenv("AOS_DISK_METRICS_PATH", "/")).free
 	except Exception:

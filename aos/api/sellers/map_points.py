@@ -610,7 +610,7 @@ def _serialize_pin(
     return {
         "type": "seller",
         "seller": row.get("name"),
-        "user": row.get("user"),
+        "user": display.get("user"),
         "display_name": display.get("display_name") or row.get("full_name"),
         "avatar": display.get("avatar") or row.get("user_image"),
         "business_category": row.get("business_category"),

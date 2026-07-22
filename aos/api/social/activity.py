@@ -106,6 +106,7 @@ def _load_user_target(target_user: str | None) -> dict[str, Any] | None:
         return None
 
     display = get_user_display(target_user)
+    public_user = display.get("user")
     title = _compact_text(display.get("display_name"), max_len=120) or "User"
 
     return {
@@ -115,9 +116,9 @@ def _load_user_target(target_user: str | None) -> dict[str, Any] | None:
         "target_subtitle": "Profile",
         "target_image": display.get("avatar") or display.get("user_image") or "",
         "route_type": ROUTE_TYPE_PROFILE,
-        "route_id": target_user,
+        "route_id": public_user,
         "metadata": {
-            "target_user": target_user,
+            "target_user": public_user,
             "target_display_name": title,
             "target_is_deleted": bool(display.get("is_deleted")),
             "target_is_live": bool(display.get("is_live")),

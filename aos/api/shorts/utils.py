@@ -321,7 +321,7 @@ def serialize_short_row(
         "mentions": row.get("mentions") or [],
         "sound": row.get("sound"),
         "creator": {
-            "user": owner,
+            "user": creator_display.get("user"),
             "display_name": creator_display.get("display_name"),
             "avatar": creator_display.get("avatar"),
             "is_deleted": creator_is_deleted,
@@ -369,7 +369,7 @@ def serialize_comment_row(
     return {
         "id": row.get("name"),
         "short": row.get("short"),
-        "user": user,
+        "user": author_display.get("user"),
         "seller": row.get("seller"),
         "display_name": author_display.get("display_name"),
         "avatar": author_display.get("avatar"),

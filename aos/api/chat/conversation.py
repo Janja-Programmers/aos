@@ -337,7 +337,7 @@ def list_conversations_impl(**kwargs):
             results.append(
                 {
                     "id": conv["name"],
-                    "user": other_user,
+                    "user": user.get("user"),
                     "display_name": display_name,
                     "avatar": avatar,
                     "is_deleted": bool(user.get("is_deleted")),
@@ -346,7 +346,7 @@ def list_conversations_impl(**kwargs):
                     "live_status": user.get("live_status") if not bool(user.get("is_deleted")) else None,
                     "last_message": last_message,
                     "last_message_at": last_message_at,
-                    "last_sender": last_sender,
+                    "last_sender": (last_sender_user.get("user") if last_sender_user else None),
                     "last_sender_display_name": (
                         last_sender_user.get("display_name")
                         if last_sender_user

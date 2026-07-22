@@ -1,9 +1,4 @@
-"""Shared account-status helpers.
-
-AOS uses recoverable soft deletion:
-- User.enabled blocks login/session use.
-- AOS Profile.account_status / is_deleted stores app-level account state.
-"""
+"""Shared account-state checks used by Auth and feature authorization."""
 
 from __future__ import annotations
 
@@ -12,103 +7,55 @@ from typing import Any
 import frappe
 from frappe.utils import now_datetime
 
+from aos.services.accounts.constants import (
+    ACCOUNT_STATUS_ACTIVE,
+    ACCOUNT_STATUS_DEACTIVATED,
+    ACCOUNT_STATUS_DELETED,
+    ACCOUNT_STATUS_SUSPENDED,
+)
+
 from .responses import fail
-
-
-ACCOUNT_STATUS_ACTIVE = "Active"
-ACCOUNT_STATUS_DELETED = "Deleted"
-ACCOUNT_STATUS_SUSPENDED = "Suspended"
 
 DELETED_ACCOUNT_MESSAGE = "This account has been deleted. Please restore it to continue."
 
 
 def _profile_has_field(fieldname: str) -> bool:
-    """Return True when AOS Profile has a field.
-
-    Defensive helper so deploys are less brittle while migrations are running.
-    """
     try:
         return bool(frappe.get_meta("AOS Profile").has_field(fieldname))
     except Exception:
         return False
 
 
-def _select_existing_profile_fields(fieldnames: list[str]) -> list[str]:
-    return [fieldname for fieldname in fieldnames if _profile_has_field(fieldname)]
-
-
 def get_account_state(user: str) -> dict[str, Any]:
-    """Return soft-delete/account-status state for a user.
-
-    Missing status fields are treated as active so existing account rows can
-    be repaired by the auth bootstrap path rather than being locked out forever.
-    """
-    user = (user or "").strip()
-
-    if not user:
-        return {
-            "exists": False,
-            "account_status": ACCOUNT_STATUS_ACTIVE,
-            "is_deleted": False,
-            "is_suspended": False,
-            "can_restore": False,
-            "restore_deadline": None,
-        }
-
-    if not frappe.db.exists("AOS Profile", user):
-        return {
-            "exists": False,
-            "account_status": ACCOUNT_STATUS_ACTIVE,
-            "is_deleted": False,
-            "is_suspended": False,
-            "can_restore": False,
-            "restore_deadline": None,
-        }
-
-    fields = _select_existing_profile_fields(
-        [
-            "account_status",
-            "is_deleted",
-            "restore_deadline",
-            "deleted_at",
-            "restored_at",
-        ]
-    )
-
-    if not fields:
-        return {
-            "exists": True,
-            "account_status": ACCOUNT_STATUS_ACTIVE,
-            "is_deleted": False,
-            "is_suspended": False,
-            "can_restore": False,
-            "restore_deadline": None,
-        }
-
-    profile = frappe.db.get_value(
-        "AOS Profile",
-        user,
-        fields,
-        as_dict=True,
-    ) or {}
-
+    user = str(user or "").strip()
+    base = {
+        "exists": False,
+        "account_status": ACCOUNT_STATUS_ACTIVE,
+        "is_deleted": False,
+        "is_deactivated": False,
+        "is_suspended": False,
+        "can_restore": False,
+        "restore_deadline": None,
+    }
+    if not user or not frappe.db.exists("AOS Profile", user):
+        return base
+    wanted = ["account_status", "is_deleted", "restore_deadline", "deleted_at", "deactivated_at", "restored_at"]
+    fields = [field for field in wanted if _profile_has_field(field)]
+    profile = frappe.db.get_value("AOS Profile", user, fields, as_dict=True) or {}
     status = profile.get("account_status") or ACCOUNT_STATUS_ACTIVE
-    is_deleted = bool(int(profile.get("is_deleted") or 0)) or status == ACCOUNT_STATUS_DELETED
-    is_suspended = status == ACCOUNT_STATUS_SUSPENDED
-    restore_deadline = profile.get("restore_deadline")
-
-    can_restore = bool(is_deleted)
-    if can_restore and restore_deadline:
-        can_restore = now_datetime() <= restore_deadline
-
+    deleted = bool(int(profile.get("is_deleted") or 0)) or status == ACCOUNT_STATUS_DELETED
+    deadline = profile.get("restore_deadline")
+    can_restore = deleted and (not deadline or now_datetime() <= deadline)
     return {
         "exists": True,
         "account_status": status,
-        "is_deleted": is_deleted,
-        "is_suspended": is_suspended,
-        "can_restore": can_restore,
-        "restore_deadline": restore_deadline,
+        "is_deleted": deleted,
+        "is_deactivated": status == ACCOUNT_STATUS_DEACTIVATED,
+        "is_suspended": status == ACCOUNT_STATUS_SUSPENDED,
+        "can_restore": bool(can_restore),
+        "restore_deadline": deadline,
         "deleted_at": profile.get("deleted_at"),
+        "deactivated_at": profile.get("deactivated_at"),
         "restored_at": profile.get("restored_at"),
     }
 
@@ -122,9 +69,7 @@ def can_restore_account(user: str) -> bool:
 
 
 def deleted_account_response(*, restorable: bool | None = None):
-    """Standard response for deleted-account blocks."""
-    can_restore = bool(restorable) if restorable is not None else False
-
+    can_restore = bool(restorable)
     return fail(
         DELETED_ACCOUNT_MESSAGE,
         error="ACCOUNT_DELETED_RESTORABLE" if can_restore else "ACCOUNT_DELETED",
@@ -134,13 +79,11 @@ def deleted_account_response(*, restorable: bool | None = None):
 
 
 def ensure_account_active(user: str):
-    """Return fail response if account is deleted/suspended, else None."""
     state = get_account_state(user)
-
     if state.get("is_deleted"):
         return deleted_account_response(restorable=bool(state.get("can_restore")))
-
+    if state.get("is_deactivated"):
+        return fail("Account deactivated.", error="ACCOUNT_DEACTIVATED", http_status=403)
     if state.get("is_suspended"):
         return fail("Account suspended.", error="ACCOUNT_SUSPENDED", http_status=403)
-
     return None

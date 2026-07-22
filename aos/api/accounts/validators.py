@@ -1,47 +1,22 @@
-"""Validators for profile updates."""
+"""Backward-compatible endpoint validators backed by Accounts domain validation."""
 
 from __future__ import annotations
 
-import re
-import frappe
-
 from aos.api.shared.responses import fail
-
-from .constants import (
-    FULL_NAME_MIN_LEN,
-    FULL_NAME_MAX_LEN,
-    BIO_MAX_LEN,
-)
+from aos.services.accounts.errors import AccountValidationError
+from aos.services.accounts.validation import validate_bio as _validate_bio
+from aos.services.accounts.validation import validate_display_name
 
 
-def validate_full_name(value: str):
-    value = (value or "").strip()
-
-    if not value:
-        return None, fail("Full name is required.", error="VALIDATION_ERROR")
-
-    if len(value) < FULL_NAME_MIN_LEN:
-        return None, fail("Full name is too short.", error="VALIDATION_ERROR")
-
-    if len(value) > FULL_NAME_MAX_LEN:
-        return None, fail("Full name is too long.", error="VALIDATION_ERROR")
-
-    value = re.sub(r"\s+", " ", value)
-
-    return value, None
+def validate_full_name(value):
+    try:
+        return validate_display_name(value), None
+    except AccountValidationError as exc:
+        return None, fail(str(exc), error=exc.code, http_status=exc.http_status)
 
 
-def validate_bio(value: str):
-    value = (value or "").strip()
-
-    # Normalize excessive spaces/tabs while preserving normal line breaks.
-    value = re.sub(r"[ \t]+", " ", value)
-    value = re.sub(r"\n{3,}", "\n\n", value)
-
-    if len(value) > BIO_MAX_LEN:
-        return None, fail(
-            f"Bio is too long. Maximum is {BIO_MAX_LEN} characters.",
-            error="VALIDATION_ERROR",
-        )
-
-    return value, None
+def validate_bio(value):
+    try:
+        return _validate_bio(value), None
+    except AccountValidationError as exc:
+        return None, fail(str(exc), error=exc.code, http_status=exc.http_status)

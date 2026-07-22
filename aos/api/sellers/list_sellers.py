@@ -578,7 +578,7 @@ def _serialize_seller(
 
     item = {
         "seller": seller.get("name"),
-        "user": seller_user,
+        "user": display.get("user"),
         "display_name": display.get("display_name"),
         "avatar": display.get("avatar"),
         "is_deleted": is_deleted,

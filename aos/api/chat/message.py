@@ -98,11 +98,11 @@ def _serialize_user(user_id: str, user_map: Dict[str, dict]) -> Dict[str, Any]:
     user = user_map.get(user_id)
 
     return {
-        "sender": user_id,
+        "sender": user.get("user") if user else None,
         "sender_display_name": (
             user.get("display_name")
             if user
-            else user_id
+            else "AOS User"
         ),
         "sender_avatar": user.get("avatar") if user else None,
         "sender_is_deleted": bool(user.get("is_deleted")) if user else False,

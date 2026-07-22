@@ -96,7 +96,7 @@ def get_seller_impl(**kwargs):
         profile = frappe.db.get_value(
             "AOS Profile",
             {
-                "user": seller_doc.user,
+                "user": display.get("user"),
             },
             [
                 "total_followers",

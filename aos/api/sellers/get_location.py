@@ -21,6 +21,7 @@ from aos.api.shared.rate_limit import (
     request_ip,
 )
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.user_display import get_user_display
 
 from .constants import (
     GET_MY_SELLER_LOCATION_LIMIT_PER_MINUTE_PER_USER,
@@ -110,7 +111,7 @@ def _get_current_seller_location():
             "Seller location fetched successfully.",
             data={
                 "seller": seller.get("name"),
-                "user": seller.get("user"),
+                "user": get_user_display(seller.get("user")).get("user"),
                 "is_owner": True,
                 "location": serialize_seller_location(
                     seller
@@ -178,7 +179,7 @@ def _get_public_seller_location(
             "Seller location fetched successfully.",
             data={
                 "seller": seller.get("name"),
-                "user": seller.get("user"),
+                "user": get_user_display(seller.get("user")).get("user"),
                 "is_owner": is_owner,
                 "location": serialize_seller_location(
                     seller

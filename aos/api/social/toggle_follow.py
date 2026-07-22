@@ -15,6 +15,7 @@ from aos.api.shared.blocking import ensure_not_blocked
 from aos.api.shared.formatters import humanize_count, to_non_negative_int
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.services.accounts.identity import resolve_account_reference
 from aos.api.shared.public_errors import safe_fail_from_exception
 
 from aos.services.notification_service import NotificationService
@@ -40,7 +41,7 @@ def toggle_follow_impl(**kwargs):
     if rl:
         return rl
 
-    target_user = kwargs.get("target_user")
+    target_user = resolve_account_reference(kwargs.get("target_user") or kwargs.get("account_id"))
 
     if not target_user:
         return fail("Target user is required.", error="VALIDATION_ERROR")

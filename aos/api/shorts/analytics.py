@@ -350,7 +350,7 @@ def _is_staff(user: str) -> bool:
 def _serialize_user(user: str) -> dict[str, Any]:
     display = get_user_display(user)
     return {
-        "user": user,
+        "user": display.get("user"),
         "display_name": display.get("display_name"),
         "avatar": display.get("avatar"),
         "is_deleted": bool(display.get("is_deleted")),

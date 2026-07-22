@@ -22,6 +22,7 @@ from aos.api.shared.auth import require_login
 from aos.api.shared.blocking import get_block_status
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.services.accounts.identity import public_account_id_for_user, resolve_account_reference
 
 from .constants import GET_RELATIONSHIP_STATUS_LIMIT_PER_MINUTE_PER_USER
 
@@ -61,7 +62,7 @@ def get_relationship_status_impl(**kwargs):
     if rl:
         return rl
 
-    target_user = kwargs.get("target_user")
+    target_user = resolve_account_reference(kwargs.get("target_user") or kwargs.get("account_id"))
 
     if not target_user:
         return fail("Target user is required.", error="VALIDATION_ERROR")
@@ -138,7 +139,7 @@ def build_relationship_status(*, current_user: str, target_user: str) -> dict:
     )
 
     return {
-        "target_user": target_user,
+        "target_user": public_account_id_for_user(target_user),
         "is_self": False,
         "is_following": is_following,
         "is_followed_by": is_followed_by,
@@ -156,7 +157,7 @@ def _self_relationship_payload(*, target_user: str) -> dict:
     )
 
     return {
-        "target_user": target_user,
+        "target_user": public_account_id_for_user(target_user),
         "is_self": True,
         "is_following": False,
         "is_followed_by": False,

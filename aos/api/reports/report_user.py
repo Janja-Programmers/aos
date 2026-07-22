@@ -11,6 +11,7 @@ from aos.api.shared.responses import fail, ok
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.social.block import block_user_impl
 from aos.api.social.activity import record_report_user_activity
+from aos.services.accounts.identity import resolve_account_reference
 
 from .constants import (
     REPORT_USER_LIMIT_PER_MINUTE_PER_USER,
@@ -92,7 +93,7 @@ def report_user_impl(**kwargs):
     if rl:
         return rl
 
-    target_user = _clean_text(kwargs.get("target_user") or kwargs.get("user"))
+    target_user = resolve_account_reference(kwargs.get("target_user") or kwargs.get("user")) or ""
     reason = _clean_text(kwargs.get("reason"))
     details = _clean_text(kwargs.get("details"))
     should_block_user = _truthy(

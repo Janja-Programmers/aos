@@ -14,6 +14,7 @@ from typing import Any
 import frappe
 
 from aos.api.shared.responses import fail
+from aos.services.accounts.identity import public_account_id_for_user
 
 
 USER_BLOCK_DOCTYPE = "AOS User Block"
@@ -56,7 +57,7 @@ def get_block_status(*, current_user: str | None, target_user: str | None) -> di
     is_blocked = block_status != BLOCK_NONE
 
     return {
-        "target_user": target_user,
+        "target_user": public_account_id_for_user(target_user),
         "is_blocked_by_me": is_blocked_by_me,
         "has_blocked_me": has_blocked_me,
         "is_blocked": is_blocked,
@@ -163,7 +164,7 @@ def filter_blocked_users(current_user: str | None, users: Iterable[str]) -> list
 
 def _empty_block_status(*, target_user: str | None = None) -> dict[str, Any]:
     return {
-        "target_user": target_user,
+        "target_user": public_account_id_for_user(target_user),
         "is_blocked_by_me": False,
         "has_blocked_me": False,
         "is_blocked": False,

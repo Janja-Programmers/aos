@@ -462,10 +462,22 @@ def serialize_preference(
 	*,
 	is_country_locked: bool = False,
 ) -> dict[str, Any]:
+	location_id = _value(preference, "location")
+	location = None
+	if location_id:
+		row = frappe.db.get_value(
+			"AOS Location",
+			location_id,
+			["name", "location", "country"],
+			as_dict=True,
+		)
+		if row:
+			location = {"id": row.name, "name": row.location, "country": row.country}
 	return {
 		"country": serialize_country(_value(preference, "country")),
 		"currency": serialize_currency(_value(preference, "currency")),
 		"language": serialize_language(_value(preference, "language")),
+		"location": location,
 		"is_country_locked": bool(is_country_locked),
 	}
 

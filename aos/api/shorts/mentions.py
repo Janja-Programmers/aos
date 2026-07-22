@@ -75,7 +75,7 @@ def resolve_mention_users(text: str | None) -> list[dict[str, Any]]:
         resolved.append(
             {
                 "token": token,
-                "user": user.get("name"),
+                "user": display.get("user"),
                 "display_name": display.get("display_name"),
                 "avatar": display.get("avatar"),
                 "is_deleted": bool(display.get("is_deleted")),
