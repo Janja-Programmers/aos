@@ -137,9 +137,25 @@ class TestOutboxRecoveryDispatchAllServices(FrappeTestCase):
 		outbox.dispatch_generation = attempt
 		outbox.current_dispatch_token = token
 		outbox.published_at = add_to_date(now_datetime(), seconds=-120, as_datetime=True)
-		outbox.callback_deadline_at = add_to_date(now_datetime(), seconds=-60, as_datetime=True)
+		# Commit a non-overdue row so a live staging scheduler cannot recover this
+		# test fixture before the test's own transaction takes control of it.
+		outbox.callback_deadline_at = add_to_date(now_datetime(), seconds=300, as_datetime=True)
 		outbox.save(ignore_permissions=True)
 		frappe.db.commit()
+
+		# Make the fixture overdue only inside the current uncommitted test
+		# transaction. Other workers continue to see the committed future
+		# deadline, while recover_overdue_published() sees this local value.
+		frappe.db.set_value(
+			OUTBOX_DOCTYPE,
+			outbox.name,
+			{
+				"published_at": add_to_date(now_datetime(), seconds=-120, as_datetime=True),
+				"callback_deadline_at": add_to_date(now_datetime(), seconds=-60, as_datetime=True),
+			},
+			update_modified=False,
+		)
+		outbox.reload()
 		return token
 
 	def _claim_recovery(self, outbox) -> dict[str, object]:
