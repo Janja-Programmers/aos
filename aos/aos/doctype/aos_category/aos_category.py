@@ -13,6 +13,9 @@ from aos.services.media.media_service import (
     MediaError,
     MediaService,
 )
+from aos.services.catalog.observability import catalog_log
+from aos.services.catalog.service import CatalogService
+from aos.services.catalog.validation import validate_category_document
 
 CATEGORY_ICON_PURPOSE = "category_icon"
 CATEGORY_ICON_MEDIA_FIELD = "icon_media"
@@ -41,12 +44,35 @@ class AOSCategory(NestedSet):
     """Category tree with centrally owned, admin-managed icon media."""
 
     def validate(self):
-        self._sync_icon_media()
+        try:
+            validate_category_document(self)
+            self._sync_icon_media()
+        except Exception:
+            catalog_log("configuration_rejected", outcome="rejected")
+            raise
 
     def on_update(self):
         # Preserve NestedSet tree maintenance before finalizing media ownership.
         super().on_update()
         self._finalize_icon_media_relationship()
+        CatalogService.invalidate_cache()
+        catalog_log(
+            "configuration_changed",
+            outcome="success",
+            category_kind="group" if int(self.is_group or 0) else "leaf",
+        )
+
+    def on_trash(self):
+        media_id = _normalize_media_id(getattr(self, CATEGORY_ICON_MEDIA_FIELD, None))
+        if media_id:
+            MediaService().release_media(
+                media_id=media_id,
+                user=frappe.session.user,
+                attached_doctype=self.doctype,
+                attached_name=self.name,
+                replacement_media_id=None,
+            )
+        CatalogService.invalidate_cache()
 
     def _sync_icon_media(self) -> None:
         if not hasattr(self, CATEGORY_ICON_MEDIA_FIELD):

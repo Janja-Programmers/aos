@@ -20,6 +20,7 @@ class TestOperationalMetrics(FrappeTestCase):
 			metrics._DURATION_BUCKETS.clear()
 			metrics._EXCEPTIONS.clear()
 			metrics._RATE_LIMIT_REJECTIONS.clear()
+			metrics._CATALOG_EVENTS.clear()
 
 	def _outbox_summary(self):
 		services = {
@@ -105,6 +106,7 @@ class TestOperationalMetrics(FrappeTestCase):
 			"aos_http_request_duration_seconds",
 			"aos_unhandled_exceptions_total",
 			"aos_rate_limit_rejections_total",
+			"aos_catalog_events_total",
 			"aos_background_jobs_created_total",
 			"aos_background_jobs_dispatched_total",
 			"aos_background_jobs_completed_total",
@@ -143,6 +145,8 @@ class TestOperationalMetrics(FrappeTestCase):
 			"surface",
 			"status_class",
 			"category",
+			"event",
+			"outcome",
 			"policy",
 			"service",
 			"state",

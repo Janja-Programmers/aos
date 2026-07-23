@@ -6,6 +6,9 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import add_days, getdate, now
 
+from aos.services.catalog.errors import CatalogError, public_catalog_message
+from aos.services.catalog.service import CatalogService
+
 from aos.api.catalog.schema import (
     _get_category_chain,
     _resolve_attributes,
@@ -198,6 +201,7 @@ class AOSAd(Document):
         self._validate_edit_permissions()
         self._validate_market_integrity()
         self._validate_location()
+        self._validate_category()
         self._validate_media()
         self._validate_details()
         self._validate_pricing()
@@ -755,6 +759,23 @@ class AOSAd(Document):
                 "Unsupported video format."
             )
 
+    # CATEGORY VALIDATION
+    def _validate_category(self):
+        try:
+            chain = CatalogService().get_sellable_category_chain(self.category)
+            self.category = chain[0]["name"]
+            self._aos_catalog_chain = chain
+        except CatalogError as exc:
+            frappe.throw(public_catalog_message(exc))
+
+    def _get_catalog_chain(self):
+        cached = getattr(self, "_aos_catalog_chain", None)
+        if cached:
+            return cached
+        chain = _get_category_chain(self.category)
+        self._aos_catalog_chain = chain
+        return chain
+
     # DETAILS VALIDATION
     def _validate_details(self):
         if not getattr(
@@ -764,9 +785,7 @@ class AOSAd(Document):
         ):
             return
 
-        chain = _get_category_chain(
-            self.category
-        )
+        chain = self._get_catalog_chain()
 
         allowed_attrs = _resolve_attributes(
             chain
@@ -893,9 +912,7 @@ class AOSAd(Document):
         ):
             return
 
-        chain = _get_category_chain(
-            self.category
-        )
+        chain = self._get_catalog_chain()
 
         pricing = _resolve_pricing(
             chain

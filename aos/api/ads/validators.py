@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 import json
 
 import frappe
 
 from aos.api.shared.responses import fail
+from aos.services.catalog.errors import CatalogError, CatalogValidationError, public_catalog_message
+from aos.services.catalog.service import CatalogService, resolve_attributes
+from aos.services.catalog.validation import normalize_text
 
 
 ALLOWED_DETAILS_KEYS = {
@@ -62,51 +65,41 @@ def normalize_list_payload(val: Any) -> List[Dict[str, Any]]:
     return []
 
 
-def _build_attribute_key_map(category: str) -> Dict[str, str]:
-    """Build key -> DocType name map (fuel_type -> Fuel Type)."""
+def _build_attribute_key_map(category: str) -> tuple[Dict[str, str], set[str]]:
+    """Build accepted public key and DocType-name sets for one sellable category."""
 
-    try:
-        from aos.api.catalog.schema import _get_category_chain, _resolve_attributes
-
-        chain = _get_category_chain(category)
-        attrs = _resolve_attributes(chain)
-
-        return {
-            attr["key"]: attr["id"]
-            for attr in attrs
-        }
-    except Exception:
-        return {}
+    service = CatalogService()
+    chain = service.get_sellable_category_chain(category)
+    attributes = resolve_attributes(chain)
+    return (
+        {attribute["key"]: attribute["id"] for attribute in attributes},
+        {attribute["id"] for attribute in attributes},
+    )
 
 
 def validate_basic_fields(title: Any, location: Any, category: Any, description: Any):
-    title = (str(title or "").strip())
-    location = (str(location or "").strip())
-    category = (str(category or "").strip())
-    description = (str(description or "").strip())
+    title = str(title or "").strip()
+    location = str(location or "").strip()
+    description = str(description or "").strip()
 
     if not title:
         return None, None, None, None, fail("Title is required.", error="VALIDATION_ERROR")
     if not location:
         return None, None, None, None, fail("Location is required.", error="VALIDATION_ERROR")
-    if not category:
-        return None, None, None, None, fail("Category is required.", error="VALIDATION_ERROR")
     if not description:
         return None, None, None, None, fail("Description is required.", error="VALIDATION_ERROR")
 
-    # Ensure category exists
-    if not frappe.db.exists("AOS Category", category):
-        return None, None, None, None, fail("Category not found.", error="NOT_FOUND")
-
-    # Optional: enforce active category if field exists
     try:
-        is_active = frappe.db.get_value("AOS Category", category, "is_active")
-        if is_active is not None and int(is_active or 0) != 1:
-            return None, None, None, None, fail("Category is inactive.", error="VALIDATION_ERROR")
-    except Exception:
-        pass
+        category_id = CatalogService().assert_sellable_category(category)
+    except CatalogError as exc:
+        message = public_catalog_message(exc)
+        return None, None, None, None, fail(
+            message,
+            error=exc.code,
+            http_status=exc.http_status,
+        )
 
-    return title, location, category, description, None
+    return title, location, category_id, description, None
 
 
 def sanitize_details(details: Any, category: str | None = None) -> List[Dict[str, Any]]:
@@ -114,31 +107,32 @@ def sanitize_details(details: Any, category: str | None = None) -> List[Dict[str
     out: List[Dict[str, Any]] = []
 
     key_map: Dict[str, str] = {}
-    reverse_map: Dict[str, str] = {}
+    allowed_ids: set[str] = set()
+    schema_loaded = False
 
     if category:
-        key_map = _build_attribute_key_map(category)
-        reverse_map = {v: v for v in key_map.values()}  # allow "Fuel Type"
+        key_map, allowed_ids = _build_attribute_key_map(category)
+        schema_loaded = True
 
     for item in items:
         row = {k: v for k, v in item.items() if k in ALLOWED_DETAILS_KEYS}
 
-        attr = (row.get("attribute") or "").strip()
+        try:
+            attr = normalize_text(
+                row.get("attribute"),
+                field="attribute",
+                max_length=120,
+                required=True,
+            )
+        except CatalogValidationError:
+            frappe.throw("Invalid category attribute.")
 
-        if not attr:
-            continue
-
-        # KEY → ID conversion
-        if key_map and attr in key_map:
+        if attr in key_map:
             row["attribute"] = key_map[attr]
-
-        # Allow already-correct values (Fuel Type)
-        elif reverse_map and attr in reverse_map:
+        elif attr in allowed_ids:
             row["attribute"] = attr
-
-        # Invalid attribute
-        elif key_map:
-            frappe.throw(f"Invalid attribute: {attr}")
+        elif schema_loaded:
+            frappe.throw("Invalid category attribute.")
 
         out.append(row)
     return out

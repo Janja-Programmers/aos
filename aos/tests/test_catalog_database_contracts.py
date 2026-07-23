@@ -1,0 +1,36 @@
+from __future__ import annotations
+
+import frappe
+from frappe.tests.utils import FrappeTestCase
+
+from aos.patches.v1_0 import harden_catalog_subsystem
+
+
+class TestCatalogDatabaseContracts(FrappeTestCase):
+    def test_catalog_indexes_are_idempotently_present(self):
+        harden_catalog_subsystem.execute()
+        harden_catalog_subsystem.execute()
+        for index_name, (doctype, _fields) in harden_catalog_subsystem.INDEXES.items():
+            rows = frappe.db.sql(
+                """
+                SELECT INDEX_NAME
+                FROM information_schema.STATISTICS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = %s
+                  AND INDEX_NAME = %s
+                """,
+                (f"tab{doctype}", index_name),
+            )
+            self.assertTrue(rows, f"missing Catalog index {index_name}")
+
+    def test_catalog_name_fields_remain_unique(self):
+        category_meta = frappe.get_meta("AOS Category")
+        attribute_meta = frappe.get_meta("AOS Ad Attribute")
+        self.assertTrue(category_meta.get_field("category_name").unique)
+        self.assertTrue(attribute_meta.get_field("label").unique)
+
+    def test_catalog_desk_permissions_are_admin_only(self):
+        for doctype in ("AOS Category", "AOS Ad Attribute"):
+            permissions = frappe.get_meta(doctype).permissions
+            roles = {row.role for row in permissions if row.read or row.write or row.create or row.delete}
+            self.assertEqual(roles, {"System Manager"})

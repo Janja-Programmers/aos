@@ -17,3 +17,4 @@ aos.patches.v1_0.finalize_outbox_failure_reconciliation
 
 aos.patches.v1_0.harden_media_subsystem
 aos.patches.v1_0.harden_accounts_subsystem
+aos.patches.v1_0.harden_catalog_subsystem

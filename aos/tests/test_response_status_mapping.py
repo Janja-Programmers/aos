@@ -25,6 +25,19 @@ class TestResponseStatusMapping(FrappeTestCase):
             with self.subTest(code=code):
                 self.assertEqual(http_status_for_code(code), 422)
 
+    def test_catalog_codes_have_stable_statuses(self):
+        for code in (
+            "INVALID_CATALOG_INPUT",
+            "INVALID_CATEGORY",
+            "INVALID_CATEGORY_SCHEMA",
+            "INVALID_CATEGORY_TREE",
+            "CATEGORY_NOT_SELLABLE",
+        ):
+            with self.subTest(code=code):
+                self.assertEqual(http_status_for_code(code), 422)
+        self.assertEqual(http_status_for_code("CATEGORY_NOT_FOUND"), 404)
+        self.assertEqual(http_status_for_code("CATALOG_DATA_ERROR"), 500)
+
     def test_auth_codes_use_unauthorized(self):
         for code in (
             "AUTH_REQUIRED",

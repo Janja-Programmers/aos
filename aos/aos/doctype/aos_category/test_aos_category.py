@@ -1,22 +1,14 @@
 # Copyright (c) 2026, Africa Online Stores and Contributors
 # See license.txt
 
-# import frappe
 from frappe.tests import IntegrationTestCase
+from frappe.utils.nestedset import NestedSet
 
-
-# On IntegrationTestCase, the doctype test records and all
-# link-field test record dependencies are recursively loaded
-# Use these module variables to add/remove to/from that list
-EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
-IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
-
+from aos.aos.doctype.aos_category.aos_category import AOSCategory
 
 
 class IntegrationTestAOSCategory(IntegrationTestCase):
-	"""
-	Integration tests for AOSCategory.
-	Use this class for testing interactions between multiple components.
-	"""
+	"""Controller-level contracts that do not duplicate API/domain flow tests."""
 
-	pass
+	def test_controller_preserves_nested_set_behavior(self):
+		self.assertTrue(issubclass(AOSCategory, NestedSet))
