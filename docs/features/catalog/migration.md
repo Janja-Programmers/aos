@@ -1,6 +1,9 @@
 # Catalog migration
 
-Patch: `aos.patches.v1_0.harden_catalog_subsystem`
+Patches:
+
+- `aos.patches.v1_0.harden_catalog_subsystem`
+- `aos.patches.v1_0.enforce_catalog_desk_permissions`
 
 ## Additive indexes
 
@@ -28,4 +31,14 @@ It does not delete categories, merge duplicate legacy rows, rename identifiers, 
 5. Inspect Catalog configuration-rejection logs and `aos_catalog_events_total`.
 6. Run the full app suite and repository validators before promotion.
 
-The patch contains no explicit commit. Bench/Frappe migration transaction ownership remains authoritative.
+## Desk permission normalization
+
+`enforce_catalog_desk_permissions` removes legacy `Custom DocPerm` overrides for
+`AOS Category` and `AOS Ad Attribute`. The source-controlled DocType JSON remains
+the single permission authority and grants Catalog Desk CRUD access only to
+`System Manager`. This is a separate patch so sites that already executed the
+original Catalog hardening patch still receive the permission correction. It is
+idempotent and clears only the affected DocType metadata caches.
+
+Neither patch contains an explicit commit. Bench/Frappe migration transaction
+ownership remains authoritative.

@@ -8,6 +8,7 @@ bench --site <disposable-test-site> run-tests --module aos.api.catalog.tests.tes
 bench --site <disposable-test-site> run-tests --module aos.api.catalog.tests.test_api
 bench --site <disposable-test-site> run-tests --module aos.api.catalog.tests.test_security
 bench --site <disposable-test-site> run-tests --module aos.api.catalog.tests.test_migration_patch
+bench --site <disposable-test-site> run-tests --module aos.api.catalog.tests.test_permission_patch
 bench --site <disposable-test-site> run-tests --module aos.api.catalog.tests.test_database_integration
 bench --site <disposable-test-site> run-tests --module aos.api.media.tests.test_category_integration
 bench --site <disposable-test-site> run-tests --module aos.tests.test_catalog_database_contracts

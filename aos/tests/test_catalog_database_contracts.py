@@ -3,7 +3,7 @@ from __future__ import annotations
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.patches.v1_0 import harden_catalog_subsystem
+from aos.patches.v1_0 import enforce_catalog_desk_permissions, harden_catalog_subsystem
 
 
 class TestCatalogDatabaseContracts(FrappeTestCase):
@@ -30,7 +30,18 @@ class TestCatalogDatabaseContracts(FrappeTestCase):
         self.assertTrue(attribute_meta.get_field("label").unique)
 
     def test_catalog_desk_permissions_are_admin_only(self):
-        for doctype in ("AOS Category", "AOS Ad Attribute"):
+        enforce_catalog_desk_permissions.execute()
+        enforce_catalog_desk_permissions.execute()
+
+        for doctype in enforce_catalog_desk_permissions.CATALOG_ADMIN_DOCTYPES:
             permissions = frappe.get_meta(doctype).permissions
-            roles = {row.role for row in permissions if row.read or row.write or row.create or row.delete}
+            roles = {
+                row.role
+                for row in permissions
+                if row.read or row.write or row.create or row.delete
+            }
             self.assertEqual(roles, {"System Manager"})
+            self.assertFalse(
+                frappe.db.exists("Custom DocPerm", {"parent": doctype}),
+                f"unexpected Custom DocPerm override remains for {doctype}",
+            )
