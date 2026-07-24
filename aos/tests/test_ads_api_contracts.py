@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+
+from aos.api.v1 import ads as ads_v1
 
 
 class TestAdsApiContracts(FrappeTestCase):
@@ -68,3 +71,18 @@ class TestAdsApiContracts(FrappeTestCase):
         self.assertIn("transition_for_action", status_source)
         self.assertNotIn("float(", create_source)
         self.assertNotIn("float(", update_source)
+
+    def test_v1_ads_transport_strips_cmd_before_strict_validation(self):
+        response = {"ok": True}
+        with patch.object(ads_v1, "_list_ads_impl", return_value=response) as implementation:
+            result = ads_v1.list_ads(
+                cmd="aos.api.v1.ads.list_ads",
+                limit="20",
+                unexpected="must-remain-visible-to-validator",
+            )
+
+        self.assertIs(result, response)
+        implementation.assert_called_once_with(
+            limit="20",
+            unexpected="must-remain-visible-to-validator",
+        )
