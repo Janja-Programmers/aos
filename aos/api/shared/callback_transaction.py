@@ -33,6 +33,41 @@ _CALLBACK_JOB_DOCTYPES = {
 	"AOS Analytics Ingest Job",
 }
 
+_CALLBACK_CONFLICT_CODES = frozenset(
+	{
+		"OUTBOX_CONFLICT",
+		"CALLBACK_STATE_CONFLICT",
+		"CALLBACK_TOKEN_MISMATCH",
+		"NEWER_DISPATCH_GENERATION",
+		"OLD_GENERATION_CALLBACK",
+		"STABLE_DISPATCH_MISMATCH",
+		"TERMINAL_CALLBACK_CONFLICT",
+	}
+)
+
+
+def extract_callback_conflict_code(exc: BaseException) -> str | None:
+	"""Return an allowlisted callback-conflict code from an exception chain.
+
+	Long-lived workers and test processes may retain an older imported exception
+	class after a module reload. Recognize the stable public contract
+	structurally as well as by class identity, without exposing arbitrary
+	dynamic exception values.
+	"""
+
+	current: BaseException | None = exc
+	seen: set[int] = set()
+	while current is not None and id(current) not in seen:
+		seen.add(id(current))
+		raw_code = getattr(current, "error_code", None)
+		code = str(raw_code or "").strip().upper()
+		if code in _CALLBACK_CONFLICT_CODES:
+			return code
+		if isinstance(current, OutboxConflictError):
+			return "OUTBOX_CONFLICT"
+		current = current.__cause__ or current.__context__
+	return None
+
 
 def _increment_counter(outbox_name: str | None, fieldname: str) -> None:
 	if not outbox_name or fieldname not in _COUNTER_FIELDS:
@@ -146,8 +181,8 @@ def execute_callback_atomically[T](
 		_restore_outbox_registration_flag(registration_flag_before)
 		outbox_name = getattr(exc, "outbox_name", None) or correlated_outbox
 		_increment_counter(outbox_name, "transaction_rollback_count")
-		if isinstance(exc, OutboxConflictError):
-			_increment_counter(outbox_name, getattr(exc, "counter_field", ""))
+		if extract_callback_conflict_code(exc):
+			_increment_counter(outbox_name, str(getattr(exc, "counter_field", "") or ""))
 		try:
 			from aos.utils.metrics import record_outbox_event
 

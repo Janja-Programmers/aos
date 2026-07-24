@@ -1,0 +1,70 @@
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+import frappe
+from frappe.tests.utils import FrappeTestCase
+
+
+class TestAdsApiContracts(FrappeTestCase):
+    def _source(self, relative: str) -> str:
+        return Path(frappe.get_app_path("aos", *relative.split("/"))).read_text(encoding="utf-8")
+
+    def test_mutation_implementations_do_not_commit_outer_transactions(self):
+        files = [
+            "api/ads/create.py",
+            "api/ads/update.py",
+            "api/ads/status.py",
+            "api/ads/drafts.py",
+            "api/wishlist/toggle.py",
+            "api/reports/report_ad.py",
+            "tasks/ads.py",
+        ]
+        offenders: list[str] = []
+        for relative in files:
+            tree = ast.parse(self._source(relative), filename=relative)
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "commit"
+                ):
+                    offenders.append(f"{relative}:{node.lineno}")
+        self.assertEqual(offenders, [])
+
+    def test_public_detail_does_not_select_raw_ad_documents(self):
+        source = self._source("api/ads/get_ad.py")
+        self.assertNotIn("a.*", source)
+        self.assertIn("a.status = 'Active'", source)
+        self.assertIn("s.status = 'Active'", source)
+        self.assertIn("AOS User Block", source)
+
+    def test_public_list_is_bounded_deterministic_and_cursor_safe(self):
+        source = self._source("api/ads/list_ads.py")
+        self.assertIn("LIMIT %(limit)s OFFSET %(offset)s", source)
+        self.assertIn("a.creation DESC, a.name DESC", source)
+        self.assertIn("decode_recent_cursor", source)
+        self.assertIn("safe_like_contains", source)
+        self.assertIn("AOS User Block", source)
+        self.assertIn("MAX_IMAGES", source)
+
+    def test_wishlist_and_image_search_recheck_public_eligibility(self):
+        wishlist = self._source("api/wishlist/list.py")
+        image_search = self._source("api/ads/image_search.py")
+        for source in (wishlist, image_search):
+            self.assertIn("seller.status = 'Active'", source)
+            self.assertIn("expires_on", source)
+            self.assertIn("AOS User Block", source)
+        self.assertIn("normalize_wishlist_list_filters", wishlist)
+        self.assertIn("normalize_int", image_search)
+
+    def test_ads_apis_use_central_validation_and_lifecycle(self):
+        create_source = self._source("api/ads/create.py")
+        update_source = self._source("api/ads/update.py")
+        status_source = self._source("api/ads/status.py")
+        self.assertIn("normalize_full_ad_payload", create_source)
+        self.assertIn("normalize_active_update", update_source)
+        self.assertIn("transition_for_action", status_source)
+        self.assertNotIn("float(", create_source)
+        self.assertNotIn("float(", update_source)

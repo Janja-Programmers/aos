@@ -332,8 +332,14 @@ class AOSFeatureTestMixin:
                 ],
             }
         )
-        ad.insert(ignore_permissions=True)
-        frappe.db.commit()
+        original_user = frappe.session.user
+        try:
+            frappe.set_user("Administrator")
+            ad.flags.aos_status_action = "migration"
+            ad.insert(ignore_permissions=True)
+            frappe.db.commit()
+        finally:
+            frappe.set_user(original_user)
         return ad
 
     def make_conversation(self, user_a: str, user_b: str, *, with_message: bool = False):

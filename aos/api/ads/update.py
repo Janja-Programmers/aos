@@ -1,372 +1,158 @@
-"""Update/edit an Ad (status-aware)."""
+"""Status-aware Ads updates with strict contracts and transactional media changes."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
-
 import frappe
-from frappe.utils import getdate
 
 from aos.api.shared.auth import require_login
+from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
-from aos.api.shared.public_errors import safe_fail_from_exception
+from aos.api.shared.validators import resolve_location
+from aos.services.ads.api import run_ads_api
+from aos.services.ads.authorization import get_owned_ad_row, require_active_seller
+from aos.services.ads.constants import (
+    ACTIVE_UPDATE_FIELDS,
+    CREATE_FIELDS,
+    SELLER_BLOCKED_EDIT_STATUSES,
+    SELLER_EDITABLE_FULL_STATUSES,
+    STATUS_ACTIVE,
+    STATUS_REVIEWING,
+)
+from aos.services.ads.errors import AdsConflictError
+from aos.services.ads.lifecycle import validate_status_transition
+from aos.services.ads.media import attach_all, prepare_image_rows, prepare_video, release_removed
+from aos.services.ads.mutations import apply_ad_values, apply_transition, lock_ad
+from aos.services.ads.observability import ads_log
+from aos.services.ads.validation import (
+    ensure_known_fields,
+    normalize_active_update,
+    normalize_full_ad_payload,
+    normalize_identifier,
+)
 from aos.services.moderation_service import enqueue_ad_moderation
 
 from .constants import UPDATE_AD_LIMIT_PER_MINUTE_PER_USER
-from .media import (
-    attach_ad_media,
-    get_media_public_url,
-    normalize_media_id,
-    validate_ad_media_for_use,
-)
-from .validators import (
-    sanitize_details,
-    sanitize_images,
-    validate_basic_fields,
-)
-
-_MAX_IMAGES = 4
-
-_ACTIVE_EDITABLE_FIELDS = {
-    "title",
-    "description",
-    "price_type",
-    "price",
-    "price_unit",
-    "offer_price",
-    "offer_start_date",
-    "offer_end_date",
-}
-
-_BLOCKED_STATUSES = {"Sold", "Expired", "Deleted"}
-_FULL_EDIT_STATUSES = {"Reviewing", "Declined"}
 
 
-def _clean_str(val: Any) -> str:
-    return str(val or "").strip()
+def _existing_values(doc) -> dict[str, object]:
+    return {
+        "category": doc.category,
+        "price_type": doc.price_type,
+        "price": doc.price,
+        "price_unit": doc.price_unit,
+        "offer_price": doc.offer_price,
+        "offer_start_date": doc.offer_start_date,
+        "offer_end_date": doc.offer_end_date,
+    }
 
 
-def _to_float_or_none(val: Any):
-    if val in (None, ""):
-        return None
-    try:
-        return float(val)
-    except Exception:
-        return "INVALID"
-
-
-def _to_date_or_none(val: Any):
-    if val in (None, ""):
-        return None
-    try:
-        return getdate(val)
-    except Exception:
-        return "INVALID"
-
-
-def _apply_active_safe_updates(doc, updates: Dict[str, Any]):
-    if "title" in updates:
-        title = _clean_str(updates.get("title"))
-        if not title:
-            return fail("Title cannot be empty.", error="VALIDATION_ERROR")
-        doc.title = title
-
-    if "description" in updates:
-        desc = _clean_str(updates.get("description"))
-        if not desc:
-            return fail("Description cannot be empty.", error="VALIDATION_ERROR")
-        doc.description = desc
-
-    if "price_type" in updates:
-        doc.price_type = _clean_str(updates.get("price_type"))
-
-    if "price_unit" in updates:
-        doc.price_unit = _clean_str(updates.get("price_unit"))
-
-    if "price" in updates:
-        v = _to_float_or_none(updates.get("price"))
-        if v == "INVALID":
-            return fail("Invalid price.", error="VALIDATION_ERROR")
-        doc.price = v
-
-    if "offer_price" in updates:
-        v = _to_float_or_none(updates.get("offer_price"))
-        if v == "INVALID":
-            return fail("Invalid offer_price.", error="VALIDATION_ERROR")
-        doc.offer_price = v
-
-    if "offer_start_date" in updates:
-        d = _to_date_or_none(updates.get("offer_start_date"))
-        if d == "INVALID":
-            return fail("Invalid offer_start_date.", error="VALIDATION_ERROR")
-        doc.offer_start_date = d
-
-    if "offer_end_date" in updates:
-        d = _to_date_or_none(updates.get("offer_end_date"))
-        if d == "INVALID":
-            return fail("Invalid offer_end_date.", error="VALIDATION_ERROR")
-        doc.offer_end_date = d
-
-    return None
-
-
-def _replace_child_table(doc, fieldname: str, rows: List[Dict[str, Any]]):
-    doc.set(fieldname, [])
-    for r in rows:
-        child = doc.append(fieldname, {})
-        for k, v in r.items():
-            setattr(child, k, v)
+def _media_ids(doc) -> list[str]:
+    result = [str(getattr(row, "media", "") or "").strip() for row in (doc.images or [])]
+    if getattr(doc, "video_media", None):
+        result.append(str(doc.video_media).strip())
+    return [value for value in result if value]
 
 
 def update_ad_impl(**kwargs):
-    user, err = require_login()
-    if err:
-        return err
+    user, error = require_login()
+    if error:
+        return error
 
-    rl = rate_limit(
+    limited = rate_limit(
         key=f"aos:ads:update:user:{user}",
         ttl_seconds=60,
         limit=UPDATE_AD_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
     )
+    if limited:
+        return limited
 
-    if rl:
-        return rl
-
-    ad_id = _clean_str(kwargs.get("ad_id") or kwargs.get("id"))
-
-    if not ad_id:
-        return fail("Ad id is required.", error="VALIDATION_ERROR")
-
-    row = frappe.db.get_value(
-        "AOS Ad",
-        ad_id,
-        ["name", "seller", "status"],
-        as_dict=True,
-    )
-
-    if not row:
-        return fail("Ad not found.", error="NOT_FOUND")
-
-    seller_user = frappe.db.get_value(
-        "AOS Seller",
-        row.seller,
-        "user",
-    )
-
-    if seller_user != user:
-        return fail("You don't have permission to edit this ad.", error="FORBIDDEN")
-
-    status = _clean_str(row.status)
-
-    if status in _BLOCKED_STATUSES:
-        return fail(
-            "This ad cannot be edited in its current status.",
-            error="VALIDATION_ERROR",
-        )
-
-    try:
+    def _update():
+        ad_id = normalize_identifier(kwargs.get("ad_id") or kwargs.get("id"), field="ad_id", required=True)
+        row = get_owned_ad_row(user, ad_id, fields=["category"])
+        require_active_seller(user)
+        lock_ad(ad_id)
         doc = frappe.get_doc("AOS Ad", ad_id)
+        status = str(row.status or "").strip()
 
-        if status == "Active":
-            updates: Dict[str, Any] = {
-                k: kwargs.get(k)
-                for k in _ACTIVE_EDITABLE_FIELDS
-                if k in kwargs
-            }
+        if status in SELLER_BLOCKED_EDIT_STATUSES:
+            raise AdsConflictError("This ad cannot be edited in its current status.")
 
-            if not updates:
-                return fail("No editable fields provided.", error="VALIDATION_ERROR")
+        previous_media = _media_ids(doc)
+        moderation_job = None
 
-            e = _apply_active_safe_updates(doc, updates)
-            if e:
-                return e
+        if status == STATUS_ACTIVE:
+            ensure_known_fields(kwargs, ACTIVE_UPDATE_FIELDS)
+            updates = normalize_active_update(kwargs, existing=_existing_values(doc))
+            apply_ad_values(doc, updates)
+            doc.save(ignore_permissions=True)
+            message = "Ad updated."
+        elif status in SELLER_EDITABLE_FULL_STATUSES:
+            ensure_known_fields(kwargs, CREATE_FIELDS, aliases={"ad_id", "id"})
+            payload = {key: value for key, value in kwargs.items() if key in CREATE_FIELDS}
+            values = normalize_full_ad_payload(payload)
 
-            doc.status = "Active"
+            market_country, market_error = resolve_market_country(None)
+            if market_error:
+                return market_error
+            location_name, location_error = resolve_location(values["location"], country=market_country)
+            if location_error:
+                return location_error
+            location_country = frappe.db.get_value("AOS Location", location_name, "country")
+            if not location_country or location_country != market_country:
+                return fail("Invalid location for your market.", error="INVALID_LOCATION")
+            if str(doc.country or "") != str(location_country):
+                return fail("Ad market cannot be changed.", error="MARKET_LOCKED")
 
+            image_rows = prepare_image_rows(values["images"], user=user, ad_name=doc.name)
+            video_id, video_url = prepare_video(values.get("video_media"), user=user, ad_name=doc.name)
+            values.update(
+                {
+                    "location": location_name,
+                    "images": image_rows,
+                    "video_media": video_id,
+                    "video": video_url,
+                }
+            )
+            transition = validate_status_transition(status, STATUS_REVIEWING, action="seller_resubmit")
+            apply_transition(doc, transition)
+            doc.decline_reason = None
+            apply_ad_values(doc, values)
             doc.save(ignore_permissions=True)
 
-            moderation_job = None
-            if any(field in updates for field in {"title", "description"}):
-                moderation_job = enqueue_ad_moderation(doc.name, source="ad_update_active")
-
-            return ok(
-                "Ad updated.",
-                data={
-                    "id": doc.name,
-                    "status": doc.status,
-                    "moderation_job_id": getattr(moderation_job, "name", None),
-                    "moderation_job_status": getattr(moderation_job, "status", None),
-                },
+            attach_all(
+                user=user,
+                ad_name=doc.name,
+                image_ids=[entry["media"] for entry in image_rows],
+                video_id=video_id,
             )
-
-        if status in _FULL_EDIT_STATUSES:
-            title, location, category, description, e = validate_basic_fields(
-                kwargs.get("title"),
-                kwargs.get("location"),
-                kwargs.get("category"),
-                kwargs.get("description"),
+            current_media = [entry["media"] for entry in image_rows]
+            if video_id:
+                current_media.append(video_id)
+            release_removed(
+                user=user,
+                ad_name=doc.name,
+                previous_ids=previous_media,
+                current_ids=current_media,
             )
-
-            if e:
-                return e
-
-            details_rows = sanitize_details(kwargs.get("details"), category=category,)
-            images_rows = sanitize_images(kwargs.get("images"))
-
-            if len(images_rows) > _MAX_IMAGES:
-                return fail(
-                    f"Maximum {_MAX_IMAGES} images allowed.",
-                    error="VALIDATION_ERROR",
-                )
-
-            if not images_rows:
-                return fail("At least one image is required.", error="VALIDATION_ERROR")
-
-            video_media_id = normalize_media_id(
-                kwargs.get("video_media")
-                or kwargs.get("video_media_id")
-                or kwargs.get("video")
-            )
-            video_url = ""
-
-            if video_media_id:
-                video_doc, e = validate_ad_media_for_use(
-                    media_id=video_media_id,
-                    user=user,
-                    purpose="ad_video",
-                    kind="Video",
-                    ad_name=doc.name,
-                )
-                if e:
-                    return e
-                video_url = get_media_public_url(video_doc.name)
-
-            primary_count = 0
-            seen_media: set[str] = set()
-
-            for index, row_img in enumerate(images_rows, start=1):
-                media_id = normalize_media_id(row_img.get("media") or row_img.get("media_id"))
-
-                if not media_id:
-                    return fail(f"Image media id is required on row {index}.", error="VALIDATION_ERROR")
-
-                if media_id in seen_media:
-                    return fail("Duplicate image selected.", error="VALIDATION_ERROR")
-
-                media_doc, e = validate_ad_media_for_use(
-                    media_id=media_id,
-                    user=user,
-                    purpose="ad_image",
-                    kind="Image",
-                    ad_name=doc.name,
-                )
-
-                if e:
-                    return e
-
-                seen_media.add(media_id)
-                row_img["media"] = media_doc.name
-                row_img["media_id"] = media_doc.name
-                row_img["image"] = get_media_public_url(media_doc.name)
-                row_img["is_primary"] = int(row_img.get("is_primary") or 0)
-
-                if row_img["is_primary"] == 1:
-                    primary_count += 1
-
-            if primary_count != 1:
-                return fail("Exactly one primary image is required.", error="VALIDATION_ERROR")
-
-            # Core fields
-            doc.title = title
-            doc.location = location
-            doc.category = category
-            doc.description = description
-
-            # Pricing
-            doc.price_type = kwargs.get("price_type")
-            doc.price = _to_float_or_none(kwargs.get("price"))
-            doc.price_unit = kwargs.get("price_unit")
-
-            # Offers
-            doc.offer_price = _to_float_or_none(kwargs.get("offer_price"))
-            doc.offer_start_date = _to_date_or_none(kwargs.get("offer_start_date"))
-            doc.offer_end_date = _to_date_or_none(kwargs.get("offer_end_date"))
-
-            # Video
-            if any(k in kwargs for k in ("video", "video_media", "video_media_id")):
-                doc.video_media = video_media_id or None
-                doc.video = video_url or None
-
-            # Replace child tables
-            image_child_rows = [
-                {k: v for k, v in row.items() if k != "media_id"}
-                for row in images_rows
-            ]
-            _replace_child_table(doc, "details", details_rows)
-            _replace_child_table(doc, "images", image_child_rows)
-
-            doc.status = "Reviewing"
-            doc.reviewed_by = None
-
-            doc.save(ignore_permissions=True)
-
-            # Attach MinIO media metadata to this ad.
-            for r in images_rows:
-                _media_doc, attach_error = attach_ad_media(
-                    media_id=r.get("media"),
-                    user=user,
-                    purpose="ad_image",
-                    ad_name=doc.name,
-                    attached_field="images",
-                )
-                if attach_error:
-                    frappe.db.rollback()
-                    return attach_error
-
-            if video_media_id:
-                _media_doc, attach_error = attach_ad_media(
-                    media_id=video_media_id,
-                    user=user,
-                    purpose="ad_video",
-                    ad_name=doc.name,
-                    attached_field="video_media",
-                )
-                if attach_error:
-                    frappe.db.rollback()
-                    return attach_error
-
             moderation_job = enqueue_ad_moderation(doc.name, source="ad_update_reviewing")
+            message = "Ad updated and queued for moderation."
+        else:
+            raise AdsConflictError("This ad cannot be edited in its current status.")
 
-            return ok(
-                "Ad updated and queued for moderation.",
-                data={
-                    "id": doc.name,
-                    "status": doc.status,
-                    "moderation_job_id": getattr(moderation_job, "name", None),
-                    "moderation_job_status": getattr(moderation_job, "status", None),
-                },
-            )
-
-        return fail(
-            "This ad cannot be edited in its current status.",
-            error="VALIDATION_ERROR",
+        ads_log("updated", status=doc.status, outcome="success")
+        return ok(
+            message,
+            data={
+                "id": doc.name,
+                "status": doc.status,
+                "moderation_job_id": getattr(moderation_job, "name", None),
+                "moderation_job_status": getattr(moderation_job, "status", None),
+            },
         )
 
-    except frappe.DoesNotExistError:
-        return fail("Ad not found.", error="NOT_FOUND")
-
-    except frappe.ValidationError as ex:
-        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
-
-    except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Update Ad Failed",
-        )
-
-        return fail(
-            "Failed to update ad.",
-            error="INTERNAL_ERROR",
-        )
+    response = run_ads_api(_update, fallback="Failed to update ad.", log_title="AOS Update Ad Failed")
+    if not response.get("ok"):
+        frappe.db.rollback()
+    return response

@@ -16,6 +16,15 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.services.ads.api import run_ads_api
+from aos.services.ads.constants import DRAFT_ID_FIELDS, DRAFT_LIST_FIELDS
+from aos.services.ads.errors import AdsConflictError, AdsNotFoundError
+from aos.services.ads.validation import (
+    ensure_known_fields,
+    normalize_draft_request,
+    normalize_identifier,
+    normalize_pagination,
+)
 
 from .constants import (
     ABANDON_AD_DRAFT_LIMIT_PER_MINUTE_PER_USER,
@@ -520,449 +529,185 @@ def _build_draft_list_item(
 
 # Save / Update Draft
 def upsert_ad_draft_impl(**kwargs):
-    user, err = require_login()
-
-    if err:
-        return err
-
-    rl = rate_limit(
+    user, error = require_login()
+    if error:
+        return error
+    limited = rate_limit(
         key=f"aos:drafts:save:user:{user}",
         ttl_seconds=60,
-        limit=(
-            SAVE_AD_DRAFT_LIMIT_PER_MINUTE_PER_USER
-        ),
+        limit=SAVE_AD_DRAFT_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests.",
     )
+    if limited:
+        return limited
 
-    if rl:
-        return rl
-
-    draft_id = _clean_str(
-        kwargs.get("draft_id")
-        or kwargs.get("id")
-    )
-
-    payload = _parse_jsonish(
-        kwargs.get("payload_json")
-        or kwargs.get("payload")
-    )
-
-    if payload is None:
-        return fail(
-            "payload_json is required.",
-            error="VALIDATION_ERROR",
-        )
-
-    if not isinstance(payload, dict):
-        return fail(
-            "payload_json must be a JSON object.",
-            error="VALIDATION_ERROR",
-        )
-
-    hints = _compute_hints(payload)
-
-    try:
+    def _save():
+        draft_id, payload, last_step = normalize_draft_request(kwargs)
+        hints = _compute_hints(payload)
+        hints["last_step"] = last_step
         if draft_id:
-            doc = _get_owned_draft(
-                draft_id,
-                user,
-            )
-
+            doc = _get_owned_draft(draft_id, user)
             if not doc:
-                return fail(
-                    "Draft not found.",
-                    error="NOT_FOUND",
-                )
-
+                raise AdsNotFoundError("Draft not found.")
             if doc.status != "Draft":
-                return fail(
-                    "Only Draft items can be updated.",
-                    error="VALIDATION_ERROR",
-                )
-
+                raise AdsConflictError("Only Draft items can be updated.")
         else:
             doc = frappe.new_doc(_DT)
-            doc.status = "Draft"
             doc.user = user
-
+            doc.status = "Draft"
         doc.payload_json = payload
-
-        doc.title_hint = (
-            hints["title_hint"]
-        )
-
-        doc.category_hint = (
-            hints["category_hint"]
-        )
-
-        doc.country_hint = (
-            hints["country_hint"]
-        )
-
-        doc.location_hint = (
-            hints["location_hint"]
-        )
-
+        doc.title_hint = hints["title_hint"]
+        doc.category_hint = hints["category_hint"]
+        doc.country_hint = hints["country_hint"]
+        doc.location_hint = hints["location_hint"]
         doc.last_step = hints["last_step"]
+        doc.save(ignore_permissions=True)
+        return ok("Draft saved.", data={"id": doc.name, "status": doc.status})
 
-        doc.save(
-            ignore_permissions=True
-        )
-
-        frappe.db.commit()
-
-        return ok(
-            "Draft saved.",
-            data={
-                "id": doc.name,
-                "status": doc.status,
-            },
-        )
-
-    except Exception:
+    response = run_ads_api(_save, fallback="Failed to save draft.", log_title="AOS Save Draft Failed")
+    if not response.get("ok"):
         frappe.db.rollback()
-
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Save Draft Failed",
-        )
-
-        return fail(
-            "Failed to save draft.",
-            error="INTERNAL_ERROR",
-        )
+    return response
 
 
-# List Drafts (seller UI)
 def list_my_ad_drafts_impl(**kwargs):
-    user, err = require_login()
-
-    if err:
-        return err
-
-    rl = rate_limit(
+    user, error = require_login()
+    if error:
+        return error
+    limited = rate_limit(
         key=f"aos:drafts:list:user:{user}",
         ttl_seconds=60,
-        limit=(
-            LIST_AD_DRAFTS_LIMIT_PER_MINUTE_PER_USER
-        ),
+        limit=LIST_AD_DRAFTS_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests.",
     )
+    if limited:
+        return limited
 
-    if rl:
-        return rl
-
-    limit = min(
-        max(
-            _safe_int(
-                kwargs.get("limit"),
-                20,
-            ),
-            1,
-        ),
-        50,
-    )
-
-    offset = max(
-        _safe_int(
-            kwargs.get("offset"),
-            0,
-        ),
-        0,
-    )
-
-    try:
+    def _list():
+        ensure_known_fields(kwargs, DRAFT_LIST_FIELDS)
+        limit, offset = normalize_pagination(kwargs)
         default_currency = _clean_str(
-            frappe.db.get_value(
-                "AOS User Preference",
-                {"user": user},
-                "currency",
-            )
+            frappe.db.get_value("AOS User Preference", {"user": user}, "currency")
         )
-
         rows = frappe.get_all(
             _DT,
-            filters={
-                "user": user,
-                "status": "Draft",
-            },
-            fields=[
-                "name",
-                "title_hint",
-                "country_hint",
-                "location_hint",
-                "payload_json",
-                "modified",
-            ],
-            order_by="modified desc",
+            filters={"user": user, "status": "Draft"},
+            fields=["name", "title_hint", "country_hint", "location_hint", "payload_json", "modified"],
+            order_by="modified desc, name desc",
             start=offset,
             page_length=limit,
         )
-
-        items = [
-            _build_draft_list_item(
-                row,
-                default_currency,
-            )
-            for row in rows
-        ]
-
+        items = [_build_draft_list_item(row, default_currency) for row in rows]
         return ok(
             "Drafts fetched.",
-            data={
-                "items": items,
-                "pagination": {
-                    "limit": limit,
-                    "offset": offset,
-                    "returned": len(items),
-                },
-            },
+            data={"items": items, "pagination": {"limit": limit, "offset": offset, "returned": len(items)}},
         )
 
-    except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS List Drafts Failed",
-        )
-
-        return fail(
-            "Failed to fetch drafts.",
-            error="INTERNAL_ERROR",
-        )
+    return run_ads_api(_list, fallback="Failed to fetch drafts.", log_title="AOS List Drafts Failed")
 
 
-# Get Draft (for editing)
 def get_my_ad_draft_impl(**kwargs):
-    user, err = require_login()
-
-    if err:
-        return err
-
-    rl = rate_limit(
+    user, error = require_login()
+    if error:
+        return error
+    limited = rate_limit(
         key=f"aos:drafts:get:user:{user}",
         ttl_seconds=60,
-        limit=(
-            GET_AD_DRAFT_LIMIT_PER_MINUTE_PER_USER
-        ),
+        limit=GET_AD_DRAFT_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests.",
     )
+    if limited:
+        return limited
 
-    if rl:
-        return rl
+    def _get():
+        ensure_known_fields(kwargs, DRAFT_ID_FIELDS)
+        draft_id = normalize_identifier(kwargs.get("draft_id") or kwargs.get("id"), field="draft_id", required=True)
+        doc = _get_owned_draft(draft_id, user)
+        if not doc:
+            raise AdsNotFoundError("Draft not found.")
+        payload = _as_dict_payload(doc.payload_json) or {}
+        payload.update({"id": doc.name, "status": doc.status, "last_step": doc.last_step})
+        return ok("Draft fetched.", data={"item": payload})
 
-    draft_id = _clean_str(
-        kwargs.get("draft_id")
-        or kwargs.get("id")
-    )
-
-    if not draft_id:
-        return fail(
-            "draft_id is required.",
-            error="VALIDATION_ERROR",
-        )
-
-    doc = _get_owned_draft(
-        draft_id,
-        user,
-    )
-
-    if not doc:
-        return fail(
-            "Draft not found.",
-            error="NOT_FOUND",
-        )
-
-    payload = _as_dict_payload(
-        doc.payload_json
-    ) or {}
-
-    payload.update(
-        {
-            "id": doc.name,
-            "status": doc.status,
-            "last_step": doc.last_step,
-        }
-    )
-
-    return ok(
-        "Draft fetched.",
-        data={"item": payload},
-    )
+    return run_ads_api(_get, fallback="Failed to fetch draft.", log_title="AOS Get Draft Failed")
 
 
-# Abandon Draft
 def abandon_ad_draft_impl(**kwargs):
-    user, err = require_login()
-
-    if err:
-        return err
-
-    rl = rate_limit(
-        key=(
-            f"aos:drafts:abandon:user:{user}"
-        ),
+    user, error = require_login()
+    if error:
+        return error
+    limited = rate_limit(
+        key=f"aos:drafts:abandon:user:{user}",
         ttl_seconds=60,
-        limit=(
-            ABANDON_AD_DRAFT_LIMIT_PER_MINUTE_PER_USER
-        ),
+        limit=ABANDON_AD_DRAFT_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests.",
     )
+    if limited:
+        return limited
 
-    if rl:
-        return rl
-
-    draft_id = _clean_str(
-        kwargs.get("draft_id")
-        or kwargs.get("id")
-    )
-
-    if not draft_id:
-        return fail(
-            "draft_id is required.",
-            error="VALIDATION_ERROR",
-        )
-
-    doc = _get_owned_draft(
-        draft_id,
-        user,
-    )
-
-    if not doc:
-        return fail(
-            "Draft not found.",
-            error="NOT_FOUND",
-        )
-
-    if doc.status != "Draft":
-        return fail(
-            "Only Draft items can be abandoned.",
-            error="VALIDATION_ERROR",
-        )
-
-    try:
+    def _abandon():
+        ensure_known_fields(kwargs, DRAFT_ID_FIELDS)
+        draft_id = normalize_identifier(kwargs.get("draft_id") or kwargs.get("id"), field="draft_id", required=True)
+        doc = _get_owned_draft(draft_id, user)
+        if not doc:
+            raise AdsNotFoundError("Draft not found.")
+        if doc.status == "Abandoned":
+            return ok("Draft abandoned.", data={"id": doc.name, "changed": False})
+        if doc.status != "Draft":
+            raise AdsConflictError("Only Draft items can be abandoned.")
         doc.status = "Abandoned"
+        doc.save(ignore_permissions=True)
+        return ok("Draft abandoned.", data={"id": doc.name, "changed": True})
 
-        doc.save(
-            ignore_permissions=True
-        )
-
-        frappe.db.commit()
-
-        return ok(
-            "Draft abandoned.",
-            data={"id": doc.name},
-        )
-
-    except Exception:
+    response = run_ads_api(_abandon, fallback="Failed to abandon draft.", log_title="AOS Abandon Draft Failed")
+    if not response.get("ok"):
         frappe.db.rollback()
-
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Abandon Draft Failed",
-        )
-
-        return fail(
-            "Failed to abandon draft.",
-            error="INTERNAL_ERROR",
-        )
+    return response
 
 
-# Submit Draft
 def submit_ad_draft_impl(**kwargs):
-    user, err = require_login()
-
-    if err:
-        return err
-
-    rl = rate_limit(
-        key=(
-            f"aos:drafts:submit:user:{user}"
-        ),
+    user, error = require_login()
+    if error:
+        return error
+    limited = rate_limit(
+        key=f"aos:drafts:submit:user:{user}",
         ttl_seconds=60,
-        limit=(
-            SUBMIT_AD_DRAFT_LIMIT_PER_MINUTE_PER_USER
-        ),
+        limit=SUBMIT_AD_DRAFT_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests.",
     )
+    if limited:
+        return limited
 
-    if rl:
-        return rl
-
-    draft_id = _clean_str(
-        kwargs.get("draft_id")
-        or kwargs.get("id")
-    )
-
-    if not draft_id:
-        return fail(
-            "draft_id is required.",
-            error="VALIDATION_ERROR",
-        )
-
-    doc = _get_owned_draft(
-        draft_id,
-        user,
-    )
-
-    if not doc:
-        return fail(
-            "Draft not found.",
-            error="NOT_FOUND",
-        )
-
-    if doc.status != "Draft":
-        return fail(
-            "Only Draft items can be submitted.",
-            error="VALIDATION_ERROR",
-        )
-
-    payload = _as_dict_payload(
-        doc.payload_json
-    )
-
-    if not payload:
-        return fail(
-            "Draft payload invalid.",
-            error="VALIDATION_ERROR",
-        )
-
-    result = create_ad_impl(**payload)
-
-    ok_val, ad_id = _extract_ok_and_id(
-        result
-    )
-
-    if not ok_val:
-        return result
-
-    try:
+    def _submit():
+        ensure_known_fields(kwargs, DRAFT_ID_FIELDS)
+        draft_id = normalize_identifier(kwargs.get("draft_id") or kwargs.get("id"), field="draft_id", required=True)
+        frappe.db.sql("SELECT name FROM `tabAOS Ad Draft` WHERE name = %s FOR UPDATE", (draft_id,))
+        doc = _get_owned_draft(draft_id, user)
+        if not doc:
+            raise AdsNotFoundError("Draft not found.")
+        if doc.status == "Submitted" and doc.submitted_ad:
+            return ok(
+                "Draft submitted.",
+                data={"draft_id": doc.name, "submitted_ad": doc.submitted_ad, "changed": False},
+            )
+        if doc.status != "Draft":
+            raise AdsConflictError("Only Draft items can be submitted.")
+        payload = _as_dict_payload(doc.payload_json)
+        if not payload:
+            raise AdsConflictError("Draft payload is invalid.")
+        result = create_ad_impl(**payload)
+        success, ad_id = _extract_ok_and_id(result)
+        if not success:
+            return result
         doc.status = "Submitted"
         doc.submitted_ad = ad_id
-
-        doc.save(
-            ignore_permissions=True
-        )
-
-        frappe.db.commit()
-
+        doc.save(ignore_permissions=True)
         return ok(
             "Draft submitted.",
-            data={
-                "draft_id": doc.name,
-                "submitted_ad": ad_id,
-            },
+            data={"draft_id": doc.name, "submitted_ad": ad_id, "changed": True},
         )
 
-    except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Submit Draft Failed",
-        )
-
-        return fail(
-            "Ad created but failed to update draft.",
-            error="INTERNAL_ERROR",
-            data={
-                "submitted_ad": ad_id
-            },
-        )
+    response = run_ads_api(_submit, fallback="Failed to submit draft.", log_title="AOS Submit Draft Failed")
+    if not response.get("ok"):
+        frappe.db.rollback()
+    return response

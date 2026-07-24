@@ -449,11 +449,15 @@ def _query_indexable_active_ads(*, page_length: int, start: int) -> List[Dict[st
         f"""
         SELECT DISTINCT ad.name
         FROM `tabAOS Ad` ad
+        INNER JOIN `tabAOS Seller` seller
+            ON seller.name = ad.seller
         INNER JOIN `tabAOS Ad Image` img
             ON img.parent = ad.name
             AND img.parenttype = 'AOS Ad'
             AND img.parentfield = 'images'
         WHERE ad.status = 'Active'
+            AND seller.status = 'Active'
+            AND (ad.expires_on IS NULL OR ad.expires_on >= CURRENT_DATE())
             AND (COALESCE(img.media, '') != '' OR COALESCE(img.image, '') != '')
         ORDER BY ad.modified DESC
         LIMIT %s OFFSET %s
@@ -477,13 +481,17 @@ def _query_unindexable_ads(*, page_length: int, start: int) -> List[Dict[str, An
         f"""
         SELECT ad.name, ad.status
         FROM `tabAOS Ad` ad
+        LEFT JOIN `tabAOS Seller` seller
+            ON seller.name = ad.seller
         LEFT JOIN `tabAOS Ad Image` img
             ON img.parent = ad.name
             AND img.parenttype = 'AOS Ad'
             AND img.parentfield = 'images'
             AND (COALESCE(img.media, '') != '' OR COALESCE(img.image, '') != '')
-        GROUP BY ad.name, ad.status, ad.modified
+        GROUP BY ad.name, ad.status, seller.status, ad.expires_on, ad.modified
         HAVING COALESCE(ad.status, '') != 'Active'
+            OR COALESCE(seller.status, '') != 'Active'
+            OR (ad.expires_on IS NOT NULL AND ad.expires_on < CURRENT_DATE())
             OR COUNT(img.name) = 0
         ORDER BY ad.modified DESC
         LIMIT %s OFFSET %s

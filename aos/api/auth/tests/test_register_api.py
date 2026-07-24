@@ -22,26 +22,31 @@ class TestAuthRegisterAPI(AOSFeatureTestMixin, FrappeTestCase):
         frappe.set_user("Administrator")
 
     def test_register_rejects_structured_string_inputs(self):
-        response = register_impl(email={"value": "x@example.com"}, full_name="Example User", password="StrongPass123!")
-        self.assertFalse(response.get("ok"), response)
-        self.assertEqual(response.get("error"), "VALIDATION_ERROR")
-        self.assertEqual(response.get("data", {}).get("field"), "email")
+        # This test verifies the validator contract, not Redis rate-limit state.
+        # The full application suite intentionally reuses one request IP, so an
+        # earlier registration test must not mask the field-specific failures.
+        with patch("aos.api.auth.register.rate_limit", return_value=None):
+            response = register_impl(email={"value": "x@example.com"}, full_name="Example User", password="StrongPass123!")
+            self.assertFalse(response.get("ok"), response)
+            self.assertEqual(response.get("error"), "VALIDATION_ERROR")
+            self.assertEqual(response.get("data", {}).get("field"), "email")
 
-        response = register_impl(email=f"{self.prefix}-x@example.com", full_name=["Example"], password="StrongPass123!")
-        self.assertFalse(response.get("ok"), response)
-        self.assertEqual(response.get("data", {}).get("field"), "full_name")
+            response = register_impl(email=f"{self.prefix}-x@example.com", full_name=["Example"], password="StrongPass123!")
+            self.assertFalse(response.get("ok"), response)
+            self.assertEqual(response.get("data", {}).get("field"), "full_name")
 
-        response = register_impl(email=f"{self.prefix}-x@example.com", full_name="Example User", password={"secret": "StrongPass123!"})
-        self.assertFalse(response.get("ok"), response)
-        self.assertEqual(response.get("data", {}).get("field"), "password")
+            response = register_impl(email=f"{self.prefix}-x@example.com", full_name="Example User", password={"secret": "StrongPass123!"})
+            self.assertFalse(response.get("ok"), response)
+            self.assertEqual(response.get("data", {}).get("field"), "password")
 
     def test_register_rejects_structured_optional_bootstrap_inputs(self):
-        response = register_impl(
-            email=f"{self.prefix}-x@example.com",
-            full_name="Example User",
-            password="StrongPass123!",
-            country={"name": "Kenya"},
-        )
+        with patch("aos.api.auth.register.rate_limit", return_value=None):
+            response = register_impl(
+                email=f"{self.prefix}-x@example.com",
+                full_name="Example User",
+                password="StrongPass123!",
+                country={"name": "Kenya"},
+            )
         self.assertFalse(response.get("ok"), response)
         self.assertEqual(response.get("error"), "VALIDATION_ERROR")
         self.assertEqual(response.get("data", {}).get("field"), "country")

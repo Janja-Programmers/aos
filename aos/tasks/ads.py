@@ -1,72 +1,49 @@
-"""
-Ads background jobs.
-
-This module is intended for background/scheduled work.
-
-Jobs:
-- expire_ads: Mark Active ads as Expired when expires_on is in the past.
-"""
+"""Bounded, idempotent Ads lifecycle scheduler tasks."""
 
 from __future__ import annotations
 
 import frappe
+from frappe.utils import getdate, today
 
+from aos.services.ads.indexing import enqueue_discovery_refresh
+from aos.services.ads.lifecycle import validate_status_transition
+from aos.services.ads.mutations import apply_transition, lock_ad
+from aos.services.ads.observability import ads_log
 from aos.services.notification_service import NotificationService
+
+_EXPIRY_BATCH_SIZE = 200
 
 
 def expire_ads() -> None:
+    """Expire one bounded batch of overdue public ads.
+
+    Each row is rechecked under a database lock, making retries and overlapping
+    scheduler invocations idempotent. The scheduler/worker owns transaction
+    durability; this helper intentionally performs no hidden commit.
     """
-    Mark Active ads as Expired when their expires_on date has passed.
 
-    Runs hourly via scheduler.
-    Sends notifications to sellers.
-    """
-
-    try:
-        # Fetch ads that will expire
-        ads = frappe.get_all(
-            "AOS Ad",
-            filters={
-                "status": "Active",
-                "expires_on": ["<", frappe.utils.today()],
-            },
-            fields=["name", "seller", "title"],
-        )
-
-        if not ads:
-            return
-
-        ad_ids = [a.name for a in ads]
-
-        # Bulk update
-        frappe.db.sql(
-            """
-            UPDATE `tabAOS Ad`
-            SET status = 'Expired'
-            WHERE name IN %s
-            """,
-            (tuple(ad_ids),),
-        )
-
-        frappe.db.commit()
-
-        # Notify sellers
-        for ad in ads:
-            if not ad.seller:
+    due = frappe.get_all(
+        "AOS Ad",
+        filters={"status": "Active", "expires_on": ["<", today()]},
+        fields=["name"],
+        order_by="expires_on asc, name asc",
+        limit=_EXPIRY_BATCH_SIZE,
+    )
+    expired = 0
+    for row in due:
+        try:
+            lock_ad(row.name)
+            ad = frappe.get_doc("AOS Ad", row.name)
+            if ad.status != "Active" or not ad.expires_on or getdate(ad.expires_on) >= getdate(today()):
                 continue
-
-            NotificationService.notify_ad_expired(
-                user=ad.seller,
-                ad_id=ad.name,
-                title=ad.title,
-            )
-
-        frappe.logger("aos").info(
-            f"[AOS] expire_ads: marked {len(ad_ids)} ads as Expired."
-        )
-
-    except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS expire_ads failed"
-        )
+            transition = validate_status_transition(ad.status, "Expired", action="expire")
+            apply_transition(ad, transition)
+            ad.save(ignore_permissions=True)
+            seller_user = frappe.db.get_value("AOS Seller", ad.seller, "user")
+            if seller_user:
+                NotificationService.notify_ad_expired(user=seller_user, ad_id=ad.name, title=ad.title)
+            enqueue_discovery_refresh(ad.name, status=ad.status, source="ad_expiry")
+            expired += 1
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "AOS expire ad row failed")
+    ads_log("expiry_batch", status="Expired", outcome="success", count=expired)

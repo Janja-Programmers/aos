@@ -458,27 +458,42 @@ def _reason_text(reasons: list[Any], fallback: str) -> str:
 
 
 def _apply_ad_decision(job, decision: str, reasons: list[Any]) -> None:
+	from aos.services.ads.lifecycle import validate_status_transition
+	from aos.services.ads.mutations import apply_transition, lock_ad
+
+	lock_ad(job.target_name)
 	ad = frappe.get_doc("AOS Ad", job.target_name)
 	if ad.status in {"Deleted", "Sold", "Expired", "Suspended"}:
 		return
 
+	# A moderation callback may only decide content that is still awaiting the
+	# matching review. Generation/callback correlation is enforced by the shared
+	# moderation job boundary; this additional state check prevents a late job
+	# from overwriting a newer seller or moderator decision.
+	if ad.status != "Reviewing":
+		return
+
 	seller_user = frappe.db.get_value("AOS Seller", ad.seller, "user") or ad.seller
 	if decision == "allow":
-		ad.status = "Active"
+		transition = validate_status_transition(ad.status, "Active", action="moderation_allow")
+		apply_transition(ad, transition)
 		ad.decline_reason = None
 		ad.save(ignore_permissions=True)
 		_notify_ad_approved(user=seller_user, ad=ad)
 		_enqueue_ad_index(ad)
 		_enqueue_ad_search_index(ad.name, source="ad_moderation_allow")
 	elif decision == "reject":
-		ad.status = "Declined"
+		transition = validate_status_transition(ad.status, "Declined", action="moderation_reject")
+		apply_transition(ad, transition)
 		ad.decline_reason = _reason_text(reasons, "Rejected by content moderation.")
 		ad.save(ignore_permissions=True)
 		_notify_ad_rejected(user=seller_user, ad=ad)
 		_enqueue_ad_index(ad)
 		_enqueue_ad_search_index(ad.name, source="ad_moderation_reject")
 	else:
-		ad.status = "Reviewing"
+		# Reviewing -> Reviewing is intentionally idempotent; retain a bounded
+		# reason for manual review without reopening a public ad.
+		ad.flags.aos_status_action = "moderation_review"
 		ad.decline_reason = _reason_text(reasons, "Requires manual content review.")
 		ad.save(ignore_permissions=True)
 		_enqueue_ad_index(ad)

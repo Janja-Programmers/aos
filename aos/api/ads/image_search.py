@@ -16,11 +16,16 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List
 
 import frappe
+from frappe.utils import getdate, nowdate
 
 from aos.api.ads.constants import SEARCH_BY_IMAGE_LIMIT_PER_MINUTE_PER_IP
 from aos.api.ads.serializers import serialize_ad_list_item
+from aos.api.shared.auth import current_user
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
+from aos.api.shared.sql_safety import clean_safe_docnames
+from aos.services.ads.errors import AdsValidationError
+from aos.services.ads.validation import ensure_known_fields, normalize_int
 from aos.integrations.ai.image_search_client import (
     ImageSearchServiceError,
     ImageSearchUnavailableError,
@@ -43,13 +48,6 @@ def _norm(value: Any) -> str:
     return str(value or "").strip()
 
 
-def _to_int(value: Any, default: int = 20) -> int:
-    try:
-        return int(value)
-    except Exception:
-        return int(default)
-
-
 def _request_ip() -> str:
     return _norm(getattr(frappe.local, "request_ip", None)) or "unknown"
 
@@ -61,17 +59,13 @@ def _get_uploaded_image() -> Any | None:
         return None
 
 
-def _get_limit(kwargs: Dict[str, Any]) -> int | None:
+def _get_limit(kwargs: Dict[str, Any]) -> int:
     raw_limit = (
         kwargs.get("limit")
         or getattr(frappe.local, "form_dict", {}).get("limit")
         or getattr(frappe.local, "form_dict", {}).get("page_length")
     )
-
-    if raw_limit in (None, ""):
-        return None
-
-    return _to_int(raw_limit, default=20)
+    return normalize_int(raw_limit, field="limit", default=20, minimum=1, maximum=50)
 
 
 def _filename(image_file: Any) -> str:
@@ -140,34 +134,51 @@ def _dedupe_ranked_results(items: Iterable[Dict[str, Any]]) -> List[Dict[str, An
 
 
 def _load_active_ad_docs(ad_ids: List[str]) -> Dict[str, Any]:
-    if not ad_ids:
+    safe_ids = clean_safe_docnames(ad_ids)[:50]
+    if not safe_ids:
         return {}
 
-    rows = frappe.get_all(
-        "AOS Ad",
-        filters={
-            "name": ["in", ad_ids],
-            "status": "Active",
-        },
-        fields=["name"],
-        limit_page_length=len(ad_ids),
+    viewer = current_user()
+    conditions = [
+        "ad.name IN %(ad_ids)s",
+        "ad.status = 'Active'",
+        "seller.status = 'Active'",
+        "(ad.expires_on IS NULL OR ad.expires_on >= %(today)s)",
+    ]
+    values: Dict[str, Any] = {"ad_ids": tuple(safe_ids), "today": getdate(nowdate())}
+    if viewer != "Guest":
+        values["viewer"] = viewer
+        conditions.append(
+            """NOT EXISTS (
+                SELECT 1 FROM `tabAOS User Block` b
+                WHERE b.status = 'Active'
+                  AND ((b.blocker_user = %(viewer)s AND b.blocked_user = seller.user)
+                    OR (b.blocker_user = seller.user AND b.blocked_user = %(viewer)s))
+            )"""
+        )
+
+    rows = frappe.db.sql(
+        f"""
+        SELECT ad.name
+        FROM `tabAOS Ad` ad
+        INNER JOIN `tabAOS Seller` seller ON seller.name = ad.seller
+        WHERE {' AND '.join(conditions)}
+        ORDER BY ad.name
+        LIMIT 50
+        """,
+        values,
+        as_dict=True,
     )
 
+    eligible = {str(row.name) for row in rows}
     docs: Dict[str, Any] = {}
-
-    for row in rows:
-        ad_id = _norm(getattr(row, "name", None) or row.get("name"))
-        if not ad_id:
+    for ad_id in safe_ids:
+        if ad_id not in eligible:
             continue
-
         try:
             docs[ad_id] = frappe.get_doc("AOS Ad", ad_id)
         except Exception:
-            frappe.log_error(
-                frappe.get_traceback(),
-                f"Image Search Result Ad Load Failed: {ad_id}",
-            )
-
+            frappe.log_error(frappe.get_traceback(), "Image Search Result Ad Load Failed")
     return docs
 
 
@@ -216,6 +227,7 @@ def search_ads_by_image_impl(**kwargs):
         return validation_error
 
     try:
+        ensure_known_fields(kwargs, {"limit", "page_length"})
         ai_result = search_by_image_file(
             image_file=image_file,
             limit=_get_limit(kwargs),
@@ -253,6 +265,9 @@ def search_ads_by_image_impl(**kwargs):
             ai_result.get("message") or "Search successful.",
             data={"items": results},
         )
+
+    except AdsValidationError as exc:
+        return fail("Invalid image search request.", error=exc.code, http_status=exc.http_status)
 
     except ImageSearchValidationError as exc:
         return fail(

@@ -22,7 +22,7 @@ class TestConversionEndpoints(AOSFeatureTestMixin, FrappeTestCase):
         self.buyer_user = self.make_user("buyer")
         self.ad = self.make_ad(seller_user=self.seller_user)
         filters = {"enabled": 1} if frappe.get_meta("Currency").has_field("enabled") else {}
-        self.currencies = frappe.get_all("Currency", filters=filters, pluck="name", limit_page_length=3)
+        self.currencies = frappe.get_all("Currency", filters=filters, pluck="name", limit=3)
         if len(self.currencies) < 3:
             self.skipTest("Three enabled currencies are required")
         self.source, self.base, self.target = self.currencies[:3]

@@ -5,7 +5,10 @@ from __future__ import annotations
 import frappe
 
 from aos.api.shared.callback_security import CallbackSecurityError, read_signed_json_callback_payload
-from aos.api.shared.callback_transaction import execute_callback_atomically
+from aos.api.shared.callback_transaction import (
+	execute_callback_atomically,
+	extract_callback_conflict_code,
+)
 from aos.api.shared.public_errors import safe_exception_message
 from aos.api.shared.responses import fail, ok
 from aos.services.search_ranking_service import (
@@ -13,7 +16,6 @@ from aos.services.search_ranking_service import (
 	handle_search_index_callback,
 	verify_signature,
 )
-from aos.services.transactional_outbox import OutboxConflictError
 
 SIGNATURE_HEADER = "X-AOS-Search-Callback-Signature"
 
@@ -55,11 +57,12 @@ def handle_callback_impl(**kwargs):
 				"action": job.action,
 			},
 		)
-	except OutboxConflictError as exc:
-		frappe.logger("aos.callbacks", allow_site=True).warning(
-			"Signed search indexing callback rejected: category=%s", exc.error_code
-		)
-		return fail("Callback state conflict.", error=exc.error_code, http_status=409)
-	except Exception:
+	except Exception as exc:
+		conflict_code = extract_callback_conflict_code(exc)
+		if conflict_code:
+			frappe.logger("aos.callbacks", allow_site=True).warning(
+				"Signed search indexing callback rejected: category=%s", conflict_code
+			)
+			return fail("Callback state conflict.", error=conflict_code, http_status=409)
 		frappe.log_error(frappe.get_traceback(), "Search Indexing callback failed")
 		return fail("Callback processing failed.", error="SEARCH_RANKING_CALLBACK_FAILED")

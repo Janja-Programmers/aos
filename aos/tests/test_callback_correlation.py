@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from aos.api.shared.callback_transaction import extract_callback_conflict_code
 from aos.services.callback_correlation import accepted_dispatch_generations
 
 
@@ -23,3 +24,18 @@ class TestCallbackCorrelation(unittest.TestCase):
 			accepted_dispatch_generations(current_generation=0, proposed_generation=0),
 			frozenset({0}),
 		)
+
+	def test_structural_conflict_code_survives_exception_class_reload(self):
+		class LegacyConflict(RuntimeError):
+			error_code = "OLD_GENERATION_CALLBACK"
+
+		self.assertEqual(
+			extract_callback_conflict_code(LegacyConflict("stale")),
+			"OLD_GENERATION_CALLBACK",
+		)
+
+	def test_structural_conflict_code_rejects_arbitrary_dynamic_values(self):
+		class UnsafeError(RuntimeError):
+			error_code = "SECRET_INTERNAL_DETAIL"
+
+		self.assertIsNone(extract_callback_conflict_code(UnsafeError("private")))

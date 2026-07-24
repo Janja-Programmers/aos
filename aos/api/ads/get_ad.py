@@ -1,205 +1,201 @@
-"""
-Get a single Ad by id.
-Pricing operates in display currency.
-"""
+"""Privacy-safe public Ad detail."""
 
 from __future__ import annotations
 
+from typing import Any
+
 import frappe
-from frappe.utils import nowdate, getdate
+from frappe.utils import getdate, nowdate
 
 from aos.api.shared.auth import current_user
 from aos.api.shared.market_context import resolve_market_context
-from aos.api.shared.utils import get_active_wishlist_ad_ids
 from aos.api.shared.rate_limit import rate_limit, request_ip
-from aos.api.shared.responses import fail, ok
+from aos.api.shared.responses import ok
+from aos.services.ads.api import run_ads_api
+from aos.services.ads.constants import GET_AD_FIELDS, MAX_AD_ATTRIBUTES, MAX_IMAGES
+from aos.services.ads.errors import AdsNotFoundError
+from aos.services.ads.validation import ensure_known_fields, normalize_identifier
+from aos.services.analytics_pipeline_service import emit_analytics_event
+from aos.services.currency_conversion import convert_amount
+from aos.utils.aos_settings import get_aos_settings_snapshot
 
+from .activity import record_ad_view_activity
 from .constants import GET_AD_LIMIT_PER_HOUR_PER_IP
 from .serializers import serialize_ad_detail
-from .activity import record_ad_view_activity
-from aos.services.analytics_pipeline_service import emit_analytics_event
-from aos.services.currency_conversion import sql_conversion_expressions
-from aos.utils.aos_settings import get_aos_settings_snapshot
+
+
+def _rate_for(currency: str, *, base_currency: str) -> Any:
+    """Return the configured rate, with the base currency represented by one."""
+    if currency == base_currency:
+        return 1
+    return frappe.db.get_value("AOS Exchange Rate", currency, "rate_vs_base")
+
+
+def _is_offer_active(ad_doc: Any, *, today: Any) -> bool:
+    return bool(
+        ad_doc.offer_price
+        and (ad_doc.offer_start_date is None or ad_doc.offer_start_date <= today)
+        and (ad_doc.offer_end_date is None or ad_doc.offer_end_date >= today)
+    )
+
+
+def _apply_display_price(
+    ad_doc: Any,
+    *,
+    requested_currency: str,
+    base_currency: str,
+    today: Any,
+) -> None:
+    """Attach viewer-currency metadata without mutating authoritative prices."""
+    source_currency = str(ad_doc.currency or "").strip()
+    source_rate = _rate_for(source_currency, base_currency=base_currency)
+    target_rate = _rate_for(requested_currency, base_currency=base_currency)
+    offer_active = _is_offer_active(ad_doc, today=today)
+    native_current_price = ad_doc.offer_price if offer_active else ad_doc.price
+
+    original = convert_amount(
+        ad_doc.price or 0,
+        source_currency,
+        requested_currency,
+        source_rate,
+        target_rate,
+        base_currency,
+    )
+    current = convert_amount(
+        native_current_price or 0,
+        source_currency,
+        requested_currency,
+        source_rate,
+        target_rate,
+        base_currency,
+    )
+
+    ad_doc.display_currency = original.display_currency
+    ad_doc.requested_display_currency = original.requested_display_currency
+    ad_doc.conversion_available = int(original.available)
+    ad_doc.conversion_rate = original.rate
+    ad_doc.original_price_converted = original.amount
+    ad_doc.current_price = current.amount
+    ad_doc.is_offer_active = offer_active
+
+
+def _viewer_has_wishlisted(*, viewer: str, ad_id: str) -> bool:
+    if viewer == "Guest":
+        return False
+    return bool(
+        frappe.db.exists(
+            "AOS Wishlist",
+            {"user": viewer, "ad": ad_id, "status": "Active"},
+        )
+    )
+
+
+def _record_view_best_effort(*, viewer: str, ad_id: str) -> None:
+    if viewer == "Guest":
+        return
+    try:
+        record_ad_view_activity(user=viewer, ad_id=ad_id)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "AOS Ad View Activity Failed")
 
 
 def get_ad_impl(**kwargs):
-    rl = rate_limit(
+    limited = rate_limit(
         key=f"aos:ads:get:ip:{request_ip()}",
         ttl_seconds=60 * 60,
         limit=GET_AD_LIMIT_PER_HOUR_PER_IP,
         message="Too many requests. Please try again later.",
     )
+    if limited:
+        return limited
 
-    if rl:
-        return rl
+    def _get():
+        ensure_known_fields(kwargs, GET_AD_FIELDS)
+        ad_id = normalize_identifier(
+            kwargs.get("ad_id") or kwargs.get("id"),
+            field="ad_id",
+            required=True,
+        )
+        _country, display_currency, market_error = resolve_market_context(
+            country=kwargs.get("country"),
+            currency=kwargs.get("currency"),
+        )
+        if market_error:
+            return market_error
 
-    ad_id = str(kwargs.get("ad_id") or "").strip()
+        viewer = current_user()
+        today = getdate(nowdate())
+        conditions = [
+            "a.name = %(ad_id)s",
+            "a.status = 'Active'",
+            "s.status = 'Active'",
+            "(a.expires_on IS NULL OR a.expires_on >= %(today)s)",
+        ]
+        values: dict[str, Any] = {"ad_id": ad_id, "today": today}
+        if viewer != "Guest":
+            values["viewer"] = viewer
+            conditions.append(
+                """NOT EXISTS (
+                    SELECT 1 FROM `tabAOS User Block` b
+                    WHERE b.status = 'Active'
+                      AND ((b.blocker_user = %(viewer)s AND b.blocked_user = s.user)
+                        OR (b.blocker_user = s.user AND b.blocked_user = %(viewer)s))
+                )"""
+            )
 
-    if not ad_id:
-        return fail("Ad id is required.", error="VALIDATION_ERROR")
-
-    # Market Context
-    _country, display_currency, error = resolve_market_context(
-        country=kwargs.get("country"),
-        currency=kwargs.get("currency"),
-    )
-    if error:
-        return error
-
-    user = current_user()
-    today = getdate(nowdate())
-    base_currency = get_aos_settings_snapshot().base_currency
-
-    # Offer Logic
-    offer_active_sql = """
-        a.offer_price IS NOT NULL
-        AND a.offer_price > 0
-        AND (a.offer_start_date IS NULL OR a.offer_start_date <= %(today)s)
-        AND (a.offer_end_date IS NULL OR a.offer_end_date >= %(today)s)
-    """
-
-    native_current_price_sql = f"""
-        CASE
-            WHEN {offer_active_sql}
-            THEN a.offer_price
-            ELSE a.price
-        END
-    """
-    original_conversion = sql_conversion_expressions(amount_sql="a.price")
-    current_conversion = sql_conversion_expressions(amount_sql=native_current_price_sql)
-
-    # SQL Query
-    sql = f"""
-        SELECT
-            a.*,
-            {original_conversion["currency"]} as display_currency,
-            %(display_currency)s as requested_display_currency,
-            {original_conversion["available"]} as conversion_available,
-            {original_conversion["rate"]} as conversion_rate,
-            {original_conversion["amount"]} as original_price_converted,
-            {current_conversion["amount"]} as current_price
-        FROM `tabAOS Ad` a
-        INNER JOIN `tabAOS Seller` s ON s.name = a.seller
-        LEFT JOIN `tabAOS Exchange Rate` er_source
-            ON er_source.currency = a.currency
-        LEFT JOIN `tabAOS Exchange Rate` er_target
-            ON er_target.currency = %(display_currency)s
-        WHERE a.name = %(ad_id)s
-          AND a.status = 'Active'
-          AND s.status = 'Active'
-          AND (a.expires_on IS NULL OR a.expires_on >= %(today)s)
-        LIMIT 1
-    """
-
-    try:
         rows = frappe.db.sql(
-            sql,
-            {
-                "ad_id": ad_id,
-                "today": today,
-                "display_currency": display_currency,
-                "base_currency": base_currency,
-            },
+            f"""
+            SELECT a.name
+            FROM `tabAOS Ad` a
+            INNER JOIN `tabAOS Seller` s ON s.name = a.seller
+            WHERE {' AND '.join(conditions)}
+            LIMIT 1
+            """,
+            values,
             as_dict=True,
         )
-
         if not rows:
-            return fail("Ad not found.", error="NOT_FOUND")
+            raise AdsNotFoundError("Ad not found.")
 
-        row = rows[0]
-
-        doc = frappe._dict(row)
-
-    except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Get Ad FX Failed",
+        ad_doc = frappe.get_doc("AOS Ad", ad_id)
+        ad_doc.images = list(ad_doc.images or [])[:MAX_IMAGES]
+        ad_doc.details = list(ad_doc.details or [])[:MAX_AD_ATTRIBUTES]
+        settings = get_aos_settings_snapshot()
+        _apply_display_price(
+            ad_doc,
+            requested_currency=display_currency,
+            base_currency=settings.base_currency,
+            today=today,
+        )
+        item = serialize_ad_detail(
+            ad_doc,
+            is_wishlisted=_viewer_has_wishlisted(viewer=viewer, ad_id=ad_id),
         )
 
-        return fail(
-            "Failed to fetch ad.",
-            error="INTERNAL_ERROR",
-        )
+        _record_view_best_effort(viewer=viewer, ad_id=ad_id)
+        try:
+            emit_analytics_event(
+                event_type="ad_view",
+                event_group="ads",
+                user=viewer if viewer != "Guest" else None,
+                target_doctype="AOS Ad",
+                target_name=ad_id,
+                route_type="ad",
+                route_id=ad_id,
+                source="ads.get_ad",
+                country=ad_doc.country,
+                metadata={
+                    "category": ad_doc.category,
+                    "seller": ad_doc.seller,
+                    "location": ad_doc.location,
+                },
+            )
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "AOS Ad View Analytics Emit Failed")
+        return ok("Ad fetched.", data={"item": item})
 
-    # Images
-    doc.images = frappe.get_all(
-        "AOS Ad Image",
-        filters={
-            "parent": ad_id,
-            "parenttype": "AOS Ad",
-        },
-        fields=["media", "image", "is_primary", "sort_order"],
-        order_by="is_primary desc, sort_order asc",
-    )
-
-    # Details
-    doc.details = frappe.get_all(
-        "AOS Ad Attribute Value",
-        filters={
-            "parent": ad_id,
-            "parenttype": "AOS Ad",
-        },
-        fields=[
-            "attribute",
-            "value_text",
-            "value_number",
-            "value_date",
-            "value_bool",
-            "value_json",
-        ],
-    )
-
-    # Offer flag
-    doc.is_offer_active = bool(
-        row.get("offer_price")
-        and (
-            row.get("offer_start_date") is None
-            or row.get("offer_start_date") <= today
-        )
-        and (
-            row.get("offer_end_date") is None
-            or row.get("offer_end_date") >= today
-        )
-    )
-
-    # Wishlist
-    wishlisted_ids = set()
-
-    if user != "Guest":
-        wishlisted_ids = get_active_wishlist_ad_ids(user)
-
-    item = serialize_ad_detail(
-        doc,
-        is_wishlisted=ad_id in wishlisted_ids,
-    )
-
-    if user != "Guest":
-        record_ad_view_activity(
-            user=user,
-            ad_id=ad_id,
-        )
-
-    try:
-        emit_analytics_event(
-            event_type="ad_view",
-            event_group="ads",
-            user=user if user != "Guest" else None,
-            target_doctype="AOS Ad",
-            target_name=ad_id,
-            route_type="ad",
-            route_id=ad_id,
-            source="ads.get_ad",
-            country=row.get("country"),
-            metadata={
-                "category": row.get("category"),
-                "seller": row.get("seller"),
-                "location": row.get("location"),
-            },
-        )
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), "ad view analytics emit failed")
-
-    return ok(
-        "Ad fetched.",
-        data={"item": item},
+    return run_ads_api(
+        _get,
+        fallback="Failed to fetch ad.",
+        log_title="AOS Get Ad Failed",
     )

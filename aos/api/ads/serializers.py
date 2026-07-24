@@ -10,30 +10,22 @@ The mobile app needs four shapes:
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
 import frappe
 
-from aos.api.catalog.schema import (
-    _attribute_key,
-    _get_category_chain,
-    _resolve_pricing,
-)
+from aos.services.catalog.errors import CatalogError
+from aos.services.catalog.service import CatalogService, attribute_key, resolve_pricing
 from aos.api.ads.media import get_ad_image_url, get_ad_video_url, serialize_ad_media
 
 
-# Currency symbol cache
-_currency_symbol_cache: Dict[str, str] = {}
-
-
+@lru_cache(maxsize=128)
 def _get_currency_symbol(code: str) -> str:
     code = str(code or "").strip()
 
     if not code:
         return ""
-
-    if code in _currency_symbol_cache:
-        return _currency_symbol_cache[code]
 
     symbol = frappe.db.get_value(
         "Currency",
@@ -42,8 +34,6 @@ def _get_currency_symbol(code: str) -> str:
     ) or ""
 
     symbol = str(symbol).strip()
-
-    _currency_symbol_cache[code] = symbol
 
     return symbol
 
@@ -106,13 +96,16 @@ def _get_edit_category_metadata(
     if not category_id:
         return default
 
-    chain = _get_category_chain(category_id)
+    try:
+        chain = CatalogService().get_sellable_category_chain(category_id)
+    except CatalogError:
+        return default
 
     if not chain:
         return default
 
     leaf = chain[0]
-    pricing = _resolve_pricing(chain) or {}
+    pricing = resolve_pricing(chain) or {}
 
     return {
         "is_service": bool(
@@ -250,46 +243,21 @@ def serialize_ad_details(
 ) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
 
-    for row in (
-        getattr(ad_doc, "details", [])
-        or []
-    ):
+    for row in (getattr(ad_doc, "details", []) or []):
+        attribute_id = _norm(getattr(row, "attribute", None))
+        snapshot_key = _norm(getattr(row, "attribute_key", None)) or attribute_key(attribute_id)
         items.append(
             {
-                "attribute": _norm(
-                    getattr(
-                        row,
-                        "attribute",
-                        None,
-                    )
-                ),
-                "value_text": getattr(
-                    row,
-                    "value_text",
-                    None,
-                ),
-                "value_number": getattr(
-                    row,
-                    "value_number",
-                    None,
-                ),
-                "value_date": getattr(
-                    row,
-                    "value_date",
-                    None,
-                ),
-                "value_bool": _to_int(
-                    getattr(
-                        row,
-                        "value_bool",
-                        0,
-                    )
-                ),
-                "value_json": getattr(
-                    row,
-                    "value_json",
-                    None,
-                ),
+                "attribute": attribute_id,
+                "attribute_key": snapshot_key,
+                "attribute_label": _norm(getattr(row, "attribute_label", None)) or attribute_id,
+                "attribute_type": _norm(getattr(row, "attribute_type", None)) or None,
+                "attribute_unit": _norm(getattr(row, "attribute_unit", None)) or None,
+                "value_text": getattr(row, "value_text", None),
+                "value_number": getattr(row, "value_number", None),
+                "value_date": getattr(row, "value_date", None),
+                "value_bool": _to_int(getattr(row, "value_bool", 0)),
+                "value_json": getattr(row, "value_json", None),
             }
         )
 
@@ -374,7 +342,11 @@ def serialize_ad_list_item(
         "id": ad_doc.name,
         "price": _to_float(getattr(ad_doc, "price", None)),
         "currency": _norm(getattr(ad_doc, "currency", display_currency)),
+        "original_price_value": _to_float(getattr(ad_doc, "price", None)),
+        "original_currency": _norm(getattr(ad_doc, "currency", display_currency)),
         "display_price": current_price,
+        "displayed_price_value": current_price,
+        "displayed_currency": display_currency,
         "display_currency": display_currency,
         "requested_display_currency": _norm(getattr(ad_doc, "requested_display_currency", display_currency)),
         "price_conversion": {
@@ -661,13 +633,8 @@ def serialize_ad_for_edit(
     ):
         details.append(
             {
-                "attribute": _attribute_key(
-                    getattr(
-                        row,
-                        "attribute",
-                        None,
-                    )
-                ),
+                "attribute": _norm(getattr(row, "attribute_key", None))
+                or attribute_key(getattr(row, "attribute", None)),
                 "value_text": getattr(
                     row,
                     "value_text",

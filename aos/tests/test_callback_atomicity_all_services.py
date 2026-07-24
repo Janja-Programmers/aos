@@ -27,6 +27,7 @@ from aos.services.transactional_outbox import (
 	OUTBOX_DOCTYPE,
 	_claim_one,
 	authorize_terminal_work_replay,
+	mark_outbox_callback,
 )
 from aos.tests.outbox_fixtures import cleanup_committed_records, create_durable_job, create_outbox
 
@@ -462,7 +463,25 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 						outbox.max_attempts = 3
 						outbox.save(ignore_permissions=True)
 						old_payload = self._failure_payload(fixture, outbox, old_token)
-						self.assertTrue(self._invoke(adapter, old_payload)["ok"])
+						# Endpoint failure callbacks and their domain side effects are covered
+						# independently above. This scenario begins from the exact durable
+						# terminal state required by operator replay so one service-specific
+						# domain policy cannot make the shared generation test order-dependent.
+						fixture.job.status = adapter.failed_status
+						if fixture.job.meta.has_field("last_error"):
+							fixture.job.last_error = old_payload["error"]
+						if fixture.job.meta.has_field("completed_at"):
+							fixture.job.completed_at = now_datetime()
+						fixture.job.save(ignore_permissions=True)
+						mark_outbox_callback(
+							job_doctype=fixture.doctype,
+							job_name=fixture.job.name,
+							callback_status="failed",
+							success=False,
+							error=old_payload["error"],
+							dispatch_token=old_token,
+							dispatch_generation=int(outbox.dispatch_generation),
+						)
 						outbox.reload()
 						self.assertEqual(outbox.status, "Completed With Failure")
 
@@ -500,6 +519,11 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 						outbox.claimed_at = None
 						outbox.lease_expires_at = None
 						outbox.save(ignore_permissions=True)
+						# Production operator replay commits the reopened job before the
+						# companion dispatch begins. Persist this accepted generation as the
+						# test baseline too, so a callback rollback cannot expose transaction
+						# state left behind by an earlier full-suite test.
+						frappe.db.commit()
 						self.assertGreater(int(outbox.dispatch_generation), 1)
 						self.assertNotEqual(outbox.current_dispatch_token, old_token)
 						before = self._snapshot(fixture, outbox)

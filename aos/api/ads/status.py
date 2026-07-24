@@ -1,277 +1,85 @@
-"""Change an Ad's status (seller actions).
-
-This module centralizes lifecycle transitions so the mobile app can call one
-endpoint and the server remains the single source of truth for what is allowed.
-
-Supported actions (action -> transition):
-- mark_sold:       Active  -> Sold
-- mark_available:  Sold    -> Active
-- renew:           Expired -> Active (extends expires_on)
-- delete:          Reviewing/Declined/Sold/Expired -> Deleted
-
-Notes:
-- "delete" is a soft delete via status="Deleted".
-- Editing while Reviewing should restart review (handled in update endpoint).
-- Trusted lifecycle actions are passed to the AOS Ad controller through a
-  temporary document flag so they are not treated as ordinary ad editing.
-"""
+"""Seller-owned Ads lifecycle actions."""
 
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple
-
 import frappe
-from frappe.utils import add_days, today
+from frappe.utils import add_days, getdate, today
 
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
-from aos.api.shared.responses import fail, ok
-from aos.api.shared.public_errors import safe_fail_from_exception
+from aos.api.shared.responses import ok
+from aos.services.ads.api import run_ads_api
+from aos.services.ads.authorization import get_owned_ad_row, require_active_seller
+from aos.services.ads.constants import ACTION_DELETE, ACTION_MARK_AVAILABLE, ACTION_RENEW, STATUS_ACTIVE, STATUS_DELETED
+from aos.services.ads.indexing import enqueue_discovery_refresh
+from aos.services.ads.lifecycle import transition_for_action
+from aos.services.ads.media import release_all
+from aos.services.ads.mutations import apply_transition, lock_ad
+from aos.services.ads.observability import ads_log
+from aos.services.ads.validation import ensure_known_fields, normalize_identifier, normalize_text
 from aos.utils.aos_settings import get_aos_settings_snapshot
-from aos.integrations.ai.image_search_tasks import enqueue_index_refresh_for_status
 
 from .constants import SET_AD_STATUS_LIMIT_PER_MINUTE_PER_USER
 
 
-_ACTIONS = {
-    "mark_sold",
-    "mark_available",
-    "renew",
-    "delete",
-}
-
-_DELETABLE_STATUSES = {
-    "Reviewing",
-    "Declined",
-    "Sold",
-    "Expired",
-}
+def _media_ids(doc) -> list[str]:
+    values = [str(getattr(row, "media", "") or "").strip() for row in (doc.images or [])]
+    if getattr(doc, "video_media", None):
+        values.append(str(doc.video_media).strip())
+    return [value for value in values if value]
 
 
-# HELPERS
-def _clean_str(val: Any) -> str:
-    return str(val or "").strip()
-
-
-def _get_transition(
-    action: str,
-    status: str,
-) -> Tuple[Optional[str], Optional[str]]:
-    action = _clean_str(action).lower()
-    status = _clean_str(status)
-
-    if action not in _ACTIONS:
-        return None, "Invalid action."
-
-    if status == "Deleted":
-        return None, "This ad is deleted."
-
-    if action == "mark_sold":
-        if status != "Active":
-            return None, "Only Active ads can be marked as Sold."
-
-        return "Sold", None
-
-    if action == "mark_available":
-        if status != "Sold":
-            return None, "Only Sold ads can be marked as Available."
-
-        return "Active", None
-
-    if action == "renew":
-        if status != "Expired":
-            return None, "Only Expired ads can be renewed."
-
-        return "Active", None
-
-    if action == "delete":
-        if status not in _DELETABLE_STATUSES:
-            return None, "This ad cannot be deleted in its current status."
-
-        return "Deleted", None
-
-    return None, "Invalid action."
-
-
-def _enqueue_image_search_refresh(doc) -> None:
-    """Queue image-search index refresh for the ad's current status."""
-
-    try:
-        enqueue_index_refresh_for_status(
-            doc.name,
-            status=doc.status,
-        )
-    except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            f"Failed to enqueue image-search refresh for {doc.name}",
-        )
-
-
-def _enqueue_search_ranking_refresh(doc) -> None:
-    """Queue search/ranking index refresh for the ad's current status."""
-
-    try:
-        from aos.services.search_ranking_service import enqueue_ad_search_index
-        enqueue_ad_search_index(
-            doc.name,
-            source="ad_status_change",
-        )
-    except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            f"Failed to enqueue search/ranking refresh for {doc.name}",
-        )
-
-
-# API IMPLEMENTATION
 def set_ad_status_impl(**kwargs):
-    user, err = require_login()
-    if err:
-        return err
+    user, error = require_login()
+    if error:
+        return error
 
-    rl = rate_limit(
+    limited = rate_limit(
         key=f"aos:ads:status:user:{user}",
         ttl_seconds=60,
         limit=SET_AD_STATUS_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
     )
+    if limited:
+        return limited
 
-    if rl:
-        return rl
+    def _change():
+        from aos.services.ads.constants import STATUS_FIELDS
 
-    ad_id = _clean_str(
-        kwargs.get("ad_id")
-        or kwargs.get("id")
-    )
+        ensure_known_fields(kwargs, STATUS_FIELDS)
+        ad_id = normalize_identifier(kwargs.get("ad_id") or kwargs.get("id"), field="ad_id", required=True)
+        action = normalize_text(kwargs.get("action"), field="action", max_length=40, required=True).lower()
+        row = get_owned_ad_row(user, ad_id, fields=["expires_on"])
+        if action != ACTION_DELETE:
+            require_active_seller(user)
 
-    if not ad_id:
-        return fail(
-            "Ad id is required.",
-            error="VALIDATION_ERROR",
-        )
+        lock_ad(ad_id)
+        doc = frappe.get_doc("AOS Ad", ad_id)
+        transition = transition_for_action(action, doc.status)
+        if transition.changed:
+            apply_transition(doc, transition)
+            if action == ACTION_MARK_AVAILABLE and (
+                not doc.expires_on or getdate(doc.expires_on) < getdate(today())
+            ):
+                doc.expires_on = add_days(today(), get_aos_settings_snapshot().ad_expiry_days)
+            doc.save(ignore_permissions=True)
 
-    action = _clean_str(
-        kwargs.get("action")
-    ).lower()
+            if transition.new_status == STATUS_DELETED:
+                release_all(user=user, ad_name=doc.name, media_ids=_media_ids(doc))
+            enqueue_discovery_refresh(doc.name, status=doc.status, source=f"ad_{action}")
 
-    if not action:
-        return fail(
-            "Action is required.",
-            error="VALIDATION_ERROR",
-        )
-
-    if action not in _ACTIONS:
-        return fail(
-            "Invalid action.",
-            error="VALIDATION_ERROR",
-        )
-
-    row = frappe.db.get_value(
-        "AOS Ad",
-        ad_id,
-        [
-            "name",
-            "seller",
-            "status",
-            "expires_on",
-        ],
-        as_dict=True,
-    )
-
-    if not row:
-        return fail(
-            "Ad not found.",
-            error="NOT_FOUND",
-        )
-
-    seller_user = frappe.db.get_value(
-        "AOS Seller",
-        row.seller,
-        "user",
-    )
-
-    if seller_user != user:
-        return fail(
-            "You don't have permission to change this ad.",
-            error="FORBIDDEN",
-        )
-
-    current_status = _clean_str(row.status)
-
-    new_status, message = _get_transition(
-        action,
-        current_status,
-    )
-
-    if message:
-        return fail(
-            message,
-            error="VALIDATION_ERROR",
-        )
-
-    try:
-        doc = frappe.get_doc(
-            "AOS Ad",
-            ad_id,
-        )
-
-        # Temporary internal flag checked by the AOS Ad controller.
-        # This distinguishes trusted lifecycle transitions from normal edits.
-        doc.flags.aos_status_action = action
-
-        doc.status = new_status
-
-        if action == "renew":
-            settings = get_aos_settings_snapshot()
-
-            doc.expires_on = add_days(
-                today(),
-                settings.ad_expiry_days,
-            )
-
-        doc.save(ignore_permissions=True)
-
-        _enqueue_image_search_refresh(doc)
-        _enqueue_search_ranking_refresh(doc)
-
-        frappe.db.commit()
-
+        ads_log("status_changed", status=doc.status, outcome="success")
         return ok(
             "Ad status updated.",
             data={
                 "id": doc.name,
                 "status": doc.status,
-                "expires_on": getattr(
-                    doc,
-                    "expires_on",
-                    None,
-                ),
+                "expires_on": doc.expires_on,
+                "changed": transition.changed,
             },
         )
 
-    except frappe.DoesNotExistError:
+    response = run_ads_api(_change, fallback="Failed to update ad status.", log_title="AOS Set Ad Status Failed")
+    if not response.get("ok"):
         frappe.db.rollback()
-
-        return fail(
-            "Ad not found.",
-            error="NOT_FOUND",
-        )
-
-    except frappe.ValidationError as ex:
-        frappe.db.rollback()
-
-        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
-
-    except Exception:
-        frappe.db.rollback()
-
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Set Ad Status Failed",
-        )
-
-        return fail(
-            "Failed to update ad status.",
-            error="INTERNAL_ERROR",
-        )
+    return response
