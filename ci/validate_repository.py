@@ -127,9 +127,13 @@ def raw_patch_ddl_lines(path: Path, text: str) -> list[int]:
 	for node in ast.walk(tree):
 		if not isinstance(node, ast.Call) or _attribute_path(node.func) != ("frappe", "db", "sql"):
 			continue
-		query_node = node.args[0] if node.args else next(
-			(keyword.value for keyword in node.keywords if keyword.arg == "query"),
-			None,
+		query_node = (
+			node.args[0]
+			if node.args
+			else next(
+				(keyword.value for keyword in node.keywords if keyword.arg == "query"),
+				None,
+			)
 		)
 		query = _string_template(query_node)
 		if query and RAW_DDL.search(query):

@@ -26,18 +26,20 @@ REQUIRED_MEDIA_TEST_FILES = {
 }
 
 REQUIRED_ACCOUNTS_TEST_FILES = {
-    "__init__.py",
-    "test_consumer_privacy.py",
-    "test_identity.py",
-    "test_lifecycle.py",
-    "test_migration.py",
-    "test_preferences.py",
-    "test_profile.py",
-    "test_serializers.py",
-    "test_validation.py",
+	"__init__.py",
+	"test_consumer_privacy.py",
+	"test_identity.py",
+	"test_lifecycle.py",
+	"test_migration.py",
+	"test_preferences.py",
+	"test_profile.py",
+	"test_serializers.py",
+	"test_validation.py",
 }
 LEGACY_ACCOUNTS_TEST_FILES = {
-    "test_accounts.py", "test_account_profile.py", "test_account_preferences.py",
+	"test_accounts.py",
+	"test_account_profile.py",
+	"test_account_preferences.py",
 }
 
 LEGACY_MEDIA_TEST_FILES = {
@@ -134,8 +136,7 @@ def main() -> int:
 	)
 	if missing_accounts_files:
 		raise SystemExit(
-			"Accounts feature tests must live under aos/api/accounts/tests: "
-			+ str(missing_accounts_files)
+			"Accounts feature tests must live under aos/api/accounts/tests: " + str(missing_accounts_files)
 		)
 	legacy_accounts_paths = sorted(
 		str(path.relative_to(repository))
@@ -149,16 +150,14 @@ def main() -> int:
 		)
 	missing_media_files = (
 		sorted(
-			REQUIRED_MEDIA_TEST_FILES
-			- {path.name for path in media_test_root.iterdir() if path.is_file()}
+			REQUIRED_MEDIA_TEST_FILES - {path.name for path in media_test_root.iterdir() if path.is_file()}
 		)
 		if media_test_root.is_dir()
 		else sorted(REQUIRED_MEDIA_TEST_FILES)
 	)
 	if missing_media_files:
 		raise SystemExit(
-			"Media feature tests must live under aos/api/media/tests: "
-			+ str(missing_media_files)
+			"Media feature tests must live under aos/api/media/tests: " + str(missing_media_files)
 		)
 	legacy_media_paths = sorted(
 		str(path.relative_to(repository))
@@ -167,8 +166,7 @@ def main() -> int:
 	)
 	if legacy_media_paths:
 		raise SystemExit(
-			"Media-owned tests must not live in the generic aos/tests package: "
-			+ str(legacy_media_paths)
+			"Media-owned tests must not live in the generic aos/tests package: " + str(legacy_media_paths)
 		)
 	media_fixture = media_test_root / "fixtures" / "valid_64x64.png"
 	if not media_fixture.is_file():
