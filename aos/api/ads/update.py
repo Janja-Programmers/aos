@@ -29,6 +29,7 @@ from aos.services.ads.validation import (
     normalize_active_update,
     normalize_full_ad_payload,
     normalize_identifier,
+    persisted_offer_value,
 )
 from aos.services.moderation_service import enqueue_ad_moderation
 
@@ -36,14 +37,15 @@ from .constants import UPDATE_AD_LIMIT_PER_MINUTE_PER_USER
 
 
 def _existing_values(doc) -> dict[str, object]:
+    offer_price = persisted_offer_value(doc.price_type, doc.offer_price)
     return {
         "category": doc.category,
         "price_type": doc.price_type,
         "price": doc.price,
         "price_unit": doc.price_unit,
-        "offer_price": doc.offer_price,
-        "offer_start_date": doc.offer_start_date,
-        "offer_end_date": doc.offer_end_date,
+        "offer_price": offer_price,
+        "offer_start_date": doc.offer_start_date if offer_price is not None else None,
+        "offer_end_date": doc.offer_end_date if offer_price is not None else None,
     }
 
 

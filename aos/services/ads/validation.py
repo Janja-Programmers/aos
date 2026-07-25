@@ -72,6 +72,25 @@ _MONEY_QUANTUM = Decimal(1).scaleb(-MONEY_DECIMAL_PLACES)
 _MONEY_MAX_ABS = Decimal(10) ** (MONEY_MAX_DIGITS - MONEY_DECIMAL_PLACES) - _MONEY_QUANTUM
 
 
+def persisted_offer_value(price_type: Any, value: Any) -> Any:
+    """Translate a persisted Currency zero sentinel to an absent offer.
+
+    Public payload validation must continue to reject an explicitly supplied
+    zero offer. This helper is only for values reloaded from Frappe/MariaDB,
+    where an unset non-null Currency column is represented as numeric zero.
+    Non-fixed price types can never retain offer metadata. Invalid non-zero
+    persisted values are returned unchanged so normal validation still fails
+    closed.
+    """
+
+    if str(price_type or "").strip() != "Fixed" or value in (None, ""):
+        return None
+    try:
+        return None if Decimal(str(value)) == 0 else value
+    except (InvalidOperation, TypeError, ValueError):
+        return value
+
+
 def ensure_known_fields(payload: Mapping[str, Any], allowed: Iterable[str], *, aliases: Iterable[str] = ()) -> None:
     if not isinstance(payload, Mapping):
         raise AdsValidationError("Invalid request payload.", code="INVALID_AD_INPUT")
