@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
 import frappe
@@ -27,6 +27,24 @@ _SYSTEM_ACTIONS = frozenset({"moderation_allow", "moderation_reject", "moderatio
 
 def _clean(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _persisted_offer_value(price_type: Any, value: Any) -> Any:
+    """Translate Frappe Currency zero sentinels to an absent optional offer.
+
+    MariaDB/Frappe may hydrate an unset Currency field as numeric zero. Public
+    request validation must still reject an explicitly supplied zero offer, but
+    a persisted zero must not become a synthetic offer when an Ad is revalidated
+    during moderation or another lifecycle-only save. Non-fixed price types can
+    never retain offer metadata.
+    """
+
+    if _clean(price_type) != "Fixed" or value in (None, ""):
+        return None
+    try:
+        return None if Decimal(str(value)) == 0 else value
+    except (InvalidOperation, TypeError, ValueError):
+        return value
 
 
 def _throw_domain(exc: Exception) -> None:
@@ -224,6 +242,7 @@ class AOSAd(Document):
             }
             for row in (self.images or [])
         ]
+        offer_price = _persisted_offer_value(self.price_type, self.offer_price)
         return {
             "title": self.title,
             "description": self.description,
@@ -234,9 +253,9 @@ class AOSAd(Document):
             "price_type": self.price_type,
             "price": self.price,
             "price_unit": self.price_unit,
-            "offer_price": self.offer_price,
-            "offer_start_date": self.offer_start_date,
-            "offer_end_date": self.offer_end_date,
+            "offer_price": offer_price,
+            "offer_start_date": self.offer_start_date if offer_price is not None else None,
+            "offer_end_date": self.offer_end_date if offer_price is not None else None,
             "video_media": self.video_media,
         }
 

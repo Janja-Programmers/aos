@@ -21,3 +21,4 @@ aos.patches.v1_0.harden_catalog_subsystem
 aos.patches.v1_0.enforce_catalog_desk_permissions
 
 aos.patches.v1_0.harden_ads_subsystem
+aos.patches.v1_0.normalize_ads_offer_fields
