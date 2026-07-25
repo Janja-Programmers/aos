@@ -32,6 +32,8 @@ class TestAdsOfferPersistence(TestCase):
         statement = " ".join(str(sql.call_args.args[0]).split()).upper()
         self.assertIn("UPDATE `TABAOS AD`", statement)
         self.assertIn("COALESCE(PRICE_TYPE, '') != 'FIXED'", statement)
+        self.assertIn("SET OFFER_PRICE = 0", statement)
+        self.assertNotIn("SET OFFER_PRICE = NULL", statement)
         self.assertIn("COALESCE(OFFER_PRICE, 0) <= 0", statement)
         commit.assert_not_called()
         logger.assert_called_once_with("aos.ads", allow_site=True)

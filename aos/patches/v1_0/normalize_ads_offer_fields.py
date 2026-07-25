@@ -1,9 +1,10 @@
 """Normalize persisted Ads offer metadata after pricing hardening.
 
 Frappe Currency columns can hydrate an unset value as zero. Older rows may also
-retain offer metadata after changing away from Fixed pricing. Both states are
-canonicalized so lifecycle-only saves, especially moderation callbacks, do not
-interpret a storage sentinel or stale hidden values as an active offer.
+retain offer metadata after changing away from Fixed pricing. The Currency
+column is non-nullable, so its canonical empty sentinel is zero; both states
+are canonicalized so lifecycle-only saves, especially moderation callbacks,
+do not interpret a storage sentinel or stale hidden values as an active offer.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ def execute() -> None:
     frappe.db.sql(
         """
         UPDATE `tabAOS Ad`
-        SET offer_price = NULL,
+        SET offer_price = 0,
             offer_start_date = NULL,
             offer_end_date = NULL,
             offer_percent = 0
