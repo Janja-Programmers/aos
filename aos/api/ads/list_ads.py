@@ -34,6 +34,48 @@ def _search_order_sql(ad_ids: list[str]) -> str:
     return f"FIELD(a.name, {escaped})"
 
 
+def _build_order_by(
+    *,
+    candidate_order: str,
+    cursor: str,
+    sort: str,
+    promotion_type: str | None,
+    geo_boost: str,
+    verified_boost: str,
+    conversion_available_sql: str,
+    current_price_sql: str,
+) -> str:
+    """Return deterministic ordering without allowing ranking boosts to mask explicit sorts."""
+
+    if cursor:
+        return "a.creation DESC, a.name DESC"
+
+    tie_breakers = f"{geo_boost}, {verified_boost}, a.creation DESC, a.name DESC"
+    if sort == "price_low":
+        return (
+            f"{conversion_available_sql} DESC, {current_price_sql} ASC, "
+            f"{tie_breakers}"
+        )
+    if sort == "price_high":
+        return (
+            f"{conversion_available_sql} DESC, {current_price_sql} DESC, "
+            f"{tie_breakers}"
+        )
+    if sort == "recent":
+        return f"a.creation DESC, {geo_boost}, {verified_boost}, a.name DESC"
+    if candidate_order:
+        return f"{candidate_order} ASC, {geo_boost}, {verified_boost}, a.name DESC"
+    if promotion_type == "deal":
+        return (
+            f"IFNULL(a.offer_percent, 0) DESC, {geo_boost}, "
+            f"{verified_boost}, a.creation DESC, a.name DESC"
+        )
+    return (
+        f"a.average_rating DESC, a.total_reviews DESC, {geo_boost}, "
+        f"{verified_boost}, a.creation DESC, a.name DESC"
+    )
+
+
 def _empty(limit: int, offset: int, *, cursor: str = ""):
     return ok(
         "Ads fetched.",
@@ -195,20 +237,16 @@ def list_ads_impl(**kwargs):
             geo_parts.append("CASE WHEN a.location = %(location)s THEN 0 ELSE 1 END")
         geo_boost = ", ".join(geo_parts)
 
-        if candidate_order:
-            order_by = f"{candidate_order} ASC, a.name DESC"
-        elif cursor:
-            order_by = "a.creation DESC, a.name DESC"
-        elif filters["promotion_type"] == "deal":
-            order_by = f"{geo_boost}, {verified_boost}, IFNULL(a.offer_percent, 0) DESC, a.creation DESC, a.name DESC"
-        elif filters["sort"] == "rating_high":
-            order_by = f"{geo_boost}, {verified_boost}, a.average_rating DESC, a.total_reviews DESC, a.creation DESC, a.name DESC"
-        elif filters["sort"] == "recent":
-            order_by = f"{geo_boost}, {verified_boost}, a.creation DESC, a.name DESC"
-        elif filters["sort"] == "price_low":
-            order_by = f"{geo_boost}, {verified_boost}, {original_conversion['available']} DESC, {current_price_sql} ASC, a.creation DESC, a.name DESC"
-        else:
-            order_by = f"{geo_boost}, {verified_boost}, {original_conversion['available']} DESC, {current_price_sql} DESC, a.creation DESC, a.name DESC"
+        order_by = _build_order_by(
+            candidate_order=candidate_order,
+            cursor=cursor,
+            sort=filters["sort"],
+            promotion_type=filters["promotion_type"],
+            geo_boost=geo_boost,
+            verified_boost=verified_boost,
+            conversion_available_sql=original_conversion["available"],
+            current_price_sql=current_price_sql,
+        )
 
         where_clause = " AND ".join(conditions)
         rows = frappe.db.sql(

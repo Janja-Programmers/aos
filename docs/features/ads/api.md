@@ -37,7 +37,7 @@ Mutation endpoints reject unknown fields. Scalars reject arrays/objects, text is
 
 Public listing and wishlist listing have a default limit of 20 and maximum of 50. Offset is bounded. Sort and filter fields are allowlisted and all orderings have deterministic tie-breakers.
 
-Public `list_ads` preserves offset pagination. For `sort=recent`, clients may additionally use the opaque `cursor` returned as `pagination.next_cursor`; cursor mode requires zero offset and no search query. Search-ranking results preserve companion ranking but remain bounded and are re-filtered by authoritative public eligibility.
+Public `list_ads` preserves offset pagination. Category, seller, pricing, promotion, rating, and verification filters are applied conjunctively. Country and location remain marketplace ranking context. Explicit `price_low`, `price_high`, and `recent` sorts are the primary ordering when combined with those filters; geographic and verified-seller ranking are deterministic tie-breakers rather than overrides. For `sort=recent`, clients may additionally use the opaque `cursor` returned as `pagination.next_cursor`; cursor mode requires zero offset and no search query. Search-ranking relevance is used for the default best-match ordering while candidates remain bounded and are re-filtered by authoritative public eligibility.
 
 ## Errors
 
