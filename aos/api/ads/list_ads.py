@@ -111,6 +111,8 @@ def list_ads_impl(**kwargs):
                 code="INVALID_AD_CURSOR",
             )
 
+        cursor_values = decode_recent_cursor(filters["cursor"]) if filters["cursor"] else None
+
         country, display_currency, market_error = resolve_market_context(
             country=filters["country"], currency=filters["currency"]
         )
@@ -223,8 +225,8 @@ def list_ads_impl(**kwargs):
             conditions.extend([f"({original_conversion['available']}) = 1", f"{current_price_sql} <= %(price_max)s"])
             values["price_max"] = filters["price_max"]
 
-        if cursor:
-            cursor_creation, cursor_name = decode_recent_cursor(cursor)
+        if cursor_values:
+            cursor_creation, cursor_name = cursor_values
             conditions.append(
                 "(a.creation < %(cursor_creation)s OR (a.creation = %(cursor_creation)s AND a.name < %(cursor_name)s))"
             )

@@ -127,6 +127,12 @@ def list_wishlist_impl(**kwargs):
                 code="INVALID_WISHLIST_CURSOR",
             )
 
+        cursor_values = (
+            decode_wishlist_cursor(filters["cursor"])
+            if filters["cursor"]
+            else None
+        )
+
         country, display_currency, market_error = resolve_market_context(
             country=filters["country"],
             currency=filters["currency"],
@@ -169,8 +175,8 @@ def list_wishlist_impl(**kwargs):
             "offset": 0 if cursor_mode else offset,
         }
 
-        if cursor:
-            cursor_saved_on, cursor_name = decode_wishlist_cursor(cursor)
+        if cursor_values:
+            cursor_saved_on, cursor_name = cursor_values
             conditions.append(
                 f"({saved_on_sql} < %(cursor_saved_on)s OR "
                 f"({saved_on_sql} = %(cursor_saved_on)s AND w.name < %(cursor_name)s))"
