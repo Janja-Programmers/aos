@@ -127,7 +127,7 @@ PUBLIC_LIST_FIELDS = frozenset(
     }
 )
 WISHLIST_TOGGLE_FIELDS = frozenset({"ad_id", "id", "wishlisted"})
-WISHLIST_LIST_FIELDS = PUBLIC_LIST_FIELDS - frozenset({"cursor"})
+WISHLIST_LIST_FIELDS = PUBLIC_LIST_FIELDS
 REPORT_AD_FIELDS = frozenset({"ad", "ad_id", "reason", "details"})
 DRAFT_UPSERT_FIELDS = frozenset({"draft_id", "id", "payload", "payload_json", "last_step"})
 DRAFT_ID_FIELDS = frozenset({"draft_id", "id"})

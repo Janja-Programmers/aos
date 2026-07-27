@@ -31,11 +31,11 @@ Mutation endpoints reject unknown fields. Scalars reject arrays/objects, text is
 
 `create_ad` and a full update of Reviewing/Declined Ads require a complete valid payload, one to four confirmed `ad_image` Media IDs, exactly one primary image, all required Catalog attributes, and valid pricing for the resolved category. Active Ads allow only the existing safe edit subset: title, description, and pricing fields. Category, market, attribute, and Media replacement of an Active Ad require an explicit resubmission workflow rather than an unsafe direct public mutation.
 
-`toggle_wishlist` preserves legacy toggle behavior when `wishlisted` is omitted. Sending `wishlisted=1` or `wishlisted=0` gives idempotent desired-state behavior. Duplicate logical rows are prevented by the database.
+`toggle_wishlist` preserves legacy toggle behavior when `wishlisted` is omitted. Sending `wishlisted=1` or `wishlisted=0` gives idempotent desired-state behavior. Duplicate logical rows are prevented by the database. Adds reject own ads and recheck public eligibility; explicit removal remains available for stale unavailable ads. See `docs/features/wishlist/`.
 
 ## Pagination and sorting
 
-Public listing and wishlist listing have a default limit of 20 and maximum of 50. Offset is bounded. Sort and filter fields are allowlisted and all orderings have deterministic tie-breakers.
+Public listing and wishlist listing have a default limit of 20 and maximum of 50. Offset is bounded. Wishlist listing defaults to recently saved order and also supports an opaque recent cursor. Sort and filter fields are allowlisted and explicit sorts remain primary with deterministic tie-breakers.
 
 Public `list_ads` preserves offset pagination. Category, seller, pricing, promotion, rating, and verification filters are applied conjunctively. Country and location remain marketplace ranking context. Explicit `price_low`, `price_high`, and `recent` sorts are the primary ordering when combined with those filters; geographic and verified-seller ranking are deterministic tie-breakers rather than overrides. For `sort=recent`, clients may additionally use the opaque `cursor` returned as `pagination.next_cursor`; cursor mode requires zero offset and no search query. Search-ranking relevance is used for the default best-match ordering while candidates remain bounded and are re-filtered by authoritative public eligibility.
 

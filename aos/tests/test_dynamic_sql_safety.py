@@ -140,6 +140,20 @@ class TestDynamicSqlSafety(FrappeTestCase):
         self.assertEqual(response.get("error"), "VALIDATION_ERROR")
         self.assertEqual(frappe.local.response.get("http_status_code"), 422)
 
+    def test_wishlist_invalid_cursor_is_rejected_before_listing_sql(self):
+        with (
+            patch.object(wishlist_list, "rate_limit", return_value=None),
+            patch.object(wishlist_list, "request_ip", return_value="127.0.0.1"),
+            patch.object(wishlist_list, "require_login", return_value=("sql-test@example.com", None)),
+            patch.object(wishlist_list, "resolve_market_context", return_value=("Kenya", "KES", None)),
+            patch.object(wishlist_list.frappe.db, "sql", side_effect=AssertionError("SQL should not run")),
+        ):
+            response = wishlist_list.list_wishlist_impl(cursor="not-a-valid-cursor")
+
+        self.assertFalse(response.get("ok"))
+        self.assertEqual(response.get("error"), "INVALID_WISHLIST_CURSOR")
+        self.assertEqual(frappe.local.response.get("http_status_code"), 422)
+
     def test_seller_search_escapes_like_wildcards(self):
         captured = {}
 

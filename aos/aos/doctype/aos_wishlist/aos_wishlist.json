@@ -7,7 +7,9 @@
   "ad",
   "user",
   "column_break_kcsb",
-  "status"
+  "status",
+  "saved_on",
+  "removed_on"
  ],
  "fields": [
   {
@@ -43,12 +45,27 @@
   {
    "fieldname": "column_break_kcsb",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "saved_on",
+   "fieldtype": "Datetime",
+   "label": "Saved On",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "removed_on",
+   "fieldtype": "Datetime",
+   "label": "Removed On",
+   "read_only": 1,
+   "in_standard_filter": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-05 01:20:41.246042",
+ "modified": "2026-07-27 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Wishlist",

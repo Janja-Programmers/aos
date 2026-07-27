@@ -626,13 +626,28 @@ def _remove_wishlist_items(*, user: str) -> int:
     if not _doctype_exists("AOS Wishlist"):
         return 0
 
-    return _update_counted(
+    affected_ads = frappe.get_all(
         "AOS Wishlist",
-        set_sql="status = 'Removed', modified = %s",
+        filters={"user": user, "status": "Active"},
+        pluck="ad",
+        limit=0,
+    )
+    now = now_datetime()
+    removed = _update_counted(
+        "AOS Wishlist",
+        set_sql="status = 'Removed', removed_on = %s, modified = %s",
         where_sql="user = %s AND status != 'Removed'",
-        set_params=(now_datetime(),),
+        set_params=(now, now),
         where_params=(user,),
     )
+    if affected_ads:
+        from aos.services.wishlist.counters import recompute_wishlist_counts
+
+        recompute_wishlist_counts(
+            affected_ads,
+            source="account_deletion_wishlist_cleanup",
+        )
+    return removed
 
 
 def _disable_saved_searches(*, user: str) -> int:

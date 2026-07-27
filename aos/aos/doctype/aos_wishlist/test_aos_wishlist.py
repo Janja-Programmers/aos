@@ -1,22 +1,24 @@
-# Copyright (c) 2026, Africa Online Stores and Contributors
-# See license.txt
+from __future__ import annotations
 
-# import frappe
+import frappe
 from frappe.tests import IntegrationTestCase
 
-
-# On IntegrationTestCase, the doctype test records and all
-# link-field test record dependencies are recursively loaded
-# Use these module variables to add/remove to/from that list
-EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
-IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
-
+from .aos_wishlist import wishlist_name
 
 
 class IntegrationTestAOSWishlist(IntegrationTestCase):
-	"""
-	Integration tests for AOSWishlist.
-	Use this class for testing interactions between multiple components.
-	"""
+    def test_deterministic_name_is_stable_and_pair_specific(self):
+        first = wishlist_name("buyer@example.com", "AD-2026-00001")
+        repeated = wishlist_name("buyer@example.com", "AD-2026-00001")
+        other = wishlist_name("buyer@example.com", "AD-2026-00002")
 
-	pass
+        self.assertEqual(first, repeated)
+        self.assertNotEqual(first, other)
+        self.assertTrue(first.startswith("WISH-"))
+        self.assertEqual(len(first), 37)
+
+    def test_lifecycle_fields_are_read_only(self):
+        meta = frappe.get_meta("AOS Wishlist")
+
+        for fieldname in ("user", "ad", "status", "saved_on", "removed_on"):
+            self.assertTrue(meta.get_field(fieldname).read_only, fieldname)

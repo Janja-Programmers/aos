@@ -21,7 +21,7 @@ def toggle_wishlist(**kwargs):
     return _toggle_wishlist_impl(**kwargs)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET"])
 def list_wishlist(**kwargs):
     """List current user's wishlist (Active only)."""
     return _list_wishlist_impl(**kwargs)

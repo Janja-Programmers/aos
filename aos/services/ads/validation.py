@@ -12,7 +12,7 @@ import base64
 import json
 import re
 import unicodedata
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Iterable, Mapping
 
@@ -593,12 +593,13 @@ def _normalize_listing_filters(
     *,
     allowed_fields: Iterable[str],
     include_cursor: bool,
+    default_sort: str = "rating_high",
 ) -> dict[str, Any]:
     ensure_known_fields(payload, allowed_fields)
     limit, offset = normalize_pagination(payload)
     try:
         sort = normalize_text(
-            payload.get("sort") or "rating_high",
+            payload.get("sort") or default_sort,
             field="sort",
             max_length=32,
             required=True,
@@ -658,9 +659,59 @@ def normalize_wishlist_list_filters(payload: Mapping[str, Any]) -> dict[str, Any
     return _normalize_listing_filters(
         payload,
         allowed_fields=WISHLIST_LIST_FIELDS,
-        include_cursor=False,
+        include_cursor=True,
+        default_sort="recent",
     )
 
+
+
+def encode_wishlist_cursor(*, saved_on: Any, name: Any) -> str:
+    payload = {
+        "v": 1,
+        "scope": "wishlist",
+        "sort": "recent",
+        "saved_on": str(saved_on or ""),
+        "name": str(name or ""),
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def decode_wishlist_cursor(value: Any) -> tuple[str, str]:
+    token = normalize_text(value, field="cursor", max_length=500, required=True)
+    try:
+        padded = token + "=" * (-len(token) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+    except Exception:
+        raise AdsValidationError(
+            "Invalid wishlist pagination cursor.",
+            code="INVALID_WISHLIST_CURSOR",
+        ) from None
+    if (
+        not isinstance(payload, dict)
+        or payload.get("v") != 1
+        or payload.get("scope") != "wishlist"
+        or payload.get("sort") != "recent"
+    ):
+        raise AdsValidationError(
+            "Invalid wishlist pagination cursor.",
+            code="INVALID_WISHLIST_CURSOR",
+        )
+    saved_on = normalize_text(payload.get("saved_on"), field="cursor", max_length=64, required=True)
+    try:
+        saved_on_value = datetime.fromisoformat(saved_on)
+    except ValueError:
+        raise AdsValidationError(
+            "Invalid wishlist pagination cursor.",
+            code="INVALID_WISHLIST_CURSOR",
+        ) from None
+    if saved_on_value.tzinfo is not None:
+        raise AdsValidationError(
+            "Invalid wishlist pagination cursor.",
+            code="INVALID_WISHLIST_CURSOR",
+        )
+    name = normalize_identifier(payload.get("name"), field="cursor", required=True)
+    return str(saved_on_value), name
 
 def encode_recent_cursor(*, creation: Any, name: Any) -> str:
     payload = {"v": 1, "sort": "recent", "creation": str(creation or ""), "name": str(name or "")}

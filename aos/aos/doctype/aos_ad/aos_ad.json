@@ -40,6 +40,7 @@
   "status",
   "column_break_uadk",
   "total_reviews",
+  "wishlist_count",
   "expires_on",
   "reviewed_on",
   "section_break_jebo",
@@ -333,12 +334,20 @@
    "fieldtype": "Datetime",
    "label": "Deleted On",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "wishlist_count",
+   "fieldtype": "Int",
+   "label": "Wishlist Count",
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-24 00:00:00.000000",
+ "modified": "2026-07-27 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad",

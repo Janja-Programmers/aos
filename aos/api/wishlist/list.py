@@ -11,39 +11,104 @@ from aos.api.ads.category_filters import resolve_category_filter_values
 from aos.api.ads.serializers import serialize_ad_list_item
 from aos.api.shared.auth import require_login
 from aos.api.shared.market_context import resolve_market_context
-from aos.api.shared.rate_limit import rate_limit, request_ip
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
 from aos.api.shared.responses import ok
 from aos.api.shared.sql_safety import safe_like_contains
 from aos.services.ads.api import run_ads_api
 from aos.services.ads.constants import MAX_IMAGES
 from aos.services.ads.errors import AdsValidationError
-from aos.services.ads.validation import normalize_wishlist_list_filters
+from aos.services.ads.validation import (
+    decode_wishlist_cursor,
+    encode_wishlist_cursor,
+    normalize_wishlist_list_filters,
+)
 from aos.services.currency_conversion import sql_conversion_expressions
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
-from .constants import WISHLIST_LIMIT_PER_MINUTE_PER_IP
+from .constants import WISHLIST_LIST_LIMIT_PER_MINUTE_PER_USER
 
 
-def _empty(*, limit: int, offset: int):
+def _pagination(
+    *,
+    limit: int,
+    offset: int,
+    returned: int,
+    has_more: bool,
+    next_cursor: str | None,
+    cursor_mode: bool,
+) -> dict[str, Any]:
+    return {
+        "limit": limit,
+        "offset": offset,
+        "returned": returned,
+        "has_more": bool(has_more),
+        "next_offset": None if cursor_mode or not has_more else offset + returned,
+        "next_cursor": next_cursor,
+    }
+
+
+def _empty(*, limit: int, offset: int, cursor_mode: bool = False):
     return ok(
         "Wishlist fetched.",
-        data={"items": [], "pagination": {"limit": limit, "offset": offset, "returned": 0}},
+        data={
+            "items": [],
+            "pagination": _pagination(
+                limit=limit,
+                offset=offset,
+                returned=0,
+                has_more=False,
+                next_cursor=None,
+                cursor_mode=cursor_mode,
+            ),
+        },
+    )
+
+
+def _build_order_by(
+    *,
+    sort: str,
+    cursor_mode: bool,
+    saved_on_sql: str,
+    geo_boost: str,
+    verified_boost: str,
+    conversion_available_sql: str,
+    current_price_sql: str,
+) -> str:
+    """Build deterministic ordering with the explicit user sort as primary."""
+
+    saved_tie_breakers = f"{saved_on_sql} DESC, w.name DESC, a.name DESC"
+    if cursor_mode:
+        return saved_tie_breakers
+
+    market_tie_breakers = f"{geo_boost}, {verified_boost}, {saved_tie_breakers}"
+    if sort == "recent":
+        return f"{saved_on_sql} DESC, w.name DESC, {geo_boost}, {verified_boost}, a.name DESC"
+    if sort == "rating_high":
+        return f"a.average_rating DESC, a.total_reviews DESC, {market_tie_breakers}"
+    if sort == "price_low":
+        return (
+            f"{conversion_available_sql} DESC, {current_price_sql} ASC, "
+            f"{market_tie_breakers}"
+        )
+    return (
+        f"{conversion_available_sql} DESC, {current_price_sql} DESC, "
+        f"{market_tie_breakers}"
     )
 
 
 def list_wishlist_impl(**kwargs):
+    user, auth_error = require_login()
+    if auth_error:
+        return auth_error
+
     limited = rate_limit(
-        key=f"aos:wishlist:list:ip:{request_ip()}",
+        key=rate_limit_key("wishlist", "list", user, request_ip()),
         ttl_seconds=60,
-        limit=WISHLIST_LIMIT_PER_MINUTE_PER_IP,
+        limit=WISHLIST_LIST_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
     )
     if limited:
         return limited
-
-    user, auth_error = require_login()
-    if auth_error:
-        return auth_error
 
     def _list():
         filters = normalize_wishlist_list_filters(kwargs)
@@ -51,6 +116,15 @@ def list_wishlist_impl(**kwargs):
             raise AdsValidationError(
                 "Search query must contain at least two characters.",
                 code="INVALID_SEARCH_QUERY",
+            )
+        if filters["cursor"] and (
+            filters["sort"] != "recent"
+            or filters["offset"] != 0
+            or filters["q"]
+        ):
+            raise AdsValidationError(
+                "Wishlist cursor pagination requires recent sort, zero offset, and no search query.",
+                code="INVALID_WISHLIST_CURSOR",
             )
 
         country, display_currency, market_error = resolve_market_context(
@@ -62,13 +136,16 @@ def list_wishlist_impl(**kwargs):
 
         limit = filters["limit"]
         offset = filters["offset"]
+        cursor = filters["cursor"]
+        cursor_mode = bool(cursor)
         today = getdate(nowdate())
         settings = get_aos_settings_snapshot()
         base_currency = settings.base_currency
 
         if filters["seller"] and not frappe.db.exists("AOS Seller", filters["seller"]):
-            return _empty(limit=limit, offset=offset)
+            return _empty(limit=limit, offset=offset, cursor_mode=cursor_mode)
 
+        saved_on_sql = "COALESCE(w.saved_on, w.creation)"
         conditions = [
             "w.user = %(user)s",
             "w.status = 'Active'",
@@ -88,9 +165,18 @@ def list_wishlist_impl(**kwargs):
             "today": today,
             "display_currency": display_currency,
             "base_currency": base_currency,
-            "limit": limit,
-            "offset": offset,
+            "limit": limit + 1,
+            "offset": 0 if cursor_mode else offset,
         }
+
+        if cursor:
+            cursor_saved_on, cursor_name = decode_wishlist_cursor(cursor)
+            conditions.append(
+                f"({saved_on_sql} < %(cursor_saved_on)s OR "
+                f"({saved_on_sql} = %(cursor_saved_on)s AND w.name < %(cursor_name)s))"
+            )
+            values["cursor_saved_on"] = cursor_saved_on
+            values["cursor_name"] = cursor_name
 
         if filters["seller"]:
             conditions.append("a.seller = %(seller)s")
@@ -98,7 +184,7 @@ def list_wishlist_impl(**kwargs):
         if filters["category"]:
             category_ids = resolve_category_filter_values(filters["category"])
             if not category_ids:
-                return _empty(limit=limit, offset=offset)
+                return _empty(limit=limit, offset=offset, cursor_mode=cursor_mode)
             conditions.append("a.category IN %(categories)s")
             values["categories"] = tuple(category_ids)
         if filters["q"]:
@@ -152,34 +238,21 @@ def list_wishlist_impl(**kwargs):
             values["location"] = filters["location"]
             geo_parts.append("CASE WHEN a.location = %(location)s THEN 0 ELSE 1 END")
         geo_boost = ", ".join(geo_parts)
-
-        if filters["promotion_type"] == "deal":
-            order_by = (
-                f"{geo_boost}, {verified_boost}, "
-                "IFNULL(a.offer_percent, 0) DESC, w.creation DESC, w.name DESC, a.name DESC"
-            )
-        elif filters["sort"] == "rating_high":
-            order_by = (
-                f"{geo_boost}, {verified_boost}, "
-                "a.average_rating DESC, a.total_reviews DESC, "
-                "w.creation DESC, w.name DESC, a.name DESC"
-            )
-        elif filters["sort"] == "recent":
-            order_by = f"{geo_boost}, {verified_boost}, w.creation DESC, w.name DESC, a.name DESC"
-        elif filters["sort"] == "price_low":
-            order_by = (
-                f"{geo_boost}, {verified_boost}, {original_conversion['available']} DESC, "
-                f"{current_price_sql} ASC, w.creation DESC, w.name DESC, a.name DESC"
-            )
-        else:
-            order_by = (
-                f"{geo_boost}, {verified_boost}, {original_conversion['available']} DESC, "
-                f"{current_price_sql} DESC, w.creation DESC, w.name DESC, a.name DESC"
-            )
+        order_by = _build_order_by(
+            sort=filters["sort"],
+            cursor_mode=cursor_mode,
+            saved_on_sql=saved_on_sql,
+            geo_boost=geo_boost,
+            verified_boost=verified_boost,
+            conversion_available_sql=original_conversion["available"],
+            current_price_sql=current_price_sql,
+        )
 
         rows = frappe.db.sql(
             f"""
             SELECT
+                w.name AS wishlist_id,
+                {saved_on_sql} AS wishlist_saved_on,
                 a.name, a.title, a.status, a.country, a.location, a.category, a.seller,
                 a.currency, {original_conversion['currency']} AS display_currency,
                 %(display_currency)s AS requested_display_currency,
@@ -205,6 +278,8 @@ def list_wishlist_impl(**kwargs):
             as_dict=True,
         )
 
+        has_more = len(rows) > limit
+        rows = rows[:limit]
         ad_names = [row.name for row in rows]
         images_by_ad: Dict[str, List[Dict[str, Any]]] = {name: [] for name in ad_names}
         if ad_names:
@@ -226,13 +301,31 @@ def list_wishlist_impl(**kwargs):
                 and (row.offer_start_date is None or row.offer_start_date <= today)
                 and (row.offer_end_date is None or row.offer_end_date >= today)
             )
-            items.append(serialize_ad_list_item(row, is_wishlisted=True))
+            item = serialize_ad_list_item(row, is_wishlisted=True)
+            item["wishlisted_on"] = str(row.wishlist_saved_on or "") or None
+            items.append(item)
+
+        next_cursor = None
+        cursor_eligible = filters["sort"] == "recent" and offset == 0 and not filters["q"]
+        if has_more and rows and cursor_eligible:
+            last = rows[-1]
+            next_cursor = encode_wishlist_cursor(
+                saved_on=last.wishlist_saved_on,
+                name=last.wishlist_id,
+            )
 
         return ok(
             "Wishlist fetched.",
             data={
                 "items": items,
-                "pagination": {"limit": limit, "offset": offset, "returned": len(items)},
+                "pagination": _pagination(
+                    limit=limit,
+                    offset=offset,
+                    returned=len(items),
+                    has_more=has_more,
+                    next_cursor=next_cursor,
+                    cursor_mode=cursor_mode,
+                ),
             },
         )
 
