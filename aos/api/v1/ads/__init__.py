@@ -6,8 +6,6 @@ Implementation stays in aos.api.ads implementation modules.
 
 from __future__ import annotations
 
-from typing import Any
-
 import frappe
 
 from aos.api.ads.create import (
@@ -43,19 +41,7 @@ from aos.api.ads.drafts import (
 )
 
 
-_FRAPPE_TRANSPORT_FIELDS = frozenset({"cmd"})
-
-
-def _client_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
-    """Remove framework-owned routing metadata before domain validation.
-
-    Frappe forwards ``form_dict`` to whitelisted methods, including the
-    ``cmd`` value used to resolve the method. Ads validators intentionally
-    reject unknown client fields, so the transport-only key must be removed
-    at this public boundary rather than allowlisted in the domain contract.
-    """
-
-    return {key: value for key, value in kwargs.items() if key not in _FRAPPE_TRANSPORT_FIELDS}
+from aos.api.v1._transport import client_kwargs as _client_kwargs
 
 
 @frappe.whitelist(methods=["POST"])

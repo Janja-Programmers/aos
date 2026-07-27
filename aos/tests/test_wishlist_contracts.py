@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from unittest.mock import patch
 
+
+from aos.api.v1 import wishlist as wishlist_v1
 from aos.api.wishlist.list import _build_order_by
 from aos.services.ads.validation import (
     decode_wishlist_cursor,
@@ -82,6 +85,37 @@ def test_wishlist_wrappers_keep_read_and_write_http_methods_separate():
     assert isinstance(list_methods, ast.List)
     assert [item.value for item in list_methods.elts if isinstance(item, ast.Constant)] == ["GET"]
 
+
+
+def test_v1_wishlist_transport_strips_cmd_before_strict_validation():
+    response = {"ok": True}
+    with patch.object(wishlist_v1, "_toggle_wishlist_impl", return_value=response) as toggle_impl:
+        toggle_result = wishlist_v1.toggle_wishlist(
+            cmd="aos.api.v1.wishlist.toggle_wishlist",
+            ad_id="AD-2026-00001",
+            wishlisted="1",
+            unexpected="must-remain-visible-to-validator",
+        )
+
+    assert toggle_result is response
+    toggle_impl.assert_called_once_with(
+        ad_id="AD-2026-00001",
+        wishlisted="1",
+        unexpected="must-remain-visible-to-validator",
+    )
+
+    with patch.object(wishlist_v1, "_list_wishlist_impl", return_value=response) as list_impl:
+        list_result = wishlist_v1.list_wishlist(
+            cmd="aos.api.v1.wishlist.list_wishlist",
+            limit="20",
+            unexpected="must-remain-visible-to-validator",
+        )
+
+    assert list_result is response
+    list_impl.assert_called_once_with(
+        limit="20",
+        unexpected="must-remain-visible-to-validator",
+    )
 
 def test_wishlist_api_uses_domain_service_and_safe_rate_limit_keys():
     toggle_source = (ROOT / "api" / "wishlist" / "toggle.py").read_text(encoding="utf-8")
