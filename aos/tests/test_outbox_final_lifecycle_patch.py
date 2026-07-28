@@ -48,13 +48,13 @@ class TestFinalizeOutboxFailureReconciliationPatch(FrappeTestCase):
 			outbox.next_attempt_at = now_datetime()
 			outbox.save(ignore_permissions=True)
 
-			first = execute(batch_size=50)
+			first = execute(batch_size=50, names=[outbox.name])
 			outbox.reload()
 			self.assertEqual(outbox.status, "Completed With Failure")
 			self.assertIsNone(outbox.next_attempt_at)
 			self.assertGreaterEqual(first["normalized"], 1)
 			completed_at = outbox.completed_at
-			execute(batch_size=50)
+			execute(batch_size=50, names=[outbox.name])
 			outbox.reload()
 			self.assertEqual(outbox.status, "Completed With Failure")
 			self.assertEqual(outbox.completed_at, completed_at)
@@ -102,7 +102,10 @@ class TestFinalizeOutboxFailureReconciliationPatch(FrappeTestCase):
 			active.lease_expires_at = add_to_date(now_datetime(), minutes=5, as_datetime=True)
 			active.save(ignore_permissions=True)
 
-			execute(batch_size=50)
+			execute(
+				batch_size=50,
+				names=[claimed.name, recon.name, uncertain.name, active.name],
+			)
 			claimed.reload()
 			recon.reload()
 			uncertain.reload()

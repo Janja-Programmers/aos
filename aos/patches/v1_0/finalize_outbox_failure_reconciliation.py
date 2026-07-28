@@ -2,20 +2,92 @@
 
 from __future__ import annotations
 
+import time
+from collections.abc import Sequence
+
 import frappe
 from frappe.utils import get_datetime, now_datetime
 
 OUTBOX_DOCTYPE = "AOS Transactional Outbox"
+_LOCK_RETRY_LIMIT = 8
 
 
-def execute(batch_size: int = 500) -> dict[str, int]:
-    """Run after model sync in the normal patch transaction; never commit here."""
+def _normalize_names(names: Sequence[str] | None) -> tuple[str, ...]:
+    if names is None:
+        return ()
+    normalized = tuple(dict.fromkeys(str(name or "").strip() for name in names if str(name or "").strip()))
+    if len(normalized) > 2000:
+        raise ValueError("Outbox normalization is limited to 2000 explicit names per execution.")
+    return normalized
+
+
+def _candidate_where(*, names: tuple[str, ...]) -> tuple[str, tuple[object, ...]]:
+    clauses = [
+        """
+        (
+            (status = 'Failed' AND LOWER(COALESCE(callback_status, '')) = 'failed'
+             AND callback_received_at IS NOT NULL)
+            OR status IN ('Claimed', 'Dispatched')
+            OR (status = 'Dispatch Uncertain'
+                AND COALESCE(attempt_count, 0) >= GREATEST(1, COALESCE(max_attempts, 5)))
+            OR (status = 'Reconciliation Pending'
+                AND COALESCE(reconciliation_attempt_count, 0)
+                    >= GREATEST(1, COALESCE(reconciliation_max_attempts, 10)))
+            OR COALESCE(companion_authoritative_generation, 0)
+                < COALESCE(dispatch_generation, 0)
+            OR COALESCE(reconciliation_max_attempts, 0) = 0
+        )
+        """
+    ]
+    params: list[object] = []
+    if names:
+        clauses.append(f"name IN ({', '.join(['%s'] * len(names))})")
+        params.extend(names)
+    return " AND ".join(f"({clause.strip()})" for clause in clauses), tuple(params)
+
+
+def _remaining_candidates(
+    *,
+    where_sql: str,
+    where_params: tuple[object, ...],
+    normalization_started_at,
+) -> int:
+    result = frappe.db.sql(
+        f"""
+        SELECT COUNT(*)
+        FROM `tab{OUTBOX_DOCTYPE}`
+        WHERE {where_sql}
+          AND NOT (
+              claim_token IS NOT NULL
+              AND lease_expires_at IS NOT NULL
+              AND lease_expires_at >= %s
+          )
+        """,
+        (*where_params, normalization_started_at),
+    )
+    return int(result[0][0] or 0) if result else 0
+
+
+def execute(batch_size: int = 500, names: Sequence[str] | None = None) -> dict[str, int]:
+    """Run after model sync in the normal patch transaction; never commit here.
+
+    ``names`` is an internal bounded scope used by deterministic tests and
+    operational repair tooling. Normal patch execution leaves it unset and
+    processes every eligible legacy row.
+    """
     if not frappe.db.table_exists(OUTBOX_DOCTYPE):
         return {"scanned": 0, "normalized": 0}
+
     size = max(50, min(int(batch_size or 500), 2000))
-    cursor = ""
+    scoped_names = _normalize_names(names)
+    if names is not None and not scoped_names:
+        return {"scanned": 0, "normalized": 0}
+
+    where_sql, where_params = _candidate_where(names=scoped_names)
     counters = {"scanned": 0, "normalized": 0}
     normalization_started_at = now_datetime()
+    empty_attempts = 0
+
     while True:
         rows = frappe.db.sql(
             f"""
@@ -25,15 +97,36 @@ def execute(batch_size: int = 500) -> dict[str, int]:
                    companion_authoritative_generation, claimed_by, claim_token,
                    lease_expires_at
             FROM `tab{OUTBOX_DOCTYPE}`
-            WHERE name > %s
+            WHERE {where_sql}
+              AND NOT (
+                  claim_token IS NOT NULL
+                  AND lease_expires_at IS NOT NULL
+                  AND lease_expires_at >= %s
+              )
             ORDER BY name ASC
             LIMIT %s
+            FOR UPDATE SKIP LOCKED
             """,
-            (cursor, size),
+            (*where_params, normalization_started_at, size),
             as_dict=True,
         )
         if not rows:
-            break
+            remaining = _remaining_candidates(
+                where_sql=where_sql,
+                where_params=where_params,
+                normalization_started_at=normalization_started_at,
+            )
+            if not remaining:
+                break
+            empty_attempts += 1
+            if empty_attempts >= _LOCK_RETRY_LIMIT:
+                raise RuntimeError(
+                    "Outbox lifecycle normalization could not acquire all candidate rows; retry migration."
+                )
+            time.sleep(min(0.05 * (2 ** (empty_attempts - 1)), 1.0))
+            continue
+
+        empty_attempts = 0
         for row in rows:
             counters["scanned"] += 1
             lease_expires_at = row.get("lease_expires_at")
@@ -43,9 +136,9 @@ def execute(batch_size: int = 500) -> dict[str, int]:
                 and get_datetime(lease_expires_at) >= normalization_started_at
             )
             if has_live_lease:
-                # Never rewrite a row currently owned by a publisher. The
-                # active lease holder remains authoritative; normal stale-lease
-                # recovery can handle the row after the lease expires.
+                # The SQL predicate already excludes these rows. Keep the
+                # defensive check so a row whose lease changes unexpectedly is
+                # never rewritten by this migration.
                 continue
 
             updates: dict[str, object] = {}
@@ -98,9 +191,9 @@ def execute(batch_size: int = 500) -> dict[str, int]:
             if not row.get("reconciliation_max_attempts"):
                 updates["reconciliation_max_attempts"] = 10
             if updates:
-                frappe.db.set_value(OUTBOX_DOCTYPE, row.name, updates, update_modified=False)
+                frappe.db.set_value(OUTBOX_DOCTYPE, row["name"], updates, update_modified=False)
                 counters["normalized"] += 1
-        cursor = rows[-1]["name"]
+
     frappe.logger("aos.outbox", allow_site=True).info(
         "Final outbox lifecycle normalization complete: scanned=%s normalized=%s",
         counters["scanned"],
