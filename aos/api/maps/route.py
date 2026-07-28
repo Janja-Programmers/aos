@@ -18,6 +18,7 @@ from aos.api.shared.rate_limit import (
 )
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.public_errors import safe_fail_from_exception
+from aos.services.sellers.identity import resolve_seller_reference
 
 from .clients.valhalla_client import (
     ValhallaClientError,
@@ -343,9 +344,10 @@ def _get_active_seller_location(
 ) -> dict:
     """Return active seller coordinates or raise a validation error."""
 
+    seller_name = resolve_seller_reference(seller_id)
     seller = frappe.db.get_value(
         "AOS Seller",
-        seller_id,
+        seller_name,
         [
             "name",
             "status",

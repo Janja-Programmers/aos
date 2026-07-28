@@ -24,3 +24,5 @@ aos.patches.v1_0.harden_ads_subsystem
 aos.patches.v1_0.normalize_ads_offer_fields
 aos.patches.v1_0.harden_wishlist_subsystem
 aos.patches.v1_0.harden_reviews_subsystem
+
+aos.patches.v1_0.harden_sellers_subsystem

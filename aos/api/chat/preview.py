@@ -21,6 +21,8 @@ from typing import Any, Dict
 
 import frappe
 
+from aos.services.sellers.identity import public_seller_id_for_name
+
 from .visibility import (
     get_deleted_for_everyone_display_text,
     get_last_message_at_field,
@@ -97,7 +99,8 @@ def _fetch_ads_bulk(ad_ids: list[str]) -> Dict[str, Dict[str, Any]]:
             "price": row.get("price"),
             "currency": row.get("currency"),
             "status": row.get("status"),
-            "seller": row.get("seller"),
+            "seller": public_seller_id_for_name(row.get("seller")),
+            "seller_id": public_seller_id_for_name(row.get("seller")),
         }
 
     return result
@@ -366,3 +369,4 @@ def set_conversation_preview_for_deleted_everyone(
         },
         update_modified=False,
     )
+

@@ -18,6 +18,8 @@ from typing import Any
 
 from frappe.utils import cint, flt
 
+from aos.services.sellers.identity import public_seller_id_for_name
+
 from aos.api.shared.auth import current_user
 from aos.api.shared.sql_safety import require_dotted_sql_identifier
 from aos.api.shared.user_display import get_user_display
@@ -336,7 +338,7 @@ def serialize_short_row(
             "is_verified": bool(row.get("creator_is_verified")) if not creator_is_deleted else False,
             "seller": (
                 {
-                    "id": row.get("seller"),
+                    "id": public_seller_id_for_name(row.get("seller")),
                 }
                 if row.get("seller")
                 else None
@@ -370,7 +372,7 @@ def serialize_comment_row(
         "id": row.get("name"),
         "short": row.get("short"),
         "user": author_display.get("user"),
-        "seller": row.get("seller"),
+        "seller": public_seller_id_for_name(row.get("seller")) if row.get("seller") else None,
         "display_name": author_display.get("display_name"),
         "avatar": author_display.get("avatar"),
         "is_deleted_user": bool(author_display.get("is_deleted")),

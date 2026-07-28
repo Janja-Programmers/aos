@@ -20,6 +20,7 @@ from aos.api.shared.rate_limit import (
 )
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.user_display import get_user_display_map
+from aos.services.sellers.identity import migration_fallback_public_seller_id, normalize_public_seller_id
 from aos.api.maps.validators import (
     clamp_bbox_to_supported_area,
     viewport_intersects_supported_area,
@@ -80,6 +81,9 @@ def list_seller_map_points_impl(**kwargs):
 
         conditions = [
             "s.status = 'Active'",
+            "u.enabled = 1",
+            "COALESCE(p.is_deleted, 0) = 0",
+            "COALESCE(p.account_status, 'Active') = 'Active'",
             "COALESCE(s.has_location, 0) = 1",
             "s.latitude IS NOT NULL",
             "s.longitude IS NOT NULL",
@@ -95,12 +99,19 @@ def list_seller_map_points_impl(**kwargs):
         ]
 
         if is_logged_in:
+            conditions.append("s.user != %s")
+            params.append(viewer)
             conditions.append(
-                "s.user != %s"
+                """
+                NOT EXISTS (
+                    SELECT 1 FROM `tabAOS User Block` b
+                    WHERE b.status = 'Active'
+                      AND ((b.blocker_user = %s AND b.blocked_user = s.user)
+                        OR (b.blocked_user = %s AND b.blocker_user = s.user))
+                )
+                """
             )
-            params.append(
-                viewer
-            )
+            params.extend([viewer, viewer])
 
         if filters.get("seller_type"):
             conditions.append(
@@ -134,6 +145,7 @@ def list_seller_map_points_impl(**kwargs):
             f"""
             SELECT
                 s.name,
+                s.public_id,
                 s.user,
                 s.business_category,
                 s.seller_type,
@@ -609,7 +621,8 @@ def _serialize_pin(
 
     return {
         "type": "seller",
-        "seller": row.get("name"),
+        "seller": normalize_public_seller_id(row.get("public_id")) or migration_fallback_public_seller_id(row.get("name")),
+        "seller_id": normalize_public_seller_id(row.get("public_id")) or migration_fallback_public_seller_id(row.get("name")),
         "user": display.get("user"),
         "display_name": display.get("display_name") or row.get("full_name"),
         "avatar": display.get("avatar") or row.get("user_image"),

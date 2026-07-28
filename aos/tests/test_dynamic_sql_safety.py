@@ -25,6 +25,7 @@ from aos.api.shorts.utils import (
 )
 search_users = importlib.import_module("aos.api.social.search_users")
 list_sellers = importlib.import_module("aos.api.sellers.list_sellers")
+seller_service = importlib.import_module("aos.services.sellers.service")
 wishlist_list = importlib.import_module("aos.api.wishlist.list")
 
 
@@ -180,13 +181,26 @@ class TestDynamicSqlSafety(FrappeTestCase):
             patch.object(list_sellers, "rate_limit", return_value=None),
             patch.object(list_sellers, "request_ip", return_value="127.0.0.1"),
             patch.object(list_sellers, "current_user", return_value="Guest"),
-            patch.object(list_sellers.frappe.db, "sql", side_effect=fake_sql),
+            patch.object(seller_service.frappe.db, "sql", side_effect=fake_sql),
         ):
             response = list_sellers.list_sellers_impl(search="50%_off")
 
         self.assertTrue(response.get("ok"), response)
         self.assertIn("ESCAPE", captured["query"])
         self.assertIn("%50\\%\\_off%", captured["params"])
+
+    def test_seller_invalid_sort_is_rejected_before_sql(self):
+        with (
+            patch.object(list_sellers, "rate_limit", return_value=None),
+            patch.object(list_sellers, "request_ip", return_value="127.0.0.1"),
+            patch.object(list_sellers, "current_user", return_value="Guest"),
+            patch.object(seller_service.frappe.db, "sql", side_effect=AssertionError("SQL should not run")),
+        ):
+            response = list_sellers.list_sellers_impl(sort="rating; DROP TABLE `tabAOS Seller`; --")
+
+        self.assertFalse(response.get("ok"))
+        self.assertEqual(response.get("error"), "INVALID_SELLER_SORT")
+        self.assertEqual(frappe.local.response.get("http_status_code"), 422)
 
     def test_sound_search_escapes_like_wildcards(self):
         captured = {}

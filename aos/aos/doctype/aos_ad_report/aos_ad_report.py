@@ -7,6 +7,7 @@ from frappe.utils import now_datetime
 from aos.services.ads.indexing import enqueue_discovery_refresh
 from aos.services.ads.lifecycle import validate_status_transition
 from aos.services.ads.mutations import apply_transition, lock_ad
+from aos.services.sellers.policy import set_seller_status
 
 _MODERATOR_ROLES = frozenset({"System Manager", "AOS Moderator"})
 
@@ -80,7 +81,13 @@ class AOSAdReport(Document):
                 ad.save(ignore_permissions=True)
                 enqueue_discovery_refresh(ad.name, status=ad.status, source="ad_report_suspend")
         elif self.admin_action == "Suspended Seller":
-            frappe.db.set_value("AOS Seller", self.seller, "status", "Suspended", update_modified=True)
+            set_seller_status(
+                self.seller,
+                status="Suspended",
+                reason_code="AD_REPORT_MODERATION",
+                source="ad_report",
+                actor=str(frappe.session.user or ""),
+            )
             for ad_id in frappe.get_all(
                 "AOS Ad",
                 filters={"seller": self.seller, "status": "Active"},

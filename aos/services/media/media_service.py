@@ -6,7 +6,7 @@ import hashlib
 import os
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Iterable
 
 import frappe
 from frappe.utils import add_to_date, get_datetime, now_datetime
@@ -571,6 +571,37 @@ class MediaService:
         if doc.visibility != "Public" or doc.status not in ACTIVE_READABLE_STATUSES:
             return ""
         return self._public_url_for_doc(doc)
+
+    def get_public_url_map(self, media_ids: Iterable[str]) -> dict[str, str]:
+        """Resolve multiple readable public Media URLs with one database query.
+
+        Missing, private, deleted, and otherwise unreadable rows are omitted.
+        Storage configuration failures are isolated per item so public list
+        serializers can fail closed without exposing internal storage details.
+        """
+
+        unique = sorted({str(media_id or "").strip() for media_id in media_ids if media_id})
+        if not unique:
+            return {}
+        rows = frappe.get_all(
+            "AOS Media Object",
+            filters={
+                "name": ["in", unique],
+                "visibility": "Public",
+                "status": ["in", sorted(ACTIVE_READABLE_STATUSES)],
+            },
+            fields=["name", "bucket", "object_key"],
+            limit=max(1, len(unique)),
+        )
+        result: dict[str, str] = {}
+        for row in rows:
+            try:
+                url = self._public_url_for_doc(row)
+            except MediaError:
+                continue
+            if url:
+                result[str(row.name)] = url
+        return result
 
     # VALIDATE / ATTACH / REPLACE
     def validate_media_for_use(

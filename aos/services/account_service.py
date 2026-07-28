@@ -1,19 +1,9 @@
-import frappe
+"""Legacy Accounts compatibility services.
 
+Seller creation is owned by the Seller domain. This wrapper remains for
+existing Ads and Verification imports until their next versioned migration.
+"""
 
-def get_or_create_seller(user: str):
-    if not user or user == "Guest":
-        return None
+from aos.services.sellers.policy import get_or_create_seller
 
-    if frappe.db.exists("AOS Seller", user):
-        return frappe.get_doc("AOS Seller", user)
-
-    seller = frappe.get_doc({
-        "doctype": "AOS Seller",
-        "user": user,
-        "status": "Active",
-    })
-
-    seller.insert(ignore_permissions=True)
-
-    return seller
+__all__ = ["get_or_create_seller"]

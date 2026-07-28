@@ -11,6 +11,8 @@ from typing import Any
 
 import frappe
 
+from aos.services.sellers.identity import public_seller_id_for_name
+
 from aos.services.activity_service import ActivityService
 
 SHORT_DOCTYPE = "AOS Short"
@@ -126,7 +128,7 @@ def _load_short_target(short_id: str | None) -> dict[str, Any] | None:
         "route_id": short.name,
         "metadata": {
             "short_owner": short.owner,
-            "seller": short.seller,
+            "seller": public_seller_id_for_name(short.seller),
             "ad": short.ad,
             "short_status": short.status,
             "visibility_status": short.visibility_status,

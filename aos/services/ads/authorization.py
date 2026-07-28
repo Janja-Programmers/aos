@@ -6,22 +6,21 @@ from typing import Any
 
 import frappe
 
+from aos.services.sellers.errors import SellerStateError
+from aos.services.sellers.policy import get_seller_for_user as seller_policy_row
+
 from .constants import AD_DOCTYPE
 from .errors import AdsNotFoundError, AdsPermissionError
 
 
 def get_seller_for_user(user: str, *, require_active: bool = False) -> object | None:
-    row = frappe.db.get_value(
-        "AOS Seller",
-        {"user": user},
-        ["name", "user", "status"],
-        as_dict=True,
-    )
-    if not row:
-        return None
-    if require_active and str(row.get("status") or "") != "Active":
-        raise AdsPermissionError("Seller account is not active.", code="AD_SELLER_INACTIVE")
-    return row
+    try:
+        return seller_policy_row(user, require_active=require_active)
+    except SellerStateError as exc:
+        raise AdsPermissionError(
+            "Seller account is not active.",
+            code="AD_SELLER_INACTIVE",
+        ) from exc
 
 
 def require_active_seller(user: str) -> object:

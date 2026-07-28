@@ -13,6 +13,8 @@ from typing import Any, Dict, List
 import frappe
 from frappe.utils import now_datetime
 
+from aos.services.sellers.identity import public_seller_id_for_name
+
 from aos.api.shared.auth import require_login
 from aos.api.shared.blocking import ensure_not_blocked
 from aos.api.shared.rate_limit import rate_limit
@@ -399,7 +401,8 @@ def _fetch_ads_bulk(ad_ids: List[str]) -> Dict[str, Dict[str, Any]]:
             "price": row.get("price"),
             "currency": row.get("currency"),
             "status": row.get("status"),
-            "seller": row.get("seller"),
+            "seller": public_seller_id_for_name(row.get("seller")),
+            "seller_id": public_seller_id_for_name(row.get("seller")),
             "thumbnail": thumbnails.get(row.name),
         }
 

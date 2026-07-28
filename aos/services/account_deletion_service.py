@@ -278,11 +278,19 @@ def _mark_sellers_deleted(*, sellers: list[str]) -> int:
 
     where_sql = f"name IN ({_placeholders(sellers)}) AND status != 'Deleted'"
 
+    now = now_datetime()
     return _update_counted(
         "AOS Seller",
-        set_sql="status = 'Deleted', modified = %s",
+        set_sql="""
+            status = 'Deleted',
+            status_reason_code = 'ACCOUNT_DELETED',
+            status_source = 'accounts',
+            status_changed_at = %s,
+            total_ads = 0,
+            modified = %s
+        """,
         where_sql=where_sql,
-        set_params=(now_datetime(),),
+        set_params=(now, now),
         where_params=tuple(sellers),
     )
 

@@ -12,16 +12,19 @@ from typing import Any
 
 import frappe
 
+from aos.api.shared.blocking import is_blocked_between
 from aos.api.shared.auth import (
     current_user,
     require_login,
 )
 from aos.api.shared.rate_limit import (
     rate_limit,
+    rate_limit_key,
     request_ip,
 )
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.user_display import get_user_display
+from aos.services.sellers.identity import public_seller_id_for_name, resolve_seller_reference
 
 from .constants import (
     GET_MY_SELLER_LOCATION_LIMIT_PER_MINUTE_PER_USER,
@@ -32,6 +35,7 @@ from .serializers import serialize_seller_location
 
 LOCATION_FIELDS = [
     "name",
+    "public_id",
     "user",
     "status",
     "has_location",
@@ -59,14 +63,14 @@ def get_seller_location_impl(**kwargs):
     """
 
     seller_name = _normalize_optional_string(
-        kwargs.get("seller")
+        kwargs.get("seller") or kwargs.get("seller_id") or kwargs.get("id")
     )
 
     if not seller_name:
         return _get_current_seller_location()
 
     return _get_public_seller_location(
-        seller_name=seller_name,
+        seller_reference=seller_name,
     )
 
 
@@ -79,8 +83,7 @@ def _get_current_seller_location():
 
     rl = rate_limit(
         key=(
-            "aos:sellers:get_location:"
-            f"user:{current_user_value}"
+            rate_limit_key("sellers", "get_location", current_user_value)
         ),
         ttl_seconds=60,
         limit=(
@@ -110,7 +113,8 @@ def _get_current_seller_location():
         return ok(
             "Seller location fetched successfully.",
             data={
-                "seller": seller.get("name"),
+                "seller": public_seller_id_for_name(seller.get("name")),
+                "seller_id": public_seller_id_for_name(seller.get("name")),
                 "user": get_user_display(seller.get("user")).get("user"),
                 "is_owner": True,
                 "location": serialize_seller_location(
@@ -133,7 +137,7 @@ def _get_current_seller_location():
 
 def _get_public_seller_location(
     *,
-    seller_name: str,
+    seller_reference: str,
 ):
     """Fetch an active seller's public location."""
 
@@ -151,6 +155,9 @@ def _get_public_seller_location(
         return rl
 
     try:
+        seller_name = resolve_seller_reference(seller_reference)
+        if not seller_name:
+            return fail("Seller not found.", error="SELLER_NOT_FOUND")
         seller = frappe.db.get_value(
             "AOS Seller",
             {
@@ -167,18 +174,31 @@ def _get_public_seller_location(
                 error="NOT_FOUND",
             )
 
-        viewer = current_user()
-
-        is_owner = bool(
-            viewer
-            and viewer != "Guest"
-            and viewer == seller.get("user")
+        user_enabled = frappe.db.get_value("User", seller.get("user"), "enabled")
+        profile = frappe.db.get_value(
+            "AOS Profile",
+            {"user": seller.get("user")},
+            ["account_status", "is_deleted"],
+            as_dict=True,
         )
+        if (
+            not int(user_enabled or 0)
+            or not profile
+            or bool(profile.get("is_deleted"))
+            or str(profile.get("account_status") or "Active") != "Active"
+        ):
+            return fail("Seller not found.", error="SELLER_NOT_FOUND")
+
+        viewer = current_user()
+        is_owner = bool(viewer and viewer != "Guest" and viewer == seller.get("user"))
+        if viewer and viewer != "Guest" and not is_owner and is_blocked_between(viewer, seller.get("user")):
+            return fail("Seller not found.", error="SELLER_NOT_FOUND")
 
         return ok(
             "Seller location fetched successfully.",
             data={
-                "seller": seller.get("name"),
+                "seller": public_seller_id_for_name(seller.get("name")),
+                "seller_id": public_seller_id_for_name(seller.get("name")),
                 "user": get_user_display(seller.get("user")).get("user"),
                 "is_owner": is_owner,
                 "location": serialize_seller_location(

@@ -7,6 +7,7 @@ from frappe.model.document import Document
 from frappe.utils import now
 
 from aos.services.notification_service import NotificationService
+from aos.services.sellers.policy import sync_verified_business_profile
 
 
 class AOSVerificationRequest(Document):
@@ -53,7 +54,7 @@ class AOSVerificationRequest(Document):
             if not self.get(fieldname):
                 frappe.throw(_("{0} is required for business verification.").format(label))
 
-        if not frappe.db.exists("AOS Seller", self.user):
+        if not frappe.db.exists("AOS Seller", {"user": self.user}):
             frappe.throw(_("AOS Seller is required for business verification."))
 
     def _validate_individual_request(self):
@@ -119,10 +120,11 @@ class AOSVerificationRequest(Document):
         if self.verification_type != "Business":
             return
 
-        seller = frappe.get_doc("AOS Seller", self.user)
-        seller.seller_type = "Business"
-        seller.business_category = self.business_category
-        seller.save(ignore_permissions=True)
+        sync_verified_business_profile(
+            user=self.user,
+            business_category=self.business_category,
+            source="verification_approved",
+        )
 
     def _notify_approved(self):
         try:

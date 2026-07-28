@@ -9,6 +9,7 @@ import frappe
 from aos.api.shared.formatters import humanize_count, to_non_negative_int
 from aos.services.localization_service import serialize_preference as serialize_localization_preference
 from aos.services.media.media_service import MediaService
+from aos.services.sellers.identity import public_seller_id_for_name
 from aos.services.user_preference_service import get_user_preference, is_country_locked
 
 from .constants import ACCOUNT_STATUS_ACTIVE
@@ -111,13 +112,13 @@ def _counts(user: str, profile: Any, *, hidden: bool) -> dict[str, Any]:
 
 
 def seller_summary(user: str, *, public: bool = False) -> dict[str, Any]:
-    fields = ["name", "status", "seller_type", "business_category", "rating", "total_reviews"]
+    fields = ["name", "public_id", "status", "seller_type", "business_category", "rating", "total_reviews"]
     seller = frappe.db.get_value("AOS Seller", {"user": user}, fields, as_dict=True)
     if not seller:
         return {"is_seller": False, "seller_id": None, "status": None}
     payload = {
         "is_seller": seller.status == "Active",
-        "seller_id": seller.name,
+        "seller_id": public_seller_id_for_name(seller.name),
         "status": seller.status,
         "seller_type": seller.seller_type,
         "business_category": seller.business_category,

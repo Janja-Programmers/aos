@@ -6,15 +6,21 @@
  "engine": "InnoDB",
  "field_order": [
   "user",
+  "public_id",
   "seller_type",
   "business_category",
   "column_break_gwmy",
   "status",
+  "status_source",
+  "status_reason_code",
+  "status_changed_at",
   "shop_banner",
   "shop_banner_media",
   "section_break_rvlv",
   "about_business",
   "operating_hours",
+  "storefront_updated_at",
+  "storefront_version",
   "location_tab",
   "has_location",
   "location_name",
@@ -137,12 +143,14 @@
    "fieldname": "business_category",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Business Category"
+   "label": "Business Category",
+   "length": 140
   },
   {
    "fieldname": "about_business",
    "fieldtype": "Small Text",
-   "label": "About Business"
+   "label": "About Business",
+   "description": "Plain-text public storefront description. Maximum 2000 characters."
   },
   {
    "default": "0",
@@ -268,11 +276,55 @@
   {
    "fieldname": "column_break_yppu",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "public_id",
+   "fieldtype": "Data",
+   "label": "Public Seller ID",
+   "read_only": 1,
+   "unique": 1,
+   "search_index": 1,
+   "no_copy": 1,
+   "length": 27,
+   "description": "Opaque immutable public identifier. Internal seller names are never returned publicly."
+  },
+  {
+   "fieldname": "status_changed_at",
+   "fieldtype": "Datetime",
+   "label": "Status Changed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "status_reason_code",
+   "fieldtype": "Data",
+   "label": "Status Reason Code",
+   "read_only": 1,
+   "length": 64
+  },
+  {
+   "fieldname": "status_source",
+   "fieldtype": "Data",
+   "label": "Status Source",
+   "read_only": 1,
+   "length": 64
+  },
+  {
+   "fieldname": "storefront_version",
+   "fieldtype": "Int",
+   "label": "Storefront Version",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "storefront_updated_at",
+   "fieldtype": "Datetime",
+   "label": "Storefront Updated At",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-06-10 17:31:05.105087",
+ "modified": "2026-07-28 17:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Seller",
@@ -304,6 +356,10 @@
   {
    "color": "Red",
    "title": "Suspended"
+  },
+  {
+   "color": "Gray",
+   "title": "Deleted"
   }
  ]
 }

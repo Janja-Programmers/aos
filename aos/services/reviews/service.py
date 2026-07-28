@@ -18,6 +18,7 @@ from aos.api.shared.blocking import is_blocked_between
 from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.formatters import humanize_count
 from aos.services.media.media_service import MediaService
+from aos.services.sellers.identity import public_seller_id_for_name
 from aos.services.moderation_service import enqueue_review_moderation
 
 from .aggregates import (
@@ -185,7 +186,7 @@ class ReviewService:
                     "eligibility_basis": review.eligibility_basis,
                 }
             ),
-            "target": {"ad_id": target["ad"].name, "seller_id": target["seller"].name},
+            "target": {"ad_id": target["ad"].name, "seller_id": public_seller_id_for_name(target["seller"].name)},
         }
 
     def update(
@@ -416,7 +417,7 @@ class ReviewService:
         )[0]
         total = int(count_row.total or 0)
         return {
-            "seller": {"id": seller.name, "status": seller.status},
+            "seller": {"id": public_seller_id_for_name(seller.name), "status": seller.status},
             "reviews": self._serialize_rows(rows, viewer=user, include_private=False),
             "pagination": self._pagination(total=total, limit=limit, offset=offset),
         }

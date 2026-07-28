@@ -37,9 +37,10 @@ from aos.api.maps.validators import (
     validate_supported_location,
 )
 from aos.api.shared.auth import require_login
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.public_errors import safe_fail_from_exception
+from aos.services.sellers.identity import public_seller_id_for_name
 
 from .constants import (
     SET_MY_SELLER_LOCATION_LIMIT_PER_MINUTE_PER_USER,
@@ -67,8 +68,7 @@ def set_my_seller_location_impl(**kwargs):
 
     rl = rate_limit(
         key=(
-            "aos:sellers:set_location:"
-            f"user:{current_user}"
+            rate_limit_key("sellers", "set_location", current_user)
         ),
         ttl_seconds=60,
         limit=(
@@ -183,12 +183,12 @@ def set_my_seller_location_impl(**kwargs):
             ignore_permissions=True
         )
 
-        frappe.db.commit()
 
         return ok(
             "Seller location saved successfully.",
             data={
-                "seller": seller_doc.name,
+                "seller": public_seller_id_for_name(seller_doc.name),
+                "seller_id": public_seller_id_for_name(seller_doc.name),
                 "location": (
                     serialize_seller_location(
                         seller_doc

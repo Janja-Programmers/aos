@@ -71,26 +71,42 @@ class AOSAd(Document):
         self._stamp_status_metadata()
 
     def after_insert(self):
-        if self.seller:
-            frappe.db.sql(
-                """
-                UPDATE `tabAOS Seller`
-                SET total_ads = total_ads + 1
-                WHERE name = %s
-                """,
-                (self.seller,),
-            )
+        # Seller.total_ads is the count of publicly Active ads, not drafts or
+        # moderation-pending records.
+        if self.seller and self.status == "Active":
+            self._adjust_seller_active_ad_count(self.seller, 1)
+
+    def on_update(self):
+        previous = self.get_doc_before_save()
+        if not previous:
+            return
+        old_seller = _clean(previous.seller)
+        new_seller = _clean(self.seller)
+        old_active = _clean(previous.status) == "Active"
+        new_active = _clean(self.status) == "Active"
+        if old_seller == new_seller:
+            if old_active != new_active and new_seller:
+                self._adjust_seller_active_ad_count(new_seller, 1 if new_active else -1)
+            return
+        if old_seller and old_active:
+            self._adjust_seller_active_ad_count(old_seller, -1)
+        if new_seller and new_active:
+            self._adjust_seller_active_ad_count(new_seller, 1)
 
     def on_trash(self):
-        if self.seller:
-            frappe.db.sql(
-                """
-                UPDATE `tabAOS Seller`
-                SET total_ads = GREATEST(total_ads - 1, 0)
-                WHERE name = %s
-                """,
-                (self.seller,),
-            )
+        if self.seller and self.status == "Active":
+            self._adjust_seller_active_ad_count(self.seller, -1)
+
+    @staticmethod
+    def _adjust_seller_active_ad_count(seller: str, delta: int) -> None:
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Seller`
+            SET total_ads = GREATEST(COALESCE(total_ads, 0) + %s, 0)
+            WHERE name = %s
+            """,
+            (int(delta), seller),
+        )
 
     def _normalize_content(self) -> None:
         self.title = " ".join(_clean(self.title).split())

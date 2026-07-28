@@ -17,6 +17,7 @@ import frappe
 
 from aos.services.catalog.errors import CatalogError
 from aos.services.catalog.service import CatalogService, attribute_key, resolve_pricing
+from aos.services.sellers.identity import public_seller_id_for_name
 from aos.api.ads.media import get_ad_image_url, get_ad_video_url, serialize_ad_media
 
 
@@ -448,12 +449,11 @@ def serialize_ad_detail(
             ad_doc,
             is_wishlisted=is_wishlisted,
         ),
-        "seller": _norm(
-            getattr(
-                ad_doc,
-                "seller",
-                None,
-            )
+        "seller": public_seller_id_for_name(
+            getattr(ad_doc, "seller", None)
+        ),
+        "seller_id": public_seller_id_for_name(
+            getattr(ad_doc, "seller", None)
         ),
         "description": (
             getattr(
