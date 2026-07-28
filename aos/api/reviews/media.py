@@ -15,6 +15,7 @@ from aos.api.media.consumer_helpers import (
     normalize_media_id,
     public_media_url,
 )
+from aos.api.shared.public_errors import safe_exception_message
 from aos.api.shared.responses import fail
 from aos.services.media.media_service import MediaService
 from aos.services.reviews.errors import ReviewValidationError
@@ -80,7 +81,10 @@ def normalize_review_image_inputs(images: Any):
     try:
         return normalize_images(images), None
     except ReviewValidationError as exc:
-        return [], fail(str(exc), error="VALIDATION_ERROR")
+        return [], fail(
+            safe_exception_message(exc, "Invalid review media."),
+            error="VALIDATION_ERROR",
+        )
 
 
 def validate_review_images_for_create(*, media_ids: list[str], user: str):
