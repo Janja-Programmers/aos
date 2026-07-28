@@ -1,119 +1,90 @@
 # Copyright (c) 2026, Africa Online Stores and contributors
 # For license information, please see license.txt
 
+from __future__ import annotations
+
 import frappe
 from frappe.model.document import Document
-from frappe.utils import now
+from frappe.utils import now_datetime
+
+from aos.services.reviews.aggregates import recompute_review_aggregates
+from aos.services.reviews.constants import (
+    ALL_STATUSES,
+    STATUS_APPROVED,
+    STATUS_HIDDEN,
+    STATUS_PENDING,
+    STATUS_REJECTED,
+    STATUS_WITHDRAWN,
+)
+from aos.services.reviews.eligibility import review_key
+from aos.services.reviews.validation import normalize_comment, normalize_rating, normalize_title
+
+_ALLOWED_TRANSITIONS = {
+    STATUS_PENDING: {STATUS_PENDING, STATUS_APPROVED, STATUS_REJECTED, STATUS_HIDDEN, STATUS_WITHDRAWN},
+    STATUS_APPROVED: {STATUS_APPROVED, STATUS_PENDING, STATUS_HIDDEN, STATUS_WITHDRAWN},
+    STATUS_REJECTED: {STATUS_REJECTED, STATUS_PENDING, STATUS_WITHDRAWN},
+    STATUS_HIDDEN: {STATUS_HIDDEN, STATUS_APPROVED, STATUS_REJECTED, STATUS_WITHDRAWN},
+    STATUS_WITHDRAWN: {STATUS_WITHDRAWN},
+}
 
 
 class AOSReview(Document):
     def before_insert(self):
-        if frappe.session.user == "Guest":
+        user = getattr(frappe.session, "user", None) or "Guest"
+        if user == "Guest":
             frappe.throw("Login required")
-
-        self.reviewer = frappe.session.user
-        self.status = "Pending"
+        if "System Manager" not in set(frappe.get_roles(user) or []):
+            self.reviewer = user
+            self.status = STATUS_PENDING
+        self.review_key = review_key(reviewer=self.reviewer, ad_id=self.ad)
+        self.moderation_generation = max(1, int(self.moderation_generation or 1))
+        self.eligibility_basis = self.eligibility_basis or "communication"
 
     def validate(self):
-        self.prevent_duplicate_review()
+        self.rating = normalize_rating(self.rating)
+        self.title = normalize_title(self.title)
+        self.comment = normalize_comment(self.comment)
+        if self.status not in ALL_STATUSES:
+            frappe.throw("Invalid review status.")
+        if self.ad and self.reviewer:
+            self.review_key = review_key(reviewer=self.reviewer, ad_id=self.ad)
+        self._validate_immutable_fields()
+        self._validate_status_transition()
 
     def before_save(self):
-        self._stamp_review_metadata()
+        previous = self.get_doc_before_save()
+        if previous and previous.status != self.status:
+            self.reviewed_by = getattr(frappe.session, "user", None) or "Administrator"
+            self.reviewed_on = now_datetime()
 
     def on_update(self):
-        update_ad_rating(self.ad)
-        update_seller_rating_from_ad(self.ad)
+        recompute_review_aggregates(ad_id=self.ad, lock_target=True)
 
-    def on_trash(self):
-        update_ad_rating(self.ad)
-        update_seller_rating_from_ad(self.ad)
+    def after_delete(self):
+        recompute_review_aggregates(ad_id=self.ad, lock_target=True)
 
-    def prevent_duplicate_review(self):
-        """Ensure a user can only review an ad once."""
-        if not self.ad or not self.reviewer:
-            return
-
-        exists = frappe.db.exists(
-            "AOS Review",
-            {
-                "ad": self.ad,
-                "reviewer": self.reviewer,
-                "name": ["!=", self.name],
-            },
-        )
-
-        if exists:
-            frappe.throw("You have already reviewed this ad.")
-
-    def _stamp_review_metadata(self):
-        """Stamp moderation metadata when status changes."""
-        if frappe.session.user == "Guest":
-            return
-
+    def _validate_immutable_fields(self):
         previous = self.get_doc_before_save()
+        if not previous:
+            return
+        for fieldname in ("ad", "reviewer", "review_key", "eligibility_basis", "eligibility_reference"):
+            if getattr(previous, fieldname, None) != getattr(self, fieldname, None):
+                frappe.throw(f"{fieldname.replace('_', ' ').title()} cannot be changed.")
 
-        if not previous or previous.status != self.status:
-            self.reviewed_by = frappe.session.user
-            self.reviewed_on = now()
+    def _validate_status_transition(self):
+        previous = self.get_doc_before_save()
+        if not previous:
+            return
+        allowed = _ALLOWED_TRANSITIONS.get(previous.status, {previous.status})
+        if self.status not in allowed:
+            frappe.throw("Invalid review status transition.")
 
 
 def update_ad_rating(ad_name):
-    """Recalculate rating metrics for an Ad."""
-    result = frappe.db.sql(
-        """
-        SELECT 
-            AVG(rating) AS avg_rating,
-            COUNT(name) AS total_reviews
-        FROM `tabAOS Review`
-        WHERE ad = %s
-        AND status = 'Approved'
-        """,
-        (ad_name,),
-        as_dict=True,
-    )
+    """Backward-compatible aggregate entry point."""
+    return recompute_review_aggregates(ad_id=ad_name)
 
-    row = result[0] if result else {}
-
-    frappe.db.set_value(
-        "AOS Ad",
-        ad_name,
-        {
-            "average_rating": round(row.get("avg_rating") or 0, 2),
-            "total_reviews": row.get("total_reviews") or 0,
-        },
-        update_modified=False,
-    )
 
 def update_seller_rating_from_ad(ad_name):
-    """Aggregate seller rating across all their ads."""
-
-    seller = frappe.db.get_value("AOS Ad", ad_name, "seller")
-
-    if not seller:
-        return
-
-    result = frappe.db.sql(
-        """
-        SELECT 
-            AVG(r.rating) AS avg_rating,
-            COUNT(r.name) AS total_reviews
-        FROM `tabAOS Review` r
-        INNER JOIN `tabAOS Ad` a ON r.ad = a.name
-        WHERE a.seller = %s
-        AND r.status = 'Approved'
-        """,
-        (seller,),
-        as_dict=True,
-    )
-
-    row = result[0] if result else {}
-
-    frappe.db.set_value(
-        "AOS Seller",
-        seller,
-        {
-            "rating": round(row.get("avg_rating") or 0, 2),
-            "total_reviews": row.get("total_reviews") or 0,
-        },
-        update_modified=False,
-    )
+    """Backward-compatible aggregate entry point."""
+    return recompute_review_aggregates(ad_id=ad_name)

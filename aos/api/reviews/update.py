@@ -1,4 +1,4 @@
-"""Create Review API implementation."""
+"""Review update API implementation."""
 
 from __future__ import annotations
 
@@ -11,24 +11,24 @@ from aos.services.reviews.constants import RATE_LIMITS
 from aos.services.reviews.service import ReviewService
 
 
-def create_review_impl(**kwargs):
+def update_review_impl(**kwargs):
     user, err = require_login()
     if err:
         return err
     limited = rate_limit(
-        key=rate_limit_key("reviews", "create", user),
+        key=rate_limit_key("reviews", "update", user),
         ttl_seconds=60,
-        limit=RATE_LIMITS["create"],
-        message="Too many review submissions. Please try again shortly.",
+        limit=RATE_LIMITS["update"],
+        message="Too many review updates. Please try again shortly.",
     )
     if limited:
         return limited
     return run_review_api(
-        lambda: ok("Review submitted for moderation.", data=ReviewService().create(
+        lambda: ok("Review updated and queued for moderation.", data=ReviewService().update(
             user=user,
             payload=kwargs,
             moderation_enqueue=enqueue_review_moderation,
         )),
-        fallback="Failed to create review.",
-        log_title="AOS Create Review Failed",
+        fallback="Failed to update review.",
+        log_title="AOS Update Review Failed",
     )

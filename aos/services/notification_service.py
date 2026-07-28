@@ -406,6 +406,49 @@ class NotificationService:
             event="aos_ad_expired",
         )
 
+    # REVIEWS
+    @classmethod
+    def notify_review_received(
+        cls,
+        *,
+        user: str,
+        actor: str,
+        review_id: str,
+        ad_id: str,
+    ):
+        actor_name = cls._display_name(actor)
+        return cls.notify(
+            user=user,
+            type="review_received",
+            title="New Review",
+            body=f"{actor_name} reviewed one of your ads",
+            actor=actor,
+            payload={"review_id": review_id, "ad_id": ad_id},
+            event="aos_review_received",
+        )
+
+    @classmethod
+    def notify_review_approved(cls, *, user: str, review_id: str, ad_id: str):
+        return cls.notify(
+            user=user,
+            type="review_approved",
+            title="Review Published",
+            body="Your review is now visible.",
+            payload={"review_id": review_id, "ad_id": ad_id},
+            event="aos_review_approved",
+        )
+
+    @classmethod
+    def notify_review_rejected(cls, *, user: str, review_id: str, ad_id: str):
+        return cls.notify(
+            user=user,
+            type="review_rejected",
+            title="Review Needs Changes",
+            body="Your review was not approved. You can edit and resubmit it.",
+            payload={"review_id": review_id, "ad_id": ad_id},
+            event="aos_review_rejected",
+        )
+
     # SELLER VERIFICATION
     @classmethod
     def notify_verification_approved(

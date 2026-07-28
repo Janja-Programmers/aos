@@ -1,4 +1,9 @@
-"""Review-image integration through the canonical Media service."""
+"""Backward-compatible review-image helpers.
+
+The Reviews service is the canonical owner of input normalisation while the
+Media service owns content, ownership, lifecycle, storage and URL generation.
+This module retains the old helper names as thin delegates for internal callers.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +17,8 @@ from aos.api.media.consumer_helpers import (
 )
 from aos.api.shared.responses import fail
 from aos.services.media.media_service import MediaService
+from aos.services.reviews.errors import ReviewValidationError
+from aos.services.reviews.validation import normalize_images
 
 REVIEW_IMAGE_PURPOSE = "review_image"
 REVIEW_DOCTYPE = "AOS Review"
@@ -56,7 +63,6 @@ def validate_review_image_media_for_use(
             "Review image media id is required.",
             error="VALIDATION_ERROR",
         )
-
     try:
         doc = MediaService().validate_media_for_use(
             media_id=normalized_id,
@@ -69,35 +75,12 @@ def validate_review_image_media_for_use(
 
 
 def normalize_review_image_inputs(images: Any):
-    """Normalize create-review media inputs and reject raw URL injection."""
-    if images in (None, ""):
-        return [], None
-    if not isinstance(images, list):
-        return [], fail("Images must be a list.", error="VALIDATION_ERROR")
+    """Delegate legacy media-list normalisation to the Reviews policy."""
 
-    media_ids: list[str] = []
-    seen: set[str] = set()
-    for index, item in enumerate(images):
-        media_id = normalize_media_id(item)
-        if not media_id:
-            continue
-        if not looks_like_media_id(media_id):
-            return [], fail(
-                f"Review image {index + 1} must be uploaded media_id. "
-                "Upload with purpose=review_image first.",
-                error="VALIDATION_ERROR",
-            )
-        if media_id in seen:
-            return [], fail(
-                f"Review image {index + 1} is duplicated.",
-                error="VALIDATION_ERROR",
-            )
-        seen.add(media_id)
-        media_ids.append(media_id)
-
-    if len(media_ids) > 5:
-        return [], fail("Maximum 5 images allowed.", error="VALIDATION_ERROR")
-    return media_ids, None
+    try:
+        return normalize_images(images), None
+    except ReviewValidationError as exc:
+        return [], fail(str(exc), error="VALIDATION_ERROR")
 
 
 def validate_review_images_for_create(*, media_ids: list[str], user: str):

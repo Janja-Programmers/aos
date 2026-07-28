@@ -9,6 +9,9 @@
   "ad",
   "title",
   "reviewer",
+  "review_key",
+  "eligibility_basis",
+  "eligibility_reference",
   "column_break_faua",
   "rating",
   "like_count",
@@ -18,6 +21,11 @@
   "review_images",
   "review_tab",
   "status",
+  "moderation_generation",
+  "edit_count",
+  "edited_on",
+  "withdrawn_on",
+  "review_notes",
   "reviewed_by",
   "column_break_sfmr",
   "reviewed_on"
@@ -73,7 +81,8 @@
    "fieldname": "title",
    "fieldtype": "Data",
    "label": "Title",
-   "reqd": 1
+   "reqd": 1,
+   "length": 120
   },
   {
    "default": "0",
@@ -98,7 +107,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "Pending\nApproved\nRejected",
+   "options": "Pending\nApproved\nRejected\nHidden\nWithdrawn",
    "search_index": 1
   },
   {
@@ -128,11 +137,64 @@
   {
    "fieldname": "column_break_sfmr",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "review_key",
+   "fieldtype": "Data",
+   "label": "Review Key",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "eligibility_basis",
+   "fieldtype": "Select",
+   "label": "Eligibility Basis",
+   "options": "communication",
+   "read_only": 1
+  },
+  {
+   "fieldname": "eligibility_reference",
+   "fieldtype": "Data",
+   "label": "Eligibility Reference",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "moderation_generation",
+   "fieldtype": "Int",
+   "label": "Moderation Generation",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "edit_count",
+   "fieldtype": "Int",
+   "label": "Edit Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "edited_on",
+   "fieldtype": "Datetime",
+   "label": "Edited On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "withdrawn_on",
+   "fieldtype": "Datetime",
+   "label": "Withdrawn On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "review_notes",
+   "fieldtype": "Small Text",
+   "label": "Review Notes",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-03-04 20:06:16.493048",
+ "modified": "2026-07-28 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Review",
@@ -168,6 +230,14 @@
   {
    "color": "Red",
    "title": "Rejected"
+  },
+  {
+   "color": "Orange",
+   "title": "Hidden"
+  },
+  {
+   "color": "Gray",
+   "title": "Withdrawn"
   }
  ]
 }

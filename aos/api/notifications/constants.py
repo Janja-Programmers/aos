@@ -33,6 +33,9 @@ NOTIFICATION_CATEGORY_TYPES = {
         "ad_approved",
         "ad_rejected",
         "ad_expired",
+        "review_received",
+        "review_approved",
+        "review_rejected",
     ),
     NOTIFICATION_CATEGORY_ACCOUNT: (
         "verification_approved",

@@ -501,21 +501,80 @@ def _apply_ad_decision(job, decision: str, reasons: list[Any]) -> None:
 
 
 def _apply_review_decision(job, decision: str, reasons: list[Any]) -> None:
+	from aos.services.reviews.observability import review_log
+
+	frappe.db.sql("SELECT name FROM `tabAOS Review` WHERE name = %s FOR UPDATE", (job.target_name,))
 	review = frappe.get_doc("AOS Review", job.target_name)
+	context = _json_loads(job.context_json, {})
+	job_generation = int(context.get("moderation_generation") or 1)
+	current_generation = max(1, int(getattr(review, "moderation_generation", 1) or 1))
+	# A callback for an older edit must never publish/reject newer content. The
+	# moderation job still completes idempotently, but its domain mutation is a
+	# safe no-op.
+	if job_generation != current_generation:
+		review_log(
+			"review.moderation.failed",
+			review_id=review.name,
+			operation="stale_callback",
+			outcome="rejected",
+			status=review.status,
+		)
+		return
 	if review.status not in {"Pending", "Approved", "Rejected"}:
 		return
+	previous_status = review.status
 	if decision == "allow":
 		review.status = "Approved"
+		review.review_notes = ""
+		event = "review.published"
 	elif decision == "reject":
 		review.status = "Rejected"
-		if review.meta.has_field("review_notes"):
-			review.review_notes = _reason_text(reasons, "Rejected by content moderation.")
+		review.review_notes = _reason_text(reasons, "Rejected by content moderation.")
+		event = "review.rejected"
 	else:
 		review.status = "Pending"
-		if review.meta.has_field("review_notes"):
-			review.review_notes = _reason_text(reasons, "Requires manual content review.")
+		review.review_notes = _reason_text(reasons, "Requires manual content review.")
+		event = "review.hidden"
 	review.save(ignore_permissions=True)
+	_notify_review_moderation_result(
+		review=review,
+		previous_status=previous_status,
+		decision=decision,
+	)
+	review_log(event, review_id=review.name, operation="moderation", status=review.status)
 
+
+
+def _notify_review_moderation_result(*, review, previous_status: str, decision: str) -> None:
+	"""Create canonical persistent notifications through the delivery outbox."""
+
+	try:
+		from aos.services.notification_service import NotificationService
+
+		if decision == "allow" and previous_status != "Approved":
+			NotificationService.notify_review_approved(
+				user=review.reviewer,
+				review_id=review.name,
+				ad_id=review.ad,
+			)
+			if int(getattr(review, "edit_count", 0) or 0) == 0:
+				seller_id = frappe.db.get_value("AOS Ad", review.ad, "seller")
+				seller_user = frappe.db.get_value("AOS Seller", seller_id, "user") if seller_id else None
+				if seller_user:
+					NotificationService.notify_review_received(
+						user=seller_user,
+						actor=review.reviewer,
+						review_id=review.name,
+						ad_id=review.ad,
+					)
+		elif decision == "reject" and previous_status != "Rejected":
+			NotificationService.notify_review_rejected(
+				user=review.reviewer,
+				review_id=review.name,
+				ad_id=review.ad,
+			)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Review moderation notification failed")
 
 def _apply_short_decision(job, decision: str, reasons: list[Any]) -> None:
 	short = frappe.get_doc("AOS Short", job.target_name)
@@ -563,7 +622,12 @@ def _hold_target_for_review(job, error_text: str) -> None:
 			)
 	elif job.target_doctype == "AOS Review":
 		if frappe.db.exists("AOS Review", job.target_name):
-			frappe.db.set_value("AOS Review", job.target_name, "status", "Pending", update_modified=True)
+			review = frappe.get_doc("AOS Review", job.target_name)
+			context = _json_loads(job.context_json, {})
+			job_generation = int(context.get("moderation_generation") or 1)
+			current_generation = max(1, int(getattr(review, "moderation_generation", 1) or 1))
+			if job_generation == current_generation and review.status not in {"Withdrawn", "Hidden"}:
+				frappe.db.set_value("AOS Review", job.target_name, "status", "Pending", update_modified=True)
 	elif job.target_doctype == "AOS Short":
 		if frappe.db.exists("AOS Short", job.target_name):
 			frappe.db.set_value(
@@ -669,7 +733,11 @@ def enqueue_review_moderation(review_id: str, *, source: str = "review_create") 
 		source=source,
 		text_items=text_items,
 		media_items=media_items,
-		context={"ad": review.ad, "rating": review.rating},
+		context={
+			"ad": review.ad,
+			"rating": review.rating,
+			"moderation_generation": max(1, int(getattr(review, "moderation_generation", 1) or 1)),
+		},
 		enqueue=True,
 	)
 

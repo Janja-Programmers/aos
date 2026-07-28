@@ -1,4 +1,4 @@
-"""Review reaction API implementation."""
+"""Review reporting API implementation."""
 
 from __future__ import annotations
 
@@ -10,20 +10,20 @@ from aos.services.reviews.constants import RATE_LIMITS
 from aos.services.reviews.service import ReviewService
 
 
-def toggle_reaction_impl(**kwargs):
+def report_review_impl(**kwargs):
     user, err = require_login()
     if err:
         return err
     limited = rate_limit(
-        key=rate_limit_key("reviews", "reaction", user),
+        key=rate_limit_key("reviews", "report", user),
         ttl_seconds=60,
-        limit=RATE_LIMITS["reaction"],
-        message="Too many review reactions. Please try again shortly.",
+        limit=RATE_LIMITS["report"],
+        message="Too many review reports. Please try again later.",
     )
     if limited:
         return limited
     return run_review_api(
-        lambda: ok("Review reaction updated.", data=ReviewService().toggle_reaction(user=user, payload=kwargs)),
-        fallback="Failed to update review reaction.",
-        log_title="AOS Toggle Review Reaction Failed",
+        lambda: ok("Review report submitted.", data=ReviewService().report(user=user, payload=kwargs)),
+        fallback="Failed to report review.",
+        log_title="AOS Report Review Failed",
     )

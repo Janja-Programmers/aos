@@ -151,6 +151,11 @@ def cleanup_deleted_account_features(user: str) -> dict[str, int]:
     summary["verification_requests_revoked"] = _revoke_verification_requests(user=user, now=now)
     summary["notifications_marked_read"] = _mark_notifications_read(user=user)
 
+    # Marketplace trust history is retained and rendered through the Accounts
+    # deleted-user serializer. Private reactions/reports are removed so deleted
+    # accounts no longer keep personalization or reporter identity rows.
+    summary.update(_cleanup_review_account_data(user=user))
+
     follow_summary = _remove_social_graph(user=user)
     summary.update(follow_summary)
 
@@ -693,6 +698,56 @@ def _mark_notifications_read(*, user: str) -> int:
         where_params=(user,),
     )
 
+
+
+def _cleanup_review_account_data(*, user: str) -> dict[str, int]:
+    """Apply the documented review-retention policy for a deleted account.
+
+    Authored reviews remain as marketplace trust history. Public serialization
+    resolves the deleted reviewer through Accounts and therefore exposes only an
+    anonymized identity. Private reaction and report rows owned by the deleted
+    account are removed, and affected reaction counters are rebuilt from source
+    rows. The caller owns the surrounding account-deletion transaction.
+    """
+
+    authored_reviews = _count_rows("AOS Review", "reviewer = %s", (user,))
+
+    affected_review_ids: list[str] = []
+    if _doctype_exists("AOS Review Reaction"):
+        rows = frappe.get_all(
+            "AOS Review Reaction",
+            filters={"user": user},
+            pluck="review",
+            limit=0,
+        )
+        affected_review_ids = sorted({str(review_id) for review_id in rows if review_id})
+
+    reactions_removed = _delete_counted(
+        "AOS Review Reaction",
+        where_sql="user = %s",
+        where_params=(user,),
+    )
+    reports_removed = _delete_counted(
+        "AOS Review Report",
+        where_sql="reported_by = %s",
+        where_params=(user,),
+    )
+
+    counters_recalculated = 0
+    if affected_review_ids:
+        from aos.services.reviews.aggregates import recompute_review_reaction_counts
+
+        for review_id in affected_review_ids:
+            if frappe.db.exists("AOS Review", review_id):
+                recompute_review_reaction_counts(review_id=review_id, lock_review=True)
+                counters_recalculated += 1
+
+    return {
+        "reviews_retained_anonymized": authored_reviews,
+        "review_reactions_removed": reactions_removed,
+        "review_reports_removed": reports_removed,
+        "review_reaction_totals_recalculated": counters_recalculated,
+    }
 
 def _remove_social_graph(*, user: str) -> dict[str, int]:
     if not _doctype_exists("AOS Follow"):

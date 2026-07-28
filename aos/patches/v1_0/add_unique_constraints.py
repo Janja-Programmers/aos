@@ -53,11 +53,6 @@ USER_ACTION_UNIQUE_CONSTRAINTS = [
         "constraint_name": "unique_aos_short_comment_like_user",
     },
     {
-        "doctype": "AOS Review",
-        "fields": ["ad", "reviewer"],
-        "constraint_name": "unique_aos_review_ad_reviewer",
-    },
-    {
         "doctype": "AOS Review Reaction",
         "fields": ["review", "user"],
         "constraint_name": "unique_aos_review_reaction_user",
@@ -93,7 +88,6 @@ UNIQUE_CONSTRAINTS = [
 
 def execute():
     _dedupe_short_comment_likes()
-    _dedupe_reviews()
     _dedupe_review_reactions()
     _normalize_user_block_active_keys()
     _normalize_live_view_active_keys()
@@ -122,14 +116,15 @@ def _dedupe_short_comment_likes():
 
 
 def _dedupe_reviews():
-    affected_ads = _delete_duplicate_docs(
-        doctype="AOS Review",
-        fields=["ad", "reviewer"],
-        order_by="FIELD(status, 'Approved', 'Pending', 'Rejected'), modified desc, creation desc, name desc",
-    )
+    """Deprecated non-destructive compatibility helper.
 
-    if affected_ads:
-        _sync_review_metrics(affected_ads)
+    Reviews are reconciled by ``harden_reviews_subsystem`` where duplicate
+    records are retained and withdrawn deterministically. Historical versions
+    deleted rows here; keeping this helper as a no-op prevents accidental data
+    loss when older operational scripts still import it.
+    """
+
+    return set()
 
 
 def _dedupe_review_reactions():
