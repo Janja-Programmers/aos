@@ -29,6 +29,13 @@ class TestSellerContracts(unittest.TestCase):
         self.assertIn("_restore_transaction_callbacks", source)
         self.assertNotIn("frappe.db.commit", source)
 
+    def test_read_only_seller_endpoints_validate_before_transaction_sql(self):
+        for filename in ("list_sellers.py", "get_seller.py", "get_my_seller_status.py"):
+            source = (ROOT / "aos/api/sellers" / filename).read_text()
+            self.assertIn("transactional=False", source, filename)
+        update_source = (ROOT / "aos/api/sellers/update_my_seller.py").read_text()
+        self.assertNotIn("transactional=False", update_source)
+
     def test_public_seller_identity_is_opaque_and_legacy_names_are_input_only(self):
         identity = (ROOT / "aos/services/sellers/identity.py").read_text()
         serializers = (ROOT / "aos/services/sellers/serializers.py").read_text()

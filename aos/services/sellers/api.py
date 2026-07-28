@@ -112,32 +112,41 @@ def run_seller_api(
     *,
     fallback: str,
     log_title: str,
+    transactional: bool = True,
 ) -> dict[str, Any]:
-    savepoint = f"aos_seller_{uuid.uuid4().hex[:16]}"
-    callbacks_before = _snapshot_transaction_callbacks()
-    outbox_flag_before = _outbox_registration_flag()
-    frappe.db.savepoint(savepoint)
+    """Execute a Seller API operation behind a safe response boundary.
+
+    Mutations use an operation-level savepoint so a handled Seller conflict
+    rolls back only that operation rather than unrelated work in the caller's
+    outer transaction. Read-only operations must set ``transactional=False``:
+    request validation then runs before any database statement, preserving the
+    fail-fast SQL-safety boundary for malformed filters and sort values.
+    """
+
+    savepoint = f"aos_seller_{uuid.uuid4().hex[:16]}" if transactional else None
+    callbacks_before = _snapshot_transaction_callbacks() if transactional else {}
+    outbox_flag_before = _outbox_registration_flag() if transactional else None
+    if savepoint:
+        frappe.db.savepoint(savepoint)
+
+    def rollback_operation() -> None:
+        if not savepoint:
+            return
+        _rollback_operation(
+            savepoint=savepoint,
+            callbacks_before=callbacks_before,
+            outbox_flag_before=outbox_flag_before,
+        )
+
     try:
         return operation()
     except (SellerError, MediaError) as exc:
-        _rollback_operation(
-            savepoint=savepoint,
-            callbacks_before=callbacks_before,
-            outbox_flag_before=outbox_flag_before,
-        )
+        rollback_operation()
         return seller_fail(exc, fallback=fallback)
     except frappe.DoesNotExistError:
-        _rollback_operation(
-            savepoint=savepoint,
-            callbacks_before=callbacks_before,
-            outbox_flag_before=outbox_flag_before,
-        )
+        rollback_operation()
         return seller_fail(SellerNotFoundError("Seller not found."), fallback=fallback)
     except Exception:
-        _rollback_operation(
-            savepoint=savepoint,
-            callbacks_before=callbacks_before,
-            outbox_flag_before=outbox_flag_before,
-        )
+        rollback_operation()
         frappe.log_error(frappe.get_traceback(), log_title)
         return fail(fallback, error="INTERNAL_ERROR", http_status=500)

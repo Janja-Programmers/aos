@@ -29,4 +29,5 @@ def get_my_seller_status_impl(**kwargs):
         ),
         fallback="Failed to fetch seller status.",
         log_title="AOS Get My Seller Status Failed",
+        transactional=False,
     )

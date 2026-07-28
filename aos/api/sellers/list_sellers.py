@@ -28,4 +28,5 @@ def list_sellers_impl(**kwargs):
         ),
         fallback="Failed to fetch sellers.",
         log_title="AOS List Sellers Failed",
+        transactional=False,
     )
