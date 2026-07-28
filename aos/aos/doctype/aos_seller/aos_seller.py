@@ -175,13 +175,23 @@ class AOSSeller(Document):
 
     def _validate_and_normalize_location(self):
         self._normalize_location_text_fields()
+
+        # Frappe materializes empty Float fields as ``0.0`` on persisted
+        # documents. Coordinates therefore cannot be used to infer whether a
+        # seller has deliberately published a map location: doing so makes an
+        # unrelated storefront or lifecycle save interpret an empty location
+        # as the valid coordinate pair (0, 0). ``has_location`` is the
+        # canonical publication flag set by the Seller/Maps location service.
+        if not _is_checked(self.has_location):
+            self._clear_resolved_location()
+            return
+
         has_latitude = _has_value(self.latitude)
         has_longitude = _has_value(self.longitude)
         if has_latitude != has_longitude:
             frappe.throw(_("Latitude and longitude must be provided together."))
         if not has_latitude:
-            self._clear_resolved_location()
-            return
+            frappe.throw(_("Latitude and longitude are required when a seller location is set."))
         latitude = _parse_coordinate(self.latitude, label=_("Latitude"))
         longitude = _parse_coordinate(self.longitude, label=_("Longitude"))
         if not LATITUDE_MIN <= latitude <= LATITUDE_MAX:
@@ -260,6 +270,15 @@ def _normalize_plain_text(value: Any, *, label: str, max_length: int, multiline:
     if _HTML_TAG_RE.search(text) or _SCRIPT_SCHEME_RE.search(text):
         frappe.throw(_("{0} must be plain text.").format(label))
     return text or None
+
+
+def _is_checked(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    try:
+        return int(value or 0) == 1
+    except (TypeError, ValueError, OverflowError):
+        return False
 
 
 def _has_value(value: Any) -> bool:
