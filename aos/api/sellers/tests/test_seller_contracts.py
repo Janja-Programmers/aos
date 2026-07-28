@@ -22,6 +22,13 @@ class TestSellerContracts(unittest.TestCase):
             self.assertNotIn("frappe.db", source)
             self.assertNotIn("frappe.db.commit", source)
 
+    def test_seller_api_conflicts_use_operation_savepoints(self):
+        source = (ROOT / "aos/services/sellers/api.py").read_text()
+        self.assertIn("frappe.db.savepoint(savepoint)", source)
+        self.assertIn("frappe.db.rollback(save_point=savepoint)", source)
+        self.assertIn("_restore_transaction_callbacks", source)
+        self.assertNotIn("frappe.db.commit", source)
+
     def test_public_seller_identity_is_opaque_and_legacy_names_are_input_only(self):
         identity = (ROOT / "aos/services/sellers/identity.py").read_text()
         serializers = (ROOT / "aos/services/sellers/serializers.py").read_text()
@@ -48,6 +55,14 @@ class TestSellerContracts(unittest.TestCase):
         self.assertTrue(fields["public_id"].get("read_only"))
         status_options = fields["status"]["options"].splitlines()
         self.assertEqual(status_options, ["Active", "Suspended", "Deleted"])
+        hours_schema = json.loads(
+            (ROOT / "aos/aos/doctype/aos_seller_operating_hours/aos_seller_operating_hours.json").read_text()
+        )
+        day_field = next(field for field in hours_schema["fields"] if field.get("fieldname") == "day_of_week")
+        self.assertEqual(
+            day_field["options"].splitlines(),
+            ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+        )
 
     def test_storefront_service_uses_lock_version_media_and_no_commit(self):
         source = (ROOT / "aos/services/sellers/service.py").read_text()
@@ -87,6 +102,14 @@ class TestSellerContracts(unittest.TestCase):
         self.assertIn("_canonical_public_id", source)
         self.assertIn("SELECT MIN(name)", source)
         self.assertNotIn("frappe.db.commit", source)
+        operating_patch = "aos.patches.v1_0.canonicalize_seller_operating_days"
+        self.assertIn(operating_patch, patches)
+        operating_source = (
+            ROOT / "aos/patches/v1_0/canonicalize_seller_operating_days.py"
+        ).read_text()
+        self.assertIn("_BATCH_SIZE = 250", operating_source)
+        self.assertIn("LIMIT %(limit)s", operating_source)
+        self.assertNotIn("frappe.db.commit", operating_source)
 
     def test_location_compatibility_endpoints_return_public_seller_ids(self):
         for filename in ("get_location.py", "set_location.py", "remove_location.py", "map_points.py"):

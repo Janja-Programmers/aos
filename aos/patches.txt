@@ -26,3 +26,4 @@ aos.patches.v1_0.harden_wishlist_subsystem
 aos.patches.v1_0.harden_reviews_subsystem
 
 aos.patches.v1_0.harden_sellers_subsystem
+aos.patches.v1_0.canonicalize_seller_operating_days

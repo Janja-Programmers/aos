@@ -32,6 +32,15 @@ _PRIVILEGED_ROLES = frozenset({"System Manager", "AOS Moderator"})
 _HTML_TAG_RE = re.compile(r"<\s*/?\s*[A-Za-z][^>]*>")
 _SCRIPT_SCHEME_RE = re.compile(r"(?:javascript|data|vbscript)\s*:", re.IGNORECASE)
 _DISALLOWED_INVISIBLE = frozenset({"\u200b", "\u2060", "\ufeff", *[chr(value) for value in range(0x202A, 0x202F)], *[chr(value) for value in range(0x2066, 0x206A)]})
+_LEGACY_OPERATING_DAY_MAP = {
+    "Mon": "Monday",
+    "Tue": "Tuesday",
+    "Wed": "Wednesday",
+    "Thu": "Thursday",
+    "Fri": "Friday",
+    "Sat": "Saturday",
+    "Sun": "Sunday",
+}
 
 
 class AOSSeller(Document):
@@ -160,6 +169,7 @@ class AOSSeller(Document):
         seen_days: set[str] = set()
         for row in self.operating_hours:
             day = str(row.day_of_week or "").strip()
+            day = _LEGACY_OPERATING_DAY_MAP.get(day, day)
             if day not in OPERATING_DAYS or day in seen_days:
                 frappe.throw(_("Invalid or duplicate operating-hours day."))
             seen_days.add(day)

@@ -510,6 +510,10 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 						# Simulate the companion accepting the proposed replay correlation.
 						outbox.reload()
 						outbox.status = "Published"
+						outbox.published_at = now_datetime()
+						outbox.callback_deadline_at = add_to_date(
+							now_datetime(), seconds=300, as_datetime=True
+						)
 						outbox.dispatch_generation = int(claim["dispatch_generation"])
 						outbox.current_dispatch_token = str(claim["dispatch_token"])
 						outbox.proposed_dispatch_generation = 0

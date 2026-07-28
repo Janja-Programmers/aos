@@ -18,7 +18,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Day Of Week",
-   "options": "Mon\nTue\nWed\nThu\nFri\nSat\nSun"
+   "options": "Monday\nTuesday\nWednesday\nThursday\nFriday\nSaturday\nSunday"
   },
   {
    "default": "0",
