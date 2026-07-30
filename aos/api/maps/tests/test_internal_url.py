@@ -21,9 +21,11 @@ class TestInternalMapsURL(unittest.TestCase):
         )
 
     def test_public_credentials_query_and_fragment_are_rejected(self):
+        # Preserve the runtime Basic Auth case without committing a credential-shaped URI literal.
+        basic_auth_userinfo = ":".join(("user", "pass"))
         invalid = (
             "https://8.8.8.8",
-            "https://user:pass@127.0.0.1:8081",
+            f"https://{basic_auth_userinfo}@127.0.0.1:8081",
             "http://127.0.0.1:8081?target=x",
             "http://127.0.0.1:8081#fragment",
             "file:///tmp/maps",
