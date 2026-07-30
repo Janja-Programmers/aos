@@ -54,6 +54,14 @@ assert_nonempty_file "${REGION_PBF}"
 assert_nonempty_file "${MBTILES}"
 assert_nonempty_file "${VALHALLA_CONFIG}"
 
+# The style contains symbol layers, so both Noto glyph stacks must be complete
+# before TileServer is considered deployable. The builder performs an offline
+# verification here and prints the exact remediation command when assets are
+# absent or incomplete.
+if ! "${ROOT_DIR}/infra/maps/scripts/build-map-fonts.sh" --verify-only; then
+    fail "Map glyph assets are missing or incomplete. Run ./infra/maps/scripts/build-map-fonts.sh before starting TileServer."
+fi
+
 
 # Verify the downloaded Kenya source against the committed manifest value.
 source_checksum="$(
@@ -191,6 +199,16 @@ if [[ "${VERIFY_SERVICES}" == true ]]; then
     wait_http \
         "http://127.0.0.1:${TILESERVER_PORT:-8080}/data/kenya.json" \
         "TileServer Kenya data source"
+
+    info "Verifying TileServer glyph stacks"
+
+    wait_http \
+        "http://127.0.0.1:${TILESERVER_PORT:-8080}/fonts/Noto%20Sans%20Regular/0-255.pbf" \
+        "TileServer Noto Sans Regular glyphs"
+
+    wait_http \
+        "http://127.0.0.1:${TILESERVER_PORT:-8080}/fonts/Noto%20Sans%20Bold/0-255.pbf" \
+        "TileServer Noto Sans Bold glyphs"
 
     info "Verifying Valhalla"
 

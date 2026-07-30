@@ -1019,7 +1019,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:8080/styles/aos/style.json').then(r => { if (!r.ok) process.exit(1); }).catch(() => process.exit(1));",
+          "Promise.all(['http://127.0.0.1:8080/styles/aos/style.json','http://127.0.0.1:8080/data/kenya.json','http://127.0.0.1:8080/fonts/Noto%20Sans%20Regular/0-255.pbf','http://127.0.0.1:8080/fonts/Noto%20Sans%20Bold/0-255.pbf'].map(async url => { const response = await fetch(url); if (!response.ok) throw new Error(url); const body = await response.arrayBuffer(); if (body.byteLength === 0) throw new Error(url); })).catch(() => process.exit(1));",
         ]
       interval: 30s
       timeout: 15s

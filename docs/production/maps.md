@@ -36,6 +36,7 @@ infra/maps/scripts/download-kenya.sh
 infra/maps/scripts/prepare-kenya.sh
 infra/maps/scripts/build-kenya-tiles.sh
 infra/maps/scripts/build-valhalla.sh
+infra/maps/scripts/build-map-fonts.sh
 infra/maps/scripts/import-nominatim.sh
 infra/maps/scripts/import-photon.sh
 infra/maps/scripts/verify-map-data.sh
@@ -82,6 +83,7 @@ Run from the repository root on the deployment server:
 ./infra/maps/scripts/prepare-kenya.sh
 ./infra/maps/scripts/build-kenya-tiles.sh
 ./infra/maps/scripts/build-valhalla.sh
+./infra/maps/scripts/build-map-fonts.sh
 ./infra/maps/scripts/import-nominatim.sh --rebuild
 ./infra/maps/scripts/verify-map-data.sh
 ```
@@ -177,7 +179,16 @@ TileServer:
 ```bash
 curl 'http://127.0.0.1:8080/styles/aos/style.json'
 curl 'http://127.0.0.1:8080/data/kenya.json'
+curl --fail --output /dev/null \
+  'http://127.0.0.1:8080/fonts/Noto%20Sans%20Regular/0-255.pbf'
+curl --fail --output /dev/null \
+  'http://127.0.0.1:8080/fonts/Noto%20Sans%20Bold/0-255.pbf'
 ```
+
+A `400` response from either glyph URL means the local font tree was never
+built or is incomplete. Run `./infra/maps/scripts/build-map-fonts.sh`, then
+restart TileServer. The build is atomic and preserves a previously valid font
+tree if an upstream download fails.
 
 ## Manual API checks
 
@@ -212,6 +223,8 @@ Before marking a maps release complete:
 
 ```text
 Kenya MBTiles exists and validates as SQLite.
+Both Noto Sans glyph stacks contain all 256 PBF ranges and the public glyph
+endpoints return HTTP 200.
 Valhalla routing artifacts exist.
 Nominatim volume exists and service is healthy.
 Photon is explicitly disabled, or its published digest is verified and its

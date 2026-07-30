@@ -64,3 +64,7 @@ maps/*
 
 # Local map build manifest with exact source checksums and image digests
 infra/maps/manifest.env
+
+# Generated MapLibre glyph PBF assets
+infra/maps/tileserver/fonts/*
+!infra/maps/tileserver/fonts/.gitkeep

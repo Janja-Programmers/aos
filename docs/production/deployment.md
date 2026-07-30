@@ -91,6 +91,7 @@ For a fresh build:
 ./infra/maps/scripts/prepare-kenya.sh
 ./infra/maps/scripts/build-kenya-tiles.sh
 ./infra/maps/scripts/build-valhalla.sh
+./infra/maps/scripts/build-map-fonts.sh
 ./infra/maps/scripts/import-nominatim.sh --rebuild
 # Prepare Photon data before starting the photon service.
 # See infra/maps/manifest.env.example for PHOTON_IMAGE/volume settings.
