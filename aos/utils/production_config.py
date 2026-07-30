@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 
 import frappe
 
+from aos.services.maps.internal_url import InvalidInternalMapsURL, normalize_internal_maps_url
 from aos.utils import aos_config
 
 MIN_SECRET_LENGTH = 24
@@ -842,14 +843,32 @@ def _check_maps(
 	photon_enabled = _site_value(site_config, "maps_photon_enabled").lower() in {"1", "true", "yes", "on"}
 	if photon_enabled:
 		photon_url = _site_value(site_config, "photon_base_url")
-		if not photon_url or not _is_valid_url(photon_url) or _is_placeholder(photon_url):
+		photon_url_ready = False
+		if photon_url and not _is_placeholder(photon_url):
+			try:
+				normalized_photon_url = normalize_internal_maps_url(photon_url, service="Photon")
+			except InvalidInternalMapsURL:
+				pass
+			else:
+				# The loopback value shipped in examples is intentionally safe while
+				# Photon is disabled, but it is not evidence that the optional
+				# production service has actually been deployed. Enabling Photon
+				# requires a dedicated private/service-network endpoint.
+				photon_url_ready = not _is_local_url(normalized_photon_url)
+		if not photon_url_ready:
 			_redacted_issue(
 				issues,
 				severity="error",
 				category="maps",
 				key="photon_base_url",
-				message="Photon is enabled but its internal service URL is missing or invalid.",
-				remediation="Set photon_base_url or disable maps_photon_enabled.",
+				message=(
+					"Photon is enabled but its dedicated internal service URL is missing, "
+					"invalid, public, or still set to the disabled loopback example."
+				),
+				remediation=(
+					"Set photon_base_url to the deployed private/service-network endpoint, "
+					"or disable maps_photon_enabled."
+				),
 			)
 
 	for item in _MAP_SITE_CONFIG_URLS:

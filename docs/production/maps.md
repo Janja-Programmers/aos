@@ -143,7 +143,7 @@ Set backend service URLs:
 bench --site <site> set-config nominatim_base_url http://127.0.0.1:8081
 bench --site <site> set-config maps_photon_enabled 0
 # Configure Photon only after deploying an approved immutable image:
-# bench --site <site> set-config photon_base_url http://127.0.0.1:2322
+# bench --site <site> set-config photon_base_url http://photon:2322
 bench --site <site> set-config valhalla_base_url http://127.0.0.1:8002
 bench --site <site> set-config maps_geocoder_primary nominatim
 bench --site <site> set-config maps_geocoder_fallback photon

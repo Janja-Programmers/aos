@@ -228,6 +228,13 @@ class TestProductionConfigValidation(FrappeTestCase):
 		self.assertFalse(report["ready"])
 		self.assertIn("photon_base_url", {issue["key"] for issue in report["errors"]})
 
+	def test_enabled_photon_accepts_dedicated_internal_service_url(self):
+		site_config = self._valid_site_config()
+		site_config["maps_photon_enabled"] = True
+		site_config["photon_base_url"] = "http://photon:2322"
+		report = validate_production_config(env=self._valid_env(), site_config=site_config)
+		self.assertTrue(report["ready"], report)
+
 	def test_production_backup_encryption_placeholder_is_rejected_and_redacted(self):
 		env = self._valid_env()
 		env["BACKUP_AGE_RECIPIENT"] = "age1example-change-me"
