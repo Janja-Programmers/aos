@@ -90,8 +90,8 @@ GEOCODER_PRIMARY_ALLOWED = {
     GEOCODER_PRIMARY_NOMINATIM,
 }
 
-DEFAULT_GEOCODER_PRIMARY = GEOCODER_PRIMARY_PHOTON
-DEFAULT_GEOCODER_FALLBACK = GEOCODER_PRIMARY_NOMINATIM
+DEFAULT_GEOCODER_PRIMARY = GEOCODER_PRIMARY_NOMINATIM
+DEFAULT_GEOCODER_FALLBACK = GEOCODER_PRIMARY_PHOTON
 
 
 # REVERSE GEOCODING
@@ -185,8 +185,9 @@ ROUTE_LANGUAGE_MAX_LENGTH = 20
 #   "nominatim_base_url": "http://127.0.0.1:8081",
 #   "photon_base_url": "http://127.0.0.1:2322",
 #   "valhalla_base_url": "http://127.0.0.1:8002",
-#   "maps_geocoder_primary": "photon",
-#   "maps_geocoder_fallback": "nominatim"
+#   "maps_geocoder_primary": "nominatim",
+#   "maps_geocoder_fallback": "photon",
+#   "maps_photon_enabled": false
 # }
 NOMINATIM_BASE_URL_CONFIG_KEY = "nominatim_base_url"
 PHOTON_BASE_URL_CONFIG_KEY = "photon_base_url"

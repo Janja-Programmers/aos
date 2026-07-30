@@ -152,6 +152,25 @@ class AOSSeller(Document):
                 or self.flags.get("aos_review_aggregate_update")
             ):
                 frappe.throw(_("Seller metrics are server controlled."), exc=frappe.PermissionError)
+        location_fields = {
+            "has_location",
+            "latitude",
+            "longitude",
+            "display_address",
+            "locality",
+            "region",
+            "country_code",
+            "location_name",
+            "location_instructions",
+            "location_updated_at",
+            "location_version",
+        }
+        if any(previous.get(field) != self.get(field) for field in location_fields):
+            if not (self.flags.get("aos_seller_location_action") or self._is_privileged()):
+                frappe.throw(
+                    _("Seller location must be changed through the Maps service."),
+                    exc=frappe.PermissionError,
+                )
         storefront = {"business_category", "about_business", "shop_banner", "shop_banner_media", "operating_hours"}
         changed = any(previous.get(field) != self.get(field) for field in storefront - {"operating_hours"})
         if _operating_hours_signature(previous.operating_hours) != _operating_hours_signature(self.operating_hours):
@@ -225,6 +244,7 @@ class AOSSeller(Document):
             "chat_response_sample_size",
             "chat_response_requests",
             "storefront_version",
+            "location_version",
         ):
             value = int(self.get(field) or 0)
             if value < 0:

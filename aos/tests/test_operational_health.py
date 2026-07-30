@@ -135,7 +135,7 @@ class TestOperationalHealth(FrappeTestCase):
 
     def _valid_site_config(self) -> dict[str, str]:
         return {
-            "photon_base_url": "http://127.0.0.1:2322",
+            "maps_photon_enabled": False,
             "nominatim_base_url": "http://127.0.0.1:8081",
             "valhalla_base_url": "http://127.0.0.1:8002",
         }

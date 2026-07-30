@@ -118,17 +118,14 @@ class TestSellerContracts(unittest.TestCase):
         self.assertIn("LIMIT %(limit)s", operating_source)
         self.assertNotIn("frappe.db.commit", operating_source)
 
-    def test_location_compatibility_endpoints_return_public_seller_ids(self):
+    def test_location_compatibility_endpoints_delegate_to_maps_domain(self):
         for filename in ("get_location.py", "set_location.py", "remove_location.py", "map_points.py"):
             source = (ROOT / "aos/api/sellers" / filename).read_text()
-            self.assertTrue(
-                "public_seller_id_for_name" in source
-                or "migration_fallback_public_seller_id" in source,
-                filename,
-            )
+            self.assertIn("aos.api.maps.seller_locations", source, filename)
+            self.assertNotIn("frappe.db", source)
             self.assertNotIn("frappe.db.commit", source)
         route = (ROOT / "aos/api/maps/route.py").read_text()
-        self.assertIn("resolve_seller_reference", route)
+        self.assertIn("MapsService", route)
 
     def test_every_seller_endpoint_has_rate_limit_coverage(self):
         registry = json.loads((ROOT / "ci/public-endpoint-rate-limits.json").read_text())

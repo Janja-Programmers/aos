@@ -316,6 +316,7 @@ def _map_endpoints(
 			url=_site_value(site_config, "photon_base_url"),
 			health_path="/api?q=Nairobi&limit=1",
 			ready_path=None,
+			enabled=_site_value(site_config, "maps_photon_enabled").lower() in {"1", "true", "yes", "on"},
 		),
 		ServiceEndpoint(
 			name="nominatim",

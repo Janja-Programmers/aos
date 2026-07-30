@@ -29,6 +29,7 @@
   "latitude",
   "longitude",
   "location_updated_at",
+  "location_version",
   "section_break_knlj",
   "locality",
   "region",
@@ -244,6 +245,13 @@
    "fieldname": "location_updated_at",
    "fieldtype": "Datetime",
    "label": "Location Updated At",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "location_version",
+   "fieldtype": "Int",
+   "label": "Location Version",
    "read_only": 1
   },
   {

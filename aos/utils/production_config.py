@@ -157,7 +157,6 @@ _PRIVATE_SERVICE_URLS: tuple[dict[str, Any], ...] = (
 )
 
 _MAP_SITE_CONFIG_URLS: tuple[dict[str, str], ...] = (
-	{"key": "photon_base_url", "name": "Photon base URL"},
 	{"key": "nominatim_base_url", "name": "Nominatim base URL"},
 	{"key": "valhalla_base_url", "name": "Valhalla base URL"},
 )
@@ -839,6 +838,19 @@ def _check_maps(
 		label="TileServer public URL",
 		require_https=True,
 	)
+
+	photon_enabled = _site_value(site_config, "maps_photon_enabled").lower() in {"1", "true", "yes", "on"}
+	if photon_enabled:
+		photon_url = _site_value(site_config, "photon_base_url")
+		if not photon_url or not _is_valid_url(photon_url) or _is_placeholder(photon_url):
+			_redacted_issue(
+				issues,
+				severity="error",
+				category="maps",
+				key="photon_base_url",
+				message="Photon is enabled but its internal service URL is missing or invalid.",
+				remediation="Set photon_base_url or disable maps_photon_enabled.",
+			)
 
 	for item in _MAP_SITE_CONFIG_URLS:
 		value = _site_value(site_config, item["key"])

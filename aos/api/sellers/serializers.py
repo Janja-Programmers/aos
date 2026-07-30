@@ -52,7 +52,7 @@ def serialize_seller_location(
     )
 
     if not is_valid_location:
-        return _empty_location_payload()
+        return _empty_location_payload(version=int(seller.get("location_version") or 0))
 
     return {
         "has_location": True,
@@ -75,6 +75,7 @@ def serialize_seller_location(
         "updated_at": seller.get(
             "location_updated_at"
         ),
+        "version": int(seller.get("location_version") or 0),
     }
 
 
@@ -135,7 +136,7 @@ def serialize_lightweight_seller_location(
     return payload
 
 
-def _empty_location_payload() -> dict:
+def _empty_location_payload(*, version: int = 0) -> dict:
     """Return the standard empty seller-location payload."""
 
     return {
@@ -149,6 +150,7 @@ def _empty_location_payload() -> dict:
         "country_code": None,
         "instructions": None,
         "updated_at": None,
+        "version": max(0, int(version or 0)),
     }
 
 

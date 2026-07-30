@@ -218,9 +218,15 @@ class TestProductionConfigValidation(FrappeTestCase):
 
 		self.assertFalse(report["ready"])
 		keys = {issue["key"] for issue in report["errors"]}
-		self.assertIn("photon_base_url", keys)
 		self.assertIn("nominatim_base_url", keys)
 		self.assertIn("valhalla_base_url", keys)
+
+	def test_enabled_photon_requires_internal_url(self):
+		site_config = self._valid_site_config()
+		site_config["maps_photon_enabled"] = True
+		report = validate_production_config(env=self._valid_env(), site_config=site_config)
+		self.assertFalse(report["ready"])
+		self.assertIn("photon_base_url", {issue["key"] for issue in report["errors"]})
 
 	def test_production_backup_encryption_placeholder_is_rejected_and_redacted(self):
 		env = self._valid_env()

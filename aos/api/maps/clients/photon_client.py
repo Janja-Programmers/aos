@@ -13,6 +13,13 @@ from typing import Any
 import frappe
 import requests
 
+from aos.services.maps.internal_url import (
+    InvalidInternalMapsURL,
+    build_internal_maps_url,
+    normalize_internal_maps_url,
+    safe_provider_body,
+)
+
 from ..constants import (
     DEFAULT_PHOTON_BASE_URL,
     KENYA_BBOX_EAST,
@@ -175,6 +182,7 @@ class PhotonClient:
             response = self._session.get(
                 url,
                 params=params,
+                allow_redirects=False,
                 timeout=(
                     MAP_SERVICE_CONNECT_TIMEOUT_SECONDS,
                     PHOTON_REQUEST_TIMEOUT_SECONDS,
@@ -253,9 +261,7 @@ class PhotonClient:
         to public API consumers.
         """
 
-        safe_body = (
-            response_body or ""
-        )[:2000]
+        safe_body = safe_provider_body(response_body)
 
         frappe.log_error(
             message=(
@@ -273,48 +279,18 @@ def get_photon_client() -> PhotonClient:
     return PhotonClient()
 
 
-def _normalize_base_url(
-    value: Any,
-) -> str:
-    """Normalize and validate the configured internal base URL."""
-
-    normalized = str(
-        value or ""
-    ).strip().rstrip("/")
-
-    if not normalized:
-        raise PhotonClientError(
-            "Photon service URL is not configured."
-        )
-
-    if not (
-        normalized.startswith("http://")
-        or normalized.startswith("https://")
-    ):
-        raise PhotonClientError(
-            "Photon service URL must use HTTP or HTTPS."
-        )
-
-    return normalized
+def _normalize_base_url(value: Any) -> str:
+    try:
+        return normalize_internal_maps_url(value, service="Photon")
+    except InvalidInternalMapsURL as exc:
+        raise PhotonClientError(str(exc)) from exc
 
 
-def _build_url(
-    *,
-    base_url: str,
-    endpoint: str,
-) -> str:
-    """Build an internal Photon endpoint URL."""
-
-    normalized_endpoint = (
-        endpoint
-        if endpoint.startswith("/")
-        else f"/{endpoint}"
-    )
-
-    return (
-        f"{base_url}"
-        f"{normalized_endpoint}"
-    )
+def _build_url(*, base_url: str, endpoint: str) -> str:
+    try:
+        return build_internal_maps_url(base_url, endpoint)
+    except InvalidInternalMapsURL as exc:
+        raise PhotonClientError(str(exc)) from exc
 
 
 def _normalize_optional_string(
