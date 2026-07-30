@@ -56,6 +56,19 @@ Numeric Ad prices and currency/localization behavior remain owned by Ads and Loc
 
 Category icons use the centralized `category_icon` Media purpose. It is public image media, limited by the Media policy, and attachable to one `AOS Category` by a System Manager. New icon changes require a confirmed Media ID; the legacy URL field is a compatibility cache, not storage authority. Replacement and deletion reuse `MediaService`; Catalog has no storage or presigned-upload implementation.
 
+### Desk category-image uploader
+
+The `AOS Category` Desk form provides the supported administrative workflow:
+
+1. Save the category so the attachment target has a durable identity.
+2. Select **Upload image** or **Replace image** in the Category Image section.
+3. The browser validates the basic image type, size, and dimensions, calculates SHA-256 when Web Crypto is available, and calls `aos.api.v1.media.init_upload`.
+4. The file is uploaded directly to the returned presigned URL with the returned headers.
+5. Desk calls `aos.api.v1.media.confirm_upload`, assigns the confirmed Media ID, and saves the category.
+6. The category controller attaches the new Media relationship and safely releases the previous one in the request transaction.
+
+Only System Managers see enabled image actions. The server-side Media policy and category controller remain authoritative for role, ownership, purpose, MIME, extension, size, dimensions, checksum, lifecycle, and attachment validation. The raw `icon` cache is hidden and read-only, and `icon_media` is read-only so administrators do not bypass the supported workflow. Failed browser uploads attempt bounded cleanup through `delete_media`; centralized orphan cleanup remains the fallback for ambiguous network outcomes. **Remove image** clears the relationship through a normal category save so the shared Media lifecycle handles release.
+
 ## Search, moderation, outbox, and notifications
 
 The repository has no independent Catalog index, moderation job, outbox event, or user notification. Those integrations operate on Ads. Catalog hardening therefore does not create speculative companion workflows. Deactivating or deleting a category prevents new or updated Ads from using it; existing Ad discovery remains governed by the existing Ad lifecycle and search/removal mechanisms.

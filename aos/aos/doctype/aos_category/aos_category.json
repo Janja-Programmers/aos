@@ -20,8 +20,10 @@
   "is_service",
   "section_break_patt",
   "attributes",
-  "icon",
+  "category_image_section",
+  "icon_preview",
   "icon_media",
+  "icon",
   "lft",
   "rgt"
  ],
@@ -74,16 +76,18 @@
   {
    "fieldname": "icon",
    "fieldtype": "Data",
-   "hidden": 0,
+   "hidden": 1,
    "label": "Icon URL",
-   "description": "Cached public icon URL. Use icon_media as the source of truth."
+   "description": "Cached public icon URL managed by the AOS Media pipeline.",
+   "read_only": 1
   },
   {
    "fieldname": "icon_media",
    "fieldtype": "Link",
    "label": "Icon Media",
    "options": "AOS Media Object",
-   "description": "Public AOS Media Object uploaded with purpose category_icon."
+   "description": "Confirmed category_icon media managed through the Desk uploader.",
+   "read_only": 1
   },
   {
    "default": "1",
@@ -141,6 +145,16 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Is Service"
+  },
+  {
+   "fieldname": "category_image_section",
+   "fieldtype": "Section Break",
+   "label": "Category Image"
+  },
+  {
+   "fieldname": "icon_preview",
+   "fieldtype": "HTML",
+   "label": "Category Image Uploader"
   }
  ],
  "grid_page_length": 50,
@@ -148,7 +162,7 @@
  "index_web_pages_for_search": 1,
  "is_tree": 1,
  "links": [],
- "modified": "2026-07-02 00:00:00.000000",
+ "modified": "2026-07-31 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Category",
