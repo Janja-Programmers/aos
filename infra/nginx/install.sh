@@ -228,12 +228,12 @@ validate_certificate() {
 # LOAD ENVIRONMENT
 require_file "${ENV_FILE}" "environment file"
 
-set -a
+DOTENV_LOADER="${ROOT_DIR}/infra/scripts/load-dotenv.sh"
+require_file "${DOTENV_LOADER}" "safe dotenv loader"
 
 # shellcheck disable=SC1090
-source "${ENV_FILE}"
-
-set +a
+source "${DOTENV_LOADER}"
+load_dotenv_file "${ENV_FILE}"
 
 
 # REQUIRED TOOLS
