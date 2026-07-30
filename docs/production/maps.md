@@ -221,3 +221,7 @@ Nominatim, any enabled Photon service, and Valhalla are not publicly exposed.
 Seller near-me and viewport APIs have rate limits.
 Route endpoints require login.
 ```
+
+### Browser CORS ownership
+
+TileServer GL may emit `Access-Control-Allow-Origin` itself. The AOS Maps Nginx proxy strips that upstream header and emits one canonical wildcard header. Do not remove `proxy_hide_header Access-Control-Allow-Origin;` from the Maps proxy locations; duplicate wildcard headers are accepted by `curl` but rejected by browsers.

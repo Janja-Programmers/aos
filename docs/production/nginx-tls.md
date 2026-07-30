@@ -105,3 +105,7 @@ wss://<AOS_LIVEKIT_DOMAIN>
 ```
 
 The TCP fallback port `7881` and configured UDP range bypass Nginx and must remain open in the firewall.
+
+### Browser CORS ownership
+
+TileServer GL may emit `Access-Control-Allow-Origin` itself. The AOS Maps Nginx proxy strips that upstream header and emits one canonical wildcard header. Do not remove `proxy_hide_header Access-Control-Allow-Origin;` from the Maps proxy locations; duplicate wildcard headers are accepted by `curl` but rejected by browsers.

@@ -49,6 +49,9 @@ server {
         proxy_send_timeout ${NGINX_PROXY_SEND_TIMEOUT};
         proxy_cache_valid 200 1h;
         proxy_set_header Accept-Encoding "";
+        # TileServer GL also emits Access-Control-Allow-Origin. Strip the
+        # upstream value so browsers receive exactly one canonical CORS header.
+        proxy_hide_header Access-Control-Allow-Origin;
         add_header Access-Control-Allow-Origin "*" always;
         add_header Vary "Origin" always;
         proxy_pass http://127.0.0.1:${TILESERVER_PORT};
@@ -59,6 +62,8 @@ server {
         proxy_connect_timeout ${NGINX_PROXY_CONNECT_TIMEOUT};
         proxy_read_timeout ${NGINX_PROXY_READ_TIMEOUT};
         proxy_send_timeout ${NGINX_PROXY_SEND_TIMEOUT};
+        # Keep Nginx as the sole CORS authority for tile/font/sprite responses.
+        proxy_hide_header Access-Control-Allow-Origin;
         add_header Access-Control-Allow-Origin "*" always;
         add_header Cache-Control "public, max-age=86400" always;
         expires 1d;

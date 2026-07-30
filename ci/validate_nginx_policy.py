@@ -9,8 +9,10 @@ def main() -> int:
 	root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
 	limits_path = root / "infra/nginx/snippets/rate-limits.conf"
 	api_path = root / "infra/nginx/aos-api.conf.template"
+	maps_path = root / "infra/nginx/maps.conf.template"
 	limits = limits_path.read_text(encoding="utf-8")
 	api = api_path.read_text(encoding="utf-8")
+	maps = maps_path.read_text(encoding="utf-8")
 	errors: list[str] = []
 
 	if not re.search(
@@ -46,6 +48,14 @@ def main() -> int:
 		errors.append("generic ^~ API location would bypass the callback regex location")
 	if "@aos_rate_limited" not in api or '"error":"RATE_LIMIT"' not in api:
 		errors.append("shared sanitized rate-limit response is missing")
+
+	# TileServer GL currently emits its own wildcard CORS header. Nginx must
+	# suppress that upstream value before adding the canonical public Maps
+	# header, otherwise browsers receive a combined `*, *` value and reject it.
+	if maps.count("proxy_hide_header Access-Control-Allow-Origin;") < 2:
+		errors.append("maps proxy locations must suppress duplicate upstream CORS headers")
+	if maps.count('add_header Access-Control-Allow-Origin "*" always;') < 3:
+		errors.append("maps OPTIONS and public resources must expose the reviewed wildcard CORS policy")
 
 	if errors:
 		print("\n".join(errors), file=sys.stderr)
