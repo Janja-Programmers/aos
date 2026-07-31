@@ -140,3 +140,10 @@ def test_social_failure_logs_do_not_include_tracebacks_or_private_values() -> No
     assert "frappe.get_traceback()" not in activity
     assert "Social activity hook failed." in activity
     assert "Social API operation failed." in boundary
+
+def test_social_package_does_not_eagerly_import_service() -> None:
+    source = (ROOT / "aos/services/social/__init__.py").read_text()
+    assert "if TYPE_CHECKING:" in source
+    assert "def __getattr__(name: str)" in source
+    assert "from .service import SocialService\n\n__all__" not in source
+
