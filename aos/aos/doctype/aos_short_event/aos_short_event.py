@@ -2,6 +2,8 @@
 # For license information, please see license.txt
 
 import frappe
+
+from aos.services.shorts.policy import can_view
 from frappe.model.document import Document
 
 
@@ -29,7 +31,7 @@ class AOSShortEvent(Document):
         short = frappe.db.get_value(
             "AOS Short",
             self.short,
-            ["status", "visibility_status"],
+            ["name", "owner", "status", "visibility_status", "approval_status", "audience"],
             as_dict=True,
         )
 
@@ -41,6 +43,9 @@ class AOSShortEvent(Document):
 
         if short.visibility_status != "visible":
             frappe.throw("Short is not visible")
+        viewer = self.user if self.user and self.user != "Guest" else None
+        if not can_view(short, viewer=viewer):
+            frappe.throw("Short is not available")
 
     def _validate_event_type(self):
         allowed = {

@@ -16,6 +16,22 @@ def _bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _csv(name: str, default: str = "") -> tuple[str, ...]:
+    return tuple(part.strip().lower() for part in os.getenv(name, default).split(",") if part.strip())
+
+
+def _float(name: str, default: float, *, min_value: float | None = None, max_value: float | None = None) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+    except Exception:
+        value = float(default)
+    if min_value is not None:
+        value = max(value, min_value)
+    if max_value is not None:
+        value = min(value, max_value)
+    return value
+
+
 def _int(name: str, default: int, *, min_value: int | None = None, max_value: int | None = None) -> int:
     try:
         value = int(os.getenv(name, str(default)))
@@ -57,7 +73,19 @@ class Settings:
     thumbnail_bucket: str = _clean(os.getenv("VIDEO_THUMBNAIL_BUCKET"), "aos-public").strip("/")
     thumbnail_base_path: str = _clean(os.getenv("VIDEO_THUMBNAIL_BASE_PATH"), "shorts/thumbnails").strip("/")
 
-    max_duration_seconds: int = _int("VIDEO_MAX_DURATION_SECONDS", 180, min_value=1)
+    max_duration_seconds: int = _int("VIDEO_MAX_DURATION_SECONDS", 180, min_value=1, max_value=3600)
+    max_input_bytes: int = _int("VIDEO_MAX_INPUT_BYTES", 536870912, min_value=1048576, max_value=2147483648)
+    max_width: int = _int("VIDEO_MAX_WIDTH", 4096, min_value=320, max_value=8192)
+    max_height: int = _int("VIDEO_MAX_HEIGHT", 4096, min_value=320, max_value=8192)
+    max_pixels: int = _int("VIDEO_MAX_PIXELS", 16777216, min_value=230400, max_value=67108864)
+    min_aspect_ratio: float = _float("VIDEO_MIN_ASPECT_RATIO", 0.25, min_value=0.05, max_value=1.0)
+    max_aspect_ratio: float = _float("VIDEO_MAX_ASPECT_RATIO", 4.0, min_value=1.0, max_value=20.0)
+    ffprobe_timeout_seconds: int = _int("VIDEO_FFPROBE_TIMEOUT_SECONDS", 120, min_value=10, max_value=600)
+    ffmpeg_timeout_seconds: int = _int("VIDEO_FFMPEG_TIMEOUT_SECONDS", 1800, min_value=60, max_value=7200)
+    ffmpeg_threads: int = _int("VIDEO_FFMPEG_THREADS", 2, min_value=1, max_value=16)
+    callback_timeout_seconds: int = _int("VIDEO_CALLBACK_TIMEOUT_SECONDS", 60, min_value=5, max_value=300)
+    allowed_video_codecs: tuple[str, ...] = _csv("VIDEO_ALLOWED_CODECS", "h264,hevc,vp8,vp9,av1,mpeg4")
+    callback_allowed_hosts: tuple[str, ...] = _csv("VIDEO_CALLBACK_ALLOWED_HOSTS", "")
 
 
 def get_settings() -> Settings:

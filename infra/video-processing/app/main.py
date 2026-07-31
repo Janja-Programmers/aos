@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Header, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.config import get_settings
 from app.durable_lifecycle import authorize_work_replay, job_status, replay_callback_delivery
@@ -14,24 +14,84 @@ from app.queue import get_queue, get_redis
 from app.security import verify_signature
 
 
-class VideoJobRequest(BaseModel):
-	job_id: str = Field(min_length=1)
+class StrictModel(BaseModel):
+	model_config = ConfigDict(extra="forbid")
+
+
+class ObjectInput(StrictModel):
+	media_id: str | None = Field(default=None, max_length=140)
+	bucket: str = Field(min_length=1, max_length=128)
+	object_key: str = Field(min_length=1, max_length=1024)
+	content_type: str | None = Field(default=None, max_length=255)
+	size_bytes: int = Field(default=0, ge=0)
+	filename: str | None = Field(default=None, max_length=255)
+
+	@field_validator("bucket", "object_key")
+	@classmethod
+	def validate_storage_component(cls, value: str) -> str:
+		clean = value.strip().strip("/")
+		if not clean or ".." in clean.split("/") or "\\" in clean:
+			raise ValueError("Invalid storage location")
+		return clean
+
+
+class SoundInput(ObjectInput):
+	sound_id: str | None = Field(default=None, max_length=140)
+	start_ms: int = Field(default=0, ge=0)
+	duration_ms: int = Field(default=0, ge=0)
+	volume: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
+class OutputConfig(StrictModel):
+	output_bucket: str = Field(min_length=1, max_length=128)
+	output_base_path: str = Field(min_length=1, max_length=512)
+	thumbnail_bucket: str = Field(min_length=1, max_length=128)
+	thumbnail_base_path: str = Field(min_length=1, max_length=512)
+	max_duration_seconds: int = Field(ge=1, le=3600)
+
+	@field_validator("output_bucket", "output_base_path", "thumbnail_bucket", "thumbnail_base_path")
+	@classmethod
+	def validate_output_component(cls, value: str) -> str:
+		clean = value.strip().strip("/")
+		if not clean or ".." in clean.split("/") or "\\" in clean:
+			raise ValueError("Invalid output location")
+		return clean
+
+
+class VideoJobRequest(StrictModel):
+	job_id: str = Field(min_length=1, max_length=140)
 	idempotency_key: str | None = Field(default=None, min_length=8, max_length=200)
 	dispatch_id: str | None = Field(default=None, min_length=8, max_length=200)
 	dispatch_generation: int = Field(default=0, ge=0, le=1000)
 	dispatch_token: str | None = Field(default=None, min_length=16, max_length=140)
-	short_id: str = Field(min_length=1)
+	job_generation: int = Field(default=1, ge=1, le=1000000)
+	short_id: str = Field(pattern=r"^SHORT-[0-9]{4}-[0-9]{5,}$")
 	force: bool = False
-	callback_url: str = Field(min_length=1)
-	raw_video: dict[str, Any]
-	sound: dict[str, Any] | None = None
-	output: dict[str, Any] | None = None
+	callback_url: str = Field(min_length=1, max_length=2048)
+	raw_video: ObjectInput
+	sound: SoundInput | None = None
+	output: OutputConfig
+
+	@field_validator("callback_url")
+	@classmethod
+	def validate_callback_url(cls, value: str) -> str:
+		parsed = urlparse(value)
+		if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+			raise ValueError("Invalid callback URL")
+		settings = get_settings()
+		if settings.environment.lower() in {"production", "staging"}:
+			if parsed.scheme != "https":
+				raise ValueError("Callback URL must use HTTPS")
+			if not settings.callback_allowed_hosts:
+				raise ValueError("Callback host allowlist is not configured")
+		if settings.callback_allowed_hosts and parsed.hostname.lower() not in settings.callback_allowed_hosts:
+			raise ValueError("Callback host is not allowed")
+		return value
 
 
-class InternalJobLookupRequest(BaseModel):
+class InternalJobLookupRequest(StrictModel):
 	job_id: str = Field(min_length=1, max_length=200)
 	idempotency_key: str | None = Field(default=None, min_length=8, max_length=200)
-
 
 app = FastAPI(title="AOS Video Processing Service", version="1.0.0")
 instrument_app(app, "aos-video-processing")

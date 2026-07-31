@@ -30,7 +30,9 @@
   "completed_at",
   "payload_section",
   "request_payload",
-  "response_payload"
+  "response_payload",
+  "generation",
+  "active_key"
  ],
  "fields": [
   {
@@ -201,6 +203,20 @@
    "fieldtype": "Long Text",
    "label": "Response Payload",
    "read_only": 1
+  },
+  {
+   "fieldname": "generation",
+   "fieldtype": "Int",
+   "default": "1",
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "active_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "read_only": 1,
+   "length": 64
   }
  ],
  "index_web_pages_for_search": 1,

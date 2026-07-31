@@ -130,7 +130,6 @@ def toggle_like_impl(**kwargs):
                 short_id=short_id,
             )
 
-        frappe.db.commit()
 
         # Read canonical count after AOS Short Like hooks update the metric.
         like_count = frappe.db.get_value("AOS Short", short_id, "like_count") or 0
@@ -141,6 +140,7 @@ def toggle_like_impl(**kwargs):
                 "aos.api.shorts.tasks.update_short_score_task",
                 short_id=short_id,
                 queue="short",
+                enqueue_after_commit=True,
             )
 
         return ok(
@@ -163,10 +163,8 @@ def toggle_like_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "toggle_like failed")
-        frappe.db.rollback()
+        frappe.log_error("Shorts operation failed.", "toggle_like failed")
         return fail("Failed to toggle like", error="INTERNAL_ERROR")

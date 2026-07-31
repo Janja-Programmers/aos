@@ -16,6 +16,8 @@ import frappe
 
 from aos.api.shared.user_display import get_user_display, get_user_display_map
 from aos.services.notification_service import NotificationService
+from aos.services.shorts.notifications import should_notify
+from aos.services.shorts.policy import creator_is_available
 
 MENTION_PATTERN = re.compile(
     r"(?<![\w@.])@([A-Za-z0-9][A-Za-z0-9._+-]{1,79}(?:@[A-Za-z0-9.-]+\.[A-Za-z]{2,})?)"
@@ -76,6 +78,7 @@ def resolve_mention_users(text: str | None) -> list[dict[str, Any]]:
             {
                 "token": token,
                 "user": display.get("user"),
+                "_internal_user": user.get("name"),
                 "display_name": display.get("display_name"),
                 "avatar": display.get("avatar"),
                 "is_deleted": bool(display.get("is_deleted")),
@@ -196,8 +199,8 @@ def _sync_mentions(
 
     mentions = resolve_mention_users(text)
     for mention in mentions:
-        mentioned_user = mention.get("user")
-        if not mentioned_user:
+        mentioned_user = mention.get("_internal_user")
+        if not mentioned_user or not creator_is_available(mentioned_user):
             continue
 
         frappe.get_doc(
@@ -212,7 +215,7 @@ def _sync_mentions(
             }
         ).insert(ignore_permissions=True)
 
-        if mentioned_user != mentioned_by:
+        if should_notify(actor=mentioned_by, recipient=mentioned_user):
             try:
                 NotificationService.notify_short_mention(
                     user=mentioned_user,
@@ -223,11 +226,15 @@ def _sync_mentions(
                 )
             except Exception:
                 frappe.log_error(
-                    frappe.get_traceback(),
-                    "AOS Short mention notification failed",
+                    "Short mention notification enqueue failed.",
+                    "AOS Short Mention Notification",
                 )
 
-    return mentions
+    return [
+        {key: value for key, value in mention.items() if key != "_internal_user"}
+        for mention in mentions
+        if mention.get("_internal_user") and creator_is_available(mention.get("_internal_user"))
+    ]
 
 
 def _fetch_candidate_users(tokens: list[str]) -> dict[str, dict[str, Any]]:
@@ -334,7 +341,7 @@ def _serialize_mention_row(
 ) -> dict[str, Any]:
     display = user_map.get(user) or get_user_display(user)
     return {
-        "user": user,
+        "user": display.get("user"),
         "token": token,
         "display_name": display.get("display_name"),
         "avatar": display.get("avatar"),

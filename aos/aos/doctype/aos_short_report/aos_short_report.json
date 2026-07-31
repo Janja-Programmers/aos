@@ -19,7 +19,8 @@
   "reviewed_by",
   "column_break_cnjo",
   "admin_action",
-  "reviewed_on"
+  "reviewed_on",
+  "active_key"
  ],
  "fields": [
   {
@@ -117,6 +118,13 @@
    "fieldtype": "Datetime",
    "label": "Reviewed On",
    "read_only": 1
+  },
+  {
+   "fieldname": "active_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "read_only": 1,
+   "length": 64
   }
  ],
  "grid_page_length": 50,

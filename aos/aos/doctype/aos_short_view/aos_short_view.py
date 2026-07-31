@@ -2,6 +2,9 @@
 # For license information, please see license.txt
 
 import frappe
+
+from aos.services.shorts.analytics import bounded_watch_ms
+from aos.services.shorts.policy import can_view
 from frappe.model.document import Document
 from frappe.utils import now_datetime, getdate
 
@@ -57,7 +60,7 @@ class AOSShortView(Document):
         short = frappe.db.get_value(
             "AOS Short",
             self.short,
-            ["status", "visibility_status", "duration_seconds"],
+            ["name", "owner", "status", "visibility_status", "approval_status", "audience", "duration_seconds"],
             as_dict=True,
         )
 
@@ -69,8 +72,12 @@ class AOSShortView(Document):
 
         if short.visibility_status != "visible":
             frappe.throw("Short is not visible")
+        viewer = self.user if self.user and self.user != "Guest" else None
+        if not can_view(short, viewer=viewer):
+            frappe.throw("Short is not available")
 
         self._short_duration = short.duration_seconds or 0
+        self.watch_ms = bounded_watch_ms(self.watch_ms, duration_seconds=self._short_duration)
 
     def _handle_qualification(self):
         """Check if view qualifies and update count"""

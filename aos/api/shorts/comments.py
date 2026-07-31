@@ -348,12 +348,12 @@ def add_comment_impl(**kwargs):
                 content=comment,
             )
 
-        frappe.db.commit()
 
         frappe.enqueue(
             RANKING_TASK,
             short_id=short_id,
             queue="short",
+            enqueue_after_commit=True,
         )
 
         row = _fetch_comment_row(doc.name)
@@ -375,12 +375,10 @@ def add_comment_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "add_comment failed")
-        frappe.db.rollback()
+        frappe.log_error("Shorts operation failed.", "add_comment failed")
         return fail("Failed to add comment", error="INTERNAL_ERROR")
 
 
@@ -463,12 +461,12 @@ def reply_comment_impl(**kwargs):
                 content=comment,
             )
 
-        frappe.db.commit()
 
         frappe.enqueue(
             RANKING_TASK,
             short_id=parent.short,
             queue="short",
+            enqueue_after_commit=True,
         )
 
         row = _fetch_comment_row(doc.name)
@@ -493,12 +491,10 @@ def reply_comment_impl(**kwargs):
         return fail("Comment not found.", error="NOT_FOUND")
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "reply_comment failed")
-        frappe.db.rollback()
+        frappe.log_error("Shorts operation failed.", "reply_comment failed")
         return fail("Failed to reply", error="INTERNAL_ERROR")
 
 
@@ -562,7 +558,6 @@ def toggle_comment_like_impl(**kwargs):
             liked = False
             message = "Comment unliked."
 
-        frappe.db.commit()
 
         like_count = _get_comment_like_count(comment_id)
 
@@ -570,6 +565,7 @@ def toggle_comment_like_impl(**kwargs):
             RANKING_TASK,
             short_id=comment.short,
             queue="short",
+            enqueue_after_commit=True,
         )
 
         return ok(
@@ -592,7 +588,6 @@ def toggle_comment_like_impl(**kwargs):
         )
 
     except Exception as ex:
-        frappe.db.rollback()
 
         if is_duplicate_entry_error(ex):
             like_count = _get_comment_like_count(comment_id)
@@ -615,7 +610,7 @@ def toggle_comment_like_impl(**kwargs):
         if isinstance(ex, frappe.ValidationError):
             return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
-        frappe.log_error(frappe.get_traceback(), "toggle_comment_like failed")
+        frappe.log_error("Shorts operation failed.", "toggle_comment_like failed")
         return fail("Failed to toggle comment like", error="INTERNAL_ERROR")
 
 
@@ -724,7 +719,7 @@ def list_comments_impl(**kwargs):
         )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "list_comments failed")
+        frappe.log_error("Shorts operation failed.", "list_comments failed")
         return fail("Failed to fetch comments", error="INTERNAL_ERROR")
 
 
@@ -846,7 +841,7 @@ def list_replies_impl(**kwargs):
         )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "list_replies failed")
+        frappe.log_error("Shorts operation failed.", "list_replies failed")
         return fail("Failed to fetch replies", error="INTERNAL_ERROR")
 
 
@@ -873,6 +868,16 @@ def delete_comment_impl(**kwargs):
             return fail("Not allowed.", error="FORBIDDEN")
 
         short_id = doc.short
+        # Serialize comment-count changes with concurrent replies/deletes.
+        frappe.db.sql("SELECT name FROM `tabAOS Short` WHERE name = %s FOR UPDATE", (short_id,))
+        deleted_count = 1
+        if not doc.parent_comment:
+            deleted_count = int(frappe.db.sql(
+                """SELECT COUNT(*) FROM `tabAOS Short Comment`
+                   WHERE root_comment = %s AND status != 'deleted'""",
+                (doc.name,),
+            )[0][0] or 0)
+            deleted_count = max(1, deleted_count)
 
         # Hide Activity Center comment-history rows for the deleted comment and
         # any cascaded replies before their source records are soft-deleted.
@@ -916,15 +921,22 @@ def delete_comment_impl(**kwargs):
                 (doc.name,),
             )
 
-        # DELETE THIS COMMENT
+        # DELETE THIS COMMENT. The controller decrements one; account for
+        # replies already cascade-deleted above without invoking their hooks.
         doc.soft_delete()
-
-        frappe.db.commit()
+        if deleted_count > 1:
+            frappe.db.sql(
+                """UPDATE `tabAOS Short`
+                   SET comment_count = GREATEST(COALESCE(comment_count, 0) - %s, 0)
+                   WHERE name = %s""",
+                (deleted_count - 1, short_id),
+            )
 
         frappe.enqueue(
             RANKING_TASK,
             short_id=short_id,
             queue="short",
+            enqueue_after_commit=True,
         )
 
         return ok(
@@ -936,6 +948,5 @@ def delete_comment_impl(**kwargs):
         return fail("Comment not found.", error="NOT_FOUND")
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "delete_comment failed")
-        frappe.db.rollback()
+        frappe.log_error("Shorts operation failed.", "delete_comment failed")
         return fail("Failed to delete comment", error="INTERNAL_ERROR")

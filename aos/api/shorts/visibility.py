@@ -22,6 +22,7 @@ import frappe
 
 from aos.api.shared.auth import optional_active_user
 from aos.api.shared.blocking import is_blocked_between
+from aos.services.shorts.policy import can_view as _canonical_can_view
 from aos.services.social.repository import SocialRepository
 from aos.api.shorts.constants import (
     DEFAULT_SHORT_AUDIENCE,
@@ -152,55 +153,13 @@ def are_friends(*, user_a: str, user_b: str) -> bool:
 
 
 def can_view_short(short: Any, current_user: str | None = None) -> bool:
+    """Return whether the viewer may access the Short.
+
+    This compatibility function delegates to the canonical domain policy,
+    which also enforces processing, moderation, creator-account and blocking
+    state. Restricted direct IDs intentionally collapse to unavailable.
     """
-    Return whether current_user can view the given short.
-
-    Rules:
-    - Owner can always view their own short.
-    - everyone can be viewed by anyone, including Guest.
-    - followers requires logged-in viewer following creator.
-    - friends requires mutual follow.
-    - only_me requires owner.
-    """
-    owner = get_short_owner(short)
-    audience = get_short_audience(short)
-    current_user = normalize_user(current_user)
-
-    if not owner:
-        return False
-
-    # Owner can always view their own short.
-    if current_user and current_user == owner:
-        return True
-
-    # Blocking is stronger than public audience. This prevents public-feed,
-    # direct-link, saved, liked, and profile-tab leakage in either direction.
-    if current_user and is_blocked_between(current_user, owner):
-        return False
-
-    if audience == SHORT_AUDIENCE_EVERYONE:
-        return True
-
-    # Guests cannot view restricted shorts.
-    if not current_user:
-        return False
-
-    if audience == SHORT_AUDIENCE_FOLLOWERS:
-        return is_following_user(
-            follower_user=current_user,
-            following_user=owner,
-        )
-
-    if audience == SHORT_AUDIENCE_FRIENDS:
-        return are_friends(
-            user_a=current_user,
-            user_b=owner,
-        )
-
-    if audience == SHORT_AUDIENCE_ONLY_ME:
-        return False
-
-    return False
+    return _canonical_can_view(short, viewer=current_user)
 
 
 def can_view_short_record(

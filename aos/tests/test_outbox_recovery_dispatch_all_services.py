@@ -200,13 +200,14 @@ class TestOutboxRecoveryDispatchAllServices(FrappeTestCase):
 			"dispatch_token": outbox.current_dispatch_token,
 		}
 		if service_type == "video_processing":
+			prefix = f"shorts/processed/{fixture.job.short}/test-version"
 			return {
 				**base,
 				"status": "ready",
+				"job_generation": int(getattr(fixture.job, "generation", 1) or 1),
 				"duration_seconds": 3.5,
-				"playback_url": "https://files.invalid/master.m3u8",
-				"processed_file_url": "https://files.invalid/final.mp4",
-				"processed_file_key": "tests/final.mp4",
+				"processed_file_key": f"{prefix}/final.mp4",
+				"master_playlist_key": f"{prefix}/master.m3u8",
 			}
 		if service_type == "moderation":
 			return {**base, "status": "completed", "decision": "review", "reasons": ["test"]}

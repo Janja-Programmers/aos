@@ -9,6 +9,7 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any
 
 import requests
@@ -53,14 +54,19 @@ def _output_object_name(file_key: str, output_base_prefix: str = "shorts") -> st
 	return key
 
 
-def _download_object(client: Minio, *, bucket: str, object_key: str, destination: str) -> None:
+def _download_object(client: Minio, *, bucket: str, object_key: str, destination: str, max_bytes: int) -> None:
 	response = None
 	try:
 		response = client.get_object(bucket, object_key.strip("/"))
+		written = 0
 		with open(destination, "wb") as out:
 			for chunk in response.stream(1024 * 1024):
-				if chunk:
-					out.write(chunk)
+				if not chunk:
+					continue
+				written += len(chunk)
+				if written > max_bytes:
+					raise VideoProcessingError("Downloaded object exceeds the configured size limit")
+				out.write(chunk)
 	finally:
 		if response is not None:
 			response.close()
@@ -101,41 +107,56 @@ def _upload_file(
 	}
 
 
-def _run(cmd: list[str], error_message: str, *, timeout: int = 1800) -> subprocess.CompletedProcess[str]:
+def _run(cmd: list[str], error_message: str, *, timeout: int | None = None) -> subprocess.CompletedProcess[str]:
 	# Commands are internal argv lists and never use a shell.
+	settings = get_settings()
+	if cmd and cmd[0] == "ffmpeg" and "-threads" not in cmd:
+		cmd = [*cmd[:-1], "-threads", str(settings.ffmpeg_threads), cmd[-1]]
 	result = subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
 		cmd,
 		capture_output=True,
 		text=True,
-		timeout=timeout,
+		timeout=timeout or settings.ffmpeg_timeout_seconds,
 	)
 	if result.returncode != 0:
-		stderr = (result.stderr or "").strip()
-		stdout = (result.stdout or "").strip()
-		raise VideoProcessingError(f"{error_message}: {stderr or stdout or 'unknown error'}")
+		# Keep companion errors bounded and avoid propagating media metadata or paths.
+		raise VideoProcessingError(error_message)
 	return result
 
 
-def _duration(path: str) -> float:
+def _probe_video(path: str) -> dict[str, Any]:
+	settings = get_settings()
 	result = _run(
 		[
-			"ffprobe",
-			"-v",
-			"error",
-			"-show_entries",
-			"format=duration",
-			"-of",
-			"json",
-			path,
+			"ffprobe", "-v", "error", "-select_streams", "v:0",
+			"-show_entries", "stream=codec_name,width,height:format=duration",
+			"-of", "json", path,
 		],
-		"Duration probe failed",
-		timeout=120,
+		"Video metadata probe failed",
+		timeout=settings.ffprobe_timeout_seconds,
 	)
-	data = json.loads(result.stdout or "{}")
-	value = float(data.get("format", {}).get("duration") or 0)
-	if value <= 0:
-		raise VideoProcessingError("Invalid video duration")
-	return value
+	try:
+		data = json.loads(result.stdout or "{}")
+		stream = (data.get("streams") or [])[0]
+		duration = float((data.get("format") or {}).get("duration") or 0)
+		width, height = int(stream.get("width") or 0), int(stream.get("height") or 0)
+		codec = str(stream.get("codec_name") or "").lower()
+	except (IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+		raise VideoProcessingError("Invalid video metadata") from exc
+	if duration <= 0 or width <= 0 or height <= 0:
+		raise VideoProcessingError("Invalid video metadata")
+	if codec not in settings.allowed_video_codecs:
+		raise VideoProcessingError("Unsupported video codec")
+	if width > settings.max_width or height > settings.max_height or width * height > settings.max_pixels:
+		raise VideoProcessingError("Video dimensions exceed configured limits")
+	ratio = width / height
+	if ratio < settings.min_aspect_ratio or ratio > settings.max_aspect_ratio:
+		raise VideoProcessingError("Video aspect ratio exceeds configured limits")
+	return {"duration": duration, "width": width, "height": height, "codec": codec}
+
+
+def _duration(path: str) -> float:
+	return float(_probe_video(path)["duration"])
 
 
 def _has_audio(path: str) -> bool:
@@ -154,7 +175,7 @@ def _has_audio(path: str) -> bool:
 		],
 		capture_output=True,
 		text=True,
-		timeout=120,
+		timeout=get_settings().ffprobe_timeout_seconds,
 	)
 	if result.returncode != 0:
 		return False
@@ -194,7 +215,7 @@ def _generate_thumbnail(input_path: str, output_path: str) -> tuple[int | None, 
 			except Exception:
 				return None, None
 		last_error = result.stderr or result.stdout or last_error
-	raise VideoProcessingError(f"Thumbnail generation failed: {last_error}")
+	raise VideoProcessingError("Thumbnail generation failed")
 
 
 def _generate_mp4_original(input_path: str, output_path: str, duration: float) -> None:
@@ -345,8 +366,21 @@ def _generate_hls(input_path: str, work_dir: str) -> None:
 	_run(cmd, "HLS generation failed")
 
 
+def _validate_callback_url(callback_url: str) -> None:
+	settings = get_settings()
+	parsed = urlparse(callback_url)
+	if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+		raise VideoProcessingError("Invalid callback URL")
+	if settings.environment.lower() in {"production", "staging"}:
+		if parsed.scheme != "https" or not settings.callback_allowed_hosts:
+			raise VideoProcessingError("Invalid callback URL")
+	if settings.callback_allowed_hosts and parsed.hostname.lower() not in settings.callback_allowed_hosts:
+		raise VideoProcessingError("Invalid callback host")
+
+
 def _callback(callback_url: str, payload: dict[str, Any]) -> Any:
 	settings = get_settings()
+	_validate_callback_url(callback_url)
 	body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
 	timestamp = str(int(time.time()))
 	signed_payload = timestamp.encode("utf-8") + b"." + body
@@ -355,7 +389,7 @@ def _callback(callback_url: str, payload: dict[str, Any]) -> Any:
 		"X-AOS-Callback-Timestamp": timestamp,
 		"X-AOS-Callback-Signature": build_signature(settings.callback_secret, signed_payload),
 	}
-	response = requests.post(callback_url, data=body, headers=headers, timeout=60)
+	response = requests.post(callback_url, data=body, headers=headers, timeout=settings.callback_timeout_seconds)
 	return response
 
 
@@ -366,6 +400,7 @@ def _failure_payload(payload: dict[str, Any], error: str) -> dict[str, Any]:
 		"dispatch_id": payload.get("dispatch_id"),
 		"dispatch_generation": payload.get("dispatch_generation"),
 		"dispatch_token": payload.get("dispatch_token"),
+		"job_generation": payload.get("job_generation"),
 		"short_id": payload.get("short_id"),
 		"status": "failed",
 		"error": "VIDEO_PROCESSING_FAILED",
@@ -386,6 +421,12 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 
 		if not short_id or not job_id or not callback_url:
 			raise VideoProcessingError("Invalid video job payload")
+		_validate_callback_url(callback_url)
+		if not short_id.startswith("SHORT-") or ".." in str(raw_video.get("object_key") or "").split("/"):
+			raise VideoProcessingError("Invalid video job payload")
+		expected_size = max(0, int(raw_video.get("size_bytes") or 0))
+		if expected_size > settings.max_input_bytes:
+			raise VideoProcessingError("Input video exceeds configured size limit")
 
 		input_ext = Path(str(raw_video.get("object_key") or "video.mp4")).suffix or ".mp4"
 		input_path = os.path.join(work_dir, f"input{input_ext}")
@@ -394,9 +435,11 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 			bucket=str(raw_video.get("bucket") or ""),
 			object_key=str(raw_video.get("object_key") or ""),
 			destination=input_path,
+			max_bytes=settings.max_input_bytes,
 		)
 
-		duration = _duration(input_path)
+		metadata = _probe_video(input_path)
+		duration = float(metadata["duration"])
 		max_duration = int(output.get("max_duration_seconds") or settings.max_duration_seconds)
 		if duration > max_duration:
 			raise VideoProcessingError(f"Short must be <= {max_duration} seconds")
@@ -413,6 +456,7 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 				bucket=str(sound.get("bucket")),
 				object_key=str(sound.get("object_key")),
 				destination=sound_path,
+				max_bytes=min(settings.max_input_bytes, 134217728),
 			)
 
 		final_path = os.path.join(work_dir, "final.mp4")
@@ -487,6 +531,7 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 			"dispatch_id": payload.get("dispatch_id"),
 			"dispatch_generation": payload.get("dispatch_generation"),
 			"dispatch_token": payload.get("dispatch_token"),
+			"job_generation": payload.get("job_generation"),
 			"short_id": short_id,
 			"status": "ready",
 			"duration_seconds": duration,
@@ -500,8 +545,8 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 			"sound_applied": bool(sound_path),
 		}
 		return callback_payload
-	except Exception:
-		logger.exception("Video processing job failed")
+	except Exception as exc:
+		logger.error("Video processing job failed category=%s", exc.__class__.__name__)
 		raise
 	finally:
 		shutil.rmtree(work_dir, ignore_errors=True)

@@ -11,7 +11,8 @@
   "user",
   "status",
   "column_break_oglr",
-  "note"
+  "note",
+  "active_key"
  ],
  "fields": [
   {
@@ -60,6 +61,13 @@
    "fieldname": "note",
    "fieldtype": "Small Text",
    "label": "Note"
+  },
+  {
+   "fieldname": "active_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "read_only": 1,
+   "length": 64
   }
  ],
  "grid_page_length": 50,

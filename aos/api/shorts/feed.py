@@ -36,6 +36,7 @@ from aos.api.shorts.utils import (
 )
 
 from aos.api.shorts.visibility import can_view_short
+from aos.services.shorts.policy import audience_sql, filter_viewable_rows
 from aos.api.shorts.mentions import get_short_mentions_map
 from aos.api.shorts.sounds import get_short_sound_map
 from aos.services.accounts.identity import public_account_id_for_user
@@ -89,80 +90,8 @@ def _build_content_mode_filter(content_mode):
 
 
 def _build_audience_where_clause(viewer: str | None) -> tuple[str, tuple]:
-    """
-    SQL-level audience filter.
-
-    This is the first privacy layer. The Python can_view_short() check remains
-    as the final safety layer before serialization.
-
-    Guest:
-    - only everyone
-
-    Logged-in user:
-    - everyone
-    - own shorts
-    - followers shorts where viewer follows creator
-    - friends shorts where viewer and creator mutually follow each other
-    """
-    if not viewer:
-        return "AND s.audience = %s", (SHORT_AUDIENCE_EVERYONE,)
-
-    return (
-        """
-        AND NOT EXISTS (
-            SELECT 1
-            FROM `tabAOS User Block` social_block
-            WHERE social_block.status = 'Active'
-              AND ((social_block.blocker_user = %s AND social_block.blocked_user = s.owner)
-                OR (social_block.blocked_user = %s AND social_block.blocker_user = s.owner))
-        )
-        AND (
-            s.audience = %s
-            OR s.owner = %s
-            OR (
-                s.audience = %s
-                AND EXISTS (
-                    SELECT 1
-                    FROM `tabAOS Follow` af
-                    WHERE
-                        af.follower_user = %s
-                        AND af.following_user = s.owner
-                    LIMIT 1
-                )
-            )
-            OR (
-                s.audience = %s
-                AND EXISTS (
-                    SELECT 1
-                    FROM `tabAOS Follow` af1
-                    WHERE
-                        af1.follower_user = %s
-                        AND af1.following_user = s.owner
-                    LIMIT 1
-                )
-                AND EXISTS (
-                    SELECT 1
-                    FROM `tabAOS Follow` af2
-                    WHERE
-                        af2.follower_user = s.owner
-                        AND af2.following_user = %s
-                    LIMIT 1
-                )
-            )
-        )
-        """,
-        (
-            viewer,
-            viewer,
-            SHORT_AUDIENCE_EVERYONE,
-            viewer,
-            SHORT_AUDIENCE_FOLLOWERS,
-            viewer,
-            SHORT_AUDIENCE_FRIENDS,
-            viewer,
-            viewer,
-        ),
-    )
+    """Compatibility helper backed by the canonical Shorts policy."""
+    return audience_sql(viewer, short_alias="s")
 
 
 def _filter_viewable_rows(
@@ -171,22 +100,8 @@ def _filter_viewable_rows(
     viewer: str | None,
     limit: int,
 ) -> list[dict[str, Any]]:
-    """
-    Final Python safety filter for audience visibility.
-
-    SQL already filters audience for performance, but this guarantees no row is
-    exposed if a SQL clause changes later.
-    """
-    result = []
-
-    for row in rows or []:
-        if can_view_short(row, current_user=viewer):
-            result.append(row)
-
-            if len(result) >= limit + 1:
-                break
-
-    return result
+    """Final batched policy filter; SQL remains the first privacy boundary."""
+    return filter_viewable_rows(rows, viewer=viewer, limit=limit + 1)
 
 
 def _load_liked_short_ids(viewer: str | None, short_ids: list[str]) -> set[str]:
@@ -416,6 +331,7 @@ def _select_short_rows_sql() -> str:
             s.owner,
             s.status,
             s.visibility_status,
+            s.approval_status,
             s.content_mode,
             s.audience,
             s.allow_comments,
@@ -491,28 +407,21 @@ def feed_for_you_impl(**kwargs):
         if mode_err:
             return mode_err
 
-        candidate_clause = ""
-        candidate_order_sql = ""
+        # Candidate retrieval is advisory only. It must never narrow the canonical
+        # feed or change cursor ordering; an empty/partial ranking response falls
+        # back to the complete deterministic database feed.
         if not cursor:
             try:
-                candidate_short_ids = clean_safe_docnames(
-                    short_feed_candidates(
-                        viewer=viewer,
-                        content_mode=kwargs.get("content_mode") or kwargs.get("mode"),
-                        limit=limit + 1,
-                        offset=0,
-                    )
+                short_feed_candidates(
+                    viewer=viewer,
+                    content_mode=kwargs.get("content_mode") or kwargs.get("mode"),
+                    limit=limit + 1,
+                    offset=0,
                 )
-                if candidate_short_ids:
-                    candidate_clause, candidate_order_sql = _short_candidate_sql(candidate_short_ids)
-                else:
-                    return _build_response([], limit, viewer=viewer)
             except Exception:
-                candidate_clause = ""
-                candidate_order_sql = ""
                 frappe.log_error(
-                    frappe.get_traceback(),
-                    "AOS Search Ranking Shorts Candidate Fetch Failed",
+                    "Short ranking candidate lookup failed; database fallback used.",
+                    "AOS Shorts Ranking Fallback",
                 )
 
         audience_clause, audience_params = _build_audience_where_clause(viewer)
@@ -533,12 +442,10 @@ def feed_for_you_impl(**kwargs):
                 AND s.visibility_status = 'visible'
                 {mode_clause}
                 {audience_clause}
-                {candidate_clause}
                 {where_cursor}
 
             ORDER BY
-                {candidate_order_sql + "," if candidate_order_sql else ""}
-                s.ranking_score DESC,
+                COALESCE(s.ranking_score, 0) DESC,
                 s.creation DESC,
                 s.name DESC
 
@@ -551,7 +458,7 @@ def feed_for_you_impl(**kwargs):
         return _build_response(rows, limit, viewer=viewer)
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "feed_for_you failed")
+        frappe.log_error("Shorts operation failed.", "feed_for_you failed")
         return fail("Failed to fetch feed", error="INTERNAL_ERROR")
 
 
@@ -592,10 +499,12 @@ def feed_following_impl(**kwargs):
         rows = frappe.db.sql(
             f"""
             {_select_short_rows_sql()}
-            INNER JOIN `tabAOS Follow` f ON f.following_user = s.owner
 
             WHERE
-                f.follower_user = %s
+                EXISTS (
+                    SELECT 1 FROM `tabAOS Follow` f
+                    WHERE f.follower_user = %s AND f.following_user = s.owner
+                )
                 AND s.status = 'ready'
                 AND s.visibility_status = 'visible'
                 {mode_clause}
@@ -603,7 +512,7 @@ def feed_following_impl(**kwargs):
                 {where_cursor}
 
             ORDER BY
-                s.ranking_score DESC,
+                COALESCE(s.ranking_score, 0) DESC,
                 s.creation DESC,
                 s.name DESC
 
@@ -616,7 +525,7 @@ def feed_following_impl(**kwargs):
         return _build_response(rows, limit, viewer=user)
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "feed_following failed")
+        frappe.log_error("Shorts operation failed.", "feed_following failed")
         return fail("Failed to fetch following feed", error="INTERNAL_ERROR")
 
 
@@ -662,7 +571,7 @@ def feed_by_ad_impl(**kwargs):
                 {where_cursor}
 
             ORDER BY
-                s.ranking_score DESC,
+                COALESCE(s.ranking_score, 0) DESC,
                 s.creation DESC,
                 s.name DESC
 
@@ -681,5 +590,5 @@ def feed_by_ad_impl(**kwargs):
         return _build_response(rows, limit, viewer=viewer)
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "feed_by_ad failed")
+        frappe.log_error("Shorts operation failed.", "feed_by_ad failed")
         return fail("Failed to fetch ad feed", error="INTERNAL_ERROR")

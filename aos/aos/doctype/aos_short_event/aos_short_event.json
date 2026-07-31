@@ -16,7 +16,8 @@
   "column_break_xftn",
   "session_id",
   "source",
-  "metadata"
+  "metadata",
+  "event_key"
  ],
  "fields": [
   {
@@ -91,6 +92,13 @@
    "fieldtype": "Link",
    "label": "Country",
    "options": "Country"
+  },
+  {
+   "fieldname": "event_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "read_only": 1,
+   "length": 64
   }
  ],
  "grid_page_length": 50,

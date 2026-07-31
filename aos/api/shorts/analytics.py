@@ -12,13 +12,14 @@ from __future__ import annotations
 from typing import Any
 
 import frappe
+
+from aos.services.accounts.identity import public_account_id_for_user, resolve_account_reference
 from frappe.utils import add_days, date_diff, getdate, today
 
 from aos.api.shared.auth import require_login
 from aos.api.shared.formatters import humanize_count
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
-from aos.api.shared.user_display import get_user_display
 from aos.api.shared.validators import require_id
 from aos.api.shorts.constants import (
     ANALYTICS_DEFAULT_RANGE_DAYS,
@@ -116,7 +117,7 @@ def get_short_analytics_impl(**kwargs):
         )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "get_short_analytics failed")
+        frappe.log_error("Shorts operation failed.", "get_short_analytics failed")
         return fail("Failed to fetch short analytics", error="INTERNAL_ERROR")
 
 
@@ -145,12 +146,15 @@ def user_short_analytics_impl(**kwargs):
     if err:
         return err
 
-    target_user, err = require_id(
-        kwargs.get("user") or kwargs.get("target_user") or user,
+    target_reference, err = require_id(
+        kwargs.get("user") or kwargs.get("target_user") or public_account_id_for_user(user),
         "user",
     )
     if err:
         return err
+    target_user = resolve_account_reference(target_reference, allow_legacy=True)
+    if not target_user:
+        return fail("User not found.", error="NOT_FOUND")
 
     if target_user != user and not _is_staff(user):
         return fail("Not allowed.", error="FORBIDDEN")
@@ -235,7 +239,7 @@ def general_short_analytics_impl(**kwargs):
         )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "general_short_analytics failed")
+        frappe.log_error("Shorts operation failed.", "general_short_analytics failed")
         return fail("Failed to fetch general shorts analytics", error="INTERNAL_ERROR")
 
 
@@ -308,7 +312,7 @@ def _creator_analytics_response(
         )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "creator short analytics failed")
+        frappe.log_error("Shorts operation failed.", "creator short analytics failed")
         return fail("Failed to fetch user shorts analytics", error="INTERNAL_ERROR")
 
 
@@ -362,7 +366,7 @@ def _serialize_user(user: str) -> dict[str, Any]:
 def _serialize_short_summary(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row.get("name"),
-        "owner": row.get("owner"),
+        "owner": public_account_id_for_user(row.get("owner")),
         "caption": row.get("caption") or "",
         "content_mode": row.get("content_mode"),
         "status": row.get("status"),

@@ -234,7 +234,6 @@ def create_short_impl(**kwargs):
             enqueue=True,
         )
 
-        frappe.db.commit()
 
         return ok(
             "Short created and queued for processing.",
@@ -249,11 +248,9 @@ def create_short_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "create_short failed")
-        frappe.db.rollback()
+        frappe.log_error("Shorts operation failed.", "create_short failed")
         return fail("Failed to create short.", error="INTERNAL_ERROR")
 
 
@@ -387,7 +384,6 @@ def update_short_metadata_impl(**kwargs):
             was_visible=was_visible,
         )
 
-        frappe.db.commit()
 
         if sound_id:
             enqueue_short_audio_reprocess(doc.name)
@@ -411,10 +407,8 @@ def update_short_metadata_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "update_short_metadata failed")
-        frappe.db.rollback()
+        frappe.log_error("Shorts operation failed.", "update_short_metadata failed")
         return fail("Failed to update short", error="INTERNAL_ERROR")

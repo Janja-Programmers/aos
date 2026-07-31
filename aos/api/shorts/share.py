@@ -8,12 +8,14 @@ Handles:
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 import frappe
 from frappe.utils import get_url, now_datetime
 
 from aos.api.shared.auth import require_login, current_user
+from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.blocking import ensure_not_blocked
 from aos.api.shared.formatters import humanize_count
 from aos.api.shared.rate_limit import rate_limit, request_ip
@@ -21,6 +23,8 @@ from aos.api.shared.responses import ok, fail
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
 from aos.services.notification_service import NotificationService
+from aos.services.shorts.analytics import event_key
+from aos.services.shorts.repository import ShortsRepository
 
 from aos.api.chat.message import (
     _fetch_ads_bulk,
@@ -75,6 +79,8 @@ def _get_short_for_share(short_id: str, *, viewer: str | None):
             "audience",
             "caption",
             "thumbnail_url",
+            "playback_url",
+            "processed_file_url",
         ],
         as_dict=True,
     )
@@ -105,32 +111,38 @@ def _increment_share_count(
     session_id: str | None,
     channel: str,
     conversation_id: str | None = None,
+    client_event_id: object | None = None,
 ) -> int:
-    frappe.db.sql(
-        """
-        UPDATE `tabAOS Short`
-        SET share_count = share_count + 1
-        WHERE name = %s
-        """,
-        (short_id,),
-    )
 
     metadata: dict[str, Any] = {"channel": channel}
     if conversation_id:
         metadata["conversation_id"] = conversation_id
 
-    frappe.get_doc(
-        {
-            "doctype": "AOS Short Event",
-            "short": short_id,
-            "user": user,
-            "session_id": None if user else session_id,
-            "event_type": "share",
-            "source": channel,
-            "metadata": json.dumps(metadata),
-        }
-    ).insert(ignore_permissions=True)
-
+    actor = f"user:{user}" if user else f"session:{session_id}"
+    dedupe_id = str(client_event_id or f"bucket:{int(time.time() // 30)}")[:140]
+    counted = True
+    try:
+        frappe.get_doc(
+            {
+                "doctype": "AOS Short Event",
+                "short": short_id,
+                "user": user,
+                "session_id": None if user else session_id,
+                "event_type": "share",
+                "source": channel,
+                "metadata": json.dumps(metadata),
+                "event_key": event_key(
+                    event_type="share", short_id=short_id, actor_key=actor, client_event_id=dedupe_id
+                ),
+            }
+        ).insert(ignore_permissions=True)
+    except Exception as exc:
+        if is_duplicate_entry_error(exc):
+            counted = False
+        else:
+            raise
+    if counted:
+        ShortsRepository().increment_counter(short_id, "share_count", 1)
     return int(frappe.db.get_value("AOS Short", short_id, "share_count") or 0)
 
 
@@ -193,16 +205,19 @@ def create_short_share_link_impl(**kwargs):
             user=viewer,
             session_id=session_id,
             channel=channel,
+            client_event_id=kwargs.get("event_id"),
         )
 
-        frappe.db.commit()
-        frappe.enqueue(RANKING_TASK, short_id=short_id, queue="short")
+        frappe.enqueue(RANKING_TASK, short_id=short_id, queue="short", enqueue_after_commit=True)
 
         return ok(
             "Share link created.",
             data={
                 "short_id": short_id,
                 "share_url": _build_share_url(short_id),
+                "playable_url": short.get("playback_url") or short.get("processed_file_url") or "",
+                "thumbnail_url": short.get("thumbnail_url") or "",
+                "preview_text": _short_preview(short),
                 "channel": channel,
                 "metrics": {
                     "share_count": share_count,
@@ -212,12 +227,10 @@ def create_short_share_link_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "create_short_share_link failed")
-        frappe.db.rollback()
+        frappe.log_error("Shorts operation failed.", "create_short_share_link failed")
         return fail("Failed to create share link", error="INTERNAL_ERROR")
 
 
@@ -318,6 +331,7 @@ def share_short_to_chat_impl(**kwargs):
             session_id=None,
             channel="chat",
             conversation_id=conversation_id,
+            client_event_id=kwargs.get("event_id") or msg.name,
         )
 
         reply_map = _fetch_reply_messages_bulk([])
@@ -359,8 +373,7 @@ def share_short_to_chat_impl(**kwargs):
             participant_2=conv.participant_2,
         )
 
-        frappe.db.commit()
-        frappe.enqueue(RANKING_TASK, short_id=short_id, queue="short")
+        frappe.enqueue(RANKING_TASK, short_id=short_id, queue="short", enqueue_after_commit=True)
 
         return ok(
             "Short shared to chat.",
@@ -374,10 +387,8 @@ def share_short_to_chat_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "share_short_to_chat failed")
-        frappe.db.rollback()
+        frappe.log_error("Shorts operation failed.", "share_short_to_chat failed")
         return fail("Failed to share short to chat", error="INTERNAL_ERROR")

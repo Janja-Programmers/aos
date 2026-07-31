@@ -102,6 +102,12 @@ _ENV = {
 	"VIDEO_SERVICE_URL": "http://127.0.0.1:18130",
 	"VIDEO_SERVICE_SECRET": _test_dispatch_secret("video"),
 	"VIDEO_SERVICE_CALLBACK_SECRET": _TEST_CALLBACK_SECRET,
+	"MINIO_ENDPOINT": "127.0.0.1:19000",
+	"MINIO_ACCESS_KEY": "test-access-key",
+	"MINIO_SECRET_KEY": "test-secret-key",
+	"MINIO_PUBLIC_BASE_URL": "http://127.0.0.1:19100",
+	"AOS_MINIO_BUCKET": "shorts",
+	"AOS_MINIO_BASE_PATH": "shorts",
 	"MODERATION_SERVICE_URL": "http://127.0.0.1:18140",
 	"MODERATION_SERVICE_SECRET": _test_dispatch_secret("moderation"),
 	"MODERATION_SERVICE_CALLBACK_SECRET": _TEST_CALLBACK_SECRET,
@@ -156,13 +162,14 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 	def _success_payload(self, adapter: CallbackAdapter, fixture, outbox, token: str) -> dict[str, Any]:
 		base = self._base_payload(fixture, outbox, token)
 		if adapter.service_type == "video_processing":
+			prefix = f"shorts/processed/{fixture.job.short}/test-version"
 			return {
 				**base,
 				"status": "ready",
+				"job_generation": int(getattr(fixture.job, "generation", 1) or 1),
 				"duration_seconds": 4.0,
-				"playback_url": "https://files.invalid/master.m3u8",
-				"processed_file_url": "https://files.invalid/final.mp4",
-				"processed_file_key": "tests/final.mp4",
+				"processed_file_key": f"{prefix}/final.mp4",
+				"master_playlist_key": f"{prefix}/master.m3u8",
 			}
 		if adapter.service_type == "moderation":
 			return {

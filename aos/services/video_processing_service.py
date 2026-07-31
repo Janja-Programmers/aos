@@ -14,6 +14,8 @@ import requests
 from frappe.utils import now_datetime
 
 from aos.services.media.media_service import MediaService
+from aos.services.shorts.media import validate_object_key
+from aos.services.shorts.repository import ShortsRepository
 from aos.services.transactional_outbox import (
 	OutboxConflictError,
 	complete_outbox_without_callback,
@@ -110,6 +112,55 @@ def verify_signature(secret: str, payload: bytes, signature: str | None) -> bool
 	return hmac.compare_digest(build_signature(secret, payload), str(signature).strip())
 
 
+def _job_generation(short_id: str) -> int:
+	value = frappe.db.sql(
+		"SELECT COALESCE(MAX(generation), 0) FROM `tabAOS Video Processing Job` WHERE short = %s",
+		(short_id,),
+	)[0][0]
+	return max(1, int(value or 0) + 1)
+
+
+def _validated_processed_keys(short_id: str, payload: dict[str, Any]) -> tuple[str, str, str, str]:
+	config = get_minio_config()
+	base = f"{config.base_path}/processed/{short_id}/".strip("/") + "/"
+	processed_key = validate_object_key(
+		str(payload.get("processed_file_key") or ""), expected_prefix=base.rstrip("/")
+	)
+	manifest_key = validate_object_key(
+		str(payload.get("master_playlist_key") or ""), expected_prefix=base.rstrip("/")
+	)
+	if not processed_key.endswith("/final.mp4") or not manifest_key.endswith("/master.m3u8"):
+		raise VideoProcessingError("Processed output keys are invalid")
+	# The companion stores output after removing the configured root prefix.
+	root = f"{config.base_path.strip('/')}/"
+	stored_processed = processed_key[len(root):] if processed_key.startswith(root) else processed_key
+	stored_manifest = manifest_key[len(root):] if manifest_key.startswith(root) else manifest_key
+	base_url = config.public_base_url.rstrip("/")
+	if not base_url:
+		raise VideoProcessingError("Public media base URL is not configured")
+	return (
+		processed_key,
+		f"{base_url}/{config.bucket}/{stored_processed}",
+		manifest_key,
+		f"{base_url}/{config.bucket}/{stored_manifest}",
+	)
+
+
+def _validate_thumbnail(short_id: str, thumbnail: dict[str, Any]) -> dict[str, Any]:
+	config = get_minio_config()
+	prefix = f"shorts/thumbnails/{short_id}/"
+	if str(thumbnail.get("bucket") or "").strip("/") != config.public_bucket:
+		raise VideoProcessingError("Thumbnail bucket is invalid")
+	key = validate_object_key(str(thumbnail.get("object_key") or ""), expected_prefix=prefix.rstrip("/"))
+	if not key.lower().endswith((".jpg", ".jpeg", ".webp")):
+		raise VideoProcessingError("Thumbnail object is invalid")
+	clean = dict(thumbnail)
+	clean["bucket"] = config.public_bucket
+	clean["object_key"] = key
+	clean["url"] = f"{config.public_base_url.rstrip('/')}/{config.public_bucket}/{key}"
+	return clean
+
+
 def create_video_processing_job(
 	*,
 	short_id: str,
@@ -122,7 +173,15 @@ def create_video_processing_job(
 	if not short_id:
 		raise VideoProcessingError("Short id is required")
 
+	locked_short, active_jobs = ShortsRepository().lock_short_and_active_jobs(short_id)
+	if not locked_short:
+		raise VideoProcessingError("Short not found")
+	if active_jobs:
+		# Confirmation/retry is idempotent while one generation is active.
+		return frappe.get_doc("AOS Video Processing Job", active_jobs[-1]["name"])
 	short = frappe.get_doc("AOS Short", short_id)
+	if str(short.status or "").lower() == "deleted":
+		raise VideoProcessingError("Short cannot be processed")
 	raw_media_id = str(getattr(short, "raw_video_media", "") or "").strip()
 	if not raw_media_id:
 		raise VideoProcessingError("Short raw video media is missing")
@@ -163,6 +222,7 @@ def create_video_processing_job(
 			"reason": reason or "short_upload",
 			"attempt_count": 0,
 			"max_attempts": config.max_attempts,
+			"generation": _job_generation(short.name),
 			"idempotency_key": uuid.uuid4().hex,
 		}
 	)
@@ -210,12 +270,10 @@ def dispatch_video_processing_job(job_id: str) -> object:
 	job.last_error = None
 	job.dispatched_at = now_datetime()
 	job.save(ignore_permissions=True)
-	frappe.db.commit()
 
 	payload = build_video_job_payload(job)
 	job.request_payload = json.dumps(payload, default=str)
 	job.save(ignore_permissions=True)
-	frappe.db.commit()
 
 	body = _json_bytes(payload)
 	headers = {
@@ -244,25 +302,22 @@ def dispatch_video_processing_job(job_id: str) -> object:
 		job.service_job_id = str(data.get("service_job_id") or data.get("job_id") or job.service_job_id or "")
 		job.dispatched_at = now_datetime()
 		job.save(ignore_permissions=True)
-		frappe.db.commit()
 		return job
 	except OutboxConflictError as exc:
 		job.reload()
 		job.status = "Processing"
 		job.last_error = exc.error_code
 		job.save(ignore_permissions=True)
-		frappe.db.commit()
 		raise
 	except Exception as exc:
 		error_code = sanitized_dispatch_error(exc)
-		frappe.log_error(frappe.get_traceback(), f"Video dispatch failed: {error_code}")
+		frappe.log_error("Video processing dispatch failed.", f"Video dispatch failed: {error_code}")
 		job.reload()
 		# A transport error may occur after the companion accepted the stable job.
 		# Keep business work nonterminal; the outbox reconciles by stable identity.
 		job.status = "Processing"
 		job.last_error = error_code
 		job.save(ignore_permissions=True)
-		frappe.db.commit()
 		raise
 
 
@@ -279,6 +334,7 @@ def build_video_job_payload(job) -> dict[str, Any]:
 		"idempotency_key": job.idempotency_key,
 		"short_id": short.name,
 		"force": bool(int(getattr(job, "force_reprocess", 0) or 0)),
+		"job_generation": max(1, int(getattr(job, "generation", 1) or 1)),
 		"callback_url": get_video_processing_config().callback_url,
 		"raw_video": {
 			"media_id": raw.name,
@@ -351,6 +407,29 @@ def handle_video_processing_callback(payload: dict[str, Any]) -> object:
 		raise VideoProcessingError("Video processing job not found")
 
 	job = frappe.get_doc("AOS Video Processing Job", job_id)
+	payload_generation = max(1, int(payload.get("job_generation") or 1))
+	job_generation = max(1, int(getattr(job, "generation", 1) or 1))
+	if payload_generation != job_generation:
+		raise VideoProcessingError("Video callback generation does not match")
+	latest_generation = int(frappe.db.sql(
+		"SELECT COALESCE(MAX(generation), 0) FROM `tabAOS Video Processing Job` WHERE short = %s",
+		(job.short,),
+	)[0][0] or 0)
+	if job_generation < latest_generation:
+		job.status = "Cancelled"
+		job.active_key = None
+		job.completed_at = now_datetime()
+		job.last_error = "SUPERSEDED"
+		job.save(ignore_permissions=True)
+		return job
+	short_state = frappe.db.get_value("AOS Short", job.short, "status")
+	if str(short_state or "").lower() == "deleted":
+		job.status = "Cancelled"
+		job.active_key = None
+		job.completed_at = now_datetime()
+		job.last_error = "SHORT_DELETED"
+		job.save(ignore_permissions=True)
+		return job
 	incoming_status = str(payload.get("status") or "").strip().lower()
 	canonical_status = {"completed": "ready"}.get(incoming_status, incoming_status)
 	validation = validate_callback_idempotency(job, payload, callback_status=canonical_status)
@@ -376,7 +455,7 @@ def handle_video_processing_callback(payload: dict[str, Any]) -> object:
 		return mark_video_job_ready(job, payload)
 	if incoming_status == "failed":
 		return mark_video_job_failed(
-			job.name, str(payload.get("error") or "Video processing failed"), commit=False
+			job.name, str(payload.get("error") or "Video processing failed")
 		)
 
 	raise VideoProcessingError("Invalid video callback status")
@@ -390,15 +469,17 @@ def mark_video_job_ready(job, payload: dict[str, Any]) -> object:
 		raise VideoProcessingError("Processed video duration is invalid") from exc
 	if duration_seconds <= 0 or duration_seconds > get_max_short_duration_seconds():
 		raise VideoProcessingError("Processed video duration is outside the allowed limit")
+	processed_key, processed_url, _manifest_key, playback_url = _validated_processed_keys(short.name, payload)
 	thumbnail_media_id = None
 	thumbnail = payload.get("thumbnail") if isinstance(payload.get("thumbnail"), dict) else None
 	if thumbnail and thumbnail.get("bucket") and thumbnail.get("object_key"):
+		thumbnail = _validate_thumbnail(short.name, thumbnail)
 		thumbnail_media_id = _create_thumbnail_media_from_existing_object(short, thumbnail)
 
 	short.reload()
-	short.playback_url = str(payload.get("playback_url") or "")
-	short.processed_file_url = str(payload.get("processed_file_url") or "")
-	short.processed_file_key = str(payload.get("processed_file_key") or "")
+	short.playback_url = playback_url
+	short.processed_file_url = processed_url
+	short.processed_file_key = processed_key
 	short.duration_seconds = duration_seconds
 	if thumbnail_media_id and short.meta.has_field("thumbnail_media"):
 		short.thumbnail_media = thumbnail_media_id
@@ -422,7 +503,15 @@ def mark_video_job_ready(job, payload: dict[str, Any]) -> object:
 	job.processed_file_key = short.processed_file_key
 	job.thumbnail_media = thumbnail_media_id or getattr(short, "thumbnail_media", None)
 	job.duration_seconds = short.duration_seconds
-	job.response_payload = json.dumps(payload, default=str)
+	job.response_payload = json.dumps(
+		{
+			"status": "ready",
+			"duration_seconds": duration_seconds,
+			"sound_applied": bool(payload.get("sound_applied")),
+			"generation": max(1, int(getattr(job, "generation", 1) or 1)),
+		},
+		default=str,
+	)
 	job.save(ignore_permissions=True)
 	MediaService().mark_processing_completed(media_id=job.raw_video_media)
 	mark_outbox_callback(
@@ -461,10 +550,21 @@ def _create_thumbnail_media_from_existing_object(short, thumbnail: dict[str, Any
 
 
 def mark_video_job_failed(
-	job_id: str, error: str, *, dispatch_failure: bool = False, commit: bool = True
+	job_id: str, error: str, *, dispatch_failure: bool = False
 ) -> object:
 	job = frappe.get_doc("AOS Video Processing Job", job_id)
 	short = frappe.get_doc("AOS Short", job.short)
+	latest_generation = int(frappe.db.sql(
+		"SELECT COALESCE(MAX(generation), 0) FROM `tabAOS Video Processing Job` WHERE short = %s",
+		(job.short,),
+	)[0][0] or 0)
+	if max(1, int(getattr(job, "generation", 1) or 1)) < latest_generation or str(short.status or "").lower() == "deleted":
+		job.status = "Cancelled"
+		job.active_key = None
+		job.completed_at = now_datetime()
+		job.last_error = "SUPERSEDED"
+		job.save(ignore_permissions=True)
+		return job
 	force = bool(int(getattr(job, "force_reprocess", 0) or 0))
 	error_text = str(error or "Video processing failed")[:1000]
 
@@ -495,6 +595,4 @@ def mark_video_job_failed(
 			success=False,
 			error=error_text,
 		)
-	if commit:
-		frappe.db.commit()
 	return job

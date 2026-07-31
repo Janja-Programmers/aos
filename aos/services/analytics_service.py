@@ -63,6 +63,7 @@ class AnalyticsService:
                     "aos.api.shorts.tasks.update_short_score_task",
                     short_id=short_id,
                     queue="short",
+                    enqueue_after_commit=True,
                 )
             except Exception:
                 frappe.log_error(

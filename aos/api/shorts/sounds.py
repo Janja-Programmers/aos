@@ -9,6 +9,8 @@ from typing import Any
 
 import frappe
 
+from aos.services.accounts.identity import public_account_id_for_user
+
 from aos.api.shared.auth import require_login, current_user
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
@@ -137,8 +139,8 @@ def enqueue_short_audio_reprocess(short_id: str) -> None:
         )
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
-            f"Failed to enqueue short audio reprocess: {short_id}",
+            "Shorts operation failed.",
+            "Short audio reprocess enqueue failed",
         )
 
 
@@ -224,7 +226,7 @@ def serialize_sound_row(
         "favorite_count_display": humanize_count(row.get("favorite_count") or 0),
         "status": row.get("status"),
         "is_commercial_safe": bool(int(row.get("is_commercial_safe") or 0)),
-        "owner": row.get("owner"),
+        "owner": public_account_id_for_user(row.get("owner")),
         "created_from_short": row.get("created_from_short"),
         "viewer_state": {
             "is_favorited": bool(sound_id and sound_id in favorited_sound_ids),
@@ -289,7 +291,7 @@ def get_short_sound_map(short_ids: list[str]) -> dict[str, dict[str, Any]]:
                 "favorite_count": row.get("favorite_count"),
                 "status": row.get("status"),
                 "is_commercial_safe": row.get("is_commercial_safe"),
-                "owner": row.get("owner"),
+                "owner": public_account_id_for_user(row.get("owner")),
                 "created_from_short": row.get("created_from_short"),
             },
             viewer=None,
@@ -535,7 +537,6 @@ def create_sound_impl(**kwargs):
             attached_field="sound_media",
         )
 
-        frappe.db.commit()
 
         row = frappe.db.get_value(
             "AOS Sound",
@@ -561,11 +562,9 @@ def create_sound_impl(**kwargs):
         return ok("Sound created.", data={"sound": serialize_sound_row(row, viewer=user)})
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
     except Exception:
-        frappe.db.rollback()
-        frappe.log_error(frappe.get_traceback(), "create_sound failed")
+        frappe.log_error("Shorts operation failed.", "create_sound failed")
         return fail("Failed to create sound.", error="INTERNAL_ERROR")
 
 
@@ -635,7 +634,7 @@ def list_sounds_impl(**kwargs):
             },
         )
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "list_sounds failed")
+        frappe.log_error("Shorts operation failed.", "list_sounds failed")
         return fail("Failed to fetch sounds", error="INTERNAL_ERROR")
 
 
@@ -675,7 +674,7 @@ def search_sounds_impl(**kwargs):
         )
         return ok("Sounds fetched.", data={"items": _serialize_sound_rows(rows, viewer=viewer)})
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "search_sounds failed")
+        frappe.log_error("Shorts operation failed.", "search_sounds failed")
         return fail("Failed to search sounds", error="INTERNAL_ERROR")
 
 
@@ -713,7 +712,7 @@ def get_sound_impl(**kwargs):
         favorites = _load_favorite_sound_ids(viewer, [sound_id])
         return ok("Sound fetched.", data={"sound": serialize_sound_row(row, viewer=viewer, favorited_sound_ids=favorites)})
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "get_sound failed")
+        frappe.log_error("Shorts operation failed.", "get_sound failed")
         return fail("Failed to fetch sound", error="INTERNAL_ERROR")
 
 
@@ -755,7 +754,6 @@ def favorite_sound_impl(**kwargs):
             favorited = True
             message = "Sound favorited."
 
-        frappe.db.commit()
         favorite_count = frappe.db.get_value("AOS Sound", sound_id, "favorite_count") or 0
 
         return ok(
@@ -771,11 +769,9 @@ def favorite_sound_impl(**kwargs):
             },
         )
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
     except Exception:
-        frappe.db.rollback()
-        frappe.log_error(frappe.get_traceback(), "favorite_sound failed")
+        frappe.log_error("Shorts operation failed.", "favorite_sound failed")
         return fail("Failed to toggle favorite sound", error="INTERNAL_ERROR")
 
 
@@ -832,7 +828,7 @@ def my_favorite_sounds_impl(**kwargs):
             },
         )
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "my_favorite_sounds failed")
+        frappe.log_error("Shorts operation failed.", "my_favorite_sounds failed")
         return fail("Failed to fetch favorite sounds", error="INTERNAL_ERROR")
 
 
@@ -908,7 +904,7 @@ def sound_shorts_impl(**kwargs):
             },
         )
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "sound_shorts failed")
+        frappe.log_error("Shorts operation failed.", "sound_shorts failed")
         return fail("Failed to fetch sound shorts", error="INTERNAL_ERROR")
 
 
@@ -951,7 +947,6 @@ def change_short_sound_impl(**kwargs):
             duration_ms=kwargs.get("sound_duration_ms") or kwargs.get("duration_ms"),
             volume=kwargs.get("sound_volume") if kwargs.get("sound_volume") is not None else kwargs.get("volume"),
         )
-        frappe.db.commit()
         enqueue_short_audio_reprocess(short_id)
         return ok(
             "Short sound updated.",
@@ -962,13 +957,11 @@ def change_short_sound_impl(**kwargs):
             },
         )
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
     except frappe.DoesNotExistError:
         return fail("Short not found.", error="NOT_FOUND")
     except Exception:
-        frappe.db.rollback()
-        frappe.log_error(frappe.get_traceback(), "change_short_sound failed")
+        frappe.log_error("Shorts operation failed.", "change_short_sound failed")
         return fail("Failed to change short sound", error="INTERNAL_ERROR")
 
 
@@ -990,7 +983,6 @@ def remove_short_sound_impl(**kwargs):
             return fail("Cannot remove sound from a deleted short.", error="VALIDATION_ERROR")
 
         remove_short_sound_link(short_id)
-        frappe.db.commit()
         enqueue_short_audio_reprocess(short_id)
         return ok(
             "Short sound removed.",
@@ -1003,6 +995,5 @@ def remove_short_sound_impl(**kwargs):
     except frappe.DoesNotExistError:
         return fail("Short not found.", error="NOT_FOUND")
     except Exception:
-        frappe.db.rollback()
-        frappe.log_error(frappe.get_traceback(), "remove_short_sound failed")
+        frappe.log_error("Shorts operation failed.", "remove_short_sound failed")
         return fail("Failed to remove short sound", error="INTERNAL_ERROR")

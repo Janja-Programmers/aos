@@ -9,6 +9,8 @@ Handles:
 
 from __future__ import annotations
 
+import time
+
 import frappe
 from aos.api.shared.auth import current_user
 from frappe.utils import now_datetime, getdate
@@ -34,6 +36,8 @@ from aos.api.shorts.utils import resolve_actor
 from aos.api.shorts.visibility import can_view_short
 from aos.api.shorts.activity import record_short_watch_activity
 from aos.services.analytics_pipeline_service import emit_analytics_event
+from aos.services.shorts.analytics import bounded_watch_ms, event_key
+from aos.services.shorts.repository import ShortsRepository
 
 
 # COMMON
@@ -79,6 +83,34 @@ def _short_view_identity_key(*, user: str | None, session_id: str | None) -> str
     return None
 
 
+def _insert_event_once(
+    *, short_id: str, event_type: str, user: str | None, session_id: str | None,
+    client_event_id: object | None, source: str | None = None, metadata: object | None = None,
+    bucket_seconds: int = 10,
+) -> bool:
+    actor = f"user:{user}" if user else f"session:{session_id}"
+    dedupe_id = str(client_event_id or f"bucket:{int(time.time() // max(1, bucket_seconds))}")[:140]
+    doc = frappe.get_doc({
+        "doctype": "AOS Short Event",
+        "short": short_id,
+        "user": user,
+        "session_id": None if user else session_id,
+        "event_type": event_type,
+        "source": source,
+        "metadata": metadata or {},
+        "event_key": event_key(
+            event_type=event_type, short_id=short_id, actor_key=actor, client_event_id=dedupe_id
+        ),
+    })
+    try:
+        doc.insert(ignore_permissions=True)
+        return True
+    except Exception as exc:
+        if is_duplicate_entry_error(exc):
+            return False
+        raise
+
+
 # TRACK IMPRESSION
 def track_impression_impl(**kwargs):
     rl = rate_limit(
@@ -105,32 +137,28 @@ def track_impression_impl(**kwargs):
     try:
         user, session_id = resolve_actor(session_id=session_id)
 
-        frappe.get_doc(
-            {
-                "doctype": "AOS Short Event",
-                "short": short_id,
-                "user": user,
-                "session_id": session_id,
-                "event_type": "impression",
-            }
-        ).insert(ignore_permissions=True)
+        created = _insert_event_once(
+            short_id=short_id, event_type="impression", user=user, session_id=session_id,
+            client_event_id=kwargs.get("event_id"), bucket_seconds=10,
+        )
+        if created:
+            ShortsRepository().increment_counter(short_id, "impression_count", 1)
 
-        frappe.db.commit()
-
-        try:
-            emit_analytics_event(
-                event_type="short_impression",
-                event_group="shorts",
-                user=user,
-                session_id=session_id,
-                target_doctype="AOS Short",
-                target_name=short_id,
-                route_type="short",
-                route_id=short_id,
-                source="shorts.track_impression",
-            )
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), "short impression analytics emit failed")
+        if created:
+            try:
+                emit_analytics_event(
+                    event_type="short_impression",
+                    event_group="shorts",
+                    user=user,
+                    session_id=session_id,
+                    target_doctype="AOS Short",
+                    target_name=short_id,
+                    route_type="short",
+                    route_id=short_id,
+                    source="shorts.track_impression",
+                )
+            except Exception:
+                frappe.log_error("Shorts operation failed.", "short impression analytics emit failed")
 
         return ok(
             "Impression tracked.",
@@ -138,8 +166,7 @@ def track_impression_impl(**kwargs):
         )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "track_impression failed")
-        frappe.db.rollback()
+        frappe.log_error("Shorts operation failed.", "track_impression failed")
         return fail("Failed to track impression", error="INTERNAL_ERROR")
 
 
@@ -172,6 +199,8 @@ def track_view_impl(**kwargs):
 
     try:
         user, session_id = resolve_actor(session_id=session_id)
+        duration_seconds = frappe.db.get_value("AOS Short", short_id, "duration_seconds") or 0
+        watch_ms = bounded_watch_ms(watch_ms, duration_seconds=duration_seconds)
 
         today = getdate()
 
@@ -239,28 +268,28 @@ def track_view_impl(**kwargs):
                 )
             except Exception:
                 frappe.log_error(
-                    frappe.get_traceback(),
+                    "Shorts operation failed.",
                     "record_short_watch_activity failed",
                 )
 
-        frappe.db.commit()
 
-        try:
-            emit_analytics_event(
-                event_type="short_view",
-                event_group="shorts",
-                user=user,
-                session_id=session_id,
-                target_doctype="AOS Short",
-                target_name=short_id,
-                route_type="short",
-                route_id=short_id,
-                source="shorts.track_view",
-                metrics={"watch_ms": watch_ms},
-                metadata={"qualified_candidate": should_update_ranking},
-            )
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), "short view analytics emit failed")
+        if should_update_ranking:
+            try:
+                emit_analytics_event(
+                    event_type="short_view",
+                    event_group="shorts",
+                    user=user,
+                    session_id=session_id,
+                    target_doctype="AOS Short",
+                    target_name=short_id,
+                    route_type="short",
+                    route_id=short_id,
+                    source="shorts.track_view",
+                    metrics={"watch_ms": watch_ms},
+                    metadata={"qualified_candidate": True},
+                )
+            except Exception:
+                frappe.log_error("Shorts operation failed.", "short view analytics emit failed")
 
         # TRIGGER RANKING (ASYNC)
         if should_update_ranking:
@@ -268,6 +297,7 @@ def track_view_impl(**kwargs):
                 "aos.api.shorts.tasks.update_short_score_task",
                 short_id=short_id,
                 queue="short",
+                enqueue_after_commit=True,
             )
 
         return ok(
@@ -276,7 +306,6 @@ def track_view_impl(**kwargs):
         )
 
     except Exception as ex:
-        frappe.db.rollback()
 
         if is_duplicate_entry_error(ex):
             try:
@@ -295,7 +324,6 @@ def track_view_impl(**kwargs):
                         doc.last_seen_at = now_datetime()
                         doc.save(ignore_permissions=True)
 
-                    frappe.db.commit()
 
                     return ok(
                         "View tracked.",
@@ -304,12 +332,11 @@ def track_view_impl(**kwargs):
 
             except Exception:
                 frappe.log_error(
-                    frappe.get_traceback(),
+                    "Shorts operation failed.",
                     "track_view duplicate recovery failed",
                 )
-                frappe.db.rollback()
 
-        frappe.log_error(frappe.get_traceback(), "track_view failed")
+        frappe.log_error("Shorts operation failed.", "track_view failed")
         return fail("Failed to track view", error="INTERNAL_ERROR")
 
 
@@ -340,52 +367,40 @@ def track_share_impl(**kwargs):
         user, session_id = resolve_actor(session_id=session_id)
         channel = str(kwargs.get("channel") or kwargs.get("source") or "").strip()
 
-        frappe.get_doc(
-            {
-                "doctype": "AOS Short Event",
-                "short": short_id,
-                "user": user,
-                "session_id": session_id,
-                "event_type": "share",
-                "source": channel,
-                "metadata": {"channel": channel} if channel else {},
-            }
-        ).insert(ignore_permissions=True)
-
-        frappe.db.sql(
-            """
-            UPDATE `tabAOS Short`
-            SET share_count = share_count + 1
-            WHERE name = %s
-            """,
-            (short_id,),
+        created = _insert_event_once(
+            short_id=short_id, event_type="share", user=user, session_id=session_id,
+            client_event_id=kwargs.get("event_id"), source=channel,
+            metadata={"channel": channel} if channel else {}, bucket_seconds=30,
         )
+        if created:
+            ShortsRepository().increment_counter(short_id, "share_count", 1)
 
-        frappe.db.commit()
-
-        try:
-            emit_analytics_event(
-                event_type="short_share",
-                event_group="shorts",
-                user=user,
-                session_id=session_id,
-                target_doctype="AOS Short",
-                target_name=short_id,
-                route_type="short",
-                route_id=short_id,
-                source="shorts.track_share",
-                metadata={"channel": channel},
-            )
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), "short share analytics emit failed")
+        if created:
+            try:
+                emit_analytics_event(
+                    event_type="short_share",
+                    event_group="shorts",
+                    user=user,
+                    session_id=session_id,
+                    target_doctype="AOS Short",
+                    target_name=short_id,
+                    route_type="short",
+                    route_id=short_id,
+                    source="shorts.track_share",
+                    metadata={"channel": channel},
+                )
+            except Exception:
+                frappe.log_error("Shorts operation failed.", "short share analytics emit failed")
 
         share_count = frappe.db.get_value("AOS Short", short_id, "share_count") or 0
 
-        frappe.enqueue(
-            "aos.api.shorts.tasks.update_short_score_task",
-            short_id=short_id,
-            queue="short",
-        )
+        if created:
+            frappe.enqueue(
+                "aos.api.shorts.tasks.update_short_score_task",
+                short_id=short_id,
+                queue="short",
+                enqueue_after_commit=True,
+            )
 
         return ok(
             "Share tracked.",
@@ -399,10 +414,8 @@ def track_share_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "track_share failed")
-        frappe.db.rollback()
+        frappe.log_error("Shorts operation failed.", "track_share failed")
         return fail("Failed to track share", error="INTERNAL_ERROR")

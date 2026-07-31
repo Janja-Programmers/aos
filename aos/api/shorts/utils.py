@@ -12,14 +12,19 @@ Do NOT place business logic here.
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
+import time
 from datetime import datetime
 from typing import Any
 
+import frappe
 from frappe.utils import cint, flt
 
 from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.sellers.identity import public_seller_id_for_name
+from aos.services.shorts.errors import ShortsCursorError
 
 from aos.api.shared.auth import current_user
 from aos.api.shared.sql_safety import require_dotted_sql_identifier
@@ -132,21 +137,62 @@ def default_comment_viewer_state() -> dict[str, bool]:
 
 
 # CURSOR HELPERS
+_CURSOR_MAX_LENGTH = 2048
+_CURSOR_TTL_SECONDS = 24 * 60 * 60
+
+
+def _cursor_secret() -> bytes:
+    config = {}
+    try:
+        config.update(dict(getattr(frappe.local, "conf", {}) or {}))
+    except Exception:
+        pass
+    if not config:
+        try:
+            config.update(dict(frappe.get_site_config() or {}))
+        except Exception:
+            pass
+    value = str(config.get("encryption_key") or config.get("db_password") or "").strip()
+    if not value:
+        raise ShortsCursorError("Shorts pagination is temporarily unavailable.")
+    return value.encode("utf-8")
+
+
 def encode_cursor(payload: dict[str, Any]) -> str:
-    raw = json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8")
-    return base64.urlsafe_b64encode(raw).decode("utf-8")
+    envelope = {
+        "v": 1,
+        "exp": int(time.time()) + _CURSOR_TTL_SECONDS,
+        "d": payload,
+    }
+    body = json.dumps(envelope, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    signature = hmac.new(_cursor_secret(), body, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(body + signature).decode("ascii").rstrip("=")
 
 
 def decode_cursor(cursor: str | None) -> dict[str, Any] | None:
-    if not cursor:
+    if cursor in (None, ""):
         return None
-
+    if not isinstance(cursor, str) or len(cursor) > _CURSOR_MAX_LENGTH:
+        raise ShortsCursorError()
     try:
-        raw = base64.urlsafe_b64decode(cursor.encode("utf-8"))
-        data = json.loads(raw.decode("utf-8"))
-        return data if isinstance(data, dict) else None
+        padded = cursor + "=" * (-len(cursor) % 4)
+        raw = base64.urlsafe_b64decode(padded.encode("ascii"))
+        if len(raw) <= 32:
+            raise ValueError
+        body, signature = raw[:-32], raw[-32:]
+        expected = hmac.new(_cursor_secret(), body, hashlib.sha256).digest()
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError
+        envelope = json.loads(body.decode("utf-8"))
+        if envelope.get("v") != 1 or not isinstance(envelope.get("d"), dict):
+            raise ValueError
+        if int(envelope.get("exp") or 0) < int(time.time()):
+            raise ValueError
+        return dict(envelope["d"])
+    except ShortsCursorError:
+        raise
     except Exception:
-        return None
+        raise ShortsCursorError() from None
 
 
 def build_time_id_cursor(*, created_on: Any, name: str) -> str:
@@ -190,10 +236,7 @@ def build_ranked_cursor(
     created_on: Any,
     name: str,
 ) -> str:
-    """
-    Cursor for feeds ordered by:
-    ranking_score DESC, creation DESC, name DESC
-    """
+    """Cursor for ranking_score DESC, creation DESC, name DESC."""
     return encode_cursor(
         {
             "ranking_score": flt(ranking_score or 0),
@@ -207,14 +250,11 @@ def parse_ranked_cursor(
     cursor: str | None,
 ) -> tuple[float | None, str | None, str | None]:
     data = decode_cursor(cursor) or {}
-
     ranking_score = data.get("ranking_score")
     created_on = data.get("created_on")
     name = data.get("name")
-
     if ranking_score is None or not created_on or not name:
         return None, None, None
-
     return flt(ranking_score), created_on, name
 
 
@@ -224,42 +264,23 @@ def build_ranked_cursor_where_clause(
     name_field: str,
     cursor: str | None,
 ) -> tuple[str, tuple]:
-    """
-    Keyset WHERE clause for feeds ordered by:
-    score_field DESC, created_field DESC, name_field DESC
-    """
     score_field = require_dotted_sql_identifier(score_field, label="cursor score field")
     created_field = require_dotted_sql_identifier(created_field, label="cursor created field")
     name_field = require_dotted_sql_identifier(name_field, label="cursor name field")
 
     ranking_score, created_on, name = parse_ranked_cursor(cursor)
-
     if ranking_score is None or not created_on or not name:
         return "", ()
 
+    score_expr = f"COALESCE({score_field}, 0)"
     clause = f"""
         AND (
-            {score_field} < %s
-            OR (
-                {score_field} = %s
-                AND {created_field} < %s
-            )
-            OR (
-                {score_field} = %s
-                AND {created_field} = %s
-                AND {name_field} < %s
-            )
+            {score_expr} < %s
+            OR ({score_expr} = %s AND {created_field} < %s)
+            OR ({score_expr} = %s AND {created_field} = %s AND {name_field} < %s)
         )
     """
-
-    return clause, (
-        ranking_score,
-        ranking_score,
-        created_on,
-        ranking_score,
-        created_on,
-        name,
-    )
+    return clause, (ranking_score, ranking_score, created_on, ranking_score, created_on, name)
 
 
 # SHORT SERIALIZATION HELPERS

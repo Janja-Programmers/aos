@@ -15,15 +15,36 @@ def settings():
 		output_base_path="shorts",
 		thumbnail_bucket="media",
 		thumbnail_base_path="thumbnails",
+		max_input_bytes=536870912,
+		max_width=4096,
+		max_height=4096,
+		max_pixels=16777216,
+		min_aspect_ratio=0.25,
+		max_aspect_ratio=4.0,
+		allowed_video_codecs=("h264", "hevc", "vp8", "vp9", "av1", "mpeg4"),
+		ffprobe_timeout_seconds=30,
+		ffmpeg_timeout_seconds=1800,
+		ffmpeg_threads=2,
+		environment="test",
+		callback_allowed_hosts=(),
+		callback_secret="test-secret",
+		callback_timeout_seconds=30,
 	)
 
 
 def payload():
 	return {
 		"job_id": "job-1",
-		"short_id": "SHORT-1",
+		"short_id": "SHORT-2026-00001",
 		"callback_url": "https://callback.invalid/video",
-		"raw_video": {"bucket": "raw", "object_key": "clip.mp4"},
+		"raw_video": {"bucket": "raw", "object_key": "clip.mp4", "size_bytes": 1024},
+		"output": {
+			"output_bucket": "shorts",
+			"output_base_path": "shorts/processed",
+			"thumbnail_bucket": "aos-public",
+			"thumbnail_base_path": "shorts/thumbnails",
+			"max_duration_seconds": 180,
+		},
 	}
 
 

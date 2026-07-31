@@ -1,6 +1,8 @@
 # Copyright (c) 2026, Africa Online Stores and contributors
 # For license information, please see license.txt
 
+import hashlib
+
 import frappe
 from frappe.model.document import Document
 
@@ -12,6 +14,7 @@ class AOSShortRepost(Document):
     def validate(self):
         self._validate_status()
         self._validate_short()
+        self._set_active_key()
         self._prevent_duplicate_active()
 
     def after_insert(self):
@@ -77,6 +80,13 @@ class AOSShortRepost(Document):
 
         if self.status not in {"active", "deleted"}:
             frappe.throw("Invalid repost status")
+
+    def _set_active_key(self):
+        if self.status == "active" and self.short and self.user:
+            material = f"{self.short}|{self.user}".encode("utf-8")
+            self.active_key = hashlib.sha256(material).hexdigest()
+        else:
+            self.active_key = None
 
     def _prevent_duplicate_active(self):
         if self.status != "active":

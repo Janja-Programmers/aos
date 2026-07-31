@@ -38,7 +38,9 @@ from aos.api.shorts.visibility import can_view_short
 from aos.api.shorts.mentions import get_short_mentions_map
 from aos.api.shorts.sounds import get_short_sound_map
 from aos.services.video_processing_service import create_video_processing_job
-from aos.services.accounts.identity import public_account_id_for_user
+from aos.services.media.media_service import MediaService
+from aos.services.shorts.repository import ShortsRepository
+from aos.services.accounts.identity import public_account_id_for_user, resolve_account_reference
 from aos.services.social.repository import SocialRepository
 from aos.services.social.serializers import relationship_map as social_relationship_map
 
@@ -347,7 +349,7 @@ def get_short_impl(**kwargs):
         return fail("Short not found.", error="NOT_FOUND")
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "get_short failed")
+        frappe.log_error("Shorts operation failed.", "get_short failed")
         return fail("Failed to fetch short", error="INTERNAL_ERROR")
 
 
@@ -431,7 +433,7 @@ def my_shorts_impl(**kwargs):
         )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "my_shorts failed")
+        frappe.log_error("Shorts operation failed.", "my_shorts failed")
         return fail("Failed to fetch my shorts", error="INTERNAL_ERROR")
 
 
@@ -453,14 +455,14 @@ def user_shorts_impl(**kwargs):
     if rl:
         return rl
 
-    target_user, err = require_id(
+    target_reference, err = require_id(
         kwargs.get("user") or kwargs.get("target_user"),
         "user",
     )
     if err:
         return err
-
-    if not frappe.db.exists("User", target_user):
+    target_user = resolve_account_reference(target_reference, allow_legacy=True)
+    if not target_user:
         return fail("User not found.", error="NOT_FOUND")
 
     viewer = _get_optional_viewer()
@@ -555,7 +557,7 @@ def user_shorts_impl(**kwargs):
         )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "user_shorts failed")
+        frappe.log_error("Shorts operation failed.", "user_shorts failed")
         return fail("Failed to fetch user shorts", error="INTERNAL_ERROR")
 
 
@@ -570,15 +572,45 @@ def delete_short_impl(**kwargs):
         return err
 
     try:
+        locked, active_jobs = ShortsRepository().lock_short_and_active_jobs(short_id)
+        if not locked:
+            return fail("Short not found.", error="NOT_FOUND")
         doc = frappe.get_doc("AOS Short", short_id)
 
         if doc.owner != user:
             return fail("Not allowed.", error="FORBIDDEN")
+        if doc.status == "deleted":
+            return ok("Short deleted.", data={"short_id": short_id})
 
         doc.visibility_status = "deleted"
         doc.status = "deleted"
         doc.save(ignore_permissions=True)
-        frappe.db.commit()
+        job_names = tuple(row["name"] for row in active_jobs)
+        if job_names:
+            frappe.db.sql(
+                """UPDATE `tabAOS Video Processing Job`
+                   SET status='Cancelled', active_key=NULL, completed_at=NOW(), last_error='SHORT_DELETED'
+                   WHERE name IN %(names)s""",
+                {"names": job_names},
+            )
+            if frappe.db.table_exists("AOS Transactional Outbox"):
+                frappe.db.sql(
+                    """UPDATE `tabAOS Transactional Outbox`
+                       SET status='Cancelled', completed_at=NOW(), last_error='SHORT_DELETED'
+                       WHERE job_doctype='AOS Video Processing Job' AND job_name IN %(names)s
+                         AND status NOT IN ('Completed','Completed With Failure','Failed','Dead Letter','Cancelled')""",
+                    {"names": job_names},
+                )
+        for media_id in {str(getattr(doc, "raw_video_media", "") or ""), str(getattr(doc, "thumbnail_media", "") or "")}:
+            if not media_id:
+                continue
+            try:
+                MediaService().release_media(
+                    media_id=media_id, user=user, attached_doctype="AOS Short",
+                    attached_name=doc.name, system=True,
+                )
+            except Exception:
+                frappe.log_error("Short media release failed.", "Shorts delete media release")
 
         return ok(
             "Short deleted.",
@@ -589,8 +621,7 @@ def delete_short_impl(**kwargs):
         return fail("Short not found.", error="NOT_FOUND")
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "delete_short failed")
-        frappe.db.rollback()
+        frappe.log_error("Shorts operation failed.", "delete_short failed")
         return fail("Failed to delete short", error="INTERNAL_ERROR")
 
 
@@ -605,22 +636,23 @@ def retry_processing_impl(**kwargs):
         return err
 
     try:
+        locked, active_jobs = ShortsRepository().lock_short_and_active_jobs(short_id)
+        if not locked:
+            return fail("Short not found.", error="NOT_FOUND")
         doc = frappe.get_doc("AOS Short", short_id)
 
         if doc.owner != user:
             return fail("Not allowed.", error="FORBIDDEN")
-
+        if active_jobs:
+            return ok(
+                "Processing already active.",
+                data={"short_id": short_id, "video_job_id": active_jobs[-1]["name"]},
+            )
         if doc.status != "failed":
             return fail(
                 "Only failed shorts can be retried.",
                 error="VALIDATION_ERROR",
             )
-
-        # Reset state
-        doc.status = "uploaded"
-        doc.processing_error = None
-        doc.save(ignore_permissions=True)
-        frappe.db.commit()
 
         video_job = create_video_processing_job(
             short_id=doc.name,
@@ -638,6 +670,5 @@ def retry_processing_impl(**kwargs):
         return fail("Short not found.", error="NOT_FOUND")
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "retry_processing failed")
-        frappe.db.rollback()
+        frappe.log_error("Shorts operation failed.", "retry_processing failed")
         return fail("Failed to retry processing", error="INTERNAL_ERROR")

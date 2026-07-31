@@ -1,0 +1,31 @@
+# Operations
+
+## Required configuration
+
+Configure MinIO credentials/base URL/buckets, video service URL and both request/callback secrets. In staging/production set `VIDEO_CALLBACK_ALLOWED_HOSTS` and HTTPS callback URLs. Review all `VIDEO_MAX_*`, timeout and FFmpeg thread limits before enabling workers.
+
+## Scheduled work
+
+Hourly: ranking and daily-metric aggregation. Daily: `aos.tasks.shorts.maintain_short_integrity`, plus canonical Media and external-service cleanup.
+
+## Observability
+
+The `aos.shorts` logger records operation category, outcome, bounded reason and numeric metrics only. Never add account/Short IDs, keys, URLs, captions, comments, searches, cursors, tokens or signed URLs to these logs. Companion logs report failure categories rather than FFmpeg paths/output.
+
+## Staging commands
+
+```bash
+bench --site <site> backup --with-files
+bench --site <site> migrate
+bench --site <site> clear-cache
+bench restart
+bench --site <site> run-tests --app aos --module aos.api.shorts
+bench --site <site> run-tests --app aos --module aos.tests.test_dynamic_sql_safety
+bench --site <site> run-tests --app aos
+pytest infra/video-processing
+pytest infra/moderation
+pytest infra/notification-delivery
+pytest infra/analytics-pipeline
+```
+
+Verify upload, callback, ready playback, All/vibes parity, all audiences, both block directions, replayed events, delete/retry races and cleanup metrics.

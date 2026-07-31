@@ -19,6 +19,7 @@ def settings(**overrides):
 		"job_timeout_seconds": 600,
 		"result_ttl_seconds": 60,
 		"failure_ttl_seconds": 60,
+		"callback_allowed_hosts": (),
 	}
 	values.update(overrides)
 	return SimpleNamespace(**values)
@@ -27,9 +28,16 @@ def settings(**overrides):
 def payload() -> dict:
 	return {
 		"job_id": "job-1",
-		"short_id": "SHORT-1",
+		"short_id": "SHORT-2026-00001",
 		"callback_url": "https://callback.invalid/video",
-		"raw_video": {"bucket": "synthetic", "object_key": "clip.mp4"},
+		"raw_video": {"bucket": "synthetic", "object_key": "clip.mp4", "size_bytes": 1024},
+		"output": {
+			"output_bucket": "shorts",
+			"output_base_path": "shorts/processed",
+			"thumbnail_bucket": "aos-public",
+			"thumbnail_base_path": "shorts/thumbnails",
+			"max_duration_seconds": 180,
+		},
 	}
 
 

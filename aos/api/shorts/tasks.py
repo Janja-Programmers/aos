@@ -15,6 +15,6 @@ def update_short_score_task(short_id: str):
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
-            f"update_short_score_task failed for short {short_id}",
+            "Shorts operation failed.",
+            "Short score update task failed",
         )

@@ -1,6 +1,8 @@
 # Copyright (c) 2026, Africa Online Stores and contributors
 # For license information, please see license.txt
 
+import hashlib
+
 import frappe
 from frappe.model.document import Document
 from frappe.utils import now_datetime
@@ -14,6 +16,7 @@ class AOSShortReport(Document):
         self._validate_short()
         self._validate_reporter()
         self._validate_reason()
+        self._set_active_key()
         self._prevent_duplicate_active_report()
         self._sync_review_fields()
 
@@ -66,6 +69,13 @@ class AOSShortReport(Document):
 
         if not int(reason.is_active or 0):
             frappe.throw("Selected report reason is inactive")
+
+    def _set_active_key(self):
+        if self.status == "Reviewing" and self.short and self.reported_by:
+            material = f"{self.short}|{self.reported_by}".encode("utf-8")
+            self.active_key = hashlib.sha256(material).hexdigest()
+        else:
+            self.active_key = None
 
     def _prevent_duplicate_active_report(self):
         existing = frappe.db.get_value(

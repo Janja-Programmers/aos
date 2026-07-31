@@ -2,6 +2,8 @@
 # For license information, please see license.txt
 
 import frappe
+
+from aos.services.shorts.policy import can_comment
 from frappe.model.document import Document
 
 
@@ -54,7 +56,7 @@ class AOSShortComment(Document):
         short = frappe.db.get_value(
             "AOS Short",
             self.short,
-            ["status", "visibility_status"],
+            ["name", "owner", "status", "visibility_status", "approval_status", "audience", "allow_comments"],
             as_dict=True,
         )
 
@@ -66,6 +68,8 @@ class AOSShortComment(Document):
 
         if short.visibility_status != "visible":
             frappe.throw("Short is not visible")
+        if not can_comment(short, viewer=self.user):
+            frappe.throw("Commenting is not allowed")
 
     def _validate_body(self):
         if not self.comment:

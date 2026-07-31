@@ -8,10 +8,17 @@ Handles:
 """
 
 from __future__ import annotations
+
+import time
 from typing import Any
 
 import frappe
 
+from aos.services.shorts.analytics import event_key
+from aos.services.shorts.repository import ShortsRepository
+from aos.services.accounts.identity import resolve_account_reference
+
+from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
@@ -179,11 +186,10 @@ def toggle_save_short_impl(**kwargs):
             saved = False
             message = "Removed from saved shorts."
 
-        frappe.db.commit()
 
         save_count = frappe.db.get_value("AOS Short", short_id, "save_count") or 0
 
-        frappe.enqueue(RANKING_TASK, short_id=short_id, queue="short")
+        frappe.enqueue(RANKING_TASK, short_id=short_id, queue="short", enqueue_after_commit=True)
 
         return ok(
             message,
@@ -199,12 +205,10 @@ def toggle_save_short_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "toggle_save_short failed")
-        frappe.db.rollback()
+        frappe.log_error("Shorts operation failed.", "toggle_save_short failed")
         return fail("Failed to toggle save", error="INTERNAL_ERROR")
 
 
@@ -256,7 +260,7 @@ def saved_shorts_impl(**kwargs):
         )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "saved_shorts failed")
+        frappe.log_error("Shorts operation failed.", "saved_shorts failed")
         return fail("Failed to fetch saved shorts", error="INTERNAL_ERROR")
 
 
@@ -308,7 +312,7 @@ def liked_shorts_impl(**kwargs):
         )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "liked_shorts failed")
+        frappe.log_error("Shorts operation failed.", "liked_shorts failed")
         return fail("Failed to fetch liked shorts", error="INTERNAL_ERROR")
 
 
@@ -384,17 +388,11 @@ def download_short_impl(**kwargs):
             expiry_minutes=expiry_minutes,
         )
 
-        frappe.db.sql(
-            """
-            UPDATE `tabAOS Short`
-            SET download_count = download_count + 1
-            WHERE name = %s
-            """,
-            (short_id,),
-        )
-
         event_user = viewer
-        if event_user or session_id:
+        actor = f"user:{event_user}" if event_user else f"session:{session_id}"
+        dedupe_id = str(kwargs.get("event_id") or f"bucket:{int(time.time() // 30)}")[:140]
+        counted = True
+        try:
             frappe.get_doc(
                 {
                     "doctype": "AOS Short Event",
@@ -402,10 +400,18 @@ def download_short_impl(**kwargs):
                     "user": event_user,
                     "session_id": None if event_user else session_id,
                     "event_type": "download",
+                    "event_key": event_key(
+                        event_type="download", short_id=short_id, actor_key=actor, client_event_id=dedupe_id
+                    ),
                 }
             ).insert(ignore_permissions=True)
-
-        frappe.db.commit()
+        except Exception as exc:
+            if is_duplicate_entry_error(exc):
+                counted = False
+            else:
+                raise
+        if counted:
+            ShortsRepository().increment_counter(short_id, "download_count", 1)
 
         download_count = frappe.db.get_value("AOS Short", short_id, "download_count") or 0
 
@@ -414,7 +420,6 @@ def download_short_impl(**kwargs):
             data={
                 "short_id": short_id,
                 "download_url": download_url,
-                "download_file_key": download_file_key,
                 "expires_in_seconds": expiry_minutes * 60,
                 "metrics": {
                     "download_count": int(download_count),
@@ -424,12 +429,10 @@ def download_short_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "download_short failed")
-        frappe.db.rollback()
+        frappe.log_error("Shorts operation failed.", "download_short failed")
         return fail("Failed to generate download URL", error="INTERNAL_ERROR")
 
 
@@ -507,12 +510,11 @@ def toggle_repost_impl(**kwargs):
             reposted = True
             message = "Reposted."
 
-        frappe.db.commit()
 
         repost_count = frappe.db.get_value("AOS Short", short_id, "repost_count") or 0
         share_count = frappe.db.get_value("AOS Short", short_id, "share_count") or 0
 
-        frappe.enqueue(RANKING_TASK, short_id=short_id, queue="short")
+        frappe.enqueue(RANKING_TASK, short_id=short_id, queue="short", enqueue_after_commit=True)
 
         return ok(
             message,
@@ -530,12 +532,10 @@ def toggle_repost_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "toggle_repost failed")
-        frappe.db.rollback()
+        frappe.log_error("Shorts operation failed.", "toggle_repost failed")
         return fail("Failed to toggle repost", error="INTERNAL_ERROR")
 
 
@@ -549,7 +549,8 @@ def reposted_shorts_impl(**kwargs):
             return err
         target_user = user
 
-    if not frappe.db.exists("User", target_user):
+    target_user = resolve_account_reference(target_user, allow_legacy=True)
+    if not target_user:
         return fail("User not found.", error="NOT_FOUND")
 
     limit = validate_limit(
@@ -616,5 +617,5 @@ def reposted_shorts_impl(**kwargs):
         )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "reposted_shorts failed")
+        frappe.log_error("Shorts operation failed.", "reposted_shorts failed")
         return fail("Failed to fetch reposted shorts", error="INTERNAL_ERROR")

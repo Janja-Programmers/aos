@@ -30,3 +30,5 @@ aos.patches.v1_0.canonicalize_seller_operating_days
 aos.patches.v1_0.harden_maps_subsystem
 
 aos.patches.v1_0.harden_social_subsystem
+
+aos.patches.v1_0.harden_shorts_subsystem
