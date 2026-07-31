@@ -51,6 +51,7 @@ from .validators import (
     validate_active_view_session,
     validate_live_active,
     validate_live_exists,
+    validate_live_social_access,
     validate_view_identity,
 )
 
@@ -342,6 +343,10 @@ def track_join_impl(**kwargs):
         err = validate_live_active(
             live
         )
+        if err:
+            return err
+
+        err = validate_live_social_access(live=live, user=viewer)
         if err:
             return err
 

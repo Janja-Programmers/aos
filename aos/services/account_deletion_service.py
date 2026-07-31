@@ -19,6 +19,8 @@ from typing import Any
 import frappe
 from frappe.utils import now_datetime
 
+from aos.services.social.repository import SocialRepository
+
 
 ACCOUNT_DELETED_REASON = "Account deleted"
 
@@ -125,6 +127,14 @@ def cleanup_deleted_account_features(user: str) -> dict[str, int]:
     user = (user or "").strip()
     if not user:
         return {}
+
+    # Pair mutations lock User rows too. Holding the deleted account row for
+    # this transaction prevents a concurrent follow/block from crossing the
+    # cleanup boundary; mutation services revalidate lifecycle after waiting.
+    frappe.db.sql(
+        "SELECT name FROM `tabUser` WHERE name = %s FOR UPDATE",
+        (user,),
+    )
 
     now = now_datetime()
     sellers = _seller_names_for_user(user)
@@ -758,77 +768,89 @@ def _cleanup_review_account_data(*, user: str) -> dict[str, int]:
     }
 
 def _remove_social_graph(*, user: str) -> dict[str, int]:
-    if not _doctype_exists("AOS Follow"):
-        return {
-            "follow_rows_removed": 0,
-            "profile_follow_totals_recalculated": 0,
-        }
+    repository = SocialRepository()
+    removed = 0
+    recalculated = 0
+    batch_size = 250
 
-    rows = frappe.db.sql(
-        """
-        SELECT follower_user, following_user
-        FROM `tabAOS Follow`
-        WHERE follower_user = %s OR following_user = %s
-        """,
-        (user, user),
-        as_dict=True,
-    )
+    if _doctype_exists("AOS Follow"):
+        while True:
+            rows = frappe.db.sql(
+                """
+                SELECT name, follower_user, following_user
+                FROM `tabAOS Follow`
+                WHERE follower_user = %s OR following_user = %s
+                ORDER BY name ASC
+                LIMIT %s
+                """,
+                (user, user, batch_size),
+                as_dict=True,
+            )
+            if not rows:
+                break
 
-    affected_users: set[str] = {user}
-    for row in rows:
-        follower = row.get("follower_user")
-        following = row.get("following_user")
-        if follower:
-            affected_users.add(follower)
-        if following:
-            affected_users.add(following)
+            names = tuple(str(row.name) for row in rows if row.name)
+            if not names:
+                break
 
-    removed = _delete_counted(
-        "AOS Follow",
-        where_sql="follower_user = %s OR following_user = %s",
-        where_params=(user, user),
-    )
+            affected_users = {
+                str(value)
+                for row in rows
+                for value in (row.follower_user, row.following_user)
+                if value
+            }
+            frappe.db.sql(
+                "DELETE FROM `tabAOS Follow` WHERE name IN %(names)s",
+                {"names": names},
+            )
+            removed += len(names)
+            repository.sync_counters(affected_users)
+            recalculated += len(affected_users)
 
-    recalculated = _recalculate_profile_follow_totals(affected_users)
+        repository.sync_counters([user])
+        recalculated += 1
+
+    blocks_closed = 0
+    if _doctype_exists("AOS User Block"):
+        now = now_datetime()
+        while True:
+            block_names = frappe.db.sql(
+                """
+                SELECT name
+                FROM `tabAOS User Block`
+                WHERE status = 'Active'
+                  AND (blocker_user = %s OR blocked_user = %s)
+                ORDER BY name ASC
+                LIMIT %s
+                """,
+                (user, user, batch_size),
+                pluck=True,
+            )
+            if not block_names:
+                break
+
+            names = tuple(str(name) for name in block_names if name)
+            if not names:
+                break
+
+            frappe.db.sql(
+                """
+                UPDATE `tabAOS User Block`
+                SET status = 'Unblocked',
+                    unblocked_at = COALESCE(unblocked_at, %(now)s),
+                    active_pair_key = NULL,
+                    modified = %(now)s
+                WHERE name IN %(names)s
+                """,
+                {"now": now, "names": names},
+            )
+            blocks_closed += len(names)
 
     return {
         "follow_rows_removed": removed,
         "profile_follow_totals_recalculated": recalculated,
+        "active_social_blocks_closed": blocks_closed,
     }
-
-
-def _recalculate_profile_follow_totals(users: set[str]) -> int:
-    if not users or not _doctype_exists("AOS Profile"):
-        return 0
-
-    updated = 0
-
-    for user in users:
-        if not user or not frappe.db.exists("AOS Profile", user):
-            continue
-
-        total_followers = frappe.db.count(
-            "AOS Follow",
-            {"following_user": user},
-        )
-        total_following = frappe.db.count(
-            "AOS Follow",
-            {"follower_user": user},
-        )
-
-        frappe.db.set_value(
-            "AOS Profile",
-            user,
-            {
-                "total_followers": total_followers,
-                "total_following": total_following,
-            },
-            update_modified=False,
-        )
-
-        updated += 1
-
-    return updated
 
 
 def deactivate_account_features(user: str) -> dict[str, int]:

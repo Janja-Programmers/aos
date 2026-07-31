@@ -6,6 +6,7 @@ from frappe.model.document import Document
 from frappe.utils import now_datetime
 
 from aos.api.shared.account_status import is_account_deleted
+from aos.services.social.repository import SocialRepository
 
 
 ACTIVE_STATUS = "Active"
@@ -18,8 +19,14 @@ class AOSUserBlock(Document):
         self._set_defaults()
         self._validate_status()
         self._validate_users()
+        SocialRepository().lock_account_pair(user_a=self.blocker_user, user_b=self.blocked_user)
         self._sync_active_pair_key()
-        self._validate_unique_active_block()
+
+    def after_insert(self):
+        self._enforce_active_block_side_effects()
+
+    def on_update(self):
+        self._enforce_active_block_side_effects()
 
     def _set_defaults(self):
         if not self.status:
@@ -64,6 +71,11 @@ class AOSUserBlock(Document):
         if is_account_deleted(user):
             frappe.throw(f"{label} has been deleted.")
 
+        if self.status == ACTIVE_STATUS:
+            account_status = frappe.db.get_value("AOS Profile", user, "account_status") or "Active"
+            if account_status != "Active":
+                frappe.throw(f"{label} is unavailable.")
+
     def _sync_active_pair_key(self):
         """Populate DB-enforced active-only uniqueness key.
 
@@ -76,18 +88,12 @@ class AOSUserBlock(Document):
 
         self.active_pair_key = None
 
-    def _validate_unique_active_block(self):
-        if self.status != ACTIVE_STATUS:
+    def _enforce_active_block_side_effects(self):
+        if self.status != ACTIVE_STATUS or not self.blocker_user or not self.blocked_user:
             return
-
-        existing = frappe.db.exists(
-            "AOS User Block",
-            {
-                "blocker_user": self.blocker_user,
-                "blocked_user": self.blocked_user,
-                "status": ACTIVE_STATUS,
-            },
+        repository = SocialRepository()
+        repository.remove_follows_both_directions(
+            user_a=self.blocker_user,
+            user_b=self.blocked_user,
         )
-
-        if existing and existing != self.name:
-            frappe.throw("You have already blocked this user.")
+        repository.sync_counters({self.blocker_user, self.blocked_user})

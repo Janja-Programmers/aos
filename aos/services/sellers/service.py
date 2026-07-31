@@ -17,6 +17,8 @@ from aos.api.maps.validators import clamp_bbox_to_supported_area, is_supported_l
 from aos.api.shared.sql_safety import safe_like_contains
 from aos.api.social.relationship import build_relationship_status
 from aos.services.media.media_service import MediaService
+from aos.services.social.repository import SocialRepository
+from aos.services.social.serializers import relationship_map as social_relationship_map
 
 from .constants import (
     GET_ALLOWED_FIELDS,
@@ -584,72 +586,11 @@ class SellerService:
                 target: guest_relationship(target_user=(displays.get(target) or {}).get("user"))
                 for target in unique
             }
-        follows = frappe.db.sql(
-            """
-            SELECT follower_user, following_user
-            FROM `tabAOS Follow`
-            WHERE (follower_user = %(viewer)s AND following_user IN %(targets)s)
-               OR (following_user = %(viewer)s AND follower_user IN %(targets)s)
-            """,
-            {"viewer": viewer, "targets": tuple(unique)},
-            as_dict=True,
+        return social_relationship_map(
+            repository=SocialRepository(),
+            viewer=viewer,
+            targets=unique,
         )
-        following = {str(row.following_user) for row in follows if row.follower_user == viewer}
-        followed_by = {str(row.follower_user) for row in follows if row.following_user == viewer}
-        blocks = frappe.db.sql(
-            """
-            SELECT blocker_user, blocked_user
-            FROM `tabAOS User Block`
-            WHERE status = 'Active'
-              AND ((blocker_user = %(viewer)s AND blocked_user IN %(targets)s)
-                OR (blocked_user = %(viewer)s AND blocker_user IN %(targets)s))
-            """,
-            {"viewer": viewer, "targets": tuple(unique)},
-            as_dict=True,
-        )
-        blocked_by_me = {str(row.blocked_user) for row in blocks if row.blocker_user == viewer}
-        has_blocked_me = {str(row.blocker_user) for row in blocks if row.blocked_user == viewer}
-        result: dict[str, dict[str, Any]] = {}
-        for target in unique:
-            is_following = target in following
-            is_followed_by = target in followed_by
-            mine = target in blocked_by_me
-            theirs = target in has_blocked_me
-            if mine:
-                action = "Unblock"
-            elif theirs:
-                action = "Unavailable"
-            elif is_following and is_followed_by:
-                action = "Friends"
-            elif is_following:
-                action = "Following"
-            elif is_followed_by:
-                action = "Follow Back"
-            else:
-                action = "Follow"
-            status = (
-                "friends"
-                if is_following and is_followed_by
-                else "following"
-                if is_following
-                else "followed_by"
-                if is_followed_by
-                else "none"
-            )
-            result[target] = {
-                "target_user": (displays.get(target) or {}).get("user"),
-                "is_self": False,
-                "is_following": is_following,
-                "is_followed_by": is_followed_by,
-                "is_friend": is_following and is_followed_by,
-                "relationship_status": status,
-                "action_label": action,
-                "is_blocked_by_me": mine,
-                "has_blocked_me": theirs,
-                "is_blocked": mine or theirs,
-                "block_status": "blocked_by_me" if mine else "blocked_me" if theirs else "none",
-            }
-        return result
 
     @staticmethod
     def _geo_context(request: dict[str, Any]) -> dict[str, float] | None:

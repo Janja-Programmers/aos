@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Iterable
 
 import frappe
 
@@ -10,6 +10,7 @@ from aos.api.shared.formatters import humanize_count, to_non_negative_int
 from aos.services.localization_service import serialize_preference as serialize_localization_preference
 from aos.services.media.media_service import MediaService
 from aos.services.sellers.identity import public_seller_id_for_name
+from aos.services.social.repository import SocialRepository
 from aos.services.user_preference_service import get_user_preference, is_country_locked
 
 from .constants import ACCOUNT_STATUS_ACTIVE
@@ -72,19 +73,7 @@ def _display_name(profile: Any, user_row: Any, *, masked: bool = False) -> str:
 
 
 def _friends_count(user: str) -> int:
-    rows = frappe.db.sql(
-        """
-        SELECT COUNT(*) AS count
-        FROM `tabAOS Follow` a
-        INNER JOIN `tabAOS Follow` b
-          ON b.follower_user = a.following_user
-         AND b.following_user = a.follower_user
-        WHERE a.follower_user = %s
-        """,
-        (user,),
-        as_dict=True,
-    )
-    return to_non_negative_int(rows[0].get("count") if rows else 0)
+    return SocialRepository().friends_count(user=user)
 
 
 def _counts(user: str, profile: Any, *, hidden: bool) -> dict[str, Any]:
@@ -148,19 +137,74 @@ def verification_summary(user: str) -> dict[str, Any]:
 
 
 def serialize_internal_identity(user: str) -> dict[str, Any]:
-    profile = _profile(user)
-    user_row = _user(user)
-    status = _get(profile, "account_status", ACCOUNT_STATUS_ACTIVE) or ACCOUNT_STATUS_ACTIVE
-    hidden = bool(int(_get(profile, "is_deleted", 0) or 0)) or status == "Deleted"
-    return {
+    return serialize_internal_identity_map([user]).get(user) or {
         "internal_user": user,
         "account_id": public_account_id_for_user(user),
-        "display_name": _display_name(profile, user_row, masked=hidden),
-        "avatar": None if hidden else _avatar_url(profile, user_row),
-        "account_status": status,
-        "is_deleted": hidden,
-        "is_deactivated": status == "Deactivated",
+        "display_name": "AOS User",
+        "avatar": None,
+        "account_status": ACCOUNT_STATUS_ACTIVE,
+        "is_deleted": False,
+        "is_deactivated": True,
     }
+
+
+def serialize_internal_identity_map(users: Iterable[str]) -> dict[str, dict[str, Any]]:
+    """Resolve public identity primitives with bounded database/media reads."""
+    unique = sorted({str(user).strip() for user in users if user})
+    if not unique:
+        return {}
+    rows = frappe.db.sql(
+        """
+        SELECT u.name AS user, u.full_name, u.first_name, u.user_image,
+               COALESCE(u.enabled, 0) AS enabled,
+               p.public_id, p.display_name, p.profile_image_media,
+               COALESCE(NULLIF(p.account_status, ''), %(active)s) AS account_status,
+               COALESCE(p.is_deleted, 0) AS is_deleted
+        FROM `tabUser` u
+        LEFT JOIN `tabAOS Profile` p ON p.user = u.name
+        WHERE u.name IN %(users)s
+        """,
+        {"users": tuple(unique), "active": ACCOUNT_STATUS_ACTIVE},
+        as_dict=True,
+    )
+    by_user = {str(row.user): row for row in rows}
+    media_ids = [str(row.profile_image_media) for row in rows if row.profile_image_media]
+    try:
+        media_urls = MediaService().get_public_url_map(media_ids)
+    except Exception:
+        media_urls = {}
+
+    result: dict[str, dict[str, Any]] = {}
+    for user in unique:
+        row = by_user.get(user)
+        if not row:
+            result[user] = {
+                "internal_user": user,
+                "account_id": public_account_id_for_user(user),
+                "display_name": "AOS User",
+                "avatar": None,
+                "account_status": ACCOUNT_STATUS_ACTIVE,
+                "is_deleted": False,
+                "is_deactivated": True,
+            }
+            continue
+        status = str(row.account_status or ACCOUNT_STATUS_ACTIVE)
+        deleted = bool(int(row.is_deleted or 0)) or status == "Deleted"
+        deactivated = int(row.enabled or 0) != 1 or status == "Deactivated"
+        display_name = "Deleted User" if deleted else str(
+            row.display_name or row.full_name or row.first_name or "AOS User"
+        ).strip()
+        media_id = str(row.profile_image_media or "")
+        result[user] = {
+            "internal_user": user,
+            "account_id": str(row.public_id or "") or public_account_id_for_user(user),
+            "display_name": display_name or "AOS User",
+            "avatar": None if deleted else (media_urls.get(media_id) or row.user_image or None),
+            "account_status": status,
+            "is_deleted": deleted,
+            "is_deactivated": deactivated,
+        }
+    return result
 
 
 def serialize_public_profile(user: str, *, relationship: dict[str, Any] | None = None) -> dict[str, Any]:

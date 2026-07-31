@@ -31,6 +31,7 @@ class AccountProfileService:
         if not user:
             raise AccountNotFoundError("Account not found.")
         self._assert_profile_exists(user)
+        self._assert_public_profile_available(user)
         if viewer and viewer != user:
             block = get_block_status(current_user=viewer, target_user=user)
             if block.get("has_blocked_me") or block.get("is_blocked_by_me"):
@@ -111,6 +112,19 @@ class AccountProfileService:
 
     def remove_avatar(self, *, user: str) -> dict[str, Any]:
         return self.update_profile(user=user, payload={"remove_avatar": True})
+
+    @staticmethod
+    def _assert_public_profile_available(user: str) -> None:
+        row = frappe.db.get_value(
+            "AOS Profile",
+            user,
+            ["account_status", "is_deleted"],
+            as_dict=True,
+        ) or {}
+        enabled = frappe.db.get_value("User", user, "enabled")
+        status = str(row.get("account_status") or "Active")
+        if int(enabled or 0) != 1 or status != "Active" or int(row.get("is_deleted") or 0):
+            raise AccountNotFoundError("Account not found.")
 
     @staticmethod
     def _assert_profile_exists(user: str) -> None:

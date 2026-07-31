@@ -16,6 +16,7 @@ from __future__ import annotations
 import frappe
 from frappe.utils import get_datetime, now_datetime
 
+from aos.api.shared.blocking import is_blocked_between
 from aos.api.shared.responses import fail
 
 from .constants import (
@@ -236,6 +237,22 @@ def validate_live_active(
             error="INVALID_STATE",
         )
 
+    return None
+
+
+def validate_live_social_access(
+    *,
+    live,
+    user: str | None,
+):
+    """Hide a host/live relationship when either account has blocked the other."""
+    if not is_authenticated_user(user) or live.host_user == user:
+        return None
+    if is_blocked_between(user, live.host_user):
+        return fail(
+            "Live stream not found.",
+            error="NOT_FOUND",
+        )
     return None
 
 
@@ -462,6 +479,10 @@ def validate_live_participant_session(
     if live.host_user == user:
         return None
 
+    blocked_err = validate_live_social_access(live=live, user=user)
+    if blocked_err:
+        return blocked_err
+
     session_id = normalize_session_id(
         session_id
     )
@@ -542,6 +563,10 @@ def validate_user_is_active_viewer(
             "The live host cannot be a co-host candidate.",
             error="VALIDATION_ERROR",
         )
+
+    blocked_err = validate_live_social_access(live=live, user=user)
+    if blocked_err:
+        return None, blocked_err
 
     _, err = get_enabled_user_row(
         user

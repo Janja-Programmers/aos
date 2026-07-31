@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import frappe
 
-from aos.services.notification_delivery_service import create_notification_delivery_job
 from aos.api.shared.user_display import get_user_display
+from aos.services.accounts.identity import public_account_id_for_user
+from aos.services.notification_delivery_service import create_notification_delivery_job
+from aos.services.social.constants import MAX_SOCIAL_EVENT_FANOUT
+from aos.services.social.repository import SocialRepository
 
 
 class NotificationService:
@@ -338,7 +341,7 @@ class NotificationService:
             title="New Follower",
             body=f"{follower_name} started following you",
             actor=follower,
-            payload={"follower": follower},
+            payload={"follower": public_account_id_for_user(follower)},
             event="aos_follow",
         )
 
@@ -497,16 +500,16 @@ class NotificationService:
         if not actor or not short_id:
             return None
 
-        followers = frappe.get_all(
-            "AOS Follow",
-            filters={"following_user": actor},
-            pluck="follower_user",
+        followers = SocialRepository().list_active_followers_for_event(
+            target=actor,
+            limit=MAX_SOCIAL_EVENT_FANOUT,
         )
 
         if not followers:
             return None
 
         actor_name = cls._display_name(actor)
+        actor_public_id = public_account_id_for_user(actor)
 
         title = "New Short 🎬"
         body = f"{actor_name} posted a new short"
@@ -523,7 +526,7 @@ class NotificationService:
                 actor=actor,
                 payload={
                     "short_id": short_id,
-                    "actor": actor,
+                    "actor": actor_public_id,
                 },
                 event="aos_new_short",
             )
@@ -545,6 +548,7 @@ class NotificationService:
         `actor` should be the user who liked the short.
         """
         actor_name = cls._display_name(actor)
+        actor_public_id = public_account_id_for_user(actor)
 
         return cls.notify(
             user=user,
@@ -554,7 +558,7 @@ class NotificationService:
             actor=actor,
             payload={
                 "short_id": short_id,
-                "actor": actor,
+                "actor": actor_public_id,
             },
             event="aos_short_like",
         )
@@ -576,6 +580,7 @@ class NotificationService:
         """
         preview = (content or "").strip()
         actor_name = cls._display_name(actor)
+        actor_public_id = public_account_id_for_user(actor)
 
         return cls.notify(
             user=user,
@@ -589,7 +594,7 @@ class NotificationService:
             actor=actor,
             payload={
                 "short_id": short_id,
-                "actor": actor,
+                "actor": actor_public_id,
                 "content": preview,
             },
             event="aos_short_comment",
@@ -607,10 +612,11 @@ class NotificationService:
     ):
         """Notify a user that they were mentioned in a short caption/comment."""
         actor_name = cls._display_name(actor)
+        actor_public_id = public_account_id_for_user(actor)
 
         payload = {
             "short_id": short_id,
-            "actor": actor,
+            "actor": actor_public_id,
             "source_type": source_type,
         }
 
@@ -647,10 +653,11 @@ class NotificationService:
         """
         preview = (content or "").strip()
         actor_name = cls._display_name(actor)
+        actor_public_id = public_account_id_for_user(actor)
 
         payload = {
             "comment_id": comment_id,
-            "actor": actor,
+            "actor": actor_public_id,
             "content": preview,
         }
 
@@ -688,6 +695,7 @@ class NotificationService:
         `host_user` is the live host / creator User ID.
         """
         host_name = cls._display_name(host_user)
+        host_public_id = public_account_id_for_user(host_user)
         live_title = (title or "").strip()
 
         return cls.notify(
@@ -702,7 +710,7 @@ class NotificationService:
             actor=host_user,
             payload={
                 "live_id": live_id,
-                "host_user": host_user,
+                "host_user": host_public_id,
             },
             event="aos_live_started",
         )

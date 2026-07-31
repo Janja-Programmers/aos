@@ -10,6 +10,7 @@ from typing import Any
 
 import frappe
 
+from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.activity_service import ActivityService
 
 LIVE_STREAM_DOCTYPE = "AOS Live Stream"
@@ -113,7 +114,7 @@ def _load_live_target(live_id: str | None) -> dict[str, Any] | None:
         "route_id": live.name,
         "metadata": {
             "live_id": live.name,
-            "host_user": live.host_user,
+            "host_user": public_account_id_for_user(live.host_user),
             "live_cover_media": getattr(live, "live_cover_media", None),
             "live_status": live.status,
             "is_active": bool(live.is_active),

@@ -18,6 +18,7 @@ from typing import Any
 
 from frappe.utils import cint, flt
 
+from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.sellers.identity import public_seller_id_for_name
 
 from aos.api.shared.auth import current_user
@@ -90,13 +91,21 @@ def default_short_viewer_state(
         "is_reposted": False,
 
         # Relationship state
-        "target_user": target_user,
+        "target_user": public_account_id_for_user(target_user),
         "is_self": False,
         "is_following": False,
         "is_followed_by": False,
         "is_friend": False,
         "relationship_status": "none",
         "action_label": "Follow",
+        "is_blocked_by_me": False,
+        "has_blocked_me": False,
+        "is_blocked": False,
+        "block_status": "none",
+        "can_follow": False,
+        "can_message": False,
+        "can_call": False,
+        "can_view_profile": bool(target_user),
 
         # Ownership/actions
         "is_owner": False,

@@ -28,6 +28,8 @@ from collections.abc import Iterable
 import frappe
 
 from aos.api.shared.user_display import get_user_display
+from aos.services.social.constants import MAX_SOCIAL_EVENT_FANOUT
+from aos.services.social.repository import SocialRepository
 
 
 # REALTIME EVENT NAMES
@@ -159,15 +161,9 @@ def _get_followers(
     if not user:
         return []
 
-    return (
-        frappe.get_all(
-            "AOS Follow",
-            filters={
-                "following_user": user,
-            },
-            pluck="follower_user",
-        )
-        or []
+    return SocialRepository().list_active_followers_for_event(
+        target=user,
+        limit=MAX_SOCIAL_EVENT_FANOUT,
     )
 
 

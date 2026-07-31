@@ -42,6 +42,7 @@ from .validators import (
     validate_cohost_exists,
     validate_live_active,
     validate_live_exists,
+    validate_live_social_access,
 )
 
 
@@ -146,6 +147,10 @@ def _validate_token_session(
     """
     if live.host_user == user:
         return None
+
+    blocked_err = validate_live_social_access(live=live, user=user)
+    if blocked_err:
+        return blocked_err
 
     if not session_id:
         return fail(

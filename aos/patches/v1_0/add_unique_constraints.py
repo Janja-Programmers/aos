@@ -7,6 +7,9 @@ import frappe
 from frappe.utils import now_datetime
 
 
+_SOCIAL_BATCH = 250
+
+
 BASE_UNIQUE_CONSTRAINTS = [
     {
         "doctype": "AOS Follow",
@@ -87,6 +90,7 @@ UNIQUE_CONSTRAINTS = [
 
 
 def execute():
+    _dedupe_social_follows()
     _dedupe_short_comment_likes()
     _dedupe_review_reactions()
     _normalize_user_block_active_keys()
@@ -103,6 +107,73 @@ def execute():
 
 
 # NORMALIZATION / DEDUPE
+
+def _dedupe_social_follows():
+    """Reconcile legacy duplicate follow edges before adding uniqueness."""
+    if not _doctype_exists("AOS Follow"):
+        return
+
+    while True:
+        groups = frappe.db.sql(
+            """
+            SELECT follower_user, following_user
+            FROM `tabAOS Follow`
+            WHERE follower_user IS NOT NULL AND follower_user != ''
+              AND following_user IS NOT NULL AND following_user != ''
+            GROUP BY follower_user, following_user
+            HAVING COUNT(*) > 1
+            ORDER BY follower_user, following_user
+            LIMIT 100
+            """,
+            as_dict=True,
+        )
+        if not groups:
+            break
+
+        for group in groups:
+            keep = frappe.db.sql(
+                """
+                SELECT name FROM `tabAOS Follow`
+                WHERE follower_user = %s AND following_user = %s
+                ORDER BY creation ASC, name ASC
+                LIMIT 1
+                """,
+                (group.follower_user, group.following_user),
+                pluck=True,
+            )
+            keep_name = str(keep[0]) if keep else ""
+            while keep_name:
+                stale = frappe.db.sql(
+                    """
+                    SELECT name FROM `tabAOS Follow`
+                    WHERE follower_user = %s AND following_user = %s AND name != %s
+                    ORDER BY creation ASC, name ASC
+                    LIMIT %s
+                    """,
+                    (group.follower_user, group.following_user, keep_name, _SOCIAL_BATCH),
+                    pluck=True,
+                )
+                if not stale:
+                    break
+                frappe.db.sql(
+                    "DELETE FROM `tabAOS Follow` WHERE name IN %(names)s",
+                    {"names": tuple(stale)},
+                )
+
+            frappe.db.sql(
+                """
+                UPDATE `tabAOS Profile` p
+                SET total_followers = (
+                        SELECT COUNT(*) FROM `tabAOS Follow` f WHERE f.following_user = p.name
+                    ),
+                    total_following = (
+                        SELECT COUNT(*) FROM `tabAOS Follow` f WHERE f.follower_user = p.name
+                    )
+                WHERE p.name IN %(users)s
+                """,
+                {"users": (group.follower_user, group.following_user)},
+            )
+
 
 def _dedupe_short_comment_likes():
     affected_comments = _delete_duplicate_docs(
@@ -143,50 +214,83 @@ def _normalize_user_block_active_keys():
     if not _doctype_exists(doctype) or not _column_exists(doctype, "active_pair_key"):
         return
 
-    rows = frappe.db.sql(
-        """
-        SELECT blocker_user, blocked_user, GROUP_CONCAT(name ORDER BY modified DESC, creation DESC, name DESC) AS names
-        FROM `tabAOS User Block`
-        WHERE status = 'Active'
-          AND blocker_user IS NOT NULL
-          AND blocker_user != ''
-          AND blocked_user IS NOT NULL
-          AND blocked_user != ''
-        GROUP BY blocker_user, blocked_user
-        HAVING COUNT(*) > 1
-        """,
-        as_dict=True,
-    )
-
-    for row in rows:
-        names = _split_names(row.names)
-        stale_names = names[1:]
-        if not stale_names:
-            continue
-
-        frappe.db.sql(
+    while True:
+        groups = frappe.db.sql(
             """
-            UPDATE `tabAOS User Block`
-            SET status = 'Unblocked', unblocked_at = %(unblocked_at)s, active_pair_key = NULL
-            WHERE name IN %(names)s
+            SELECT blocker_user, blocked_user
+            FROM `tabAOS User Block`
+            WHERE status = 'Active'
+              AND blocker_user IS NOT NULL AND blocker_user != ''
+              AND blocked_user IS NOT NULL AND blocked_user != ''
+            GROUP BY blocker_user, blocked_user
+            HAVING COUNT(*) > 1
+            ORDER BY blocker_user, blocked_user
+            LIMIT 100
             """,
-            {"names": tuple(stale_names), "unblocked_at": now_datetime()},
+            as_dict=True,
         )
+        if not groups:
+            break
 
-    frappe.db.sql(
-        """
-        UPDATE `tabAOS User Block`
-        SET active_pair_key = CASE
-            WHEN status = 'Active'
-                 AND blocker_user IS NOT NULL
-                 AND blocker_user != ''
-                 AND blocked_user IS NOT NULL
-                 AND blocked_user != ''
-            THEN CONCAT(blocker_user, '|', blocked_user)
-            ELSE NULL
-        END
-        """
-    )
+        for group in groups:
+            keep = frappe.db.sql(
+                """
+                SELECT name FROM `tabAOS User Block`
+                WHERE blocker_user = %s AND blocked_user = %s AND status = 'Active'
+                ORDER BY modified DESC, creation DESC, name DESC
+                LIMIT 1
+                """,
+                (group.blocker_user, group.blocked_user),
+                pluck=True,
+            )
+            keep_name = str(keep[0]) if keep else ""
+            while keep_name:
+                stale = frappe.db.sql(
+                    """
+                    SELECT name FROM `tabAOS User Block`
+                    WHERE blocker_user = %s AND blocked_user = %s
+                      AND status = 'Active' AND name != %s
+                    ORDER BY modified DESC, creation DESC, name DESC
+                    LIMIT %s
+                    """,
+                    (group.blocker_user, group.blocked_user, keep_name, _SOCIAL_BATCH),
+                    pluck=True,
+                )
+                if not stale:
+                    break
+                frappe.db.sql(
+                    """
+                    UPDATE `tabAOS User Block`
+                    SET status = 'Unblocked', unblocked_at = %(now)s, active_pair_key = NULL
+                    WHERE name IN %(names)s
+                    """,
+                    {"names": tuple(stale), "now": now_datetime()},
+                )
+
+    start_after = ""
+    while True:
+        rows = frappe.db.sql(
+            """
+            SELECT name, blocker_user, blocked_user, status
+            FROM `tabAOS User Block`
+            WHERE name > %s
+            ORDER BY name
+            LIMIT %s
+            """,
+            (start_after, _SOCIAL_BATCH),
+            as_dict=True,
+        )
+        if not rows:
+            break
+
+        for row in rows:
+            key = (
+                f"{row.blocker_user}|{row.blocked_user}"
+                if row.status == "Active" and row.blocker_user and row.blocked_user
+                else None
+            )
+            frappe.db.set_value(doctype, row.name, "active_pair_key", key, update_modified=False)
+        start_after = rows[-1].name
 
 
 def _normalize_live_view_active_keys():

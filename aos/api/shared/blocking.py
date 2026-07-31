@@ -11,15 +11,12 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-import frappe
 
 from aos.api.shared.responses import fail
 from aos.services.accounts.identity import public_account_id_for_user
+from aos.services.social.repository import SocialRepository
+from aos.services.social.serializers import relationship_payload
 
-
-USER_BLOCK_DOCTYPE = "AOS User Block"
-BLOCK_STATUS_ACTIVE = "Active"
-BLOCK_STATUS_UNBLOCKED = "Unblocked"
 
 BLOCK_NONE = "none"
 BLOCKED_BY_ME = "blocked_by_me"
@@ -33,41 +30,51 @@ def normalize_user(user: Any) -> str | None:
 
 
 def get_block_status(*, current_user: str | None, target_user: str | None) -> dict[str, Any]:
-    """Return block state between current_user and target_user."""
+    """Return canonical block state without exposing internal account identity."""
     current_user = normalize_user(current_user)
     target_user = normalize_user(target_user)
 
-    if not current_user or not target_user or current_user == target_user:
+    if not target_user:
+        return _empty_block_status(target_user=None)
+    if not current_user:
         return _empty_block_status(target_user=target_user)
-
-    is_blocked_by_me = _active_block_exists(
-        blocker_user=current_user,
-        blocked_user=target_user,
-    )
-    has_blocked_me = _active_block_exists(
-        blocker_user=target_user,
-        blocked_user=current_user,
-    )
-
-    block_status = _resolve_block_status(
-        is_blocked_by_me=is_blocked_by_me,
-        has_blocked_me=has_blocked_me,
-    )
-
-    is_blocked = block_status != BLOCK_NONE
+    if current_user == target_user:
+        relation = relationship_payload(
+            target=target_user,
+            is_self=True,
+            outgoing=False,
+            incoming=False,
+            blocked_by_me=False,
+            blocked_me=False,
+        )
+    else:
+        outgoing, incoming, blocks = SocialRepository().relationship_sets(
+            viewer=current_user,
+            targets=[target_user],
+        )
+        blocked_by_me, blocked_me = blocks.get(target_user, (False, False))
+        relation = relationship_payload(
+            target=target_user,
+            is_self=False,
+            outgoing=target_user in outgoing,
+            incoming=target_user in incoming,
+            blocked_by_me=blocked_by_me,
+            blocked_me=blocked_me,
+        )
 
     return {
-        "target_user": public_account_id_for_user(target_user),
-        "is_blocked_by_me": is_blocked_by_me,
-        "has_blocked_me": has_blocked_me,
-        "is_blocked": is_blocked,
-        "block_status": block_status,
-        "can_follow": not is_blocked,
-        "can_message": not is_blocked,
-        "can_call": not is_blocked,
-        # If I blocked them, the frontend can still open a limited profile so I
-        # can unblock. If they blocked me, their profile should be unavailable.
-        "can_view_profile": not has_blocked_me,
+        key: relation[key]
+        for key in (
+            "target_user",
+            "is_blocked_by_me",
+            "has_blocked_me",
+            "is_blocked",
+            "block_status",
+            "can_follow",
+            "can_message",
+            "can_call",
+            "can_view_profile",
+        )
     }
 
 
@@ -100,12 +107,7 @@ def ensure_not_blocked(*, current_user: str | None, target_user: str | None, act
 
 
 def get_blocked_user_set(current_user: str | None, users: Iterable[str]) -> set[str]:
-    """Return users that current_user cannot interact with due to a block.
-
-    Includes both directions:
-      - current_user blocked returned user
-      - returned user blocked current_user
-    """
+    """Return users blocked in either direction using the canonical repository."""
     current_user = normalize_user(current_user)
     unique_users = sorted(
         {
@@ -114,40 +116,14 @@ def get_blocked_user_set(current_user: str | None, users: Iterable[str]) -> set[
             if normalized and normalized != current_user
         }
     )
-
     if not current_user or not unique_users:
         return set()
 
-    rows = frappe.db.sql(
-        f"""
-        SELECT blocker_user, blocked_user
-        FROM `tab{USER_BLOCK_DOCTYPE}`
-        WHERE status = %(status)s
-          AND (
-                (blocker_user = %(current_user)s AND blocked_user IN %(users)s)
-             OR (blocked_user = %(current_user)s AND blocker_user IN %(users)s)
-          )
-        """,
-        {
-            "status": BLOCK_STATUS_ACTIVE,
-            "current_user": current_user,
-            "users": tuple(unique_users),
-        },
-        as_dict=True,
+    _outgoing, _incoming, blocks = SocialRepository().relationship_sets(
+        viewer=current_user,
+        targets=unique_users,
     )
-
-    blocked: set[str] = set()
-
-    for row in rows:
-        blocker = normalize_user(row.blocker_user)
-        blocked_user = normalize_user(row.blocked_user)
-
-        if blocker == current_user and blocked_user:
-            blocked.add(blocked_user)
-        elif blocked_user == current_user and blocker:
-            blocked.add(blocker)
-
-    return blocked
+    return {user for user, state in blocks.items() if state[0] or state[1]}
 
 
 def filter_blocked_users(current_user: str | None, users: Iterable[str]) -> list[str]:
@@ -169,37 +145,11 @@ def _empty_block_status(*, target_user: str | None = None) -> dict[str, Any]:
         "has_blocked_me": False,
         "is_blocked": False,
         "block_status": BLOCK_NONE,
-        "can_follow": True,
-        "can_message": True,
-        "can_call": True,
-        "can_view_profile": True,
+        "can_follow": False,
+        "can_message": False,
+        "can_call": False,
+        "can_view_profile": bool(target_user),
     }
-
-
-def _active_block_exists(*, blocker_user: str, blocked_user: str) -> bool:
-    return bool(
-        frappe.db.exists(
-            USER_BLOCK_DOCTYPE,
-            {
-                "blocker_user": blocker_user,
-                "blocked_user": blocked_user,
-                "status": BLOCK_STATUS_ACTIVE,
-            },
-        )
-    )
-
-
-def _resolve_block_status(*, is_blocked_by_me: bool, has_blocked_me: bool) -> str:
-    if is_blocked_by_me and has_blocked_me:
-        return BLOCK_MUTUAL
-
-    if is_blocked_by_me:
-        return BLOCKED_BY_ME
-
-    if has_blocked_me:
-        return BLOCKED_ME
-
-    return BLOCK_NONE
 
 
 def _blocked_message(*, status: dict[str, Any], action: str) -> str:

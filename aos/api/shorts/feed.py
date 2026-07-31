@@ -38,7 +38,10 @@ from aos.api.shorts.utils import (
 from aos.api.shorts.visibility import can_view_short
 from aos.api.shorts.mentions import get_short_mentions_map
 from aos.api.shorts.sounds import get_short_sound_map
+from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.search_ranking_service import short_feed_candidates
+from aos.services.social.repository import SocialRepository
+from aos.services.social.serializers import relationship_map as social_relationship_map
 
 
 # COMMON
@@ -106,6 +109,13 @@ def _build_audience_where_clause(viewer: str | None) -> tuple[str, tuple]:
 
     return (
         """
+        AND NOT EXISTS (
+            SELECT 1
+            FROM `tabAOS User Block` social_block
+            WHERE social_block.status = 'Active'
+              AND ((social_block.blocker_user = %s AND social_block.blocked_user = s.owner)
+                OR (social_block.blocked_user = %s AND social_block.blocker_user = s.owner))
+        )
         AND (
             s.audience = %s
             OR s.owner = %s
@@ -142,6 +152,8 @@ def _build_audience_where_clause(viewer: str | None) -> tuple[str, tuple]:
         )
         """,
         (
+            viewer,
+            viewer,
             SHORT_AUDIENCE_EVERYONE,
             viewer,
             SHORT_AUDIENCE_FOLLOWERS,
@@ -234,132 +246,38 @@ def _load_reposted_short_ids(viewer: str | None, short_ids: list[str]) -> set[st
 
     return set(rows or [])
 
-def _load_followed_user_ids(
+def _load_relationship_map(
     viewer: str | None,
     target_users: list[str],
-) -> set[str]:
-    """
-    Batch-load users followed by the current viewer.
-
-    AOS Follow is user-to-user:
-    - follower_user = current viewer
-    - following_user = short.owner
-    """
+) -> dict[str, dict[str, Any]]:
+    """Batch-load block-aware canonical Social state for short creators."""
     if not viewer or not target_users:
-        return set()
+        return {}
 
-    rows = frappe.get_all(
-        "AOS Follow",
-        filters={
-            "follower_user": viewer,
-            "following_user": ["in", target_users],
-        },
-        pluck="following_user",
+    return social_relationship_map(
+        repository=SocialRepository(),
+        viewer=viewer,
+        targets=target_users,
     )
-
-    return set(rows or [])
-
-
-def _load_followed_by_user_ids(
-    viewer: str | None,
-    target_users: list[str],
-) -> set[str]:
-    """
-    Batch-load users who follow the current viewer.
-
-    AOS Follow is user-to-user:
-    - follower_user = short.owner
-    - following_user = current viewer
-
-    This lets the UI show:
-    - Follow Back
-    - Friends
-    """
-    if not viewer or not target_users:
-        return set()
-
-    rows = frappe.get_all(
-        "AOS Follow",
-        filters={
-            "follower_user": ["in", target_users],
-            "following_user": viewer,
-        },
-        pluck="follower_user",
-    )
-
-    return set(rows or [])
-
-
-def _build_relationship_payload(
-    *,
-    viewer: str | None,
-    target_user: str | None,
-    followed_user_ids: set[str],
-    followed_by_user_ids: set[str],
-) -> dict[str, Any]:
-    """
-    Build relationship state for a short creator.
-
-    Meaning:
-    - is_following: viewer follows creator
-    - is_followed_by: creator follows viewer
-    - is_friend: both follow each other
-    """
-
-    if not target_user:
-        return _guest_relationship_payload(target_user=None)
-
-    if not viewer:
-        return _guest_relationship_payload(target_user=target_user)
-
-    if viewer == target_user:
-        return {
-            "target_user": target_user,
-            "is_self": True,
-            "is_following": False,
-            "is_followed_by": False,
-            "is_friend": False,
-            "relationship_status": "none",
-            "action_label": "You",
-        }
-
-    is_following = target_user in followed_user_ids
-    is_followed_by = target_user in followed_by_user_ids
-    is_friend = is_following and is_followed_by
-
-    if is_friend:
-        relationship_status = "friends"
-        action_label = "Friends"
-    elif is_following:
-        relationship_status = "following"
-        action_label = "Following"
-    elif is_followed_by:
-        relationship_status = "followed_by"
-        action_label = "Follow Back"
-    else:
-        relationship_status = "none"
-        action_label = "Follow"
-
-    return {
-        "target_user": target_user,
-        "is_self": False,
-        "is_following": is_following,
-        "is_followed_by": is_followed_by,
-        "is_friend": is_friend,
-        "relationship_status": relationship_status,
-        "action_label": action_label,
-    }
 
 
 def _guest_relationship_payload(*, target_user: str | None) -> dict[str, Any]:
     return {
-        "target_user": target_user,
+        "target_user": public_account_id_for_user(target_user),
         "is_self": False,
         "is_following": False,
         "is_followed_by": False,
         "is_friend": False,
         "relationship_status": "none",
         "action_label": "Follow",
+        "is_blocked_by_me": False,
+        "has_blocked_me": False,
+        "is_blocked": False,
+        "block_status": "none",
+        "can_follow": False,
+        "can_message": False,
+        "can_call": False,
+        "can_view_profile": bool(target_user),
     }
 
 
@@ -370,8 +288,7 @@ def _build_viewer_state(
     liked_short_ids: set[str],
     saved_short_ids: set[str],
     reposted_short_ids: set[str],
-    followed_user_ids: set[str],
-    followed_by_user_ids: set[str],
+    relationships: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     """
     Build viewer_state for one short from preloaded sets.
@@ -387,11 +304,8 @@ def _build_viewer_state(
     is_logged_in = bool(viewer)
     is_owner = bool(viewer and owner and viewer == owner)
 
-    relationship = _build_relationship_payload(
-        viewer=viewer,
+    relationship = relationships.get(owner) or _guest_relationship_payload(
         target_user=owner,
-        followed_user_ids=followed_user_ids,
-        followed_by_user_ids=followed_by_user_ids,
     )
 
     return {
@@ -459,8 +373,7 @@ def _build_response(rows, limit: int, *, viewer: str | None = None):
         row["mentions"] = mention_map.get(short_id, [])
         row["sound"] = sound_map.get(short_id)
 
-    followed_user_ids = _load_followed_user_ids(viewer, owner_users)
-    followed_by_user_ids = _load_followed_by_user_ids(viewer, owner_users)
+    relationships = _load_relationship_map(viewer, owner_users)
 
     items = [
         serialize_short_row(
@@ -471,8 +384,7 @@ def _build_response(rows, limit: int, *, viewer: str | None = None):
                 liked_short_ids=liked_short_ids,
                 saved_short_ids=saved_short_ids,
                 reposted_short_ids=reposted_short_ids,
-                followed_user_ids=followed_user_ids,
-                followed_by_user_ids=followed_by_user_ids,
+                relationships=relationships,
             ),
         )
         for row in visible_rows

@@ -11,7 +11,8 @@
   "blocked_at",
   "unblocked_at",
   "section_break_znaf",
-  "reason"
+  "reason",
+  "active_pair_key"
  ],
  "fields": [
   {
@@ -75,7 +76,8 @@
    "hidden": 1,
    "read_only": 1,
    "label": "Active Pair Key",
-   "no_copy": 1
+   "no_copy": 1,
+   "length": 300
   }
  ],
  "grid_page_length": 50,

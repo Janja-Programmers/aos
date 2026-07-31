@@ -21,6 +21,8 @@ from typing import Any
 import frappe
 
 from aos.api.shared.auth import optional_active_user
+from aos.api.shared.blocking import is_blocked_between
+from aos.services.social.repository import SocialRepository
 from aos.api.shorts.constants import (
     DEFAULT_SHORT_AUDIENCE,
     SHORT_AUDIENCE_EVERYONE,
@@ -114,14 +116,12 @@ def is_following_user(*, follower_user: str, following_user: str) -> bool:
     if follower_user == following_user:
         return True
 
-    return bool(
-        frappe.db.exists(
-            "AOS Follow",
-            {
-                "follower_user": follower_user,
-                "following_user": following_user,
-            },
-        )
+    if is_blocked_between(follower_user, following_user):
+        return False
+
+    return SocialRepository().follow_exists(
+        follower=follower_user,
+        target=following_user,
     )
 
 
@@ -172,6 +172,11 @@ def can_view_short(short: Any, current_user: str | None = None) -> bool:
     # Owner can always view their own short.
     if current_user and current_user == owner:
         return True
+
+    # Blocking is stronger than public audience. This prevents public-feed,
+    # direct-link, saved, liked, and profile-tab leakage in either direction.
+    if current_user and is_blocked_between(current_user, owner):
+        return False
 
     if audience == SHORT_AUDIENCE_EVERYONE:
         return True

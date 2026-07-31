@@ -33,10 +33,13 @@ from typing import Any
 
 import frappe
 
-from aos.api.social.relationship import build_relationship_status
 from aos.api.shared.formatters import humanize_count
 from aos.api.shared.user_display import get_user_display as shared_get_user_display
 from aos.api.shared.user_display import get_user_display_map
+from aos.api.social.relationship import build_relationship_status
+from aos.services.accounts.identity import public_account_id_for_user
+from aos.services.social.repository import SocialRepository
+from aos.services.social.serializers import relationship_map as social_relationship_map
 
 
 LIVE_STATUS = "live"
@@ -1183,14 +1186,23 @@ def has_active_view_session(
 def guest_relationship_payload(
     host_user: str | None,
 ) -> dict:
+    available = bool(host_user)
     return {
-        "target_user": host_user,
+        "target_user": public_account_id_for_user(host_user),
         "is_self": False,
         "is_following": False,
         "is_followed_by": False,
         "is_friend": False,
         "relationship_status": "none",
         "action_label": "Follow",
+        "is_blocked_by_me": False,
+        "has_blocked_me": False,
+        "is_blocked": False,
+        "block_status": "none",
+        "can_follow": False,
+        "can_message": False,
+        "can_call": False,
+        "can_view_profile": available,
     }
 
 
@@ -1731,121 +1743,17 @@ def preload_relationships(
     viewer: str | None,
     target_users: list[str],
 ) -> dict[str, dict]:
-    """
-    Batch preload relationship state for Live list endpoints.
-    """
-    target_users = sorted(
-        {
-            user
-            for user in target_users
-            if user
-        }
+    """Batch preload canonical, block-aware relationship state for Live."""
+    targets = sorted({user for user in target_users if user})
+    if not targets:
+        return {}
+    if is_guest_user(viewer):
+        return {target: guest_relationship_payload(target) for target in targets}
+    return social_relationship_map(
+        repository=SocialRepository(),
+        viewer=str(viewer),
+        targets=targets,
     )
-
-    if (
-        is_guest_user(viewer)
-        or not target_users
-    ):
-        return {
-            target: (
-                guest_relationship_payload(
-                    target
-                )
-            )
-            for target in target_users
-        }
-
-    following_rows = frappe.get_all(
-        "AOS Follow",
-        filters={
-            "follower_user": viewer,
-            "following_user": [
-                "in",
-                target_users,
-            ],
-        },
-        fields=[
-            "following_user",
-        ],
-    )
-
-    followed_by_rows = frappe.get_all(
-        "AOS Follow",
-        filters={
-            "following_user": viewer,
-            "follower_user": [
-                "in",
-                target_users,
-            ],
-        },
-        fields=[
-            "follower_user",
-        ],
-    )
-
-    following = {
-        row.following_user
-        for row in following_rows
-    }
-
-    followed_by = {
-        row.follower_user
-        for row in followed_by_rows
-    }
-
-    result: dict[str, dict] = {}
-
-    for target in target_users:
-        is_self = (
-            target == viewer
-        )
-
-        is_following = (
-            target in following
-        )
-
-        is_followed_by = (
-            target in followed_by
-        )
-
-        is_friend = (
-            is_following
-            and is_followed_by
-        )
-
-        if is_self:
-            relationship_status = "self"
-            action_label = "You"
-
-        elif is_friend:
-            relationship_status = "friends"
-            action_label = "Friends"
-
-        elif is_following:
-            relationship_status = "following"
-            action_label = "Following"
-
-        elif is_followed_by:
-            relationship_status = "followed_by"
-            action_label = "Follow Back"
-
-        else:
-            relationship_status = "none"
-            action_label = "Follow"
-
-        result[target] = {
-            "target_user": target,
-            "is_self": is_self,
-            "is_following": is_following,
-            "is_followed_by": is_followed_by,
-            "is_friend": is_friend,
-            "relationship_status": (
-                relationship_status
-            ),
-            "action_label": action_label,
-        }
-
-    return result
 
 
 # JOINED-LIVE PRELOADING
@@ -1986,6 +1894,10 @@ def serialize_live_list(
             "host_user",
         )
 
+        relationship = relationships.get(host_user)
+        if relationship and relationship.get("is_blocked"):
+            continue
+
         items.append(
             serialize_live(
                 live,
@@ -1994,11 +1906,7 @@ def serialize_live_list(
                 preloaded_host=hosts.get(
                     host_user
                 ),
-                preloaded_relationship=(
-                    relationships.get(
-                        host_user
-                    )
-                ),
+                preloaded_relationship=relationship,
                 preloaded_has_joined=(
                     live_id
                     in joined_live_ids

@@ -12,6 +12,7 @@ import frappe
 
 from aos.api.shared.user_display import get_user_display
 from aos.services.activity_service import ActivityService
+from aos.services.social.observability import social_log
 
 USER_DOCTYPE = "User"
 USER_REPORT_DOCTYPE = "AOS User Report"
@@ -51,9 +52,16 @@ def _safe_record(action_name: str, fn, *args, **kwargs) -> str | bool | None:
     try:
         return fn(*args, **kwargs)
     except Exception:
+        operation = (
+            "search" if action_name == "record_user_search_activity"
+            else "block" if action_name == "record_block_user_activity"
+            else "toggle_follow" if action_name == "record_follow_user_activity"
+            else "relationship"
+        )
+        social_log(operation, outcome="failure", reason="internal")
         frappe.log_error(
-            frappe.get_traceback(),
-            f"AOS Activity Center Social Hook Failed: {action_name}",
+            "Social activity hook failed.",
+            "AOS Social Activity Hook Failed",
         )
         return None
 

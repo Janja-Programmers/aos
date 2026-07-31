@@ -9,7 +9,7 @@ import frappe
 
 from aos.api.shared.live_state import get_user_live_state, get_users_live_state
 from aos.services.accounts.identity import public_account_id_for_user
-from aos.services.accounts.serializers import serialize_internal_identity
+from aos.services.accounts.serializers import serialize_internal_identity, serialize_internal_identity_map
 
 DELETED_USER_DISPLAY_NAME = "Deleted User"
 DEACTIVATED_USER_DISPLAY_NAME = "Unavailable User"
@@ -46,6 +46,7 @@ def normalize_user_display(
     is_deactivated: bool = False,
     fallback_to_user: bool = False,
     live_state: dict[str, Any] | None = None,
+    account_id: str | None = None,
 ) -> dict[str, Any]:
     if not user:
         return {
@@ -59,7 +60,7 @@ def normalize_user_display(
             "is_deactivated": False,
             **_empty_live_state(),
         }
-    public_id = public_account_id_for_user(user)
+    public_id = str(account_id or "").strip() or public_account_id_for_user(user)
     if is_deleted:
         name, avatar, live_state = DELETED_USER_DISPLAY_NAME, None, None
     elif is_deactivated:
@@ -108,9 +109,10 @@ def get_user_display_map(users: Iterable[str]) -> dict[str, dict[str, Any]]:
     if not unique:
         return {}
     live_by_user = get_users_live_state(unique)
+    identities = serialize_internal_identity_map(unique)
     result: dict[str, dict[str, Any]] = {}
     for user in unique:
-        identity = serialize_internal_identity(user)
+        identity = identities.get(user) or {}
         result[user] = normalize_user_display(
             user=user,
             full_name=identity.get("display_name"),
@@ -118,6 +120,7 @@ def get_user_display_map(users: Iterable[str]) -> dict[str, dict[str, Any]]:
             is_deleted=bool(identity.get("is_deleted")),
             is_deactivated=bool(identity.get("is_deactivated")),
             live_state=live_by_user.get(user),
+            account_id=identity.get("account_id"),
         )
     return result
 

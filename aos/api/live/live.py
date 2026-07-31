@@ -30,8 +30,11 @@ from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
+from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.livekit_service import LiveKitService
 from aos.services.notification_service import NotificationService
+from aos.services.social.constants import MAX_SOCIAL_EVENT_FANOUT
+from aos.services.social.repository import SocialRepository
 
 from .activity import record_live_host_activity
 from .constants import (
@@ -68,6 +71,7 @@ from .serializers import (
 from .validators import (
     validate_live_active,
     validate_live_exists,
+    validate_live_social_access,
     validate_user_can_go_live,
     validate_user_is_host,
 )
@@ -196,15 +200,9 @@ def _get_followers(
     if not user:
         return []
 
-    return (
-        frappe.get_all(
-            "AOS Follow",
-            filters={
-                "following_user": user,
-            },
-            pluck="follower_user",
-        )
-        or []
+    return SocialRepository().list_active_followers_for_event(
+        target=user,
+        limit=MAX_SOCIAL_EVENT_FANOUT,
     )
 
 
@@ -344,13 +342,15 @@ def _create_startup_messages(
     - Visible only to the host.
     - Published directly to the host's devices.
     """
+    host_public_id = public_account_id_for_user(host_user)
+
     live_started_message = create_live_system_message(
         live_id=live.name,
         message_type="live_started",
         content="Live has started.",
         user=host_user,
         metadata={
-            "host_user": host_user,
+            "host_user": host_public_id,
             "live_id": live.name,
         },
         visible_to_host=True,
@@ -364,7 +364,7 @@ def _create_startup_messages(
         content="We are notifying people to join.",
         user=host_user,
         metadata={
-            "host_user": host_user,
+            "host_user": host_public_id,
             "live_id": live.name,
         },
         visible_to_host=True,
@@ -389,13 +389,15 @@ def _create_live_ended_message(
     live,
     host_user: str,
 ) -> dict:
+    host_public_id = public_account_id_for_user(host_user)
+
     return create_live_system_message(
         live_id=live.name,
         message_type="live_ended",
         content="Live has ended.",
         user=host_user,
         metadata={
-            "host_user": host_user,
+            "host_user": host_public_id,
             "live_id": live.name,
             "duration_seconds": int(
                 live.duration_seconds or 0
@@ -1042,6 +1044,10 @@ def get_live_impl(**kwargs):
                 "Live not found.",
                 error="NOT_FOUND",
             )
+
+        access_err = validate_live_social_access(live=live, user=viewer)
+        if access_err:
+            return access_err
 
         return ok(
             "Live fetched.",
