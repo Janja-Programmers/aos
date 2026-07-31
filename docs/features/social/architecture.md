@@ -14,7 +14,7 @@
 
 ## Transaction boundary
 
-Services and migrations never call `frappe.db.commit()`. Frappe’s request/test/deployment caller owns commit. API error boundaries roll back failed mutations. A new follow, persistent notification, delivery job, and transactional-outbox row are created in one transaction.
+Services and migrations never call `frappe.db.commit()`. Frappe’s request/test/deployment caller owns commit. Each API implementation executes behind an operation-level savepoint: handled validation, conflict, and internal failures roll back only that Social operation, preserving unrelated writes in the caller transaction. The boundary also restores Frappe’s in-memory transaction callbacks and outbox registration flag so rolled-back notification work cannot execute after commit. A new follow, persistent notification, delivery job, and transactional-outbox row are created in one transaction.
 
 ## Database boundaries
 

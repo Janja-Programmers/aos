@@ -2,7 +2,7 @@
 
 Automated coverage is under `aos/api/social/tests/` and existing core feature, uniqueness, migration, SQL-safety, account-deletion, seller, profile, live, shorts, chat, and notification suites.
 
-Required checks include strict fields/aliases, self-actions, idempotent set semantics, mutual-follow friends, public serializer safety, block side effects, blocked discovery, cursor tamper rejection, search bounds, suspended targets, transaction rollback when notification/outbox creation fails, wrapper stability, rate-limit coverage, parameterized SQL, patch registration, and no service/migration commits.
+Required checks include strict fields/aliases, self-actions, idempotent set semantics, mutual-follow friends, public serializer safety, block side effects, blocked discovery, cursor tamper rejection, search bounds, suspended targets, operation-savepoint isolation, preservation of prior caller writes after handled Social errors, transaction rollback when notification/outbox creation fails, callback restoration, wrapper stability, rate-limit coverage, parameterized SQL, patch registration, and no service/migration commits.
 
 ## Curl/Postman guide
 

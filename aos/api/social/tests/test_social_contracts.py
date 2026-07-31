@@ -147,3 +147,11 @@ def test_social_package_does_not_eagerly_import_service() -> None:
     assert "def __getattr__(name: str)" in source
     assert "from .service import SocialService\n\n__all__" not in source
 
+
+def test_social_api_uses_operation_savepoint() -> None:
+    source = (ROOT / "aos/services/social/api.py").read_text()
+    assert "frappe.db.savepoint(savepoint)" in source
+    assert "frappe.db.rollback(save_point=savepoint)" in source
+    assert "_restore_transaction_callbacks(callbacks_before)" in source
+    assert "except SocialError as exc:\n        try:\n            frappe.db.rollback()" not in source
+
