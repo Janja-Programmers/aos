@@ -411,10 +411,43 @@ def handle_video_processing_callback(payload: dict[str, Any]) -> object:
 	job_generation = max(1, int(getattr(job, "generation", 1) or 1))
 	if payload_generation != job_generation:
 		raise VideoProcessingError("Video callback generation does not match")
-	latest_generation = int(frappe.db.sql(
-		"SELECT COALESCE(MAX(generation), 0) FROM `tabAOS Video Processing Job` WHERE short = %s",
-		(job.short,),
-	)[0][0] or 0)
+
+	incoming_status = str(payload.get("status") or "").strip().lower()
+	canonical_status = {"completed": "ready"}.get(incoming_status, incoming_status)
+	validation = validate_callback_idempotency(job, payload, callback_status=canonical_status)
+	if validation.duplicate:
+		return job
+
+	# Terminal jobs are immutable. A repeated matching callback is an idempotent
+	# no-op and does not need to load or lock the owning Short. Conflicting late
+	# callbacks remain rejected after dispatch-generation validation above.
+	terminal_statuses = {"Ready", "Failed"}
+	if job.status in terminal_statuses:
+		if (job.status == "Ready" and canonical_status == "ready") or (
+			job.status == "Failed" and canonical_status == "failed"
+		):
+			mark_outbox_callback(
+				job_doctype="AOS Video Processing Job",
+				job_name=job.name,
+				callback_status=canonical_status,
+				success=job.status == "Ready",
+				error=str(payload.get("error") or "") or None,
+			)
+			return job
+		raise VideoProcessingError(f"Video processing job is already {job.status}")
+
+	short_id = str(getattr(job, "short", None) or "").strip()
+	if not short_id:
+		raise VideoProcessingError("Video processing job is missing its Short")
+
+	latest_generation = int(
+		frappe.db.sql(
+			"SELECT COALESCE(MAX(generation), 0) "
+			"FROM `tabAOS Video Processing Job` WHERE short = %s",
+			(short_id,),
+		)[0][0]
+		or 0
+	)
 	if job_generation < latest_generation:
 		job.status = "Cancelled"
 		job.active_key = None
@@ -422,7 +455,8 @@ def handle_video_processing_callback(payload: dict[str, Any]) -> object:
 		job.last_error = "SUPERSEDED"
 		job.save(ignore_permissions=True)
 		return job
-	short_state = frappe.db.get_value("AOS Short", job.short, "status")
+
+	short_state = frappe.db.get_value("AOS Short", short_id, "status")
 	if str(short_state or "").lower() == "deleted":
 		job.status = "Cancelled"
 		job.active_key = None
@@ -430,30 +464,10 @@ def handle_video_processing_callback(payload: dict[str, Any]) -> object:
 		job.last_error = "SHORT_DELETED"
 		job.save(ignore_permissions=True)
 		return job
-	incoming_status = str(payload.get("status") or "").strip().lower()
-	canonical_status = {"completed": "ready"}.get(incoming_status, incoming_status)
-	validation = validate_callback_idempotency(job, payload, callback_status=canonical_status)
-	if validation.duplicate:
-		return job
 
-	terminal_statuses = {"Ready", "Failed"}
-	if job.status in terminal_statuses:
-		if (job.status == "Ready" and incoming_status == "ready") or (
-			job.status == "Failed" and incoming_status == "failed"
-		):
-			mark_outbox_callback(
-				job_doctype="AOS Video Processing Job",
-				job_name=job.name,
-				callback_status=incoming_status,
-				success=job.status == "Ready",
-				error=str(payload.get("error") or "") or None,
-			)
-			return job
-		raise VideoProcessingError(f"Video processing job is already {job.status}")
-
-	if incoming_status == "ready":
+	if canonical_status == "ready":
 		return mark_video_job_ready(job, payload)
-	if incoming_status == "failed":
+	if canonical_status == "failed":
 		return mark_video_job_failed(
 			job.name, str(payload.get("error") or "Video processing failed")
 		)

@@ -1,5 +1,25 @@
 # Testing
 
+## Test layout
+
+Feature-owned Shorts tests live in `aos/api/shorts/tests/`; generic repository contracts remain in `aos/tests/`.
+
+```text
+aos/api/shorts/tests/
+  __init__.py
+  test_api_contracts.py
+  test_database_contracts.py
+```
+
+Cross-service callback, outbox, dynamic SQL, repository hygiene, and other genuinely generic suites remain under `aos/tests/`.
+
+## Feature test commands
+
+```bash
+bench --site <site> run-tests --app aos --module aos.api.shorts.tests.test_api_contracts
+bench --site <site> run-tests --app aos --module aos.api.shorts.tests.test_database_contracts
+```
+
 ## API examples
 
 Authenticated requests use the normal Frappe session cookie.

@@ -19,7 +19,8 @@ bench --site <site> backup --with-files
 bench --site <site> migrate
 bench --site <site> clear-cache
 bench restart
-bench --site <site> run-tests --app aos --module aos.api.shorts
+bench --site <site> run-tests --app aos --module aos.api.shorts.tests.test_api_contracts
+bench --site <site> run-tests --app aos --module aos.api.shorts.tests.test_database_contracts
 bench --site <site> run-tests --app aos --module aos.tests.test_dynamic_sql_safety
 bench --site <site> run-tests --app aos
 pytest infra/video-processing

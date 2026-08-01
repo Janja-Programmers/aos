@@ -28,6 +28,15 @@ required_docs = {
 docs_dir = ROOT / "docs/features/shorts"
 require(required_docs <= {p.name for p in docs_dir.glob("*.md")}, "required Shorts docs are incomplete")
 
+shorts_tests = ROOT / "aos/api/shorts/tests"
+required_shorts_tests = {"__init__.py", "test_api_contracts.py", "test_database_contracts.py"}
+require(
+    required_shorts_tests <= {p.name for p in shorts_tests.glob("*.py")},
+    "feature-specific Shorts tests are not colocated under aos/api/shorts/tests",
+)
+root_shorts_tests = sorted((ROOT / "aos/tests").glob("test_shorts*.py"))
+require(not root_shorts_tests, "feature-specific Shorts tests remain under aos/tests")
+
 wrapper_tree = ast.parse(source("aos/api/v1/shorts/__init__.py"))
 wrappers = {
     node.name for node in wrapper_tree.body
