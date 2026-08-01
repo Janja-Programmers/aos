@@ -70,6 +70,7 @@ transaction_roots = [
     ROOT / "aos/services/shorts",
     ROOT / "aos/services/video_processing_service.py",
     ROOT / "aos/patches/v1_0/harden_shorts_subsystem.py",
+    ROOT / "aos/patches/v1_0/install_shorts_indexes.py",
 ]
 for root in transaction_roots:
     files = [root] if root.is_file() else list(root.rglob("*.py"))
@@ -84,8 +85,38 @@ for root in transaction_roots:
                 ERRORS.append(f"full rollback found: {file.relative_to(ROOT)}:{node.lineno}")
 
 patches = source("aos/patches.txt")
-require("aos.patches.v1_0.harden_shorts_subsystem" in patches, "Shorts migration not registered")
-require("frappe.db.commit" not in source("aos/patches/v1_0/harden_shorts_subsystem.py"), "migration commits")
+data_patch = "aos.patches.v1_0.harden_shorts_subsystem"
+index_patch = "aos.patches.v1_0.install_shorts_indexes"
+require(data_patch in patches, "Shorts data migration not registered")
+require(index_patch in patches, "Shorts index migration not registered")
+if data_patch in patches and index_patch in patches:
+    require(patches.index(data_patch) < patches.index(index_patch), "Shorts index patch must follow data reconciliation")
+data_patch_source = source("aos/patches/v1_0/harden_shorts_subsystem.py")
+index_patch_source = source("aos/patches/v1_0/install_shorts_indexes.py")
+require("frappe.db.commit" not in data_patch_source, "Shorts data migration commits")
+require("frappe.db.commit" not in index_patch_source, "Shorts index migration commits")
+require("ALTER TABLE" not in data_patch_source, "Shorts data migration mixes DML and DDL")
+require("ALTER TABLE" in index_patch_source, "Shorts schema-only index migration is missing DDL")
+index_patch_tree = ast.parse(index_patch_source)
+for node in ast.walk(index_patch_tree):
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+        continue
+    if node.func.attr != "sql" or not node.args:
+        continue
+    query_node = node.args[0]
+    literal = ""
+    if isinstance(query_node, ast.Constant) and isinstance(query_node.value, str):
+        literal = query_node.value
+    elif isinstance(query_node, ast.JoinedStr):
+        literal = "".join(
+            value.value for value in query_node.values
+            if isinstance(value, ast.Constant) and isinstance(value.value, str)
+        )
+    normalized = literal.lstrip().upper()
+    require(
+        not normalized.startswith(("INSERT", "UPDATE", "DELETE", "REPLACE", "TRUNCATE")),
+        f"Shorts index migration contains DML at line {node.lineno}",
+    )
 
 library = source("aos/api/shorts/library.py")
 response_tail = library[library.find('"Download URL generated."'):]

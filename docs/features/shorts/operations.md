@@ -29,3 +29,7 @@ pytest infra/analytics-pipeline
 ```
 
 Verify upload, callback, ready playback, All/vibes parity, all audiences, both block directions, replayed events, delete/retry races and cleanup metrics.
+
+## Migration transaction boundary
+
+Shorts hardening uses two consecutive post-model-sync patches. Data reconciliation completes and is committed by Frappe before the dedicated index patch starts. The index patch contains no inserts, updates, deletes, explicit commits, or rollbacks; this prevents MariaDB's implicit DDL commit from splitting domain-data changes. If index installation fails, fix the reported duplicate/schema condition and rerun `bench --site <site> migrate`; completed indexes are detected and skipped.

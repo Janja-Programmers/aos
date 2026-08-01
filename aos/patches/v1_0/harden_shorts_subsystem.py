@@ -14,15 +14,6 @@ _BATCH = 250
 
 
 def execute() -> None:
-    doctypes = (
-        "aos_short_event", "aos_short_report", "aos_short_repost",
-        "aos_video_processing_job", "aos_short_like", "aos_short_save",
-        "aos_short_comment_like", "aos_short_view", "aos_short_metrics_daily",
-        "aos_short_sound", "aos_short",
-    )
-    for doctype in doctypes:
-        frappe.reload_doc("aos", "doctype", doctype, force=True)
-
     _dedupe_exact("AOS Short Like", ("short", "user"))
     _dedupe_exact("AOS Short Save", ("short", "user"))
     _dedupe_exact("AOS Short Comment Like", ("comment", "user"))
@@ -35,7 +26,6 @@ def execute() -> None:
     _backfill_event_keys()
     _normalize_short_states()
     _reconcile_short_counters()
-    _install_indexes()
 
 
 def _table(doctype: str) -> str:
@@ -319,38 +309,3 @@ def _reconcile_short_counters() -> None:
             }
             frappe.db.set_value("AOS Short", row.name, values, update_modified=False)
         start = rows[-1].name
-
-
-def _index_exists(doctype: str, name: str) -> bool:
-    rows = frappe.db.sql(
-        """SELECT 1 FROM information_schema.statistics
-           WHERE table_schema=DATABASE() AND table_name=%s AND index_name=%s LIMIT 1""",
-        (_table(doctype), name),
-    )
-    return bool(rows)
-
-
-def _ensure_index(doctype: str, name: str, columns: tuple[str, ...], *, unique: bool = False) -> None:
-    if not frappe.db.table_exists(doctype) or _index_exists(doctype, name):
-        return
-    kind = "UNIQUE INDEX" if unique else "INDEX"
-    quoted = ", ".join(f"`{column}`" for column in columns)
-    frappe.db.sql(f"ALTER TABLE `{_table(doctype)}` ADD {kind} `{name}` ({quoted})")
-
-
-def _install_indexes() -> None:
-    definitions = (
-        ("AOS Short Metrics Daily", "uq_short_metrics_day", ("short", "date"), True),
-        ("AOS Short Sound", "uq_short_sound_link", ("short",), True),
-        ("AOS Short Report", "uq_short_report_active", ("active_key",), True),
-        ("AOS Short Repost", "uq_short_repost_active", ("active_key",), True),
-        ("AOS Video Processing Job", "uq_short_processing_active", ("active_key",), True),
-        ("AOS Short Event", "uq_short_event_key", ("event_key",), True),
-        ("AOS Short", "idx_short_feed", ("status", "visibility_status", "approval_status", "ranking_score", "posted_on", "name"), False),
-        ("AOS Short", "idx_short_profile", ("owner", "status", "posted_on", "name"), False),
-        ("AOS Short Comment", "idx_short_comment_page", ("short", "status", "parent_comment", "creation", "name"), False),
-        ("AOS Short Report", "idx_short_report_review", ("status", "creation", "name"), False),
-        ("AOS Video Processing Job", "idx_short_job_lifecycle", ("short", "status", "generation", "creation"), False),
-    )
-    for doctype, name, columns, unique in definitions:
-        _ensure_index(doctype, name, columns, unique=unique)

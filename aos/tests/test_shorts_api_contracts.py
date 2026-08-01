@@ -70,7 +70,13 @@ class TestShortsApiContracts(FrappeTestCase):
             self.assertIn(f"aos.api.v1.shorts.__init__.{name}", methods)
 
     def test_shorts_services_do_not_commit_or_full_rollback(self):
-        roots = ["api/shorts", "services/shorts", "services/video_processing_service.py", "patches/v1_0/harden_shorts_subsystem.py"]
+        roots = [
+            "api/shorts",
+            "services/shorts",
+            "services/video_processing_service.py",
+            "patches/v1_0/harden_shorts_subsystem.py",
+            "patches/v1_0/install_shorts_indexes.py",
+        ]
         offenders: list[str] = []
         for relative in roots:
             path = Path(frappe.get_app_path("aos", *relative.split("/")))

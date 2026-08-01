@@ -23,4 +23,5 @@ Use the returned `next_cursor` unchanged. Altering any byte or using an expired 
 - idempotent likes/saves/reposts/reports/events and exact counters;
 - comments-disabled and cascade-delete counter behavior;
 - share playable metadata and download object-key non-disclosure;
-- migration rerun safety and populated-database duplicate reconciliation.
+- migration rerun safety and populated-database duplicate reconciliation;
+- schema-only index patch ordering and absence of mixed DML/DDL.
