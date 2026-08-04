@@ -1,22 +1,21 @@
 # Copyright (c) 2026, Africa Online Stores and Contributors
 # See license.txt
 
-# import frappe
+from __future__ import annotations
+
+from types import SimpleNamespace
+
 from frappe.tests import IntegrationTestCase
 
+from aos.aos.doctype.aos_sound.aos_sound import AOSSound
 
-# On IntegrationTestCase, the doctype test records and all
-# link-field test record dependencies are recursively loaded
-# Use these module variables to add/remove to/from that list
-EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
-IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
+EXTRA_TEST_RECORD_DEPENDENCIES = []
+IGNORE_TEST_RECORD_DEPENDENCIES = []
 
 
 class IntegrationTestAOSSound(IntegrationTestCase):
-	"""
-	Integration tests for AOSSound.
-	Use this class for testing interactions between multiple components.
-	"""
-
-	pass
+    def test_commercial_source_is_always_commercial_safe(self):
+        sound = SimpleNamespace(source_type="commercial", is_commercial_safe=0)
+        AOSSound._normalize_flags(sound)
+        self.assertEqual(sound.is_commercial_safe, 1)

@@ -528,16 +528,6 @@ def create_sound_impl(**kwargs):
         )
         doc.insert(ignore_permissions=True)
 
-        media_service.attach_media(
-            media_id=media_doc.name,
-            user=user,
-            purpose="sound_upload",
-            attached_doctype="AOS Sound",
-            attached_name=doc.name,
-            attached_field="sound_media",
-        )
-
-
         row = frappe.db.get_value(
             "AOS Sound",
             doc.name,

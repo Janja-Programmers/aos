@@ -54,3 +54,9 @@ Search-index jobs and transactional outbox rows are durable audit records and ma
 - an already accepted upsert is cancelled and replaced with a fresh delete correlation;
 - job and outbox lifecycle saves tolerate a deleted optional aggregate while retaining the durable job link;
 - dead-letter rows created by an older deployment can be explicitly requeued after confirming their persisted idempotency key.
+
+## Curated sound upload in Desk
+
+Open **AOS Sound → New**, choose the source type, then use **Upload audio**. The browser uploads directly to object storage and the Sound controller finalizes the Media attachment when the document is saved. For `commercial` sounds, `Commercial Safe` is enforced automatically. Existing audio cannot be replaced; create a new Sound instead.
+
+After deployment, run `bench --site <site> migrate` to synchronize the new Desk HTML field, then clear cache and reload Desk assets.

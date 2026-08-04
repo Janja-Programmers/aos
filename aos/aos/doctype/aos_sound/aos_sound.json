@@ -11,6 +11,8 @@
   "artist",
   "source_type",
   "status",
+  "audio_section",
+  "sound_upload_preview",
   "column_break_dxae",
   "file_key",
   "sound_media",
@@ -67,6 +69,16 @@
    "options": "active\ninactive\nremoved",
    "reqd": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "audio_section",
+   "fieldtype": "Section Break",
+   "label": "Audio"
+  },
+  {
+   "fieldname": "sound_upload_preview",
+   "fieldtype": "HTML",
+   "label": "Sound Upload"
   },
   {
    "fieldname": "file_key",
@@ -134,7 +146,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-26 01:59:15.722081",
+ "modified": "2026-08-05 01:45:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Sound",
