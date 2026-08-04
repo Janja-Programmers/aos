@@ -9,6 +9,7 @@ aos/api/shorts/tests/
   __init__.py
   test_api_contracts.py
   test_database_contracts.py
+  test_classification.py
 ```
 
 Cross-service callback, outbox, dynamic SQL, repository hygiene, and other genuinely generic suites remain under `aos/tests/`.
@@ -18,6 +19,7 @@ Cross-service callback, outbox, dynamic SQL, repository hygiene, and other genui
 ```bash
 bench --site <site> run-tests --app aos --module aos.api.shorts.tests.test_api_contracts
 bench --site <site> run-tests --app aos --module aos.api.shorts.tests.test_database_contracts
+bench --site <site> run-tests --app aos --module aos.api.shorts.tests.test_classification
 ```
 
 ## API examples
@@ -35,6 +37,7 @@ Use the returned `next_cursor` unchanged. Altering any byte or using an expired 
 ## Required regression matrix
 
 - strict fields, aliases, IDs and `cmd` transport handling;
+- creator mode ignored, automatic Math/Learn classification, Shop/ad enforcement, signed frame requests, and non-fatal classifier fallback;
 - upload owner/key/size/content validation and duplicate confirmation;
 - generation-aware ready/failed/replayed/stale callbacks;
 - everyone/followers/friends/only-me, guest and both block directions;

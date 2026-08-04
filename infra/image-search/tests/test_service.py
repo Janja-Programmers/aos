@@ -221,3 +221,110 @@ def test_validation_location_normalization_never_echoes_dynamic_keys(caplog):
 	for sensitive in sensitive_values:
 		assert sensitive not in serialized
 	assert "secret" not in _json.dumps(_json.loads(response.body)).lower()
+
+
+def test_short_frame_classification_requires_signature(monkeypatch):
+	from types import SimpleNamespace
+
+	monkeypatch.setattr(
+		main,
+		"get_settings",
+		lambda: SimpleNamespace(
+			internal_secret="classification-secret",
+			max_image_bytes=1048576,
+			short_classification_max_frames=6,
+			short_classification_max_frame_bytes=1048576,
+			short_classification_max_total_bytes=6291456,
+		),
+	)
+	response = TestClient(main.app).post(
+		"/internal/shorts/classify-frames",
+		json={"frames": ["aW52YWxpZA=="]},
+	)
+	assert response.status_code == 401
+
+
+def test_short_frame_classification_uses_signed_internal_boundary(monkeypatch):
+	import base64
+	import json
+	from io import BytesIO
+	from types import SimpleNamespace
+
+	from PIL import Image
+	from app.security import build_signature
+
+	secret = "classification-secret"
+	settings = SimpleNamespace(
+		internal_secret=secret,
+		max_image_bytes=1048576,
+		short_classification_max_frames=6,
+		short_classification_max_frame_bytes=1048576,
+		short_classification_max_total_bytes=6291456,
+	)
+	monkeypatch.setattr(main, "get_settings", lambda: settings)
+
+	class FakeClassifier:
+		def classify(self, images):
+			assert len(images) == 1
+			return {
+				"status": "ready",
+				"mode": "learn",
+				"confidence": 0.9,
+				"margin": 0.6,
+				"scores": {"shop": 0.02, "geo": 0.03, "vibes": 0.05, "learn": 0.9},
+				"model": "synthetic",
+				"model_version": "test-v1",
+				"frame_count": 1,
+			}
+
+	monkeypatch.setattr(main, "get_short_classifier", lambda: FakeClassifier())
+	buffer = BytesIO()
+	Image.new("RGB", (8, 8)).save(buffer, format="JPEG")
+	body = json.dumps(
+		{"frames": [base64.b64encode(buffer.getvalue()).decode("ascii")]},
+		separators=(",", ":"),
+		sort_keys=True,
+	).encode("utf-8")
+	timestamp = "1700000000"
+	monkeypatch.setattr(main.time, "time", lambda: float(timestamp))
+	signed_payload = timestamp.encode("ascii") + b"." + body
+	response = TestClient(main.app).post(
+		"/internal/shorts/classify-frames",
+		content=body,
+		headers={
+			"Content-Type": "application/json",
+			"X-AOS-Timestamp": timestamp,
+			"X-AOS-Signature": build_signature(secret, signed_payload),
+		},
+	)
+	assert response.status_code == 200
+	assert response.json()["mode"] == "learn"
+
+
+def test_short_frame_classification_rejects_stale_signature(monkeypatch):
+	from types import SimpleNamespace
+
+	from app.security import build_signature
+
+	secret = "classification-secret"
+	monkeypatch.setattr(
+		main,
+		"get_settings",
+		lambda: SimpleNamespace(
+			internal_secret=secret,
+			max_image_bytes=1048576,
+			short_classification_max_frames=6,
+			short_classification_max_frame_bytes=1048576,
+			short_classification_max_total_bytes=6291456,
+		),
+	)
+	monkeypatch.setattr(main.time, "time", lambda: 1700001000.0)
+	body = b'{"frames":["aW52YWxpZA=="]}'
+	timestamp = "1700000000"
+	signature = build_signature(secret, timestamp.encode("ascii") + b"." + body)
+	response = TestClient(main.app).post(
+		"/internal/shorts/classify-frames",
+		content=body,
+		headers={"X-AOS-Timestamp": timestamp, "X-AOS-Signature": signature},
+	)
+	assert response.status_code == 401

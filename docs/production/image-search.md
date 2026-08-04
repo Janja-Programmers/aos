@@ -9,12 +9,15 @@ AOS Frappe backend
   -> private image-search HTTP service
       -> OpenCLIP / Torch embedding runtime
       -> Qdrant vector store
+AOS video worker
+  -> signed internal frame-classification endpoint
+      -> the same OpenCLIP runtime
 ```
 
 Ownership boundary:
 
 - Frappe owns ads, permissions, moderation, database records, rate limits, and response serialization.
-- Image search owns embeddings, vector indexing, Qdrant access, similarity scoring, thresholds, and model configuration.
+- Image search owns embeddings, vector indexing, Qdrant access, similarity scoring, thresholds, model configuration, and visual Shop/Geo/Vibes/Learn frame scores.
 - Qdrant is private infrastructure behind the image-search service.
 
 The Frappe backend must not import `torch`, `open_clip`, `qdrant_client`, or image-search model logic.
@@ -141,3 +144,7 @@ bench --site <site> execute aos.integrations.ai.image_search_tasks.rebuild_image
 ```
 
 After the rebuild, test visual search with known Active ads.
+
+## Shorts frame classification
+
+Set `SHORT_CLASSIFICATION_SECRET` to the same long random value used by the video services. `/internal/shorts/classify-frames` is hidden from OpenAPI, rejects unsigned or stale requests, binds `X-AOS-Timestamp` into the HMAC signature, bounds frame count/size, and returns only four normalized scores plus model metadata. It does not decide Shop authorization or publish state; Frappe owns those rules. Warm `/ready` after deployment so the OpenCLIP model is loaded before the first Short is processed.

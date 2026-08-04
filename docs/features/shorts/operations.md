@@ -2,7 +2,7 @@
 
 ## Required configuration
 
-Configure MinIO credentials/base URL/buckets, video service URL and both request/callback secrets. In staging/production set `VIDEO_CALLBACK_ALLOWED_HOSTS` and HTTPS callback URLs. Review all `VIDEO_MAX_*`, timeout and FFmpeg thread limits before enabling workers.
+Configure MinIO credentials/base URL/buckets, video service URL, request/callback secrets, and a separate `SHORT_CLASSIFICATION_SECRET` shared only by video processing and image search. In staging/production set `VIDEO_CALLBACK_ALLOWED_HOSTS` and HTTPS callback URLs. Review all `VIDEO_MAX_*`, timeout and FFmpeg thread limits before enabling workers.
 
 ## Scheduled work
 
@@ -24,12 +24,13 @@ bench --site <site> run-tests --app aos --module aos.api.shorts.tests.test_datab
 bench --site <site> run-tests --app aos --module aos.tests.test_dynamic_sql_safety
 bench --site <site> run-tests --app aos
 pytest infra/video-processing
+pytest infra/image-search
 pytest infra/moderation
 pytest infra/notification-delivery
 pytest infra/analytics-pipeline
 ```
 
-Verify upload, callback, ready playback, All/vibes parity, all audiences, both block directions, replayed events, delete/retry races and cleanup metrics.
+Verify upload, signed frame classification, automatic Learn/Geo/Vibes assignment, owned-ad Shop assignment, classifier fallback, callback, ready playback, All/vibes parity, all audiences, both block directions, replayed events, delete/retry races and cleanup metrics.
 
 ## Migration transaction boundary
 

@@ -5,7 +5,7 @@ Base method prefix: `aos.api.v1.shorts.`. Responses use `{ok, message, data}` or
 ## Upload and management
 
 - `create_short` POST: `raw_video_media|media_id|media`, optional audience/comment/download settings.
-- `update_short_metadata` POST: `short_id`, caption, hashtags, audience, settings, content mode, ad and sound metadata.
+- `update_short_metadata` POST: `short_id`, caption, hashtags, audience, settings, optional `ad_id`, and sound metadata. Legacy `content_mode` is accepted but ignored; the response returns the automatically assigned mode and classification summary.
 - `get_short`: `short_id`.
 - `my_shorts`: bounded `limit`, signed `cursor`.
 - `user_shorts`: `user|target_user`, optional mode, bounded `limit`, signed `cursor`.
@@ -38,3 +38,7 @@ All cursor endpoints use an HMAC-signed cursor with a 24-hour maximum age.
 `SHORTS_UNKNOWN_FIELD`, `SHORTS_ALIAS_CONFLICT`, `SHORTS_INVALID_IDENTIFIER`, `SHORTS_INVALID_CURSOR`, `SHORTS_INVALID_REQUEST`, `SHORTS_INVALID_MEDIA_KEY`, `SHORTS_NOT_FOUND`, `SHORTS_ACCESS_DENIED`, `SHORTS_INVALID_STATE`, `SHORTS_CONFLICT`, `SHORTS_PROCESSING_FAILED`, `SHORTS_MEDIA_CONFIGURATION_ERROR`, `SHORTS_INTERNAL_ERROR`.
 
 Known shared dependency errors such as `AUTH_REQUIRED`, `RATE_LIMITED`, `MEDIA_NOT_FOUND` and `STORAGE_UNAVAILABLE` remain unchanged.
+
+## Classification response
+
+Short payloads include `content_mode` and `classification: {status, source, confidence, model_version}`. Raw visual/text scores are never public. `shop` requires a validated owned active ad. `all` is accepted only as a feed filter and is not a Short mode.

@@ -87,6 +87,25 @@ class Settings:
     allowed_video_codecs: tuple[str, ...] = _csv("VIDEO_ALLOWED_CODECS", "h264,hevc,vp8,vp9,av1,mpeg4")
     callback_allowed_hosts: tuple[str, ...] = _csv("VIDEO_CALLBACK_ALLOWED_HOSTS", "")
 
+    classification_enabled: bool = _bool("VIDEO_CLASSIFICATION_ENABLED", True)
+    classification_url: str = _clean(
+        os.getenv("VIDEO_CLASSIFICATION_URL"),
+        "http://image-search:8000/internal/shorts/classify-frames",
+    )
+    classification_secret: str = _clean(os.getenv("VIDEO_CLASSIFICATION_SECRET"), "")
+    classification_allowed_hosts: tuple[str, ...] = _csv(
+        "VIDEO_CLASSIFICATION_ALLOWED_HOSTS", "image-search"
+    )
+    classification_timeout_seconds: int = _int(
+        "VIDEO_CLASSIFICATION_TIMEOUT_SECONDS", 45, min_value=5, max_value=300
+    )
+    classification_frame_count: int = _int(
+        "VIDEO_CLASSIFICATION_FRAME_COUNT", 5, min_value=1, max_value=8
+    )
+    classification_max_frame_bytes: int = _int(
+        "VIDEO_CLASSIFICATION_MAX_FRAME_BYTES", 1048576, min_value=65536, max_value=5242880
+    )
+
 
 def get_settings() -> Settings:
     return Settings()

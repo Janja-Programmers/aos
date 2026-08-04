@@ -9,3 +9,7 @@ Ordering uses a stable score/time/name tie-breaker and the cursor uses the ident
 Joins are either unique or deduplicated, creator/media/relationship state is loaded in batches, and the final policy filter prevents nested leakage. Page size is bounded by endpoint constants.
 
 A standalone hashtag search or Friends feed was not invented because no public endpoint/data contract exists in this backend. Existing content-mode (including vibes), profile, saved, liked, reposted, sound and ad feeds are preserved.
+
+## Mode feeds
+
+Shop, Geo, Vibes, and Learn filters use the server-assigned `content_mode`. All does not depend on classification confidence and always queries every otherwise-accessible mode, so an unavailable classifier cannot remove a Short from All. Shorts are hidden until ready/moderated, so provisional classification is not exposed in public mode feeds.

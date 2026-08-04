@@ -14,6 +14,7 @@ import requests
 from frappe.utils import now_datetime
 
 from aos.services.media.media_service import MediaService
+from aos.services.shorts.classification import apply_visual_result
 from aos.services.shorts.media import validate_object_key
 from aos.services.shorts.repository import ShortsRepository
 from aos.services.transactional_outbox import (
@@ -500,6 +501,7 @@ def mark_video_job_ready(job, payload: dict[str, Any]) -> object:
 	if thumbnail and thumbnail.get("url"):
 		short.thumbnail_url = str(thumbnail.get("url") or "")
 
+	apply_visual_result(short, payload.get("classification"))
 	short.status = "ready"
 	short.processing_error = None
 	if hasattr(short, "audio_mix_status"):
@@ -522,6 +524,7 @@ def mark_video_job_ready(job, payload: dict[str, Any]) -> object:
 			"status": "ready",
 			"duration_seconds": duration_seconds,
 			"sound_applied": bool(payload.get("sound_applied")),
+			"classification_status": getattr(short, "classification_status", None),
 			"generation": max(1, int(getattr(job, "generation", 1) or 1)),
 		},
 		default=str,

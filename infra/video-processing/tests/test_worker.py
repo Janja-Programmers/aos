@@ -29,6 +29,13 @@ def settings():
 		callback_allowed_hosts=(),
 		callback_secret="test-secret",
 		callback_timeout_seconds=30,
+		classification_enabled=True,
+		classification_url="http://image-search:8000/internal/shorts/classify-frames",
+		classification_secret="classification-secret",
+		classification_allowed_hosts=("image-search",),
+		classification_timeout_seconds=30,
+		classification_frame_count=5,
+		classification_max_frame_bytes=1048576,
 	)
 
 
@@ -56,7 +63,11 @@ def configure_boundaries(monkeypatch, tmp_path):
 	monkeypatch.setattr(worker, "_minio_client", object)
 	monkeypatch.setattr(worker.tempfile, "mkdtemp", lambda **_kwargs: str(work_dir))
 	monkeypatch.setattr(worker.uuid, "uuid4", lambda: SimpleNamespace(hex="fixed-version"))
-	monkeypatch.setattr(worker, "_duration", lambda _path: 2.5)
+	monkeypatch.setattr(
+		worker,
+		"_probe_video",
+		lambda _path: {"duration": 2.5, "width": 320, "height": 480, "codec": "h264"},
+	)
 	monkeypatch.setattr(
 		worker,
 		"_download_object",
@@ -66,6 +77,24 @@ def configure_boundaries(monkeypatch, tmp_path):
 		worker,
 		"_generate_thumbnail",
 		lambda _source, destination: Path(destination).write_bytes(b"jpeg") and (320, 480),
+	)
+	monkeypatch.setattr(
+		worker,
+		"_generate_classification_frames",
+		lambda _source, _directory, _duration, thumbnail: [thumbnail],
+	)
+	monkeypatch.setattr(
+		worker,
+		"_classify_frames",
+		lambda _frames: {
+			"status": "ready",
+			"mode": "learn",
+			"confidence": 0.9,
+			"scores": {"shop": 0.02, "geo": 0.03, "vibes": 0.05, "learn": 0.9},
+			"model": "synthetic",
+			"model_version": "test-v1",
+			"frame_count": 1,
+		},
 	)
 	monkeypatch.setattr(
 		worker,
@@ -93,6 +122,7 @@ def test_work_happy_path_is_separate_from_callback(monkeypatch, tmp_path):
 	assert result["job_id"] == "job-1"
 	assert result["status"] == "ready"
 	assert result["duration_seconds"] == 2.5
+	assert result["classification"]["mode"] == "learn"
 	assert len(uploads) >= 3
 	assert not work_dir.exists()
 
@@ -107,3 +137,53 @@ def test_work_failure_raises_and_cleans_tempdir(monkeypatch, tmp_path):
 	with pytest.raises(RuntimeError, match="storage failed"):
 		worker._perform_video_work(payload())
 	assert not work_dir.exists()
+
+
+def test_classification_failure_is_non_fatal(monkeypatch, tmp_path):
+	work_dir, _uploads = configure_boundaries(monkeypatch, tmp_path)
+	monkeypatch.setattr(
+		worker,
+		"_classify_frames",
+		lambda _frames: worker._classification_fallback("unavailable"),
+	)
+	result = worker._perform_video_work(payload())
+	assert result["status"] == "ready"
+	assert result["classification"]["status"] == "unavailable"
+	assert not work_dir.exists()
+
+
+def test_classification_request_is_timestamp_signed(monkeypatch, tmp_path):
+	frame = tmp_path / "frame.jpg"
+	frame.write_bytes(b"synthetic-jpeg")
+	captured = {}
+
+	class Response:
+		content = b"{}"
+
+		def raise_for_status(self):
+			return None
+
+		def json(self):
+			return {
+				"status": "ready",
+				"mode": "learn",
+				"confidence": 0.9,
+				"scores": {"shop": 0.02, "geo": 0.03, "vibes": 0.05, "learn": 0.9},
+				"model": "synthetic",
+				"model_version": "test-v1",
+			}
+
+	def post(url, *, data, headers, timeout):
+		captured.update(url=url, data=data, headers=headers, timeout=timeout)
+		return Response()
+
+	monkeypatch.setattr(worker, "get_settings", settings)
+	monkeypatch.setattr(worker.time, "time", lambda: 1700000000.0)
+	monkeypatch.setattr(worker.requests, "post", post)
+	result = worker._classify_frames([str(frame)])
+	assert result["mode"] == "learn"
+	assert captured["headers"]["X-AOS-Timestamp"] == "1700000000"
+	signed = b"1700000000." + captured["data"]
+	assert captured["headers"]["X-AOS-Signature"] == worker.build_signature(
+		"classification-secret", signed
+	)

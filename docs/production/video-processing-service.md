@@ -20,6 +20,7 @@ The video service owns heavy execution:
 - ffmpeg final MP4 generation
 - HLS generation
 - thumbnail extraction
+- representative-frame extraction and signed OpenCLIP classification request
 - output upload to MinIO
 - callback to Frappe
 
@@ -33,7 +34,8 @@ The video service owns heavy execution:
 6. `aos-video-api` enqueues the FFmpeg job into the video service Redis/RQ queue.
 7. `aos-video-worker` processes the video and uploads outputs to MinIO.
 8. `aos-video-worker` calls `aos.api.v1.video_processing.handle_callback`.
-9. Frappe updates `AOS Short`, creates thumbnail media metadata, and marks the job ready/failed.
+9. Frappe stores validated visual classification evidence, updates `AOS Short`, creates thumbnail media metadata, and marks the job ready/failed.
+10. Metadata publication fuses visual evidence with caption/hashtags and trusted ad context.
 
 ## Docker services
 
@@ -50,6 +52,9 @@ VIDEO_SERVICE_CALLBACK_SECRET=change-this-long-random-video-callback-secret
 VIDEO_CALLBACK_URL=https://api.example.com/api/method/aos.api.v1.video_processing.handle_callback
 VIDEO_REDIS_URL=redis://video-redis:6379/0
 VIDEO_QUEUE_NAME=video
+SHORT_CLASSIFICATION_SECRET=change-this-long-random-short-classification-secret
+VIDEO_CLASSIFICATION_URL=http://image-search:8000/internal/shorts/classify-frames
+VIDEO_CLASSIFICATION_ALLOWED_HOSTS=image-search
 VIDEO_MINIO_ENDPOINT=minio:9000
 ```
 
@@ -60,6 +65,8 @@ Frappe signs dispatch requests with `VIDEO_SERVICE_SECRET` using HMAC-SHA256 in
 
 The video worker signs callbacks with `VIDEO_SERVICE_CALLBACK_SECRET` using
 HMAC-SHA256 in `X-AOS-Callback-Signature`.
+
+The video worker signs `X-AOS-Timestamp + "." + request_body` with `SHORT_CLASSIFICATION_SECRET` in `X-AOS-Signature`. The image service rejects requests more than five minutes old. Classification failure is non-fatal and never prevents a playable Short.
 
 ## Notes
 

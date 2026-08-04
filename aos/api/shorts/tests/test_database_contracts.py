@@ -6,7 +6,11 @@ from pathlib import Path
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.patches.v1_0 import harden_shorts_subsystem, install_shorts_indexes
+from aos.patches.v1_0 import (
+    harden_shorts_subsystem,
+    initialize_short_classification_metadata,
+    install_shorts_indexes,
+)
 
 
 class TestShortsDatabaseContracts(FrappeTestCase):
@@ -55,6 +59,20 @@ class TestShortsDatabaseContracts(FrappeTestCase):
         self.assertEqual(forbidden_calls, [])
         self.assertNotIn("_install_indexes()", Path(harden_shorts_subsystem.__file__).read_text())
 
+
+    def test_classification_metadata_patch_is_idempotent_and_registered_last(self):
+        initialize_short_classification_metadata.execute()
+        initialize_short_classification_metadata.execute()
+
+        patches = Path(frappe.get_app_path("aos", "patches.txt")).read_text(encoding="utf-8")
+        index_patch = "aos.patches.v1_0.install_shorts_indexes"
+        classification_patch = "aos.patches.v1_0.initialize_short_classification_metadata"
+        self.assertIn(classification_patch, patches)
+        self.assertLess(patches.index(index_patch), patches.index(classification_patch))
+        source = Path(initialize_short_classification_metadata.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("frappe.db.commit", source)
+        self.assertNotIn("ALTER TABLE", source)
+
     def test_active_uniqueness_fields_are_fixed_size_and_not_public(self):
         for doctype, fieldname in (
             ("AOS Short Report", "active_key"),
@@ -67,6 +85,23 @@ class TestShortsDatabaseContracts(FrappeTestCase):
             self.assertTrue(field.hidden)
             self.assertTrue(field.read_only)
             self.assertLessEqual(int(field.length or 140), 64)
+
+    def test_automatic_classification_fields_exist(self):
+        expected = {
+            "classification_status": "Select",
+            "classification_source": "Select",
+            "classification_confidence": "Float",
+            "classification_model": "Data",
+            "classification_model_version": "Data",
+            "classified_at": "Datetime",
+            "classification_visual_scores": "JSON",
+            "classification_scores": "JSON",
+        }
+        meta = frappe.get_meta("AOS Short")
+        for fieldname, fieldtype in expected.items():
+            field = meta.get_field(fieldname)
+            self.assertIsNotNone(field, fieldname)
+            self.assertEqual(field.fieldtype, fieldtype)
 
     def test_processing_generation_field_exists(self):
         field = frappe.get_meta("AOS Video Processing Job").get_field("generation")

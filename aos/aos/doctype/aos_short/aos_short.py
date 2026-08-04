@@ -6,6 +6,8 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 
+from aos.services.shorts.classification import normalize_scores
+
 from aos.api.shorts.constants import (
     MAX_SHORT_DURATION_SECONDS,
     CAPTION_MAX_LENGTH,
@@ -25,6 +27,7 @@ class AOSShort(Document):
 
     def validate(self):
         self._validate_content_mode()
+        self._validate_classification_metadata()
         self._validate_audience()
         self._validate_allow_comments()
         self._validate_allow_downloads()
@@ -75,6 +78,43 @@ class AOSShort(Document):
 
         if self.content_mode not in VALID_SHORT_CONTENT_MODES:
             frappe.throw("Invalid short content mode")
+
+    def _validate_classification_metadata(self):
+        valid_statuses = {"pending", "visual_ready", "ready", "fallback", "failed", "legacy"}
+        valid_sources = {
+            "automatic_visual", "automatic_text", "automatic_visual_text",
+            "commerce_context", "fallback", "legacy", "admin_override",
+        }
+        if not getattr(self, "classification_status", None):
+            self.classification_status = "pending"
+        if self.classification_status not in valid_statuses:
+            frappe.throw("Invalid Shorts classification status")
+
+        source = str(getattr(self, "classification_source", None) or "").strip()
+        if source and source not in valid_sources:
+            frappe.throw("Invalid Shorts classification source")
+
+        try:
+            confidence = float(getattr(self, "classification_confidence", 0) or 0)
+        except (TypeError, ValueError):
+            frappe.throw("Invalid Shorts classification confidence")
+        if confidence < 0 or confidence > 1:
+            frappe.throw("Invalid Shorts classification confidence")
+        self.classification_confidence = confidence
+
+        for fieldname in ("classification_visual_scores", "classification_scores"):
+            value = getattr(self, fieldname, None)
+            if value in (None, ""):
+                continue
+            if isinstance(value, str):
+                try:
+                    value = json.loads(value)
+                except Exception:
+                    frappe.throw("Invalid Shorts classification scores")
+            if not isinstance(value, dict):
+                frappe.throw("Invalid Shorts classification scores")
+            normalized = normalize_scores(value)
+            setattr(self, fieldname, json.dumps(normalized, separators=(",", ":"), sort_keys=True))
 
     def _validate_audience(self):
         """

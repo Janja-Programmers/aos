@@ -12,6 +12,11 @@ import json
 import frappe
 
 from aos.services.video_processing_service import create_video_processing_job
+from aos.services.shorts.classification import (
+    apply_publish_result,
+    classify_for_publish,
+    public_classification,
+)
 from aos.services.moderation_service import enqueue_short_moderation
 
 from aos.services.media.media_service import (
@@ -30,7 +35,6 @@ from aos.api.shared.validators import require_id
 from aos.api.shorts.validators import (
     validate_caption,
     normalize_hashtags,
-    validate_content_mode,
 )
 
 from aos.api.shorts.mentions import sync_short_mentions
@@ -242,6 +246,7 @@ def create_short_impl(**kwargs):
                 "media_id": media_doc.name,
                 "raw_video_media": media_doc.name,
                 "status": frappe.db.get_value("AOS Short", doc.name, "status"),
+                "classification": public_classification(doc),
                 "video_job_id": video_job.name,
                 "video_job_status": video_job.status,
             },
@@ -256,15 +261,18 @@ def create_short_impl(**kwargs):
 
 # UPDATE METADATA
 def update_short_metadata_impl(**kwargs):
+    """Publish/update metadata with server-owned automatic content classification.
+
+    ``content_mode`` remains an accepted legacy transport field so older clients
+    do not break, but it is never authoritative.  A validated active ``ad_id``
+    is trusted commerce context and classifies the Short as ``shop``; otherwise
+    visual processing evidence is fused with caption and hashtag signals.
+    """
     user, err = require_login()
     if err:
         return err
 
     short_id, err = require_id(kwargs.get("short_id"), "short_id")
-    if err:
-        return err
-
-    content_mode, err = validate_content_mode(kwargs.get("content_mode"))
     if err:
         return err
 
@@ -280,12 +288,10 @@ def update_short_metadata_impl(**kwargs):
         kwargs.get("allow_comments"),
         default=DEFAULT_ALLOW_COMMENTS,
     )
-
     allow_downloads = _normalize_bool(
         kwargs.get("allow_downloads"),
         default=DEFAULT_ALLOW_DOWNLOADS,
     )
-
     hashtags = normalize_hashtags(kwargs.get("hashtags"))
 
     try:
@@ -294,66 +300,71 @@ def update_short_metadata_impl(**kwargs):
         if doc.owner != user:
             return fail("Not allowed.", error="FORBIDDEN")
 
-        # Only allow publishing when processing is complete
         if doc.status != "ready":
-            return fail(
-                "Short not ready for publishing.",
-                error="VALIDATION_ERROR",
-            )
+            return fail("Short not ready for publishing.", error="VALIDATION_ERROR")
 
         was_visible = doc.visibility_status == "visible"
+        ad_field_supplied = "ad_id" in kwargs
+        requested_ad_id = str(kwargs.get("ad_id") or "").strip() or None
 
-        doc.content_mode = content_mode
+        # The ad link is the only creator-provided signal allowed to establish
+        # Shop mode. It is validated as owned, active commerce context. Omitting
+        # ad_id during an edit preserves an existing valid attachment; supplying
+        # an empty ad_id explicitly detaches it.
+        commerce_ad_id = requested_ad_id
+        if not ad_field_supplied and getattr(doc, "ad", None):
+            commerce_ad_id = str(doc.ad).strip() or None
+
+        if commerce_ad_id:
+            ad_id, err = require_id(commerce_ad_id, "ad_id")
+            if err:
+                return err
+
+            seller = _get_seller_for_user(user)
+            if not seller:
+                return fail(
+                    "Seller profile is required to attach a product to a Short.",
+                    error="SELLER_REQUIRED",
+                )
+
+            ad = frappe.get_doc("AOS Ad", ad_id)
+            if ad.status != "Active":
+                return fail(
+                    "Shorts can only be attached to active ads.",
+                    error="VALIDATION_ERROR",
+                )
+            if ad.seller != seller:
+                return fail("Not allowed to attach to this ad.", error="FORBIDDEN")
+
+            doc.seller = seller
+            doc.ad = ad.name
+            doc.country = getattr(ad, "country", None)
+        else:
+            doc.seller = None
+            doc.ad = None
+            doc.country = None
+
+        classification = classify_for_publish(
+            visual_scores=getattr(doc, "classification_visual_scores", None),
+            caption=caption,
+            hashtags=hashtags,
+            has_shop_context=bool(doc.ad),
+            legacy_content_mode=kwargs.get("content_mode"),
+        )
+        apply_publish_result(doc, classification)
+
         doc.audience = audience
         doc.allow_comments = allow_comments
         doc.allow_downloads = allow_downloads
         doc.caption = caption
         doc.hashtags = json.dumps(hashtags or [])
 
-        if content_mode == SHORT_CONTENT_MODE_SHOP:
-            seller = _get_seller_for_user(user)
-            if not seller:
-                return fail(
-                    "Seller profile is required to publish shop shorts.",
-                    error="SELLER_REQUIRED",
-                )
-
-            ad_id, err = require_id(kwargs.get("ad_id"), "ad_id")
-            if err:
-                return err
-
-            ad = frappe.get_doc("AOS Ad", ad_id)
-
-            if ad.status != "Active":
-                return fail(
-                    "Shorts can only be attached to active ads.",
-                    error="VALIDATION_ERROR",
-                )
-
-            if ad.seller != seller:
-                return fail(
-                    "Not allowed to attach to this ad.",
-                    error="FORBIDDEN",
-                )
-
-            doc.seller = seller
-            doc.ad = ad.name
-            doc.country = getattr(ad, "country", None)
-
-        else:
-            # Non-shop shorts can be posted by any logged-in user.
-            # They are creator/user content, not commerce/ad content.
-            doc.seller = None
-            doc.ad = None
-            doc.country = None
-
         sound = None
         sound_id = kwargs.get("sound_id")
-
-        if content_mode == SHORT_CONTENT_MODE_SHOP and not sound_id:
+        if doc.content_mode == SHORT_CONTENT_MODE_SHOP and not sound_id:
             existing_sound_err = validate_existing_short_sound_for_mode(
                 short_id=doc.name,
-                content_mode=content_mode,
+                content_mode=doc.content_mode,
             )
             if existing_sound_err:
                 return existing_sound_err
@@ -369,7 +380,11 @@ def update_short_metadata_impl(**kwargs):
                 sound_id=sound_id,
                 start_ms=kwargs.get("sound_start_ms") or kwargs.get("start_ms"),
                 duration_ms=kwargs.get("sound_duration_ms") or kwargs.get("duration_ms"),
-                volume=kwargs.get("sound_volume") if kwargs.get("sound_volume") is not None else kwargs.get("volume"),
+                volume=(
+                    kwargs.get("sound_volume")
+                    if kwargs.get("sound_volume") is not None
+                    else kwargs.get("volume")
+                ),
             )
 
         mentions = sync_short_mentions(
@@ -384,21 +399,23 @@ def update_short_metadata_impl(**kwargs):
             was_visible=was_visible,
         )
 
-
         if sound_id:
             enqueue_short_audio_reprocess(doc.name)
 
         return ok(
-            "Short queued for moderation.",
+            "Short classified and queued for moderation.",
             data={
                 "short_id": doc.name,
                 "content_mode": doc.content_mode,
+                "classification": public_classification(doc),
                 "audience": doc.audience,
                 "allow_comments": bool(int(doc.allow_comments or 0)),
                 "allow_downloads": bool(int(doc.allow_downloads or 0)),
                 "mentions": mentions,
                 "sound": sound,
-                "audio_mix_status": "pending" if sound_id else getattr(doc, "audio_mix_status", None),
+                "audio_mix_status": (
+                    "pending" if sound_id else getattr(doc, "audio_mix_status", None)
+                ),
                 "visibility_status": doc.visibility_status,
                 "approval_status": getattr(doc, "approval_status", None),
                 "moderation_job_id": getattr(moderation_job, "name", None),
@@ -408,7 +425,6 @@ def update_short_metadata_impl(**kwargs):
 
     except frappe.ValidationError as ex:
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
-
     except Exception:
         frappe.log_error("Shorts operation failed.", "update_short_metadata failed")
         return fail("Failed to update short", error="INTERNAL_ERROR")

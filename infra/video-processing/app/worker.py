@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -366,6 +367,124 @@ def _generate_hls(input_path: str, work_dir: str) -> None:
 	_run(cmd, "HLS generation failed")
 
 
+def _generate_classification_frames(
+	input_path: str,
+	work_dir: str,
+	duration: float,
+	thumbnail_path: str,
+) -> list[str]:
+	settings = get_settings()
+	paths = [thumbnail_path] if os.path.exists(thumbnail_path) else []
+	remaining = max(0, settings.classification_frame_count - len(paths))
+	if remaining <= 0:
+		return paths
+
+	# Evenly spread samples avoid classifying only an intro/title frame.
+	for index in range(remaining):
+		fraction = (index + 1) / (remaining + 1)
+		timestamp = max(0.0, min(float(duration) - 0.05, float(duration) * fraction))
+		path = os.path.join(work_dir, f"classification_{index:02d}.jpg")
+		try:
+			_run(
+				[
+					"ffmpeg", "-y", "-ss", f"{timestamp:.3f}", "-i", input_path,
+					"-frames:v", "1",
+					"-vf", "scale=640:-2:force_original_aspect_ratio=decrease",
+					"-q:v", "5", path,
+				],
+				"Classification frame extraction failed",
+				timeout=min(settings.ffmpeg_timeout_seconds, 180),
+			)
+			if os.path.exists(path) and 0 < os.path.getsize(path) <= settings.classification_max_frame_bytes:
+				paths.append(path)
+		except Exception:
+			logger.warning("Short classification frame extraction failed category=processing")
+	return paths[: settings.classification_frame_count]
+
+
+def _validate_classification_url(url: str) -> None:
+	settings = get_settings()
+	parsed = urlparse(url)
+	if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+		raise VideoProcessingError("Invalid classification service URL")
+	if settings.classification_allowed_hosts and parsed.hostname.lower() not in settings.classification_allowed_hosts:
+		raise VideoProcessingError("Invalid classification service host")
+
+
+def _classification_fallback(status: str = "unavailable") -> dict[str, Any]:
+	return {
+		"status": status,
+		"mode": "vibes",
+		"confidence": 0.0,
+		"scores": {"shop": 0.0, "geo": 0.0, "vibes": 0.0, "learn": 0.0},
+		"model": "fallback",
+		"model_version": "1",
+		"frame_count": 0,
+	}
+
+
+def _classify_frames(frame_paths: list[str]) -> dict[str, Any]:
+	settings = get_settings()
+	if not settings.classification_enabled or not frame_paths:
+		return _classification_fallback("disabled" if not settings.classification_enabled else "unavailable")
+	if not settings.classification_secret:
+		return _classification_fallback("unavailable")
+
+	try:
+		_validate_classification_url(settings.classification_url)
+		frames: list[str] = []
+		for path in frame_paths[: settings.classification_frame_count]:
+			if not os.path.exists(path):
+				continue
+			size = os.path.getsize(path)
+			if size <= 0 or size > settings.classification_max_frame_bytes:
+				continue
+			with open(path, "rb") as handle:
+				frames.append(base64.b64encode(handle.read()).decode("ascii"))
+		if not frames:
+			return _classification_fallback("unavailable")
+
+		body = json.dumps({"frames": frames}, separators=(",", ":"), sort_keys=True).encode("utf-8")
+		timestamp = str(int(time.time()))
+		signed_payload = timestamp.encode("ascii") + b"." + body
+		response = requests.post(
+			settings.classification_url,
+			data=body,
+			headers={
+				"Content-Type": "application/json",
+				"X-AOS-Timestamp": timestamp,
+				"X-AOS-Signature": build_signature(settings.classification_secret, signed_payload),
+			},
+			timeout=settings.classification_timeout_seconds,
+		)
+		response.raise_for_status()
+		data = response.json() if response.content else {}
+		scores = data.get("scores") if isinstance(data.get("scores"), dict) else {}
+		clean_scores = {}
+		for mode in ("shop", "geo", "vibes", "learn"):
+			try:
+				clean_scores[mode] = max(0.0, min(float(scores.get(mode) or 0.0), 1.0))
+			except (TypeError, ValueError):
+				clean_scores[mode] = 0.0
+		if sum(clean_scores.values()) <= 0:
+			return _classification_fallback("unavailable")
+		mode = str(data.get("mode") or "").strip().lower()
+		if mode not in clean_scores:
+			mode = max(clean_scores, key=clean_scores.get)
+		return {
+			"status": "ready",
+			"mode": mode,
+			"confidence": max(0.0, min(float(data.get("confidence") or clean_scores[mode]), 1.0)),
+			"scores": clean_scores,
+			"model": str(data.get("model") or "openclip")[:140],
+			"model_version": str(data.get("model_version") or "1")[:140],
+			"frame_count": len(frames),
+		}
+	except Exception as exc:
+		logger.warning("Short visual classification unavailable category=%s", exc.__class__.__name__)
+		return _classification_fallback("unavailable")
+
+
 def _validate_callback_url(callback_url: str) -> None:
 	settings = get_settings()
 	parsed = urlparse(callback_url)
@@ -446,6 +565,10 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 
 		thumbnail_path = os.path.join(work_dir, "thumbnail.jpg")
 		width, height = _generate_thumbnail(input_path, thumbnail_path)
+		classification_frames = _generate_classification_frames(
+			input_path, work_dir, duration, thumbnail_path
+		)
+		classification = _classify_frames(classification_frames)
 
 		sound_path = None
 		if isinstance(sound, dict) and sound.get("bucket") and sound.get("object_key"):
@@ -488,6 +611,7 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 				if (
 					filename.startswith("input")
 					or filename.startswith("sound")
+					or filename.startswith("classification_")
 					or filename == "thumbnail.jpg"
 				):
 					continue
@@ -543,6 +667,7 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 			"objects": uploaded_objects,
 			"force": bool(payload.get("force")),
 			"sound_applied": bool(sound_path),
+			"classification": classification,
 		}
 		return callback_payload
 	except Exception as exc:

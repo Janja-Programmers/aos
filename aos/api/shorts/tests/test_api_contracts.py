@@ -76,6 +76,7 @@ class TestShortsApiContracts(FrappeTestCase):
             "services/video_processing_service.py",
             "patches/v1_0/harden_shorts_subsystem.py",
             "patches/v1_0/install_shorts_indexes.py",
+            "patches/v1_0/initialize_short_classification_metadata.py",
         ]
         offenders: list[str] = []
         for relative in roots:
@@ -91,6 +92,14 @@ class TestShortsApiContracts(FrappeTestCase):
                     if node.func.attr == "rollback" and not node.keywords:
                         offenders.append(f"{file}:{node.lineno}:full-rollback")
         self.assertEqual(offenders, [])
+
+    def test_content_mode_is_server_classified_not_creator_controlled(self):
+        source = self._source("api/shorts/upload.py")
+        update_section = source[source.index("def update_short_metadata_impl"): ]
+        self.assertIn("classify_for_publish", update_section)
+        self.assertIn("legacy_content_mode=kwargs.get(\"content_mode\")", update_section)
+        self.assertNotIn("validate_content_mode(kwargs.get(\"content_mode\"))", update_section)
+        self.assertIn("has_shop_context=bool(doc.ad)", update_section)
 
     def test_public_download_does_not_return_object_key(self):
         source = self._source("api/shorts/library.py")

@@ -22,6 +22,7 @@ from typing import Any
 import frappe
 from frappe.utils import cint, flt
 
+from aos.services.shorts.classification import public_classification
 from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.sellers.identity import public_seller_id_for_name
 from aos.services.shorts.errors import ShortsCursorError
@@ -310,6 +311,7 @@ def serialize_short_row(
         "status": status,
         "visibility_status": row.get("visibility_status"),
         "content_mode": row.get("content_mode") or DEFAULT_SHORT_CONTENT_MODE,
+        "classification": public_classification(row),
         "audience": row.get("audience") or DEFAULT_SHORT_AUDIENCE,
         "allow_comments": bool(
             cint(row.get("allow_comments", DEFAULT_ALLOW_COMMENTS))

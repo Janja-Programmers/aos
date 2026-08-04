@@ -102,10 +102,10 @@ class EmbeddingRuntime:
             raise EmbeddingError("Failed to generate image embedding.") from exc
 
     def generate_text_embedding(self, text: str) -> list[float]:
-        """Reserved for future hybrid search.
+        """Generate a normalized text embedding for internal AI services.
 
-        Kept here because the old backend had this helper, but no current AOS
-        business endpoint should call it directly.
+        Public business endpoints do not call this primitive directly. It is
+        used by the private Shorts frame classifier and future hybrid search.
         """
         clean_text = str(text or "").strip()
         if not clean_text:

@@ -24,12 +24,16 @@ required_docs = {
     "README.md", "architecture.md", "api.md", "upload-lifecycle.md", "processing.md",
     "feeds.md", "privacy.md", "media.md", "interactions.md", "notifications.md",
     "analytics.md", "moderation.md", "migration.md", "operations.md", "testing.md",
+    "classification.md",
 }
 docs_dir = ROOT / "docs/features/shorts"
 require(required_docs <= {p.name for p in docs_dir.glob("*.md")}, "required Shorts docs are incomplete")
 
 shorts_tests = ROOT / "aos/api/shorts/tests"
-required_shorts_tests = {"__init__.py", "test_api_contracts.py", "test_database_contracts.py"}
+required_shorts_tests = {
+    "__init__.py", "test_api_contracts.py", "test_database_contracts.py",
+    "test_classification.py",
+}
 require(
     required_shorts_tests <= {p.name for p in shorts_tests.glob("*.py")},
     "feature-specific Shorts tests are not colocated under aos/api/shorts/tests",
@@ -60,6 +64,22 @@ require("if not candidate_ids" not in feed, "All feed still empties on missing r
 require("COALESCE(s.ranking_score, 0) DESC" in feed, "feed and cursor ranking order are inconsistent")
 require("EXISTS (" in feed, "Following feed is not duplicate-safe")
 
+
+classification = source("aos/services/shorts/classification.py")
+upload = source("aos/api/shorts/upload.py")
+short_schema = json.loads(source("aos/aos/doctype/aos_short/aos_short.json"))
+require("classify_for_publish" in upload, "automatic publish classification is not wired")
+require("legacy_content_mode=kwargs.get(\"content_mode\")" in upload, "legacy content mode compatibility is not explicit")
+require("del legacy_content_mode" in classification, "creator content mode is still authoritative")
+require("commerce_context" in classification, "validated Shop context classification is missing")
+mode_field = next((field for field in short_schema.get("fields", []) if field.get("fieldname") == "content_mode"), {})
+require("all" not in str(mode_field.get("options") or "").split(), "All is incorrectly persisted as a content mode")
+image_main = source("infra/image-search/app/main.py")
+require("/internal/shorts/classify-frames" in image_main, "signed visual classification endpoint is missing")
+require("verify_signature" in image_main, "visual classification endpoint is not authenticated")
+require("x_aos_timestamp" in image_main, "visual classification request lacks freshness protection")
+require("signed_payload" in image_main, "visual classification signature does not bind timestamp")
+
 cursor = source("aos/api/shorts/utils.py")
 for token in ("hmac.new", "compare_digest", "_CURSOR_TTL_SECONDS", "ShortsCursorError"):
     require(token in cursor, f"cursor hardening token missing: {token}")
@@ -70,7 +90,10 @@ for token in ("job_generation", "SUPERSEDED", "SHORT_DELETED", "_validated_proce
 require('payload.get("playback_url")' not in processing, "callback playback URL is still trusted")
 
 worker = source("infra/video-processing/app/worker.py")
-for token in ("max_input_bytes", "allowed_video_codecs", "max_pixels", "ffmpeg_threads", "_validate_callback_url"):
+for token in (
+    "max_input_bytes", "allowed_video_codecs", "max_pixels", "ffmpeg_threads",
+    "_validate_callback_url", "_generate_classification_frames", "_classify_frames",
+):
     require(token in worker, f"video worker limit missing: {token}")
 require("shell=True" not in worker and "os.system(" not in worker, "unsafe video subprocess invocation")
 
@@ -80,6 +103,7 @@ transaction_roots = [
     ROOT / "aos/services/video_processing_service.py",
     ROOT / "aos/patches/v1_0/harden_shorts_subsystem.py",
     ROOT / "aos/patches/v1_0/install_shorts_indexes.py",
+    ROOT / "aos/patches/v1_0/initialize_short_classification_metadata.py",
 ]
 for root in transaction_roots:
     files = [root] if root.is_file() else list(root.rglob("*.py"))
@@ -96,14 +120,24 @@ for root in transaction_roots:
 patches = source("aos/patches.txt")
 data_patch = "aos.patches.v1_0.harden_shorts_subsystem"
 index_patch = "aos.patches.v1_0.install_shorts_indexes"
+classification_patch = "aos.patches.v1_0.initialize_short_classification_metadata"
 require(data_patch in patches, "Shorts data migration not registered")
 require(index_patch in patches, "Shorts index migration not registered")
+require(classification_patch in patches, "Shorts classification migration not registered")
 if data_patch in patches and index_patch in patches:
     require(patches.index(data_patch) < patches.index(index_patch), "Shorts index patch must follow data reconciliation")
+if index_patch in patches and classification_patch in patches:
+    require(
+        patches.index(index_patch) < patches.index(classification_patch),
+        "Shorts classification metadata patch must follow schema/index migration",
+    )
 data_patch_source = source("aos/patches/v1_0/harden_shorts_subsystem.py")
 index_patch_source = source("aos/patches/v1_0/install_shorts_indexes.py")
+classification_patch_source = source("aos/patches/v1_0/initialize_short_classification_metadata.py")
 require("frappe.db.commit" not in data_patch_source, "Shorts data migration commits")
 require("frappe.db.commit" not in index_patch_source, "Shorts index migration commits")
+require("frappe.db.commit" not in classification_patch_source, "Shorts classification migration commits")
+require("ALTER TABLE" not in classification_patch_source, "Shorts classification migration mixes DML and DDL")
 require("ALTER TABLE" not in data_patch_source, "Shorts data migration mixes DML and DDL")
 require("ALTER TABLE" in index_patch_source, "Shorts schema-only index migration is missing DDL")
 index_patch_tree = ast.parse(index_patch_source)

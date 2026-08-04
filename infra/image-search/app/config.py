@@ -100,6 +100,24 @@ class Settings:
 			minimum=1.0,
 		)
 
+		self.internal_secret = _get_optional_str("IMAGE_SEARCH_INTERNAL_SECRET")
+		self.short_classification_max_frames = min(
+			_get_int("IMAGE_SEARCH_SHORT_CLASSIFICATION_MAX_FRAMES", 6, minimum=1),
+			8,
+		)
+		self.short_classification_max_frame_bytes = _get_int(
+			"IMAGE_SEARCH_SHORT_CLASSIFICATION_MAX_FRAME_BYTES", 1048576, minimum=65536
+		)
+		self.short_classification_max_total_bytes = _get_int(
+			"IMAGE_SEARCH_SHORT_CLASSIFICATION_MAX_TOTAL_BYTES", 6291456, minimum=65536
+		)
+		self.short_classification_temperature = _get_float(
+			"IMAGE_SEARCH_SHORT_CLASSIFICATION_TEMPERATURE", 0.05, minimum=0.01
+		)
+		self.short_classification_model_version = _get_str(
+			"IMAGE_SEARCH_SHORT_CLASSIFICATION_MODEL_VERSION", "openclip-v1"
+		)
+
 		# Optional. Prefer sending absolute URLs from AOS backend. This exists only
 		# as a safe fallback for /files/... values during local development.
 		self.file_base_url = _get_optional_str("IMAGE_SEARCH_FILE_BASE_URL")
@@ -125,6 +143,9 @@ class Settings:
 			"primary_boost": self.primary_boost,
 			"max_image_bytes": self.max_image_bytes,
 			"request_timeout_seconds": self.request_timeout_seconds,
+			"short_classification_enabled": bool(self.internal_secret),
+			"short_classification_max_frames": self.short_classification_max_frames,
+			"short_classification_model_version": self.short_classification_model_version,
 			"file_base_url_configured": bool(self.file_base_url),
 		}
 

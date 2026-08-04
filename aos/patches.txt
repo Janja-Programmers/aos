@@ -33,3 +33,4 @@ aos.patches.v1_0.harden_social_subsystem
 
 aos.patches.v1_0.harden_shorts_subsystem
 aos.patches.v1_0.install_shorts_indexes
+aos.patches.v1_0.initialize_short_classification_metadata

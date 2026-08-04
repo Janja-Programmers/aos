@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
+import time
+from io import BytesIO
 
-from fastapi import FastAPI, File, Form, HTTPException, Path, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Path, Request, UploadFile
 
 from .config import get_settings
 from .embedding import EmbeddingError
-from .image_loader import ImageLoadError
+from .image_loader import ImageLoadError, load_image_from_file
 from .observability import instrument_app, readiness_error
 from .qdrant_store import VectorStoreError
 from .schemas import (
@@ -16,8 +20,12 @@ from .schemas import (
 	ReadyResponse,
 	ReplaceImagesRequest,
 	ReplaceImagesResponse,
+	ShortFrameClassificationRequest,
+	ShortFrameClassificationResponse,
 )
 from .service import get_service
+from .security import verify_signature
+from .short_classification import ShortClassificationError, get_short_classifier
 
 app = FastAPI(
 	title="AOS Image Search Service",
@@ -111,3 +119,62 @@ def search_by_image(
 		)
 	except Exception as exc:
 		_handle_known_error(exc)
+
+
+@app.post(
+	"/internal/shorts/classify-frames",
+	response_model=ShortFrameClassificationResponse,
+	include_in_schema=False,
+)
+async def classify_short_frames(
+	request: Request,
+	x_aos_signature: str | None = Header(default=None),
+	x_aos_timestamp: str | None = Header(default=None),
+):
+	settings = get_settings()
+	raw_body = await request.body()
+	try:
+		timestamp = int(str(x_aos_timestamp or "").strip())
+	except (TypeError, ValueError) as exc:
+		raise HTTPException(status_code=401, detail="Invalid signature") from exc
+	if abs(int(time.time()) - timestamp) > 300:
+		raise HTTPException(status_code=401, detail="Invalid signature")
+	signed_payload = str(timestamp).encode("ascii") + b"." + raw_body
+	if not verify_signature(settings.internal_secret or "", signed_payload, x_aos_signature):
+		raise HTTPException(status_code=401, detail="Invalid signature")
+
+	try:
+		payload = ShortFrameClassificationRequest.model_validate_json(raw_body)
+	except Exception as exc:
+		raise HTTPException(status_code=422, detail="Invalid classification request") from exc
+
+	if len(payload.frames) > settings.short_classification_max_frames:
+		raise HTTPException(status_code=413, detail="Too many frames")
+
+	images = []
+	total_bytes = 0
+	for index, encoded in enumerate(payload.frames):
+		try:
+			raw = base64.b64decode(str(encoded or ""), validate=True)
+		except (binascii.Error, ValueError) as exc:
+			raise HTTPException(status_code=400, detail="Invalid frame encoding") from exc
+		if not raw or len(raw) > settings.short_classification_max_frame_bytes:
+			raise HTTPException(status_code=413, detail="Frame exceeds configured limit")
+		total_bytes += len(raw)
+		if total_bytes > settings.short_classification_max_total_bytes:
+			raise HTTPException(status_code=413, detail="Frames exceed configured limit")
+		try:
+			images.append(
+				load_image_from_file(
+					BytesIO(raw),
+					settings=settings,
+					source_label=f"short-frame-{index}",
+				)
+			)
+		except ImageLoadError as exc:
+			raise HTTPException(status_code=400, detail="Invalid frame image") from exc
+
+	try:
+		return get_short_classifier().classify(images)
+	except (EmbeddingError, ShortClassificationError) as exc:
+		raise HTTPException(status_code=503, detail="Short classification is unavailable") from exc

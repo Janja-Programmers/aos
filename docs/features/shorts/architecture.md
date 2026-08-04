@@ -6,7 +6,8 @@
 - `aos/services/shorts`: validation, policies, repositories, media rules, feeds, analytics, notification decisions, serializers, errors and observability.
 - `aos/api/shorts`: compatibility implementations retained for callers already importing them.
 - `aos/services/video_processing_service.py`: persistent job/outbox orchestration.
-- `infra/video-processing`: authenticated, durable FFmpeg companion.
+- `infra/video-processing`: authenticated, durable FFmpeg companion and representative-frame sampler.
+- `infra/image-search`: private OpenCLIP frame classifier shared with visual ad search.
 - `AOS Media Object`: canonical upload ownership and object lifecycle.
 - `AOS Transactional Outbox`: atomic dispatch and callback lifecycle.
 
@@ -19,3 +20,7 @@ Visibility, comment, download and owner rules are centralized in `aos.services.s
 ## Transaction boundary
 
 Frappe owns request/job transactions. Shorts mutations create a savepoint, restore callback manager state when rolling back a handled error, and leave outer commit/rollback to Frappe. Outbox rows and domain mutations are therefore atomic.
+
+## Classification boundary
+
+The video companion sends bounded frames to the private OpenCLIP service using `SHORT_CLASSIFICATION_SECRET`. Frappe never imports Torch/OpenCLIP. Visual scores are evidence only; Frappe owns the final fusion, Shop/ad authorization, persistence, moderation handoff, and public serialization.

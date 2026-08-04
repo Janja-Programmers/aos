@@ -22,6 +22,14 @@
   "column_break_odah",
   "status",
   "content_mode",
+  "classification_status",
+  "classification_source",
+  "classification_confidence",
+  "classification_model",
+  "classification_model_version",
+  "classified_at",
+  "classification_visual_scores",
+  "classification_scores",
   "audience",
   "posted_on",
   "allow_comments",
@@ -300,6 +308,63 @@
    "label": "Content Mode",
    "options": "shop\ngeo\nvibes\nlearn",
    "search_index": 1
+  },
+  {
+   "default": "pending",
+   "fieldname": "classification_status",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Classification Status",
+   "options": "pending\nvisual_ready\nready\nfallback\nfailed\nlegacy",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "classification_source",
+   "fieldtype": "Select",
+   "label": "Classification Source",
+   "options": "automatic_visual\nautomatic_text\nautomatic_visual_text\ncommerce_context\nfallback\nlegacy\nadmin_override",
+   "read_only": 1
+  },
+  {
+   "fieldname": "classification_confidence",
+   "fieldtype": "Float",
+   "label": "Classification Confidence",
+   "precision": "6",
+   "read_only": 1
+  },
+  {
+   "fieldname": "classification_model",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Classification Model",
+   "read_only": 1
+  },
+  {
+   "fieldname": "classification_model_version",
+   "fieldtype": "Data",
+   "label": "Classification Model Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "classified_at",
+   "fieldtype": "Datetime",
+   "label": "Classified At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "classification_visual_scores",
+   "fieldtype": "JSON",
+   "hidden": 1,
+   "label": "Visual Classification Scores",
+   "read_only": 1
+  },
+  {
+   "fieldname": "classification_scores",
+   "fieldtype": "JSON",
+   "hidden": 1,
+   "label": "Classification Scores",
+   "read_only": 1
   },
   {
    "default": "everyone",

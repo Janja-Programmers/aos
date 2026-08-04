@@ -808,7 +808,7 @@ def _get_content_mode_breakdown(*, date_from, date_to, owner: str | None = None)
     rows = frappe.db.sql(
         f"""
         SELECT
-            COALESCE(s.content_mode, 'geo') AS content_mode,
+            COALESCE(NULLIF(s.content_mode, ''), 'vibes') AS content_mode,
             COUNT(DISTINCT s.name) AS total_shorts,
             COALESCE(SUM(m.impressions), 0) AS impressions,
             COALESCE(SUM(m.views), 0) AS views,
@@ -825,7 +825,7 @@ def _get_content_mode_breakdown(*, date_from, date_to, owner: str | None = None)
          AND m.date BETWEEN %s AND %s
         WHERE s.status != 'deleted'
           {owner_clause}
-        GROUP BY COALESCE(s.content_mode, 'geo')
+        GROUP BY COALESCE(NULLIF(s.content_mode, ''), 'vibes')
         ORDER BY views DESC, total_shorts DESC
         """,
         params,
