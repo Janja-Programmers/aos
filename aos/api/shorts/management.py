@@ -15,7 +15,7 @@ from typing import Any
 import frappe
 
 from aos.api.shared.auth import require_login, current_user
-from aos.api.shared.rate_limit import rate_limit, request_ip
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.validators import require_id
 
@@ -298,8 +298,10 @@ def _select_short_rows_sql() -> str:
 
 # GET SHORT
 def get_short_impl(**kwargs):
+    viewer = _get_optional_viewer()
+    rate_limit_subject = ("user", viewer) if viewer else ("ip", request_ip())
     rl = rate_limit(
-        key=f"aos:shorts:get:ip:{request_ip()}",
+        key=rate_limit_key("shorts", "get", *rate_limit_subject),
         ttl_seconds=60,
         limit=120,
         message="Too many requests. Please try again shortly.",
@@ -312,8 +314,6 @@ def get_short_impl(**kwargs):
         return err
 
     try:
-        viewer = _get_optional_viewer()
-
         # Fetch doc first for access control.
         doc = frappe.get_doc("AOS Short", short_id)
 

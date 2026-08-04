@@ -766,19 +766,25 @@ class MediaService:
                 code="MEDIA_ALREADY_ATTACHED",
             )
 
-        policy = self._get_purpose_or_raise(doc.purpose)
-        if not policy.deletion_permitted and not system:
-            raise MediaPermissionError("Media deletion is not permitted", code="MEDIA_ACCESS_DENIED")
+        if not system:
+            policy = self._get_purpose_or_raise(doc.purpose)
+            if not policy.deletion_permitted:
+                raise MediaPermissionError("Media deletion is not permitted", code="MEDIA_ACCESS_DENIED")
 
-        doc.status = "Delete Pending"
-        doc.delete_requested_at = now_datetime()
-        doc.save(ignore_permissions=True)
+        self._persist_delete_lifecycle(
+            doc,
+            {
+                "status": "Delete Pending",
+                "delete_requested_at": now_datetime(),
+            },
+            bypass_validation=system,
+        )
         media_log("delete_requested", media_id=doc.name, purpose=doc.purpose, operation="delete")
 
         try:
             self._delete_all_storage_identities(doc)
         except (StorageUnavailableError, StorageConfigurationError) as exc:
-            self._record_storage_failure(doc, exc)
+            self._record_storage_failure(doc, exc, bypass_validation=system)
             media_log(
                 "delete_failed",
                 media_id=doc.name,
@@ -790,12 +796,18 @@ class MediaService:
             )
             raise MediaStorageError("Storage deletion will be retried") from exc
 
-        doc.status = "Deleted"
-        doc.deleted_at = now_datetime()
-        doc.last_storage_error = ""
+        deleted_values = {
+            "status": "Deleted",
+            "deleted_at": now_datetime(),
+            "last_storage_error": "",
+        }
         if getattr(doc, "upload_object_key", None):
-            doc.staging_cleanup_required = 1
-        doc.save(ignore_permissions=True)
+            deleted_values["staging_cleanup_required"] = 1
+        self._persist_delete_lifecycle(
+            doc,
+            deleted_values,
+            bypass_validation=system,
+        )
         media_log("delete_completed", media_id=doc.name, purpose=doc.purpose, operation="delete")
         return doc
 
@@ -1274,11 +1286,74 @@ class MediaService:
             if bucket and object_key:
                 self.storage.delete_object(bucket, object_key)
 
-    def _record_storage_failure(self, doc, exc: Exception) -> None:
+    def _persist_delete_lifecycle(
+        self,
+        doc,
+        values: dict[str, object],
+        *,
+        bypass_validation: bool,
+    ) -> None:
+        """Persist deletion-only state without revalidating immutable legacy metadata.
+
+        System cleanup must be able to remove old orphan rows whose stored MIME or
+        filename predates the canonical purpose policy. Only the tightly bounded
+        lifecycle fields supplied by the deletion path use this bypass; normal
+        user-managed saves continue through full DocType validation.
+        """
+
+        allowed_fields = {
+            "status",
+            "delete_requested_at",
+            "deleted_at",
+            "last_storage_error",
+            "staging_cleanup_required",
+        }
+        if not set(values).issubset(allowed_fields):
+            raise MediaConflictError(
+                "Invalid system media lifecycle update",
+                code="INVALID_STATE",
+            )
+
+        if bypass_validation:
+            frappe.db.set_value(
+                "AOS Media Object",
+                doc.name,
+                values,
+                update_modified=True,
+            )
+            for fieldname, value in values.items():
+                setattr(doc, fieldname, value)
+            return
+
+        for fieldname, value in values.items():
+            setattr(doc, fieldname, value)
+        doc.save(ignore_permissions=True)
+
+    def _record_storage_failure(
+        self,
+        doc,
+        exc: Exception,
+        *,
+        bypass_validation: bool = False,
+    ) -> None:
         try:
-            doc.retry_count = int(getattr(doc, "retry_count", 0) or 0) + 1
-            doc.last_storage_error = str(getattr(exc, "category", "unavailable"))[:64]
-            doc.last_storage_attempt_at = now_datetime()
+            values = {
+                "retry_count": int(getattr(doc, "retry_count", 0) or 0) + 1,
+                "last_storage_error": str(getattr(exc, "category", "unavailable"))[:64],
+                "last_storage_attempt_at": now_datetime(),
+            }
+            if bypass_validation:
+                frappe.db.set_value(
+                    "AOS Media Object",
+                    doc.name,
+                    values,
+                    update_modified=True,
+                )
+                for fieldname, value in values.items():
+                    setattr(doc, fieldname, value)
+                return
+            for fieldname, value in values.items():
+                setattr(doc, fieldname, value)
             doc.save(ignore_permissions=True)
         except Exception:
             pass

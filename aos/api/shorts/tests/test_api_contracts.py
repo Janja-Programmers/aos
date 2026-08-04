@@ -8,6 +8,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from aos.api.shorts.management import get_short_impl
 from aos.api.shorts.utils import decode_cursor, encode_cursor
 from aos.services.shorts.errors import ShortsCursorError, ShortsError
 from aos.services.shorts.endpoints import ENDPOINT_SPECS
@@ -46,6 +47,23 @@ class TestShortsApiContracts(FrappeTestCase):
             replacement = "A" if cursor[-1] != "A" else "B"
             with self.assertRaises(ShortsCursorError):
                 decode_cursor(cursor[:-1] + replacement)
+
+    def test_authenticated_short_status_rate_limit_is_user_scoped(self):
+        limited = {
+            "ok": False,
+            "message": "Too many requests. Please try again shortly.",
+            "error": "RATE_LIMIT",
+            "data": {},
+        }
+        with (
+            patch("aos.api.shorts.management._get_optional_viewer", return_value="user@example.test"),
+            patch("aos.api.shorts.management.rate_limit", return_value=limited) as limiter,
+        ):
+            self.assertEqual(get_short_impl(short_id="SHORT-2026-00137"), limited)
+
+        key = limiter.call_args.kwargs["key"]
+        self.assertTrue(key.startswith("aos:rl:shorts:get:user:sha256:"), key)
+        self.assertNotIn("user@example.test", key)
 
     def test_all_feed_candidates_are_advisory_and_order_matches_cursor(self):
         source = self._source("api/shorts/feed.py")

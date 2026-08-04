@@ -275,6 +275,33 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
         with self.assertRaises(MediaConflictError):
             self.service.delete_media(media_id=confirmed.name, user=self.user)
 
+    def test_system_cleanup_can_delete_legacy_media_with_policy_drift(self):
+        doc = self._init_png()
+        self._upload_staging(doc)
+        confirmed = self.service.confirm_upload(user=self.user, media_id=doc.name)
+
+        # Model a historical row created before the current purpose/MIME policy.
+        frappe.db.set_value(
+            "AOS Media Object",
+            confirmed.name,
+            "content_type",
+            "video/mp4",
+            update_modified=False,
+        )
+
+        deleted = self.service.delete_media_as_system(media_id=confirmed.name)
+
+        self.assertEqual(deleted.status, "Deleted")
+        self.assertFalse(self.storage.object_exists(confirmed.bucket, confirmed.object_key))
+        stored = frappe.db.get_value(
+            "AOS Media Object",
+            confirmed.name,
+            ["status", "deleted_at"],
+            as_dict=True,
+        )
+        self.assertEqual(stored.status, "Deleted")
+        self.assertTrue(stored.deleted_at)
+
     def test_storage_delete_failure_remains_retriable_and_second_delete_succeeds(self):
         doc = self._init_png()
         self._upload_staging(doc)
