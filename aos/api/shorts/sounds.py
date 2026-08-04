@@ -12,11 +12,11 @@ import frappe
 from aos.services.accounts.identity import public_account_id_for_user
 
 from aos.api.shared.auth import require_login, current_user
-from aos.api.shared.rate_limit import rate_limit, request_ip
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
-from aos.api.shared.sql_safety import safe_like_contains
+from aos.api.shared.sql_safety import safe_like_contains, safe_like_prefix
 from aos.api.shared.formatters import humanize_count
 from aos.services.video_processing_service import create_video_processing_job
 
@@ -639,8 +639,14 @@ def list_sounds_impl(**kwargs):
 
 
 def search_sounds_impl(**kwargs):
+    q = str(kwargs.get("q") or kwargs.get("query") or "").strip()
+    if not q:
+        return fail("Search query is required.", error="VALIDATION_ERROR")
+
+    viewer = _get_optional_viewer()
+    rate_limit_subject = ("user", viewer) if viewer else ("ip", request_ip())
     rl = rate_limit(
-        key=f"aos:shorts:sounds:search:ip:{request_ip()}",
+        key=rate_limit_key("shorts", "sounds", "search", *rate_limit_subject),
         ttl_seconds=60,
         limit=300,
         message="Too many requests. Please try again shortly.",
@@ -648,13 +654,9 @@ def search_sounds_impl(**kwargs):
     if rl:
         return rl
 
-    q = str(kwargs.get("q") or kwargs.get("query") or "").strip()
-    if not q:
-        return fail("Search query is required.", error="VALIDATION_ERROR")
-
-    viewer = _get_optional_viewer()
     limit = validate_limit(kwargs.get("limit"), SOUND_DEFAULT_LIMIT, SOUND_MAX_LIMIT)
     like = safe_like_contains(q)
+    prefix = safe_like_prefix(q)
 
     try:
         rows = frappe.db.sql(
@@ -665,11 +667,24 @@ def search_sounds_impl(**kwargs):
                 owner, created_from_short, creation
             FROM `tabAOS Sound`
             WHERE status = 'active'
-              AND (title LIKE %s ESCAPE '\\' OR artist LIKE %s ESCAPE '\\')
-            ORDER BY creation DESC, name DESC
+              AND (
+                COALESCE(title, '') LIKE %s ESCAPE '\\'
+                OR COALESCE(artist, '') LIKE %s ESCAPE '\\'
+              )
+            ORDER BY
+                CASE
+                    WHEN LOWER(COALESCE(title, '')) = LOWER(%s) THEN 0
+                    WHEN LOWER(COALESCE(title, '')) LIKE LOWER(%s) ESCAPE '\\' THEN 1
+                    WHEN LOWER(COALESCE(artist, '')) = LOWER(%s) THEN 2
+                    WHEN LOWER(COALESCE(artist, '')) LIKE LOWER(%s) ESCAPE '\\' THEN 3
+                    ELSE 4
+                END,
+                usage_count DESC,
+                creation DESC,
+                name DESC
             LIMIT %s
             """,
-            (like, like, limit),
+            (like, like, q, prefix, q, prefix, limit),
             as_dict=True,
         )
         return ok("Sounds fetched.", data={"items": _serialize_sound_rows(rows, viewer=viewer)})

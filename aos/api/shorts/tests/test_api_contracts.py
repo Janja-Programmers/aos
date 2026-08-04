@@ -9,6 +9,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from aos.api.shorts.management import get_short_impl
+from aos.api.shorts.sounds import search_sounds_impl
 from aos.api.shorts.utils import decode_cursor, encode_cursor
 from aos.services.shorts.errors import ShortsCursorError, ShortsError
 from aos.services.shorts.endpoints import ENDPOINT_SPECS
@@ -64,6 +65,28 @@ class TestShortsApiContracts(FrappeTestCase):
         key = limiter.call_args.kwargs["key"]
         self.assertTrue(key.startswith("aos:rl:shorts:get:user:sha256:"), key)
         self.assertNotIn("user@example.test", key)
+
+    def test_authenticated_sound_search_is_user_scoped_and_ranked(self):
+        captured: dict[str, object] = {}
+
+        def fake_sql(query, params=None, **kwargs):
+            captured["query"] = query
+            captured["params"] = tuple(params or ())
+            return []
+
+        with (
+            patch("aos.api.shorts.sounds._get_optional_viewer", return_value="user@example.test"),
+            patch("aos.api.shorts.sounds.rate_limit", return_value=None) as limiter,
+            patch("aos.api.shorts.sounds.frappe.db.sql", side_effect=fake_sql),
+        ):
+            response = search_sounds_impl(q="Math", limit=20)
+
+        self.assertTrue(response.get("ok"), response)
+        key = limiter.call_args.kwargs["key"]
+        self.assertTrue(key.startswith("aos:rl:shorts:sounds:search:user:sha256:"), key)
+        self.assertNotIn("user@example.test", key)
+        self.assertIn("CASE", str(captured["query"]))
+        self.assertEqual(captured["params"], ("%Math%", "%Math%", "Math", "Math%", "Math", "Math%", 20))
 
     def test_all_feed_candidates_are_advisory_and_order_matches_cursor(self):
         source = self._source("api/shorts/feed.py")
