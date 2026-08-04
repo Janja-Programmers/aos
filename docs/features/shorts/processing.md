@@ -13,3 +13,8 @@ Limits are configured with `VIDEO_MAX_INPUT_BYTES`, `VIDEO_MAX_DURATION_SECONDS`
 ## Classification stage
 
 After metadata validation and thumbnail generation, the worker samples representative frames and sends them over the signed internal `/internal/shorts/classify-frames` boundary. Classification is non-fatal: processing still reaches `ready` with a fallback marker if OpenCLIP is unavailable. The Frappe callback validates and stores only bounded four-mode scores; final fusion occurs when caption/hashtags and optional ad context are submitted.
+## Durable callback payload integrity
+
+The video companion stores a bounded terminal result in Redis before callback delivery. The stored JSON must remain complete; it must never be cut at a generic diagnostic-field limit because truncated JSON cannot be replayed safely. HLS segment/object details stay internal to the worker. The callback contains only the canonical job and generation identifiers, final MP4/HLS keys, thumbnail metadata, duration, sound/classification results, and a bounded output-object count.
+
+A legacy or corrupt durable result is dead-lettered as `CALLBACK_RESULT_INVALID` without sending a malformed callback. Operators must retry processing for the affected Short; the service never invents missing duration or storage metadata.

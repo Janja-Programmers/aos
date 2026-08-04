@@ -96,6 +96,13 @@ for token in (
 ):
     require(token in worker, f"video worker limit missing: {token}")
 require("shell=True" not in worker and "os.system(" not in worker, "unsafe video subprocess invocation")
+require('"objects": uploaded_objects' not in worker, "video callback still exposes every HLS object")
+require('"output_object_count": len(uploaded_objects)' in worker, "bounded video output summary is missing")
+
+durable_video = source("infra/video-processing/app/durable_lifecycle.py")
+require('65536 if name == "result_payload"' in durable_video, "video callback JSON is still truncated at 4 KiB")
+require("CALLBACK_RESULT_INVALID" in durable_video, "corrupt durable callback records do not fail closed")
+require('result_payload["job_id"]' in durable_video, "durable callback delivery does not restore stable job ID")
 
 transaction_roots = [
     ROOT / "aos/api/shorts",

@@ -40,11 +40,19 @@ def handle_callback_impl(**kwargs):
 	except CallbackSecurityError as exc:
 		return _security_failure(exc)
 
+	job_id = str(payload.get("job_id") or "").strip()
+	if not job_id:
+		return fail(
+			"Invalid video processing callback payload.",
+			error="VIDEO_CALLBACK_INVALID",
+			http_status=400,
+		)
+
 	try:
 		job = execute_callback_atomically(
 			service_type="video_processing",
 			job_doctype="AOS Video Processing Job",
-			job_name=str(payload.get("job_id") or "").strip(),
+			job_name=job_id,
 			operation=lambda: handle_video_processing_callback(payload),
 		)
 		return ok(

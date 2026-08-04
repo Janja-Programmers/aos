@@ -149,6 +149,25 @@ class TestCallbackSecurity(FrappeTestCase):
         self.assertEqual(response["error"], "VALIDATION_ERROR")
         handler.assert_not_called()
 
+
+    def test_video_callback_without_job_id_is_rejected_before_transaction(self):
+        with patch.object(
+            video_callback,
+            "get_video_processing_config",
+            return_value=SimpleNamespace(callback_secret=self.secret),
+        ):
+            with patch.object(
+                video_callback,
+                "read_signed_json_callback_payload",
+                return_value={"status": "ready"},
+            ):
+                with patch.object(video_callback, "execute_callback_atomically") as execute:
+                    response = video_callback.handle_callback_impl()
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"], "VIDEO_CALLBACK_INVALID")
+        execute.assert_not_called()
+
     def test_service_signature_verifiers_fail_closed_without_secret(self):
         for service in (
             video_processing_service,

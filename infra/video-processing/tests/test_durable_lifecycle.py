@@ -522,3 +522,73 @@ def test_newer_signed_generation_rearms_completed_callback_without_rerunning_wor
 	assert decision.authoritative_generation == 2
 	assert lifecycle.load_result(redis_conn, SERVICE_TYPE, STABLE_ID)["callback_status"] == "pending"
 	assert work_calls == ["work"]
+
+
+def test_large_terminal_result_is_preserved_and_callback_keeps_job_id(monkeypatch, redis_conn, rq_queue):
+	large_metadata = "x" * 12000
+	monkeypatch.setattr(
+		worker,
+		"_perform_video_work",
+		lambda _payload: {
+			"job_id": "service-job-1",
+			"status": "ready",
+			"processed_file_key": large_metadata,
+		},
+	)
+	worker.process_video_job(payload())
+	record = load_result(redis_conn, SERVICE_TYPE, STABLE_ID)
+	stored = lifecycle._parse_json(record["result_payload"], None)
+	assert stored["job_id"] == "service-job-1"
+	assert stored["processed_file_key"] == large_metadata
+
+	captured = {}
+
+	def send(_url, callback_payload):
+		captured.update(callback_payload)
+		return response()
+
+	completed = deliver_callback(
+		redis=redis_conn,
+		service_type=SERVICE_TYPE,
+		stable_id=STABLE_ID,
+		send_callback=send,
+		result_ttl_seconds=3600,
+		callback_max_attempts=3,
+	)
+	assert completed["callback_status"] == "complete"
+	assert captured["job_id"] == "service-job-1"
+	assert captured["status"] == "ready"
+
+
+def test_invalid_legacy_result_is_dead_lettered_without_malformed_callback(redis_conn):
+	lifecycle._write_record(
+		redis_conn,
+		SERVICE_TYPE,
+		STABLE_ID,
+		{
+			"work_state": "work_complete",
+			"stable_job_id": "service-job-1",
+			"terminal_result_type": "ready",
+			"result_payload": '{"job_id":"service-job-1"',
+			"callback_status": "pending",
+		},
+		retention_seconds=3600,
+	)
+
+	def forbidden(_url, _payload):
+		raise AssertionError("Malformed callback must not be delivered")
+
+	result = deliver_callback(
+		redis=redis_conn,
+		service_type=SERVICE_TYPE,
+		stable_id=STABLE_ID,
+		send_callback=forbidden,
+		result_ttl_seconds=3600,
+		callback_max_attempts=3,
+	)
+	assert result == {
+		"ok": False,
+		"callback_status": "dead_letter",
+		"error": "CALLBACK_RESULT_INVALID",
+	}
+	assert load_result(redis_conn, SERVICE_TYPE, STABLE_ID)["callback_status"] == "dead_letter"

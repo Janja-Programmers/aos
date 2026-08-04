@@ -126,6 +126,8 @@ def test_work_happy_path_is_separate_from_callback(monkeypatch, tmp_path):
 	assert result["status"] == "ready"
 	assert result["duration_seconds"] == 2.5
 	assert result["classification"]["mode"] == "learn"
+	assert result["output_object_count"] >= 2
+	assert "objects" not in result
 	assert len(uploads) >= 3
 	assert not work_dir.exists()
 

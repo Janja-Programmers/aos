@@ -664,7 +664,10 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 			"processed_file_key": processed_file_key,
 			"master_playlist_key": master_playlist_key,
 			"thumbnail": thumbnail,
-			"objects": uploaded_objects,
+			# Individual HLS object records are internal processing details and can
+			# make the durable callback JSON unnecessarily large. The backend only
+			# needs the validated final/manifest keys and thumbnail metadata.
+			"output_object_count": len(uploaded_objects),
 			"force": bool(payload.get("force")),
 			"sound_applied": bool(sound_path),
 			"classification": classification,
@@ -711,4 +714,3 @@ def replay_callback(_callback_url: str, payload: dict[str, Any]) -> dict[str, An
 	"""Compatibility entry point: replay from the durable result, never from RQ result data."""
 	stable_id = str(payload.get("idempotency_key") or payload.get("job_id") or "").strip()
 	return deliver_callback_job(stable_id)
-
