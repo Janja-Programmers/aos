@@ -100,6 +100,9 @@ class TestResponseStatusMapping(FrappeTestCase):
             with self.subTest(code=code):
                 self.assertEqual(http_status_for_code(code), 503)
 
+    def test_invalid_video_callback_uses_bad_request(self):
+        self.assertEqual(http_status_for_code("VIDEO_CALLBACK_INVALID"), 400)
+
     def test_callback_and_worker_failure_codes_use_bad_gateway(self):
         for code in (
             "ANALYTICS_CALLBACK_FAILED",
