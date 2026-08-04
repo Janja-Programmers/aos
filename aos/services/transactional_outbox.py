@@ -269,6 +269,25 @@ def is_ambiguous_dispatch_error(exc: Exception) -> bool:
 	return any(token in name for token in ("timeout", "connection", "connect", "reset", "proxy", "chunked", "closed"))
 
 
+def _outbox_aggregate_exists(outbox: Any) -> bool:
+	aggregate_doctype = _clean(getattr(outbox, "aggregate_doctype", None), limit=140)
+	aggregate_name = _clean(getattr(outbox, "aggregate_name", None), limit=140)
+	if not aggregate_doctype or not aggregate_name:
+		return True
+	return bool(frappe.db.exists(aggregate_doctype, aggregate_name))
+
+
+def _save_outbox(outbox: Any) -> None:
+	"""Persist outbox lifecycle state after its optional aggregate is deleted.
+
+	The durable job link remains authoritative. The aggregate Dynamic Link is
+	audit metadata and is allowed to become stale after an aggregate deletion.
+	"""
+	if not _outbox_aggregate_exists(outbox):
+		outbox.flags.ignore_links = True
+	outbox.save(ignore_permissions=True)
+
+
 def ensure_outbox_for_job(
 	*,
 	service_type: str,
@@ -334,6 +353,8 @@ def ensure_outbox_for_job(
 			"created_at": now_datetime(),
 		}
 	)
+	if not _outbox_aggregate_exists(outbox):
+		outbox.flags.ignore_links = True
 	try:
 		outbox.insert(ignore_permissions=True)
 	except Exception:
@@ -679,7 +700,7 @@ def recover_overdue_published(
 					manual_review += 1
 				else:
 					pending_reconciliation += 1
-			outbox.save(ignore_permissions=True)
+			_save_outbox(outbox)
 		except (DoesNotExistError, TimestampMismatchError):
 			# Another publisher or callback updated or removed this row after it was read.
 			# Treat that concurrent writer as authoritative and retry naturally on
@@ -700,7 +721,7 @@ def recover_overdue_published(
 					outcome="status_query_failed",
 					error=sanitized_dispatch_error(exc),
 				)
-				outbox.save(ignore_permissions=True)
+				_save_outbox(outbox)
 			except (DoesNotExistError, TimestampMismatchError):
 				concurrent_updates_skipped += 1
 				continue
@@ -1100,7 +1121,7 @@ def dispatch_claimed_outbox(outbox_name: str, claim_token: str) -> Any:
 		if outcome not in {"callback_already_completed", "reconciliation_pending", "newer_generation_exists"}:
 			outbox.last_error = None
 		_update_dispatch_outcome_counters(outbox, context)
-		outbox.save(ignore_permissions=True)
+		_save_outbox(outbox)
 		frappe.db.commit()
 		return result
 	except Exception as exc:
@@ -1368,7 +1389,7 @@ def mark_outbox_callback(
 		outbox.next_attempt_at = None
 		outbox.last_error = _clean(error) or "Downstream service reported failure"
 		outbox.current_dispatch_token = None
-	outbox.save(ignore_permissions=True)
+	_save_outbox(outbox)
 	return outbox
 
 
@@ -1425,7 +1446,7 @@ def requeue_dead_letter_outbox(
 	outbox.proposed_dispatch_token = None
 	outbox.completed_at = None
 	outbox.last_error = None
-	outbox.save(ignore_permissions=True)
+	_save_outbox(outbox)
 	frappe.db.commit()
 
 	operator = _clean(getattr(getattr(frappe, "session", None), "user", "unknown"), limit=140)
@@ -1508,7 +1529,7 @@ def authorize_terminal_work_replay(
 	outbox.last_reconciliation_outcome = "operator_work_replay_authorized"
 	_clear_claim(outbox)
 	_clear_proposal(outbox)
-	outbox.save(ignore_permissions=True)
+	_save_outbox(outbox)
 
 	job.status = "Queued"
 	if hasattr(job, "last_error"):

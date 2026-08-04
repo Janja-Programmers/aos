@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -100,12 +101,24 @@ require('"objects": uploaded_objects' not in worker, "video callback still expos
 require('"output_object_count": len(uploaded_objects)' in worker, "bounded video output summary is missing")
 
 compose = source("docker-compose.yml")
-video_worker = (
-    compose.split("  video-worker:", 1)[1].split("\n\n  moderation-api:", 1)[0]
-    if "  video-worker:" in compose
-    else ""
-)
-require("--with-scheduler" in video_worker, "video-worker must enable the RQ scheduler for interval retries")
+for worker_name, queue_token in (
+    ("video-worker", "${VIDEO_QUEUE_NAME:-video}"),
+    ("moderation-worker", "${MODERATION_QUEUE_NAME:-moderation}"),
+    ("search-ranking-worker", "${SEARCH_RANKING_QUEUE_NAME:-search-ranking}"),
+    ("notification-worker", "${NOTIFICATION_QUEUE_NAME:-notification-delivery}"),
+    ("analytics-worker", "${ANALYTICS_QUEUE_NAME:-analytics-pipeline}"),
+):
+    match = re.search(
+        rf"(?ms)^  {re.escape(worker_name)}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+        compose,
+    )
+    require(match is not None, f"missing companion worker: {worker_name}")
+    block = match.group("body") if match else ""
+    require(queue_token in block, f"{worker_name} queue command is missing")
+    require(
+        "--with-scheduler" in block,
+        f"{worker_name} must enable the RQ scheduler for interval retries",
+    )
 
 durable_video = source("infra/video-processing/app/durable_lifecycle.py")
 require('65536 if name == "result_payload"' in durable_video, "video callback JSON is still truncated at 4 KiB")

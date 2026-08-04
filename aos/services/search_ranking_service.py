@@ -121,6 +121,89 @@ def _clean(value: Any) -> str:
 	return str(value or "").strip()
 
 
+def _target_exists(job: Any) -> bool:
+	"""Return whether the durable search target still exists.
+
+	Search-index jobs intentionally outlive their aggregate so delete work can
+	remove stale companion index entries. Missing targets are therefore a valid
+	lifecycle state for delete jobs, not a link-validation failure.
+	"""
+	target_doctype = _clean(getattr(job, "target_doctype", None))
+	target_name = _clean(getattr(job, "target_name", None))
+	return bool(target_doctype and target_name and frappe.db.exists(target_doctype, target_name))
+
+
+def _prepare_missing_target_delete(job: Any) -> str:
+	"""Classify how a missing aggregate should be removed from the index.
+
+	An undispatched upsert can safely become a delete under the same durable
+	correlation. Once the companion may have accepted the upsert, that
+	correlation is immutable and a separate delete job is required.
+	"""
+	if _target_exists(job):
+		return "present"
+
+	job.flags.ignore_links = True
+	if _clean(getattr(job, "action", None)).lower() == "delete":
+		return "delete"
+
+	if _clean(getattr(job, "service_job_id", None)) or int(getattr(job, "attempt_count", 0) or 0) > 0:
+		return "replacement_required"
+
+	job.action = "delete"
+	job.document_json = _json_dumps({})
+	job.indexed = 0
+	job.last_error = None
+	return "converted"
+
+
+def _cancel_stale_upsert_and_enqueue_delete(job: Any) -> object:
+	"""Close an accepted stale upsert and create one fresh delete correlation."""
+	job.status = "Cancelled"
+	job.completed_at = now_datetime()
+	job.last_error = "TARGET_DELETED"
+	_save_search_index_job(job)
+	complete_outbox_without_callback(
+		job_doctype="AOS Search Index Job",
+		job_name=job.name,
+		status="cancelled",
+	)
+
+	existing_delete = frappe.db.sql(
+		"""
+		SELECT name
+		FROM `tabAOS Search Index Job`
+		WHERE target_doctype = %s
+		  AND target_name = %s
+		  AND action = 'delete'
+		  AND name != %s
+		  AND status NOT IN ('Failed', 'Cancelled')
+		ORDER BY creation DESC, name DESC
+		LIMIT 1
+		""",
+		(job.target_doctype, job.target_name, job.name),
+	)
+	if not existing_delete:
+		create_search_index_job(
+			target_doctype=job.target_doctype,
+			target_name=job.target_name,
+			target_owner=job.target_owner,
+			index_kind=job.index_kind,
+			action="delete",
+			source="missing_target_reconciliation",
+			document={},
+			enqueue=True,
+		)
+	return job
+
+
+def _save_search_index_job(job: Any) -> None:
+	"""Save a durable search job even after its Dynamic Link target is deleted."""
+	if not _target_exists(job):
+		job.flags.ignore_links = True
+	job.save(ignore_permissions=True)
+
+
 def create_search_index_job(
 	*,
 	target_doctype: str,
@@ -162,6 +245,8 @@ def create_search_index_job(
 			"document_json": _json_dumps(document or {}),
 		}
 	)
+	if action == "delete" and not frappe.db.exists(target_doctype, target_name):
+		job.flags.ignore_links = True
 	job.insert(ignore_permissions=True)
 	if enqueue:
 		enqueue_search_index_dispatch(job.name)
@@ -171,13 +256,14 @@ def create_search_index_job(
 def enqueue_search_index_dispatch(search_job_id: str) -> object:
 	config = get_search_ranking_config()
 	job = frappe.get_doc("AOS Search Index Job", search_job_id)
+	target_exists = _target_exists(job)
 	return ensure_outbox_for_job(
 		service_type="search_indexing",
 		job=job,
 		queue=config.queue,
 		timeout_seconds=config.dispatcher_timeout_seconds,
-		aggregate_doctype=job.target_doctype,
-		aggregate_name=job.target_name,
+		aggregate_doctype=job.target_doctype if target_exists else None,
+		aggregate_name=job.target_name if target_exists else None,
 		max_attempts=job.max_attempts,
 	)
 
@@ -213,12 +299,16 @@ def dispatch_search_index_job(search_job_id: str) -> object:
 	):
 		return job
 
+	target_state = _prepare_missing_target_delete(job)
+	if target_state == "replacement_required":
+		return _cancel_stale_upsert_and_enqueue_delete(job)
+
 	config = get_search_ranking_config()
 	if not config.enabled:
 		job.status = "Cancelled"
 		job.last_error = "Search/ranking is disabled"
 		job.completed_at = now_datetime()
-		job.save(ignore_permissions=True)
+		_save_search_index_job(job)
 		complete_outbox_without_callback(
 			job_doctype="AOS Search Index Job",
 			job_name=job.name,
@@ -231,12 +321,12 @@ def dispatch_search_index_job(search_job_id: str) -> object:
 	job.status = "Dispatching"
 	job.last_error = None
 	job.dispatched_at = now_datetime()
-	job.save(ignore_permissions=True)
+	_save_search_index_job(job)
 	frappe.db.commit()
 
 	payload = build_search_index_job_payload(job)
 	job.request_payload = json.dumps(payload, ensure_ascii=False, default=str)
-	job.save(ignore_permissions=True)
+	_save_search_index_job(job)
 	frappe.db.commit()
 
 	body = _json_bytes(payload)
@@ -260,14 +350,14 @@ def dispatch_search_index_job(search_job_id: str) -> object:
 		job.status = "Processing"
 		job.service_job_id = str(data.get("service_job_id") or data.get("job_id") or job.service_job_id or "")
 		job.started_at = now_datetime()
-		job.save(ignore_permissions=True)
+		_save_search_index_job(job)
 		frappe.db.commit()
 		return job
 	except OutboxConflictError as exc:
 		job.reload()
 		job.status = "Processing"
 		job.last_error = exc.error_code
-		job.save(ignore_permissions=True)
+		_save_search_index_job(job)
 		frappe.db.commit()
 		raise
 	except Exception as exc:
@@ -278,7 +368,7 @@ def dispatch_search_index_job(search_job_id: str) -> object:
 		# Keep business work nonterminal; the outbox reconciles by stable identity.
 		job.status = "Processing"
 		job.last_error = error_code
-		job.save(ignore_permissions=True)
+		_save_search_index_job(job)
 		frappe.db.commit()
 		raise
 
@@ -326,7 +416,7 @@ def handle_search_index_callback(payload: dict[str, Any]) -> object:
 		job.callback_received_at = now_datetime()
 		job.completed_at = now_datetime()
 		job.last_error = None
-		job.save(ignore_permissions=True)
+		_save_search_index_job(job)
 		mark_outbox_callback(
 			job_doctype="AOS Search Index Job",
 			job_name=job.name,
@@ -348,7 +438,7 @@ def mark_search_index_job_failed(
 	job.status = "Failed"
 	job.completed_at = now_datetime()
 	job.last_error = str(error or "Search/ranking job failed")[:1000]
-	job.save(ignore_permissions=True)
+	_save_search_index_job(job)
 	if not dispatch_failure:
 		mark_outbox_callback(
 			job_doctype="AOS Search Index Job",

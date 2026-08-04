@@ -46,3 +46,11 @@ rq worker --with-scheduler <queue> --url <redis-url>
 
 Without the scheduler, a temporary callback failure leaves the retry in RQ's scheduled registry and the Short can remain in `processing`. After changing the worker command, rebuild and recreate `video-worker`; restarting only the Frappe processes is insufficient.
 
+### Stale search-index work after Short deletion
+
+Search-index jobs and transactional outbox rows are durable audit records and may outlive the Short they reference. A missing Short is therefore not treated as a link-validation failure:
+
+- an undispatched stale upsert is converted to an idempotent delete;
+- an already accepted upsert is cancelled and replaced with a fresh delete correlation;
+- job and outbox lifecycle saves tolerate a deleted optional aggregate while retaining the durable job link;
+- dead-letter rows created by an older deployment can be explicitly requeued after confirming their persisted idempotency key.

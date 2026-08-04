@@ -86,6 +86,34 @@ class TestTransactionalOutbox(FrappeTestCase):
 		self.assertFalse(frappe.db.exists(job.doctype, job.name))
 		self.assertFalse(frappe.db.exists(OUTBOX_DOCTYPE, outbox.name))
 
+	def test_deleted_optional_aggregate_does_not_block_outbox_lifecycle(self):
+		savepoint = f"outbox_{uuid.uuid4().hex[:12]}"
+		frappe.db.savepoint(savepoint)
+		try:
+			with patch("aos.services.transactional_outbox.register_after_commit_publish"):
+				job = self._analytics_job()
+				outbox = ensure_outbox_for_job(
+					service_type="analytics_ingestion",
+					job=job,
+					queue="short",
+					timeout_seconds=300,
+					aggregate_doctype="AOS Short",
+					aggregate_name="SHORT-2099-MISSING",
+				)
+			outbox.status = "Published"
+			outbox.flags.ignore_links = True
+			outbox.save(ignore_permissions=True)
+
+			result = mark_outbox_callback(
+				job_doctype=job.doctype,
+				job_name=job.name,
+				callback_status="ingested",
+				success=True,
+			)
+			self.assertEqual(result.status, "Completed")
+		finally:
+			frappe.db.rollback(save_point=savepoint)
+
 	def test_ensure_is_idempotent_for_the_same_durable_job(self):
 		savepoint = f"outbox_{uuid.uuid4().hex[:12]}"
 		frappe.db.savepoint(savepoint)

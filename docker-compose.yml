@@ -668,7 +668,7 @@ services:
     container_name: aos-moderation-worker
     restart: unless-stopped
 
-    command: ["rq", "worker", "${MODERATION_QUEUE_NAME:-moderation}", "--url", "${MODERATION_REDIS_URL:-redis://moderation-redis:6379/0}"]
+    command: ["rq", "worker", "--with-scheduler", "${MODERATION_QUEUE_NAME:-moderation}", "--url", "${MODERATION_REDIS_URL:-redis://moderation-redis:6379/0}"]
 
     environment:
       MODERATION_SERVICE_NAME: ${MODERATION_SERVICE_NAME:-aos-content-moderation}
@@ -780,7 +780,7 @@ services:
     container_name: aos-search-ranking-worker
     restart: unless-stopped
 
-    command: ["rq", "worker", "${SEARCH_RANKING_QUEUE_NAME:-search-ranking}", "--url", "${SEARCH_RANKING_REDIS_URL:-redis://search-ranking-redis:6379/0}"]
+    command: ["rq", "worker", "--with-scheduler", "${SEARCH_RANKING_QUEUE_NAME:-search-ranking}", "--url", "${SEARCH_RANKING_REDIS_URL:-redis://search-ranking-redis:6379/0}"]
 
     environment:
       SEARCH_RANKING_SERVICE_NAME: ${SEARCH_RANKING_SERVICE_NAME:-aos-search-ranking}
@@ -884,7 +884,7 @@ services:
     container_name: aos-notification-worker
     restart: unless-stopped
 
-    command: ["rq", "worker", "${NOTIFICATION_QUEUE_NAME:-notification-delivery}", "--url", "${NOTIFICATION_REDIS_URL:-redis://notification-redis:6379/0}"]
+    command: ["rq", "worker", "--with-scheduler", "${NOTIFICATION_QUEUE_NAME:-notification-delivery}", "--url", "${NOTIFICATION_REDIS_URL:-redis://notification-redis:6379/0}"]
 
     environment:
       NOTIFICATION_SERVICE_NAME: ${NOTIFICATION_SERVICE_NAME:-aos-notification-delivery}
@@ -987,7 +987,7 @@ services:
     container_name: aos-analytics-worker
     restart: unless-stopped
 
-    command: ["rq", "worker", "${ANALYTICS_QUEUE_NAME:-analytics-pipeline}", "--url", "${ANALYTICS_REDIS_URL:-redis://analytics-redis:6379/0}"]
+    command: ["rq", "worker", "--with-scheduler", "${ANALYTICS_QUEUE_NAME:-analytics-pipeline}", "--url", "${ANALYTICS_REDIS_URL:-redis://analytics-redis:6379/0}"]
 
     environment:
       ANALYTICS_SERVICE_NAME: ${ANALYTICS_SERVICE_NAME:-aos-analytics-pipeline}

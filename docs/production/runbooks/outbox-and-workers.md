@@ -215,3 +215,7 @@ Investigate retries, callback age, manual review, dead letters, uncertainty, rec
 Callback retries do not rerun work after durable result persistence. Analytics is effectively once within its dedupe retention. Notification uncertainty avoids automatic duplicate sends.
 
 Strict third-party exactly-once cannot be guaranteed across a crash after provider acceptance but before local durable result persistence unless that provider supplies idempotency or authoritative status reconciliation.
+
+## RQ scheduler requirement for companion workers
+
+All companion workers use delayed `Retry(interval=[...])` schedules for work or callback delivery. Their Docker commands must include `rq worker --with-scheduler`. This applies to video processing, moderation, search ranking, notification delivery and analytics ingestion. Rebuild and force-recreate a worker after changing its command; restarting an existing container does not change the configured command.
