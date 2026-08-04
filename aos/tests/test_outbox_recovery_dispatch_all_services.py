@@ -458,13 +458,27 @@ class TestOutboxRecoveryDispatchAllServices(FrappeTestCase):
 					outbox.proposed_dispatch_generation = 1
 					outbox.proposed_dispatch_token = proposal_token
 					outbox.pending_dispatch_reason = "dispatch_uncertain"
-					outbox.next_attempt_at = now_datetime()
+					# Commit a non-due row so a live staging scheduler cannot claim this
+					# fixture between the commit and this test's explicit _claim_one().
+					# Make it due only inside the current test transaction afterwards;
+					# concurrent workers continue to see the committed future timestamp.
+					outbox.next_attempt_at = add_to_date(
+						now_datetime(), seconds=300, as_datetime=True
+					)
 					outbox.save(ignore_permissions=True)
 					frappe.db.commit()
+					claim_now = now_datetime()
+					frappe.db.set_value(
+						OUTBOX_DOCTYPE,
+						outbox.name,
+						"next_attempt_at",
+						claim_now,
+						update_modified=False,
+					)
 					claim = _claim_one(
 						owner="uncertain-duplicate-test",
 						lease_seconds=60,
-						now=now_datetime(),
+						now=claim_now,
 						outbox_name=outbox.name,
 					)
 					self.assertIsNotNone(claim)
