@@ -99,6 +99,14 @@ require("shell=True" not in worker and "os.system(" not in worker, "unsafe video
 require('"objects": uploaded_objects' not in worker, "video callback still exposes every HLS object")
 require('"output_object_count": len(uploaded_objects)' in worker, "bounded video output summary is missing")
 
+compose = source("docker-compose.yml")
+video_worker = (
+    compose.split("  video-worker:", 1)[1].split("\n\n  moderation-api:", 1)[0]
+    if "  video-worker:" in compose
+    else ""
+)
+require("--with-scheduler" in video_worker, "video-worker must enable the RQ scheduler for interval retries")
+
 durable_video = source("infra/video-processing/app/durable_lifecycle.py")
 require('65536 if name == "result_payload"' in durable_video, "video callback JSON is still truncated at 4 KiB")
 require("CALLBACK_RESULT_INVALID" in durable_video, "corrupt durable callback records do not fail closed")

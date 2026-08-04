@@ -72,3 +72,8 @@ The video worker signs `X-AOS-Timestamp + "." + request_body` with `SHORT_CLASSI
 
 The video service does not know AOS business rules. It processes only the object
 keys and options Frappe sends. Frappe remains the source of truth.
+
+### RQ scheduler requirement
+
+`video-worker` uses delayed retry intervals. Run it with `rq worker --with-scheduler`; otherwise scheduled processing or callback retries are never promoted back to the queue. In Docker Compose, rebuild and recreate the worker after changing this command.
+

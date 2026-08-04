@@ -35,3 +35,14 @@ Verify upload, signed frame classification, automatic Learn/Geo/Vibes assignment
 ## Migration transaction boundary
 
 Shorts hardening uses two consecutive post-model-sync patches. Data reconciliation completes and is committed by Frappe before the dedicated index patch starts. The index patch contains no inserts, updates, deletes, explicit commits, or rollbacks; this prevents MariaDB's implicit DDL commit from splitting domain-data changes. If index installation fails, fix the reported duplicate/schema condition and rerun `bench --site <site> migrate`; completed indexes are detected and skipped.
+
+## Video worker retry scheduler
+
+The video worker uses RQ interval retries for processing and callback delivery. It must run with the scheduler component enabled:
+
+```text
+rq worker --with-scheduler <queue> --url <redis-url>
+```
+
+Without the scheduler, a temporary callback failure leaves the retry in RQ's scheduled registry and the Short can remain in `processing`. After changing the worker command, rebuild and recreate `video-worker`; restarting only the Frappe processes is insufficient.
+

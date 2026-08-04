@@ -526,7 +526,7 @@ services:
     container_name: aos-video-worker
     restart: unless-stopped
 
-    command: ["rq", "worker", "${VIDEO_QUEUE_NAME:-video}", "--url", "${VIDEO_REDIS_URL:-redis://video-redis:6379/0}"]
+    command: ["rq", "worker", "--with-scheduler", "${VIDEO_QUEUE_NAME:-video}", "--url", "${VIDEO_REDIS_URL:-redis://video-redis:6379/0}"]
 
     environment:
       VIDEO_SERVICE_NAME: ${VIDEO_SERVICE_NAME:-aos-video-processing}
