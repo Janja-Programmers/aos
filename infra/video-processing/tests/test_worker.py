@@ -7,6 +7,9 @@ import pytest
 from app import worker
 
 
+TEST_CLASSIFICATION_SECRET = "classification-secret"  # pragma: allowlist secret
+
+
 def settings():
 	return SimpleNamespace(
 		max_duration_seconds=180,
@@ -31,7 +34,7 @@ def settings():
 		callback_timeout_seconds=30,
 		classification_enabled=True,
 		classification_url="http://image-search:8000/internal/shorts/classify-frames",
-		classification_secret="classification-secret",
+		classification_secret=TEST_CLASSIFICATION_SECRET,
 		classification_allowed_hosts=("image-search",),
 		classification_timeout_seconds=30,
 		classification_frame_count=5,
@@ -185,5 +188,5 @@ def test_classification_request_is_timestamp_signed(monkeypatch, tmp_path):
 	assert captured["headers"]["X-AOS-Timestamp"] == "1700000000"
 	signed = b"1700000000." + captured["data"]
 	assert captured["headers"]["X-AOS-Signature"] == worker.build_signature(
-		"classification-secret", signed
+		TEST_CLASSIFICATION_SECRET, signed
 	)

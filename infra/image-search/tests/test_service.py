@@ -8,6 +8,9 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 
+TEST_CLASSIFICATION_SECRET = "classification-secret"  # pragma: allowlist secret
+
+
 class FakeService:
 	def health(self):
 		return {
@@ -230,7 +233,7 @@ def test_short_frame_classification_requires_signature(monkeypatch):
 		main,
 		"get_settings",
 		lambda: SimpleNamespace(
-			internal_secret="classification-secret",
+			internal_secret=TEST_CLASSIFICATION_SECRET,
 			max_image_bytes=1048576,
 			short_classification_max_frames=6,
 			short_classification_max_frame_bytes=1048576,
@@ -253,7 +256,7 @@ def test_short_frame_classification_uses_signed_internal_boundary(monkeypatch):
 	from PIL import Image
 	from app.security import build_signature
 
-	secret = "classification-secret"
+	secret = TEST_CLASSIFICATION_SECRET
 	settings = SimpleNamespace(
 		internal_secret=secret,
 		max_image_bytes=1048576,
@@ -306,7 +309,7 @@ def test_short_frame_classification_rejects_stale_signature(monkeypatch):
 
 	from app.security import build_signature
 
-	secret = "classification-secret"
+	secret = TEST_CLASSIFICATION_SECRET
 	monkeypatch.setattr(
 		main,
 		"get_settings",
