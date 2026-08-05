@@ -356,6 +356,7 @@ def build_video_job_payload(job) -> dict[str, Any]:
 		"idempotency_key": job.idempotency_key,
 		"short_id": short.name,
 		"force": bool(int(getattr(job, "force_reprocess", 0) or 0)),
+		"reason": str(getattr(job, "reason", "") or "short_upload"),
 		"job_generation": max(1, int(getattr(job, "generation", 1) or 1)),
 		"callback_url": get_video_processing_config().callback_url,
 		"raw_video": {
@@ -499,7 +500,8 @@ def handle_video_processing_callback(payload: dict[str, Any]) -> object:
 
 def mark_video_job_ready(job, payload: dict[str, Any]) -> object:
 	short = frappe.get_doc("AOS Short", job.short)
-	if _is_audio_reprocess(job):
+	is_audio_reprocess = _is_audio_reprocess(job)
+	if is_audio_reprocess:
 		expects_selected_sound = bool(
 			frappe.db.exists(
 				"AOS Short Sound",
@@ -517,7 +519,16 @@ def mark_video_job_ready(job, payload: dict[str, Any]) -> object:
 	processed_key, processed_url, _manifest_key, playback_url = _validated_processed_keys(short.name, payload)
 	thumbnail_media_id = None
 	thumbnail = payload.get("thumbnail") if isinstance(payload.get("thumbnail"), dict) else None
-	if thumbnail and thumbnail.get("bucket") and thumbnail.get("object_key"):
+	# Audio-only reprocessing must not create or attach another thumbnail. The
+	# Short already owns the canonical thumbnail from its initial processing
+	# generation, and short_thumbnail permits only one attachment per Short.
+	# Reusing the existing visual metadata also prevents classification churn.
+	if (
+		not is_audio_reprocess
+		and thumbnail
+		and thumbnail.get("bucket")
+		and thumbnail.get("object_key")
+	):
 		thumbnail = _validate_thumbnail(short.name, thumbnail)
 		thumbnail_media_id = _create_thumbnail_media_from_existing_object(short, thumbnail)
 
@@ -528,10 +539,11 @@ def mark_video_job_ready(job, payload: dict[str, Any]) -> object:
 	short.duration_seconds = duration_seconds
 	if thumbnail_media_id and short.meta.has_field("thumbnail_media"):
 		short.thumbnail_media = thumbnail_media_id
-	if thumbnail and thumbnail.get("url"):
+	if not is_audio_reprocess and thumbnail and thumbnail.get("url"):
 		short.thumbnail_url = str(thumbnail.get("url") or "")
 
-	apply_visual_result(short, payload.get("classification"))
+	if not is_audio_reprocess:
+		apply_visual_result(short, payload.get("classification"))
 	short.status = "ready"
 	short.processing_error = None
 	if hasattr(short, "audio_mix_status"):

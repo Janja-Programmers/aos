@@ -47,3 +47,7 @@ recovery.
 
 
 Audio-mix recovery distinguishes fresh active work from stale work. It can cancel stale active remix generations and atomically create a new generation; an explicit `stale_minutes=0` run forces immediate operator recovery.
+
+### Audio-only reprocessing
+
+An `audio_reprocess` generation replaces only the processed video/HLS outputs and the audio-mix state. It preserves the Short's existing thumbnail and automatic content classification. This prevents duplicate `short_thumbnail` attachments and avoids unnecessary visual-classification calls when only sound settings changed.

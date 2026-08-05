@@ -67,6 +67,7 @@ class VideoJobRequest(StrictModel):
 	job_generation: int = Field(default=1, ge=1, le=1000000)
 	short_id: str = Field(pattern=r"^SHORT-[0-9]{4}-[0-9]{5,}$")
 	force: bool = False
+	reason: str = Field(default="short_upload", pattern=r"^[a-z][a-z0-9_]{0,63}$")
 	callback_url: str = Field(min_length=1, max_length=2048)
 	raw_video: ObjectInput
 	sound: SoundInput | None = None

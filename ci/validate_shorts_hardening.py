@@ -100,6 +100,11 @@ require("shell=True" not in worker and "os.system(" not in worker, "unsafe video
 require('"objects": uploaded_objects' not in worker, "video callback still exposes every HLS object")
 require('"output_object_count": len(uploaded_objects)' in worker, "bounded video output summary is missing")
 require("amix=inputs=2" in worker, "selected sound is not mixed with original audio")
+require('"reason": str(getattr(job, "reason"' in processing, "video jobs do not propagate processing reason")
+require('reason: str = Field(default="short_upload"' in source("infra/video-processing/app/main.py"), "video service schema rejects processing reason")
+require('is_audio_reprocess = bool(payload.get("force"))' in worker, "audio reprocess is not identified by the companion")
+require('if not is_audio_reprocess:' in worker, "audio reprocess does not preserve visual metadata")
+require('not is_audio_reprocess' in processing, "audio callback still replaces visual metadata")
 
 sounds_source = source("aos/api/shorts/sounds.py")
 audio_enqueue = sounds_source[

@@ -251,3 +251,48 @@ def test_selected_sound_is_only_audio_when_video_is_silent(monkeypatch, tmp_path
 	assert "[0:a]" not in filter_graph
 	assert "amix=" not in filter_graph
 	assert "[1:a]volume=1.0" in filter_graph
+
+
+def test_audio_reprocess_preserves_visual_metadata(monkeypatch, tmp_path):
+	work_dir, uploads = configure_boundaries(monkeypatch, tmp_path)
+	audio_payload = payload()
+	audio_payload.update(
+		{
+			"force": True,
+			"reason": "audio_reprocess",
+			"sound": {
+				"bucket": "sounds",
+				"object_key": "sounds/uploads/track.mp3",
+				"volume": 0.8,
+			},
+		}
+	)
+	monkeypatch.setattr(
+		worker,
+		"_generate_thumbnail",
+		lambda *_args, **_kwargs: (_ for _ in ()).throw(
+			AssertionError("audio reprocess must not regenerate a thumbnail")
+		),
+	)
+	monkeypatch.setattr(
+		worker,
+		"_generate_classification_frames",
+		lambda *_args, **_kwargs: (_ for _ in ()).throw(
+			AssertionError("audio reprocess must not rerun visual classification")
+		),
+	)
+	monkeypatch.setattr(
+		worker,
+		"_generate_mp4_with_sound",
+		lambda _video, _sound, destination, _duration, _settings: Path(destination).write_bytes(b"mixed"),
+	)
+
+	result = worker._perform_video_work(audio_payload)
+
+	assert result["status"] == "ready"
+	assert result["reason"] == "audio_reprocess"
+	assert result["sound_applied"] is True
+	assert "thumbnail" not in result
+	assert "classification" not in result
+	assert not any(item.get("content_type") == "image/jpeg" for item in uploads)
+	assert not work_dir.exists()

@@ -56,6 +56,13 @@ class TestShortAudioMixLifecycle(FrappeTestCase):
         self.assertIn("skipped_active", tasks_source)
         self.assertNotIn("AND NOT EXISTS (", tasks_source[tasks_source.index("def recover_pending_audio_mixes"):tasks_source.index("def maintain_short_integrity")])
         self.assertIn("aos.tasks.shorts.recover_pending_audio_mixes", hooks_source)
+        ready_section = service_source[
+            service_source.index("def mark_video_job_ready"):
+            service_source.index("def _create_thumbnail_media_from_existing_object")
+        ]
+        self.assertIn("is_audio_reprocess = _is_audio_reprocess(job)", ready_section)
+        self.assertIn("not is_audio_reprocess", ready_section)
+        self.assertIn("if not is_audio_reprocess:\n\t\tapply_visual_result", ready_section)
 
     def test_publish_response_uses_actual_audio_job_state(self):
         root = Path(__file__).resolve().parents[1]

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import threading
 import time
@@ -18,6 +19,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from rq import Retry, get_current_job
+
+logger = logging.getLogger(__name__)
 
 _ACTIVE_JOB_STATUSES = {"queued", "started", "deferred", "scheduled"}
 _TERMINAL_WORK_STATES = {"work_complete", "work_failed"}
@@ -828,6 +831,12 @@ def deliver_callback(
                 redis.zrem(_callback_pending_key(service_type), _digest(stable_id))
                 _record_metric(redis, service_type, "callback_dead_lettered")
                 return {"ok": False, "callback_status": "dead_letter", "error": category}
+            logger.warning(
+                "Companion callback temporarily rejected service=%s status=%s category=%s",
+                service_type,
+                status_code,
+                error_code or "none",
+            )
             raise CallbackDeliveryRetryableError("CALLBACK_TEMPORARY_HTTP_FAILURE")
         except CallbackDeliveryRetryableError:
             raise

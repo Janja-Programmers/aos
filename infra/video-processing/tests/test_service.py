@@ -305,3 +305,37 @@ def test_internal_job_status_endpoint_is_signed_and_bounded(monkeypatch):
 	assert "result_payload" not in data
 	assert "dispatch_token" not in data
 	assert client.post("/internal/jobs/callback/replay", json=payload).status_code == 401
+
+
+def test_video_job_request_accepts_audio_reprocess_reason():
+	from app.main import VideoJobRequest
+
+	request = VideoJobRequest.model_validate(
+		{
+			"job_id": "VIDEO-JOB-2026-00001",
+			"idempotency_key": "abcdefgh",
+			"short_id": "SHORT-2026-00001",
+			"force": True,
+			"reason": "audio_reprocess",
+			"callback_url": "https://callback.invalid/video",
+			"raw_video": {
+				"bucket": "raw",
+				"object_key": "shorts/raw/clip.mp4",
+				"size_bytes": 1024,
+			},
+			"sound": {
+				"bucket": "public",
+				"object_key": "sounds/uploads/track.mp3",
+				"volume": 0.8,
+			},
+			"output": {
+				"output_bucket": "shorts",
+				"output_base_path": "shorts/processed",
+				"thumbnail_bucket": "public",
+				"thumbnail_base_path": "shorts/thumbnails",
+				"max_duration_seconds": 600,
+			},
+		}
+	)
+
+	assert request.reason == "audio_reprocess"

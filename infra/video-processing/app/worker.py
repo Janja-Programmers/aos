@@ -557,6 +557,8 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 		raw_video = dict(payload.get("raw_video") or {})
 		sound = payload.get("sound")
 		output = dict(payload.get("output") or {})
+		reason = str(payload.get("reason") or "short_upload").strip()
+		is_audio_reprocess = bool(payload.get("force")) and reason == "audio_reprocess"
 
 		if not short_id or not job_id or not callback_url:
 			raise VideoProcessingError("Invalid video job payload")
@@ -584,11 +586,14 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 			raise VideoProcessingError(f"Short must be <= {max_duration} seconds")
 
 		thumbnail_path = os.path.join(work_dir, "thumbnail.jpg")
-		width, height = _generate_thumbnail(input_path, thumbnail_path)
-		classification_frames = _generate_classification_frames(
-			input_path, work_dir, duration, thumbnail_path
-		)
-		classification = _classify_frames(classification_frames)
+		width = height = 0
+		classification = None
+		if not is_audio_reprocess:
+			width, height = _generate_thumbnail(input_path, thumbnail_path)
+			classification_frames = _generate_classification_frames(
+				input_path, work_dir, duration, thumbnail_path
+			)
+			classification = _classify_frames(classification_frames)
 
 		sound_path = None
 		if isinstance(sound, dict) and sound.get("bucket") and sound.get("object_key"):
@@ -656,18 +661,20 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 					)
 				)
 
-		thumbnail_bucket = str(output.get("thumbnail_bucket") or settings.thumbnail_bucket).strip("/")
-		thumbnail_base = str(output.get("thumbnail_base_path") or settings.thumbnail_base_path).strip("/")
-		thumbnail_key = f"{thumbnail_base}/{short_id}/{version}/thumbnail.jpg"
-		thumbnail = _upload_file(
-			client,
-			bucket=thumbnail_bucket,
-			object_key=thumbnail_key,
-			file_path=thumbnail_path,
-			content_type="image/jpeg",
-			strip_output_prefix=False,
-		)
-		thumbnail.update({"width": width, "height": height, "filename": f"{short_id}_thumbnail.jpg"})
+		thumbnail = None
+		if not is_audio_reprocess:
+			thumbnail_bucket = str(output.get("thumbnail_bucket") or settings.thumbnail_bucket).strip("/")
+			thumbnail_base = str(output.get("thumbnail_base_path") or settings.thumbnail_base_path).strip("/")
+			thumbnail_key = f"{thumbnail_base}/{short_id}/{version}/thumbnail.jpg"
+			thumbnail = _upload_file(
+				client,
+				bucket=thumbnail_bucket,
+				object_key=thumbnail_key,
+				file_path=thumbnail_path,
+				content_type="image/jpeg",
+				strip_output_prefix=False,
+			)
+			thumbnail.update({"width": width, "height": height, "filename": f"{short_id}_thumbnail.jpg"})
 
 		callback_payload = {
 			"job_id": job_id,
@@ -683,15 +690,18 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 			"processed_file_url": _public_url(output_bucket, _output_object_name(processed_file_key)),
 			"processed_file_key": processed_file_key,
 			"master_playlist_key": master_playlist_key,
-			"thumbnail": thumbnail,
 			# Individual HLS object records are internal processing details and can
 			# make the durable callback JSON unnecessarily large. The backend only
 			# needs the validated final/manifest keys and thumbnail metadata.
 			"output_object_count": len(uploaded_objects),
 			"force": bool(payload.get("force")),
+			"reason": reason,
 			"sound_applied": bool(sound_path),
-			"classification": classification,
 		}
+		if thumbnail is not None:
+			callback_payload["thumbnail"] = thumbnail
+		if classification is not None:
+			callback_payload["classification"] = classification
 		return callback_payload
 	except Exception as exc:
 		logger.error("Video processing job failed category=%s", exc.__class__.__name__)
