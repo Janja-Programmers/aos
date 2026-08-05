@@ -68,3 +68,16 @@ class TestShortAudioMixLifecycle(FrappeTestCase):
         ]
         self.assertIn("        raise", enqueue_section)
         self.assertNotIn('values["audio_mix_status"] = "pending"', enqueue_section)
+
+    def test_ready_short_audio_mix_can_use_the_existing_retry_endpoint(self):
+        root = Path(__file__).resolve().parents[1]
+        management_source = (root / "management.py").read_text(encoding="utf-8")
+
+        retry_section = management_source[
+            management_source.index("def retry_processing_impl"):
+        ]
+        self.assertIn('reason="audio_reprocess"', retry_section)
+        self.assertIn('force=True', retry_section)
+        self.assertIn('"Sound processing restarted."', retry_section)
+        self.assertIn('"audio_mix_status": "pending"', retry_section)
+        self.assertIn('"AOS Short Sound"', retry_section)

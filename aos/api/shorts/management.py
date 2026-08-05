@@ -652,6 +652,36 @@ def retry_processing_impl(**kwargs):
                 "Processing already active.",
                 data={"short_id": short_id, "video_job_id": active_jobs[-1]["name"]},
             )
+
+        audio_mix_status = str(
+            getattr(doc, "audio_mix_status", None) or "none"
+        ).strip().lower()
+        has_selected_sound = bool(
+            frappe.db.exists(
+                "AOS Short Sound",
+                {"short": doc.name, "is_original_audio": 0},
+            )
+        )
+        if (
+            doc.status == "ready"
+            and has_selected_sound
+            and audio_mix_status in {"none", "pending", "processing", "failed"}
+        ):
+            video_job = create_video_processing_job(
+                short_id=doc.name,
+                force=True,
+                reason="audio_reprocess",
+                enqueue=True,
+            )
+            return ok(
+                "Sound processing restarted.",
+                data={
+                    "short_id": short_id,
+                    "video_job_id": video_job.name,
+                    "audio_mix_status": "pending",
+                },
+            )
+
         if doc.status != "failed":
             return fail(
                 "Only failed shorts can be retried.",
