@@ -54,7 +54,17 @@ class TestShortAudioMixLifecycle(FrappeTestCase):
         self.assertIn("cancelled_stale", tasks_source)
         self.assertIn("AUDIO_MIX_RECOVERY_STALE", tasks_source)
         self.assertIn("skipped_active", tasks_source)
-        self.assertNotIn("AND NOT EXISTS (", tasks_source[tasks_source.index("def recover_pending_audio_mixes"):tasks_source.index("def maintain_short_integrity")])
+        recovery_section = tasks_source[
+            tasks_source.index("def recover_pending_audio_mixes"):
+            tasks_source.index("def maintain_short_integrity")
+        ]
+        self.assertIn("s.status IN ('ready', 'processing')", recovery_section)
+        self.assertIn("ss.is_original_audio = 0", recovery_section)
+        self.assertIn('reason="audio_reprocess"', recovery_section)
+        self.assertIn('reason="retry"', recovery_section)
+        self.assertIn("normalized_without_sound", recovery_section)
+        self.assertIn("restored_ready", recovery_section)
+        self.assertNotIn("AND NOT EXISTS (", recovery_section.split("without_sound =", 1)[0])
         self.assertIn("aos.tasks.shorts.recover_pending_audio_mixes", hooks_source)
         ready_section = service_source[
             service_source.index("def mark_video_job_ready"):
@@ -63,6 +73,36 @@ class TestShortAudioMixLifecycle(FrappeTestCase):
         self.assertIn("is_audio_reprocess = _is_audio_reprocess(job)", ready_section)
         self.assertIn("not is_audio_reprocess", ready_section)
         self.assertIn("if not is_audio_reprocess:\n\t\tapply_visual_result", ready_section)
+
+
+    def test_initial_processing_does_not_claim_audio_work_without_a_sound(self):
+        app_root = Path(__file__).resolve().parents[3]
+        service_source = (app_root / "services" / "video_processing_service.py").read_text(
+            encoding="utf-8"
+        )
+
+        create_section = service_source[
+            service_source.index("def create_video_processing_job"):
+            service_source.index("def enqueue_dispatch")
+        ]
+        self.assertIn("has_selected_sound = _has_selected_sound(short.name)", create_section)
+        self.assertIn(
+            'short.audio_mix_status = "processing" if has_selected_sound else "none"',
+            create_section,
+        )
+        self.assertIn(
+            'raise VideoProcessingError("Audio reprocessing requires a ready Short")',
+            create_section,
+        )
+
+        failure_section = service_source[
+            service_source.index("def mark_video_job_failed"):
+        ]
+        self.assertIn("is_audio_reprocess = _is_audio_reprocess(job)", failure_section)
+        self.assertIn(
+            'short.audio_mix_status = "failed" if has_selected_sound else "none"',
+            failure_section,
+        )
 
     def test_publish_response_uses_actual_audio_job_state(self):
         root = Path(__file__).resolve().parents[1]

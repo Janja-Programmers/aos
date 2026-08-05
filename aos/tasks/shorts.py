@@ -44,17 +44,18 @@ def recover_pending_audio_mixes(
     limit: int | None = None,
     stale_minutes: int | None = None,
 ) -> dict[str, int]:
-    """Repair missing or stale durable remix work for ready Shorts.
+    """Repair missing or stale durable sound-processing work.
 
-    A ready Short with a selected sound may legitimately have an active remix
-    job for a few minutes. Once that job is older than the configured cutoff,
-    keeping it active forever prevents both the scheduler and an explicit retry
-    from creating a replacement generation. This task therefore distinguishes
-    fresh active work from stale active work, cancels only stale generations and
-    creates one new durable ``audio_reprocess`` job in the same transaction.
+    Selected-sound Shorts can be left either ``ready`` with a pending remix or
+    ``processing`` when an older initial/callback generation never completed.
+    Recovery therefore handles both states. It never reuses a dead-lettered
+    companion callback token: stale jobs and outbox rows are made terminal and
+    a fresh durable generation is created atomically.
 
-    ``stale_minutes=0`` is an explicit operator override that treats every
-    matching active generation as stale. The scheduled default remains bounded.
+    A processing Short that already has playable output is restored to ``ready``
+    before starting an audio-only generation. A processing Short without base
+    output receives a normal full retry so thumbnail and classification work are
+    not skipped. ``stale_minutes=0`` is an explicit operator override.
     """
     from frappe.utils import add_to_date, now_datetime
 
@@ -82,36 +83,47 @@ def recover_pending_audio_mixes(
         )
     )
     cutoff = add_to_date(now_datetime(), minutes=-max(0, age_minutes))
+    bounded_limit = max(1, min(batch_limit, 500))
+
+    # Only selected-sound Shorts are remix candidates. Historical rows created
+    # before audio lifecycle hardening may have ``audio_mix_status=processing``
+    # without any selected sound; those rows are normalized separately below.
     rows = frappe.db.sql(
         """
-        SELECT s.name
+        SELECT
+            s.name,
+            s.status,
+            s.audio_mix_status,
+            s.processed_file_key,
+            s.processed_file_url,
+            s.playback_url,
+            s.thumbnail_media,
+            s.thumbnail_url
         FROM `tabAOS Short` s
-        WHERE s.status = 'ready'
-          AND (
-              s.audio_mix_status IN ('pending', 'processing')
-              OR (
-                  s.audio_mix_status = 'none'
-                  AND EXISTS (
-                      SELECT 1
-                      FROM `tabAOS Short Sound` ss
-                      WHERE ss.short = s.name
-                        AND ss.is_original_audio = 0
-                  )
-              )
+        WHERE s.status IN ('ready', 'processing')
+          AND s.audio_mix_status IN ('none', 'pending', 'processing', 'failed')
+          AND EXISTS (
+              SELECT 1
+              FROM `tabAOS Short Sound` ss
+              WHERE ss.short = s.name
+                AND ss.is_original_audio = 0
           )
         ORDER BY s.modified ASC, s.name ASC
         LIMIT %s
         """,
-        (max(1, min(batch_limit, 500)),),
+        (bounded_limit,),
         as_dict=True,
     )
 
     result = {
         "checked": len(rows),
         "requeued": 0,
+        "audio_requeues": 0,
+        "full_retries": 0,
+        "restored_ready": 0,
         "cancelled_stale": 0,
         "skipped_active": 0,
-        "cleared_missing_sound": 0,
+        "normalized_without_sound": 0,
         "failed": 0,
     }
     repository = ShortsRepository()
@@ -127,14 +139,20 @@ def recover_pending_audio_mixes(
             current = frappe.db.get_value(
                 "AOS Short",
                 row.name,
-                ["status", "audio_mix_status"],
+                [
+                    "status",
+                    "audio_mix_status",
+                    "processed_file_key",
+                    "processed_file_url",
+                    "playback_url",
+                    "thumbnail_media",
+                    "thumbnail_url",
+                ],
                 as_dict=True,
             )
-            if not current or current.status != "ready" or current.audio_mix_status not in {
-                "none",
-                "pending",
-                "processing",
-            }:
+            if not current or current.status not in {"ready", "processing"}:
+                continue
+            if current.audio_mix_status not in {"none", "pending", "processing", "failed"}:
                 continue
 
             has_selected_sound = bool(
@@ -150,7 +168,7 @@ def recover_pending_audio_mixes(
                     {"audio_mix_status": "none", "audio_mix_error": None},
                     update_modified=False,
                 )
-                result["cleared_missing_sound"] += 1
+                result["normalized_without_sound"] += 1
                 continue
 
             fresh_active = [
@@ -204,12 +222,56 @@ def recover_pending_audio_mixes(
                     )
                 result["cancelled_stale"] += len(stale_job_names)
 
-            create_video_processing_job(
-                short_id=row.name,
-                force=True,
-                reason="audio_reprocess",
-                enqueue=True,
+            has_base_output = bool(
+                current.processed_file_key
+                and current.processed_file_url
+                and current.playback_url
+                and (current.thumbnail_media or current.thumbnail_url)
             )
+            if has_base_output:
+                if current.status != "ready":
+                    frappe.db.set_value(
+                        "AOS Short",
+                        row.name,
+                        {
+                            "status": "ready",
+                            "processing_error": None,
+                            "audio_mix_status": "pending",
+                            "audio_mix_error": None,
+                        },
+                        update_modified=False,
+                    )
+                    result["restored_ready"] += 1
+                create_video_processing_job(
+                    short_id=row.name,
+                    force=True,
+                    reason="audio_reprocess",
+                    enqueue=True,
+                )
+                result["audio_requeues"] += 1
+            else:
+                # No canonical base output exists, so this is a stale initial
+                # generation rather than a pure remix. A full retry is required
+                # to recreate thumbnail and classification metadata.
+                frappe.db.set_value(
+                    "AOS Short",
+                    row.name,
+                    {
+                        "status": "failed",
+                        "processing_error": "PROCESSING_RECOVERY_RETRY",
+                        "audio_mix_status": "processing",
+                        "audio_mix_error": None,
+                    },
+                    update_modified=False,
+                )
+                create_video_processing_job(
+                    short_id=row.name,
+                    force=False,
+                    reason="retry",
+                    enqueue=True,
+                )
+                result["full_retries"] += 1
+
             result["requeued"] += 1
         except Exception:
             frappe.db.rollback(save_point=savepoint)
@@ -228,14 +290,49 @@ def recover_pending_audio_mixes(
                 "Short audio mix recovery failed",
             )
 
+    # Normalize a bounded set of historical false-positive audio states. Initial
+    # video processing used to set ``audio_mix_status=processing`` even when no
+    # selected sound existed. These rows are not remix work and must not remain
+    # visible as indefinitely pending audio.
+    without_sound = frappe.db.sql(
+        """
+        SELECT s.name
+        FROM `tabAOS Short` s
+        WHERE s.status IN ('ready', 'processing', 'failed')
+          AND s.audio_mix_status IN ('pending', 'processing', 'failed')
+          AND NOT EXISTS (
+              SELECT 1
+              FROM `tabAOS Short Sound` ss
+              WHERE ss.short = s.name
+                AND ss.is_original_audio = 0
+          )
+        ORDER BY s.modified ASC, s.name ASC
+        LIMIT %s
+        """,
+        (bounded_limit,),
+        as_dict=True,
+    )
+    for row in without_sound:
+        frappe.db.set_value(
+            "AOS Short",
+            row.name,
+            {"audio_mix_status": "none", "audio_mix_error": None},
+            update_modified=False,
+        )
+        result["normalized_without_sound"] += 1
+
     frappe.logger("aos.shorts", allow_site=True).info(
-        "shorts_audio_mix_recovery checked=%s requeued=%s cancelled_stale=%s "
-        "skipped_active=%s cleared_missing_sound=%s failed=%s",
+        "shorts_audio_mix_recovery checked=%s requeued=%s audio_requeues=%s "
+        "full_retries=%s restored_ready=%s cancelled_stale=%s skipped_active=%s "
+        "normalized_without_sound=%s failed=%s",
         result["checked"],
         result["requeued"],
+        result["audio_requeues"],
+        result["full_retries"],
+        result["restored_ready"],
         result["cancelled_stale"],
         result["skipped_active"],
-        result["cleared_missing_sound"],
+        result["normalized_without_sound"],
         result["failed"],
     )
     return result

@@ -63,9 +63,11 @@ After deployment, run `bench --site <site> migrate` to synchronize the new Desk 
 
 ## Recovering a stuck sound remix
 
-A ready Short with `audio_mix_status=pending` or `processing` must have an active
-`AOS Video Processing Job` whose reason is `audio_reprocess`. The scheduled
-reconciler repairs missing durable work every five minutes.
+A Short with a selected non-original sound may be `ready` with a pending remix,
+or may remain `processing` after an interrupted older generation. The scheduled
+reconciler handles both states. It cancels stale job/outbox generations and creates
+a fresh dispatch token; operators must not directly replay an old dead-lettered
+companion stable ID because callback-token validation will correctly reject it.
 
 Immediate staging recovery:
 
@@ -79,8 +81,14 @@ bench --site <site> execute \
   --kwargs '{"limit":100}'
 ```
 
-Then verify the video worker receives an `audio_reprocess` job and the Short
-moves from `pending` to `processing` and finally `ready` or `failed`.
+Then verify the worker receives either:
+
+- `audio_reprocess` when canonical processed output already exists; or
+- `retry` when the interrupted Short has no complete base output and must rebuild
+  thumbnail and classification metadata.
+
+Rows that were historically marked as audio-processing without a selected sound
+are normalized to `audio_mix_status=none`.
 
 
 Audio-mix recovery distinguishes fresh active work from stale work. It can cancel stale active remix generations and atomically create a new generation; an explicit `stale_minutes=0` run forces immediate operator recovery.

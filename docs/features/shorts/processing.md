@@ -41,9 +41,11 @@ audio track. Callback success is accepted only when `sound_applied=true` for a
 Short that still has a non-original selected sound.
 
 `aos.tasks.shorts.recover_pending_audio_mixes` runs every five minutes and
-requeues bounded stale `pending`/`processing` rows that have no active processing
-job. Operators may invoke it manually with `stale_minutes=0` for immediate
-recovery.
+reconciles bounded selected-sound rows in both `ready` and `processing` states.
+It cancels stale active generations, creates a fresh job/outbox callback token,
+and chooses an audio-only reprocess only when canonical base output exists. Rows
+without selected sound are normalized to `audio_mix_status=none`. Operators may
+invoke it with `stale_minutes=0` for immediate recovery.
 
 
 Audio-mix recovery distinguishes fresh active work from stale work. It can cancel stale active remix generations and atomically create a new generation; an explicit `stale_minutes=0` run forces immediate operator recovery.

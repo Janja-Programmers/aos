@@ -127,6 +127,15 @@ def _is_audio_reprocess(job: object) -> bool:
 	).strip() == "audio_reprocess"
 
 
+def _has_selected_sound(short_id: str) -> bool:
+	return bool(
+		frappe.db.exists(
+			"AOS Short Sound",
+			{"short": str(short_id or "").strip(), "is_original_audio": 0},
+		)
+	)
+
+
 def _set_audio_mix_state(job: object, status: str, error: str | None = None) -> None:
 	"""Persist the externally visible remix lifecycle for audio jobs only."""
 	if not _is_audio_reprocess(job):
@@ -212,8 +221,13 @@ def create_video_processing_job(
 		raise VideoProcessingError("Short raw video media must be private")
 	if media.status != "Attached":
 		raise VideoProcessingError("Short raw video media must be attached")
-	is_ready_reprocess = bool(force and short.status == "ready")
-	if is_ready_reprocess:
+	is_audio_reprocess = bool(force and str(reason or "").strip() == "audio_reprocess")
+	has_selected_sound = _has_selected_sound(short.name)
+	if is_audio_reprocess:
+		if not has_selected_sound:
+			raise VideoProcessingError("Short has no selected sound to process")
+		if short.status != "ready":
+			raise VideoProcessingError("Audio reprocessing requires a ready Short")
 		if hasattr(short, "audio_mix_status"):
 			short.audio_mix_status = "pending"
 		if hasattr(short, "audio_mix_error"):
@@ -224,7 +238,7 @@ def create_video_processing_job(
 		short.status = "processing"
 		short.processing_error = None
 		if hasattr(short, "audio_mix_status"):
-			short.audio_mix_status = "processing"
+			short.audio_mix_status = "processing" if has_selected_sound else "none"
 		if hasattr(short, "audio_mix_error"):
 			short.audio_mix_error = None
 	short.save(ignore_permissions=True)
@@ -624,10 +638,14 @@ def mark_video_job_failed(
 		job.last_error = "SUPERSEDED"
 		job.save(ignore_permissions=True)
 		return job
-	force = bool(int(getattr(job, "force_reprocess", 0) or 0))
+	is_audio_reprocess = _is_audio_reprocess(job)
+	has_selected_sound = _has_selected_sound(short.name)
 	error_text = str(error or "Video processing failed")[:1000]
 
-	if force and short.status == "ready":
+	if is_audio_reprocess:
+		# The canonical base video remains usable when adding a selected sound
+		# fails. Never turn a published Short into a failed video because an
+		# optional audio-only generation failed.
 		if hasattr(short, "audio_mix_status"):
 			short.audio_mix_status = "failed"
 		if hasattr(short, "audio_mix_error"):
@@ -636,9 +654,9 @@ def mark_video_job_failed(
 		short.status = "failed"
 		short.processing_error = error_text
 		if hasattr(short, "audio_mix_status"):
-			short.audio_mix_status = "failed"
+			short.audio_mix_status = "failed" if has_selected_sound else "none"
 		if hasattr(short, "audio_mix_error"):
-			short.audio_mix_error = error_text
+			short.audio_mix_error = error_text if has_selected_sound else None
 	short.save(ignore_permissions=True)
 
 	job.status = "Failed"
