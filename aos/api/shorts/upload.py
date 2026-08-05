@@ -393,14 +393,22 @@ def update_short_metadata_impl(**kwargs):
             mentioned_by=user,
         )
 
+        audio_job = None
+        if sound_id:
+            # Queueing the remix is part of the same transaction as the sound
+            # selection. A failure rolls the sound link back instead of leaving
+            # a published Short permanently stuck at ``pending``.
+            audio_job = enqueue_short_audio_reprocess(doc.name)
+
         moderation_job = enqueue_short_moderation(
             doc.name,
             source="short_publish",
             was_visible=was_visible,
         )
 
-        if sound_id:
-            enqueue_short_audio_reprocess(doc.name)
+        audio_mix_status = frappe.db.get_value(
+            "AOS Short", doc.name, "audio_mix_status"
+        )
 
         return ok(
             "Short classified and queued for moderation.",
@@ -413,9 +421,9 @@ def update_short_metadata_impl(**kwargs):
                 "allow_downloads": bool(int(doc.allow_downloads or 0)),
                 "mentions": mentions,
                 "sound": sound,
-                "audio_mix_status": (
-                    "pending" if sound_id else getattr(doc, "audio_mix_status", None)
-                ),
+                "audio_mix_status": audio_mix_status,
+                "audio_mix_job_id": getattr(audio_job, "name", None),
+                "audio_mix_job_status": getattr(audio_job, "status", None),
                 "visibility_status": doc.visibility_status,
                 "approval_status": getattr(doc, "approval_status", None),
                 "moderation_job_id": getattr(moderation_job, "name", None),

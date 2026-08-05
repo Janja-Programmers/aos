@@ -42,3 +42,20 @@ Known shared dependency errors such as `AUTH_REQUIRED`, `RATE_LIMITED`, `MEDIA_N
 ## Classification response
 
 Short payloads include `content_mode` and `classification: {status, source, confidence, model_version}`. Raw visual/text scores are never public. `shop` requires a validated owned active ad. `all` is accepted only as a feed filter and is not a Short mode.
+
+### Audio remix fields
+
+Publishing or changing a selected sound returns the durable remix state:
+
+```json
+{
+  "audio_mix_status": "pending",
+  "audio_mix_job_id": "VIDEO-JOB-2026-00001",
+  "audio_mix_job_status": "Queued"
+}
+```
+
+Clients should poll the canonical Short read endpoint while the mix status is
+`pending` or `processing`. Publication is complete with sound only when the
+status becomes `ready`. A `failed` state includes a bounded public-safe error and
+leaves the previous playable rendition available.

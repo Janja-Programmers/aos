@@ -168,6 +168,9 @@ scheduler_events = {
 			"aos.tasks.calls.handle_missed_calls",
 			"aos.tasks.outbox.publish_transactional_outbox",
 		],
+		"*/5 * * * *": [
+			"aos.tasks.shorts.recover_pending_audio_mixes",
+		],
 	},
 	"hourly": [
 		"aos.tasks.ads.expire_ads",

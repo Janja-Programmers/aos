@@ -108,30 +108,24 @@ def _active_sound_filters() -> dict[str, Any]:
     return {"status": ["in", list(SOUND_SHAREABLE_STATUSES)]}
 
 
-def enqueue_short_audio_reprocess(short_id: str) -> None:
-    """Queue background audio/HLS remuxing for a ready short.
+def enqueue_short_audio_reprocess(short_id: str):
+    """Create the durable audio-remix job for a ready Short.
 
-    The short remains ready while this runs. Existing playback stays available
-    until the external video-processing pipeline swaps in new HLS/final MP4 URLs.
+    The selected sound link and the processing job must be committed together.
+    Callers therefore receive the created/reused job and failures are propagated
+    to the transactional Shorts API boundary instead of leaving the Short stuck
+    at ``audio_mix_status=pending`` without durable work behind it.
     """
+    short_id = str(short_id or "").strip()
     if not short_id:
-        return
+        return None
 
     status = frappe.db.get_value("AOS Short", short_id, "status")
     if status != "ready":
-        return
+        return None
 
     try:
-        values = {}
-        meta = frappe.get_meta("AOS Short")
-        if meta.has_field("audio_mix_status"):
-            values["audio_mix_status"] = "pending"
-        if meta.has_field("audio_mix_error"):
-            values["audio_mix_error"] = None
-        if values:
-            frappe.db.set_value("AOS Short", short_id, values, update_modified=False)
-
-        create_video_processing_job(
+        return create_video_processing_job(
             short_id=short_id,
             force=True,
             reason="audio_reprocess",
@@ -142,6 +136,7 @@ def enqueue_short_audio_reprocess(short_id: str) -> None:
             "Shorts operation failed.",
             "Short audio reprocess enqueue failed",
         )
+        raise
 
 
 def validate_existing_short_sound_for_mode(*, short_id: str, content_mode: str):
@@ -952,13 +947,16 @@ def change_short_sound_impl(**kwargs):
             duration_ms=kwargs.get("sound_duration_ms") or kwargs.get("duration_ms"),
             volume=kwargs.get("sound_volume") if kwargs.get("sound_volume") is not None else kwargs.get("volume"),
         )
-        enqueue_short_audio_reprocess(short_id)
+        audio_job = enqueue_short_audio_reprocess(short_id)
+        audio_mix_status = frappe.db.get_value("AOS Short", short_id, "audio_mix_status")
         return ok(
             "Short sound updated.",
             data={
                 "short_id": short_id,
                 "sound": sound,
-                "audio_mix_status": "pending" if short.status == "ready" else None,
+                "audio_mix_status": audio_mix_status,
+                "audio_mix_job_id": getattr(audio_job, "name", None),
+                "audio_mix_job_status": getattr(audio_job, "status", None),
             },
         )
     except frappe.ValidationError as ex:
@@ -988,13 +986,16 @@ def remove_short_sound_impl(**kwargs):
             return fail("Cannot remove sound from a deleted short.", error="VALIDATION_ERROR")
 
         remove_short_sound_link(short_id)
-        enqueue_short_audio_reprocess(short_id)
+        audio_job = enqueue_short_audio_reprocess(short_id)
+        audio_mix_status = frappe.db.get_value("AOS Short", short_id, "audio_mix_status")
         return ok(
             "Short sound removed.",
             data={
                 "short_id": short_id,
                 "sound": None,
-                "audio_mix_status": "pending" if short.status == "ready" else None,
+                "audio_mix_status": audio_mix_status,
+                "audio_mix_job_id": getattr(audio_job, "name", None),
+                "audio_mix_job_status": getattr(audio_job, "status", None),
             },
         )
     except frappe.DoesNotExistError:

@@ -121,6 +121,24 @@ def _job_generation(short_id: str) -> int:
 	return max(1, int(value or 0) + 1)
 
 
+def _is_audio_reprocess(job: object) -> bool:
+	return bool(int(getattr(job, "force_reprocess", 0) or 0)) and str(
+		getattr(job, "reason", "") or ""
+	).strip() == "audio_reprocess"
+
+
+def _set_audio_mix_state(job: object, status: str, error: str | None = None) -> None:
+	"""Persist the externally visible remix lifecycle for audio jobs only."""
+	if not _is_audio_reprocess(job):
+		return
+	short_id = str(getattr(job, "short", "") or "").strip()
+	if not short_id:
+		return
+	values: dict[str, Any] = {"audio_mix_status": status}
+	values["audio_mix_error"] = str(error or "")[:1000] if error else None
+	frappe.db.set_value("AOS Short", short_id, values, update_modified=False)
+
+
 def _validated_processed_keys(short_id: str, payload: dict[str, Any]) -> tuple[str, str, str, str]:
 	config = get_minio_config()
 	base = f"{config.base_path}/processed/{short_id}/".strip("/") + "/"
@@ -303,12 +321,14 @@ def dispatch_video_processing_job(job_id: str) -> object:
 		job.service_job_id = str(data.get("service_job_id") or data.get("job_id") or job.service_job_id or "")
 		job.dispatched_at = now_datetime()
 		job.save(ignore_permissions=True)
+		_set_audio_mix_state(job, "processing")
 		return job
 	except OutboxConflictError as exc:
 		job.reload()
 		job.status = "Processing"
 		job.last_error = exc.error_code
 		job.save(ignore_permissions=True)
+		_set_audio_mix_state(job, "processing")
 		raise
 	except Exception as exc:
 		error_code = sanitized_dispatch_error(exc)
@@ -319,6 +339,7 @@ def dispatch_video_processing_job(job_id: str) -> object:
 		job.status = "Processing"
 		job.last_error = error_code
 		job.save(ignore_permissions=True)
+		_set_audio_mix_state(job, "processing")
 		raise
 
 
@@ -478,6 +499,15 @@ def handle_video_processing_callback(payload: dict[str, Any]) -> object:
 
 def mark_video_job_ready(job, payload: dict[str, Any]) -> object:
 	short = frappe.get_doc("AOS Short", job.short)
+	if _is_audio_reprocess(job):
+		expects_selected_sound = bool(
+			frappe.db.exists(
+				"AOS Short Sound",
+				{"short": short.name, "is_original_audio": 0},
+			)
+		)
+		if expects_selected_sound and not bool(payload.get("sound_applied")):
+			return mark_video_job_failed(job.name, "AUDIO_MIX_NOT_APPLIED")
 	try:
 		duration_seconds = float(payload.get("duration_seconds") or 0)
 	except (TypeError, ValueError) as exc:

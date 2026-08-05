@@ -274,6 +274,11 @@ def _generate_mp4_original(input_path: str, output_path: str, duration: float) -
 def _generate_mp4_with_sound(
 	input_path: str, sound_path: str, output_path: str, duration: float, sound: dict[str, Any]
 ) -> None:
+	"""Mix selected sound with original video audio when present.
+
+	The selected sound is looped and trimmed to the Short duration. Videos with
+	no original audio still receive the selected sound as their only audio track.
+	"""
 	start_seconds = max(float(sound.get("start_ms") or 0) / 1000.0, 0.0)
 	selected_duration = float(sound.get("duration_ms") or 0) / 1000.0
 	trim_duration = selected_duration if selected_duration > 0 else float(duration)
@@ -283,7 +288,22 @@ def _generate_mp4_with_sound(
 	except Exception:
 		volume = 1.0
 	volume = min(max(volume, 0.0), 1.0)
-	audio_filter = f"[1:a]volume={volume},atrim=0:{trim_duration:.3f},asetpts=PTS-STARTPTS,apad[aout]"
+
+	if _has_audio(input_path):
+		audio_filter = (
+			f"[0:a]aresample=async=1:first_pts=0,apad,"
+			f"atrim=0:{float(duration):.3f}[original];"
+			f"[1:a]volume={volume},atrim=0:{trim_duration:.3f},"
+			f"asetpts=PTS-STARTPTS,apad,atrim=0:{float(duration):.3f}[music];"
+			"[original][music]amix=inputs=2:duration=longest:"
+			f"dropout_transition=2:normalize=1,atrim=0:{float(duration):.3f}[aout]"
+		)
+	else:
+		audio_filter = (
+			f"[1:a]volume={volume},atrim=0:{trim_duration:.3f},"
+			f"asetpts=PTS-STARTPTS,apad,atrim=0:{float(duration):.3f}[aout]"
+		)
+
 	cmd = [
 		"ffmpeg",
 		"-y",

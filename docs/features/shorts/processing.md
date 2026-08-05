@@ -18,3 +18,29 @@ After metadata validation and thumbnail generation, the worker samples represent
 The video companion stores a bounded terminal result in Redis before callback delivery. The stored JSON must remain complete; it must never be cut at a generic diagnostic-field limit because truncated JSON cannot be replayed safely. HLS segment/object details stay internal to the worker. The callback contains only the canonical job and generation identifiers, final MP4/HLS keys, thumbnail metadata, duration, sound/classification results, and a bounded output-object count.
 
 A legacy or corrupt durable result is dead-lettered as `CALLBACK_RESULT_INVALID` without sending a malformed callback. Operators must retry processing for the affected Short; the service never invents missing duration or storage metadata.
+
+## Selected-sound remix lifecycle
+
+When a ready Short receives or changes a selected sound, the sound link and a
+new `AOS Video Processing Job` with `reason=audio_reprocess` are created in the
+same transaction. The public lifecycle is:
+
+```text
+pending -> processing -> ready
+                      -> failed
+```
+
+The existing playable rendition remains available while remixing. A publish or
+sound-change request is rejected and rolled back if durable remix work cannot be
+created; the backend must never acknowledge a selected sound while leaving only
+a `pending` flag with no job/outbox record.
+
+The worker mixes the selected sound with the video's original audio when an
+original audio track exists. Silent videos use the selected sound as their only
+audio track. Callback success is accepted only when `sound_applied=true` for a
+Short that still has a non-original selected sound.
+
+`aos.tasks.shorts.recover_pending_audio_mixes` runs every five minutes and
+requeues bounded stale `pending`/`processing` rows that have no active processing
+job. Operators may invoke it manually with `stale_minutes=0` for immediate
+recovery.

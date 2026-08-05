@@ -38,6 +38,100 @@ def update_short_ranking():
         )
 
 
+
+def recover_pending_audio_mixes(
+    *,
+    limit: int | None = None,
+    stale_minutes: int | None = None,
+) -> dict[str, int]:
+    """Recreate missing durable remix jobs for ready Shorts.
+
+    A Short must never remain indefinitely at ``pending`` or ``processing``
+    without an active audio-reprocess job. The task is bounded, commit-free and
+    safe to run repeatedly.
+    """
+    from frappe.utils import add_to_date, now_datetime
+
+    from aos.services.video_processing_service import create_video_processing_job
+    from aos.utils.aos_config import get_env_int
+
+    batch_limit = int(
+        limit
+        or get_env_int(
+            "AOS_SHORTS_AUDIO_MIX_RECOVERY_BATCH_LIMIT",
+            50,
+            min_value=1,
+            max_value=500,
+        )
+    )
+    age_minutes = int(
+        stale_minutes
+        if stale_minutes is not None
+        else get_env_int(
+            "AOS_SHORTS_AUDIO_MIX_STALE_MINUTES",
+            10,
+            min_value=1,
+            max_value=1440,
+        )
+    )
+    cutoff = add_to_date(now_datetime(), minutes=-max(0, age_minutes))
+    rows = frappe.db.sql(
+        """
+        SELECT s.name
+        FROM `tabAOS Short` s
+        WHERE s.status = 'ready'
+          AND s.audio_mix_status IN ('pending', 'processing')
+          AND s.modified <= %s
+          AND NOT EXISTS (
+              SELECT 1
+              FROM `tabAOS Video Processing Job` j
+              WHERE j.short = s.name
+                AND j.status IN ('Queued', 'Dispatching', 'Processing')
+          )
+        ORDER BY s.modified ASC, s.name ASC
+        LIMIT %s
+        """,
+        (cutoff, max(1, min(batch_limit, 500))),
+        as_dict=True,
+    )
+
+    result = {"checked": len(rows), "requeued": 0, "failed": 0}
+    for index, row in enumerate(rows):
+        savepoint = f"aos_audio_mix_recovery_{index}"
+        frappe.db.savepoint(savepoint)
+        try:
+            create_video_processing_job(
+                short_id=row.name,
+                force=True,
+                reason="audio_reprocess",
+                enqueue=True,
+            )
+            result["requeued"] += 1
+        except Exception:
+            frappe.db.rollback(save_point=savepoint)
+            frappe.db.set_value(
+                "AOS Short",
+                row.name,
+                {
+                    "audio_mix_status": "failed",
+                    "audio_mix_error": "AUDIO_MIX_REQUEUE_FAILED",
+                },
+                update_modified=False,
+            )
+            result["failed"] += 1
+            frappe.log_error(
+                "Shorts operation failed.",
+                "Short audio mix recovery failed",
+            )
+
+    frappe.logger("aos.shorts", allow_site=True).info(
+        "shorts_audio_mix_recovery checked=%s requeued=%s failed=%s",
+        result["checked"],
+        result["requeued"],
+        result["failed"],
+    )
+    return result
+
 def maintain_short_integrity() -> dict[str, int]:
     """Bounded daily reconciliation for stale Shorts and derived counters.
 

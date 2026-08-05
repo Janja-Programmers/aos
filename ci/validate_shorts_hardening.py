@@ -33,7 +33,7 @@ require(required_docs <= {p.name for p in docs_dir.glob("*.md")}, "required Shor
 shorts_tests = ROOT / "aos/api/shorts/tests"
 required_shorts_tests = {
     "__init__.py", "test_api_contracts.py", "test_database_contracts.py",
-    "test_classification.py",
+    "test_classification.py", "test_audio_mix_lifecycle.py",
 }
 require(
     required_shorts_tests <= {p.name for p in shorts_tests.glob("*.py")},
@@ -99,6 +99,18 @@ for token in (
 require("shell=True" not in worker and "os.system(" not in worker, "unsafe video subprocess invocation")
 require('"objects": uploaded_objects' not in worker, "video callback still exposes every HLS object")
 require('"output_object_count": len(uploaded_objects)' in worker, "bounded video output summary is missing")
+require("amix=inputs=2" in worker, "selected sound is not mixed with original audio")
+
+sounds_source = source("aos/api/shorts/sounds.py")
+audio_enqueue = sounds_source[
+    sounds_source.index("def enqueue_short_audio_reprocess"):
+    sounds_source.index("def validate_existing_short_sound_for_mode")
+]
+require("return create_video_processing_job" in audio_enqueue, "audio remix job is not returned to callers")
+require("        raise" in audio_enqueue, "audio remix enqueue failures are still swallowed")
+require('values["audio_mix_status"] = "pending"' not in audio_enqueue, "audio mix is marked pending before durable job creation")
+require("recover_pending_audio_mixes" in source("aos/tasks/shorts.py"), "stale audio mix recovery task is missing")
+require("aos.tasks.shorts.recover_pending_audio_mixes" in source("aos/hooks.py"), "audio mix recovery task is not scheduled")
 
 compose = source("docker-compose.yml")
 for worker_name, queue_token in (

@@ -192,3 +192,62 @@ def test_classification_request_is_timestamp_signed(monkeypatch, tmp_path):
 	assert captured["headers"]["X-AOS-Signature"] == worker.build_signature(
 		TEST_CLASSIFICATION_SECRET, signed
 	)
+
+
+def test_selected_sound_mixes_with_original_audio(monkeypatch, tmp_path):
+	captured = {}
+	input_path = tmp_path / "input.mp4"
+	sound_path = tmp_path / "sound.mp3"
+	output_path = tmp_path / "output.mp4"
+	input_path.write_bytes(b"video")
+	sound_path.write_bytes(b"sound")
+
+	monkeypatch.setattr(worker, "_has_audio", lambda _path: True)
+	monkeypatch.setattr(
+		worker,
+		"_run",
+		lambda cmd, _message, **_kwargs: captured.update(cmd=cmd),
+	)
+
+	worker._generate_mp4_with_sound(
+		str(input_path),
+		str(sound_path),
+		str(output_path),
+		12.0,
+		{"start_ms": 1000, "duration_ms": 8000, "volume": 0.6},
+	)
+
+	filter_graph = captured["cmd"][captured["cmd"].index("-filter_complex") + 1]
+	assert "[0:a]" in filter_graph
+	assert "[1:a]volume=0.6" in filter_graph
+	assert "amix=inputs=2" in filter_graph
+	assert "duration=longest" in filter_graph
+
+
+def test_selected_sound_is_only_audio_when_video_is_silent(monkeypatch, tmp_path):
+	captured = {}
+	input_path = tmp_path / "input.mp4"
+	sound_path = tmp_path / "sound.mp3"
+	output_path = tmp_path / "output.mp4"
+	input_path.write_bytes(b"video")
+	sound_path.write_bytes(b"sound")
+
+	monkeypatch.setattr(worker, "_has_audio", lambda _path: False)
+	monkeypatch.setattr(
+		worker,
+		"_run",
+		lambda cmd, _message, **_kwargs: captured.update(cmd=cmd),
+	)
+
+	worker._generate_mp4_with_sound(
+		str(input_path),
+		str(sound_path),
+		str(output_path),
+		5.0,
+		{"volume": 1.0},
+	)
+
+	filter_graph = captured["cmd"][captured["cmd"].index("-filter_complex") + 1]
+	assert "[0:a]" not in filter_graph
+	assert "amix=" not in filter_graph
+	assert "[1:a]volume=1.0" in filter_graph

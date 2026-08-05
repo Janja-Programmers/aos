@@ -60,3 +60,24 @@ Search-index jobs and transactional outbox rows are durable audit records and ma
 Open **AOS Sound → New**, choose the source type, then use **Upload audio**. The browser uploads directly to object storage and the Sound controller finalizes the Media attachment when the document is saved. For `commercial` sounds, `Commercial Safe` is enforced automatically. Existing audio cannot be replaced; create a new Sound instead.
 
 After deployment, run `bench --site <site> migrate` to synchronize the new Desk HTML field, then clear cache and reload Desk assets.
+
+## Recovering a stuck sound remix
+
+A ready Short with `audio_mix_status=pending` or `processing` must have an active
+`AOS Video Processing Job` whose reason is `audio_reprocess`. The scheduled
+reconciler repairs missing durable work every five minutes.
+
+Immediate staging recovery:
+
+```bash
+bench --site <site> execute \
+  aos.tasks.shorts.recover_pending_audio_mixes \
+  --kwargs '{"stale_minutes":0,"limit":100}'
+
+bench --site <site> execute \
+  aos.tasks.outbox.publish_transactional_outbox \
+  --kwargs '{"limit":100}'
+```
+
+Then verify the video worker receives an `audio_reprocess` job and the Short
+moves from `pending` to `processing` and finally `ready` or `failed`.
