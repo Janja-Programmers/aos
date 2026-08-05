@@ -51,6 +51,10 @@ class TestShortAudioMixLifecycle(FrappeTestCase):
         self.assertIn('_set_audio_mix_state(job, "processing")', service_source)
         self.assertIn('"AUDIO_MIX_NOT_APPLIED"', service_source)
         self.assertIn("def recover_pending_audio_mixes", tasks_source)
+        self.assertIn("cancelled_stale", tasks_source)
+        self.assertIn("AUDIO_MIX_RECOVERY_STALE", tasks_source)
+        self.assertIn("skipped_active", tasks_source)
+        self.assertNotIn("AND NOT EXISTS (", tasks_source[tasks_source.index("def recover_pending_audio_mixes"):tasks_source.index("def maintain_short_integrity")])
         self.assertIn("aos.tasks.shorts.recover_pending_audio_mixes", hooks_source)
 
     def test_publish_response_uses_actual_audio_job_state(self):

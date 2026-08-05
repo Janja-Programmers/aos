@@ -44,14 +44,21 @@ def recover_pending_audio_mixes(
     limit: int | None = None,
     stale_minutes: int | None = None,
 ) -> dict[str, int]:
-    """Recreate missing durable remix jobs for ready Shorts.
+    """Repair missing or stale durable remix work for ready Shorts.
 
-    A Short must never remain indefinitely at ``pending`` or ``processing``
-    without an active audio-reprocess job. The task is bounded, commit-free and
-    safe to run repeatedly.
+    A ready Short with a selected sound may legitimately have an active remix
+    job for a few minutes. Once that job is older than the configured cutoff,
+    keeping it active forever prevents both the scheduler and an explicit retry
+    from creating a replacement generation. This task therefore distinguishes
+    fresh active work from stale active work, cancels only stale generations and
+    creates one new durable ``audio_reprocess`` job in the same transaction.
+
+    ``stale_minutes=0`` is an explicit operator override that treats every
+    matching active generation as stale. The scheduled default remains bounded.
     """
     from frappe.utils import add_to_date, now_datetime
 
+    from aos.services.shorts.repository import ShortsRepository
     from aos.services.video_processing_service import create_video_processing_job
     from aos.utils.aos_config import get_env_int
 
@@ -80,26 +87,123 @@ def recover_pending_audio_mixes(
         SELECT s.name
         FROM `tabAOS Short` s
         WHERE s.status = 'ready'
-          AND s.audio_mix_status IN ('pending', 'processing')
-          AND s.modified <= %s
-          AND NOT EXISTS (
-              SELECT 1
-              FROM `tabAOS Video Processing Job` j
-              WHERE j.short = s.name
-                AND j.status IN ('Queued', 'Dispatching', 'Processing')
+          AND (
+              s.audio_mix_status IN ('pending', 'processing')
+              OR (
+                  s.audio_mix_status = 'none'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM `tabAOS Short Sound` ss
+                      WHERE ss.short = s.name
+                        AND ss.is_original_audio = 0
+                  )
+              )
           )
         ORDER BY s.modified ASC, s.name ASC
         LIMIT %s
         """,
-        (cutoff, max(1, min(batch_limit, 500))),
+        (max(1, min(batch_limit, 500)),),
         as_dict=True,
     )
 
-    result = {"checked": len(rows), "requeued": 0, "failed": 0}
+    result = {
+        "checked": len(rows),
+        "requeued": 0,
+        "cancelled_stale": 0,
+        "skipped_active": 0,
+        "cleared_missing_sound": 0,
+        "failed": 0,
+    }
+    repository = ShortsRepository()
+
     for index, row in enumerate(rows):
         savepoint = f"aos_audio_mix_recovery_{index}"
         frappe.db.savepoint(savepoint)
         try:
+            locked_short, active_jobs = repository.lock_short_and_active_jobs(row.name)
+            if not locked_short:
+                continue
+
+            current = frappe.db.get_value(
+                "AOS Short",
+                row.name,
+                ["status", "audio_mix_status"],
+                as_dict=True,
+            )
+            if not current or current.status != "ready" or current.audio_mix_status not in {
+                "none",
+                "pending",
+                "processing",
+            }:
+                continue
+
+            has_selected_sound = bool(
+                frappe.db.exists(
+                    "AOS Short Sound",
+                    {"short": row.name, "is_original_audio": 0},
+                )
+            )
+            if not has_selected_sound:
+                frappe.db.set_value(
+                    "AOS Short",
+                    row.name,
+                    {"audio_mix_status": "none", "audio_mix_error": None},
+                    update_modified=False,
+                )
+                result["cleared_missing_sound"] += 1
+                continue
+
+            fresh_active = [
+                job
+                for job in active_jobs
+                if job.get("modified") and job.get("modified") > cutoff
+            ]
+            if fresh_active:
+                result["skipped_active"] += 1
+                continue
+
+            stale_job_names = tuple(
+                str(job.get("name") or "")
+                for job in active_jobs
+                if job.get("name")
+            )
+            if stale_job_names:
+                frappe.db.sql(
+                    """
+                    UPDATE `tabAOS Video Processing Job`
+                    SET status = 'Cancelled',
+                        active_key = NULL,
+                        completed_at = NOW(),
+                        last_error = 'AUDIO_MIX_RECOVERY_STALE'
+                    WHERE name IN %(names)s
+                      AND status IN ('Queued', 'Dispatching', 'Processing')
+                    """,
+                    {"names": stale_job_names},
+                )
+                if frappe.db.table_exists("AOS Transactional Outbox"):
+                    frappe.db.sql(
+                        """
+                        UPDATE `tabAOS Transactional Outbox`
+                        SET status = 'Cancelled',
+                            completed_at = NOW(),
+                            next_attempt_at = NULL,
+                            callback_deadline_at = NULL,
+                            claimed_by = NULL,
+                            claim_token = NULL,
+                            claimed_at = NULL,
+                            lease_expires_at = NULL,
+                            last_error = 'AUDIO_MIX_RECOVERY_STALE'
+                        WHERE job_doctype = 'AOS Video Processing Job'
+                          AND job_name IN %(names)s
+                          AND status NOT IN (
+                              'Completed', 'Completed With Failure',
+                              'Dead Letter', 'Cancelled'
+                          )
+                        """,
+                        {"names": stale_job_names},
+                    )
+                result["cancelled_stale"] += len(stale_job_names)
+
             create_video_processing_job(
                 short_id=row.name,
                 force=True,
@@ -125,12 +229,17 @@ def recover_pending_audio_mixes(
             )
 
     frappe.logger("aos.shorts", allow_site=True).info(
-        "shorts_audio_mix_recovery checked=%s requeued=%s failed=%s",
+        "shorts_audio_mix_recovery checked=%s requeued=%s cancelled_stale=%s "
+        "skipped_active=%s cleared_missing_sound=%s failed=%s",
         result["checked"],
         result["requeued"],
+        result["cancelled_stale"],
+        result["skipped_active"],
+        result["cleared_missing_sound"],
         result["failed"],
     )
     return result
+
 
 def maintain_short_integrity() -> dict[str, int]:
     """Bounded daily reconciliation for stale Shorts and derived counters.

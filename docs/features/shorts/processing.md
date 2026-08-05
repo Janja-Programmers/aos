@@ -44,3 +44,6 @@ Short that still has a non-original selected sound.
 requeues bounded stale `pending`/`processing` rows that have no active processing
 job. Operators may invoke it manually with `stale_minutes=0` for immediate
 recovery.
+
+
+Audio-mix recovery distinguishes fresh active work from stale work. It can cancel stale active remix generations and atomically create a new generation; an explicit `stale_minutes=0` run forces immediate operator recovery.

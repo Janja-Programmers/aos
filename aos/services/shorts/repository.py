@@ -26,7 +26,8 @@ class ShortsRepository:
         short = self.lock_short(short_id)
         jobs = frappe.db.sql(
             """
-            SELECT name, status, creation, force_reprocess, idempotency_key, generation
+            SELECT name, status, reason, creation, modified, dispatched_at, service_job_id,
+                   force_reprocess, idempotency_key, generation
             FROM `tabAOS Video Processing Job`
             WHERE short = %s AND status IN ('Queued', 'Dispatching', 'Processing')
             ORDER BY creation ASC, name ASC

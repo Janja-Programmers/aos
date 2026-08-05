@@ -81,3 +81,6 @@ bench --site <site> execute \
 
 Then verify the video worker receives an `audio_reprocess` job and the Short
 moves from `pending` to `processing` and finally `ready` or `failed`.
+
+
+Audio-mix recovery distinguishes fresh active work from stale work. It can cancel stale active remix generations and atomically create a new generation; an explicit `stale_minutes=0` run forces immediate operator recovery.
