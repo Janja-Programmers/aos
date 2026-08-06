@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from aos.api.v1._transport import client_kwargs
+from aos.api.shared.transport import client_kwargs
 from aos.services.live.endpoints import ENDPOINT_SPECS
 from aos.services.live.errors import LiveError
 from aos.services.live.validation import validate_public_kwargs

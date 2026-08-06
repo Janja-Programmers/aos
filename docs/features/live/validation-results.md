@@ -19,6 +19,15 @@ Result: PASS (exit 0)
 python -m unittest aos.api.live.tests.test_live_validation_unit aos.api.live.tests.test_live_source_guards -v
 Result: PASS (exit 0), 29 tests passed
 
+python -m unittest aos.tests.test_api_versioning -v
+Result: PASS (exit 0), 5 tests passed
+
+Exact AST rule from aos.tests.test_public_error_safety.test_public_api_fail_calls_do_not_use_raw_exception_strings
+Result: PASS; no public fail() call serializes str(exc), .message, or get_traceback()
+
+Static compatibility assertion for aos.api.live.live.NotificationService
+Result: PASS; the legacy patch seam is restored
+
 python ci/validate_rate_limit_coverage.py .
 Result: PASS (exit 0), 208 whitelisted endpoint policies validated
 
@@ -88,3 +97,13 @@ The input ZIP's Shorts schema patch used raw `ALTER TABLE` through `frappe.db.sq
 ## Required staging evidence
 
 Deployment is not complete until the staging commands in `testing.md` and `operations.md` pass under Python 3.14.6 with a real Bench site, MariaDB, Redis, workers, LiveKit 1.9.x deployment, configured credentials, and webhook delivery.
+
+## Full-suite regression correction
+
+A subsequent Bench full-suite run exposed three compatibility regressions, all corrected in this archive:
+
+- Live test modules no longer import the public `aos.api.v1` namespace. The transport helper now lives in `aos.api.shared.transport`, while `aos.api.v1._transport` remains a backward-compatible export.
+- `aos.api.live.live.NotificationService` is restored as an explicit legacy test/patch seam without moving notification business logic back into the endpoint module.
+- Live endpoints no longer pass `str(exc)` to `fail()`. `LiveError.public_message` makes the intentional server-owned domain message explicit.
+
+The exact Frappe-dependent core-flow and public-error test methods could not be rerun in this container because Frappe/Bench is unavailable. Their structural failure conditions were reproduced directly and now pass.

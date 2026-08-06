@@ -9,7 +9,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.api.v1._transport import client_kwargs
+from aos.api.shared.transport import client_kwargs
 from aos.services.live.cursor import decode_cursor, encode_cursor
 from aos.services.live.endpoints import ENDPOINT_SPECS, TRANSACTIONAL_ENDPOINTS
 from aos.services.live.errors import LiveError

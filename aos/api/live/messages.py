@@ -994,7 +994,7 @@ def list_live_messages_impl(**kwargs):
             },
         )
     except LiveError as exc:
-        return fail(str(exc), error=exc.code, data=exc.data, http_status=exc.http_status)
+        return fail(exc.public_message, error=exc.code, data=exc.data, http_status=exc.http_status)
     except ValueError:
         return fail("Invalid Live cursor or pagination values.", error="LIVE_INVALID_CURSOR")
     except Exception:
@@ -1097,7 +1097,7 @@ def list_live_replies_impl(**kwargs):
             },
         )
     except LiveError as exc:
-        return fail(str(exc), error=exc.code, data=exc.data, http_status=exc.http_status)
+        return fail(exc.public_message, error=exc.code, data=exc.data, http_status=exc.http_status)
     except ValueError:
         return fail("Invalid Live cursor or pagination values.", error="LIVE_INVALID_CURSOR")
     except Exception:

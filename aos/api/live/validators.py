@@ -260,7 +260,7 @@ def validate_live_social_access(
         )
     except LiveError as exc:
         return fail(
-            str(exc),
+            exc.public_message,
             error=exc.code,
             data=exc.data,
             http_status=exc.http_status,
@@ -313,7 +313,7 @@ def validate_user_can_go_live(
         state = LivePolicy().require_account_available(user)
     except LiveError as exc:
         return None, fail(
-            str(exc),
+            exc.public_message,
             error=exc.code,
             data=exc.data,
             http_status=exc.http_status,

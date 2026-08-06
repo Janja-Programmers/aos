@@ -2,10 +2,10 @@
 
 Compared with the uploaded `current_backend.zip` baseline.
 
-- Added: 45
-- Modified: 32
+- Added: 46
+- Modified: 33
 - Deleted: 0
-- Total changed paths: 77
+- Total changed paths: 79
 
 Legend: `A` added, `M` modified, `D` deleted.
 
@@ -39,6 +39,8 @@ M aos/api/live/token.py
 M aos/api/live/tracking.py
 M aos/api/live/validators.py
 M aos/api/shared/responses.py
+A aos/api/shared/transport.py
+M aos/api/v1/_transport.py
 M aos/api/v1/live/__init__.py
 A aos/api/v1/livekit/__init__.py
 M aos/hooks.py
