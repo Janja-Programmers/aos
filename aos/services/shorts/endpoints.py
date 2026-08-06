@@ -53,7 +53,7 @@ ENDPOINT_SPECS: dict[str, EndpointSpec] = {
     "track_view": _spec({"short_id", "session_id", "watch_ms", "event_id"}, ids=(("short_id", SHORT_ID_RE),)),
     "track_share": _spec({"short_id", "session_id", "channel", "source", "event_id"}, ids=(("short_id", SHORT_ID_RE),)),
     "get_short": _spec({"short_id"}, ids=(("short_id", SHORT_ID_RE),)),
-    "my_shorts": _spec({"limit", "cursor"}),
+    "my_shorts": _spec({"limit", "cursor", "scope"}),
     "user_shorts": _spec({"user", "target_user", "limit", "cursor", "content_mode", "mode"}, aliases=(("user", "target_user"), ("content_mode", "mode"))),
     "delete_short": _spec({"short_id"}, ids=(("short_id", SHORT_ID_RE),)),
     "retry_processing": _spec({"short_id"}, ids=(("short_id", SHORT_ID_RE),)),

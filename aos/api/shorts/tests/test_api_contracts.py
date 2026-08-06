@@ -8,7 +8,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.api.shorts.management import get_short_impl
+from aos.api.shorts.management import get_short_impl, my_shorts_impl
 from aos.api.shorts.sounds import search_sounds_impl
 from aos.api.shorts.utils import decode_cursor, encode_cursor
 from aos.services.shorts.errors import ShortsCursorError, ShortsError
@@ -95,6 +95,34 @@ class TestShortsApiContracts(FrappeTestCase):
         self.assertIn("COALESCE(s.ranking_score, 0) DESC", source)
         self.assertIn("EXISTS (", source)
         self.assertIn("filter_viewable_rows", source)
+
+    def test_my_shorts_profile_scope_is_strictly_supported(self):
+        spec = ENDPOINT_SPECS["my_shorts"]
+        self.assertEqual(
+            validate_public_kwargs({"scope": "private", "limit": 12}, spec),
+            {"scope": "private", "limit": 12},
+        )
+
+        queries: list[str] = []
+
+        def fake_sql(query, *args, **kwargs):
+            queries.append(str(query))
+            return []
+
+        with (
+            patch("aos.api.shorts.management.require_login", return_value=("user@example.test", None)),
+            patch("aos.api.shorts.management.rate_limit", return_value=None),
+            patch("aos.api.shorts.management.frappe.db.sql", side_effect=fake_sql),
+        ):
+            private_response = my_shorts_impl(scope="private", limit=12)
+            posts_response = my_shorts_impl(scope="posts", limit=12)
+            invalid_response = my_shorts_impl(scope="public", limit=12)
+
+        self.assertTrue(private_response.get("ok"), private_response)
+        self.assertTrue(posts_response.get("ok"), posts_response)
+        self.assertEqual(invalid_response.get("error"), "VALIDATION_ERROR")
+        self.assertIn("s.audience = 'only_me'", queries[0])
+        self.assertIn("s.audience != 'only_me'", queries[1])
 
     def test_v1_endpoints_have_strict_specs_and_rate_policy_entries(self):
         wrapper = ast.parse(self._source("api/v1/shorts/__init__.py"))

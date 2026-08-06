@@ -378,6 +378,18 @@ def my_shorts_impl(**kwargs):
         MY_SHORTS_MAX_LIMIT,
     )
     cursor = kwargs.get("cursor")
+    scope = str(kwargs.get("scope") or "all").strip().lower()
+    if scope not in {"all", "posts", "private"}:
+        return fail(
+            "Invalid shorts profile scope.",
+            error="VALIDATION_ERROR",
+        )
+
+    scope_clause = ""
+    if scope == "posts":
+        scope_clause = "AND s.status != 'deleted' AND s.audience != 'only_me'"
+    elif scope == "private":
+        scope_clause = "AND s.status != 'deleted' AND s.audience = 'only_me'"
 
     try:
         where_cursor, params_cursor = build_cursor_where_clause(
@@ -392,6 +404,7 @@ def my_shorts_impl(**kwargs):
 
             WHERE
                 s.owner = %s
+                {scope_clause}
                 {where_cursor}
 
             ORDER BY
