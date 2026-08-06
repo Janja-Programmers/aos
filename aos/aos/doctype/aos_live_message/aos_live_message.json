@@ -17,7 +17,9 @@
   "root_message",
   "reply_count",
   "visible_to_host",
-  "visible_to_viewers"
+  "visible_to_viewers",
+  "idempotency_key",
+  "active_idempotency_key"
  ],
  "fields": [
   {
@@ -124,6 +126,25 @@
    "fieldname": "metadata_json",
    "fieldtype": "JSON",
    "label": "Metadata JSON"
+  },
+  {
+   "fieldname": "idempotency_key",
+   "fieldtype": "Data",
+   "label": "Idempotency Key",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "length": 128
+  },
+  {
+   "fieldname": "active_idempotency_key",
+   "fieldtype": "Data",
+   "label": "Active Idempotency Key",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "unique": 1,
+   "length": 300
   }
  ],
  "grid_page_length": 50,

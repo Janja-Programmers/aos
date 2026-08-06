@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import frappe
 from frappe.model.document import Document
+from aos.services.live.livekit import participant_identity
 from frappe.utils import (
     add_to_date,
     get_datetime,
@@ -297,11 +298,18 @@ class AOSLiveCoHost(Document):
         self.is_active = int(
             self.status == ACTIVE_STATUS
         )
+        self.active_workflow_key = (
+            f"{self.live_stream}|{self.user}"
+            if self.status in UNRESOLVED_STATUSES and self.live_stream and self.user
+            else None
+        )
 
         if self.user and self.session_id:
-            self.livekit_identity = (
-                f"user:{self.user}:"
-                f"session:{self.session_id}"
+            self.livekit_identity = participant_identity(
+                live_id=self.live_stream,
+                role="cohost",
+                user=self.user,
+                session_id=self.session_id,
             )
         else:
             self.livekit_identity = None
@@ -685,9 +693,11 @@ class AOSLiveCoHost(Document):
         identity so a role upgrade does not create a second LiveKit
         participant.
         """
-        expected_identity = (
-            f"user:{self.user}:"
-            f"session:{self.session_id}"
+        expected_identity = participant_identity(
+            live_id=self.live_stream,
+            role="cohost",
+            user=self.user,
+            session_id=self.session_id,
         )
 
         if (

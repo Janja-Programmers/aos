@@ -323,9 +323,14 @@ def fallback_user_payload(
     if not user:
         return empty_user_payload()
 
+    try:
+        public_id = public_account_id_for_user(user)
+    except Exception:
+        public_id = None
+
     return {
-        "user": user,
-        "display_name": user,
+        "user": public_id,
+        "display_name": "AOS User",
         "avatar": None,
         "is_deleted": False,
         "is_live": False,
@@ -469,7 +474,7 @@ def serialize_live_message(
         ),
 
         # Optional target identity.
-        "target_user": target_user_id,
+        "target_user": target.get("user") if target else None,
         "target": target,
 
         # Message content.
@@ -817,7 +822,7 @@ def serialize_live_cohost(
         ),
 
         # Request details.
-        "requested_by": requested_by_id,
+        "requested_by": requester.get("user") if requester else None,
         "requester": requester,
         "requested_at": _value(
             cohost,
@@ -829,7 +834,7 @@ def serialize_live_cohost(
         ),
 
         # Response details.
-        "responded_by": responded_by_id,
+        "responded_by": responder.get("user") if responder else None,
         "responder": responder,
         "responded_at": _value(
             cohost,
@@ -853,7 +858,7 @@ def serialize_live_cohost(
             cohost,
             "ended_at",
         ),
-        "ended_by": ended_by_id,
+        "ended_by": ended_by.get("user") if ended_by else None,
         "ended_by_user": ended_by,
         "end_reason": _value(
             cohost,
@@ -1512,6 +1517,10 @@ def serialize_live(
                 )
             )
         ),
+        "total_joins": _as_int(_value(live, "total_joins")),
+        "total_joins_display": humanize_count(_as_int(_value(live, "total_joins"))),
+        "unique_viewers": _as_int(_value(live, "unique_viewers")),
+        "unique_viewers_display": humanize_count(_as_int(_value(live, "unique_viewers"))),
         "peak_viewers": _as_int(
             _value(
                 live,

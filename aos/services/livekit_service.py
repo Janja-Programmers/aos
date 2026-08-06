@@ -103,6 +103,7 @@ class LiveKitService:
             can_publish=True,
             can_subscribe=True,
             can_publish_data=True,
+            token_ttl=cls._get_token_ttl(),
         )
 
     # LIVE TOKENS
@@ -158,6 +159,7 @@ class LiveKitService:
             can_publish_data=grants[
                 "can_publish_data"
             ],
+            token_ttl=cls._get_live_token_ttl(),
         )
 
     @classmethod
@@ -331,6 +333,17 @@ class LiveKitService:
             minutes=ttl_minutes
         )
 
+    @classmethod
+    def _get_live_token_ttl(cls) -> timedelta:
+        """Return a short bounded lifetime for Live publish/view tokens."""
+        settings = get_aos_settings_snapshot()
+        raw = settings.livekit_live_token_ttl_minutes
+        try:
+            minutes = int(raw)
+        except (TypeError, ValueError):
+            minutes = 15
+        return timedelta(minutes=max(1, min(minutes, 30)))
+
     # TOKEN GENERATION
     @classmethod
     def _generate_token(
@@ -343,6 +356,7 @@ class LiveKitService:
         can_publish: bool,
         can_subscribe: bool,
         can_publish_data: bool,
+        token_ttl: timedelta,
     ) -> str:
         """
         Generate and sign one LiveKit room token.
@@ -406,8 +420,6 @@ class LiveKitService:
             )
         )
 
-        token = token.with_ttl(
-            cls._get_token_ttl()
-        )
+        token = token.with_ttl(token_ttl)
 
         return token.to_jwt()

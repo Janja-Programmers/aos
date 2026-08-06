@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import frappe
 
+from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.user_display import get_user_display
 from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.notification_delivery_service import create_notification_delivery_job
@@ -55,6 +56,7 @@ class NotificationService:
         body: str,
         actor: str | None = None,
         payload: dict | None = None,
+        dedupe_key: str | None = None,
     ):
         """
         Create a persistent AOS Notification record.
@@ -75,11 +77,26 @@ class NotificationService:
                 "body": body,
                 "actor": actor,
                 "payload": payload or {},
+                "dedupe_key": str(dedupe_key or "").strip() or None,
             }
         )
 
-        doc.insert(ignore_permissions=True)
-        return doc
+        try:
+            doc.insert(ignore_permissions=True)
+            return doc
+        except Exception as exc:
+            if not dedupe_key or not is_duplicate_entry_error(exc):
+                raise
+            existing = frappe.db.get_value(
+                "AOS Notification",
+                {"dedupe_key": dedupe_key},
+                "name",
+            )
+            if not existing:
+                raise
+            existing_doc = frappe.get_doc("AOS Notification", existing)
+            existing_doc.flags.aos_dedupe_existing = True
+            return existing_doc
 
     @staticmethod
     def _deliver(
@@ -124,7 +141,7 @@ class NotificationService:
         except Exception:
             frappe.log_error(
                 frappe.get_traceback(),
-                f"Notification delivery enqueue failed for {user}",
+                "Notification delivery enqueue failed",
             )
 
     # GENERIC ENTRY POINTS
@@ -143,6 +160,7 @@ class NotificationService:
         ttl_seconds: int | None = None,
         android_channel_id: str | None = None,
         android_notification_priority: str | None = None,
+        dedupe_key: str | None = None,
     ):
         """
         Create a persistent notification and deliver its push notification.
@@ -164,21 +182,25 @@ class NotificationService:
             body=body,
             actor=actor,
             payload=payload,
+            dedupe_key=dedupe_key,
         )
 
-        # 2. Deliver push notification.
-        cls._deliver(
-            user=user,
-            event=event or type,
-            title=title,
-            body=body,
-            payload=payload,
-            priority=priority,
-            ttl_seconds=ttl_seconds,
-            android_channel_id=android_channel_id,
-            android_notification_priority=android_notification_priority,
-            notification_id=doc.name if doc else None,
-        )
+        # 2. Deliver push notification only for the newly-created row. A
+        # database dedupe conflict returns the authoritative existing document
+        # and must not create a second delivery job.
+        if not (doc and getattr(doc.flags, "aos_dedupe_existing", False)):
+            cls._deliver(
+                user=user,
+                event=event or type,
+                title=title,
+                body=body,
+                payload=payload,
+                priority=priority,
+                ttl_seconds=ttl_seconds,
+                android_channel_id=android_channel_id,
+                android_notification_priority=android_notification_priority,
+                notification_id=doc.name if doc else None,
+            )
 
         return doc
 
@@ -687,6 +709,7 @@ class NotificationService:
         host_user: str,
         live_id: str,
         title: str,
+        dedupe_key: str | None = None,
     ):
         """
         Notify a follower that a creator/host started a live stream.
@@ -694,7 +717,10 @@ class NotificationService:
         `user` is the recipient.
         `host_user` is the live host / creator User ID.
         """
-        host_name = cls._display_name(host_user)
+        try:
+            host_name = get_user_display(host_user).get("display_name") or "A creator"
+        except Exception:
+            host_name = "A creator"
         host_public_id = public_account_id_for_user(host_user)
         live_title = (title or "").strip()
 
@@ -713,4 +739,5 @@ class NotificationService:
                 "host_user": host_public_id,
             },
             event="aos_live_started",
+            dedupe_key=dedupe_key,
         )

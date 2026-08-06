@@ -143,6 +143,7 @@ def cleanup_deleted_account_features(user: str) -> dict[str, int]:
 
     summary["active_calls_ended"] = _end_active_calls(user=user, now=now)
     summary["active_live_streams_ended"] = _end_active_live_streams(user=user, now=now)
+    summary["live_view_sessions_closed"] = _close_live_view_rows(user=user, now=now)
     summary["live_cohost_rows_closed"] = _close_live_cohost_rows(user=user, now=now)
 
     summary["seller_profiles_deleted"] = _mark_sellers_deleted(sellers=sellers)
@@ -219,65 +220,215 @@ def _end_active_live_streams(*, user: str, now) -> int:
     if not _doctype_exists("AOS Live Stream"):
         return 0
 
-    return _update_counted(
-        "AOS Live Stream",
-        set_sql="""
-            status = 'ended',
-            is_active = 0,
-            ended_at = COALESCE(ended_at, %s),
-            modified = %s
-        """,
-        where_sql="""
-            host_user = %s
-            AND (
-                is_active = 1
-                OR status IN ('scheduled', 'live')
-            )
-        """,
-        set_params=(now, now),
-        where_params=(user,),
-    )
+    total = 0
+    while True:
+        rows = frappe.db.sql(
+            """
+            SELECT name
+            FROM `tabAOS Live Stream`
+            WHERE host_user = %s
+              AND (is_active = 1 OR status IN ('scheduled', 'live'))
+            ORDER BY creation ASC, name ASC
+            LIMIT 100
+            FOR UPDATE
+            """,
+            (user,),
+            as_dict=True,
+        )
+        live_ids = [str(row.name) for row in rows if row.name]
+        if not live_ids:
+            return total
+
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Live Stream`
+            SET status = 'ended',
+                is_active = 0,
+                active_host_key = NULL,
+                ended_at = COALESCE(ended_at, %(ended_at)s),
+                duration_seconds = GREATEST(
+                    COALESCE(duration_seconds, 0),
+                    COALESCE(
+                        TIMESTAMPDIFF(SECOND, started_at, COALESCE(ended_at, %(ended_at)s)),
+                        0
+                    )
+                ),
+                room_cleanup_pending = 1,
+                modified = %(modified)s
+            WHERE name IN %(live_ids)s
+            """,
+            {"live_ids": tuple(live_ids), "ended_at": now, "modified": now},
+        )
+        for live_id in live_ids:
+            try:
+                frappe.enqueue(
+                    "aos.tasks.live.cleanup_live_room",
+                    live_id=live_id,
+                    queue="short",
+                    enqueue_after_commit=True,
+                )
+            except Exception:
+                frappe.log_error(
+                    "Live room cleanup enqueue failed.",
+                    "Account deletion Live cleanup",
+                )
+        total += len(live_ids)
+
+
+def _close_live_view_rows(*, user: str, now) -> int:
+    if not _doctype_exists("AOS Live Stream View"):
+        return 0
+
+    from aos.services.live.participants import enqueue_view_removal
+
+    from aos.services.live_analytics_service import LiveAnalyticsService
+
+    total = 0
+    while True:
+        rows = frappe.db.sql(
+            """
+            SELECT v.name, v.live_stream, v.`user`
+            FROM `tabAOS Live Stream View` v
+            INNER JOIN `tabAOS Live Stream` l ON l.name = v.live_stream
+            WHERE v.is_active = 1
+              AND (v.user = %s OR l.host_user = %s)
+            ORDER BY v.creation ASC, v.name ASC
+            LIMIT 500
+            FOR UPDATE
+            """,
+            (user, user),
+            as_dict=True,
+        )
+        if not rows:
+            break
+        names = tuple(str(row.name) for row in rows)
+        batch_live_ids = sorted({str(row.live_stream) for row in rows if row.live_stream})
+        removal_ids = [str(row.name) for row in rows if str(row.user or "") == user]
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Live Stream View`
+            SET is_active = 0,
+                active_identity_key = NULL,
+                left_at = COALESCE(left_at, %(left_at)s),
+                last_seen_at = %(left_at)s,
+                watch_duration_seconds = GREATEST(
+                    COALESCE(watch_duration_seconds, 0),
+                    COALESCE(TIMESTAMPDIFF(SECOND, joined_at, %(left_at)s), 0),
+                    0
+                ),
+                qualified = CASE
+                    WHEN GREATEST(
+                        COALESCE(watch_duration_seconds, 0),
+                        COALESCE(TIMESTAMPDIFF(SECOND, joined_at, %(left_at)s), 0),
+                        0
+                    ) >= 5 THEN 1 ELSE 0
+                END,
+                modified = %(left_at)s
+            WHERE name IN %(names)s
+            """,
+            {"names": names, "left_at": now},
+        )
+        for view_id in removal_ids:
+            enqueue_view_removal(view_id)
+        for live_id in batch_live_ids:
+            LiveAnalyticsService.sync_view_metrics(live_id=live_id)
+        total += len(rows)
+
+    return total
 
 
 def _close_live_cohost_rows(*, user: str, now) -> int:
     if not _doctype_exists("AOS Live CoHost"):
         return 0
 
+    from aos.services.live.participants import enqueue_cohost_removal
+
     total = 0
+    while True:
+        rows = frappe.db.sql(
+            """
+            SELECT name
+            FROM `tabAOS Live CoHost`
+            WHERE (
+                    `user` = %s OR requested_by = %s OR responded_by = %s
+                    OR live_stream IN (
+                        SELECT name FROM `tabAOS Live Stream` WHERE host_user = %s
+                    )
+                  )
+              AND status IN ('accepted', 'active')
+            ORDER BY creation ASC, name ASC
+            LIMIT 500
+            FOR UPDATE
+            """,
+            (user, user, user, user),
+            as_dict=True,
+        )
+        if not rows:
+            break
+        names = tuple(str(row.name) for row in rows)
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Live CoHost`
+            SET status = 'ended',
+                is_active = 0,
+                active_workflow_key = NULL,
+                ended_at = COALESCE(ended_at, %(ended_at)s),
+                ended_by = COALESCE(ended_by, %(ended_by)s),
+                modified = %(modified)s
+            WHERE name IN %(names)s
+            """,
+            {
+                "names": names,
+                "ended_at": now,
+                "ended_by": user,
+                "modified": now,
+            },
+        )
+        for row in rows:
+            enqueue_cohost_removal(str(row.name))
+        total += len(rows)
 
-    total += _update_counted(
-        "AOS Live CoHost",
-        set_sql="""
-            status = 'ended',
-            is_active = 0,
-            ended_at = COALESCE(ended_at, %s),
-            ended_by = COALESCE(ended_by, %s),
-            modified = %s
-        """,
-        where_sql="""
-            (user = %s OR requested_by = %s OR responded_by = %s)
-            AND status IN ('accepted', 'active')
-        """,
-        set_params=(now, user, now),
-        where_params=(user, user, user),
-    )
-
-    total += _update_counted(
-        "AOS Live CoHost",
-        set_sql="""
-            status = 'cancelled',
-            is_active = 0,
-            ended_at = COALESCE(ended_at, %s),
-            ended_by = COALESCE(ended_by, %s),
-            modified = %s
-        """,
-        where_sql="""
-            (user = %s OR requested_by = %s OR responded_by = %s)
-            AND status IN ('pending')
-        """,
-        set_params=(now, user, now),
-        where_params=(user, user, user),
-    )
+    while True:
+        rows = frappe.db.sql(
+            """
+            SELECT name
+            FROM `tabAOS Live CoHost`
+            WHERE (
+                    `user` = %s OR requested_by = %s OR responded_by = %s
+                    OR live_stream IN (
+                        SELECT name FROM `tabAOS Live Stream` WHERE host_user = %s
+                    )
+                  )
+              AND status = 'pending'
+            ORDER BY creation ASC, name ASC
+            LIMIT 500
+            FOR UPDATE
+            """,
+            (user, user, user, user),
+            as_dict=True,
+        )
+        if not rows:
+            break
+        names = tuple(str(row.name) for row in rows)
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Live CoHost`
+            SET status = 'cancelled',
+                is_active = 0,
+                active_workflow_key = NULL,
+                ended_at = COALESCE(ended_at, %(ended_at)s),
+                ended_by = COALESCE(ended_by, %(ended_by)s),
+                modified = %(modified)s
+            WHERE name IN %(names)s
+            """,
+            {
+                "names": names,
+                "ended_at": now,
+                "ended_by": user,
+                "modified": now,
+            },
+        )
+        total += len(rows)
 
     return total
 
@@ -862,6 +1013,7 @@ def deactivate_account_features(user: str) -> dict[str, int]:
     return {
         "active_calls_ended": _end_active_calls(user=user, now=now),
         "active_live_streams_ended": _end_active_live_streams(user=user, now=now),
+        "live_view_sessions_closed": _close_live_view_rows(user=user, now=now),
         "live_cohost_rows_closed": _close_live_cohost_rows(user=user, now=now),
         "notifications_marked_read": _mark_notifications_read(user=user),
     }

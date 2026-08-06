@@ -468,12 +468,27 @@ class SocialRepository:
         total = frappe.db.count(BLOCK_DOCTYPE, {"blocker_user": viewer, "status": BLOCK_ACTIVE})
         return [dict(row) for row in rows], int(total or 0)
 
-    def list_active_followers_for_event(self, *, target: str, limit: int) -> list[str]:
-        """Return a deterministic, lifecycle-safe, block-aware fanout batch."""
+    def list_active_followers_for_event_page(
+        self,
+        *,
+        target: str,
+        limit: int,
+        after_creation: str | None = None,
+        after_name: str | None = None,
+    ) -> list[dict[str, str]]:
+        """Return a deterministic, lifecycle-safe, block-aware fanout page."""
         bounded = max(1, min(int(limit or 1), 500))
-        rows = frappe.db.sql(
+        params: dict[str, object] = {"target": target, "limit": bounded}
+        cursor_sql = ""
+        if after_creation and after_name:
+            params.update({"after_creation": after_creation, "after_name": after_name})
+            cursor_sql = """
+              AND (f.creation > %(after_creation)s
+                   OR (f.creation = %(after_creation)s AND f.name > %(after_name)s))
             """
-            SELECT f.follower_user AS user
+        rows = frappe.db.sql(
+            f"""
+            SELECT f.follower_user AS user, f.creation, f.name
             FROM `tabAOS Follow` f
             INNER JOIN `tabUser` u ON u.name = f.follower_user
             INNER JOIN `tabAOS Profile` p ON p.user = f.follower_user
@@ -487,13 +502,25 @@ class SocialRepository:
                     AND ((b.blocker_user = %(target)s AND b.blocked_user = f.follower_user)
                       OR (b.blocked_user = %(target)s AND b.blocker_user = f.follower_user))
               )
+              {cursor_sql}
             ORDER BY f.creation ASC, f.name ASC
             LIMIT %(limit)s
             """,
-            {"target": target, "limit": bounded},
+            params,
             as_dict=True,
         )
-        return [str(row.user) for row in rows if row.user]
+        return [
+            {"user": str(row.user), "creation": str(row.creation), "name": str(row.name)}
+            for row in rows
+            if row.user
+        ]
+
+    def list_active_followers_for_event(self, *, target: str, limit: int) -> list[str]:
+        """Compatibility wrapper returning only follower User values."""
+        return [
+            row["user"]
+            for row in self.list_active_followers_for_event_page(target=target, limit=limit)
+        ]
 
     def recent_follow_notification_exists(self, *, recipient: str, actor: str, seconds: int) -> bool:
         rows = frappe.db.sql(

@@ -1,284 +1,292 @@
 {
-  "actions": [],
-  "allow_rename": 1,
-  "creation": "2026-01-25 18:47:17.321630",
-  "doctype": "DocType",
-  "engine": "InnoDB",
-  "field_order": [
-    "localization_tab",
-    "aos_defaults_section",
-    "default_country",
-    "default_language",
-    "column_break_ohud",
-    "default_currency",
-    "foreign_exchange_section",
-    "base_currency",
-    "refresh_hours",
-    "authentication_tab",
-    "oauth_section",
-    "google_oauth_client_ids",
-    "column_break_auth_oauth",
-    "apple_oauth_client_ids",
-    "media_tab",
-    "media_upload_section",
-    "media_presigned_upload_expiry_minutes",
-    "background_removal_section",
-    "background_removal_max_image_bytes",
-    "column_break_background_removal",
-    "background_removal_service_timeout_seconds",
-    "ads_tab",
-    "ads_lifecycle_section",
-    "ad_expiry_days",
-    "flash_sale_window_days",
-    "image_search_section",
-    "image_search_default_limit",
-    "image_search_max_limit",
-    "column_break_image_search",
-    "image_search_service_timeout_seconds",
-    "connect_tab",
-    "livekit_section",
-    "livekit_token_ttl_minutes",
-    "translation_section",
-    "translation_max_characters",
-    "column_break_translation",
-    "translation_service_timeout_seconds"
-  ],
-  "fields": [
-    {
-      "fieldname": "localization_tab",
-      "fieldtype": "Tab Break",
-      "label": "Localization"
-    },
-    {
-      "fieldname": "aos_defaults_section",
-      "fieldtype": "Section Break",
-      "label": "AOS Defaults"
-    },
-    {
-      "fieldname": "default_country",
-      "fieldtype": "Link",
-      "label": "Default Country",
-      "options": "Country",
-      "reqd": 1
-    },
-    {
-      "fieldname": "default_language",
-      "fieldtype": "Link",
-      "label": "Default Language",
-      "options": "Language",
-      "reqd": 1
-    },
-    {
-      "fieldname": "column_break_ohud",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "default_currency",
-      "fieldtype": "Link",
-      "label": "Default Currency",
-      "options": "Currency",
-      "reqd": 1
-    },
-    {
-      "fieldname": "foreign_exchange_section",
-      "fieldtype": "Section Break",
-      "label": "Foreign Exchange"
-    },
-    {
-      "fieldname": "base_currency",
-      "fieldtype": "Link",
-      "label": "Base Currency",
-      "options": "Currency"
-    },
-    {
-      "fieldname": "refresh_hours",
-      "fieldtype": "Int",
-      "label": "Refresh Hours",
-      "description": "Number of hours between automatic FX rate refresh",
-      "default": "12"
-    },
-    {
-      "fieldname": "authentication_tab",
-      "fieldtype": "Tab Break",
-      "label": "Authentication"
-    },
-    {
-      "fieldname": "oauth_section",
-      "fieldtype": "Section Break",
-      "label": "OAuth Providers"
-    },
-    {
-      "fieldname": "google_oauth_client_ids",
-      "fieldtype": "Small Text",
-      "label": "Google OAuth Client IDs",
-      "description": "Allowed Google OAuth client IDs, one per line or comma-separated."
-    },
-    {
-      "fieldname": "column_break_auth_oauth",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "apple_oauth_client_ids",
-      "fieldtype": "Small Text",
-      "label": "Apple OAuth Client IDs",
-      "description": "Allowed Apple token audiences/client IDs, one per line or comma-separated. Include the iOS Bundle ID and web Service ID."
-    },
-    {
-      "fieldname": "media_tab",
-      "fieldtype": "Tab Break",
-      "label": "Media"
-    },
-    {
-      "fieldname": "media_upload_section",
-      "fieldtype": "Section Break",
-      "label": "Media Upload URLs"
-    },
-    {
-      "fieldname": "media_presigned_upload_expiry_minutes",
-      "fieldtype": "Int",
-      "label": "Upload URL Expiry (Minutes)",
-      "default": "10",
-      "description": "Expiry time for presigned upload URLs."
-    },
-    {
-      "fieldname": "background_removal_section",
-      "fieldtype": "Section Break",
-      "label": "Background Removal"
-    },
-    {
-      "fieldname": "background_removal_max_image_bytes",
-      "fieldtype": "Int",
-      "label": "Max Image Size Bytes",
-      "default": "10485760",
-      "description": "Maximum source image size in bytes accepted before calling the background-removal service."
-    },
-    {
-      "fieldname": "column_break_background_removal",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "background_removal_service_timeout_seconds",
-      "fieldtype": "Int",
-      "label": "Service Timeout Seconds",
-      "default": "30",
-      "description": "HTTP timeout in seconds when calling the internal background-removal service."
-    },
-    {
-      "fieldname": "ads_tab",
-      "fieldtype": "Tab Break",
-      "label": "Ads"
-    },
-    {
-      "fieldname": "ads_lifecycle_section",
-      "fieldtype": "Section Break",
-      "label": "Ad Lifecycle"
-    },
-    {
-      "fieldname": "ad_expiry_days",
-      "fieldtype": "Int",
-      "label": "Ad Expiry Days",
-      "default": "30",
-      "description": "Number of days before an active ad expires."
-    },
-    {
-      "fieldname": "flash_sale_window_days",
-      "fieldtype": "Int",
-      "label": "Flash Sale Window (Days)",
-      "default": "7",
-      "description": "Number of days before an offer expires for it to qualify as a Flash Sale."
-    },
-    {
-      "fieldname": "image_search_section",
-      "fieldtype": "Section Break",
-      "label": "Image Search"
-    },
-    {
-      "fieldname": "image_search_default_limit",
-      "fieldtype": "Int",
-      "label": "Default Result Limit",
-      "default": "20",
-      "description": "Default number of visually similar ads returned when the request does not provide a limit."
-    },
-    {
-      "fieldname": "image_search_max_limit",
-      "fieldtype": "Int",
-      "label": "Max Result Limit",
-      "default": "100",
-      "description": "Maximum image-search result limit accepted by the backend API."
-    },
-    {
-      "fieldname": "column_break_image_search",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "image_search_service_timeout_seconds",
-      "fieldtype": "Int",
-      "label": "Service Timeout Seconds",
-      "default": "20",
-      "description": "HTTP timeout in seconds when calling the internal image-search service."
-    },
-    {
-      "fieldname": "connect_tab",
-      "fieldtype": "Tab Break",
-      "label": "Connect"
-    },
-    {
-      "fieldname": "livekit_section",
-      "fieldtype": "Section Break",
-      "label": "LiveKit"
-    },
-    {
-      "fieldname": "livekit_token_ttl_minutes",
-      "fieldtype": "Int",
-      "label": "Token Expiry (Minutes)",
-      "default": "60"
-    },
-    {
-      "fieldname": "translation_section",
-      "fieldtype": "Section Break",
-      "label": "Translation"
-    },
-    {
-      "fieldname": "translation_max_characters",
-      "fieldtype": "Int",
-      "label": "Translation Max Characters",
-      "default": "1000"
-    },
-    {
-      "fieldname": "column_break_translation",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "translation_service_timeout_seconds",
-      "fieldtype": "Int",
-      "label": "Translation Service Timeout Seconds",
-      "default": "30"
-    }
-  ],
-  "grid_page_length": 50,
-  "index_web_pages_for_search": 1,
-  "issingle": 1,
-  "links": [],
-  "modified": "2026-07-14 11:30:00.000000",
-  "modified_by": "Administrator",
-  "module": "AOS",
-  "name": "AOS Settings",
-  "owner": "Administrator",
-  "permissions": [
-    {
-      "create": 1,
-      "delete": 1,
-      "email": 1,
-      "print": 1,
-      "read": 1,
-      "role": "System Manager",
-      "share": 1,
-      "write": 1
-    }
-  ],
-  "row_format": "Dynamic",
-  "rows_threshold_for_grid_search": 20,
-  "sort_field": "creation",
-  "sort_order": "DESC",
-  "states": []
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-01-25 18:47:17.321630",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "localization_tab",
+  "aos_defaults_section",
+  "default_country",
+  "default_language",
+  "column_break_ohud",
+  "default_currency",
+  "foreign_exchange_section",
+  "base_currency",
+  "refresh_hours",
+  "authentication_tab",
+  "oauth_section",
+  "google_oauth_client_ids",
+  "column_break_auth_oauth",
+  "apple_oauth_client_ids",
+  "media_tab",
+  "media_upload_section",
+  "media_presigned_upload_expiry_minutes",
+  "background_removal_section",
+  "background_removal_max_image_bytes",
+  "column_break_background_removal",
+  "background_removal_service_timeout_seconds",
+  "ads_tab",
+  "ads_lifecycle_section",
+  "ad_expiry_days",
+  "flash_sale_window_days",
+  "image_search_section",
+  "image_search_default_limit",
+  "image_search_max_limit",
+  "column_break_image_search",
+  "image_search_service_timeout_seconds",
+  "connect_tab",
+  "livekit_section",
+  "livekit_token_ttl_minutes",
+  "livekit_live_token_ttl_minutes",
+  "translation_section",
+  "translation_max_characters",
+  "column_break_translation",
+  "translation_service_timeout_seconds"
+ ],
+ "fields": [
+  {
+   "fieldname": "localization_tab",
+   "fieldtype": "Tab Break",
+   "label": "Localization"
+  },
+  {
+   "fieldname": "aos_defaults_section",
+   "fieldtype": "Section Break",
+   "label": "AOS Defaults"
+  },
+  {
+   "fieldname": "default_country",
+   "fieldtype": "Link",
+   "label": "Default Country",
+   "options": "Country",
+   "reqd": 1
+  },
+  {
+   "fieldname": "default_language",
+   "fieldtype": "Link",
+   "label": "Default Language",
+   "options": "Language",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_ohud",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "default_currency",
+   "fieldtype": "Link",
+   "label": "Default Currency",
+   "options": "Currency",
+   "reqd": 1
+  },
+  {
+   "fieldname": "foreign_exchange_section",
+   "fieldtype": "Section Break",
+   "label": "Foreign Exchange"
+  },
+  {
+   "fieldname": "base_currency",
+   "fieldtype": "Link",
+   "label": "Base Currency",
+   "options": "Currency"
+  },
+  {
+   "fieldname": "refresh_hours",
+   "fieldtype": "Int",
+   "label": "Refresh Hours",
+   "description": "Number of hours between automatic FX rate refresh",
+   "default": "12"
+  },
+  {
+   "fieldname": "authentication_tab",
+   "fieldtype": "Tab Break",
+   "label": "Authentication"
+  },
+  {
+   "fieldname": "oauth_section",
+   "fieldtype": "Section Break",
+   "label": "OAuth Providers"
+  },
+  {
+   "fieldname": "google_oauth_client_ids",
+   "fieldtype": "Small Text",
+   "label": "Google OAuth Client IDs",
+   "description": "Allowed Google OAuth client IDs, one per line or comma-separated."
+  },
+  {
+   "fieldname": "column_break_auth_oauth",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "apple_oauth_client_ids",
+   "fieldtype": "Small Text",
+   "label": "Apple OAuth Client IDs",
+   "description": "Allowed Apple token audiences/client IDs, one per line or comma-separated. Include the iOS Bundle ID and web Service ID."
+  },
+  {
+   "fieldname": "media_tab",
+   "fieldtype": "Tab Break",
+   "label": "Media"
+  },
+  {
+   "fieldname": "media_upload_section",
+   "fieldtype": "Section Break",
+   "label": "Media Upload URLs"
+  },
+  {
+   "fieldname": "media_presigned_upload_expiry_minutes",
+   "fieldtype": "Int",
+   "label": "Upload URL Expiry (Minutes)",
+   "default": "10",
+   "description": "Expiry time for presigned upload URLs."
+  },
+  {
+   "fieldname": "background_removal_section",
+   "fieldtype": "Section Break",
+   "label": "Background Removal"
+  },
+  {
+   "fieldname": "background_removal_max_image_bytes",
+   "fieldtype": "Int",
+   "label": "Max Image Size Bytes",
+   "default": "10485760",
+   "description": "Maximum source image size in bytes accepted before calling the background-removal service."
+  },
+  {
+   "fieldname": "column_break_background_removal",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "background_removal_service_timeout_seconds",
+   "fieldtype": "Int",
+   "label": "Service Timeout Seconds",
+   "default": "30",
+   "description": "HTTP timeout in seconds when calling the internal background-removal service."
+  },
+  {
+   "fieldname": "ads_tab",
+   "fieldtype": "Tab Break",
+   "label": "Ads"
+  },
+  {
+   "fieldname": "ads_lifecycle_section",
+   "fieldtype": "Section Break",
+   "label": "Ad Lifecycle"
+  },
+  {
+   "fieldname": "ad_expiry_days",
+   "fieldtype": "Int",
+   "label": "Ad Expiry Days",
+   "default": "30",
+   "description": "Number of days before an active ad expires."
+  },
+  {
+   "fieldname": "flash_sale_window_days",
+   "fieldtype": "Int",
+   "label": "Flash Sale Window (Days)",
+   "default": "7",
+   "description": "Number of days before an offer expires for it to qualify as a Flash Sale."
+  },
+  {
+   "fieldname": "image_search_section",
+   "fieldtype": "Section Break",
+   "label": "Image Search"
+  },
+  {
+   "fieldname": "image_search_default_limit",
+   "fieldtype": "Int",
+   "label": "Default Result Limit",
+   "default": "20",
+   "description": "Default number of visually similar ads returned when the request does not provide a limit."
+  },
+  {
+   "fieldname": "image_search_max_limit",
+   "fieldtype": "Int",
+   "label": "Max Result Limit",
+   "default": "100",
+   "description": "Maximum image-search result limit accepted by the backend API."
+  },
+  {
+   "fieldname": "column_break_image_search",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "image_search_service_timeout_seconds",
+   "fieldtype": "Int",
+   "label": "Service Timeout Seconds",
+   "default": "20",
+   "description": "HTTP timeout in seconds when calling the internal image-search service."
+  },
+  {
+   "fieldname": "connect_tab",
+   "fieldtype": "Tab Break",
+   "label": "Connect"
+  },
+  {
+   "fieldname": "livekit_section",
+   "fieldtype": "Section Break",
+   "label": "LiveKit"
+  },
+  {
+   "fieldname": "livekit_token_ttl_minutes",
+   "fieldtype": "Int",
+   "label": "Token Expiry (Minutes)",
+   "default": "60"
+  },
+  {
+   "fieldname": "livekit_live_token_ttl_minutes",
+   "fieldtype": "Int",
+   "label": "Live Token Expiry (Minutes)",
+   "default": "15",
+   "description": "Short-lived token lifetime for Live host, co-host and viewer access. Runtime clamps this value to 1-30 minutes."
+  },
+  {
+   "fieldname": "translation_section",
+   "fieldtype": "Section Break",
+   "label": "Translation"
+  },
+  {
+   "fieldname": "translation_max_characters",
+   "fieldtype": "Int",
+   "label": "Translation Max Characters",
+   "default": "1000"
+  },
+  {
+   "fieldname": "column_break_translation",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "translation_service_timeout_seconds",
+   "fieldtype": "Int",
+   "label": "Translation Service Timeout Seconds",
+   "default": "30"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-07-14 11:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
 }

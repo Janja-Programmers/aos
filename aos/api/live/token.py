@@ -22,11 +22,13 @@ from __future__ import annotations
 import frappe
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
 from aos.services.livekit_service import LiveKitService
+from aos.services.accounts.identity import public_account_id_for_user
+from aos.services.live.livekit import participant_identity, participant_metadata
 
 from .constants import (
     GET_LIVE_COHOST_TOKEN_LIMIT_PER_MINUTE_PER_USER,
@@ -72,18 +74,15 @@ def _normalize_session_id(
 
 def _get_viewer_livekit_identity(
     *,
+    live_id: str,
     user: str,
     session_id: str,
 ) -> str:
-    """
-    Return the session-scoped identity used by both viewers and co-hosts.
-
-    A viewer-to-co-host role upgrade must preserve this identity so LiveKit
-    upgrades the same participant instead of creating a second participant.
-    """
-    return (
-        f"user:{user}:"
-        f"session:{session_id}"
+    return participant_identity(
+        live_id=live_id,
+        role=VIEWER_ROLE,
+        user=user,
+        session_id=session_id,
     )
 
 
@@ -94,35 +93,13 @@ def _get_livekit_identity(
     role: str,
     session_id: str | None,
 ) -> str:
-    """
-    Build the same participant identity used by live.py.
-
-    Host:
-        user:{user}:host:{live_id}
-
-    Viewer/co-host:
-        user:{user}:session:{session_id}
-    """
-    if role == HOST_ROLE:
-        return (
-            f"user:{user}:"
-            f"host:{live_id}"
-        )
-
-    if role not in {
-        VIEWER_ROLE,
-        COHOST_ROLE,
-    }:
-        frappe.throw(
-            "Invalid live token role."
-        )
-
-    if not session_id:
-        frappe.throw(
-            "Session id is required."
-        )
-
-    return _get_viewer_livekit_identity(
+    if role not in {HOST_ROLE, VIEWER_ROLE, COHOST_ROLE}:
+        frappe.throw("Invalid live token role.")
+    if role != HOST_ROLE and not session_id:
+        frappe.throw("Session id is required.")
+    return participant_identity(
+        live_id=live_id,
+        role=role,
         user=user,
         session_id=session_id,
     )
@@ -148,7 +125,7 @@ def _validate_token_session(
     if live.host_user == user:
         return None
 
-    blocked_err = validate_live_social_access(live=live, user=user)
+    blocked_err = validate_live_social_access(live=live, user=user, lock_relationship=True)
     if blocked_err:
         return blocked_err
 
@@ -190,6 +167,14 @@ def _validate_cohost_token_eligibility(
             error="PERMISSION_DENIED",
         )
 
+    blocked_err = validate_live_social_access(
+        live=live,
+        user=user,
+        lock_relationship=True,
+    )
+    if blocked_err:
+        return blocked_err
+
     if cohost.status not in COHOST_TOKEN_STATUSES:
         return fail(
             "The co-host workflow must be accepted before a token "
@@ -219,6 +204,7 @@ def _validate_cohost_token_eligibility(
 
     expected_identity = (
         _get_viewer_livekit_identity(
+            live_id=live.name,
             user=user,
             session_id=session_id,
         )
@@ -257,25 +243,14 @@ def _build_livekit_payload(
         user
     )
 
-    extra = None
-
-    if cohost_id:
-        extra = {
-            "cohost_id": cohost_id,
-        }
-
-    metadata = LiveKitService.build_metadata(
-        user=user,
-        role=role,
-        display_name=display.get(
-            "display_name"
-        ),
-        avatar=display.get(
-            "avatar"
-        ),
-        is_guest=False,
-        session_id=session_id,
-        extra=extra,
+    metadata = frappe.as_json(
+        participant_metadata(
+            role=role,
+            user=user,
+            display_name=display.get("display_name"),
+            avatar=display.get("avatar"),
+            is_guest=False,
+        )
     )
 
     token = LiveKitService.generate_live_token(
@@ -295,7 +270,7 @@ def _build_livekit_payload(
         "ws_url": LiveKitService.get_ws_url(),
         "role": role,
         "identity": identity,
-        "user": user,
+        "user": public_account_id_for_user(user),
         "is_guest": False,
         "session_id": session_id,
     }
@@ -308,7 +283,7 @@ def get_live_token_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:live:token:user:{user}",
+        key=rate_limit_key("live", "token", "user", user),
         ttl_seconds=60,
         limit=GET_LIVE_TOKEN_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests.",
@@ -328,6 +303,23 @@ def get_live_token_impl(**kwargs):
     )
 
     try:
+        # Serialize token issuance with Live termination. Without the row lock,
+        # a request that read `live` immediately before end_live could return a
+        # token after the Live had already become terminal.
+        locked_live = frappe.db.sql(
+            """
+            SELECT name
+            FROM `tabAOS Live Stream`
+            WHERE name = %s
+            LIMIT 1
+            FOR UPDATE
+            """,
+            (live_id,),
+            as_dict=True,
+        )
+        if not locked_live:
+            return fail("Live stream not found.", error="NOT_FOUND")
+
         live, err = validate_live_exists(
             live_id
         )
@@ -374,17 +366,13 @@ def get_live_token_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
-
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Live operation failed.",
             "Get Live Token Failed",
         )
-        frappe.db.rollback()
-
         return fail(
             "Failed to generate token.",
             error="INTERNAL_ERROR",
@@ -398,10 +386,7 @@ def get_live_cohost_token_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=(
-            f"aos:live:cohost:token:"
-            f"user:{user}"
-        ),
+        key=rate_limit_key("live", "cohost", "token", "user", user),
         ttl_seconds=60,
         limit=(
             GET_LIVE_COHOST_TOKEN_LIMIT_PER_MINUTE_PER_USER
@@ -423,15 +408,49 @@ def get_live_cohost_token_impl(**kwargs):
     )
 
     try:
+        # Resolve the parent first, then lock in deterministic parent->child
+        # order. Co-host cancellation/end uses the same order, preventing a
+        # publishing token from being minted concurrently with demotion.
         cohost, err = validate_cohost_exists(
             cohost_id
         )
         if err:
             return err
 
-        live, err = validate_live_exists(
-            cohost.live_stream
+        locked_live = frappe.db.sql(
+            """
+            SELECT name
+            FROM `tabAOS Live Stream`
+            WHERE name = %s
+            LIMIT 1
+            FOR UPDATE
+            """,
+            (cohost.live_stream,),
+            as_dict=True,
         )
+        if not locked_live:
+            return fail("Live stream not found.", error="NOT_FOUND")
+
+        locked_cohost = frappe.db.sql(
+            """
+            SELECT name
+            FROM `tabAOS Live CoHost`
+            WHERE name = %s AND live_stream = %s
+            LIMIT 1
+            FOR UPDATE
+            """,
+            (cohost_id, cohost.live_stream),
+            as_dict=True,
+        )
+        if not locked_cohost:
+            return fail("Co-host request not found.", error="NOT_FOUND")
+
+        # Re-read after acquiring both locks so no pre-lock status or session
+        # value can authorize the token.
+        cohost, err = validate_cohost_exists(cohost_id)
+        if err:
+            return err
+        live, err = validate_live_exists(cohost.live_stream)
         if err:
             return err
 
@@ -486,17 +505,13 @@ def get_live_cohost_token_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
-
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Live operation failed.",
             "Get Live CoHost Token Failed",
         )
-        frappe.db.rollback()
-
         return fail(
             "Failed to generate co-host token.",
             error="INTERNAL_ERROR",

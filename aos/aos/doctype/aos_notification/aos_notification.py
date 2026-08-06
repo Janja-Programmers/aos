@@ -35,6 +35,11 @@ class AOSNotification(Document):
         if not self.payload:
             self.payload = {}
 
+        dedupe_key = str(getattr(self, "dedupe_key", "") or "").strip()
+        self.dedupe_key = dedupe_key or None
+        if dedupe_key and len(dedupe_key) > 180:
+            frappe.throw("Notification dedupe key is too long.")
+
         # Ensure is_read default (safety)
         if self.is_read is None:
             self.is_read = 0

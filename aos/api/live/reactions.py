@@ -19,10 +19,11 @@ from __future__ import annotations
 import frappe
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
+from aos.services.live.repository import LiveRepository
 
 from .constants import (
     SEND_REACTION_LIMIT_PER_MINUTE_PER_USER,
@@ -95,7 +96,7 @@ def send_reaction_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:live:reaction:user:{user}",
+        key=rate_limit_key("live", "reaction", "user", user),
         ttl_seconds=60,
         limit=SEND_REACTION_LIMIT_PER_MINUTE_PER_USER,
         message="Too many reactions. Please slow down.",
@@ -131,6 +132,7 @@ def send_reaction_impl(**kwargs):
     )
 
     try:
+        LiveRepository().lock_live(live_id)
         live, err = validate_live_exists(
             live_id
         )
@@ -185,17 +187,13 @@ def send_reaction_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
-
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Live operation failed.",
             "Send Reaction Failed",
         )
-        frappe.db.rollback()
-
         return fail(
             "Failed to send reaction.",
             error="INTERNAL_ERROR",

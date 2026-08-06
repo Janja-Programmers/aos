@@ -606,6 +606,12 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
+    "endpoint": "aos.api.v1.livekit.__init__.handle_webhook",
+    "access": "guest",
+    "policy": "signed_internal_exempt",
+    "rationale": "LiveKit callback verified against the raw body hash and signed Authorization JWT."
+  },
+  {
     "endpoint": "aos.api.v1.localization.__init__.get_locale_bundle",
     "access": "guest",
     "policy": "baseline_guest",

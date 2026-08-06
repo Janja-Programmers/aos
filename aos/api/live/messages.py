@@ -34,15 +34,21 @@ Rules:
 
 from __future__ import annotations
 
+import html
+import unicodedata
 from typing import Any
 
 import frappe
 
 from aos.api.shared.auth import optional_active_user, require_login
-from aos.api.shared.rate_limit import rate_limit, request_ip
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
+from aos.api.shared.db import is_duplicate_entry_error
+from aos.services.live.cursor import decode_cursor, encode_cursor
+from aos.services.live.errors import LiveError
+from aos.services.live.repository import LiveRepository
 from aos.services.live_analytics_service import LiveAnalyticsService
 
 from .activity import (
@@ -69,6 +75,7 @@ from .validators import (
     validate_live_active,
     validate_live_exists,
     validate_live_participant_session,
+    validate_live_social_access,
 )
 
 
@@ -133,9 +140,21 @@ def _normalize_message_type(
 def _normalize_content(
     value,
 ) -> str:
-    return str(
-        value or ""
-    ).strip()
+    text = unicodedata.normalize("NFC", str(value or "")).strip()
+    if len(text) > 500:
+        raise ValueError("Live comment is too long.")
+    if "\x00" in text:
+        raise ValueError("Invalid Live comment.")
+    return html.escape(text, quote=False)
+
+
+def _normalize_idempotency_key(value) -> str | None:
+    key = str(value or "").strip()
+    if not key:
+        return None
+    if len(key) > 128 or any(ord(ch) < 32 for ch in key):
+        raise ValueError("Invalid idempotency key.")
+    return key
 
 
 def _parse_pagination(
@@ -320,6 +339,7 @@ def _create_live_message(
     metadata: dict | None = None,
     visible_to_host: bool = True,
     visible_to_viewers: bool = True,
+    idempotency_key: str | None = None,
 ):
     """
     Canonical internal creator for AOS Live Message.
@@ -397,6 +417,8 @@ def _create_live_message(
     message.visible_to_viewers = int(
         bool(visible_to_viewers)
     )
+    if hasattr(message, "idempotency_key"):
+        message.idempotency_key = idempotency_key
 
     if metadata is not None:
         message.metadata_json = frappe.as_json(
@@ -416,6 +438,7 @@ def _create_comment_message(
     user: str,
     content: str,
     parent_message: str | None = None,
+    idempotency_key: str | None = None,
 ):
     return _create_live_message(
         live_id=live_id,
@@ -430,7 +453,77 @@ def _create_comment_message(
         parent_message=parent_message,
         visible_to_host=True,
         visible_to_viewers=True,
+        idempotency_key=idempotency_key,
     )
+
+
+def _find_idempotent_comment(*, live_id: str, user: str, key: str | None):
+    if not key:
+        return None
+    return frappe.db.get_value(
+        LIVE_MESSAGE_DOCTYPE,
+        {
+            "live_stream": live_id,
+            "user": user,
+            "idempotency_key": key,
+            "message_kind": COMMENT_KIND,
+            "status": ACTIVE_STATUS,
+        },
+        live_message_fields(),
+        as_dict=True,
+    )
+
+
+def _create_comment_idempotently(
+    *,
+    live_id: str,
+    user: str,
+    content: str,
+    parent_message: str | None,
+    idempotency_key: str | None,
+):
+    try:
+        return (
+            _create_comment_message(
+                live_id=live_id,
+                user=user,
+                content=content,
+                parent_message=parent_message,
+                idempotency_key=idempotency_key,
+            ),
+            False,
+        )
+    except Exception as exc:
+        if not idempotency_key or not is_duplicate_entry_error(exc):
+            raise
+        existing = _find_idempotent_comment(
+            live_id=live_id,
+            user=user,
+            key=idempotency_key,
+        )
+        if not existing:
+            raise
+        return existing, True
+
+
+_MESSAGE_SELECT = """
+    name, live_stream, message_kind, message_type, `user`, target_user,
+    content, metadata_json, status, parent_message, root_message, reply_count,
+    visible_to_host, visible_to_viewers, creation, modified
+"""
+
+
+def _message_cursor(value: str | None, *, kind: str, scope: str):
+    if not value:
+        return None
+    payload = decode_cursor(value)
+    if payload.get("kind") != kind or payload.get("scope") != scope:
+        raise ValueError("cursor_scope")
+    creation = str(payload.get("creation") or "")
+    name = str(payload.get("name") or "")
+    if not creation or not name:
+        raise ValueError("cursor_position")
+    return creation, name
 
 
 def create_live_system_message(
@@ -562,7 +655,7 @@ def add_live_message_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:live:message:add:user:{user}",
+        key=rate_limit_key("live", "message", "add", "user", user),
         ttl_seconds=60,
         limit=ADD_COMMENT_LIMIT_PER_MINUTE_PER_USER,
         message="Too many messages. Please slow down.",
@@ -581,9 +674,11 @@ def add_live_message_impl(**kwargs):
         kwargs.get("session_id")
     )
 
-    content = _normalize_content(
-        kwargs.get("content")
-    )
+    try:
+        content = _normalize_content(kwargs.get("content"))
+        idempotency_key = _normalize_idempotency_key(kwargs.get("idempotency_key"))
+    except ValueError:
+        return fail("Invalid comment content.", error="VALIDATION_ERROR")
 
     if not content:
         return fail(
@@ -592,6 +687,7 @@ def add_live_message_impl(**kwargs):
         )
 
     try:
+        LiveRepository().lock_live(live_id)
         live, err = validate_live_exists(
             live_id
         )
@@ -612,11 +708,22 @@ def add_live_message_impl(**kwargs):
         if err:
             return err
 
-        message = _create_comment_message(
+        existing = _find_idempotent_comment(live_id=live_id, user=user, key=idempotency_key)
+        if existing:
+            return ok("Message already added.", data={"message": serialize_live_message(existing)})
+
+        message, duplicate = _create_comment_idempotently(
             live_id=live_id,
             user=user,
             content=content,
+            parent_message=None,
+            idempotency_key=idempotency_key,
         )
+        if duplicate:
+            return ok(
+                "Message already added.",
+                data={"message": serialize_live_message(message)},
+            )
 
         record_live_comment_activity(
             user=user,
@@ -642,17 +749,13 @@ def add_live_message_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
-
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Live operation failed.",
             "Add Live Message Failed",
         )
-        frappe.db.rollback()
-
         return fail(
             "Failed to add message.",
             error="INTERNAL_ERROR",
@@ -666,7 +769,7 @@ def reply_live_message_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:live:message:reply:user:{user}",
+        key=rate_limit_key("live", "message", "reply", "user", user),
         ttl_seconds=60,
         limit=REPLY_COMMENT_LIMIT_PER_MINUTE_PER_USER,
         message="Too many replies.",
@@ -692,9 +795,11 @@ def reply_live_message_impl(**kwargs):
         kwargs.get("session_id")
     )
 
-    content = _normalize_content(
-        kwargs.get("content")
-    )
+    try:
+        content = _normalize_content(kwargs.get("content"))
+        idempotency_key = _normalize_idempotency_key(kwargs.get("idempotency_key"))
+    except ValueError:
+        return fail("Invalid comment content.", error="VALIDATION_ERROR")
 
     if not content:
         return fail(
@@ -703,6 +808,7 @@ def reply_live_message_impl(**kwargs):
         )
 
     try:
+        LiveRepository().lock_live(live_id)
         live, err = validate_live_exists(
             live_id
         )
@@ -748,12 +854,22 @@ def reply_live_message_impl(**kwargs):
         if err:
             return err
 
-        message = _create_comment_message(
+        existing = _find_idempotent_comment(live_id=live_id, user=user, key=idempotency_key)
+        if existing:
+            return ok("Reply already added.", data={"message": serialize_live_message(existing)})
+
+        message, duplicate = _create_comment_idempotently(
             live_id=live_id,
             user=user,
             content=content,
             parent_message=parent_id,
+            idempotency_key=idempotency_key,
         )
+        if duplicate:
+            return ok(
+                "Reply already added.",
+                data={"message": serialize_live_message(message)},
+            )
 
         record_live_comment_activity(
             user=user,
@@ -780,17 +896,13 @@ def reply_live_message_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
-
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Live operation failed.",
             "Reply Live Message Failed",
         )
-        frappe.db.rollback()
-
         return fail(
             "Failed to add reply.",
             error="INTERNAL_ERROR",
@@ -800,9 +912,8 @@ def reply_live_message_impl(**kwargs):
 # LIST LIVE MESSAGES
 def list_live_messages_impl(**kwargs):
     ip = request_ip()
-
     rl = rate_limit(
-        key=f"aos:live:message:list:ip:{ip}",
+        key=rate_limit_key("live", "message", "list", "ip", ip),
         ttl_seconds=60,
         limit=LIST_COMMENTS_LIMIT_PER_MINUTE_PER_IP,
         message="Too many requests.",
@@ -810,97 +921,92 @@ def list_live_messages_impl(**kwargs):
     if rl:
         return rl
 
-    live_id, err = require_id(
-        kwargs.get("live_id"),
-        "live_id",
-    )
+    live_id, err = require_id(kwargs.get("live_id"), "live_id")
     if err:
         return err
 
     try:
-        live, err = validate_live_exists(
-            live_id
-        )
+        live, err = validate_live_exists(live_id)
         if err:
             return err
+        current_user = _get_optional_current_user()
+        access_err = validate_live_social_access(live=live, user=current_user)
+        if access_err:
+            return access_err
 
         start, limit = _parse_pagination(
             kwargs,
             default_limit=DEFAULT_MESSAGES_LIMIT,
             max_limit=MAX_MESSAGES_LIMIT,
         )
-
-        current_user = _get_optional_current_user()
-
-        is_host = _is_live_host(
-            live,
-            current_user,
-        )
-
-        filters: dict[str, Any] = {
-            "live_stream": live_id,
-            "parent_message": [
-                "is",
-                "not set",
-            ],
-            "status": ACTIVE_STATUS,
+        cursor_value = str(kwargs.get("cursor") or "").strip()
+        cursor = _message_cursor(cursor_value, kind="live_messages", scope=live_id)
+        is_host = _is_live_host(live, current_user)
+        visibility = "visible_to_host" if is_host else "visible_to_viewers"
+        params: dict[str, Any] = {
+            "live_id": live_id,
+            "limit": limit + 1,
+            "offset": 0 if cursor else start,
         }
-
-        if is_host:
-            filters["visible_to_host"] = 1
-        else:
-            filters["visible_to_viewers"] = 1
-
-        rows = frappe.get_all(
-            LIVE_MESSAGE_DOCTYPE,
-            filters=filters,
-            fields=live_message_fields(),
-            order_by="creation desc",
-            limit_start=start,
-            limit_page_length=limit,
+        cursor_sql = ""
+        if cursor:
+            params.update({"cursor_creation": cursor[0], "cursor_name": cursor[1]})
+            cursor_sql = """
+              AND (creation < %(cursor_creation)s
+                   OR (creation = %(cursor_creation)s AND name < %(cursor_name)s))
+            """
+        rows = frappe.db.sql(
+            f"""
+            SELECT {_MESSAGE_SELECT}
+            FROM `tabAOS Live Message`
+            WHERE live_stream=%(live_id)s
+              AND (parent_message IS NULL OR parent_message='')
+              AND status='active' AND {visibility}=1
+              {cursor_sql}
+            ORDER BY creation DESC, name DESC
+            LIMIT %(limit)s OFFSET %(offset)s
+            """,
+            params,
+            as_dict=True,
         )
-
+        has_more = len(rows) > limit
+        page = rows[:limit]
+        next_cursor = None
+        if has_more and page:
+            last = page[-1]
+            next_cursor = encode_cursor({
+                "kind": "live_messages",
+                "scope": live_id,
+                "creation": str(last.creation),
+                "name": str(last.name),
+            })
         return ok(
             "Live messages fetched.",
             data={
-                "items": serialize_live_messages(
-                    rows
-                ),
+                "items": serialize_live_messages(page),
                 "pagination": {
                     "start": start,
                     "limit": limit,
-                    "count": len(rows),
-                    "has_more": (
-                        len(rows) == limit
-                    ),
+                    "count": len(page),
+                    "has_more": has_more,
+                    "next_cursor": next_cursor,
                 },
             },
         )
-
+    except LiveError as exc:
+        return fail(str(exc), error=exc.code, data=exc.data, http_status=exc.http_status)
     except ValueError:
-        return fail(
-            "Invalid pagination values.",
-            error="VALIDATION_ERROR",
-        )
-
+        return fail("Invalid Live cursor or pagination values.", error="LIVE_INVALID_CURSOR")
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "List Live Messages Failed",
-        )
-
-        return fail(
-            "Failed to fetch live messages.",
-            error="INTERNAL_ERROR",
-        )
+        frappe.log_error("Live operation failed.", "List Live Messages Failed")
+        return fail("Failed to fetch live messages.", error="INTERNAL_ERROR")
 
 
 # LIST LIVE REPLIES
 def list_live_replies_impl(**kwargs):
     ip = request_ip()
-
     rl = rate_limit(
-        key=f"aos:live:message:replies:ip:{ip}",
+        key=rate_limit_key("live", "message", "replies", "ip", ip),
         ttl_seconds=60,
         limit=LIST_REPLIES_LIMIT_PER_MINUTE_PER_IP,
         message="Too many requests.",
@@ -908,201 +1014,95 @@ def list_live_replies_impl(**kwargs):
     if rl:
         return rl
 
-    parent_id, err = require_id(
-        kwargs.get("parent_message"),
-        "parent_message",
-    )
+    parent_id, err = require_id(kwargs.get("parent_message"), "parent_message")
     if err:
         return err
 
     try:
-        parent, err = _get_live_message(
-            parent_id
-        )
+        parent, err = _get_live_message(parent_id)
+        if err:
+            return err
+        err = _validate_comment_message(parent)
+        if err:
+            return err
+        err = _validate_message_active(parent)
         if err:
             return err
 
-        err = _validate_comment_message(
-            parent
-        )
+        live, err = validate_live_exists(parent.live_stream)
         if err:
             return err
-
-        err = _validate_message_active(
-            parent
-        )
-        if err:
-            return err
+        current_user = _get_optional_current_user()
+        access_err = validate_live_social_access(live=live, user=current_user)
+        if access_err:
+            return access_err
 
         start, limit = _parse_pagination(
             kwargs,
             default_limit=DEFAULT_REPLIES_LIMIT,
             max_limit=MAX_REPLIES_LIMIT,
         )
-
-        rows = frappe.get_all(
-            LIVE_MESSAGE_DOCTYPE,
-            filters={
-                "parent_message": parent_id,
-                "message_kind": COMMENT_KIND,
-                "message_type": REPLY_TYPE,
-                "status": ACTIVE_STATUS,
-                "visible_to_viewers": 1,
-            },
-            fields=live_message_fields(),
-            order_by="creation asc",
-            limit_start=start,
-            limit_page_length=limit,
+        cursor_value = str(kwargs.get("cursor") or "").strip()
+        cursor = _message_cursor(cursor_value, kind="live_replies", scope=parent_id)
+        is_host = _is_live_host(live, current_user)
+        visibility = "visible_to_host" if is_host else "visible_to_viewers"
+        params: dict[str, Any] = {
+            "parent_id": parent_id,
+            "limit": limit + 1,
+            "offset": 0 if cursor else start,
+        }
+        cursor_sql = ""
+        if cursor:
+            params.update({"cursor_creation": cursor[0], "cursor_name": cursor[1]})
+            cursor_sql = """
+              AND (creation > %(cursor_creation)s
+                   OR (creation = %(cursor_creation)s AND name > %(cursor_name)s))
+            """
+        rows = frappe.db.sql(
+            f"""
+            SELECT {_MESSAGE_SELECT}
+            FROM `tabAOS Live Message`
+            WHERE parent_message=%(parent_id)s
+              AND message_kind='comment' AND message_type='reply'
+              AND status='active' AND {visibility}=1
+              {cursor_sql}
+            ORDER BY creation ASC, name ASC
+            LIMIT %(limit)s OFFSET %(offset)s
+            """,
+            params,
+            as_dict=True,
         )
-
+        has_more = len(rows) > limit
+        page = rows[:limit]
+        next_cursor = None
+        if has_more and page:
+            last = page[-1]
+            next_cursor = encode_cursor({
+                "kind": "live_replies",
+                "scope": parent_id,
+                "creation": str(last.creation),
+                "name": str(last.name),
+            })
         return ok(
             "Live replies fetched.",
             data={
-                "items": serialize_live_messages(
-                    rows
-                ),
+                "items": serialize_live_messages(page),
                 "pagination": {
                     "start": start,
                     "limit": limit,
-                    "count": len(rows),
-                    "has_more": (
-                        len(rows) == limit
-                    ),
+                    "count": len(page),
+                    "has_more": has_more,
+                    "next_cursor": next_cursor,
                 },
             },
         )
-
+    except LiveError as exc:
+        return fail(str(exc), error=exc.code, data=exc.data, http_status=exc.http_status)
     except ValueError:
-        return fail(
-            "Invalid pagination values.",
-            error="VALIDATION_ERROR",
-        )
-
+        return fail("Invalid Live cursor or pagination values.", error="LIVE_INVALID_CURSOR")
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "List Live Replies Failed",
-        )
-
-        return fail(
-            "Failed to fetch live replies.",
-            error="INTERNAL_ERROR",
-        )
-
-
-# DELETE HELPERS
-def _collect_descendant_message_ids(
-    message_id: str,
-) -> list[str]:
-    """
-    Collect non-deleted descendants recursively.
-
-    This prevents active or hidden child replies from remaining accessible
-    after their parent message is soft-deleted.
-    """
-
-    collected: list[str] = []
-    seen: set[str] = {
-        message_id,
-    }
-    pending: list[str] = [
-        message_id,
-    ]
-
-    while pending:
-        parent_ids = list(
-            pending
-        )
-
-        pending.clear()
-
-        children = frappe.get_all(
-            LIVE_MESSAGE_DOCTYPE,
-            filters={
-                "parent_message": [
-                    "in",
-                    parent_ids,
-                ],
-                "status": [
-                    "!=",
-                    DELETED_STATUS,
-                ],
-            },
-            pluck="name",
-        )
-
-        for child_id in children:
-            if child_id in seen:
-                continue
-
-            seen.add(
-                child_id
-            )
-
-            collected.append(
-                child_id
-            )
-
-            pending.append(
-                child_id
-            )
-
-    return collected
-
-
-def _sync_reply_counts(
-    parent_ids: set[str],
-):
-    for parent_id in parent_ids:
-        if not parent_id:
-            continue
-
-        if not frappe.db.exists(
-            LIVE_MESSAGE_DOCTYPE,
-            parent_id,
-        ):
-            continue
-
-        active_reply_count = frappe.db.count(
-            LIVE_MESSAGE_DOCTYPE,
-            filters={
-                "parent_message": parent_id,
-                "message_kind": COMMENT_KIND,
-                "message_type": REPLY_TYPE,
-                "status": ACTIVE_STATUS,
-            },
-        )
-
-        frappe.db.set_value(
-            LIVE_MESSAGE_DOCTYPE,
-            parent_id,
-            "reply_count",
-            int(
-                active_reply_count or 0
-            ),
-            update_modified=False,
-        )
-
-
-def _soft_delete_messages(
-    message_ids: list[str],
-):
-    if not message_ids:
-        return
-
-    frappe.db.sql(
-        """
-        UPDATE `tabAOS Live Message`
-        SET status = %(status)s
-        WHERE name IN %(message_ids)s
-        """,
-        {
-            "status": DELETED_STATUS,
-            "message_ids": tuple(
-                message_ids
-            ),
-        },
-    )
+        frappe.log_error("Live operation failed.", "List Live Replies Failed")
+        return fail("Failed to fetch live replies.", error="INTERNAL_ERROR")
 
 
 # DELETE LIVE MESSAGE
@@ -1112,7 +1112,7 @@ def delete_live_message_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:live:message:delete:user:{user}",
+        key=rate_limit_key("live", "message", "delete", "user", user),
         ttl_seconds=60,
         limit=DELETE_COMMENT_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests.",
@@ -1241,17 +1241,13 @@ def delete_live_message_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
-
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Live operation failed.",
             "Delete Live Message Failed",
         )
-        frappe.db.rollback()
-
         return fail(
             "Failed to delete message.",
             error="INTERNAL_ERROR",

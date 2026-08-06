@@ -13,7 +13,9 @@
   "user",
   "watch_duration_seconds",
   "qualified",
-  "is_active"
+  "is_active",
+  "active_identity_key",
+  "livekit_identity"
  ],
  "fields": [
   {
@@ -92,7 +94,18 @@
    "hidden": 1,
    "read_only": 1,
    "label": "Active Identity Key",
-   "no_copy": 1
+   "no_copy": 1,
+   "length": 128
+  },
+  {
+   "fieldname": "livekit_identity",
+   "fieldtype": "Data",
+   "label": "LiveKit Identity",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "search_index": 1,
+   "length": 96
   }
  ],
  "grid_page_length": 50,

@@ -11,6 +11,7 @@
   "request_type",
   "status",
   "is_active",
+  "active_workflow_key",
   "section_break_jrfq",
   "requested_by",
   "requested_at",
@@ -123,7 +124,9 @@
    "fieldtype": "Data",
    "label": "LiveKit Identity",
    "read_only": 1,
-   "search_index": 1
+   "search_index": 1,
+   "length": 96,
+   "hidden": 1
   },
   {
    "fieldname": "started_at",
@@ -157,6 +160,16 @@
    "label": "Is Active",
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "active_workflow_key",
+   "fieldtype": "Data",
+   "label": "Active Workflow Key",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "unique": 1,
+   "length": 180
   },
   {
    "fieldname": "metadata_json",

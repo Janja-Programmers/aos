@@ -42,12 +42,14 @@ class AOSLiveStream(Document):
 
     def validate(self):
         self._validate_host_user()
+        self._validate_immutable_ownership()
         self._validate_status_transition()
         self._validate_single_active_live_per_host()
         self._validate_timestamps()
 
     def before_save(self):
         self._handle_status_side_effects()
+        self._sync_active_host_key()
         self._compute_duration()
 
     def after_insert(self):
@@ -97,6 +99,17 @@ class AOSLiveStream(Document):
             frappe.throw(
                 "Host user account is disabled."
             )
+
+    def _validate_immutable_ownership(self):
+        if self.is_new():
+            return
+        previous = self.get_doc_before_save()
+        if not previous:
+            return
+        if previous.host_user != self.host_user:
+            frappe.throw("Live host cannot be changed.")
+        if previous.room_name and previous.room_name != self.room_name:
+            frappe.throw("LiveKit room name cannot be changed.")
 
     def _validate_status_transition(self):
         if self.is_new():
@@ -172,6 +185,10 @@ class AOSLiveStream(Document):
         self.is_active = int(
             self.status in ACTIVE_STATUSES
         )
+        self.active_host_key = self.host_user if self.is_active else None
+
+    def _sync_active_host_key(self):
+        self.active_host_key = self.host_user if self.status in ACTIVE_STATUSES and bool(self.is_active) else None
 
     def _set_room_name(self):
         if self.room_name:
@@ -211,39 +228,56 @@ class AOSLiveStream(Document):
         self.is_active = 0
 
     def _close_active_view_sessions(self):
+        """Close active viewer rows in deterministic bounded batches.
+
+        A large Live must not materialize every viewer document inside the end
+        request. The SQL mirrors the view controller's close calculations and
+        preserves the caller-managed transaction.
         """
-        Close every active viewer session when the live ends.
-
-        Each view document is saved normally so its own controller can
-        calculate watch_duration_seconds and run any related hooks.
-        """
-        active_view_ids = frappe.get_all(
-            LIVE_VIEW_DOCTYPE,
-            filters={
-                "live_stream": self.name,
-                "is_active": 1,
-            },
-            pluck="name",
-        )
-
-        if not active_view_ids:
-            return
-
         ended_at = (
             get_datetime(self.ended_at)
             if self.ended_at
             else now_datetime()
         )
-
-        for view_id in active_view_ids:
-            view = frappe.get_doc(
-                LIVE_VIEW_DOCTYPE,
-                view_id,
+        while True:
+            names = frappe.db.sql(
+                """
+                SELECT name
+                FROM `tabAOS Live Stream View`
+                WHERE live_stream = %s AND is_active = 1
+                ORDER BY creation ASC, name ASC
+                LIMIT 500
+                FOR UPDATE
+                """,
+                (self.name,),
+                pluck=True,
             )
-
-            view.left_at = ended_at
-            view.is_active = 0
-            view.save(ignore_permissions=True)
+            if not names:
+                return
+            frappe.db.sql(
+                """
+                UPDATE `tabAOS Live Stream View`
+                SET is_active = 0,
+                    active_identity_key = NULL,
+                    left_at = COALESCE(left_at, %(ended_at)s),
+                    last_seen_at = %(ended_at)s,
+                    watch_duration_seconds = GREATEST(
+                        COALESCE(watch_duration_seconds, 0),
+                        COALESCE(TIMESTAMPDIFF(SECOND, joined_at, %(ended_at)s), 0),
+                        0
+                    ),
+                    qualified = CASE
+                        WHEN GREATEST(
+                            COALESCE(watch_duration_seconds, 0),
+                            COALESCE(TIMESTAMPDIFF(SECOND, joined_at, %(ended_at)s), 0),
+                            0
+                        ) >= 5 THEN 1 ELSE 0
+                    END,
+                    modified = %(ended_at)s
+                WHERE name IN %(names)s
+                """,
+                {"names": tuple(names), "ended_at": ended_at},
+            )
 
     # COMPUTATIONS
     def _compute_duration(self):

@@ -170,6 +170,7 @@ scheduler_events = {
 		],
 		"*/5 * * * *": [
 			"aos.tasks.shorts.recover_pending_audio_mixes",
+			"aos.tasks.live.reconcile_live_state",
 		],
 	},
 	"hourly": [
@@ -184,6 +185,7 @@ scheduler_events = {
 		"aos.tasks.fx.update_exchange_rates",
 		"aos.tasks.service_hardening.cleanup_external_service_jobs",
 		"aos.tasks.shorts.maintain_short_integrity",
+		"aos.tasks.live.cleanup_live_webhook_events",
 	],
 }
 

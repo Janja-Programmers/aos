@@ -40,7 +40,7 @@ def _safe_record(action_name: str, fn, *args, **kwargs) -> str | bool | None:
         return fn(*args, **kwargs)
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Live operation failed.",
             f"AOS Activity Center Live Hook Failed: {action_name}",
         )
         return None

@@ -25,7 +25,12 @@
   "column_break_rnds",
   "peak_viewers",
   "like_count",
-  "reaction_count"
+  "reaction_count",
+  "active_host_key",
+  "unique_viewers",
+  "total_joins",
+  "room_cleanup_pending",
+  "last_reconciled_at"
  ],
  "fields": [
   {
@@ -165,6 +170,42 @@
    "label": "Live Cover Media",
    "options": "AOS Media Object",
    "description": "Source-of-truth media object for the live cover image."
+  },
+  {
+   "fieldname": "active_host_key",
+   "fieldtype": "Data",
+   "label": "Active Host Key",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "unique_viewers",
+   "fieldtype": "Int",
+   "label": "Unique Viewers",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_joins",
+   "fieldtype": "Int",
+   "label": "Total Joins",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "room_cleanup_pending",
+   "fieldtype": "Check",
+   "label": "Room Cleanup Pending",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_reconciled_at",
+   "fieldtype": "Datetime",
+   "label": "Last Reconciled At",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

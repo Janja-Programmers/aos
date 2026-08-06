@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import frappe
 
-AOS_SETTINGS_CACHE_KEY = "aos:settings:snapshot:v7"
+AOS_SETTINGS_CACHE_KEY = "aos:settings:snapshot:v8"
 
 
 @dataclass(frozen=True)
@@ -47,6 +47,7 @@ class AOSSettingsSnapshot:
 
 	# Connect / LiveKit / Translation
 	livekit_token_ttl_minutes: int
+	livekit_live_token_ttl_minutes: int
 	translation_max_characters: int
 	translation_service_timeout_seconds: int
 
@@ -109,7 +110,7 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
 	if use_cache and cache is not None:
 		try:
 			cached = cache.get_value(key)
-			if isinstance(cached, dict) and cached.get("_schema") == "v7":
+			if isinstance(cached, dict) and cached.get("_schema") == "v8":
 				payload = dict(cached)
 				payload.pop("_schema", None)
 				return AOSSettingsSnapshot(**payload)
@@ -199,6 +200,12 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
 			min_value=1,
 			max_value=1440,
 		),
+		livekit_live_token_ttl_minutes=_clamp_int(
+			_get_field(settings, "livekit_live_token_ttl_minutes", 15),
+			default=15,
+			min_value=1,
+			max_value=30,
+		),
 		translation_max_characters=_clamp_int(
 			_get_field(settings, "translation_max_characters", 1000),
 			default=1000,
@@ -215,7 +222,7 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
 
 	if cache is not None:
 		try:
-			cached_payload = {"_schema": "v7", **snap.__dict__}
+			cached_payload = {"_schema": "v8", **snap.__dict__}
 			cache.set_value(key, cached_payload, expires_in_sec=60 * 5)
 		except Exception:
 			pass

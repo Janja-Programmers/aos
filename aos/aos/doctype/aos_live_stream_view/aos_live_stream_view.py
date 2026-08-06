@@ -7,6 +7,8 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
 
+from aos.services.live.livekit import participant_identity
+
 LIVE_STREAM_DOCTYPE = "AOS Live Stream"
 LIVE_VIEW_DOCTYPE = "AOS Live Stream View"
 USER_DOCTYPE = "User"
@@ -22,6 +24,7 @@ class AOSLiveStreamView(Document):
     def validate(self):
         self._normalize_values()
         self._sync_active_identity_key()
+        self._sync_livekit_identity()
         self._validate_required_fields()
         self._validate_optional_user()
         self._validate_immutable_identity()
@@ -57,6 +60,17 @@ class AOSLiveStreamView(Document):
             return
 
         self.active_identity_key = None
+
+    def _sync_livekit_identity(self):
+        if not self.live_stream or not self.session_id:
+            self.livekit_identity = None
+            return
+        self.livekit_identity = participant_identity(
+            live_id=self.live_stream,
+            role="viewer",
+            user=self.user or None,
+            session_id=self.session_id,
+        )
 
     # VALIDATIONS
     def _validate_required_fields(self):
@@ -133,6 +147,8 @@ class AOSLiveStreamView(Document):
             frappe.throw(
                 "Joined at cannot be changed for an existing view session."
             )
+        if previous.livekit_identity and previous.livekit_identity != self.livekit_identity:
+            frappe.throw("LiveKit identity cannot be changed for an existing view session.")
 
     def _validate_live_state(self):
         live = frappe.db.get_value(

@@ -18,6 +18,8 @@ from frappe.utils import get_datetime, now_datetime
 
 from aos.api.shared.blocking import is_blocked_between
 from aos.api.shared.responses import fail
+from aos.services.live.errors import LiveError
+from aos.services.live.policy import LivePolicy
 
 from .constants import (
     LIVE_COHOST_MAX_ACTIVE_SLOTS,
@@ -244,14 +246,24 @@ def validate_live_social_access(
     *,
     live,
     user: str | None,
+    lock_relationship: bool = False,
 ):
-    """Hide a host/live relationship when either account has blocked the other."""
-    if not is_authenticated_user(user) or live.host_user == user:
-        return None
-    if is_blocked_between(user, live.host_user):
+    """Apply the canonical account and bidirectional-block visibility policy."""
+    try:
+        policy = LivePolicy()
+        viewer = user if is_authenticated_user(user) else None
+        if lock_relationship:
+            policy.lock_relationship(host_user=live.host_user, viewer=viewer)
+        policy.require_view_access(
+            host_user=live.host_user,
+            viewer=viewer,
+        )
+    except LiveError as exc:
         return fail(
-            "Live stream not found.",
-            error="NOT_FOUND",
+            str(exc),
+            error=exc.code,
+            data=exc.data,
+            http_status=exc.http_status,
         )
     return None
 
@@ -296,19 +308,17 @@ def validate_user_is_host(
 def validate_user_can_go_live(
     user: str,
 ):
-    """
-    Validate whether a user can start a live stream.
-
-    Current rules:
-    - Login is required.
-    - User must exist.
-    - User must be enabled.
-
-    Future eligibility rules can be added here without changing start_live.
-    """
-    return get_enabled_user_row(
-        user
-    )
+    """Require an enabled, active, non-deleted canonical AOS account."""
+    try:
+        state = LivePolicy().require_account_available(user)
+    except LiveError as exc:
+        return None, fail(
+            str(exc),
+            error=exc.code,
+            data=exc.data,
+            http_status=exc.http_status,
+        )
+    return state, None
 
 
 # VIEW-SESSION VALIDATION
@@ -479,7 +489,7 @@ def validate_live_participant_session(
     if live.host_user == user:
         return None
 
-    blocked_err = validate_live_social_access(live=live, user=user)
+    blocked_err = validate_live_social_access(live=live, user=user, lock_relationship=True)
     if blocked_err:
         return blocked_err
 
@@ -564,7 +574,7 @@ def validate_user_is_active_viewer(
             error="VALIDATION_ERROR",
         )
 
-    blocked_err = validate_live_social_access(live=live, user=user)
+    blocked_err = validate_live_social_access(live=live, user=user, lock_relationship=True)
     if blocked_err:
         return None, blocked_err
 

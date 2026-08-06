@@ -93,12 +93,14 @@ IMMUTABLE_FIELDS = {
     "target_user",
     "parent_message",
     "root_message",
+    "idempotency_key",
 }
 
 
 class AOSLiveMessage(Document):
     def validate(self):
         self._normalize_values()
+        self._sync_active_idempotency_key()
         self._validate_required_fields()
         self._validate_message_kind_and_type()
         self._validate_status()
@@ -109,6 +111,14 @@ class AOSLiveMessage(Document):
         self._validate_parent_message()
         self._validate_metadata()
         self._normalize_visibility()
+
+    def _sync_active_idempotency_key(self):
+        key = str(getattr(self, "idempotency_key", "") or "").strip()
+        self.idempotency_key = key or None
+        if key and self.message_kind == COMMENT_KIND and self.status == ACTIVE_MESSAGE_STATUS:
+            self.active_idempotency_key = f"{self.live_stream}|{self.user}|{key}"
+        else:
+            self.active_idempotency_key = None
 
     def before_insert(self):
         self._set_root_message()

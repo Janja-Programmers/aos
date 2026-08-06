@@ -44,10 +44,15 @@ import frappe
 from frappe.utils import get_datetime, now_datetime
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.rate_limit import rate_limit, request_ip
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
+from aos.api.shared.db import is_duplicate_entry_error
+from aos.services.accounts.identity import resolve_account_reference
+from aos.services.live.cursor import decode_cursor, encode_cursor
+from aos.services.live.errors import LiveError
+from aos.services.live.participants import enqueue_cohost_removal
 
 from .constants import (
     ACTIVATE_LIVE_COHOST_LIMIT_PER_MINUTE_PER_USER,
@@ -96,6 +101,7 @@ from .validators import (
     validate_cohost_request_not_expired,
     validate_live_active,
     validate_live_exists,
+    validate_live_social_access,
     validate_no_duplicate_cohost_workflow,
     validate_user_can_activate_cohost,
     validate_user_can_cancel_cohost,
@@ -376,22 +382,31 @@ def _create_pending_cohost(
     request_type: str,
     requested_by: str,
 ):
-    cohost = frappe.new_doc(
-        LIVE_COHOST_DOCTYPE
-    )
-
+    cohost = frappe.new_doc(LIVE_COHOST_DOCTYPE)
     cohost.live_stream = live.name
     cohost.user = user
     cohost.session_id = session_id
     cohost.request_type = request_type
     cohost.status = COHOST_STATUS_PENDING
     cohost.requested_by = requested_by
-
-    cohost.insert(
-        ignore_permissions=True
-    )
-
-    return cohost
+    try:
+        cohost.insert(ignore_permissions=True)
+        return cohost, True
+    except Exception as exc:
+        if not is_duplicate_entry_error(exc):
+            raise
+        existing_name = frappe.db.get_value(
+            LIVE_COHOST_DOCTYPE,
+            {
+                "live_stream": live.name,
+                "user": user,
+                "status": ["in", [COHOST_STATUS_PENDING, COHOST_STATUS_ACCEPTED, COHOST_STATUS_ACTIVE]],
+            },
+            "name",
+        )
+        if not existing_name:
+            raise
+        return frappe.get_doc(LIVE_COHOST_DOCTYPE, existing_name), False
 
 
 # HOST INVITES VIEWER
@@ -401,10 +416,7 @@ def invite_live_cohost_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=(
-            f"aos:live:cohost:invite:"
-            f"user:{host}"
-        ),
+        key=rate_limit_key("live", "cohost", "invite", "user", host),
         ttl_seconds=60,
         limit=(
             INVITE_LIVE_COHOST_LIMIT_PER_MINUTE_PER_USER
@@ -427,6 +439,10 @@ def invite_live_cohost_impl(**kwargs):
     )
     if err:
         return err
+
+    target_user = resolve_account_reference(target_user, allow_legacy=True)
+    if not target_user:
+        return fail("Co-host candidate is unavailable.", error="NOT_FOUND")
 
     session_id = normalize_session_id(
         kwargs.get("session_id")
@@ -464,15 +480,30 @@ def invite_live_cohost_impl(**kwargs):
             live_id
         )
 
+        live = frappe.get_doc("AOS Live Stream", live_id)
+        err = validate_live_active(live)
+        if err:
+            return err
+
         _expire_stale_pending_for_user(
             live_id=live_id,
             user=target_user,
         )
 
-        _, err = validate_no_duplicate_cohost_workflow(
+        existing, err = validate_no_duplicate_cohost_workflow(
             live_id=live_id,
             user=target_user,
         )
+        if existing:
+            return ok(
+                "Co-host workflow already exists.",
+                data={
+                    "cohost": serialize_live_cohost(
+                        frappe.get_doc(LIVE_COHOST_DOCTYPE, existing.name),
+                        include_internal=True,
+                    )
+                },
+            )
         if err:
             return err
 
@@ -482,7 +513,7 @@ def invite_live_cohost_impl(**kwargs):
         if err:
             return err
 
-        cohost = _create_pending_cohost(
+        cohost, created = _create_pending_cohost(
             live=live,
             user=target_user,
             session_id=session_id,
@@ -496,6 +527,11 @@ def invite_live_cohost_impl(**kwargs):
             cohost,
             include_internal=True,
         )
+        if not created:
+            return ok(
+                "Co-host workflow already exists.",
+                data={"cohost": internal_payload},
+            )
 
         host_display = get_user_display(
             host
@@ -556,17 +592,13 @@ def invite_live_cohost_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
-
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Live operation failed.",
             "Invite Live CoHost Failed",
         )
-        frappe.db.rollback()
-
         return fail(
             "Failed to invite co-host.",
             error="INTERNAL_ERROR",
@@ -580,10 +612,7 @@ def request_live_cohost_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=(
-            f"aos:live:cohost:request:"
-            f"user:{viewer}"
-        ),
+        key=rate_limit_key("live", "cohost", "request", "user", viewer),
         ttl_seconds=60,
         limit=(
             REQUEST_LIVE_COHOST_LIMIT_PER_MINUTE_PER_USER
@@ -629,15 +658,30 @@ def request_live_cohost_impl(**kwargs):
             live_id
         )
 
+        live = frappe.get_doc("AOS Live Stream", live_id)
+        err = validate_live_active(live)
+        if err:
+            return err
+
         _expire_stale_pending_for_user(
             live_id=live_id,
             user=viewer,
         )
 
-        _, err = validate_no_duplicate_cohost_workflow(
+        existing, err = validate_no_duplicate_cohost_workflow(
             live_id=live_id,
             user=viewer,
         )
+        if existing:
+            return ok(
+                "Co-host workflow already exists.",
+                data={
+                    "cohost": serialize_live_cohost(
+                        frappe.get_doc(LIVE_COHOST_DOCTYPE, existing.name),
+                        include_internal=True,
+                    )
+                },
+            )
         if err:
             return err
 
@@ -647,7 +691,7 @@ def request_live_cohost_impl(**kwargs):
         if err:
             return err
 
-        cohost = _create_pending_cohost(
+        cohost, created = _create_pending_cohost(
             live=live,
             user=viewer,
             session_id=session_id,
@@ -661,6 +705,11 @@ def request_live_cohost_impl(**kwargs):
             cohost,
             include_internal=True,
         )
+        if not created:
+            return ok(
+                "Co-host workflow already exists.",
+                data={"cohost": internal_payload},
+            )
 
         viewer_display = get_user_display(
             viewer
@@ -670,7 +719,7 @@ def request_live_cohost_impl(**kwargs):
             viewer_display.get(
                 "display_name"
             )
-            or viewer
+            or "A viewer"
         )
 
         message = create_live_cohost_message(
@@ -721,17 +770,13 @@ def request_live_cohost_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
-
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Live operation failed.",
             "Request Live CoHost Failed",
         )
-        frappe.db.rollback()
-
         return fail(
             "Failed to request co-host access.",
             error="INTERNAL_ERROR",
@@ -745,10 +790,7 @@ def respond_live_cohost_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=(
-            f"aos:live:cohost:respond:"
-            f"user:{user}"
-        ),
+        key=rate_limit_key("live", "cohost", "respond", "user", user),
         ttl_seconds=60,
         limit=(
             RESPOND_LIVE_COHOST_LIMIT_PER_MINUTE_PER_USER
@@ -802,6 +844,11 @@ def respond_live_cohost_impl(**kwargs):
             live.name
         )
 
+        live = frappe.get_doc("AOS Live Stream", live.name)
+        err = validate_live_active(live)
+        if err:
+            return err
+
         _lock_cohost_row(
             cohost_id
         )
@@ -809,6 +856,25 @@ def respond_live_cohost_impl(**kwargs):
         cohost = _get_cohost_doc(
             cohost_id
         )
+
+        err = validate_user_can_respond_to_cohost(
+            cohost=cohost,
+            live=live,
+            user=user,
+        )
+        if err:
+            return err
+
+        expected_status = (
+            COHOST_STATUS_ACCEPTED
+            if action == COHOST_ACTION_ACCEPT
+            else COHOST_STATUS_REJECTED
+        )
+        if cohost.status == expected_status:
+            return ok(
+                "Co-host response already recorded.",
+                data={"cohost": serialize_live_cohost(cohost, include_internal=True)},
+            )
 
         if _is_pending_expired(
             cohost
@@ -834,15 +900,14 @@ def respond_live_cohost_impl(**kwargs):
         if err:
             return err
 
-        err = validate_user_can_respond_to_cohost(
-            cohost=cohost,
-            live=live,
-            user=user,
-        )
-        if err:
-            return err
-
         if action == COHOST_ACTION_ACCEPT:
+            _, err = validate_user_is_cohost_candidate(
+                live=live,
+                user=cohost.user,
+                session_id=cohost.session_id,
+            )
+            if err:
+                return err
             err = validate_available_cohost_slot(
                 live_id=live.name,
                 exclude_cohost_id=cohost.name,
@@ -948,17 +1013,13 @@ def respond_live_cohost_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
-
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Live operation failed.",
             "Respond Live CoHost Failed",
         )
-        frappe.db.rollback()
-
         return fail(
             "Failed to respond to co-host request.",
             error="INTERNAL_ERROR",
@@ -972,10 +1033,7 @@ def cancel_live_cohost_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=(
-            f"aos:live:cohost:cancel:"
-            f"user:{user}"
-        ),
+        key=rate_limit_key("live", "cohost", "cancel", "user", user),
         ttl_seconds=60,
         limit=(
             CANCEL_LIVE_COHOST_LIMIT_PER_MINUTE_PER_USER
@@ -1013,6 +1071,11 @@ def cancel_live_cohost_impl(**kwargs):
             live.name
         )
 
+        live = frappe.get_doc("AOS Live Stream", live.name)
+        err = validate_live_active(live)
+        if err:
+            return err
+
         _lock_cohost_row(
             cohost_id
         )
@@ -1046,6 +1109,7 @@ def cancel_live_cohost_impl(**kwargs):
         if err:
             return err
 
+        previous_status = cohost.status
         cohost.status = (
             COHOST_STATUS_CANCELLED
         )
@@ -1056,6 +1120,8 @@ def cancel_live_cohost_impl(**kwargs):
         cohost.save(
             ignore_permissions=True
         )
+        if previous_status == COHOST_STATUS_ACCEPTED:
+            enqueue_cohost_removal(cohost.name)
 
         internal_payload = serialize_live_cohost(
             cohost,
@@ -1079,17 +1145,13 @@ def cancel_live_cohost_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
-
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Live operation failed.",
             "Cancel Live CoHost Failed",
         )
-        frappe.db.rollback()
-
         return fail(
             "Failed to cancel co-host workflow.",
             error="INTERNAL_ERROR",
@@ -1103,10 +1165,7 @@ def activate_live_cohost_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=(
-            f"aos:live:cohost:activate:"
-            f"user:{user}"
-        ),
+        key=rate_limit_key("live", "cohost", "activate", "user", user),
         ttl_seconds=60,
         limit=(
             ACTIVATE_LIVE_COHOST_LIMIT_PER_MINUTE_PER_USER
@@ -1149,6 +1208,11 @@ def activate_live_cohost_impl(**kwargs):
         _lock_live_row(
             live.name
         )
+
+        live = frappe.get_doc("AOS Live Stream", live.name)
+        err = validate_live_active(live)
+        if err:
+            return err
 
         _lock_cohost_row(
             cohost_id
@@ -1238,7 +1302,7 @@ def activate_live_cohost_impl(**kwargs):
             display.get(
                 "display_name"
             )
-            or cohost.user
+            or "A co-host"
         )
 
         public_message = create_live_cohost_message(
@@ -1282,17 +1346,13 @@ def activate_live_cohost_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
-
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Live operation failed.",
             "Activate Live CoHost Failed",
         )
-        frappe.db.rollback()
-
         return fail(
             "Failed to activate co-host session.",
             error="INTERNAL_ERROR",
@@ -1306,10 +1366,7 @@ def end_live_cohost_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=(
-            f"aos:live:cohost:end:"
-            f"user:{user}"
-        ),
+        key=rate_limit_key("live", "cohost", "end", "user", user),
         ttl_seconds=60,
         limit=(
             END_LIVE_COHOST_LIMIT_PER_MINUTE_PER_USER
@@ -1346,6 +1403,11 @@ def end_live_cohost_impl(**kwargs):
         _lock_live_row(
             live.name
         )
+
+        live = frappe.get_doc("AOS Live Stream", live.name)
+        err = validate_live_active(live)
+        if err:
+            return err
 
         _lock_cohost_row(
             cohost_id
@@ -1397,6 +1459,7 @@ def end_live_cohost_impl(**kwargs):
         cohost.save(
             ignore_permissions=True
         )
+        enqueue_cohost_removal(cohost.name)
 
         private_payload = serialize_live_cohost(
             cohost,
@@ -1416,7 +1479,7 @@ def end_live_cohost_impl(**kwargs):
             display.get(
                 "display_name"
             )
-            or cohost.user
+            or "A co-host"
         )
 
         public_message = create_live_cohost_message(
@@ -1459,17 +1522,13 @@ def end_live_cohost_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
-
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Live operation failed.",
             "End Live CoHost Failed",
         )
-        frappe.db.rollback()
-
         return fail(
             "Failed to end co-host session.",
             error="INTERNAL_ERROR",
@@ -1483,10 +1542,7 @@ def get_live_cohost_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=(
-            f"aos:live:cohost:get:"
-            f"ip:{request_ip()}"
-        ),
+        key=rate_limit_key("live", "cohost", "get", "ip", request_ip()),
         ttl_seconds=60,
         limit=(
             GET_LIVE_COHOST_LIMIT_PER_MINUTE_PER_IP
@@ -1532,6 +1588,10 @@ def get_live_cohost_impl(**kwargs):
                 "You are not allowed to view this co-host workflow.",
                 error="PERMISSION_DENIED",
             )
+        if not _is_live_host(live=live, user=user):
+            access_err = validate_live_social_access(live=live, user=user)
+            if access_err:
+                return access_err
 
         if _is_pending_expired(
             cohost
@@ -1551,13 +1611,11 @@ def get_live_cohost_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
-
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Live operation failed.",
             "Get Live CoHost Failed",
         )
 
@@ -1572,107 +1630,102 @@ def list_live_cohosts_impl(**kwargs):
     user, err = require_login()
     if err:
         return err
-
     rl = rate_limit(
-        key=(
-            f"aos:live:cohost:list:"
-            f"ip:{request_ip()}"
-        ),
+        key=rate_limit_key("live", "cohost", "list", "ip", request_ip()),
         ttl_seconds=60,
-        limit=(
-            LIST_LIVE_COHOSTS_LIMIT_PER_MINUTE_PER_IP
-        ),
+        limit=LIST_LIVE_COHOSTS_LIMIT_PER_MINUTE_PER_IP,
         message="Too many requests.",
     )
     if rl:
         return rl
 
-    live_id, err = require_id(
-        kwargs.get("live_id"),
-        "live_id",
-    )
+    live_id, err = require_id(kwargs.get("live_id"), "live_id")
     if err:
         return err
-
-    status = _normalize_status(
-        kwargs.get("status")
-    )
-
-    if (
-        status
-        and status not in VALID_LIST_STATUSES
-    ):
-        return fail(
-            "Invalid co-host status filter.",
-            error="VALIDATION_ERROR",
-        )
+    status = _normalize_status(kwargs.get("status"))
+    if status and status not in VALID_LIST_STATUSES:
+        return fail("Invalid co-host status filter.", error="VALIDATION_ERROR")
 
     try:
-        live, err = validate_live_exists(
-            live_id
-        )
+        live, err = validate_live_exists(live_id)
         if err:
             return err
-
-        start, limit = _parse_pagination(
-            kwargs
-        )
-
-        is_host = _is_live_host(
-            live=live,
-            user=user,
-        )
-
-        filters: dict[str, Any] = {
-            "live_stream": live_id,
-        }
-
+        start_offset, limit = _parse_pagination(kwargs)
+        is_host = _is_live_host(live=live, user=user)
         if not is_host:
-            filters["user"] = user
+            access_err = validate_live_social_access(live=live, user=user)
+            if access_err:
+                return access_err
+        scope = f"{live_id}|{status or '*'}|{'host' if is_host else 'candidate'}"
+        cursor_value = str(kwargs.get("cursor") or "").strip()
+        cursor = decode_cursor(cursor_value) if cursor_value else None
+        if cursor and (cursor.get("kind") != "live_cohosts" or cursor.get("scope") != scope):
+            return fail("Invalid Live cursor.", error="LIVE_INVALID_CURSOR")
 
+        params: dict[str, Any] = {
+            "live_id": live_id,
+            "limit": limit + 1,
+            "offset": 0 if cursor else start_offset,
+        }
+        conditions = ["live_stream=%(live_id)s"]
+        if not is_host:
+            params["user"] = user
+            conditions.append("`user`=%(user)s")
         if status:
-            filters["status"] = status
+            params["status"] = status
+            conditions.append("status=%(status)s")
+        if cursor:
+            creation = str(cursor.get("creation") or "")
+            name = str(cursor.get("name") or "")
+            if not creation or not name:
+                return fail("Invalid Live cursor.", error="LIVE_INVALID_CURSOR")
+            params.update({"cursor_creation": creation, "cursor_name": name})
+            conditions.append(
+                "(creation < %(cursor_creation)s OR "
+                "(creation = %(cursor_creation)s AND name < %(cursor_name)s))"
+            )
 
-        rows = frappe.get_all(
-            LIVE_COHOST_DOCTYPE,
-            filters=filters,
-            fields=live_cohost_fields(),
-            order_by="creation desc",
-            limit_start=start,
-            limit_page_length=limit,
+        columns = ", ".join(f"`{field}`" for field in live_cohost_fields())
+        rows = frappe.db.sql(
+            f"""
+            SELECT {columns}
+            FROM `tabAOS Live CoHost`
+            WHERE {' AND '.join(conditions)}
+            ORDER BY creation DESC, name DESC
+            LIMIT %(limit)s OFFSET %(offset)s
+            """,
+            params,
+            as_dict=True,
         )
-
+        has_more = len(rows) > limit
+        page = rows[:limit]
+        next_cursor = None
+        if has_more and page:
+            last = page[-1]
+            next_cursor = encode_cursor({
+                "kind": "live_cohosts",
+                "scope": scope,
+                "creation": str(last.creation),
+                "name": str(last.name),
+            })
         return ok(
             "Co-host workflows fetched.",
             data={
-                "items": serialize_live_cohosts(
-                    rows,
-                    include_internal=True,
-                ),
+                "items": serialize_live_cohosts(page, include_internal=True),
                 "pagination": {
-                    "start": start,
+                    "start": start_offset,
                     "limit": limit,
-                    "count": len(rows),
-                    "has_more": (
-                        len(rows) == limit
-                    ),
+                    "count": len(page),
+                    "has_more": has_more,
+                    "next_cursor": next_cursor,
                 },
             },
         )
-
+    except LiveError as exc:
+        return fail(str(exc), error=exc.code, data=exc.data, http_status=exc.http_status)
     except ValueError:
-        return fail(
-            "Invalid pagination values.",
-            error="VALIDATION_ERROR",
-        )
-
+        return fail("Invalid Live cursor or pagination values.", error="LIVE_INVALID_CURSOR")
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "List Live CoHosts Failed",
-        )
+        frappe.log_error("Live operation failed.", "List Live CoHosts Failed")
+        return fail("Failed to fetch co-host workflows.", error="INTERNAL_ERROR")
 
-        return fail(
-            "Failed to fetch co-host workflows.",
-            error="INTERNAL_ERROR",
-        )

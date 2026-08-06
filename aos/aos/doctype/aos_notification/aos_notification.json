@@ -11,6 +11,7 @@
   "actor",
   "column_break_eebq",
   "payload",
+  "dedupe_key",
   "is_read"
  ],
  "fields": [
@@ -67,6 +68,16 @@
    "fieldtype": "Check",
    "label": "Is Read",
    "search_index": 1
+  },
+  {
+   "fieldname": "dedupe_key",
+   "fieldtype": "Data",
+   "label": "Dedupe Key",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "unique": 1,
+   "length": 180
   }
  ],
  "grid_page_length": 50,

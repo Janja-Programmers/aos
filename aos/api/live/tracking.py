@@ -25,12 +25,14 @@ import frappe
 from frappe.utils import now_datetime
 
 from aos.api.shared.auth import current_user
-from aos.api.shared.rate_limit import rate_limit, request_ip
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.validators import require_id
 from aos.services.live_analytics_service import LiveAnalyticsService
+from aos.services.live.repository import LiveRepository
+from aos.services.live.participants import enqueue_view_removal
 
 from .activity import record_live_join_activity
 from .constants import (
@@ -194,6 +196,29 @@ def _get_active_view_by_session(
     )
 
 
+def _get_latest_view_by_session(
+    *,
+    live_id: str,
+    session_id: str,
+    viewer: str | None,
+):
+    filters = {
+        "live_stream": live_id,
+        "session_id": session_id,
+    }
+    if viewer:
+        filters["user"] = viewer
+    else:
+        filters["user"] = ["is", "not set"]
+    return frappe.db.get_value(
+        LIVE_VIEW_DOCTYPE,
+        filters,
+        ["name", "is_active", "left_at"],
+        as_dict=True,
+        order_by="creation desc",
+    )
+
+
 def _sync_view_metrics(
     live_id: str,
 ) -> dict:
@@ -262,10 +287,7 @@ def _build_join_message_content(
         viewer
     )
 
-    display_name = (
-        display.get("display_name")
-        or viewer
-    )
+    display_name = display.get("display_name") or "A viewer"
 
     return f"{display_name} joined."
 
@@ -291,7 +313,6 @@ def _create_viewer_joined_message(
         user=viewer,
         target_user=viewer,
         metadata={
-            "session_id": session_id,
             "is_guest": viewer is None,
         },
         visible_to_host=True,
@@ -322,9 +343,10 @@ def track_join_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=(
-            "aos:live:track_join:"
-            f"{_rate_limit_identity(viewer=viewer, session_id=session_id)}"
+        key=rate_limit_key(
+            "live",
+            "track_join",
+            _rate_limit_identity(viewer=viewer, session_id=session_id),
         ),
         ttl_seconds=60,
         limit=TRACK_JOIN_LIMIT_PER_MINUTE_PER_IP,
@@ -334,6 +356,7 @@ def track_join_impl(**kwargs):
         return rl
 
     try:
+        LiveRepository().lock_live(live_id)
         live, err = validate_live_exists(
             live_id
         )
@@ -346,7 +369,7 @@ def track_join_impl(**kwargs):
         if err:
             return err
 
-        err = validate_live_social_access(live=live, user=viewer)
+        err = validate_live_social_access(live=live, user=viewer, lock_relationship=True)
         if err:
             return err
 
@@ -374,6 +397,8 @@ def track_join_impl(**kwargs):
         )
 
         if existing:
+            active_view = frappe.get_doc(LIVE_VIEW_DOCTYPE, existing.name)
+            active_view.save(ignore_permissions=True)
             metrics = _sync_view_metrics(
                 live_id
             )
@@ -452,8 +477,6 @@ def track_join_impl(**kwargs):
         )
 
     except Exception as ex:
-        frappe.db.rollback()
-
         if is_duplicate_entry_error(ex):
             existing = _get_active_view_by_session(
                 live_id=live_id,
@@ -486,7 +509,7 @@ def track_join_impl(**kwargs):
             return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
         frappe.log_error(
-            frappe.get_traceback(),
+            "Live operation failed.",
             "Track Join Failed",
         )
 
@@ -512,9 +535,10 @@ def track_leave_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=(
-            "aos:live:track_leave:"
-            f"{_rate_limit_identity(viewer=viewer, session_id=session_id)}"
+        key=rate_limit_key(
+            "live",
+            "track_leave",
+            _rate_limit_identity(viewer=viewer, session_id=session_id),
         ),
         ttl_seconds=60,
         limit=TRACK_LEAVE_LIMIT_PER_MINUTE_PER_IP,
@@ -553,6 +577,22 @@ def track_leave_impl(**kwargs):
             session_id,
         )
         if err:
+            prior = _get_latest_view_by_session(
+                live_id=live_id, session_id=session_id, viewer=viewer
+            )
+            if prior and not bool(prior.is_active):
+                metrics = _sync_view_metrics(live_id)
+                live.reload()
+                return ok(
+                    "Already left.",
+                    data={
+                        "view_id": prior.name,
+                        "viewer_count": int(metrics.get("viewer_count") or 0),
+                        "live": serialize_live(
+                            live, viewer=viewer, session_id=session_id
+                        ),
+                    },
+                )
             return err
 
         view = frappe.get_doc(
@@ -566,6 +606,7 @@ def track_leave_impl(**kwargs):
         view.save(
             ignore_permissions=True
         )
+        enqueue_view_removal(view.name)
 
         metrics = _sync_view_metrics(
             live_id
@@ -596,17 +637,13 @@ def track_leave_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
-
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Live operation failed.",
             "Track Leave Failed",
         )
-        frappe.db.rollback()
-
         return fail(
             "Failed to track leave.",
             error="INTERNAL_ERROR",

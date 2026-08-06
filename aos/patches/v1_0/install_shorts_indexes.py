@@ -106,11 +106,11 @@ def _ensure_index(
     if unique:
         _assert_unique_ready(doctype, columns, index_name)
 
-    kind = "UNIQUE INDEX" if unique else "INDEX"
-    quoted_columns = ", ".join(f"`{column}`" for column in columns)
     # This patch is intentionally DDL-only. Patch execution begins after Frappe
     # has committed the preceding data-reconciliation patch, so MariaDB's
     # implicit DDL commit cannot split domain data changes.
-    frappe.db.sql(
-        f"ALTER TABLE `{_table(doctype)}` ADD {kind} `{index_name}` ({quoted_columns})"
-    )
+    fields = list(columns)
+    if unique:
+        frappe.db.add_unique(doctype, fields, constraint_name=index_name)
+    else:
+        frappe.db.add_index(doctype, fields, index_name=index_name)
