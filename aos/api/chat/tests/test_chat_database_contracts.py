@@ -118,10 +118,11 @@ class TestChatDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
             )
 
         self.assertFalse(response.get("ok"), response)
-        self.assertIn(
-            response.get("error"),
-            {"LIVE_CHAT_SHARE_FORBIDDEN", "LIVE_CHAT_SHARE_INVALID", "LIVE_CHAT_SHARE_FAILED"},
-        )
+        # An ended Live is intentionally indistinguishable from a missing or
+        # otherwise inaccessible Live at this feature-owned public boundary.
+        # This prevents callers from using share-to-chat to enumerate private
+        # lifecycle state for canonical LIVE-* identifiers.
+        self.assertEqual(response.get("error"), "LIVE_CHAT_TARGET_NOT_FOUND")
         self.assertEqual(frappe.db.count("AOS Message", {"live": live.name}), 0)
 
     def test_generic_chat_send_rejects_new_ended_live_reference(self):

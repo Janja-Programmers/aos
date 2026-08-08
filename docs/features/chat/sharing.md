@@ -29,6 +29,8 @@ Clients navigate using `live`/`live_id`:
 
 An ended Live already present in history remains representable when privacy permits. Removed/inaccessible/blocked Lives keep the historical reference but serialize with `live_preview: null` and `live_unavailable: true` so private state is not leaked.
 
+A **new** share attempt for an ended, missing, removed, or otherwise inaccessible Live returns the same non-enumerating `LIVE_CHAT_TARGET_NOT_FOUND` response. Clients must not infer Live lifecycle or privacy state from this error.
+
 Live share-specific errors are `LIVE_CHAT_TARGET_NOT_FOUND`, `LIVE_CHAT_SHARE_FORBIDDEN`, `LIVE_CHAT_SHARE_INVALID` and `LIVE_CHAT_SHARE_FAILED`.
 
 ## Shorts -> Chat
