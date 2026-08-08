@@ -47,97 +47,110 @@ from aos.api.chat.presence import (
     send_typing_event_impl as _send_typing_event_impl,
 )
 
+from aos.services.chat.api import run_chat_api
+from aos.services.chat.endpoints import ENDPOINT_SPECS, TRANSACTIONAL_ENDPOINTS
+
+
+def _call(name, implementation, kwargs):
+    return run_chat_api(
+        implementation,
+        kwargs,
+        spec=ENDPOINT_SPECS[name],
+        operation_name=name,
+        transactional=name in TRANSACTIONAL_ENDPOINTS,
+    )
+
 @frappe.whitelist(methods=["POST"])
 def open_conversation(**kwargs):
     """Get existing conversation between two users or create a new one."""
-    return _open_conversation_impl(**kwargs)
+    return _call("open_conversation", _open_conversation_impl, kwargs)
 
 
 @frappe.whitelist(methods=["GET", "POST"])
 def list_conversations(**kwargs):
     """List current user's conversations."""
-    return _list_conversations_impl(**kwargs)
+    return _call("list_conversations", _list_conversations_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def delete_conversation(**kwargs):
     """Soft delete/hide a conversation for the current user."""
-    return _delete_conversation_impl(**kwargs)
+    return _call("delete_conversation", _delete_conversation_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def send_message(**kwargs):
     """Send a message in a conversation."""
-    return _send_message_impl(**kwargs)
+    return _call("send_message", _send_message_impl, kwargs)
 
 
 @frappe.whitelist(methods=["GET", "POST"])
 def list_messages(**kwargs):
     """List messages for a conversation."""
-    return _list_messages_impl(**kwargs)
+    return _call("list_messages", _list_messages_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def forward_message(**kwargs):
     """Forward a visible message to one or more conversations."""
-    return _forward_message_impl(**kwargs)
+    return _call("forward_message", _forward_message_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def edit_message(**kwargs):
     """Edit a sent message."""
-    return _edit_message_impl(**kwargs)
+    return _call("edit_message", _edit_message_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def delete_messages(**kwargs):
     """Delete one or more messages for the current user or everyone."""
-    return _delete_messages_impl(**kwargs)
+    return _call("delete_messages", _delete_messages_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def clear_chat(**kwargs):
     """Clear all visible messages in a conversation for the current user."""
-    return _clear_chat_impl(**kwargs)
+    return _call("clear_chat", _clear_chat_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def toggle_message_star(**kwargs):
     """Star or unstar a message for the current user."""
-    return _toggle_message_star_impl(**kwargs)
+    return _call("toggle_message_star", _toggle_message_star_impl, kwargs)
 
 
 @frappe.whitelist(methods=["GET", "POST"])
 def list_starred_messages(**kwargs):
     """List current user's starred messages."""
-    return _list_starred_messages_impl(**kwargs)
+    return _call("list_starred_messages", _list_starred_messages_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def toggle_message_reaction(**kwargs):
     """Add, change, or remove the current user's reaction to a message."""
-    return _toggle_message_reaction_impl(**kwargs)
+    return _call("toggle_message_reaction", _toggle_message_reaction_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def translate_message(**kwargs):
     """Translate a visible text message for the current user."""
-    return _translate_message_impl(**kwargs)
+    return _call("translate_message", _translate_message_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def mark_delivered(**kwargs):
     """Mark incoming messages in a conversation as delivered."""
-    return _mark_delivered_impl(**kwargs)
+    return _call("mark_delivered", _mark_delivered_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def mark_read(**kwargs):
     """Mark incoming messages in a conversation as read."""
-    return _mark_read_impl(**kwargs)
+    return _call("mark_read", _mark_read_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def send_typing_event(**kwargs):
     """Send typing indicator for a conversation."""
-    return _send_typing_event_impl(**kwargs)
+    return _call("send_typing_event", _send_typing_event_impl, kwargs)

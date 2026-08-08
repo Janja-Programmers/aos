@@ -21,9 +21,11 @@ from typing import Any, Dict
 import frappe
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.public_errors import safe_fail_from_exception
+from aos.services.accounts.identity import public_account_id_for_user
+from aos.services.chat.observability import chat_log, chat_timing
 
 from aos.integrations.ai.translation_client import (
 	TranslationUnavailableError,
@@ -49,6 +51,12 @@ def _clean_text(value: str | None) -> str:
 
 def _hash_content(content: str) -> str:
 	return hashlib.sha256(content.strip().encode("utf-8")).hexdigest()
+
+
+def _public_translation_id(*, message_id: str, target_language: str, content_hash: str) -> str:
+	material = "\x1f".join([str(message_id), str(target_language), str(content_hash)])
+	digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:24].upper()
+	return f"TRN-{digest}"
 
 
 def _get_message_for_translation(message_id: str):
@@ -158,9 +166,15 @@ def _get_cached_translation(
 	)
 
 
-def _serialize_cached_translation(row, *, original_content: str) -> Dict[str, Any]:
+def _serialize_cached_translation(
+	row, *, original_content: str, cached: bool = True, refreshed: bool = False
+) -> Dict[str, Any]:
 	return {
-		"id": row.name,
+		"id": _public_translation_id(
+			message_id=row.message,
+			target_language=row.target_language,
+			content_hash=row.original_content_hash,
+		),
 		"message_id": row.message,
 		"conversation_id": row.conversation,
 		"source_language": row.source_language,
@@ -172,9 +186,10 @@ def _serialize_cached_translation(row, *, original_content: str) -> Dict[str, An
 		"translated_content": row.translated_content,
 		"provider": row.provider,
 		"model_name": getattr(row, "model_name", None),
-		"translated_by": row.translated_by,
+		"translated_by": public_account_id_for_user(row.translated_by) if row.translated_by else None,
 		"translated_at": row.creation,
-		"cached": True,
+		"cached": bool(cached),
+		"refreshed": bool(refreshed),
 	}
 
 
@@ -212,7 +227,11 @@ def _serialize_new_translation(
 	original_content: str,
 ) -> Dict[str, Any]:
 	return {
-		"id": doc.name,
+		"id": _public_translation_id(
+			message_id=doc.message,
+			target_language=doc.target_language,
+			content_hash=doc.original_content_hash,
+		),
 		"message_id": doc.message,
 		"conversation_id": doc.conversation,
 		"source_language": doc.source_language,
@@ -224,9 +243,10 @@ def _serialize_new_translation(
 		"translated_content": doc.translated_content,
 		"provider": doc.provider,
 		"model_name": getattr(doc, "model_name", None),
-		"translated_by": doc.translated_by,
+		"translated_by": public_account_id_for_user(doc.translated_by) if doc.translated_by else None,
 		"translated_at": doc.creation,
 		"cached": False,
+		"refreshed": False,
 	}
 
 
@@ -236,7 +256,7 @@ def translate_message_impl(**kwargs):
 		return err
 
 	rl = rate_limit(
-		key=f"aos:chat:translate:user:{current_user}",
+		key=rate_limit_key("chat", "translate_message", current_user),
 		ttl_seconds=60,
 		limit=TRANSLATE_MESSAGE_LIMIT_PER_MINUTE_PER_USER,
 		message="Too many translation requests. Please slow down.",
@@ -284,31 +304,87 @@ def translate_message_impl(**kwargs):
 					),
 				)
 
-		translation = translate_text(
-			text=content,
-			source_language=source_language or None,
-			target_language=target_language,
+		provider_timing = {"latency_ms": 0}
+		try:
+			with chat_timing("translate_provider") as provider_timing:
+				translation = translate_text(
+					text=content,
+					source_language=source_language or None,
+					target_language=target_language,
+				)
+		except TranslationValidationError:
+			chat_log(
+				"translate_provider",
+				outcome="rejected",
+				reason="validation",
+				latency_ms=provider_timing.get("latency_ms", 0),
+			)
+			raise
+		except TranslationUnavailableError:
+			chat_log(
+				"translate_provider",
+				outcome="failure",
+				reason="dependency",
+				latency_ms=provider_timing.get("latency_ms", 0),
+			)
+			raise
+		chat_log(
+			"translate_provider",
+			outcome="success",
+			reason="none",
+			latency_ms=provider_timing.get("latency_ms", 0),
 		)
 
 		# After provider normalization, cache using the normalized returned target language.
 		# This means "sw" and "swh_Latn" share the same cache.
 		normalized_target_language = translation["target_language"]
 
-		if not force_refresh:
-			cached_after_normalization = _get_cached_translation(
+		cached_after_normalization = _get_cached_translation(
+			message_id=msg.name,
+			target_language=normalized_target_language,
+			original_content_hash=content_hash,
+		)
+
+		if cached_after_normalization and not force_refresh:
+			return ok(
+				"Message translation fetched.",
+				data=_serialize_cached_translation(
+					cached_after_normalization,
+					original_content=content,
+				),
+			)
+
+		if cached_after_normalization and force_refresh:
+			updates = {
+				"source_language": translation["source_language"],
+				"source_language_label": translation.get("source_language_label"),
+				"target_language_label": translation.get("target_language_label"),
+				"translated_content": translation["translated_content"],
+				"provider": translation.get("provider"),
+				"translated_by": current_user,
+			}
+			if frappe.get_meta("AOS Message Translation").has_field("model_name"):
+				updates["model_name"] = translation.get("model_name")
+			frappe.db.set_value(
+				"AOS Message Translation",
+				cached_after_normalization.name,
+				updates,
+				update_modified=True,
+			)
+			refreshed = _get_cached_translation(
 				message_id=msg.name,
 				target_language=normalized_target_language,
 				original_content_hash=content_hash,
 			)
-
-			if cached_after_normalization:
-				return ok(
-					"Message translation fetched.",
-					data=_serialize_cached_translation(
-						cached_after_normalization,
-						original_content=content,
-					),
-				)
+			return ok(
+				"Message translation refreshed.",
+				data=_serialize_cached_translation(
+					refreshed,
+					original_content=content,
+					cached=False,
+					refreshed=True,
+				),
+			)
 
 		doc = _create_translation_cache(
 			message_id=msg.name,
@@ -327,57 +403,37 @@ def translate_message_impl(**kwargs):
 		)
 
 	except frappe.DuplicateEntryError:
-		frappe.db.rollback()
-
-		# Race-safe fallback: another request created the cache first.
-		try:
-			msg = _get_message_for_translation(message_id)
-			content = _clean_text(msg.content) if msg else ""
-			content_hash = _hash_content(content)
-
-			translation = translate_text(
-				text=content,
-				source_language=source_language or None,
-				target_language=target_language,
-			)
-
-			cached = _get_cached_translation(
+		# Another request won the unique cache race. Never invoke the external
+		# provider a second time from this recovery path.
+		msg = _get_message_for_translation(message_id)
+		content = _clean_text(msg.content) if msg else ""
+		content_hash = _hash_content(content) if content else ""
+		normalized_target = locals().get("normalized_target_language") or target_language
+		cached = (
+			_get_cached_translation(
 				message_id=message_id,
-				target_language=translation["target_language"],
+				target_language=normalized_target,
 				original_content_hash=content_hash,
 			)
-
-			if cached:
-				return ok(
-					"Message translation fetched.",
-					data=_serialize_cached_translation(
-						cached,
-						original_content=content,
-					),
-				)
-
-		except Exception:
-			pass
-
-		return fail(
-			"Failed to cache translation. Please try again.",
-			error="INTERNAL_ERROR",
+			if content_hash
+			else None
 		)
+		if cached:
+			return ok(
+				"Message translation fetched.",
+				data=_serialize_cached_translation(cached, original_content=content),
+			)
+		return fail("Failed to cache translation. Please try again.", error="CONFLICT")
 
 	except TranslationValidationError as ex:
 		return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
 	except TranslationUnavailableError as ex:
-		return safe_fail_from_exception(ex, fallback="Translation service is unavailable.", error="TRANSLATION_UNAVAILABLE", log_title="AOS Translation Unavailable")
+		return safe_fail_from_exception(ex, fallback="Translation service is unavailable.", error="TRANSLATION_UNAVAILABLE")
 
 	except frappe.ValidationError as ex:
-		frappe.db.rollback()
 		return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
 	except Exception:
-		frappe.log_error(
-			frappe.get_traceback(),
-			"AOS Translate Message Failed",
-		)
-		frappe.db.rollback()
+		frappe.log_error("Chat operation failed.", "AOS Translate Message Failed")
 		return fail("Failed to translate message.", error="INTERNAL_ERROR")

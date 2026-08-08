@@ -19,35 +19,81 @@ import frappe
 from frappe.utils import now_datetime
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.public_errors import safe_fail_from_exception
+from aos.services.accounts.identity import public_account_id_for_user
 
 from .constants import CLEAR_CHAT_LIMIT_PER_MINUTE_PER_USER
 from .preview import recompute_conversation_preview_for_user
-from .visibility import (
-    get_deleted_for_user_at_field,
-    get_deleted_for_user_field,
-)
 
+
+
+CLEAR_CHAT_BATCH_SIZE = 500
+
+
+def _clear_visible_messages_bounded(*, conversation_id: str, participant_index: int, changed_at) -> int:
+    """Mark one viewer's history deleted in bounded, deterministic batches."""
+    total = 0
+    while True:
+        if participant_index == 1:
+            names = frappe.db.sql(
+                """
+                SELECT name FROM `tabAOS Message`
+                WHERE conversation = %(conversation_id)s
+                  AND IFNULL(deleted_for_1, 0) = 0
+                ORDER BY creation ASC, name ASC
+                LIMIT %(limit)s
+                FOR UPDATE
+                """,
+                {"conversation_id": conversation_id, "limit": CLEAR_CHAT_BATCH_SIZE},
+                pluck=True,
+            )
+            if not names:
+                return total
+            frappe.db.sql(
+                """
+                UPDATE `tabAOS Message`
+                SET deleted_for_1 = 1, deleted_for_1_at = %(changed_at)s, modified = modified
+                WHERE name IN %(names)s
+                """,
+                {"changed_at": changed_at, "names": tuple(names)},
+            )
+        else:
+            names = frappe.db.sql(
+                """
+                SELECT name FROM `tabAOS Message`
+                WHERE conversation = %(conversation_id)s
+                  AND IFNULL(deleted_for_2, 0) = 0
+                ORDER BY creation ASC, name ASC
+                LIMIT %(limit)s
+                FOR UPDATE
+                """,
+                {"conversation_id": conversation_id, "limit": CLEAR_CHAT_BATCH_SIZE},
+                pluck=True,
+            )
+            if not names:
+                return total
+            frappe.db.sql(
+                """
+                UPDATE `tabAOS Message`
+                SET deleted_for_2 = 1, deleted_for_2_at = %(changed_at)s, modified = modified
+                WHERE name IN %(names)s
+                """,
+                {"changed_at": changed_at, "names": tuple(names)},
+            )
+        total += len(names)
+        if len(names) < CLEAR_CHAT_BATCH_SIZE:
+            return total
 
 def _get_conversation(conv_id: str):
-    return frappe.db.get_value(
-        "AOS Conversation",
-        conv_id,
-        ["name", "participant_1", "participant_2"],
+    rows = frappe.db.sql(
+        """SELECT name, participant_1, participant_2
+        FROM `tabAOS Conversation` WHERE name = %s LIMIT 1 FOR UPDATE""",
+        (conv_id,),
         as_dict=True,
     )
-
-
-def _get_unread_field_for_user(conv, user: str) -> str:
-    if user == conv.participant_1:
-        return "unread_count_1"
-
-    if user == conv.participant_2:
-        return "unread_count_2"
-
-    frappe.throw("User is not a participant in this conversation")
+    return rows[0] if rows else None
 
 
 def clear_chat_impl(**kwargs):
@@ -56,7 +102,7 @@ def clear_chat_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:chat:clear:user:{current_user}",
+        key=rate_limit_key("chat", "clear_chat", current_user),
         ttl_seconds=60,
         limit=CLEAR_CHAT_LIMIT_PER_MINUTE_PER_USER,
         message="Too many clear chat requests. Please slow down.",
@@ -78,38 +124,24 @@ def clear_chat_impl(**kwargs):
         if current_user not in (conv.participant_1, conv.participant_2):
             return fail("Not allowed.", error="PERMISSION_DENIED")
 
-        delete_field = get_deleted_for_user_field(conv, current_user)
-        delete_at_field = get_deleted_for_user_at_field(conv, current_user)
-        unread_field = _get_unread_field_for_user(conv, current_user)
-
         now = now_datetime()
 
-        # Hide every message still visible to the current user.
-        # This includes deleted-for-everyone placeholder messages too,
-        # because clear chat means remove the whole visible history for me.
-        frappe.db.sql(
-            f"""
-            UPDATE `tabAOS Message`
-            SET
-                {delete_field} = 1,
-                {delete_at_field} = %s,
-                modified = modified
-            WHERE
-                conversation = %s
-                AND IFNULL({delete_field}, 0) = 0
-            """,
-            (now, conv_id),
-        )
-
-        # Reset current user's unread count.
-        frappe.db.set_value(
-            "AOS Conversation",
-            conv_id,
-            {
-                unread_field: 0,
-            },
-            update_modified=False,
-        )
+        # Use bounded static SQL shapes so very large histories do not run one
+        # unbounded UPDATE. The conversation lock serializes this with sends.
+        if current_user == conv.participant_1:
+            cleared_count = _clear_visible_messages_bounded(
+                conversation_id=conv_id, participant_index=1, changed_at=now
+            )
+            frappe.db.set_value(
+                "AOS Conversation", conv_id, "unread_count_1", 0, update_modified=False
+            )
+        else:
+            cleared_count = _clear_visible_messages_bounded(
+                conversation_id=conv_id, participant_index=2, changed_at=now
+            )
+            frappe.db.set_value(
+                "AOS Conversation", conv_id, "unread_count_2", 0, update_modified=False
+            )
 
         # Current user should now have no visible latest message.
         # Other participant's preview is not affected.
@@ -122,18 +154,14 @@ def clear_chat_impl(**kwargs):
             "Chat cleared.",
             data={
                 "conversation_id": conv_id,
-                "cleared_for": current_user,
+                "cleared_for": public_account_id_for_user(current_user),
+                "cleared_count": cleared_count,
             },
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Clear Chat Failed",
-        )
-        frappe.db.rollback()
+        frappe.log_error("Chat operation failed.", "AOS Clear Chat Failed")
         return fail("Failed to clear chat.", error="INTERNAL_ERROR")

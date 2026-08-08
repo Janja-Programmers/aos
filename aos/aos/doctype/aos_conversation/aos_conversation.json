@@ -8,6 +8,7 @@
   "naming_series",
   "participant_1",
   "participant_2",
+  "pair_key",
   "last_message_1",
   "last_message_at_1",
   "last_sender_1",
@@ -119,6 +120,14 @@
    "label": "Last Sender For Participant 2",
    "options": "User",
    "read_only": 1
+  },
+  {
+   "fieldname": "pair_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Participant Pair Key",
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,

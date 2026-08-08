@@ -11,6 +11,7 @@ from .constants import MAX_CURSOR_LENGTH, MAX_REASON_LENGTH, MAX_SESSION_ID_LENG
 from .errors import LiveError
 
 LIVE_ID_RE = re.compile(r"^LIVE-\d{4}-\d{5}$")
+CONVERSATION_ID_RE = re.compile(r"^CONV-\d{4}-\d{5}$")
 SAFE_ROW_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,139}$")
 ACCOUNT_REFERENCE_RE = re.compile(r"^(?:ACC-[A-Z2-7]{20}|[^\s]{1,140})$")
 LIVEKIT_PARTICIPANT_ID_RE = re.compile(r"^aos:participant:[A-Za-z0-9_-]{20,64}$")

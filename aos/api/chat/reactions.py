@@ -20,9 +20,12 @@ from typing import Any, Dict, List
 import frappe
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.blocking import get_blocked_user_set
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.public_errors import safe_fail_from_exception
+from aos.services.chat.events import publish_after_commit
+from aos.services.chat.repository import lock_conversations, lock_messages
 
 from .constants import TOGGLE_MESSAGE_REACTION_LIMIT_PER_MINUTE_PER_USER
 from .visibility import get_deleted_for_user_field, get_other_participant
@@ -99,6 +102,10 @@ def _get_existing_reaction(*, message_id: str, user: str):
 def _validate_message_can_be_reacted_to(msg, current_user: str):
     if current_user not in (msg.participant_1, msg.participant_2):
         return fail("Not allowed.", error="PERMISSION_DENIED")
+
+    receiver = get_other_participant(msg, current_user)
+    if not receiver or receiver in get_blocked_user_set(current_user, [receiver]):
+        return fail("Not allowed.", error="PERMISSION_DENIED", http_status=403)
 
     if bool(msg.deleted_for_everyone):
         return fail(
@@ -303,7 +310,7 @@ def _publish_reaction_update(
         "emoji",
     )
 
-    frappe.publish_realtime(
+    publish_after_commit(
         event="aos_message_reaction_updated",
         message={
             "conversation_id": msg.conversation,
@@ -323,7 +330,7 @@ def toggle_message_reaction_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:chat:reaction:toggle:user:{current_user}",
+        key=rate_limit_key("chat", "toggle_message_reaction", current_user),
         ttl_seconds=60,
         limit=TOGGLE_MESSAGE_REACTION_LIMIT_PER_MINUTE_PER_USER,
         message="Too many reaction requests. Please slow down.",
@@ -342,6 +349,13 @@ def toggle_message_reaction_impl(**kwargs):
         return emoji_error
 
     try:
+        conversation_id = frappe.db.get_value("AOS Message", message_id, "conversation")
+        if not conversation_id:
+            return fail("Message not found.", error="NOT_FOUND")
+        lock_conversations([conversation_id])
+        if message_id not in set(lock_messages([message_id])):
+            return fail("Message not found.", error="NOT_FOUND")
+
         msg = _get_message_with_conversation(message_id)
 
         if not msg:
@@ -438,20 +452,14 @@ def toggle_message_reaction_impl(**kwargs):
         )
 
     except frappe.DuplicateEntryError:
-        frappe.db.rollback()
         return fail(
             "Reaction already exists. Please retry.",
             error="CONFLICT",
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Toggle Message Reaction Failed",
-        )
-        frappe.db.rollback()
+        frappe.log_error("Chat operation failed.", "AOS Toggle Message Reaction Failed")
         return fail("Failed to update message reaction.", error="INTERNAL_ERROR")

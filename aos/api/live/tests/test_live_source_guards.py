@@ -21,7 +21,7 @@ class TestLiveSourceGuards(unittest.TestCase):
     def test_public_v1_surface_is_complete_and_thin(self):
         source = _source("aos/api/v1/live/__init__.py")
         endpoints = re.findall(r"^def ([a-z_]+)\(\*\*kwargs\):", source, flags=re.MULTILINE)
-        self.assertEqual(len(endpoints), 23)
+        self.assertEqual(len(endpoints), 24)
         self.assertEqual(len(endpoints), len(set(endpoints)))
         self.assertIn("_client_kwargs(kwargs)", source)
         self.assertIn("run_live_api(", source)

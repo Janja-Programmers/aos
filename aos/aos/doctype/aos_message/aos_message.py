@@ -10,9 +10,21 @@ VALID_MESSAGE_TYPES = {
     "media",
     "ad",
     "short",
+    "live",
     "mixed",
     "system",
 }
+
+
+IMMUTABLE_REFERENCE_FIELDS = [
+    "conversation",
+    "sender",
+    "message_type",
+    "ad",
+    "short",
+    "live",
+    "reply_to_message",
+]
 
 
 SYSTEM_MANAGED_FIELDS = [
@@ -30,6 +42,7 @@ SYSTEM_MANAGED_FIELDS = [
     "deleted_for_1_at",
     "deleted_for_2",
     "deleted_for_2_at",
+    "idempotency_key",
 ]
 
 
@@ -41,6 +54,7 @@ class AOSMessage(Document):
         self._validate_message_content()
         self._validate_ad_reference()
         self._validate_short_reference()
+        self._validate_live_reference()
         self._validate_reply_to_message()
         self._validate_forward_reference()
 
@@ -48,6 +62,7 @@ class AOSMessage(Document):
         self._sync_defaults()
 
     def before_save(self):
+        self._protect_immutable_reference_fields()
         self._protect_system_managed_fields()
 
     # Validation
@@ -91,6 +106,7 @@ class AOSMessage(Document):
         content = (self.content or "").strip()
         has_ad = bool(self.ad)
         has_short = bool(getattr(self, "short", None))
+        has_live = bool(getattr(self, "live", None))
         has_attachments = bool(self.has_attachments)
 
         if self.message_type == "text":
@@ -122,19 +138,26 @@ class AOSMessage(Document):
             self.content = content or None
             return
 
+        if self.message_type == "live":
+            if not has_live:
+                frappe.throw("Live is required for live messages")
+
+            self.content = content or None
+            return
+
         if self.message_type == "mixed":
             # Mixed can be:
             # - text + media
             # - text + ad
-            # - text + short
-            # - ad/short + media
+            # - text + short/live
+            # - ad/short/live + media
             # - text + ad/short + media
             #
             # Attachments are inserted after the message row in the API,
             # so has_attachments may still be 0 during initial validation.
-            # Therefore, content OR ad OR short is enough here.
-            if not content and not has_ad and not has_short and not has_attachments:
-                frappe.throw("Mixed messages require content, an ad, a short, or attachments")
+            # Therefore, content OR ad OR short OR live is enough here.
+            if not content and not has_ad and not has_short and not has_live and not has_attachments:
+                frappe.throw("Mixed messages require content, an ad, a short, a live, or attachments")
 
             self.content = content or None
             return
@@ -161,6 +184,13 @@ class AOSMessage(Document):
 
         if not frappe.db.exists("AOS Short", self.short):
             frappe.throw("Invalid short reference")
+
+    def _validate_live_reference(self):
+        if not getattr(self, "live", None):
+            return
+
+        if not frappe.db.exists("AOS Live Stream", self.live):
+            frappe.throw("Invalid live reference")
 
     def _validate_reply_to_message(self):
         if not self.reply_to_message:
@@ -224,6 +254,21 @@ class AOSMessage(Document):
             frappe.throw("Invalid forwarded conversation reference")
 
     # Internal helpers
+    def _protect_immutable_reference_fields(self):
+        if self.is_new():
+            return
+        original = frappe.db.get_value(
+            self.doctype,
+            self.name,
+            IMMUTABLE_REFERENCE_FIELDS,
+            as_dict=True,
+        )
+        if not original:
+            return
+        for fieldname in IMMUTABLE_REFERENCE_FIELDS:
+            if getattr(self, fieldname, None) != original.get(fieldname):
+                frappe.throw(f"{fieldname} cannot be modified after message creation")
+
     def _sync_defaults(self):
         if not self.has_attachments:
             self.has_attachments = 0

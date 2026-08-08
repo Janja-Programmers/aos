@@ -26,10 +26,12 @@
   "column_break_bgvu",
   "ad",
   "short",
+  "live",
   "call_id",
   "delivered_to_receiver_at",
   "read_by_receiver_at",
-  "has_attachments"
+  "has_attachments",
+  "idempotency_key"
  ],
  "fields": [
   {
@@ -63,7 +65,7 @@
    "fieldname": "message_type",
    "fieldtype": "Select",
    "label": "Message Type",
-   "options": "text\nmedia\nad\nshort\nmixed\nsystem",
+   "options": "text\nmedia\nad\nshort\nlive\nmixed\nsystem",
    "reqd": 1
   },
   {
@@ -82,6 +84,13 @@
    "fieldtype": "Link",
    "label": "Short",
    "options": "AOS Short"
+  },
+  {
+   "fieldname": "live",
+   "fieldtype": "Link",
+   "label": "Live",
+   "options": "AOS Live Stream",
+   "search_index": 1
   },
   {
    "fieldname": "column_break_bgvu",
@@ -207,6 +216,14 @@
    "fieldtype": "Link",
    "label": "Forwarded From Conversation",
    "options": "AOS Conversation",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "idempotency_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Idempotency Key",
    "read_only": 1,
    "search_index": 1
   }

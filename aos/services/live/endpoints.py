@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .validation import (
     ACCOUNT_REFERENCE_RE,
+    CONVERSATION_ID_RE,
     LIVE_ID_RE,
     LIVEKIT_PARTICIPANT_ID_RE,
     SAFE_ROW_ID_RE,
@@ -19,6 +20,11 @@ ENDPOINT_SPECS: dict[str, EndpointSpec] = {
     "start_live": _spec(
         {"title", "cover_image", "live_cover_media", "cover_image_media", "media_id"},
         aliases=(("live_cover_media", "cover_image_media", "media_id"),),
+    ),
+    "share_live_to_chat": _spec(
+        {"live_id", "conversation_id", "message", "content", "idempotency_key"},
+        aliases=(("message", "content"),),
+        ids=(("live_id", LIVE_ID_RE), ("conversation_id", CONVERSATION_ID_RE)),
     ),
     "join_live": _spec({"live_id", "session_id"}, ids=(("live_id", LIVE_ID_RE),)),
     "end_live": _spec({"live_id"}, ids=(("live_id", LIVE_ID_RE),)),
@@ -56,7 +62,7 @@ ENDPOINT_SPECS: dict[str, EndpointSpec] = {
 
 TRANSACTIONAL_ENDPOINTS = frozenset(
     {
-        "start_live", "join_live", "end_live", "get_live_token", "get_live_cohost_token", "track_join", "track_leave", "add_live_message",
+        "start_live", "share_live_to_chat", "join_live", "end_live", "get_live_token", "get_live_cohost_token", "track_join", "track_leave", "add_live_message",
         "reply_live_message", "delete_live_message", "send_reaction", "invite_live_cohost",
         "request_live_cohost", "respond_live_cohost", "cancel_live_cohost",
         "activate_live_cohost", "end_live_cohost",

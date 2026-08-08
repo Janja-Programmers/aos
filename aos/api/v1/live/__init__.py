@@ -15,6 +15,7 @@ from aos.api.v1._transport import client_kwargs as _client_kwargs
 from aos.services.live.api import run_live_api
 from aos.services.live.endpoints import ENDPOINT_SPECS, TRANSACTIONAL_ENDPOINTS
 
+from aos.api.live.share import share_live_to_chat_impl as _share_live_to_chat_impl
 from aos.api.live.live import (
     end_live_impl as _end_live_impl,
     get_live_impl as _get_live_impl,
@@ -60,6 +61,11 @@ def _call(name: str, implementation: Callable[..., dict[str, Any]], kwargs: dict
 @frappe.whitelist(methods=["POST"])
 def start_live(**kwargs):
     return _call("start_live", _start_live_impl, kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def share_live_to_chat(**kwargs):
+    return _call("share_live_to_chat", _share_live_to_chat_impl, kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

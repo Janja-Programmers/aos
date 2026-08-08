@@ -54,3 +54,6 @@ Camera preview, camera flipping, mute controls, and countdown state remain front
 - No email, internal User name, LiveKit secret, token, raw cursor, room name, or comment text in structured Live logs.
 
 See the companion documents in this directory for exact contracts and operations.
+
+
+Live supports native Chat sharing through `aos.api.v1.live.share_live_to_chat`; Chat stores the canonical `LIVE-*` reference, not a frontend URL.

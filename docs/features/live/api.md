@@ -23,6 +23,7 @@ Base form: `/api/method/aos.api.v1.live.<endpoint>`.
 | Endpoint | HTTP | Access | Accepted domain fields |
 |---|---|---|---|
 | `start_live` | POST | authenticated | `title`, `cover_image`, `live_cover_media` or compatible cover-media alias |
+| `share_live_to_chat` | POST | authenticated viewer | `live_id`, `conversation_id`, optional `message`/`content`, optional `idempotency_key` |
 | `join_live` | POST | guest | `live_id`, `session_id` |
 | `end_live` | POST | authenticated host | `live_id` |
 | `get_live` | GET | guest | `live_id`, optional `session_id` |
@@ -114,3 +115,14 @@ curl -X POST "$SITE/api/method/aos.api.v1.live.invite_live_cohost" \
 ```
 
 Do not place LiveKit tokens in URLs, logs, Postman examples, or shared test evidence.
+
+
+## Native Chat sharing
+
+`share_live_to_chat` creates a first-class Chat message through the canonical Chat service. The Live must be active and both Chat participants must be authorized to view it. Chat stores the canonical `LIVE-*` reference rather than a web URL, so web and Flutter route natively. Historical messages may serialize an ended Live when privacy allows; inaccessible Lives return an unavailable preview.
+
+```bash
+curl -X POST "$SITE/api/method/aos.api.v1.live.share_live_to_chat" \
+  -H 'Content-Type: application/json' \
+  -d '{"live_id":"LIVE-2026-00001","conversation_id":"CONV-2026-00001","message":"Come watch"}'
+```

@@ -26,7 +26,7 @@ All cursor endpoints use an HMAC-signed cursor with a 24-hour maximum age.
 - `track_impression`, `track_view`, `track_share` accept optional `event_id` for replay deduplication.
 - `download_short` accepts optional `event_id` and never returns an object key.
 - `create_short_share_link` returns canonical link, playable URL and preview metadata.
-- `share_short_to_chat` validates both conversation membership and recipient visibility.
+- `share_short_to_chat` validates both conversation membership and recipient visibility, then delegates native Short message persistence/realtime/notification to the canonical Chat service.
 
 ## Sounds and analytics
 

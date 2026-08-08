@@ -9,11 +9,15 @@ Handles:
 
 from __future__ import annotations
 
+import hashlib
+
 import frappe
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.blocking import ensure_not_blocked
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.blocking import ensure_not_blocked, get_blocked_user_set
+from aos.api.shared.account_status import ensure_account_active
+from aos.services.accounts.identity import resolve_account_reference
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.user_display import get_user_display, get_user_display_map
@@ -24,12 +28,33 @@ from .constants import (
     DELETE_CONVERSATION_LIMIT_PER_MINUTE_PER_USER,
 )
 
-from .presence import publish_presence_update_to_peers
+from .presence import schedule_presence_update_to_peers
 
 
 # Helpers
 def _sort_participants(u1: str, u2: str) -> tuple[str, str]:
     return tuple(sorted([u1, u2]))
+
+
+def _pair_key(u1: str, u2: str) -> str:
+    p1, p2 = _sort_participants(u1, u2)
+    return hashlib.sha256("\x1f".join([p1, p2]).encode("utf-8")).hexdigest()
+
+
+def _get_conversation_by_pair(*, p1: str, p2: str, lock: bool = False):
+    params = {"pair_key": _pair_key(p1, p2), "p1": p1, "p2": p2}
+    query = """
+        SELECT name, participant_1, participant_2, is_active_1, is_active_2
+        FROM `tabAOS Conversation`
+        WHERE pair_key = %(pair_key)s
+           OR (participant_1 = %(p1)s AND participant_2 = %(p2)s)
+        ORDER BY creation ASC, name ASC
+        LIMIT 1
+    """
+    if lock:
+        query += " FOR UPDATE"
+    rows = frappe.db.sql(query, params, as_dict=True)
+    return rows[0] if rows else None
 
 
 def _clean_int(value, default: int, *, min_value: int, max_value: int) -> int:
@@ -115,7 +140,7 @@ def get_or_create_conversation_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:chat:get_or_create:user:{current_user}",
+        key=rate_limit_key("chat", "open_conversation", current_user),
         ttl_seconds=60,
         limit=OPEN_CONVERSATION_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
@@ -123,10 +148,14 @@ def get_or_create_conversation_impl(**kwargs):
     if rl:
         return rl
 
-    other_user = kwargs.get("user")
+    other_reference = kwargs.get("user")
 
-    if not other_user:
+    if not other_reference:
         return fail("User is required.", error="VALIDATION_ERROR")
+
+    other_user = resolve_account_reference(other_reference, allow_legacy=True)
+    if not other_user:
+        return fail("User not found.", error="NOT_FOUND", http_status=404)
 
     if other_user == current_user:
         return fail(
@@ -135,8 +164,12 @@ def get_or_create_conversation_impl(**kwargs):
         )
 
     try:
-        if not frappe.db.exists("User", other_user):
-            return fail("User not found.", error="NOT_FOUND")
+        if not frappe.db.exists("User", {"name": other_user, "enabled": 1}):
+            return fail("User not found.", error="NOT_FOUND", http_status=404)
+
+        target_state_error = ensure_account_active(other_user)
+        if target_state_error:
+            return fail("User not found.", error="NOT_FOUND", http_status=404)
 
         block_err = ensure_not_blocked(
             current_user=current_user,
@@ -148,15 +181,7 @@ def get_or_create_conversation_impl(**kwargs):
 
         p1, p2 = _sort_participants(current_user, other_user)
 
-        existing = frappe.db.get_value(
-            "AOS Conversation",
-            {
-                "participant_1": p1,
-                "participant_2": p2,
-            },
-            ["name", "is_active_1", "is_active_2"],
-            as_dict=True,
-        )
+        existing = _get_conversation_by_pair(p1=p1, p2=p2, lock=True)
 
         if existing:
             # Reactivate if soft-deleted for the current user.
@@ -176,7 +201,7 @@ def get_or_create_conversation_impl(**kwargs):
                     update_modified=False,
                 )
 
-            publish_presence_update_to_peers(current_user)
+            schedule_presence_update_to_peers(current_user)
 
             return ok(
                 "Conversation fetched.",
@@ -190,9 +215,30 @@ def get_or_create_conversation_impl(**kwargs):
         conv = frappe.new_doc("AOS Conversation")
         conv.participant_1 = p1
         conv.participant_2 = p2
-        conv.insert(ignore_permissions=True)
+        conv.pair_key = _pair_key(p1, p2)
+        try:
+            conv.insert(ignore_permissions=True)
+        except frappe.DuplicateEntryError:
+            existing = _get_conversation_by_pair(p1=p1, p2=p2, lock=True)
+            if not existing:
+                raise
+            updates = {}
+            if existing.is_active_1 == 0 and current_user == p1:
+                updates["is_active_1"] = 1
+            if existing.is_active_2 == 0 and current_user == p2:
+                updates["is_active_2"] = 1
+            if updates:
+                frappe.db.set_value("AOS Conversation", existing.name, updates, update_modified=False)
+            schedule_presence_update_to_peers(current_user)
+            return ok(
+                "Conversation fetched.",
+                data=_build_conversation_response(
+                    conversation_id=existing.name,
+                    other_user=other_user,
+                ),
+            )
 
-        publish_presence_update_to_peers(current_user)
+        schedule_presence_update_to_peers(current_user)
 
         return ok(
             "Conversation created.",
@@ -203,15 +249,10 @@ def get_or_create_conversation_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Get/Create Conversation Failed",
-        )
-        frappe.db.rollback()
+        frappe.log_error("Chat operation failed.", "AOS Get/Create Conversation Failed")
         return fail(
             "Failed to create conversation.",
             error="INTERNAL_ERROR",
@@ -225,7 +266,7 @@ def list_conversations_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:chat:list:user:{current_user}",
+        key=rate_limit_key("chat", "list_conversations", current_user),
         ttl_seconds=60,
         limit=LIST_CONVERSATIONS_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
@@ -244,7 +285,7 @@ def list_conversations_impl(**kwargs):
         kwargs.get("offset"),
         default=0,
         min_value=0,
-        max_value=100000,
+        max_value=10000,
     )
 
     try:
@@ -281,7 +322,8 @@ def list_conversations_impl(**kwargs):
                         THEN COALESCE(last_message_at_1, creation)
                     ELSE COALESCE(last_message_at_2, creation)
                 END DESC,
-                modified DESC
+                modified DESC,
+                name DESC
             LIMIT %(limit)s OFFSET %(offset)s
             """,
             {
@@ -293,7 +335,7 @@ def list_conversations_impl(**kwargs):
         )
 
         if not conversations:
-            publish_presence_update_to_peers(current_user)
+            schedule_presence_update_to_peers(current_user)
             return ok("Conversations fetched.", data=[])
 
         # Collect users needed for display:
@@ -312,6 +354,7 @@ def list_conversations_impl(**kwargs):
                 user_ids.add(last_sender)
 
         user_map = _fetch_users(list(user_ids))
+        blocked_users = get_blocked_user_set(current_user, user_ids)
 
         results = []
 
@@ -333,6 +376,8 @@ def list_conversations_impl(**kwargs):
             )
 
             last_sender_user = user_map.get(last_sender) if last_sender else None
+            other_blocked = other_user in blocked_users
+            last_sender_blocked = bool(last_sender and last_sender in blocked_users)
 
             results.append(
                 {
@@ -341,16 +386,28 @@ def list_conversations_impl(**kwargs):
                     "display_name": display_name,
                     "avatar": avatar,
                     "is_deleted": bool(user.get("is_deleted")),
-                    "is_live": bool(user.get("is_live")) if not bool(user.get("is_deleted")) else False,
-                    "live_id": user.get("live_id") if not bool(user.get("is_deleted")) else None,
-                    "live_status": user.get("live_status") if not bool(user.get("is_deleted")) else None,
+                    "is_live": (
+                        bool(user.get("is_live"))
+                        if not other_blocked and not bool(user.get("is_deleted"))
+                        else False
+                    ),
+                    "live_id": (
+                        user.get("live_id")
+                        if not other_blocked and not bool(user.get("is_deleted"))
+                        else None
+                    ),
+                    "live_status": (
+                        user.get("live_status")
+                        if not other_blocked and not bool(user.get("is_deleted"))
+                        else None
+                    ),
                     "last_message": last_message,
                     "last_message_at": last_message_at,
                     "last_sender": (last_sender_user.get("user") if last_sender_user else None),
                     "last_sender_display_name": (
                         last_sender_user.get("display_name")
                         if last_sender_user
-                        else last_sender
+                        else None
                     ),
                     "last_sender_avatar": (
                         last_sender_user.get("avatar")
@@ -364,19 +421,23 @@ def list_conversations_impl(**kwargs):
                     ),
                     "last_sender_is_live": (
                         bool(last_sender_user.get("is_live"))
-                        if last_sender_user and not bool(last_sender_user.get("is_deleted"))
+                        if last_sender_user
+                        and not last_sender_blocked
+                        and not bool(last_sender_user.get("is_deleted"))
                         else False
                     ),
                     "last_sender_live_id": (
                         last_sender_user.get("live_id")
-                        if last_sender_user and not bool(last_sender_user.get("is_deleted"))
+                        if last_sender_user
+                        and not last_sender_blocked
+                        and not bool(last_sender_user.get("is_deleted"))
                         else None
                     ),
                     "unread_count": unread or 0,
                 }
             )
 
-        publish_presence_update_to_peers(current_user)
+        schedule_presence_update_to_peers(current_user)
 
         return ok(
             "Conversations fetched.",
@@ -384,10 +445,7 @@ def list_conversations_impl(**kwargs):
         )
 
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS List Conversations Failed",
-        )
+        frappe.log_error("Chat operation failed.", "AOS List Conversations Failed")
 
         return fail(
             "Failed to fetch conversations.",
@@ -402,7 +460,7 @@ def delete_conversation_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:chat:delete:user:{current_user}",
+        key=rate_limit_key("chat", "delete_conversation", current_user),
         ttl_seconds=60,
         limit=DELETE_CONVERSATION_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
@@ -419,12 +477,17 @@ def delete_conversation_impl(**kwargs):
         )
 
     try:
-        conv = frappe.db.get_value(
-            "AOS Conversation",
-            conv_id,
-            ["participant_1", "participant_2"],
+        rows = frappe.db.sql(
+            """
+            SELECT name, participant_1, participant_2
+            FROM `tabAOS Conversation`
+            WHERE name = %s
+            LIMIT 1 FOR UPDATE
+            """,
+            (conv_id,),
             as_dict=True,
         )
+        conv = rows[0] if rows else None
 
         if not conv:
             return fail(
@@ -455,17 +518,13 @@ def delete_conversation_impl(**kwargs):
             update_modified=False,
         )
 
-        publish_presence_update_to_peers(current_user)
+        schedule_presence_update_to_peers(current_user)
 
         return ok("Conversation deleted.")
 
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Delete Conversation Failed",
-        )
+        frappe.log_error("Chat operation failed.", "AOS Delete Conversation Failed")
 
-        frappe.db.rollback()
 
         return fail(
             "Failed to delete conversation.",

@@ -23,6 +23,9 @@ JOIN_LIVE_LIMIT_PER_MINUTE_PER_USER = 30
 # Ending a live.
 END_LIVE_LIMIT_PER_MINUTE_PER_USER = 20
 
+# Sharing an active Live into a native AOS Chat message.
+SHARE_LIVE_TO_CHAT_LIMIT_PER_MINUTE_PER_USER = 30
+
 # Fetching live details and live feeds.
 GET_LIVE_LIMIT_PER_MINUTE_PER_IP = 120
 LIST_LIVE_STREAMS_LIMIT_PER_MINUTE_PER_IP = 120

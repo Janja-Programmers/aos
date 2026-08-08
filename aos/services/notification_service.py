@@ -257,8 +257,11 @@ class NotificationService:
         sender: str,
         conversation_id: str,
         preview: str,
+        message_id: str | None = None,
     ):
         sender_name = cls._display_name(sender)
+        sender_account_id = public_account_id_for_user(sender)
+        dedupe_key = f"chat_message:{message_id}:{user}" if message_id else None
 
         return cls.notify(
             user=user,
@@ -268,9 +271,12 @@ class NotificationService:
             actor=sender,
             payload={
                 "conversation_id": conversation_id,
-                "sender": sender,
+                "sender": sender_account_id,
+                "sender_account_id": sender_account_id,
+                "message_id": message_id,
             },
             event="aos_new_message",
+            dedupe_key=dedupe_key,
         )
 
     # CALLS

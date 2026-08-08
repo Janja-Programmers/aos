@@ -12,34 +12,20 @@ import time
 from typing import Any
 
 import frappe
-from frappe.utils import get_url, now_datetime
+from frappe.utils import get_url
 
 from aos.api.shared.auth import require_login, current_user
 from aos.api.shared.db import is_duplicate_entry_error
-from aos.api.shared.blocking import ensure_not_blocked
 from aos.api.shared.formatters import humanize_count
-from aos.api.shared.rate_limit import rate_limit, request_ip
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
-from aos.services.notification_service import NotificationService
 from aos.services.shorts.analytics import event_key
 from aos.services.shorts.repository import ShortsRepository
 
-from aos.api.chat.message import (
-    _fetch_ads_bulk,
-    _fetch_reply_messages_bulk,
-    _fetch_shorts_bulk,
-    _fetch_users,
-    _serialize_attachments_bulk,
-    _serialize_message,
-    _validate_short_reference,
-)
-from aos.api.chat.preview import set_conversation_preview_for_new_message
-from aos.api.chat.presence import publish_presence_update_to_peers
-from aos.services.seller_response_metrics import (
-    enqueue_conversation_response_metrics_refresh,
-)
+from aos.services.chat.errors import ChatError
+from aos.services.chat.service import ChatService
 
 from aos.api.shorts.constants import (
     CREATE_SHORT_SHARE_LINK_LIMIT_PER_MINUTE_PER_IP,
@@ -146,19 +132,6 @@ def _increment_share_count(
     return int(frappe.db.get_value("AOS Short", short_id, "share_count") or 0)
 
 
-def _get_conversation_row(conv_id: str):
-    return frappe.db.get_value(
-        "AOS Conversation",
-        conv_id,
-        ["name", "participant_1", "participant_2"],
-        as_dict=True,
-    )
-
-
-def _get_receiver(conv, sender: str) -> str:
-    return conv.participant_2 if conv.participant_1 == sender else conv.participant_1
-
-
 def _short_preview(short) -> str:
     caption = (short.get("caption") or "").strip()
     return caption[:80] if caption else "[Short]"
@@ -240,7 +213,7 @@ def share_short_to_chat_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:shorts:share_chat:user:{user}",
+        key=rate_limit_key("shorts", "share_chat", user),
         ttl_seconds=60,
         limit=SHARE_SHORT_TO_CHAT_LIMIT_PER_MINUTE,
         message="Too many requests. Please try again shortly.",
@@ -252,78 +225,39 @@ def share_short_to_chat_impl(**kwargs):
     if err:
         return err
 
-    conversation_id, err = require_id(
-        kwargs.get("conversation_id"),
-        "conversation_id",
-    )
+    conversation_id, err = require_id(kwargs.get("conversation_id"), "conversation_id")
     if err:
         return err
 
     note = (kwargs.get("message") or kwargs.get("content") or "").strip()
+    event_id = str(kwargs.get("event_id") or "").strip() or None
 
     try:
         short, err = _get_short_for_share(short_id, viewer=user)
         if err:
             return err
 
-        conv = _get_conversation_row(conversation_id)
-        if not conv:
-            return fail("Conversation not found.", error="NOT_FOUND")
-
-        if user not in (conv.participant_1, conv.participant_2):
-            return fail("Not allowed.", error="PERMISSION_DENIED")
-
-        receiver = _get_receiver(conv, user)
-
-        short_error = _validate_short_reference(
-            short_id,
-            viewer=user,
-            recipients=[receiver],
-        )
-        if short_error:
-            return short_error
-
-        block_err = ensure_not_blocked(
-            current_user=user,
-            target_user=receiver,
-            action="message",
-        )
-        if block_err:
-            return block_err
-
-        now = now_datetime()
-
-        msg = frappe.new_doc("AOS Message")
-        msg.conversation = conversation_id
-        msg.sender = user
-        msg.message_type = "short" if not note else "mixed"
-        msg.content = note or None
-        msg.short = short_id
-        msg.has_attachments = 0
-        msg.is_forwarded = 0
-        msg.insert(ignore_permissions=True)
-
-        preview = note or f"Shared a short: {_short_preview(short)}"
-
-        set_conversation_preview_for_new_message(
-            conversation_id=conversation_id,
-            sender=user,
-            preview=preview,
-            sent_at=now,
-        )
-
-        unread_field = "unread_count_2" if user == conv.participant_1 else "unread_count_1"
-        frappe.db.sql(
-            f"""
-            UPDATE `tabAOS Conversation`
-            SET
-                is_active_1 = 1,
-                is_active_2 = 1,
-                {unread_field} = COALESCE({unread_field}, 0) + 1
-            WHERE name = %s
-            """,
-            (conversation_id,),
-        )
+        try:
+            message_payload = ChatService().send_short_reference(
+                sender=user,
+                conversation_id=conversation_id,
+                short_id=short_id,
+                content=note,
+                idempotency_key=event_id,
+            )
+        except ChatError as exc:
+            mapping = {
+                "CHAT_NOT_FOUND": ("Conversation not found.", "NOT_FOUND", 404),
+                "CHAT_ACCESS_DENIED": ("Not allowed.", "PERMISSION_DENIED", 403),
+                "CHAT_FORBIDDEN": ("Not allowed.", "PERMISSION_DENIED", 403),
+                "CHAT_INVALID_REQUEST": ("Invalid share request.", "VALIDATION_ERROR", 422),
+                "CHAT_VALIDATION_ERROR": ("Invalid share request.", "VALIDATION_ERROR", 422),
+            }
+            message, code, status = mapping.get(
+                exc.code,
+                ("Failed to share short to chat.", "INTERNAL_ERROR", 500),
+            )
+            return fail(message, error=code, http_status=status)
 
         share_count = _increment_share_count(
             short_id=short_id,
@@ -331,46 +265,7 @@ def share_short_to_chat_impl(**kwargs):
             session_id=None,
             channel="chat",
             conversation_id=conversation_id,
-            client_event_id=kwargs.get("event_id") or msg.name,
-        )
-
-        reply_map = _fetch_reply_messages_bulk([])
-        user_map = _fetch_users([user])
-        ad_map = _fetch_ads_bulk([])
-        short_map = _fetch_shorts_bulk([short_id], viewer=user)
-        attachments_map = _serialize_attachments_bulk([msg.name])
-
-        message_payload = _serialize_message(
-            msg,
-            attachments_map=attachments_map,
-            user_map=user_map,
-            ad_map=ad_map,
-            short_map=short_map,
-            current_user=user,
-            reply_map=reply_map,
-            is_starred=False,
-            reactions=[],
-            my_reaction=None,
-        )
-        message_payload["conversation_id"] = conversation_id
-
-        frappe.publish_realtime(
-            event="aos_new_message",
-            message={"conversation_id": conversation_id, "message": message_payload},
-            user=receiver,
-        )
-
-        NotificationService.notify_new_message(
-            user=receiver,
-            sender=user,
-            conversation_id=conversation_id,
-            preview=preview,
-        )
-
-        publish_presence_update_to_peers(user)
-        enqueue_conversation_response_metrics_refresh(
-            participant_1=conv.participant_1,
-            participant_2=conv.participant_2,
+            client_event_id=event_id or message_payload.get("id"),
         )
 
         frappe.enqueue(RANKING_TASK, short_id=short_id, queue="short", enqueue_after_commit=True)
@@ -392,3 +287,4 @@ def share_short_to_chat_impl(**kwargs):
     except Exception:
         frappe.log_error("Shorts operation failed.", "share_short_to_chat failed")
         return fail("Failed to share short to chat", error="INTERNAL_ERROR")
+

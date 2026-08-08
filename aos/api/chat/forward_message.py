@@ -26,11 +26,15 @@ import frappe
 from frappe.utils import now_datetime
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.blocking import ensure_not_blocked
+from aos.api.shared.account_status import ensure_account_active
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.public_errors import safe_fail_from_exception
 
 from aos.services.notification_service import NotificationService
+from aos.services.chat.events import publish_after_commit
+from aos.services.chat.repository import lock_conversations, lock_messages
 
 from .constants import FORWARD_MESSAGE_LIMIT_PER_MINUTE_PER_USER
 
@@ -39,17 +43,22 @@ from .message import (
     _fetch_ads_bulk,
     _fetch_reply_messages_bulk,
     _fetch_shorts_bulk,
+    _fetch_lives_bulk,
     _fetch_users,
     _get_receiver,
     _is_deleted_for_everyone,
     _message_preview,
+    _message_idempotency_digest,
+    _get_idempotent_message,
     _serialize_attachments_bulk,
     _serialize_message,
+    _validate_ad_reference,
     _validate_short_reference,
+    _validate_live_reference,
 )
 
 from .preview import set_conversation_preview_for_new_message
-from .presence import publish_presence_update_to_peers
+from .presence import schedule_presence_update_to_peers
 from .visibility import get_deleted_for_user_field
 
 
@@ -89,6 +98,7 @@ def _get_source_message(message_id: str):
             m.message_type,
             m.ad,
             m.short,
+            m.live,
             m.reply_to_message,
             m.has_attachments,
             m.is_forwarded,
@@ -127,10 +137,15 @@ def _get_target_conversations(conversation_ids: List[str]) -> Dict[str, frappe._
     if not conversation_ids:
         return {}
 
-    rows = frappe.get_all(
-        "AOS Conversation",
-        filters={"name": ["in", conversation_ids]},
-        fields=["name", "participant_1", "participant_2"],
+    rows = frappe.db.sql(
+        """
+        SELECT name, participant_1, participant_2
+        FROM `tabAOS Conversation`
+        WHERE name IN %(conversation_ids)s
+        ORDER BY name ASC
+        """,
+        {"conversation_ids": tuple(sorted(set(conversation_ids)))},
+        as_dict=True,
     )
 
     return {row.name: row for row in rows}
@@ -209,9 +224,42 @@ def _validate_target_conversations(
             data={"conversation_ids": not_allowed},
         )
 
+    for conv_id in target_conversation_ids:
+        receiver = _get_receiver(target_conversation_map[conv_id], current_user)
+        if not frappe.db.exists("User", {"name": receiver, "enabled": 1}) or ensure_account_active(receiver):
+            return fail(
+                "One or more recipients are unavailable.",
+                error="NOT_FOUND",
+                http_status=404,
+            )
+        blocked = ensure_not_blocked(
+            current_user=current_user,
+            target_user=receiver,
+            action="message",
+        )
+        if blocked:
+            return blocked
+
     return None
 
 
+
+
+def _validate_forwarded_ad_access(
+    *,
+    ad: str | None,
+    target_conversation_ids: List[str],
+    target_conversation_map: Dict[str, frappe._dict],
+    current_user: str,
+):
+    if not ad:
+        return None
+    recipients = [
+        _get_receiver(target_conversation_map[conv_id], current_user)
+        for conv_id in target_conversation_ids
+        if conv_id in target_conversation_map
+    ]
+    return _validate_ad_reference(ad, viewer=current_user, recipients=recipients)
 
 def _validate_forwarded_short_access(
     *,
@@ -236,6 +284,27 @@ def _validate_forwarded_short_access(
         viewer=current_user,
         recipients=recipients,
     )
+
+def _validate_forwarded_live_access(
+    *,
+    live: str | None,
+    target_conversation_ids: List[str],
+    target_conversation_map: Dict[str, frappe._dict],
+    current_user: str,
+):
+    if not live:
+        return None
+    recipients = [
+        _get_receiver(target_conversation_map[conv_id], current_user)
+        for conv_id in target_conversation_ids
+        if conv_id in target_conversation_map
+    ]
+    return _validate_live_reference(
+        live,
+        viewer=current_user,
+        recipients=recipients,
+    )
+
 
 def _copy_attachments(
     *,
@@ -278,10 +347,12 @@ def _create_forwarded_message(
     target_conversation_id: str,
     current_user: str,
     source_attachments: List[frappe._dict],
+    idempotency_digest: str | None = None,
 ):
     content = (source.content or "").strip()
     ad = source.ad
     short = getattr(source, "short", None)
+    live = getattr(source, "live", None)
 
     message_type = _determine_message_type(
         content=content,
@@ -296,6 +367,7 @@ def _create_forwarded_message(
         ],
         ad=ad,
         short=short,
+        live=live,
     )
 
     msg = frappe.new_doc("AOS Message")
@@ -309,6 +381,12 @@ def _create_forwarded_message(
 
     if short:
         msg.short = short
+
+    if live:
+        msg.live = live
+
+    if idempotency_digest:
+        msg.idempotency_key = idempotency_digest
 
     msg.insert(ignore_permissions=True)
 
@@ -348,23 +426,26 @@ def _increment_unread_for_receiver(
     conv,
     current_user: str,
 ):
-    unread_field = (
-        "unread_count_2"
-        if current_user == conv.participant_1
-        else "unread_count_1"
-    )
-
-    frappe.db.sql(
-        f"""
-        UPDATE `tabAOS Conversation`
-        SET
-            is_active_1 = 1,
-            is_active_2 = 1,
-            {unread_field} = COALESCE({unread_field}, 0) + 1
-        WHERE name = %s
-        """,
-        (conv.name,),
-    )
+    if current_user == conv.participant_1:
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Conversation`
+            SET is_active_1 = 1, is_active_2 = 1,
+                unread_count_2 = COALESCE(unread_count_2, 0) + 1
+            WHERE name = %s
+            """,
+            (conv.name,),
+        )
+    else:
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Conversation`
+            SET is_active_1 = 1, is_active_2 = 1,
+                unread_count_1 = COALESCE(unread_count_1, 0) + 1
+            WHERE name = %s
+            """,
+            (conv.name,),
+        )
 
 
 def _serialize_forwarded_message(
@@ -402,9 +483,17 @@ def _serialize_forwarded_message(
         if getattr(replied, "short", None) and not _is_deleted_for_everyone(replied):
             short_ids.append(replied.short)
 
-    user_map = _fetch_users(user_ids)
-    ad_map = _fetch_ads_bulk(ad_ids)
+    live_ids: List[str] = []
+    if getattr(msg, "live", None) and not _is_deleted_for_everyone(msg):
+        live_ids.append(msg.live)
+    for replied in reply_map.values():
+        if getattr(replied, "live", None) and not _is_deleted_for_everyone(replied):
+            live_ids.append(replied.live)
+
+    user_map = _fetch_users(user_ids, viewer=current_user)
+    ad_map = _fetch_ads_bulk(ad_ids, viewer=current_user)
     short_map = _fetch_shorts_bulk(short_ids, viewer=current_user)
+    live_map = _fetch_lives_bulk(live_ids, viewer=current_user)
 
     return _serialize_message(
         msg,
@@ -412,6 +501,7 @@ def _serialize_forwarded_message(
         user_map=user_map,
         ad_map=ad_map,
         short_map=short_map,
+        live_map=live_map,
         current_user=current_user,
         reply_map=reply_map,
         is_starred=False,
@@ -426,7 +516,7 @@ def forward_message_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:chat:forward:user:{current_user}",
+        key=rate_limit_key("chat", "forward_message", current_user),
         ttl_seconds=60,
         limit=FORWARD_MESSAGE_LIMIT_PER_MINUTE_PER_USER,
         message="Too many forward requests. Please slow down.",
@@ -436,6 +526,7 @@ def forward_message_impl(**kwargs):
 
     message_id = kwargs.get("message_id")
     target_conversation_ids = _normalize_target_conversation_ids(kwargs)
+    client_idempotency_key = str(kwargs.get("idempotency_key") or "").strip() or None
 
     if not message_id:
         return fail("message_id is required.", error="VALIDATION_ERROR")
@@ -452,10 +543,25 @@ def forward_message_impl(**kwargs):
         if not source:
             return fail("Message not found.", error="NOT_FOUND")
 
-        source_error = _validate_source_message_can_be_forwarded(
-            source,
-            current_user,
+        source_error = _validate_source_message_can_be_forwarded(source, current_user)
+        if source_error:
+            return source_error
+
+        # Deterministic lock order across forward/delete/edit: all conversation
+        # rows first (including the source chat), then the source message.
+        conversation_locks = set(
+            lock_conversations([source.conversation, *target_conversation_ids])
         )
+        if source.conversation not in conversation_locks:
+            return fail("Message not found.", error="NOT_FOUND")
+        if source.name not in set(lock_messages([source.name])):
+            return fail("Message not found.", error="NOT_FOUND")
+
+        # Re-read and revalidate the source under lock.
+        source = _get_source_message(message_id)
+        if not source:
+            return fail("Message not found.", error="NOT_FOUND")
+        source_error = _validate_source_message_can_be_forwarded(source, current_user)
         if source_error:
             return source_error
 
@@ -469,6 +575,15 @@ def forward_message_impl(**kwargs):
         if target_error:
             return target_error
 
+        ad_error = _validate_forwarded_ad_access(
+            ad=getattr(source, "ad", None),
+            target_conversation_ids=target_conversation_ids,
+            target_conversation_map=target_conversation_map,
+            current_user=current_user,
+        )
+        if ad_error:
+            return ad_error
+
         short_error = _validate_forwarded_short_access(
             short=getattr(source, "short", None),
             target_conversation_ids=target_conversation_ids,
@@ -478,32 +593,72 @@ def forward_message_impl(**kwargs):
         if short_error:
             return short_error
 
+        live_error = _validate_forwarded_live_access(
+            live=getattr(source, "live", None),
+            target_conversation_ids=target_conversation_ids,
+            target_conversation_map=target_conversation_map,
+            current_user=current_user,
+        )
+        if live_error:
+            return live_error
+
         source_attachments = _fetch_source_attachments(source.name)
 
         now = now_datetime()
         forwarded_messages: List[Dict[str, Any]] = []
 
-        source_ad_map = _fetch_ads_bulk([source.ad]) if source.ad else {}
+        source_ad_map = _fetch_ads_bulk([source.ad], viewer=current_user) if source.ad else {}
         source_short_map = _fetch_shorts_bulk([source.short], viewer=current_user) if getattr(source, "short", None) else {}
+        source_live_map = _fetch_lives_bulk([source.live], viewer=current_user) if getattr(source, "live", None) else {}
 
         preview = _message_preview(
             content=source.content,
             has_attachments=1 if source_attachments else 0,
             ad=source.ad,
             short=getattr(source, "short", None),
+            live=getattr(source, "live", None),
             ad_preview=source_ad_map.get(source.ad) if source.ad else None,
             short_preview=source_short_map.get(source.short) if getattr(source, "short", None) else None,
+            live_preview=source_live_map.get(source.live) if getattr(source, "live", None) else None,
         )
 
         for target_conversation_id in target_conversation_ids:
             target_conv = target_conversation_map[target_conversation_id]
-
-            msg = _create_forwarded_message(
-                source=source,
-                target_conversation_id=target_conversation_id,
-                current_user=current_user,
-                source_attachments=source_attachments,
+            digest = _message_idempotency_digest(
+                sender=current_user,
+                conversation_id=target_conversation_id,
+                key=f"{client_idempotency_key}:{source.name}" if client_idempotency_key else None,
+                operation="forward",
             )
+            existing = _get_idempotent_message(digest=digest)
+            if existing:
+                forwarded_messages.append(
+                    {
+                        "conversation_id": target_conversation_id,
+                        "message": _serialize_forwarded_message(existing, current_user=current_user),
+                    }
+                )
+                continue
+
+            try:
+                msg = _create_forwarded_message(
+                    source=source,
+                    target_conversation_id=target_conversation_id,
+                    current_user=current_user,
+                    source_attachments=source_attachments,
+                    idempotency_digest=digest,
+                )
+            except frappe.DuplicateEntryError:
+                existing = _get_idempotent_message(digest=digest)
+                if not existing:
+                    raise
+                forwarded_messages.append(
+                    {
+                        "conversation_id": target_conversation_id,
+                        "message": _serialize_forwarded_message(existing, current_user=current_user),
+                    }
+                )
+                continue
 
             set_conversation_preview_for_new_message(
                 conversation_id=target_conversation_id,
@@ -517,39 +672,47 @@ def forward_message_impl(**kwargs):
                 current_user=current_user,
             )
 
-            serialized = _serialize_forwarded_message(
+            serialized_for_sender = _serialize_forwarded_message(
                 msg,
                 current_user=current_user,
             )
 
             receiver = _get_receiver(target_conv, current_user)
+            serialized_for_receiver = _serialize_forwarded_message(
+                msg,
+                current_user=receiver,
+            )
 
             realtime_payload = {
                 "conversation_id": target_conversation_id,
-                "message": serialized,
+                "message": serialized_for_receiver,
             }
 
-            frappe.publish_realtime(
+            publish_after_commit(
                 event="aos_new_message",
                 message=realtime_payload,
                 user=receiver,
             )
 
-            NotificationService.notify_new_message(
-                user=receiver,
-                sender=current_user,
-                conversation_id=target_conversation_id,
-                preview=preview,
-            )
+            try:
+                NotificationService.notify_new_message(
+                    user=receiver,
+                    sender=current_user,
+                    conversation_id=target_conversation_id,
+                    preview=preview,
+                    message_id=msg.name,
+                )
+            except Exception:
+                frappe.log_error("Chat forward notification creation failed.", "AOS Chat notification failure")
 
             forwarded_messages.append(
                 {
                     "conversation_id": target_conversation_id,
-                    "message": serialized,
+                    "message": serialized_for_sender,
                 }
             )
 
-        publish_presence_update_to_peers(current_user)
+        schedule_presence_update_to_peers(current_user)
 
         return ok(
             "Message forwarded.",
@@ -561,13 +724,8 @@ def forward_message_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Forward Message Failed",
-        )
-        frappe.db.rollback()
+        frappe.log_error("Chat operation failed.", "AOS Forward Message Failed")
         return fail("Failed to forward message.", error="INTERNAL_ERROR")

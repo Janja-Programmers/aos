@@ -29,9 +29,11 @@ import frappe
 from frappe.utils import now_datetime
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.public_errors import safe_fail_from_exception
+from aos.services.chat.events import publish_after_commit
+from aos.services.chat.repository import lock_conversations, lock_messages
 
 from .constants import DELETE_MESSAGES_LIMIT_PER_MINUTE_PER_USER
 from .preview import (
@@ -69,45 +71,32 @@ def _normalize_message_ids(value) -> List[str]:
 
 
 def _get_conversation(conv_id: str):
-    return frappe.db.get_value(
-        "AOS Conversation",
-        conv_id,
-        ["name", "participant_1", "participant_2"],
+    rows = frappe.db.sql(
+        """SELECT name, participant_1, participant_2
+        FROM `tabAOS Conversation` WHERE name = %s LIMIT 1 FOR UPDATE""",
+        (conv_id,),
         as_dict=True,
     )
+    return rows[0] if rows else None
 
 
 def _fetch_messages(message_ids: List[str]) -> List[frappe._dict]:
     if not message_ids:
         return []
 
-    return frappe.get_all(
-        "AOS Message",
-        filters={"name": ["in", message_ids]},
-        fields=[
-            "name",
-            "conversation",
-            "sender",
-            "message_type",
-            "content",
-            "ad",
-            "reply_to_message",
-            "has_attachments",
-            "is_forwarded",
-            "forwarded_from_message",
-            "forwarded_from_conversation",
-            "is_edited",
-            "edited_at",
-            "deleted_for_everyone",
-            "deleted_for_everyone_at",
-            "deleted_for_1",
-            "deleted_for_1_at",
-            "deleted_for_2",
-            "deleted_for_2_at",
-            "delivered_to_receiver_at",
-            "read_by_receiver_at",
-            "creation",
-        ],
+    return frappe.db.sql(
+        """
+        SELECT name, conversation, sender, message_type, content, ad, short, live,
+               reply_to_message, has_attachments, is_forwarded, forwarded_from_message,
+               forwarded_from_conversation, is_edited, edited_at, deleted_for_everyone,
+               deleted_for_everyone_at, deleted_for_1, deleted_for_1_at, deleted_for_2,
+               deleted_for_2_at, delivered_to_receiver_at, read_by_receiver_at, creation
+        FROM `tabAOS Message`
+        WHERE name IN %(message_ids)s
+        ORDER BY name ASC
+        """,
+        {"message_ids": tuple(sorted(set(message_ids)))},
+        as_dict=True,
     )
 
 
@@ -179,7 +168,7 @@ def delete_messages_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:chat:delete_messages:user:{current_user}",
+        key=rate_limit_key("chat", "delete_messages", current_user),
         ttl_seconds=60,
         limit=DELETE_MESSAGES_LIMIT_PER_MINUTE_PER_USER,
         message="Too many delete requests. Please slow down.",
@@ -229,6 +218,15 @@ def delete_messages_impl(**kwargs):
                 error="VALIDATION_ERROR",
             )
 
+        # Deterministic lock order: conversation first, then messages by id.
+        if conversation_id not in set(lock_conversations([conversation_id])):
+            return fail("Conversation not found.", error="NOT_FOUND")
+        locked_ids = set(lock_messages(message_ids))
+        if locked_ids != set(message_ids):
+            return fail("One or more messages were not found.", error="NOT_FOUND")
+
+        # Re-read under lock so validation and mutation use authoritative state.
+        messages = _fetch_messages(message_ids)
         conv = _get_conversation(conversation_id)
 
         if not conv:
@@ -337,7 +335,7 @@ def delete_messages_impl(**kwargs):
             ),
         }
 
-        frappe.publish_realtime(
+        publish_after_commit(
             event="aos_messages_deleted",
             message=realtime_payload,
             user=receiver,
@@ -353,13 +351,8 @@ def delete_messages_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Delete Messages Failed",
-        )
-        frappe.db.rollback()
+        frappe.log_error("Chat operation failed.", "AOS Delete Messages Failed")
         return fail("Failed to delete messages.", error="INTERNAL_ERROR")

@@ -21,7 +21,7 @@ from typing import Any, Dict
 
 import frappe
 
-from aos.services.sellers.identity import public_seller_id_for_name
+from aos.services.chat.shared_objects import fetch_chat_ad_previews
 
 from .visibility import (
     get_deleted_for_everyone_display_text,
@@ -32,79 +32,12 @@ from .visibility import (
 )
 
 
-def _get_ad_meta_fields() -> list[str]:
-    """
-    Build a safe list of AOS Ad fields to fetch.
-
-    This mirrors message.py behavior but keeps preview.py independent to avoid
-    circular imports.
-    """
-
-    fields = ["name"]
-
-    try:
-        meta = frappe.get_meta("AOS Ad")
-    except Exception:
-        return fields
-
-    possible_fields = [
-        "title",
-        "ad_title",
-        "name1",
-        "price",
-        "currency",
-        "status",
-        "seller",
-    ]
-
-    for fieldname in possible_fields:
-        if meta.has_field(fieldname):
-            fields.append(fieldname)
-
-    return fields
-
-
-def _fetch_ads_bulk(ad_ids: list[str]) -> Dict[str, Dict[str, Any]]:
-    """
-    Fetch minimal ad preview data for building conversation previews.
-    """
-
-    if not ad_ids:
-        return {}
-
-    unique_ad_ids = list({ad for ad in ad_ids if ad})
-
-    if not unique_ad_ids:
-        return {}
-
-    rows = frappe.get_all(
-        "AOS Ad",
-        filters={"name": ["in", unique_ad_ids]},
-        fields=_get_ad_meta_fields(),
-    )
-
-    result: Dict[str, Dict[str, Any]] = {}
-
-    for row in rows:
-        title = (
-            row.get("title")
-            or row.get("ad_title")
-            or row.get("name1")
-            or row.name
-        )
-
-        result[row.name] = {
-            "id": row.name,
-            "title": title,
-            "price": row.get("price"),
-            "currency": row.get("currency"),
-            "status": row.get("status"),
-            "seller": public_seller_id_for_name(row.get("seller")),
-            "seller_id": public_seller_id_for_name(row.get("seller")),
-        }
-
-    return result
-
+def _fetch_ads_bulk(
+    ad_ids: list[str],
+    *,
+    viewer: str | None = None,
+) -> Dict[str, Dict[str, Any]]:
+    return fetch_chat_ad_previews(ad_ids, viewer=viewer)
 
 def build_message_preview(
     msg,
@@ -136,6 +69,12 @@ def build_message_preview(
         title = ad_preview.get("title") if ad_preview else None
         return title or "[Ad]"
 
+    if getattr(msg, "short", None):
+        return "[Short]"
+
+    if getattr(msg, "live", None):
+        return "[Live]"
+
     if bool(getattr(msg, "has_attachments", 0)):
         return "[Attachment]"
 
@@ -156,49 +95,32 @@ def _get_latest_visible_message_for_user(
     """
 
     if user == conv.participant_1:
-        deleted_field = "deleted_for_1"
+        participant_index = 1
     elif user == conv.participant_2:
-        deleted_field = "deleted_for_2"
+        participant_index = 2
     else:
         return None
 
     rows = frappe.db.sql(
-        f"""
+        """
         SELECT
-            name,
-            conversation,
-            sender,
-            content,
-            message_type,
-            ad,
-            reply_to_message,
-            has_attachments,
-
-            is_forwarded,
-            forwarded_from_message,
-            forwarded_from_conversation,
-
-            is_edited,
-            edited_at,
-
-            deleted_for_everyone,
-            deleted_for_everyone_at,
-            deleted_for_1,
-            deleted_for_1_at,
-            deleted_for_2,
-            deleted_for_2_at,
-
-            delivered_to_receiver_at,
-            read_by_receiver_at,
-            creation
+            name, conversation, sender, content, message_type, ad, short, live,
+            reply_to_message, has_attachments,
+            is_forwarded, forwarded_from_message, forwarded_from_conversation,
+            is_edited, edited_at,
+            deleted_for_everyone, deleted_for_everyone_at,
+            deleted_for_1, deleted_for_1_at, deleted_for_2, deleted_for_2_at,
+            delivered_to_receiver_at, read_by_receiver_at, creation
         FROM `tabAOS Message`
-        WHERE
-            conversation = %(conversation_id)s
-            AND IFNULL({deleted_field}, 0) = 0
-        ORDER BY creation DESC
+        WHERE conversation = %(conversation_id)s
+          AND (
+                (%(participant_index)s = 1 AND IFNULL(deleted_for_1, 0) = 0)
+             OR (%(participant_index)s = 2 AND IFNULL(deleted_for_2, 0) = 0)
+          )
+        ORDER BY creation DESC, name DESC
         LIMIT 1
         """,
-        {"conversation_id": conversation_id},
+        {"conversation_id": conversation_id, "participant_index": participant_index},
         as_dict=True,
     )
 
@@ -253,7 +175,7 @@ def recompute_conversation_preview_for_user(
         )
         return
 
-    ad_map = _fetch_ads_bulk([latest.ad]) if latest.ad else {}
+    ad_map = _fetch_ads_bulk([latest.ad], viewer=user) if latest.ad else {}
 
     preview = build_message_preview(
         latest,

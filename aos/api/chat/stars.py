@@ -20,9 +20,10 @@ from typing import Any, Dict, List
 import frappe
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.public_errors import safe_fail_from_exception
+from aos.services.chat.repository import lock_conversations, lock_messages
 
 from .constants import (
     TOGGLE_MESSAGE_STAR_LIMIT_PER_MINUTE_PER_USER,
@@ -33,6 +34,8 @@ from .message import (
     _clean_int,
     _fetch_ads_bulk,
     _fetch_reply_messages_bulk,
+    _fetch_shorts_bulk,
+    _fetch_lives_bulk,
     _fetch_users,
     _is_deleted_for_everyone,
     _serialize_attachments_bulk,
@@ -61,6 +64,8 @@ def _get_message_with_conversation(message_id: str):
             m.content,
             m.message_type,
             m.ad,
+            m.short,
+            m.live,
             m.reply_to_message,
             m.has_attachments,
 
@@ -210,8 +215,23 @@ def _serialize_starred_messages(
     )
 
     attachments_map = _serialize_attachments_bulk(visible_message_ids, current_user=current_user)
-    user_map = _fetch_users(user_ids)
-    ad_map = _fetch_ads_bulk(ad_ids)
+    user_map = _fetch_users(user_ids, viewer=current_user)
+    ad_map = _fetch_ads_bulk(ad_ids, viewer=current_user)
+
+    short_ids = [
+        str(value) for value in [
+            *[getattr(m, "short", None) for m in messages if not _is_deleted_for_everyone(m)],
+            *[getattr(r, "short", None) for r in reply_map.values() if not _is_deleted_for_everyone(r)],
+        ] if value
+    ]
+    live_ids = [
+        str(value) for value in [
+            *[getattr(m, "live", None) for m in messages if not _is_deleted_for_everyone(m)],
+            *[getattr(r, "live", None) for r in reply_map.values() if not _is_deleted_for_everyone(r)],
+        ] if value
+    ]
+    short_map = _fetch_shorts_bulk(short_ids, viewer=current_user)
+    live_map = _fetch_lives_bulk(live_ids, viewer=current_user)
 
     results: List[Dict[str, Any]] = []
 
@@ -222,6 +242,8 @@ def _serialize_starred_messages(
                 attachments_map=attachments_map,
                 user_map=user_map,
                 ad_map=ad_map,
+                short_map=short_map,
+                live_map=live_map,
                 current_user=current_user,
                 reply_map=reply_map,
                 is_starred=msg.name in starred_ids,
@@ -239,7 +261,7 @@ def toggle_message_star_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:chat:star:toggle:user:{current_user}",
+        key=rate_limit_key("chat", "toggle_message_star", current_user),
         ttl_seconds=60,
         limit=TOGGLE_MESSAGE_STAR_LIMIT_PER_MINUTE_PER_USER,
         message="Too many star requests. Please slow down.",
@@ -253,6 +275,13 @@ def toggle_message_star_impl(**kwargs):
         return fail("message_id is required.", error="VALIDATION_ERROR")
 
     try:
+        conversation_id = frappe.db.get_value("AOS Message", message_id, "conversation")
+        if not conversation_id:
+            return fail("Message not found.", error="NOT_FOUND")
+        lock_conversations([conversation_id])
+        if message_id not in set(lock_messages([message_id])):
+            return fail("Message not found.", error="NOT_FOUND")
+
         msg = _get_message_with_conversation(message_id)
 
         if not msg:
@@ -299,7 +328,6 @@ def toggle_message_star_impl(**kwargs):
         )
 
     except frappe.DuplicateEntryError:
-        frappe.db.rollback()
 
         return ok(
             "Message already starred.",
@@ -310,49 +338,38 @@ def toggle_message_star_impl(**kwargs):
         )
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Toggle Message Star Failed",
-        )
-        frappe.db.rollback()
+        frappe.log_error("Chat operation failed.", "AOS Toggle Message Star Failed")
         return fail("Failed to update message star.", error="INTERNAL_ERROR")
 
 
-def _get_before_star_creation(*, before: str | None, current_user: str):
-    """
-    Resolve pagination cursor.
+def _get_before_star_cursor(*, before: str | None, current_user: str):
+    """Resolve a deterministic starred-message cursor.
 
-    Supports:
-    - before = AOS Message Star name
-    - before = AOS Message name
+    Backward compatibility accepts either the private star row name previously
+    returned by this endpoint or the public message id. The cursor itself is
+    resolved server-side to (creation, name), so values are never interpolated.
     """
 
     if not before:
         return None
 
-    star_creation = frappe.db.get_value(
+    row = frappe.db.get_value(
         "AOS Message Star",
-        {
-            "name": before,
-            "user": current_user,
-        },
-        "creation",
+        {"name": before, "user": current_user},
+        ["creation", "name"],
+        as_dict=True,
     )
-
-    if star_creation:
-        return star_creation
+    if row:
+        return row
 
     return frappe.db.get_value(
         "AOS Message Star",
-        {
-            "message": before,
-            "user": current_user,
-        },
-        "creation",
+        {"message": before, "user": current_user},
+        ["creation", "name"],
+        as_dict=True,
     )
 
 
@@ -362,7 +379,7 @@ def list_starred_messages_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:chat:star:list:user:{current_user}",
+        key=rate_limit_key("chat", "list_starred_messages", current_user),
         ttl_seconds=60,
         limit=LIST_STARRED_MESSAGES_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
@@ -381,79 +398,48 @@ def list_starred_messages_impl(**kwargs):
     before = kwargs.get("before")
 
     try:
-        filters_sql = [
-            "s.user = %(current_user)s",
-            """
-            (
-                (c.participant_1 = %(current_user)s AND IFNULL(m.deleted_for_1, 0) = 0)
-                OR
-                (c.participant_2 = %(current_user)s AND IFNULL(m.deleted_for_2, 0) = 0)
-            )
-            """,
-        ]
-
-        params: Dict[str, Any] = {
-            "current_user": current_user,
-            "limit": limit,
-        }
-
-        if conversation_id:
-            filters_sql.append("s.conversation = %(conversation_id)s")
-            params["conversation_id"] = conversation_id
-
-        before_creation = _get_before_star_creation(
+        before_cursor = _get_before_star_cursor(
             before=before,
             current_user=current_user,
         )
+        if before and not before_cursor:
+            return fail("Invalid 'before' cursor.", error="VALIDATION_ERROR")
 
-        if before:
-            if not before_creation:
-                return fail("Invalid 'before' cursor.", error="VALIDATION_ERROR")
-
-            filters_sql.append("s.creation < %(before_creation)s")
-            params["before_creation"] = before_creation
-
-        where_clause = " AND ".join(filters_sql)
+        params: Dict[str, Any] = {
+            "current_user": current_user,
+            "conversation_id": conversation_id or None,
+            "before_creation": before_cursor.creation if before_cursor else None,
+            "before_name": before_cursor.name if before_cursor else None,
+            "limit": limit,
+        }
 
         messages = frappe.db.sql(
-            f"""
+            """
             SELECT
-                m.name,
-                m.conversation,
-                m.sender,
-                m.content,
-                m.message_type,
-                m.ad,
-                m.reply_to_message,
-                m.has_attachments,
-
-                m.is_forwarded,
-                m.forwarded_from_message,
-                m.forwarded_from_conversation,
-
-                m.is_edited,
-                m.edited_at,
-
-                m.deleted_for_everyone,
-                m.deleted_for_everyone_at,
-                m.deleted_for_1,
-                m.deleted_for_1_at,
-                m.deleted_for_2,
-                m.deleted_for_2_at,
-
-                m.delivered_to_receiver_at,
-                m.read_by_receiver_at,
-                m.creation,
-
-                s.name AS star_id,
-                s.creation AS starred_at
+                m.name, m.conversation, m.sender, m.content, m.message_type,
+                m.ad, m.short, m.live, m.reply_to_message, m.has_attachments,
+                m.is_forwarded, m.forwarded_from_message, m.forwarded_from_conversation,
+                m.is_edited, m.edited_at,
+                m.deleted_for_everyone, m.deleted_for_everyone_at,
+                m.deleted_for_1, m.deleted_for_1_at,
+                m.deleted_for_2, m.deleted_for_2_at,
+                m.delivered_to_receiver_at, m.read_by_receiver_at, m.creation,
+                s.name AS star_id, s.creation AS starred_at
             FROM `tabAOS Message Star` s
-            INNER JOIN `tabAOS Message` m
-                ON m.name = s.message
-            INNER JOIN `tabAOS Conversation` c
-                ON c.name = s.conversation
-            WHERE {where_clause}
-            ORDER BY s.creation DESC
+            INNER JOIN `tabAOS Message` m ON m.name = s.message
+            INNER JOIN `tabAOS Conversation` c ON c.name = s.conversation
+            WHERE s.user = %(current_user)s
+              AND (
+                    (c.participant_1 = %(current_user)s AND IFNULL(m.deleted_for_1, 0) = 0)
+                 OR (c.participant_2 = %(current_user)s AND IFNULL(m.deleted_for_2, 0) = 0)
+              )
+              AND (%(conversation_id)s IS NULL OR s.conversation = %(conversation_id)s)
+              AND (
+                    %(before_creation)s IS NULL
+                 OR s.creation < %(before_creation)s
+                 OR (s.creation = %(before_creation)s AND s.name < %(before_name)s)
+              )
+            ORDER BY s.creation DESC, s.name DESC
             LIMIT %(limit)s
             """,
             params,
@@ -475,8 +461,5 @@ def list_starred_messages_impl(**kwargs):
         return ok("Starred messages fetched.", data=results)
 
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS List Starred Messages Failed",
-        )
+        frappe.log_error("Chat operation failed.", "AOS List Starred Messages Failed")
         return fail("Failed to fetch starred messages.", error="INTERNAL_ERROR")

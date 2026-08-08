@@ -24,7 +24,7 @@ import frappe
 from frappe.utils import now_datetime
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.public_errors import safe_fail_from_exception
 
@@ -33,6 +33,8 @@ from .constants import EDIT_MESSAGE_LIMIT_PER_MINUTE_PER_USER
 from .message import (
     _fetch_ads_bulk,
     _fetch_reply_messages_bulk,
+    _fetch_shorts_bulk,
+    _fetch_lives_bulk,
     _fetch_users,
     _get_receiver,
     _is_deleted_for_everyone,
@@ -41,6 +43,8 @@ from .message import (
 )
 
 from .preview import recompute_conversation_previews
+from aos.services.chat.events import publish_after_commit
+from aos.services.chat.repository import lock_conversations, lock_messages
 from .visibility import get_deleted_for_user_field
 
 
@@ -65,6 +69,8 @@ def _get_message_for_edit(message_id: str):
             m.content,
             m.message_type,
             m.ad,
+            m.short,
+            m.live,
             m.reply_to_message,
             m.has_attachments,
 
@@ -142,14 +148,30 @@ def _serialize_edited_message(
         if replied.ad and not _is_deleted_for_everyone(replied):
             ad_ids.append(replied.ad)
 
-    user_map = _fetch_users(user_ids)
-    ad_map = _fetch_ads_bulk(ad_ids)
+    user_map = _fetch_users(user_ids, viewer=current_user)
+    ad_map = _fetch_ads_bulk(ad_ids, viewer=current_user)
+
+    short_ids: List[str] = []
+    live_ids: List[str] = []
+    if getattr(msg, "short", None) and not _is_deleted_for_everyone(msg):
+        short_ids.append(msg.short)
+    if getattr(msg, "live", None) and not _is_deleted_for_everyone(msg):
+        live_ids.append(msg.live)
+    for replied in reply_map.values():
+        if _is_deleted_for_everyone(replied):
+            continue
+        if getattr(replied, "short", None):
+            short_ids.append(replied.short)
+        if getattr(replied, "live", None):
+            live_ids.append(replied.live)
 
     return _serialize_message(
         msg,
         attachments_map=attachments_map,
         user_map=user_map,
         ad_map=ad_map,
+        short_map=_fetch_shorts_bulk(short_ids, viewer=current_user),
+        live_map=_fetch_lives_bulk(live_ids, viewer=current_user),
         current_user=current_user,
         reply_map=reply_map,
         is_starred=False,
@@ -164,7 +186,7 @@ def edit_message_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:chat:edit:user:{current_user}",
+        key=rate_limit_key("chat", "edit_message", current_user),
         ttl_seconds=60,
         limit=EDIT_MESSAGE_LIMIT_PER_MINUTE_PER_USER,
         message="Too many edit requests. Please slow down.",
@@ -182,8 +204,15 @@ def edit_message_impl(**kwargs):
         return fail("content is required.", error="VALIDATION_ERROR")
 
     try:
-        rows = _get_message_for_edit(message_id)
+        conversation_id = frappe.db.get_value("AOS Message", message_id, "conversation")
+        if not conversation_id:
+            return fail("Message not found.", error="NOT_FOUND")
 
+        lock_conversations([conversation_id])
+        if message_id not in set(lock_messages([message_id])):
+            return fail("Message not found.", error="NOT_FOUND")
+
+        rows = _get_message_for_edit(message_id)
         if not rows:
             return fail("Message not found.", error="NOT_FOUND")
 
@@ -273,7 +302,7 @@ def edit_message_impl(**kwargs):
             "message": serialized_for_receiver,
         }
 
-        frappe.publish_realtime(
+        publish_after_commit(
             event="aos_message_edited",
             message=realtime_payload,
             user=receiver,
@@ -282,13 +311,8 @@ def edit_message_impl(**kwargs):
         return ok("Message edited.", data=serialized_for_sender)
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Edit Message Failed",
-        )
-        frappe.db.rollback()
+        frappe.log_error("Chat operation failed.", "AOS Edit Message Failed")
         return fail("Failed to edit message.", error="INTERNAL_ERROR")

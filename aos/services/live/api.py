@@ -112,7 +112,7 @@ def run_live_api(
         clean = validate_public_kwargs(kwargs, spec)
     except LiveError as exc:
         live_log(operation_name, outcome="rejected", reason=_reason(exc.code))
-        return fail(str(exc), error=exc.code, data=exc.data, http_status=exc.http_status)
+        return fail(exc.public_message, error=exc.code, data=exc.data, http_status=exc.http_status)
 
     savepoint = f"aos_live_{uuid.uuid4().hex[:16]}" if transactional else None
     callbacks = _snapshot_callbacks() if transactional else {}
@@ -135,7 +135,7 @@ def run_live_api(
         if savepoint:
             _rollback(savepoint, callbacks, outbox_flag)
         live_log(operation_name, outcome="rejected", reason=_reason(exc.code))
-        return fail(str(exc), error=exc.code, data=exc.data, http_status=exc.http_status)
+        return fail(exc.public_message, error=exc.code, data=exc.data, http_status=exc.http_status)
     except Exception:
         if savepoint:
             _rollback(savepoint, callbacks, outbox_flag)

@@ -8,19 +8,23 @@ Handles:
 
 from __future__ import annotations
 
+import hashlib
+
 from typing import Any, Dict, List
 
 import frappe
 from frappe.utils import now_datetime
 
-from aos.services.sellers.identity import public_seller_id_for_name
-
 from aos.api.shared.auth import require_login
-from aos.api.shared.blocking import ensure_not_blocked
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.blocking import ensure_not_blocked, get_blocked_user_set
+from aos.api.shared.account_status import ensure_account_active
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.user_display import get_user_display_map
+from aos.services.accounts.constants import ACCOUNT_STATUS_ACTIVE
+from aos.services.live.errors import LiveError
+from aos.services.live.policy import LivePolicy
 
 from aos.services.notification_service import NotificationService
 from aos.services.media.media_service import (
@@ -32,18 +36,19 @@ from aos.services.media.media_service import (
 from aos.services.seller_response_metrics import (
     enqueue_conversation_response_metrics_refresh,
 )
+from aos.services.chat.events import publish_after_commit
+from aos.services.chat.shared_objects import ad_is_shareable_to_users, fetch_chat_ad_previews
 
 from .constants import (
     SEND_MESSAGE_LIMIT_PER_MINUTE_PER_USER,
     LIST_MESSAGES_LIMIT_PER_MINUTE_PER_USER,
 )
 
-from .presence import publish_presence_update_to_peers
+from .presence import schedule_presence_update_to_peers
 from .preview import set_conversation_preview_for_new_message
 from .reactions import fetch_message_reaction_summaries, fetch_my_reactions
 from .visibility import (
     get_deleted_for_everyone_display_text,
-    get_user_delete_sql_condition,
 )
 
 
@@ -67,13 +72,17 @@ def _clean_int(value, default: int, *, min_value: int, max_value: int) -> int:
     return parsed
 
 
-def _get_conversation_row(conv_id: str):
-    return frappe.db.get_value(
-        "AOS Conversation",
-        conv_id,
-        ["name", "participant_1", "participant_2"],
-        as_dict=True,
-    )
+def _get_conversation_row(conv_id: str, *, lock: bool = False):
+    query = """
+        SELECT name, participant_1, participant_2
+        FROM `tabAOS Conversation`
+        WHERE name = %(conversation_id)s
+        LIMIT 1
+    """
+    if lock:
+        query += " FOR UPDATE"
+    rows = frappe.db.sql(query, {"conversation_id": conv_id}, as_dict=True)
+    return rows[0] if rows else None
 
 
 def _validate_sender(conv, sender: str) -> bool:
@@ -88,10 +97,27 @@ def _get_receiver(conv, sender: str) -> str:
     )
 
 
-def _fetch_users(users: List[str]) -> Dict[str, dict]:
-    """Fetch display-safe user summaries for messages."""
+def _fetch_users(users: List[str], *, viewer: str | None = None) -> Dict[str, dict]:
+    """Fetch display-safe identities and suppress Live presence across blocks."""
 
-    return get_user_display_map(users)
+    result = get_user_display_map(users)
+    if not viewer or not result:
+        return result
+    blocked = get_blocked_user_set(viewer, result.keys())
+    for internal_user in blocked:
+        payload = result.get(internal_user)
+        if not payload:
+            continue
+        payload["is_live"] = False
+        payload["live_id"] = None
+        payload["live_status"] = None
+        payload["live_title"] = None
+        payload["live_cover_image"] = None
+        payload["live_cover_media"] = None
+        payload["live_cover_media_id"] = None
+        payload["live_started_at"] = None
+        payload["live_viewer_count"] = 0
+    return result
 
 
 def _serialize_user(user_id: str, user_map: Dict[str, dict]) -> Dict[str, Any]:
@@ -218,10 +244,7 @@ def _serialize_attachments_bulk(
                 # If a stale/invalid media row slips through, skip exposing it.
                 continue
             except Exception:
-                frappe.log_error(
-                    frappe.get_traceback(),
-                    "AOS Chat Attachment Media URL Failed",
-                )
+                frappe.log_error("Chat operation failed.", "AOS Chat Attachment Media URL Failed")
                 continue
 
     for row in rows:
@@ -265,149 +288,20 @@ def _serialize_attachments_bulk(
     return grouped
 
 
-def _get_ad_meta_fields() -> List[str]:
-    """
-    Build a safe list of AOS Ad fields to fetch.
-
-    This avoids breaking if a field name differs between environments.
-    """
-
-    fields = ["name"]
-
-    try:
-        meta = frappe.get_meta("AOS Ad")
-    except Exception:
-        return fields
-
-    possible_fields = [
-        "title",
-        "ad_title",
-        "name1",
-        "price",
-        "currency",
-        "status",
-        "seller",
-    ]
-
-    for fieldname in possible_fields:
-        if meta.has_field(fieldname):
-            fields.append(fieldname)
-
-    return fields
+def _fetch_ads_bulk(
+    ad_ids: List[str],
+    *,
+    viewer: str | None = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Fetch privacy-safe active Ad previews in one bounded batch."""
+    return fetch_chat_ad_previews(ad_ids, viewer=viewer)
 
 
-def _fetch_ad_thumbnails(ad_ids: List[str]) -> Dict[str, str | None]:
-    """
-    Fetch primary/first thumbnail for ads.
-
-    Uses AOS Ad Image child table, same idea as Shorts:
-    primary image first, then sort_order, then idx.
-    """
-
-    if not ad_ids:
-        return {}
-
-    unique_ad_ids = list({ad for ad in ad_ids if ad})
-
-    if not unique_ad_ids:
-        return {}
-
-    rows = frappe.db.sql(
-        """
-        SELECT
-            adi.parent AS ad,
-            adi.image AS image
-        FROM `tabAOS Ad Image` adi
-        INNER JOIN (
-            SELECT
-                ranked.parent,
-                MIN(ranked.rank_key) AS best_rank
-            FROM (
-                SELECT
-                    parent,
-                    CONCAT(
-                        LPAD(CASE WHEN IFNULL(is_primary, 0) = 1 THEN 0 ELSE 1 END, 2, '0'),
-                        '-',
-                        LPAD(IFNULL(sort_order, 999999), 8, '0'),
-                        '-',
-                        LPAD(IFNULL(idx, 999999), 8, '0')
-                    ) AS rank_key
-                FROM `tabAOS Ad Image`
-                WHERE
-                    parent IN %(ad_ids)s
-                    AND parenttype = 'AOS Ad'
-                    AND parentfield = 'images'
-                    AND image IS NOT NULL
-                    AND image != ''
-            ) ranked
-            GROUP BY ranked.parent
-        ) best
-            ON best.parent = adi.parent
-            AND CONCAT(
-                LPAD(CASE WHEN IFNULL(adi.is_primary, 0) = 1 THEN 0 ELSE 1 END, 2, '0'),
-                '-',
-                LPAD(IFNULL(adi.sort_order, 999999), 8, '0'),
-                '-',
-                LPAD(IFNULL(adi.idx, 999999), 8, '0')
-            ) = best.best_rank
-        WHERE
-            adi.parent IN %(ad_ids)s
-            AND adi.parenttype = 'AOS Ad'
-            AND adi.parentfield = 'images'
-        """,
-        {"ad_ids": tuple(unique_ad_ids)},
-        as_dict=True,
-    )
-
-    return {row.ad: row.image for row in rows}
-
-
-def _fetch_ads_bulk(ad_ids: List[str]) -> Dict[str, Dict[str, Any]]:
-    """
-    Fetch lightweight ad previews in bulk.
-    """
-
-    if not ad_ids:
-        return {}
-
-    unique_ad_ids = list({ad for ad in ad_ids if ad})
-
-    if not unique_ad_ids:
-        return {}
-
-    fields = _get_ad_meta_fields()
-
-    rows = frappe.get_all(
-        "AOS Ad",
-        filters={"name": ["in", unique_ad_ids]},
-        fields=fields,
-    )
-
-    thumbnails = _fetch_ad_thumbnails(unique_ad_ids)
-
-    result: Dict[str, Dict[str, Any]] = {}
-
-    for row in rows:
-        title = (
-            row.get("title")
-            or row.get("ad_title")
-            or row.get("name1")
-            or row.name
-        )
-
-        result[row.name] = {
-            "id": row.name,
-            "title": title,
-            "price": row.get("price"),
-            "currency": row.get("currency"),
-            "status": row.get("status"),
-            "seller": public_seller_id_for_name(row.get("seller")),
-            "seller_id": public_seller_id_for_name(row.get("seller")),
-            "thumbnail": thumbnails.get(row.name),
-        }
-
-    return result
-
+def _ad_unavailable_payload(ad_id: str | None, ad_map: Dict[str, Dict[str, Any]]):
+    if not ad_id:
+        return {"ad_preview": None, "ad_unavailable": False}
+    preview = ad_map.get(ad_id)
+    return {"ad_preview": preview, "ad_unavailable": preview is None}
 
 def _fetch_shorts_bulk(
     short_ids: List[str],
@@ -441,6 +335,7 @@ def _fetch_shorts_bulk(
             "duration_seconds",
             "status",
             "visibility_status",
+            "approval_status",
             "audience",
             "like_count",
             "comment_count",
@@ -449,27 +344,37 @@ def _fetch_shorts_bulk(
         ],
     )
 
+    # Use the canonical Shorts batch policy so chat-history serialization does
+    # not perform account/relationship queries once per referenced Short.
+    # Keep the import local to preserve the existing chat/shorts import boundary.
+    from aos.services.shorts.policy import filter_viewable_rows
+
+    raw_rows = [dict(row) for row in rows]
+    visible_rows = filter_viewable_rows(raw_rows, viewer=viewer)
+    owner_map = _fetch_users(
+        [row.get("owner") for row in visible_rows if row.get("owner")],
+        viewer=viewer,
+    )
     result: Dict[str, Dict[str, Any]] = {}
-    for row in rows:
-        if row.status != "ready" or row.visibility_status != "visible":
-            continue
-
-        if not _can_view_short(row, current_user=viewer):
-            continue
-
-        result[row.name] = {
-            "id": row.name,
-            "owner": row.owner,
-            "caption": row.caption or "",
-            "thumbnail_url": row.thumbnail_url,
-            "playback_url": row.playback_url,
-            "duration_seconds": row.duration_seconds,
-            "status": row.status,
-            "visibility_status": row.visibility_status,
-            "like_count": row.like_count or 0,
-            "comment_count": row.comment_count or 0,
-            "share_count": row.share_count or 0,
-            "repost_count": row.repost_count or 0,
+    for row in visible_rows:
+        owner_id = row.get("owner")
+        owner = owner_map.get(owner_id) or {}
+        result[row.get("name")] = {
+            "id": row.get("name"),
+            "owner": owner.get("user"),
+            "owner_account_id": owner.get("account_id") or owner.get("user"),
+            "owner_display_name": owner.get("display_name"),
+            "owner_avatar": owner.get("avatar"),
+            "caption": row.get("caption") or "",
+            "thumbnail_url": row.get("thumbnail_url"),
+            "playback_url": row.get("playback_url"),
+            "duration_seconds": row.get("duration_seconds"),
+            "status": row.get("status"),
+            "visibility_status": row.get("visibility_status"),
+            "like_count": row.get("like_count") or 0,
+            "comment_count": row.get("comment_count") or 0,
+            "share_count": row.get("share_count") or 0,
+            "repost_count": row.get("repost_count") or 0,
         }
 
     return result
@@ -553,6 +458,168 @@ def _short_unavailable_payload(short_id: str | None, short_map: Dict[str, Dict[s
     }
 
 
+def _fetch_lives_bulk(
+    live_ids: List[str],
+    *,
+    viewer: str | None = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Fetch privacy-safe Live previews in one bounded batch.
+
+    The preview intentionally omits room names, tokens, session identifiers,
+    internal User values and moderation state. Ended Lives remain representable
+    in chat history when the viewer still has access.
+    """
+    unique_ids = list({str(live_id).strip() for live_id in live_ids if live_id})
+    if not unique_ids:
+        return {}
+
+    rows = frappe.db.sql(
+        """
+        SELECT l.name, l.host_user, l.title, l.cover_image, l.live_cover_media,
+               l.status, l.is_active, l.viewer_count, l.started_at, l.ended_at,
+               COALESCE(u.enabled, 0) AS host_enabled,
+               COALESCE(NULLIF(p.account_status, ''), %(active)s) AS account_status,
+               COALESCE(p.is_deleted, 0) AS host_deleted
+        FROM `tabAOS Live Stream` l
+        LEFT JOIN `tabUser` u ON u.name = l.host_user
+        LEFT JOIN `tabAOS Profile` p ON p.user = l.host_user
+        WHERE l.name IN %(live_ids)s
+        """,
+        {"live_ids": tuple(unique_ids), "active": ACCOUNT_STATUS_ACTIVE},
+        as_dict=True,
+    )
+    hosts = [str(row.host_user) for row in rows if row.host_user]
+    blocked = get_blocked_user_set(viewer, hosts) if viewer else set()
+    user_map = get_user_display_map(hosts)
+
+    media_ids = [str(row.live_cover_media) for row in rows if row.live_cover_media]
+    try:
+        media_urls = MediaService().get_public_url_map(media_ids) if media_ids else {}
+    except Exception:
+        media_urls = {}
+
+    result: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        host = str(row.host_user or "")
+        if not host or host in blocked:
+            continue
+        if int(row.host_enabled or 0) != 1 or bool(int(row.host_deleted or 0)):
+            continue
+        if str(row.account_status or ACCOUNT_STATUS_ACTIVE) != ACCOUNT_STATUS_ACTIVE:
+            continue
+        display = user_map.get(host) or {}
+        if bool(display.get("is_deleted")) or bool(display.get("is_deactivated")):
+            continue
+        cover = row.cover_image
+        if not cover and row.live_cover_media:
+            cover = media_urls.get(str(row.live_cover_media))
+        result[str(row.name)] = {
+            "id": str(row.name),
+            "live_id": str(row.name),
+            "title": str(row.title or "Live"),
+            "cover_image": cover or None,
+            "status": str(row.status or ""),
+            "is_live": bool(row.is_active) and str(row.status or "") == "live",
+            "viewer_count": max(0, int(row.viewer_count or 0)),
+            "started_at": row.started_at,
+            "ended_at": row.ended_at,
+            "host": {
+                "account_id": display.get("account_id") or display.get("user"),
+                "user": display.get("user"),
+                "display_name": display.get("display_name") or "AOS User",
+                "avatar": display.get("avatar"),
+            },
+        }
+    return result
+
+
+def _live_unavailable_payload(live_id: str | None, live_map: Dict[str, Dict[str, Any]]):
+    if not live_id:
+        return {"live_preview": None, "live_unavailable": False}
+    preview = live_map.get(live_id)
+    return {"live_preview": preview, "live_unavailable": preview is None}
+
+
+def _validate_live_reference(
+    live: str | None,
+    *,
+    viewer: str | None = None,
+    recipients: List[str] | None = None,
+    require_active: bool = False,
+):
+    """Validate a native Live reference without exposing private Live state."""
+    if not live:
+        return None
+    row = frappe.db.get_value(
+        "AOS Live Stream",
+        live,
+        ["name", "host_user", "status", "is_active"],
+        as_dict=True,
+    )
+    if not row:
+        return fail("Live is not available.", error="NOT_FOUND", http_status=404)
+    if require_active and (str(row.status or "") != "live" or not bool(row.is_active)):
+        return fail("Live is not available.", error="NOT_FOUND", http_status=404)
+    audience = [user for user in [viewer, *(recipients or [])] if user]
+    policy = LivePolicy()
+    try:
+        for user in audience:
+            policy.lock_relationship(host_user=str(row.host_user), viewer=user)
+            policy.require_view_access(host_user=str(row.host_user), viewer=user)
+            if not _fetch_lives_bulk([live], viewer=user).get(live):
+                return fail("Live is not available.", error="NOT_FOUND", http_status=404)
+    except LiveError:
+        return fail("Live is not available.", error="NOT_FOUND", http_status=404)
+    return None
+
+
+def _message_idempotency_digest(*, sender: str, conversation_id: str, key: str | None, operation: str = "send") -> str | None:
+    raw = str(key or "").strip()
+    if not raw:
+        return None
+    material = "\x1f".join(["chat", operation, str(conversation_id), str(sender), raw])
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _get_idempotent_message(*, digest: str | None):
+    if not digest:
+        return None
+    name = frappe.db.get_value("AOS Message", {"idempotency_key": digest}, "name")
+    return frappe.get_doc("AOS Message", name) if name else None
+
+
+def _serialize_existing_message_for_viewer(existing, *, current_user: str) -> Dict[str, Any]:
+    reply_map = _fetch_reply_messages_bulk(
+        [existing.reply_to_message] if getattr(existing, "reply_to_message", None) else []
+    )
+    user_ids = [existing.sender] + [row.sender for row in reply_map.values() if row.sender]
+    ad_ids = [value for value in [getattr(existing, "ad", None)] if value]
+    short_ids = [value for value in [getattr(existing, "short", None)] if value]
+    live_ids = [value for value in [getattr(existing, "live", None)] if value]
+    for row in reply_map.values():
+        if _is_deleted_for_everyone(row):
+            continue
+        if getattr(row, "ad", None):
+            ad_ids.append(row.ad)
+        if getattr(row, "short", None):
+            short_ids.append(row.short)
+        if getattr(row, "live", None):
+            live_ids.append(row.live)
+    return _serialize_message(
+        existing,
+        attachments_map=_serialize_attachments_bulk([existing.name], current_user=current_user),
+        user_map=_fetch_users(user_ids, viewer=current_user),
+        ad_map=_fetch_ads_bulk(ad_ids, viewer=current_user),
+        short_map=_fetch_shorts_bulk(short_ids, viewer=current_user),
+        live_map=_fetch_lives_bulk(live_ids, viewer=current_user),
+        current_user=current_user,
+        reply_map=reply_map,
+        is_starred=False,
+        reactions=[],
+        my_reaction=None,
+    )
+
+
 def _fetch_reply_messages_bulk(
     reply_message_ids: List[str],
 ) -> Dict[str, frappe._dict]:
@@ -580,6 +647,7 @@ def _fetch_reply_messages_bulk(
             "message_type",
             "ad",
             "short",
+            "live",
             "has_attachments",
             "is_forwarded",
             "forwarded_from_message",
@@ -641,19 +709,20 @@ def _viewer_state(
     }
 
 
-def _validate_ad_reference(ad: str | None):
-    """
-    Validate ad reference only when provided.
-    """
-
+def _validate_ad_reference(
+    ad: str | None,
+    *,
+    viewer: str | None = None,
+    recipients: List[str] | None = None,
+):
+    """Validate an Ad through the same active/block-aware marketplace policy."""
     if not ad:
         return None
-
-    if not frappe.db.exists("AOS Ad", ad):
-        return fail("Invalid ad reference.", error="VALIDATION_ERROR")
-
+    audience = [user for user in [viewer, *(recipients or [])] if user]
+    if not ad_is_shareable_to_users(ad, users=audience):
+        # Deliberately non-enumerating for inactive, expired, blocked or missing Ads.
+        return fail("Ad is not available.", error="NOT_FOUND", http_status=404)
     return None
-
 
 def _validate_reply_to_message(
     *,
@@ -694,6 +763,7 @@ def _determine_message_type(
     attachments: List[Dict],
     ad: str | None,
     short: str | None = None,
+    live: str | None = None,
 ) -> str:
     """
     Determine message type.
@@ -719,6 +789,9 @@ def _determine_message_type(
     if short:
         parts += 1
 
+    if live:
+        parts += 1
+
     if parts > 1:
         return "mixed"
 
@@ -727,6 +800,9 @@ def _determine_message_type(
 
     if short:
         return "short"
+
+    if live:
+        return "live"
 
     if attachments:
         return "media"
@@ -740,8 +816,10 @@ def _message_preview(
     has_attachments: int,
     ad: str | None,
     short: str | None = None,
+    live: str | None = None,
     ad_preview: Dict[str, Any] | None = None,
     short_preview: Dict[str, Any] | None = None,
+    live_preview: Dict[str, Any] | None = None,
 ) -> str:
     """
     Build last_message / notification preview.
@@ -757,6 +835,10 @@ def _message_preview(
     if short:
         caption = short_preview.get("caption") if short_preview else None
         return caption or "[Short]"
+
+    if live:
+        title = live_preview.get("title") if live_preview else None
+        return title or "[Live]"
 
     if has_attachments:
         return "[Attachment]"
@@ -798,9 +880,13 @@ def _build_deleted_message_payload(
         "original_message_type": msg.message_type,
         "ad": None,
         "ad_preview": None,
+        "ad_unavailable": False,
         "short": None,
         "short_preview": None,
         "short_unavailable": False,
+        "live": None,
+        "live_preview": None,
+        "live_unavailable": False,
         "reply_to_message": getattr(msg, "reply_to_message", None),
         "reply_to": None,
         "has_attachments": 0,
@@ -838,6 +924,7 @@ def _build_reply_payload(
     user_map: Dict[str, frappe._dict],
     ad_map: Dict[str, Dict[str, Any]],
     short_map: Dict[str, Dict[str, Any]] | None = None,
+    live_map: Dict[str, Dict[str, Any]] | None = None,
     current_user: str = "",
 ) -> Dict[str, Any] | None:
     """
@@ -848,6 +935,7 @@ def _build_reply_payload(
         return None
 
     short_map = short_map or {}
+    live_map = live_map or {}
 
     replied = reply_map.get(reply_to_message)
     if not replied:
@@ -866,9 +954,13 @@ def _build_reply_payload(
             "original_message_type": replied.message_type,
             "ad": None,
             "ad_preview": None,
+            "ad_unavailable": False,
             "short": None,
             "short_preview": None,
             "short_unavailable": False,
+            "live": None,
+            "live_preview": None,
+            "live_unavailable": False,
             "has_attachments": 0,
             "is_forwarded": getattr(replied, "is_forwarded", 0) or 0,
             "forwarded_from_message": getattr(
@@ -897,7 +989,10 @@ def _build_reply_payload(
         }
 
     short_id = getattr(replied, "short", None)
+    ad_payload = _ad_unavailable_payload(getattr(replied, "ad", None), ad_map)
     short_payload = _short_unavailable_payload(short_id, short_map)
+    live_id = getattr(replied, "live", None)
+    live_payload = _live_unavailable_payload(live_id, live_map)
 
     return {
         "id": replied.name,
@@ -907,10 +1002,14 @@ def _build_reply_payload(
         "content": replied.content,
         "message_type": replied.message_type,
         "ad": replied.ad,
-        "ad_preview": ad_map.get(replied.ad) if replied.ad else None,
+        "ad_preview": ad_payload["ad_preview"],
+        "ad_unavailable": ad_payload["ad_unavailable"],
         "short": short_id,
         "short_preview": short_payload["short_preview"],
         "short_unavailable": short_payload["short_unavailable"],
+        "live": live_id,
+        "live_preview": live_payload["live_preview"],
+        "live_unavailable": live_payload["live_unavailable"],
         "has_attachments": replied.has_attachments or 0,
         "is_forwarded": getattr(replied, "is_forwarded", 0) or 0,
         "forwarded_from_message": getattr(replied, "forwarded_from_message", None),
@@ -935,6 +1034,7 @@ def _serialize_message(
     user_map: Dict[str, frappe._dict],
     ad_map: Dict[str, Dict[str, Any]],
     short_map: Dict[str, Dict[str, Any]] | None = None,
+    live_map: Dict[str, Dict[str, Any]] | None = None,
     current_user: str = "",
     reply_map: Dict[str, frappe._dict] | None = None,
     is_starred: bool = False,
@@ -946,6 +1046,7 @@ def _serialize_message(
     """
 
     short_map = short_map or {}
+    live_map = live_map or {}
 
     user_payload = _serialize_user(msg.sender, user_map)
 
@@ -965,11 +1066,15 @@ def _serialize_message(
         user_map=user_map,
         ad_map=ad_map,
         short_map=short_map,
+        live_map=live_map,
         current_user=current_user,
     )
 
     short_id = getattr(msg, "short", None)
+    ad_payload = _ad_unavailable_payload(getattr(msg, "ad", None), ad_map)
     short_payload = _short_unavailable_payload(short_id, short_map)
+    live_id = getattr(msg, "live", None)
+    live_payload = _live_unavailable_payload(live_id, live_map)
 
     return {
         "id": msg.name,
@@ -979,10 +1084,14 @@ def _serialize_message(
         "content": msg.content,
         "message_type": msg.message_type,
         "ad": msg.ad,
-        "ad_preview": ad_map.get(msg.ad) if msg.ad else None,
+        "ad_preview": ad_payload["ad_preview"],
+        "ad_unavailable": ad_payload["ad_unavailable"],
         "short": short_id,
         "short_preview": short_payload["short_preview"],
         "short_unavailable": short_payload["short_unavailable"],
+        "live": live_id,
+        "live_preview": live_payload["live_preview"],
+        "live_unavailable": live_payload["live_unavailable"],
         "reply_to_message": reply_to_message,
         "reply_to": reply_to,
         "has_attachments": msg.has_attachments or 0,
@@ -1076,27 +1185,19 @@ def _prepare_chat_attachments(
     return prepared, None
 
 
-# send_message
-def send_message_impl(**kwargs):
-    current_user, err = require_login()
-    if err:
-        return err
-
-    rl = rate_limit(
-        key=f"aos:chat:send:user:{current_user}",
-        ttl_seconds=60,
-        limit=SEND_MESSAGE_LIMIT_PER_MINUTE_PER_USER,
-        message="Too many messages. Please slow down.",
-    )
-    if rl:
-        return rl
-
+# Canonical mutation core used by the public Chat endpoint and feature-owned
+# share adapters (Shorts/Live). Authentication and feature-specific rate limits
+# remain at their public boundaries; this function owns Chat authorization,
+# references, idempotency, persistence, notification/outbox and realtime state.
+def send_message_for_user(*, current_user: str, require_live_active: bool = False, **kwargs):
     conv_id = kwargs.get("conversation_id")
     content = (kwargs.get("content") or "").strip()
     ad = kwargs.get("ad")
     short = kwargs.get("short")
+    live = kwargs.get("live")
     attachments = kwargs.get("attachments") or []
     reply_to_message = kwargs.get("reply_to_message")
+    client_idempotency_key = kwargs.get("idempotency_key")
 
     if not conv_id:
         return fail("conversation_id is required.", error="VALIDATION_ERROR")
@@ -1109,24 +1210,37 @@ def send_message_impl(**kwargs):
         return attachment_error
 
     try:
-        conv = _get_conversation_row(conv_id)
+        conv = _get_conversation_row(conv_id, lock=True)
         if not conv:
             return fail("Conversation not found.", error="NOT_FOUND")
 
         if not _validate_sender(conv, current_user):
             return fail("Not allowed.", error="PERMISSION_DENIED")
 
-        if not content and not attachments and not ad and not short:
+        if not content and not attachments and not ad and not short and not live:
             return fail(
-                "Message must have content, attachments, an ad, or a short.",
+                "Message must have content, attachments, an ad, a short, or a live.",
                 error="VALIDATION_ERROR",
             )
 
-        ad_error = _validate_ad_reference(ad)
-        if ad_error:
-            return ad_error
+        reference_count = sum(bool(value) for value in (ad, short, live))
+        if reference_count > 1:
+            return fail(
+                "A message can reference only one shared object.",
+                error="VALIDATION_ERROR",
+            )
 
         receiver = _get_receiver(conv, current_user)
+        if not frappe.db.exists("User", {"name": receiver, "enabled": 1}) or ensure_account_active(receiver):
+            return fail("Recipient is unavailable.", error="NOT_FOUND", http_status=404)
+
+        ad_error = _validate_ad_reference(
+            ad,
+            viewer=current_user,
+            recipients=[receiver],
+        )
+        if ad_error:
+            return ad_error
 
         short_error = _validate_short_reference(
             short,
@@ -1135,6 +1249,15 @@ def send_message_impl(**kwargs):
         )
         if short_error:
             return short_error
+
+        live_error = _validate_live_reference(
+            live,
+            viewer=current_user,
+            recipients=[receiver],
+            require_active=require_live_active,
+        )
+        if live_error:
+            return live_error
 
         reply_error = _validate_reply_to_message(
             reply_to_message=reply_to_message,
@@ -1151,11 +1274,24 @@ def send_message_impl(**kwargs):
         if block_err:
             return block_err
 
+        idempotency_digest = _message_idempotency_digest(
+            sender=current_user,
+            conversation_id=conv_id,
+            key=client_idempotency_key,
+        )
+        existing = _get_idempotent_message(digest=idempotency_digest)
+        if existing:
+            return ok(
+                "Message already sent.",
+                data=_serialize_existing_message_for_viewer(existing, current_user=current_user),
+            )
+
         message_type = _determine_message_type(
             content=content,
             attachments=attachments,
             ad=ad,
             short=short,
+            live=live,
         )
 
         now = now_datetime()
@@ -1173,10 +1309,25 @@ def send_message_impl(**kwargs):
         if short:
             msg.short = short
 
+        if live:
+            msg.live = live
+
+        if idempotency_digest:
+            msg.idempotency_key = idempotency_digest
+
         if reply_to_message:
             msg.reply_to_message = reply_to_message
 
-        msg.insert(ignore_permissions=True)
+        try:
+            msg.insert(ignore_permissions=True)
+        except frappe.DuplicateEntryError:
+            existing = _get_idempotent_message(digest=idempotency_digest)
+            if not existing:
+                raise
+            return ok(
+                "Message already sent.",
+                data=_serialize_existing_message_for_viewer(existing, current_user=current_user),
+            )
 
         # Attachments.
         has_attachments = 0
@@ -1245,9 +1396,17 @@ def send_message_impl(**kwargs):
             if getattr(replied, "short", None) and not _is_deleted_for_everyone(replied):
                 short_ids.append(replied.short)
 
-        user_map = _fetch_users(user_ids)
-        ad_map = _fetch_ads_bulk(ad_ids)
+        live_ids = []
+        if live:
+            live_ids.append(live)
+        for replied in reply_map.values():
+            if getattr(replied, "live", None) and not _is_deleted_for_everyone(replied):
+                live_ids.append(replied.live)
+
+        user_map = _fetch_users(user_ids, viewer=current_user)
+        ad_map = _fetch_ads_bulk(ad_ids, viewer=current_user)
         short_map = _fetch_shorts_bulk(short_ids, viewer=current_user)
+        live_map = _fetch_lives_bulk(live_ids, viewer=current_user)
 
         serialized = _serialize_message(
             msg,
@@ -1255,6 +1414,7 @@ def send_message_impl(**kwargs):
             user_map=user_map,
             ad_map=ad_map,
             short_map=short_map,
+            live_map=live_map,
             current_user=current_user,
             reply_map=reply_map,
             is_starred=False,
@@ -1267,8 +1427,10 @@ def send_message_impl(**kwargs):
             has_attachments=has_attachments,
             ad=ad,
             short=short,
+            live=live,
             ad_preview=ad_map.get(ad) if ad else None,
             short_preview=short_map.get(short) if short else None,
+            live_preview=live_map.get(live) if live else None,
         )
 
         # Update conversation.
@@ -1282,21 +1444,25 @@ def send_message_impl(**kwargs):
         )
 
         if current_user == conv.participant_1:
-            unread_field = "unread_count_2"
+            frappe.db.sql(
+                """
+                UPDATE `tabAOS Conversation`
+                SET is_active_1 = 1, is_active_2 = 1,
+                    unread_count_2 = COALESCE(unread_count_2, 0) + 1
+                WHERE name = %s
+                """,
+                (conv_id,),
+            )
         else:
-            unread_field = "unread_count_1"
-
-        frappe.db.sql(
-            f"""
-            UPDATE `tabAOS Conversation`
-            SET
-                is_active_1 = 1,
-                is_active_2 = 1,
-                {unread_field} = COALESCE({unread_field}, 0) + 1
-            WHERE name = %s
-            """,
-            (conv_id,),
-        )
+            frappe.db.sql(
+                """
+                UPDATE `tabAOS Conversation`
+                SET is_active_1 = 1, is_active_2 = 1,
+                    unread_count_1 = COALESCE(unread_count_1, 0) + 1
+                WHERE name = %s
+                """,
+                (conv_id,),
+            )
 
         # Realtime.
         realtime_payload = {
@@ -1304,22 +1470,27 @@ def send_message_impl(**kwargs):
             "message": serialized,
         }
 
-        frappe.publish_realtime(
+        publish_after_commit(
             event="aos_new_message",
             message=realtime_payload,
             user=receiver,
         )
 
-        # Notification.
-        NotificationService.notify_new_message(
-            user=receiver,
-            sender=current_user,
-            conversation_id=conv_id,
-            preview=preview,
-        )
+        # Persist notification/outbox in the same transaction when possible.
+        # Notification failure is isolated from the committed Chat mutation.
+        try:
+            NotificationService.notify_new_message(
+                user=receiver,
+                sender=current_user,
+                conversation_id=conv_id,
+                preview=preview,
+                message_id=msg.name,
+            )
+        except Exception:
+            frappe.log_error("Chat notification creation failed.", "AOS Chat notification failure")
 
-        # Presence trigger.
-        publish_presence_update_to_peers(current_user)
+        # Presence activity is persisted in this transaction; realtime emits after commit.
+        schedule_presence_update_to_peers(current_user)
 
         # Refresh seller response metrics after this transaction commits.
         # Both participants are checked because either participant may own
@@ -1332,16 +1503,35 @@ def send_message_impl(**kwargs):
         return ok("Message sent.", data=serialized)
 
     except frappe.ValidationError as ex:
-        frappe.db.rollback()
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Send Message Failed",
-        )
-        frappe.db.rollback()
+        frappe.log_error("Chat operation failed.", "AOS Send Message Failed")
         return fail("Failed to send message.", error="INTERNAL_ERROR")
+
+
+# send_message
+def send_message_impl(**kwargs):
+    current_user, err = require_login()
+    if err:
+        return err
+
+    rl = rate_limit(
+        key=rate_limit_key("chat", "send_message", current_user),
+        ttl_seconds=60,
+        limit=SEND_MESSAGE_LIMIT_PER_MINUTE_PER_USER,
+        message="Too many messages. Please slow down.",
+    )
+    if rl:
+        return rl
+
+    return send_message_for_user(
+        current_user=current_user,
+        # New native Live messages may only reference an active Live. Historical
+        # Chat rows remain serializable after the Live ends.
+        require_live_active=True,
+        **kwargs,
+    )
 
 
 # list_messages
@@ -1351,7 +1541,7 @@ def list_messages_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:chat:list_msgs:user:{current_user}",
+        key=rate_limit_key("chat", "list_messages", current_user),
         ttl_seconds=60,
         limit=LIST_MESSAGES_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
@@ -1381,30 +1571,31 @@ def list_messages_impl(**kwargs):
         if current_user not in (conv.participant_1, conv.participant_2):
             return fail("Not allowed.", error="PERMISSION_DENIED")
 
-        delete_condition = get_user_delete_sql_condition(conv, current_user)
-
+        participant_index = 1 if current_user == conv.participant_1 else 2
         params: Dict[str, Any] = {
             "conversation_id": conv_id,
+            "participant_index": participant_index,
+            "before_creation": None,
+            "before_name": None,
             "limit": limit,
         }
 
-        before_condition = ""
-
         if before:
-            before_creation = frappe.db.get_value(
+            before_row = frappe.db.get_value(
                 "AOS Message",
-                before,
-                "creation",
+                {"name": before, "conversation": conv_id},
+                ["creation", "name"],
+                as_dict=True,
             )
 
-            if not before_creation:
+            if not before_row:
                 return fail("Invalid 'before' message.", error="VALIDATION_ERROR")
 
-            before_condition = "AND creation < %(before_creation)s"
-            params["before_creation"] = before_creation
+            params["before_creation"] = before_row.creation
+            params["before_name"] = before_row.name
 
         messages = frappe.db.sql(
-            f"""
+            """
             SELECT
                 name,
                 sender,
@@ -1412,6 +1603,7 @@ def list_messages_impl(**kwargs):
                 message_type,
                 ad,
                 short,
+                live,
                 reply_to_message,
                 has_attachments,
                 is_forwarded,
@@ -1429,11 +1621,17 @@ def list_messages_impl(**kwargs):
                 read_by_receiver_at,
                 creation
             FROM `tabAOS Message`
-            WHERE
-                conversation = %(conversation_id)s
-                AND {delete_condition}
-                {before_condition}
-            ORDER BY creation DESC
+            WHERE conversation = %(conversation_id)s
+              AND (
+                    (%(participant_index)s = 1 AND IFNULL(deleted_for_1, 0) = 0)
+                 OR (%(participant_index)s = 2 AND IFNULL(deleted_for_2, 0) = 0)
+              )
+              AND (
+                    %(before_creation)s IS NULL
+                 OR creation < %(before_creation)s
+                 OR (creation = %(before_creation)s AND name < %(before_name)s)
+              )
+            ORDER BY creation DESC, name DESC
             LIMIT %(limit)s
             """,
             params,
@@ -1510,10 +1708,23 @@ def list_messages_impl(**kwargs):
 
         short_ids = list(set(short_ids))
 
+        live_ids = list(
+            {
+                getattr(m, "live", None)
+                for m in messages
+                if getattr(m, "live", None) and not _is_deleted_for_everyone(m)
+            }
+        )
+        for replied in reply_map.values():
+            if getattr(replied, "live", None) and not _is_deleted_for_everyone(replied):
+                live_ids.append(replied.live)
+        live_ids = list(set(live_ids))
+
         attachments_map = _serialize_attachments_bulk(visible_message_ids, current_user=current_user)
-        user_map = _fetch_users(sender_ids)
-        ad_map = _fetch_ads_bulk(ad_ids)
+        user_map = _fetch_users(sender_ids, viewer=current_user)
+        ad_map = _fetch_ads_bulk(ad_ids, viewer=current_user)
         short_map = _fetch_shorts_bulk(short_ids, viewer=current_user)
+        live_map = _fetch_lives_bulk(live_ids, viewer=current_user)
 
         results = []
 
@@ -1525,6 +1736,7 @@ def list_messages_impl(**kwargs):
                     user_map=user_map,
                     ad_map=ad_map,
                     short_map=short_map,
+                    live_map=live_map,
                     current_user=current_user,
                     reply_map=reply_map,
                     is_starred=m.name in starred_message_ids,
@@ -1536,8 +1748,5 @@ def list_messages_impl(**kwargs):
         return ok("Messages fetched.", data=results)
 
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS List Messages Failed",
-        )
+        frappe.log_error("Chat operation failed.", "AOS List Messages Failed")
         return fail("Failed to fetch messages.", error="INTERNAL_ERROR")

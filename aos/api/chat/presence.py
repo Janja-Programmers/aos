@@ -17,7 +17,8 @@ import frappe
 from frappe.utils import now_datetime, time_diff_in_seconds
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.blocking import get_blocked_user_set
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.user_display import get_user_display
 
@@ -156,13 +157,11 @@ def _get_presence_subscribers_for_user(user: str) -> list[str]:
         as_dict=True,
     )
 
-    peers = {
-        row.peer
-        for row in rows
-        if row.peer and row.peer != user
-    }
-
-    return list(peers)
+    peers = {row.peer for row in rows if row.peer and row.peer != user}
+    if not peers:
+        return []
+    blocked = get_blocked_user_set(user, peers)
+    return sorted(peer for peer in peers if peer not in blocked)
 
 
 def _should_throttle_presence_publish(user: str) -> bool:
@@ -173,7 +172,7 @@ def _should_throttle_presence_publish(user: str) -> bool:
     """
 
     cache = frappe.cache()
-    key = f"aos:chat:presence:broadcast:{user}"
+    key = rate_limit_key("chat", "presence", "broadcast", user)
 
     if cache.get_value(key):
         return True
@@ -205,10 +204,7 @@ def touch_user_activity(user: str) -> None:
         )
 
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Touch User Activity Failed",
-        )
+        frappe.log_error("Chat operation failed.", "AOS Touch User Activity Failed")
 
 
 # Realtime Presence
@@ -228,9 +224,11 @@ def publish_presence_update(user: str, to_user: str | None = None):
 
     payload = _presence_payload(user)
 
-    # Direct push, usually for one peer.
-    # Do not throttle direct sends because they are targeted.
+    # Direct push, usually for one peer. Do not leak presence across a block
+    # in either direction, even when the old conversation remains in history.
     if to_user:
+        if to_user in get_blocked_user_set(user, [to_user]):
+            return
         frappe.publish_realtime(
             event="aos_presence_update",
             message=payload,
@@ -253,19 +251,26 @@ def publish_presence_update(user: str, to_user: str | None = None):
 
 
 def publish_presence_update_to_peers(user: str):
-    """
-    Call this on user activity:
-    - send_message
-    - mark_read
-    - mark_delivered
-    - open conversation
-    - list conversations
+    """Publish the current persisted presence snapshot to allowed peers.
 
-    It updates last_active first, then publishes presence to peers.
+    This compatibility helper performs no database write. New mutation/read
+    paths should call ``schedule_presence_update_to_peers`` so ``last_active``
+    is persisted inside the caller-managed transaction and realtime is emitted
+    only after that transaction commits.
     """
 
-    touch_user_activity(user)
     publish_presence_update(user=user, to_user=None)
+
+
+def schedule_presence_update_to_peers(user: str) -> None:
+    """Persist activity now and publish it only after commit."""
+
+    if not user:
+        return
+    touch_user_activity(user)
+    from aos.services.chat.events import after_commit
+
+    after_commit(lambda: publish_presence_update(user=user, to_user=None))
 
 
 # Typing
@@ -281,7 +286,7 @@ def send_typing_event_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:chat:typing:user:{current_user}",
+        key=rate_limit_key("chat", "typing", current_user),
         ttl_seconds=60,
         limit=SEND_TYPING_LIMIT_PER_MINUTE_PER_USER,
         message="Too many typing events. Please slow down.",
@@ -306,6 +311,12 @@ def send_typing_event_impl(**kwargs):
         receiver = _get_other_participant(conv_row, current_user)
         if not receiver:
             return fail("Receiver not found.", error="NOT_FOUND")
+
+        # A historical conversation may remain visible after either participant
+        # blocks the other, but transient interaction/presence must not cross
+        # that privacy boundary.
+        if receiver in get_blocked_user_set(current_user, [receiver]):
+            return fail("Not allowed.", error="PERMISSION_DENIED", http_status=403)
 
         # Typing is also user activity.
         touch_user_activity(current_user)
@@ -334,8 +345,5 @@ def send_typing_event_impl(**kwargs):
         return ok("Typing event sent.")
 
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Typing Event Failed",
-        )
+        frappe.log_error("Chat operation failed.", "AOS Typing Event Failed")
         return fail("Failed to send typing event.", error="INTERNAL_ERROR")

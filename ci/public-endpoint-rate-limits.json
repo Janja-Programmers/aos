@@ -588,6 +588,12 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
+    "endpoint": "aos.api.v1.live.__init__.share_live_to_chat",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline and stricter Live share-to-chat application limit."
+  },
+  {
     "endpoint": "aos.api.v1.live.__init__.start_live",
     "access": "authenticated",
     "policy": "baseline_authenticated",

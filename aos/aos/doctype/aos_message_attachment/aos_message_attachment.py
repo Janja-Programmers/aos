@@ -9,6 +9,7 @@ class AOSMessageAttachment(Document):
     def validate(self):
         self._validate_message()
         self._validate_media()
+        self._validate_attachment_count()
         self._prevent_duplicates()
         self._set_sort_order()
 
@@ -50,6 +51,30 @@ class AOSMessageAttachment(Document):
 
         if not self.file_type:
             self.file_type = self._infer_file_type_from_content_type(media.content_type)
+
+
+    def _validate_attachment_count(self):
+        if not self.is_new():
+            return
+
+        # Public APIs hold the message/conversation lock while attaching. This
+        # DocType guard protects Desk/import/internal writes from unbounded rows.
+        from aos.services.chat.validation import MAX_ATTACHMENTS
+
+        existing = frappe.db.count(
+            "AOS Message Attachment",
+            {"message": self.message},
+        )
+        if int(existing or 0) >= MAX_ATTACHMENTS:
+            frappe.throw(f"A message can contain at most {MAX_ATTACHMENTS} attachments")
+
+        if self.file_type and str(self.file_type).strip().lower() not in {
+            "image",
+            "video",
+            "audio",
+            "document",
+        }:
+            frappe.throw("Invalid attachment file type")
 
     def _prevent_duplicates(self):
         if not self.is_new():
