@@ -123,6 +123,18 @@ class TestLiveApiContracts(FrappeTestCase):
         self.assertIn('"account_id"', source)
         self.assertIn("hmac.new", source)
 
+    def test_host_invite_contract_uses_opaque_identity_without_session_disclosure(self):
+        spec = ENDPOINT_SPECS["invite_live_cohost"]
+        self.assertIn("livekit_identity", spec.allowed_fields)
+        source = self._source("api/live/cohost.py")
+        self.assertIn("_get_active_invite_candidate_by_identity", source)
+        self.assertIn('host_payload["livekit_identity"]', source)
+        self.assertIn("candidate_private_payload", source)
+        invite_source = source.split("def invite_live_cohost_impl", 1)[1].split(
+            "# VIEWER REQUESTS CO-HOSTING", 1
+        )[0]
+        self.assertNotIn('host_payload["session_id"]', invite_source)
+
 
 if __name__ == "__main__":
     unittest.main()

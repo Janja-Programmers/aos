@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from .validation import ACCOUNT_REFERENCE_RE, LIVE_ID_RE, SAFE_ROW_ID_RE, EndpointSpec
+from .validation import (
+    ACCOUNT_REFERENCE_RE,
+    LIVE_ID_RE,
+    LIVEKIT_PARTICIPANT_ID_RE,
+    SAFE_ROW_ID_RE,
+    EndpointSpec,
+)
 
 
 def _spec(fields: set[str], *, aliases=(), ids=()) -> EndpointSpec:
@@ -32,8 +38,12 @@ ENDPOINT_SPECS: dict[str, EndpointSpec] = {
     "delete_live_message": _spec({"message_id"}, ids=(("message_id", SAFE_ROW_ID_RE),)),
     "send_reaction": _spec({"live_id", "reaction_type", "session_id"}, ids=(("live_id", LIVE_ID_RE),)),
     "invite_live_cohost": _spec(
-        {"live_id", "target_user", "session_id"},
-        ids=(("live_id", LIVE_ID_RE), ("target_user", ACCOUNT_REFERENCE_RE)),
+        {"live_id", "livekit_identity", "target_user", "session_id"},
+        ids=(
+            ("live_id", LIVE_ID_RE),
+            ("livekit_identity", LIVEKIT_PARTICIPANT_ID_RE),
+            ("target_user", ACCOUNT_REFERENCE_RE),
+        ),
     ),
     "request_live_cohost": _spec({"live_id", "session_id"}, ids=(("live_id", LIVE_ID_RE),)),
     "respond_live_cohost": _spec({"cohost_id", "action", "reason"}, ids=(("cohost_id", SAFE_ROW_ID_RE),)),

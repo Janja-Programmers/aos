@@ -25,7 +25,8 @@ Ending the parent Live changes active to ended and pending/accepted to cancelled
 ## Authorization
 
 - Only the host may invite.
-- The invite target is resolved from a public account reference and must own the supplied active viewer session.
+- Preferred host invitations select an active authenticated viewer by the opaque `aos:participant:*` LiveKit identity already visible in the host room. The backend resolves the private account/session under lock.
+- The legacy `target_user + session_id` invitation form remains accepted for existing clients, but new clients must not request another viewer's session ID.
 - Only an active viewer may request.
 - The responder is derived from request type: candidate accepts/rejects an invitation; host accepts/rejects a viewer request.
 - A candidate cannot approve their own request.
@@ -35,7 +36,7 @@ Ending the parent Live changes active to ended and pending/accepted to cancelled
 
 ## Concurrency and idempotency
 
-- Live row is locked before workflow row.
+- Live row is locked before the selected active viewer row and workflow row.
 - `active_workflow_key` is unique for unresolved `(live, candidate)` state.
 - Duplicate invite/request returns the existing workflow.
 - Repeated response with the same terminal outcome is idempotent.
@@ -67,4 +68,4 @@ Public room events:
 - `aos_live_cohost_started`
 - `aos_live_cohost_ended`
 
-Private payloads are sent only to the host/candidate. Public payloads exclude session ID, LiveKit identity, and private workflow metadata.
+Private payloads are sent only to the host/candidate. Public room payloads exclude session ID, LiveKit identity, and private workflow metadata. A host invitation response may echo only the opaque LiveKit identity the host already selected; it never returns the target viewer's AOS session ID.

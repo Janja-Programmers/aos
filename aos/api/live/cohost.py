@@ -373,6 +373,198 @@ def _expire_stale_pending_for_user(
         )
 
 
+def _get_active_invite_candidate_by_identity(
+    *,
+    live_id: str,
+    livekit_identity: str,
+):
+    """Resolve one authenticated active viewer from an opaque room identity."""
+    rows = frappe.db.sql(
+        """
+        SELECT name, `user`, session_id, livekit_identity, is_active
+        FROM `tabAOS Live Stream View`
+        WHERE live_stream = %s
+          AND livekit_identity = %s
+          AND is_active = 1
+          AND `user` IS NOT NULL
+          AND `user` != ''
+        ORDER BY joined_at DESC, name DESC
+        LIMIT 2
+        """,
+        (live_id, livekit_identity),
+        as_dict=True,
+    )
+
+    if len(rows) != 1:
+        return None, fail(
+            "Co-host candidate is unavailable.",
+            error="INVALID_STATE",
+        )
+
+    return rows[0], None
+
+
+def _lock_and_revalidate_invite_candidate_view(
+    *,
+    view_id: str,
+    live_id: str,
+    user: str,
+    session_id: str,
+    livekit_identity: str,
+):
+    """Lock the selected view after relationship/account validation.
+
+    Lock ordering is Live -> Social/account policy -> View. This matches the
+    broader Live participant flow and avoids exposing the private viewer
+    session to the client while still closing leave/reconnect races.
+    """
+    rows = frappe.db.sql(
+        """
+        SELECT name, live_stream, `user`, session_id, livekit_identity, is_active
+        FROM `tabAOS Live Stream View`
+        WHERE name = %s
+        LIMIT 1
+        FOR UPDATE
+        """,
+        (view_id,),
+        as_dict=True,
+    )
+    if not rows:
+        return fail(
+            "Co-host candidate is unavailable.",
+            error="INVALID_STATE",
+        )
+
+    row = rows[0]
+    if (
+        not bool(row.is_active)
+        or str(row.user or "") != user
+        or str(row.session_id or "") != session_id
+        or str(row.livekit_identity or "") != livekit_identity
+    ):
+        return fail(
+            "Co-host candidate is unavailable.",
+            error="INVALID_STATE",
+        )
+
+    if str(row.live_stream or "") != live_id:
+        return fail(
+            "Co-host candidate is unavailable.",
+            error="INVALID_STATE",
+        )
+
+    return None
+
+
+def _resolve_host_invite_candidate(
+    *,
+    live,
+    livekit_identity: str | None,
+    target_user_reference: str | None,
+    legacy_session_id: str | None,
+):
+    """Resolve a host-selected co-host candidate without leaking session IDs.
+
+    Preferred contract:
+        livekit_identity
+
+    Backward-compatible contract:
+        target_user + session_id
+
+    `target_user` may accompany `livekit_identity` as a public-account
+    cross-check, but `session_id` may not be combined with the opaque identity
+    selector because the two modes have different trust boundaries.
+    """
+    livekit_identity = _normalize_text(livekit_identity)
+    legacy_session_id = normalize_session_id(legacy_session_id)
+    target_user_reference = _normalize_text(target_user_reference)
+
+    if livekit_identity and legacy_session_id:
+        return None, None, fail(
+            "Choose one co-host candidate selector.",
+            error="VALIDATION_ERROR",
+        )
+
+    if livekit_identity:
+        view, err = _get_active_invite_candidate_by_identity(
+            live_id=live.name,
+            livekit_identity=livekit_identity,
+        )
+        if err:
+            return None, None, err
+
+        target_user = str(view.user or "").strip()
+        session_id = normalize_session_id(view.session_id)
+        if not target_user or not session_id:
+            return None, None, fail(
+                "Co-host candidate is unavailable.",
+                error="INVALID_STATE",
+            )
+
+        if target_user_reference:
+            expected_user = resolve_account_reference(
+                target_user_reference,
+                allow_legacy=True,
+            )
+            if not expected_user or expected_user != target_user:
+                return None, None, fail(
+                    "Co-host candidate is unavailable.",
+                    error="INVALID_STATE",
+                )
+
+        _, err = validate_user_is_cohost_candidate(
+            live=live,
+            user=target_user,
+            session_id=session_id,
+        )
+        if err:
+            return None, None, err
+
+        err = _lock_and_revalidate_invite_candidate_view(
+            view_id=str(view.name),
+            live_id=live.name,
+            user=target_user,
+            session_id=session_id,
+            livekit_identity=livekit_identity,
+        )
+        if err:
+            return None, None, err
+
+        return target_user, session_id, None
+
+    if not target_user_reference:
+        return None, None, fail(
+            "livekit_identity is required for host invitations.",
+            error="VALIDATION_ERROR",
+        )
+
+    target_user = resolve_account_reference(
+        target_user_reference,
+        allow_legacy=True,
+    )
+    if not target_user:
+        return None, None, fail(
+            "Co-host candidate is unavailable.",
+            error="NOT_FOUND",
+        )
+
+    if not legacy_session_id:
+        return None, None, fail(
+            "session_id is required for legacy co-host invitations.",
+            error="VALIDATION_ERROR",
+        )
+
+    _, err = validate_user_is_cohost_candidate(
+        live=live,
+        user=target_user,
+        session_id=legacy_session_id,
+    )
+    if err:
+        return None, None, err
+
+    return target_user, legacy_session_id, None
+
+
 # RECORD CREATION
 def _create_pending_cohost(
     *,
@@ -433,18 +625,13 @@ def invite_live_cohost_impl(**kwargs):
     if err:
         return err
 
-    target_user, err = require_id(
-        kwargs.get("target_user"),
-        "target_user",
+    livekit_identity = _normalize_text(
+        kwargs.get("livekit_identity")
     )
-    if err:
-        return err
-
-    target_user = resolve_account_reference(target_user, allow_legacy=True)
-    if not target_user:
-        return fail("Co-host candidate is unavailable.", error="NOT_FOUND")
-
-    session_id = normalize_session_id(
+    target_user_reference = _normalize_text(
+        kwargs.get("target_user")
+    )
+    legacy_session_id = normalize_session_id(
         kwargs.get("session_id")
     )
 
@@ -468,20 +655,27 @@ def invite_live_cohost_impl(**kwargs):
         if err:
             return err
 
-        _, err = validate_user_is_cohost_candidate(
-            live=live,
-            user=target_user,
-            session_id=session_id,
-        )
-        if err:
-            return err
-
+        # Serialize host invite selection with Live termination and viewer
+        # leave/reconnect. The host supplies only an opaque LiveKit identity in
+        # the preferred path; the private AOS viewer session is resolved here.
         _lock_live_row(
             live_id
         )
 
         live = frappe.get_doc("AOS Live Stream", live_id)
         err = validate_live_active(live)
+        if err:
+            return err
+        err = validate_user_is_host(live, host)
+        if err:
+            return err
+
+        target_user, session_id, err = _resolve_host_invite_candidate(
+            live=live,
+            livekit_identity=livekit_identity,
+            target_user_reference=target_user_reference,
+            legacy_session_id=legacy_session_id,
+        )
         if err:
             return err
 
@@ -495,14 +689,15 @@ def invite_live_cohost_impl(**kwargs):
             user=target_user,
         )
         if existing:
+            existing_doc = frappe.get_doc(LIVE_COHOST_DOCTYPE, existing.name)
+            host_payload = serialize_live_cohost(
+                existing_doc,
+                include_internal=False,
+            )
+            host_payload["livekit_identity"] = existing_doc.livekit_identity
             return ok(
                 "Co-host workflow already exists.",
-                data={
-                    "cohost": serialize_live_cohost(
-                        frappe.get_doc(LIVE_COHOST_DOCTYPE, existing.name),
-                        include_internal=True,
-                    )
-                },
+                data={"cohost": host_payload},
             )
         if err:
             return err
@@ -523,14 +718,23 @@ def invite_live_cohost_impl(**kwargs):
             requested_by=host,
         )
 
-        internal_payload = serialize_live_cohost(
+        candidate_private_payload = serialize_live_cohost(
             cohost,
             include_internal=True,
         )
+        host_payload = serialize_live_cohost(
+            cohost,
+            include_internal=False,
+        )
+        # The opaque participant identity is already visible to the host in the
+        # LiveKit room and is safe to echo for UI correlation. The private
+        # viewer session_id remains server-side.
+        host_payload["livekit_identity"] = cohost.livekit_identity
+
         if not created:
             return ok(
                 "Co-host workflow already exists.",
-                data={"cohost": internal_payload},
+                data={"cohost": host_payload},
             )
 
         host_display = get_user_display(
@@ -580,13 +784,13 @@ def invite_live_cohost_impl(**kwargs):
         publish_cohost_invited(
             user=target_user,
             live_id=live_id,
-            cohost=internal_payload,
+            cohost=candidate_private_payload,
         )
 
         return ok(
             "Co-host invitation sent.",
             data={
-                "cohost": internal_payload,
+                "cohost": host_payload,
                 "message": message,
             },
         )

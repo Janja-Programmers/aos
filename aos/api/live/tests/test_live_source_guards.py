@@ -66,6 +66,21 @@ class TestLiveSourceGuards(unittest.TestCase):
         self.assertIn('"can_publish": False', viewer_block)
         self.assertIn('"can_publish_data": False', viewer_block)
 
+    def test_host_cohost_invite_resolves_opaque_identity_server_side(self):
+        endpoints = _source("aos/services/live/endpoints.py")
+        cohost = _source("aos/api/live/cohost.py")
+        self.assertIn('"livekit_identity"', endpoints)
+        self.assertIn("LIVEKIT_PARTICIPANT_ID_RE", endpoints)
+        self.assertIn("_get_active_invite_candidate_by_identity", cohost)
+        self.assertIn("_lock_and_revalidate_invite_candidate_view", cohost)
+        self.assertIn("FOR UPDATE", cohost)
+        self.assertIn('host_payload["livekit_identity"]', cohost)
+        self.assertIn("candidate_private_payload", cohost)
+        invite = cohost.split("def invite_live_cohost_impl", 1)[1].split(
+            "# VIEWER REQUESTS CO-HOSTING", 1
+        )[0]
+        self.assertNotIn('host_payload["session_id"]', invite)
+
     def test_webhook_is_verified_and_replay_safe(self):
         source = _source("aos/services/live/webhooks.py")
         self.assertIn("WebhookReceiver", source)

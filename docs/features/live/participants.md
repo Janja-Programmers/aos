@@ -34,3 +34,7 @@ Public room events contain only aggregate viewer count. No public endpoint expos
 ## Reconciliation
 
 Every five minutes the worker compares up to 2,000 LiveKit identities with at most 2,000 active local rows per Live. A local participant absent from LiveKit is closed only after a two-minute grace. Counts are recalculated from rows, never decremented blindly, so duplicates cannot make counts negative.
+## Host co-host selection
+
+A host may select an authenticated viewer for a co-host invitation using the viewer's opaque `aos:participant:*` LiveKit identity. The identity is a room-scoped locator, not an AOS session credential. The server resolves and locks the corresponding active `AOS Live Stream View` row; another viewer's `session_id` is never exposed to the host.
+

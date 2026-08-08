@@ -13,6 +13,7 @@ from .errors import LiveError
 LIVE_ID_RE = re.compile(r"^LIVE-\d{4}-\d{5}$")
 SAFE_ROW_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,139}$")
 ACCOUNT_REFERENCE_RE = re.compile(r"^(?:ACC-[A-Z2-7]{20}|[^\s]{1,140})$")
+LIVEKIT_PARTICIPANT_ID_RE = re.compile(r"^aos:participant:[A-Za-z0-9_-]{20,64}$")
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,7 @@ def validate_public_kwargs(kwargs: Mapping[str, Any], spec: EndpointSpec) -> dic
         "reaction_type": (24, True),
         "action": (24, True),
         "status": (32, False),
+        "livekit_identity": (96, False),
     }
     for field, (max_length, required) in scalar_text_fields.items():
         if field in clean and clean.get(field) is not None:

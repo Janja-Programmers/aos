@@ -109,6 +109,30 @@ class TestLivePublicValidation(unittest.TestCase):
                 ENDPOINT_SPECS["start_live"],
             )
 
+    def test_host_cohost_invite_accepts_opaque_participant_identity(self):
+        payload = validate_public_kwargs(
+            {
+                "live_id": "LIVE-2026-00001",
+                "livekit_identity": "aos:participant:abcdefghijklmnopqrstuvwx",
+            },
+            ENDPOINT_SPECS["invite_live_cohost"],
+        )
+        self.assertEqual(
+            payload["livekit_identity"],
+            "aos:participant:abcdefghijklmnopqrstuvwx",
+        )
+
+    def test_host_cohost_invite_rejects_non_participant_identity(self):
+        with self.assertRaises(LiveError) as raised:
+            validate_public_kwargs(
+                {
+                    "live_id": "LIVE-2026-00001",
+                    "livekit_identity": "aos:host:abcdefghijklmnopqrstuvwx",
+                },
+                ENDPOINT_SPECS["invite_live_cohost"],
+            )
+        self.assertEqual(raised.exception.code, "LIVE_INVALID_IDENTIFIER")
+
 
 if __name__ == "__main__":
     unittest.main()

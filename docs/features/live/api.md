@@ -37,7 +37,7 @@ Base form: `/api/method/aos.api.v1.live.<endpoint>`.
 | `list_live_replies` | GET | guest | `parent_message`, `limit`, `start`, `cursor` |
 | `delete_live_message` | POST | author or host | `message_id` |
 | `send_reaction` | POST | authenticated participant | `live_id`, `reaction_type`, `session_id` |
-| `invite_live_cohost` | POST | host | `live_id`, public `target_user`, `session_id` |
+| `invite_live_cohost` | POST | host | preferred: `live_id`, opaque `livekit_identity`; legacy: `live_id`, public `target_user`, `session_id` |
 | `request_live_cohost` | POST | active viewer | `live_id`, `session_id` |
 | `respond_live_cohost` | POST | intended responder | `cohost_id`, `action`, optional `reason` |
 | `cancel_live_cohost` | POST | authorized workflow party | `cohost_id`, optional `reason` |
@@ -58,6 +58,7 @@ The signed webhook endpoint is `/api/method/aos.api.v1.livekit.handle_webhook` a
 - `start` is 0–10000 and cannot be combined with `cursor`.
 - Cursors are signed, endpoint-scoped, and limited to 2048 characters.
 - Session IDs are at most 128 characters; titles 140; reasons 240; comments 500; comment idempotency keys 128.
+- Host co-host invitations should use the opaque `aos:participant:*` LiveKit identity already visible in the host room. The backend resolves that identity to the active authenticated viewer and private AOS session; clients must not obtain or submit another viewer's session ID. The legacy `target_user + session_id` form remains accepted for compatibility.
 - Text is NFC-normalized. NUL and whitespace-only comments are rejected. Comment content is HTML-escaped before persistence and broadcast.
 
 ## Stable Live errors
@@ -104,6 +105,12 @@ curl "$SITE/api/method/aos.api.v1.live.list_live_streams?limit=20"
 
 # Public detail
 curl "$SITE/api/method/aos.api.v1.live.get_live?live_id=LIVE-2026-00001"
+
+# Host invites an authenticated viewer already present in the LiveKit room.
+# The identity is the opaque RemoteParticipant.identity observed by the host.
+curl -X POST "$SITE/api/method/aos.api.v1.live.invite_live_cohost" \
+  -H 'Content-Type: application/json' \
+  -d '{"live_id":"LIVE-2026-00001","livekit_identity":"aos:participant:abcdefghijklmnopqrstuvwx"}'
 ```
 
 Do not place LiveKit tokens in URLs, logs, Postman examples, or shared test evidence.
