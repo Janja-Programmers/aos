@@ -25,6 +25,7 @@ _RATE_LIMIT_REJECTIONS: Counter[str] = Counter()
 _MEDIA_EVENTS: Counter[tuple[str, str, str]] = Counter()
 _ACCOUNT_EVENTS: Counter[tuple[str, str]] = Counter()
 _CATALOG_EVENTS: Counter[tuple[str, str]] = Counter()
+_CALL_EVENTS: Counter[tuple[str, str]] = Counter()
 _MEDIA_BYTES: Counter[str] = Counter()
 _MEDIA_DURATION_COUNT: Counter[str] = Counter()
 _MEDIA_DURATION_SUM: Counter[str] = Counter()
@@ -47,6 +48,7 @@ _REDIS_KEYS = {
 	"media_duration_sum": f"{_METRIC_PREFIX}:media:duration_sum",
 	"account_events": f"{_METRIC_PREFIX}:accounts:events",
 	"catalog_events": f"{_METRIC_PREFIX}:catalog:events",
+	"call_events": f"{_METRIC_PREFIX}:calls:events",
 }
 
 
@@ -149,6 +151,49 @@ def _safe_account_metrics(lines: list[str]) -> None:
         event_name, outcome_name = parts
         if event_name in _ALLOWED_ACCOUNT_EVENTS and outcome_name in _ALLOWED_ACCOUNT_OUTCOMES:
             lines.append(_line("aos_account_events_total", int(value), {"event": event_name, "outcome": outcome_name}))
+
+
+_ALLOWED_CALL_EVENTS = {
+    "initiate_call", "mark_call_ringing", "accept_call", "reject_call", "cancel_call",
+    "end_call", "request_video_upgrade", "respond_video_upgrade", "get_call_status",
+    "get_call_token", "list_calls", "get_call_group_details", "delete_call_logs",
+    "clear_call_history", "token_issue", "room_cleanup", "room_cleanup_enqueue",
+    "active_room_reconcile", "active_policy_reconcile", "missed", "timeout",
+}
+_ALLOWED_CALL_OUTCOMES = {"success", "failure", "rejected", "conflict", "idempotent"}
+
+
+def record_call_event(*, event: str, outcome: str = "success", amount: int = 1) -> None:
+    """Record bounded Calls operational events without user/call identifiers."""
+    event_name = str(event or "").strip().lower()
+    outcome_name = str(outcome or "success").strip().lower()
+    if event_name not in _ALLOWED_CALL_EVENTS or outcome_name not in _ALLOWED_CALL_OUTCOMES:
+        return
+    increment = max(1, int(amount or 1))
+    ok = _redis_increment(_REDIS_KEYS["call_events"], f"{event_name}|{outcome_name}", increment)
+    if not ok and _allow_process_fallback():
+        with _LOCK:
+            _CALL_EVENTS[(event_name, outcome_name)] += increment
+
+
+def _safe_call_metrics(lines: list[str]) -> None:
+    try:
+        raw = _decode_hash(_redis_cache().hgetall(_REDIS_KEYS["call_events"]))
+    except Exception:
+        with _LOCK:
+            raw = {"|".join(key): value for key, value in _CALL_EVENTS.items()}
+    lines.extend([
+        "# HELP aos_call_events_total Bounded Calls lifecycle and operational events.",
+        "# TYPE aos_call_events_total counter",
+    ])
+    for key, value in sorted(raw.items()):
+        parts = key.split("|", 1)
+        if len(parts) != 2:
+            continue
+        event_name, outcome_name = parts
+        if event_name in _ALLOWED_CALL_EVENTS and outcome_name in _ALLOWED_CALL_OUTCOMES:
+            lines.append(_line("aos_call_events_total", int(value), {"event": event_name, "outcome": outcome_name}))
+
 
 _ALLOWED_CATALOG_EVENTS = {
     "categories_read", "schema_read", "configuration_changed", "configuration_rejected",
@@ -736,6 +781,7 @@ def render_metrics() -> str:
 	_safe_media_metrics(lines)
 	_safe_account_metrics(lines)
 	_safe_catalog_metrics(lines)
+	_safe_call_metrics(lines)
 	try:
 		free = shutil.disk_usage(os.getenv("AOS_DISK_METRICS_PATH", "/")).free
 	except Exception:

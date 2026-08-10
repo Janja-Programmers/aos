@@ -16,8 +16,9 @@ from __future__ import annotations
 import frappe
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
+from aos.services.calls.policy import ensure_call_interaction_allowed
 
 from .constants import GET_CALL_STATUS_LIMIT_PER_MINUTE_PER_USER
 
@@ -189,7 +190,7 @@ def get_call_status_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:calls:status:user:{current_user}",
+        key=rate_limit_key("calls", "status", current_user),
         ttl_seconds=60,
         limit=GET_CALL_STATUS_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
@@ -211,6 +212,13 @@ def get_call_status_impl(**kwargs):
         if err:
             return err
 
+        if call.status in ("initiated", "ringing", "ongoing") and _is_truthy(call.is_active):
+            interaction_error = ensure_call_interaction_allowed(
+                call, current_user, action="access a call with"
+            )
+            if interaction_error:
+                return interaction_error
+
         return ok(
             "Call status fetched.",
             data=_build_call_status_response(
@@ -221,7 +229,7 @@ def get_call_status_impl(**kwargs):
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Calls operation failed.",
             "AOS Get Call Status Failed",
         )
         return fail("Failed to fetch call status.", error="INTERNAL_ERROR")

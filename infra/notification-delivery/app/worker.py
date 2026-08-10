@@ -72,7 +72,12 @@ def _normalize_android_notification_priority(priority: str | None) -> str | None
 	return value if value in {"min", "low", "default", "high", "max"} else None
 
 
-def _build_android_config(options: dict[str, Any] | None):
+def _build_android_config(
+	options: dict[str, Any] | None,
+	*,
+	collapse_key: str | None = None,
+	include_notification_options: bool = True,
+):
 	if not messaging:
 		return None
 	options = options or {}
@@ -83,7 +88,15 @@ def _build_android_config(options: dict[str, Any] | None):
 	android_channel_id = options.get("android_channel_id")
 	ttl_seconds = options.get("ttl_seconds")
 
-	if not any([priority, notification_priority, android_channel_id, ttl_seconds is not None]):
+	if not any(
+		[
+			priority,
+			notification_priority if include_notification_options else None,
+			android_channel_id if include_notification_options else None,
+			ttl_seconds is not None,
+			collapse_key,
+		]
+	):
 		return None
 
 	ttl = None
@@ -94,7 +107,7 @@ def _build_android_config(options: dict[str, Any] | None):
 			ttl = None
 
 	android_notification = None
-	if android_channel_id or notification_priority:
+	if include_notification_options and (android_channel_id or notification_priority):
 		android_notification = messaging.AndroidNotification(
 			channel_id=android_channel_id,
 			priority=notification_priority,
@@ -103,8 +116,29 @@ def _build_android_config(options: dict[str, Any] | None):
 	return messaging.AndroidConfig(
 		priority=priority,
 		ttl=ttl,
+		collapse_key=collapse_key,
 		notification=android_notification,
 	)
+
+
+def _is_transient_incoming_call(payload: dict[str, Any]) -> bool:
+	return (
+		str(payload.get("event") or "").strip() == "aos_incoming_call"
+		and str(payload.get("delivery_kind") or "").strip().lower() == "transient"
+	)
+
+
+def _is_android_token(token: dict[str, Any]) -> bool:
+	return str(token.get("device_type") or "").strip().lower() == "android"
+
+
+def _incoming_call_collapse_key(data_payload: dict[str, str]) -> str | None:
+	call_id = str(data_payload.get("call_id") or data_payload.get("id") or "").strip()
+	if not call_id:
+		return None
+	# Call IDs are server-controlled public IDs. Keep the key short and stable so
+	# retries/replacements for the same ringing call collapse on Android.
+	return f"aos-call:{call_id}"[:64]
 
 
 def _init_firebase() -> None:
@@ -208,77 +242,107 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
 	first_error: str | None = None
 
 	data_payload = _stringify_data(payload.get("data") if isinstance(payload.get("data"), dict) else {})
-	android_config = _build_android_config(
-		payload.get("options") if isinstance(payload.get("options"), dict) else {}
-	)
+	options = payload.get("options") if isinstance(payload.get("options"), dict) else {}
+	is_native_incoming = _is_transient_incoming_call(payload)
 
-	for chunk_index, chunk in enumerate(_chunk(tokens, max(1, min(settings.max_tokens_per_multicast, 500)))):
-		token_values = [row["token"] for row in chunk if row.get("token")]
-		if not token_values:
-			continue
+	# Android incoming calls are intentionally data-only. A top-level FCM
+	# notification payload can be consumed by the system tray while the app is
+	# backgrounded/terminated, preventing the mobile background handler from
+	# presenting native CallKit/ConnectionService UI. iOS/web retain the existing
+	# alert+data contract because this service does not model APNs PushKit tokens.
+	groups: list[tuple[str, list[dict[str, Any]], bool]] = []
+	if is_native_incoming:
+		android_tokens = [row for row in tokens if _is_android_token(row)]
+		other_tokens = [row for row in tokens if not _is_android_token(row)]
+		if android_tokens:
+			groups.append(("android_data_only", android_tokens, True))
+		if other_tokens:
+			groups.append(("alert_and_data", other_tokens, False))
+	else:
+		groups.append(("alert_and_data", tokens, False))
 
-		message = messaging.MulticastMessage(
-			notification=messaging.Notification(
-				title=str(payload.get("title") or ""),
-				body=str(payload.get("body") or ""),
-			),
-			data=data_payload,
-			tokens=token_values,
-			android=android_config,
+	chunk_index = 0
+	for delivery_mode, group_tokens, data_only in groups:
+		android_config = _build_android_config(
+			options,
+			collapse_key=_incoming_call_collapse_key(data_payload) if data_only else None,
+			include_notification_options=not data_only,
 		)
-
-		response = messaging.send_each_for_multicast(message)
-		success_count += int(response.success_count or 0)
-		failure_count += int(response.failure_count or 0)
-
-		chunk_errors: list[dict[str, Any]] = []
-		provider_acceptance_ids: list[str] = []
-		for idx, item in enumerate(response.responses):
-			if item.success:
-				message_id = str(getattr(item, "message_id", "") or "").strip()
-				if message_id:
-					provider_acceptance_ids.append(hashlib.sha256(message_id.encode("utf-8")).hexdigest()[:24])
+		for chunk in _chunk(group_tokens, max(1, min(settings.max_tokens_per_multicast, 500))):
+			token_values = [row["token"] for row in chunk if row.get("token")]
+			if not token_values:
 				continue
 
-			token_meta = chunk[idx] if idx < len(chunk) else {}
-			inactive = _is_inactive_token_error(item.exception)
-			error_detail = _exception_detail(item.exception)
-			error_detail["error_category"] = "inactive_token" if inactive else "provider_failure"
-			token_hash = str(token_meta.get("token_hash") or "").strip()
-
-			if inactive and token_hash:
-				inactive_hashes.append(token_hash)
-
-			if not first_error:
-				code = (
-					error_detail.get("code")
-					or error_detail.get("error_code")
-					or error_detail.get("error_class")
-				)
-				first_error = (
-					f"{error_detail.get('error_category')}:{code}"
-					if code
-					else str(error_detail.get("error_category"))
-				)
-
-			chunk_errors.append(
-				{
-					"token_hash": token_hash,
-					"device_type": str(token_meta.get("device_type") or ""),
-					"inactive": inactive,
-					**error_detail,
-				}
+			message = messaging.MulticastMessage(
+				notification=(
+					None
+					if data_only
+					else messaging.Notification(
+						title=str(payload.get("title") or ""),
+						body=str(payload.get("body") or ""),
+					)
+				),
+				data=data_payload,
+				tokens=token_values,
+				android=android_config,
 			)
 
-		provider_responses.append(
-			{
-				"chunk_index": chunk_index,
-				"success_count": response.success_count,
-				"failure_count": response.failure_count,
-				"provider_acceptance_ids": provider_acceptance_ids[:500],
-				"errors": chunk_errors,
-			}
-		)
+			response = messaging.send_each_for_multicast(message)
+			success_count += int(response.success_count or 0)
+			failure_count += int(response.failure_count or 0)
+
+			chunk_errors: list[dict[str, Any]] = []
+			provider_acceptance_ids: list[str] = []
+			for idx, item in enumerate(response.responses):
+				if item.success:
+					message_id = str(getattr(item, "message_id", "") or "").strip()
+					if message_id:
+						provider_acceptance_ids.append(
+							hashlib.sha256(message_id.encode("utf-8")).hexdigest()[:24]
+						)
+					continue
+
+				token_meta = chunk[idx] if idx < len(chunk) else {}
+				inactive = _is_inactive_token_error(item.exception)
+				error_detail = _exception_detail(item.exception)
+				error_detail["error_category"] = "inactive_token" if inactive else "provider_failure"
+				token_hash = str(token_meta.get("token_hash") or "").strip()
+
+				if inactive and token_hash:
+					inactive_hashes.append(token_hash)
+
+				if not first_error:
+					code = (
+						error_detail.get("code")
+						or error_detail.get("error_code")
+						or error_detail.get("error_class")
+					)
+					first_error = (
+						f"{error_detail.get('error_category')}:{code}"
+						if code
+						else str(error_detail.get("error_category"))
+					)
+
+				chunk_errors.append(
+					{
+						"token_hash": token_hash,
+						"device_type": str(token_meta.get("device_type") or ""),
+						"inactive": inactive,
+						**error_detail,
+					}
+				)
+
+			provider_responses.append(
+				{
+					"chunk_index": chunk_index,
+					"delivery_mode": delivery_mode,
+					"success_count": response.success_count,
+					"failure_count": response.failure_count,
+					"provider_acceptance_ids": provider_acceptance_ids[:500],
+					"errors": chunk_errors,
+				}
+			)
+			chunk_index += 1
 
 	return {
 		"status": "delivered" if success_count > 0 or failure_count == 0 else "failed",

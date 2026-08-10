@@ -319,15 +319,14 @@ class LiveKitService:
         try:
             ttl_minutes = int(
                 settings.livekit_token_ttl_minutes
-                or 60
+                or 5
             )
         except (TypeError, ValueError):
-            ttl_minutes = 60
+            ttl_minutes = 5
 
-        ttl_minutes = max(
-            ttl_minutes,
-            1,
-        )
+        # Calls tokens are reconnect credentials, not long-lived sessions.
+        # Preserve the existing setting but impose a Calls-specific ceiling.
+        ttl_minutes = max(1, min(ttl_minutes, 5))
 
         return timedelta(
             minutes=ttl_minutes

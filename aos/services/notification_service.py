@@ -297,6 +297,9 @@ class NotificationService:
         records. Only missed calls are stored in the notification inbox.
         """
         caller_name = cls._display_name(caller)
+        if not caller_name or caller_name == caller:
+            caller_name = "AOS User"
+        caller_public_id = public_account_id_for_user(caller)
 
         call_payload = dict(payload or {})
 
@@ -306,7 +309,8 @@ class NotificationService:
         call_payload.setdefault("notification_type", "incoming_call")
         call_payload.setdefault("call_id", call_id)
         call_payload.setdefault("id", call_id)
-        call_payload.setdefault("caller", caller)
+        call_payload.setdefault("caller", caller_public_id)
+        call_payload.setdefault("caller_account_id", caller_public_id)
         call_payload.setdefault("call_type", call_type)
         call_payload.setdefault("caller_display_name", caller_name)
 
@@ -337,6 +341,9 @@ class NotificationService:
         Create and deliver a persistent missed-call notification.
         """
         caller_name = cls._display_name(caller)
+        if not caller_name or caller_name == caller:
+            caller_name = "AOS User"
+        caller_public_id = public_account_id_for_user(caller)
 
         return cls.notify(
             user=user,
@@ -346,11 +353,13 @@ class NotificationService:
             actor=caller,
             payload={
                 "call_id": call_id,
-                "caller": caller,
+                "caller": caller_public_id,
+                "caller_account_id": caller_public_id,
                 "type": "missed_call",
                 "notification_type": "missed_call",
             },
             event="aos_missed_call",
+            dedupe_key=f"call:missed:{call_id}:{user}",
         )
 
     # FOLLOW

@@ -60,15 +60,18 @@ def validate_conversation_exists(conv_id: str):
 
 # USER VALIDATION
 def validate_user_in_call(call, user: str):
+    # Outsiders receive the same not-found response as an unknown public ID so
+    # valid CALL-* identifiers cannot be enumerated. Participant role checks
+    # remain explicit only after membership is established.
     if not call or user not in (call.caller, call.receiver):
-        return fail("Not allowed.", error="PERMISSION_DENIED")
+        return fail("Call not found.", error="NOT_FOUND", http_status=404)
 
     return None
 
 
 def validate_user_in_conversation(conv, user: str):
     if not conv or user not in (conv.participant_1, conv.participant_2):
-        return fail("Not allowed.", error="PERMISSION_DENIED")
+        return fail("Conversation not found.", error="NOT_FOUND", http_status=404)
 
     return None
 
@@ -88,22 +91,24 @@ def get_other_user(call, current_user: str) -> str | None:
 
 # ROLE VALIDATION
 def validate_is_caller(call, user: str):
-    if not call or call.caller != user:
+    if not call or user not in (call.caller, call.receiver):
+        return fail("Call not found.", error="NOT_FOUND", http_status=404)
+    if call.caller != user:
         return fail(
             "Only caller can perform this action.",
             error="PERMISSION_DENIED",
         )
-
     return None
 
 
 def validate_is_receiver(call, user: str):
-    if not call or call.receiver != user:
+    if not call or user not in (call.caller, call.receiver):
+        return fail("Call not found.", error="NOT_FOUND", http_status=404)
+    if call.receiver != user:
         return fail(
             "Only receiver can perform this action.",
             error="PERMISSION_DENIED",
         )
-
     return None
 
 
@@ -152,21 +157,3 @@ def validate_can_end(call):
 
     return None
 
-
-# ACTIVE CALL CONSTRAINT
-def validate_no_active_call_for_conversation(conv_id: str):
-    exists = frappe.db.exists(
-        "AOS Call",
-        {
-            "conversation": conv_id,
-            "is_active": 1,
-        },
-    )
-
-    if exists:
-        return fail(
-            "There is already an active call for this conversation.",
-            error="ACTIVE_CALL_EXISTS",
-        )
-
-    return None

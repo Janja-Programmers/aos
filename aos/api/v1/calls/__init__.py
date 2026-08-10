@@ -1,12 +1,19 @@
-"""Public AOS API v1 wrappers for calls.
+"""Stable public AOS Calls v1 endpoints.
 
-These thin wrappers are the stable external contract for /api/method/aos.api.v1.calls.*.
-Implementation stays in aos.api.calls implementation modules.
+The wrappers strip only Frappe-owned transport metadata, validate strict field
+contracts and delegate to the established Calls implementation modules.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 import frappe
+
+from aos.api.v1._transport import client_kwargs as _client_kwargs
+from aos.services.calls.api import run_call_api
+from aos.services.calls.endpoints import ENDPOINT_SPECS, TRANSACTIONAL_ENDPOINTS
 
 from aos.api.calls.call import (
     initiate_call_impl as _initiate_call_impl,
@@ -18,12 +25,8 @@ from aos.api.calls.call import (
     request_video_upgrade_impl as _request_video_upgrade_impl,
     respond_video_upgrade_impl as _respond_video_upgrade_impl,
 )
-from aos.api.calls.status import (
-    get_call_status_impl as _get_call_status_impl,
-)
-from aos.api.calls.token import (
-    get_call_token_impl as _get_call_token_impl,
-)
+from aos.api.calls.status import get_call_status_impl as _get_call_status_impl
+from aos.api.calls.token import get_call_token_impl as _get_call_token_impl
 from aos.api.calls.history import (
     list_calls_impl as _list_calls_impl,
     get_call_group_details_impl as _get_call_group_details_impl,
@@ -31,85 +34,82 @@ from aos.api.calls.history import (
     clear_call_history_impl as _clear_call_history_impl,
 )
 
+
+def _call(name: str, implementation: Callable[..., dict[str, Any]], kwargs: dict[str, Any]) -> dict[str, Any]:
+    return run_call_api(
+        implementation,
+        _client_kwargs(kwargs),
+        spec=ENDPOINT_SPECS[name],
+        operation_name=name,
+        transactional=name in TRANSACTIONAL_ENDPOINTS,
+    )
+
+
 @frappe.whitelist(methods=["POST"])
 def initiate_call(**kwargs):
-    """Start an audio/video call for a conversation."""
-    return _initiate_call_impl(**kwargs)
+    return _call("initiate_call", _initiate_call_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def mark_call_ringing(**kwargs):
-    """Mark an incoming call as ringing on the receiver side."""
-    return _mark_call_ringing_impl(**kwargs)
+    return _call("mark_call_ringing", _mark_call_ringing_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def accept_call(**kwargs):
-    """Accept an incoming call."""
-    return _accept_call_impl(**kwargs)
+    return _call("accept_call", _accept_call_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def reject_call(**kwargs):
-    """Reject an incoming call."""
-    return _reject_call_impl(**kwargs)
+    return _call("reject_call", _reject_call_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def cancel_call(**kwargs):
-    """Cancel an outgoing call before it is accepted."""
-    return _cancel_call_impl(**kwargs)
+    return _call("cancel_call", _cancel_call_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def end_call(**kwargs):
-    """End an ongoing call."""
-    return _end_call_impl(**kwargs)
+    return _call("end_call", _end_call_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def request_video_upgrade(**kwargs):
-    """Request upgrading an ongoing audio call to video."""
-    return _request_video_upgrade_impl(**kwargs)
+    return _call("request_video_upgrade", _request_video_upgrade_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def respond_video_upgrade(**kwargs):
-    """Accept or decline a pending audio-to-video upgrade request."""
-    return _respond_video_upgrade_impl(**kwargs)
+    return _call("respond_video_upgrade", _respond_video_upgrade_impl, kwargs)
 
 
 @frappe.whitelist(methods=["GET", "POST"])
 def get_call_status(**kwargs):
-    """Get current call state."""
-    return _get_call_status_impl(**kwargs)
+    return _call("get_call_status", _get_call_status_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def get_call_token(**kwargs):
-    """Generate a LiveKit token for reconnect/retry."""
-    return _get_call_token_impl(**kwargs)
+    return _call("get_call_token", _get_call_token_impl, kwargs)
 
 
 @frappe.whitelist(methods=["GET", "POST"])
 def list_calls(**kwargs):
-    """List current user's grouped call history."""
-    return _list_calls_impl(**kwargs)
+    return _call("list_calls", _list_calls_impl, kwargs)
 
 
 @frappe.whitelist(methods=["GET", "POST"])
 def get_call_group_details(**kwargs):
-    """Get individual call logs inside a grouped call-history row."""
-    return _get_call_group_details_impl(**kwargs)
+    return _call("get_call_group_details", _get_call_group_details_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def delete_call_logs(**kwargs):
-    """Delete one or more call logs for the current user only."""
-    return _delete_call_logs_impl(**kwargs)
+    return _call("delete_call_logs", _delete_call_logs_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def clear_call_history(**kwargs):
-    """Clear current user's visible call history only."""
-    return _clear_call_history_impl(**kwargs)
+    return _call("clear_call_history", _clear_call_history_impl, kwargs)

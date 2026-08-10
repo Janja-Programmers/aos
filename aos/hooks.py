@@ -171,6 +171,8 @@ scheduler_events = {
 		"*/5 * * * *": [
 			"aos.tasks.shorts.recover_pending_audio_mixes",
 			"aos.tasks.live.reconcile_live_state",
+			"aos.tasks.calls.reconcile_call_rooms",
+			"aos.tasks.calls.reconcile_active_call_state",
 		],
 	},
 	"hourly": [

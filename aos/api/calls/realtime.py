@@ -7,16 +7,33 @@ from typing import Any
 
 import frappe
 
-from aos.api.shared.user_display import get_user_display
+from aos.api.shared.user_display import get_user_display, get_user_display_map
+from aos.services.accounts.identity import public_account_id_for_user
 
 # HELPERS
-def _get_user_summary(user_id: str | None) -> dict[str, Any] | None:
-    """Return display-safe user summary."""
-
+def _get_user_summary(
+    user_id: str | None,
+    user_summaries: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    """Return display-safe public identity metadata without email fallback."""
     if not user_id:
         return None
+    if user_summaries and user_id in user_summaries:
+        return user_summaries[user_id]
+    try:
+        return get_user_display(user_id)
+    except Exception:
+        public_id = public_account_id_for_user(user_id)
+        return {
+            "user": public_id,
+            "display_name": "AOS User",
+            "avatar": None,
+            "is_deleted": False,
+            "is_live": False,
+            "live_id": None,
+            "live_status": None,
+        }
 
-    return get_user_display(user_id)
 
 def serialize_call_for_realtime(
     call,
@@ -24,30 +41,28 @@ def serialize_call_for_realtime(
     current_user: str | None = None,
     event_status: str | None = None,
     actor: str | None = None,
+    user_summaries: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """
-    Build a consistent realtime/API-friendly call payload.
+    """Build the canonical public Calls API/realtime payload."""
+    if user_summaries is None:
+        users = {
+            value
+            for value in (
+                getattr(call, "caller", None),
+                getattr(call, "receiver", None),
+                actor,
+                getattr(call, "ended_by", None),
+                getattr(call, "video_upgrade_requested_by", None),
+            )
+            if value
+        }
+        try:
+            user_summaries = get_user_display_map(users)
+        except Exception:
+            user_summaries = {}
 
-    current_user is optional. When provided, the payload includes:
-    - other_user
-    - other_display_name
-    - other_avatar
-
-    actor is optional and represents the user who performed the event:
-    - incoming
-    - ringing
-    - accepted
-    - rejected
-    - cancelled
-    - ended
-    - video_upgrade_requested
-    - video_upgrade_accepted
-    - video_upgrade_declined
-    - video_upgrade_cancelled
-    """
-
-    caller = _get_user_summary(call.caller)
-    receiver = _get_user_summary(call.receiver)
+    caller = _get_user_summary(call.caller, user_summaries)
+    receiver = _get_user_summary(call.receiver, user_summaries)
 
     other = None
     if current_user:
@@ -56,7 +71,11 @@ def serialize_call_for_realtime(
         elif current_user == call.receiver:
             other = caller
 
-    actor_summary = _get_user_summary(actor) if actor else None
+    actor_summary = _get_user_summary(actor, user_summaries) if actor else None
+    upgrade_requester = _get_user_summary(
+        getattr(call, "video_upgrade_requested_by", None), user_summaries
+    )
+    ended_by = _get_user_summary(getattr(call, "ended_by", None), user_summaries)
 
     return {
         "id": call.name,
@@ -66,61 +85,44 @@ def serialize_call_for_realtime(
         "status": event_status or call.status,
         "call_type": call.call_type,
         "is_active": call.is_active,
-        "caller": caller["user"] if caller else call.caller,
-        "caller_display_name": caller["display_name"] if caller else call.caller,
-        "caller_avatar": caller["avatar"] if caller else None,
+        "caller": caller.get("user") if caller else None,
+        "caller_display_name": caller.get("display_name") if caller else "AOS User",
+        "caller_avatar": caller.get("avatar") if caller else None,
         "caller_is_deleted": bool(caller.get("is_deleted")) if caller else False,
         "caller_is_live": bool(caller.get("is_live")) if caller and not bool(caller.get("is_deleted")) else False,
         "caller_live_id": caller.get("live_id") if caller and not bool(caller.get("is_deleted")) else None,
         "caller_live_status": caller.get("live_status") if caller and not bool(caller.get("is_deleted")) else None,
-        "receiver": receiver["user"] if receiver else call.receiver,
-        "receiver_display_name": (
-            receiver["display_name"] if receiver else call.receiver
-        ),
-        "receiver_avatar": receiver["avatar"] if receiver else None,
+        "receiver": receiver.get("user") if receiver else None,
+        "receiver_display_name": receiver.get("display_name") if receiver else "AOS User",
+        "receiver_avatar": receiver.get("avatar") if receiver else None,
         "receiver_is_deleted": bool(receiver.get("is_deleted")) if receiver else False,
         "receiver_is_live": bool(receiver.get("is_live")) if receiver and not bool(receiver.get("is_deleted")) else False,
         "receiver_live_id": receiver.get("live_id") if receiver and not bool(receiver.get("is_deleted")) else None,
         "receiver_live_status": receiver.get("live_status") if receiver and not bool(receiver.get("is_deleted")) else None,
-        "other_user": other["user"] if other else None,
-        "other_display_name": other["display_name"] if other else None,
-        "other_avatar": other["avatar"] if other else None,
+        "other_user": other.get("user") if other else None,
+        "other_display_name": other.get("display_name") if other else None,
+        "other_avatar": other.get("avatar") if other else None,
         "other_is_deleted": bool(other.get("is_deleted")) if other else False,
         "other_is_live": bool(other.get("is_live")) if other and not bool(other.get("is_deleted")) else False,
         "other_live_id": other.get("live_id") if other and not bool(other.get("is_deleted")) else None,
         "other_live_status": other.get("live_status") if other and not bool(other.get("is_deleted")) else None,
-        "actor": actor_summary["user"] if actor_summary else actor,
-        "actor_display_name": (
-            actor_summary["display_name"] if actor_summary else actor
-        ),
-        "actor_avatar": actor_summary["avatar"] if actor_summary else None,
+        "actor": actor_summary.get("user") if actor_summary else None,
+        "actor_display_name": actor_summary.get("display_name") if actor_summary else None,
+        "actor_avatar": actor_summary.get("avatar") if actor_summary else None,
         "actor_is_deleted": bool(actor_summary.get("is_deleted")) if actor_summary else False,
         "actor_is_live": bool(actor_summary.get("is_live")) if actor_summary and not bool(actor_summary.get("is_deleted")) else False,
         "actor_live_id": actor_summary.get("live_id") if actor_summary and not bool(actor_summary.get("is_deleted")) else None,
         "actor_live_status": actor_summary.get("live_status") if actor_summary and not bool(actor_summary.get("is_deleted")) else None,
         "video_upgrade_status": getattr(call, "video_upgrade_status", None) or "none",
-        "video_upgrade_requested_by": getattr(
-            call,
-            "video_upgrade_requested_by",
-            None,
-        ),
-        "video_upgrade_requested_at": getattr(
-            call,
-            "video_upgrade_requested_at",
-            None,
-        ),
-        "video_upgrade_responded_at": getattr(
-            call,
-            "video_upgrade_responded_at",
-            None,
-        ),
+        "video_upgrade_requested_by": upgrade_requester.get("user") if upgrade_requester else None,
+        "video_upgrade_requested_at": getattr(call, "video_upgrade_requested_at", None),
+        "video_upgrade_responded_at": getattr(call, "video_upgrade_responded_at", None),
         "ringing_at": call.ringing_at,
         "started_at": call.started_at,
         "ended_at": call.ended_at,
-        "ended_by": call.ended_by,
+        "ended_by": ended_by.get("user") if ended_by else None,
         "duration": call.duration or 0,
     }
-
 
 def _publish(event: str, message: dict, users: list[str]):
     """
@@ -135,6 +137,7 @@ def _publish(event: str, message: dict, users: list[str]):
             event=event,
             message=message,
             user=user,
+            after_commit=True,
         )
 
 
@@ -158,6 +161,7 @@ def publish_incoming_call(call, receiver: str):
         event="aos_incoming_call",
         message=message,
         user=receiver,
+        after_commit=True,
     )
 
 
@@ -180,6 +184,7 @@ def publish_call_ringing(call):
         event="aos_call_ringing",
         message=message,
         user=call.caller,
+        after_commit=True,
     )
 
 
@@ -202,6 +207,7 @@ def publish_call_accepted(call):
         event="aos_call_accepted",
         message=message,
         user=call.caller,
+        after_commit=True,
     )
 
 
@@ -224,6 +230,7 @@ def publish_call_rejected(call):
         event="aos_call_rejected",
         message=message,
         user=call.caller,
+        after_commit=True,
     )
 
 
@@ -246,10 +253,11 @@ def publish_call_cancelled(call):
         event="aos_call_cancelled",
         message=message,
         user=call.receiver,
+        after_commit=True,
     )
 
 
-def publish_call_ended(call):
+def publish_call_ended(call, *, event_status: str = "ended"):
     """
     Notify both participants that call ended.
 
@@ -261,14 +269,14 @@ def publish_call_ended(call):
     caller_message = serialize_call_for_realtime(
         call,
         current_user=call.caller,
-        event_status="ended",
+        event_status=event_status,
         actor=call.ended_by,
     )
 
     receiver_message = serialize_call_for_realtime(
         call,
         current_user=call.receiver,
-        event_status="ended",
+        event_status=event_status,
         actor=call.ended_by,
     )
 
@@ -276,6 +284,7 @@ def publish_call_ended(call):
         event="aos_call_ended",
         message=caller_message,
         user=call.caller,
+        after_commit=True,
     )
 
     if call.receiver != call.caller:
@@ -283,6 +292,7 @@ def publish_call_ended(call):
             event="aos_call_ended",
             message=receiver_message,
             user=call.receiver,
+            after_commit=True,
         )
 
 
@@ -313,6 +323,7 @@ def publish_call_not_answered(call):
         event="aos_call_not_answered",
         message=caller_message,
         user=call.caller,
+        after_commit=True,
     )
 
     if call.receiver != call.caller:
@@ -320,6 +331,7 @@ def publish_call_not_answered(call):
             event="aos_call_not_answered",
             message=receiver_message,
             user=call.receiver,
+            after_commit=True,
         )
 
 
@@ -350,6 +362,7 @@ def publish_video_upgrade_requested(call):
         event="aos_call_video_upgrade_requested",
         message=message,
         user=target,
+        after_commit=True,
     )
 
 
@@ -422,6 +435,7 @@ def publish_video_upgrade_declined(call):
         event="aos_call_video_upgrade_declined",
         message=message,
         user=requester,
+        after_commit=True,
     )
 
 
@@ -451,4 +465,5 @@ def publish_video_upgrade_cancelled(call):
         event="aos_call_video_upgrade_cancelled",
         message=message,
         user=target,
+        after_commit=True,
     )

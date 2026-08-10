@@ -13,11 +13,11 @@ from typing import Any
 
 import json
 import frappe
-from frappe.utils import now_datetime
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
+from aos.api.shared.user_display import get_user_display_map
 
 from .constants import (
     LIST_CALLS_LIMIT_PER_MINUTE_PER_USER,
@@ -32,6 +32,8 @@ from .realtime import serialize_call_for_realtime
 RAW_FETCH_BATCH_SIZE = 100
 MAX_GROUP_FETCH_LOOPS = 50
 MAX_DELETE_CALL_LOGS_BATCH_SIZE = 100
+CLEAR_CALL_HISTORY_BATCH_SIZE = 500
+MAX_GROUP_DETAIL_ROWS = 5000
 
 
 # HELPERS
@@ -124,7 +126,7 @@ def _validate_conversation_membership(
         return fail("Conversation not found.", error="NOT_FOUND")
 
     if current_user not in (conv.participant_1, conv.participant_2):
-        return fail("Not allowed.", error="PERMISSION_DENIED")
+        return fail("Conversation not found.", error="NOT_FOUND")
 
     return None
 
@@ -268,7 +270,12 @@ def _get_history_category(call, current_user: str) -> str:
     return status or "unknown"
 
 
-def _serialize_call_row(call, current_user: str) -> dict:
+def _serialize_call_row(
+    call,
+    current_user: str,
+    *,
+    user_summaries: dict[str, dict[str, Any]] | None = None,
+) -> dict:
     """
     Serialize one raw call row.
 
@@ -286,6 +293,7 @@ def _serialize_call_row(call, current_user: str) -> dict:
     item = serialize_call_for_realtime(
         call,
         current_user=current_user,
+        user_summaries=user_summaries,
     )
 
     item.update(
@@ -300,6 +308,16 @@ def _serialize_call_row(call, current_user: str) -> dict:
     )
 
     return item
+
+
+def _display_map_for_calls(calls) -> dict[str, dict[str, Any]]:
+    users: set[str] = set()
+    for call in calls or ():
+        for field in ("caller", "receiver", "ended_by", "video_upgrade_requested_by"):
+            value = getattr(call, field, None)
+            if value:
+                users.add(value)
+    return get_user_display_map(users) if users else {}
 
 
 def _group_compare_key(serialized_call: dict) -> tuple:
@@ -500,8 +518,14 @@ def _build_grouped_history(
             exhausted = True
             break
 
+        user_summaries = _display_map_for_calls(rows)
+
         for call in rows:
-            serialized = _serialize_call_row(call, current_user)
+            serialized = _serialize_call_row(
+                call,
+                current_user,
+                user_summaries=user_summaries,
+            )
             key = _group_compare_key(serialized)
 
             if current_group is None:
@@ -562,7 +586,8 @@ def _validate_group_boundary_call(
         return None, fail(f"{label} call not found.", error="NOT_FOUND")
 
     if not _user_in_call(call, current_user):
-        return None, fail("Not allowed.", error="PERMISSION_DENIED")
+        # Avoid exposing whether a valid Call ID belongs to another account.
+        return None, fail(f"{label} call not found.", error="NOT_FOUND")
 
     if not _user_can_see_call(call, current_user):
         return None, fail(f"{label} call not found.", error="NOT_FOUND")
@@ -619,6 +644,7 @@ def _fetch_calls_between_boundaries(
                 )
             )
         ORDER BY creation DESC, name DESC
+        LIMIT %(max_rows)s
         """,
         {
             "current_user": current_user,
@@ -626,6 +652,7 @@ def _fetch_calls_between_boundaries(
             "latest_name": latest_call.name,
             "oldest_creation": oldest_call.creation,
             "oldest_name": oldest_call.name,
+            "max_rows": MAX_GROUP_DETAIL_ROWS + 1,
         },
         as_dict=True,
     )
@@ -642,7 +669,6 @@ def _delete_selected_call_logs(*, current_user: str, call_ids: list[str]) -> int
     if not call_ids:
         return 0
 
-    now = now_datetime()
     deleted_count = 0
 
     placeholders = ", ".join(["%s"] * len(call_ids))
@@ -681,36 +707,46 @@ def _delete_selected_call_logs(*, current_user: str, call_ids: list[str]) -> int
 
 
 def _clear_all_call_history(*, current_user: str) -> int:
-    """
-    Hide all visible call logs for current user only.
-
-    Does not delete AOS Call records.
-    Does not affect the other participant.
-    """
+    """Hide visible history in bounded, lock-safe batches for this user only."""
 
     deleted_count = 0
 
-    frappe.db.sql(
-        """
-        UPDATE `tabAOS Call`
-        SET visible_to_caller = 0
-        WHERE caller = %s
-          AND IFNULL(visible_to_caller, 1) = 1
-        """,
-        (current_user,),
-    )
-    deleted_count += frappe.db._cursor.rowcount or 0
+    for role_field, visible_field in (
+        ("caller", "visible_to_caller"),
+        ("receiver", "visible_to_receiver"),
+    ):
+        while True:
+            rows = frappe.db.sql(
+                f"""
+                SELECT name
+                FROM `tabAOS Call`
+                WHERE {role_field} = %(current_user)s
+                  AND IFNULL({visible_field}, 1) = 1
+                ORDER BY creation ASC, name ASC
+                LIMIT %(limit)s
+                FOR UPDATE
+                """,
+                {
+                    "current_user": current_user,
+                    "limit": CLEAR_CALL_HISTORY_BATCH_SIZE,
+                },
+                as_dict=True,
+            )
+            if not rows:
+                break
 
-    frappe.db.sql(
-        """
-        UPDATE `tabAOS Call`
-        SET visible_to_receiver = 0
-        WHERE receiver = %s
-          AND IFNULL(visible_to_receiver, 1) = 1
-        """,
-        (current_user,),
-    )
-    deleted_count += frappe.db._cursor.rowcount or 0
+            names = tuple(row.name for row in rows)
+            frappe.db.sql(
+                f"""
+                UPDATE `tabAOS Call`
+                SET {visible_field} = 0
+                WHERE {role_field} = %(current_user)s
+                  AND IFNULL({visible_field}, 1) = 1
+                  AND name IN %(names)s
+                """,
+                {"current_user": current_user, "names": names},
+            )
+            deleted_count += frappe.db._cursor.rowcount or 0
 
     return deleted_count
 
@@ -722,7 +758,7 @@ def list_calls_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:calls:list:user:{current_user}",
+        key=rate_limit_key("calls", "list", current_user),
         ttl_seconds=60,
         limit=LIST_CALLS_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
@@ -780,10 +816,7 @@ def list_calls_impl(**kwargs):
         return ok("Calls fetched.", data=result)
 
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS List Calls Failed",
-        )
+        frappe.log_error("Unexpected Calls history failure.", "AOS List Calls Failed")
         return fail("Failed to fetch calls.", error="INTERNAL_ERROR")
 
 
@@ -794,7 +827,7 @@ def get_call_group_details_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:calls:group-details:user:{current_user}",
+        key=rate_limit_key("calls", "group_details", current_user),
         ttl_seconds=60,
         limit=GET_CALL_GROUP_DETAILS_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
@@ -828,8 +861,13 @@ def get_call_group_details_impl(**kwargs):
         if err:
             return err
 
-        latest_serialized = _serialize_call_row(latest_call, current_user)
-        oldest_serialized = _serialize_call_row(oldest_call, current_user)
+        boundary_summaries = _display_map_for_calls((latest_call, oldest_call))
+        latest_serialized = _serialize_call_row(
+            latest_call, current_user, user_summaries=boundary_summaries
+        )
+        oldest_serialized = _serialize_call_row(
+            oldest_call, current_user, user_summaries=boundary_summaries
+        )
 
         expected_key = _group_compare_key(latest_serialized)
 
@@ -842,10 +880,19 @@ def get_call_group_details_impl(**kwargs):
             oldest_call=oldest_call,
         )
 
+        if len(rows) > MAX_GROUP_DETAIL_ROWS:
+            return fail(
+                "Call group is too large to return in one response.",
+                error="CALL_INPUT_TOO_LARGE",
+            )
+
         calls = []
+        row_summaries = _display_map_for_calls(rows)
 
         for row in rows:
-            serialized = _serialize_call_row(row, current_user)
+            serialized = _serialize_call_row(
+                row, current_user, user_summaries=row_summaries
+            )
 
             if _group_compare_key(serialized) != expected_key:
                 break
@@ -892,7 +939,7 @@ def get_call_group_details_impl(**kwargs):
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Unexpected Calls group-details failure.",
             "AOS Get Call Group Details Failed",
         )
         return fail("Failed to fetch call group.", error="INTERNAL_ERROR")
@@ -905,7 +952,7 @@ def delete_call_logs_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:calls:delete-logs:user:{current_user}",
+        key=rate_limit_key("calls", "delete_logs", current_user),
         ttl_seconds=60,
         limit=DELETE_CALL_LOGS_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
@@ -930,8 +977,6 @@ def delete_call_logs_impl(**kwargs):
             call_ids=call_ids,
         )
 
-        frappe.db.commit()
-
         return ok(
             "Call logs deleted.",
             data={
@@ -941,10 +986,9 @@ def delete_call_logs_impl(**kwargs):
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Unexpected Calls history deletion failure.",
             "AOS Delete Call Logs Failed",
         )
-        frappe.db.rollback()
         return fail("Failed to delete call logs.", error="INTERNAL_ERROR")
 
 
@@ -955,7 +999,7 @@ def clear_call_history_impl(**kwargs):
         return err
 
     rl = rate_limit(
-        key=f"aos:calls:clear-history:user:{current_user}",
+        key=rate_limit_key("calls", "clear_history", current_user),
         ttl_seconds=60,
         limit=CLEAR_CALL_HISTORY_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests. Please try again shortly.",
@@ -968,8 +1012,6 @@ def clear_call_history_impl(**kwargs):
             current_user=current_user,
         )
 
-        frappe.db.commit()
-
         return ok(
             "Call history cleared.",
             data={
@@ -979,8 +1021,7 @@ def clear_call_history_impl(**kwargs):
 
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Unexpected Calls history clear failure.",
             "AOS Clear Call History Failed",
         )
-        frappe.db.rollback()
         return fail("Failed to clear call history.", error="INTERNAL_ERROR")

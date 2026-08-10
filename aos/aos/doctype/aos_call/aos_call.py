@@ -161,20 +161,33 @@ class AOSCall(Document):
             frappe.throw("Video call cannot have a pending upgrade request")
 
     def _validate_single_active_call_per_conversation(self):
+        """Enforce the legacy method's invariant across both participants.
+
+        Calls are one-to-one in the current AOS model. A user may therefore
+        have at most one active/ringing call, even when another conversation
+        is involved. Endpoint code additionally takes deterministic locks;
+        this document guard protects Desk/internal writes.
+        """
         if self.status not in ACTIVE_STATUSES:
             return
 
-        existing = frappe.db.exists(
-            "AOS Call",
-            {
-                "conversation": self.conversation,
-                "is_active": 1,
-                "name": ["!=", self.name or ""],
-            },
+        users = tuple(sorted({self.caller, self.receiver}))
+        existing = frappe.db.sql(
+            """
+            SELECT name
+            FROM `tabAOS Call`
+            WHERE name != %(name)s
+              AND is_active = 1
+              AND status IN ('initiated', 'ringing', 'ongoing')
+              AND (caller IN %(users)s OR receiver IN %(users)s)
+            LIMIT 1
+            """,
+            {"name": self.name or "", "users": users},
+            as_dict=True,
         )
 
         if existing:
-            frappe.throw("There is already an active call for this conversation")
+            frappe.throw("A participant already has an active call")
 
     def _prevent_identity_modification(self):
         if self.is_new():
@@ -237,15 +250,23 @@ class AOSCall(Document):
         if self.status == "ongoing" and not self.started_at:
             self.started_at = now
 
-        # Terminal states
+        # Terminal states. Queue room cleanup only on the transition; an
+        # unrelated later Desk save must not resurrect already-completed work.
         if self.status in TERMINAL_STATUSES:
             if not self.ended_at:
                 self.ended_at = now
 
             self.is_active = 0
+            old_status = None if self.is_new() else frappe.db.get_value(
+                self.doctype, self.name, "status"
+            )
+            if self.is_new() or old_status not in TERMINAL_STATUSES:
+                self.room_cleanup_pending = 1
+            self.rtc_missing_since = None
 
         elif self.status in ACTIVE_STATUSES:
             self.is_active = 1
+            self.room_cleanup_pending = 0
 
     def _compute_duration(self):
         if not self.started_at or not self.ended_at:

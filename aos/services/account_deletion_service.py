@@ -200,13 +200,19 @@ def _end_active_calls(*, user: str, now) -> int:
     if not _doctype_exists("AOS Call"):
         return 0
 
-    return _update_counted(
+    count = _update_counted(
         "AOS Call",
         set_sql="""
             status = 'ended',
             is_active = 0,
             ended_at = COALESCE(ended_at, %s),
             ended_by = COALESCE(ended_by, %s),
+            duration = CASE
+                WHEN started_at IS NULL THEN GREATEST(COALESCE(duration, 0), 0)
+                ELSE GREATEST(0, TIMESTAMPDIFF(SECOND, started_at, %s))
+            END,
+            room_cleanup_pending = 1,
+            rtc_missing_since = NULL,
             modified = %s
         """,
         where_sql="""
@@ -216,9 +222,41 @@ def _end_active_calls(*, user: str, now) -> int:
                 OR status IN ('initiated', 'ringing', 'ongoing')
             )
         """,
-        set_params=(now, user, now),
+        set_params=(now, user, now, now),
         where_params=(user, user),
     )
+
+    if count:
+        # No provider I/O occurs inside account deletion. Queue a bounded set
+        # after commit; the Calls reconciler drains any remainder durably.
+        from aos.services.calls.livekit import enqueue_room_cleanup
+
+        pending = frappe.get_all(
+            "AOS Call",
+            filters={
+                "room_cleanup_pending": 1,
+                "status": "ended",
+                "caller": ["in", [user]],
+            },
+            pluck="name",
+            order_by="modified asc, name asc",
+            limit=50,
+        )
+        receiver_pending = frappe.get_all(
+            "AOS Call",
+            filters={
+                "room_cleanup_pending": 1,
+                "status": "ended",
+                "receiver": ["in", [user]],
+            },
+            pluck="name",
+            order_by="modified asc, name asc",
+            limit=50,
+        )
+        for call_id in dict.fromkeys([*pending, *receiver_pending]):
+            enqueue_room_cleanup(call_id)
+
+    return count
 
 
 def _end_active_live_streams(*, user: str, now) -> int:
