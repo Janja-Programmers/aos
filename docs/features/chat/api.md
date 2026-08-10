@@ -38,6 +38,9 @@ Clients must branch on `error`, not the human message.
 
 `cmd` is accepted only as Frappe transport metadata. Other unknown fields fail closed.
 
+`list_conversations` includes `last_message_is_mine`, `last_message_id`, `last_message_delivered_at`, and `last_message_read_at` for WhatsApp-style receipt rendering. Receipt fields are populated only for the current viewer's latest visible outgoing preview. Clients render one sent tick when both receipt timestamps are null, two delivered ticks when only `last_message_delivered_at` is set, and two read ticks when `last_message_read_at` is set. Realtime clients must apply `aos_message_status` to a conversation preview only when the event `message_ids` contains that row's `last_message_id`; this prevents delayed status events for older messages from advancing a newer preview. Incoming previews keep their existing presentation and must not infer receipt state from these fields.
+
+
 ## Identifiers and bounds
 
 - Conversation: `CONV-YYYY-NNNNN`

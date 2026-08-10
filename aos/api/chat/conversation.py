@@ -133,6 +133,64 @@ def _viewer_preview_fields(conv, current_user: str) -> tuple[str | None, object 
     )
 
 
+def _fetch_latest_outgoing_statuses(conversations, current_user: str) -> dict[str, dict]:
+    """Return delivery/read state for viewer-authored conversation previews.
+
+    Conversation previews are participant-specific because delete-for-me and
+    clear-chat can make each side's latest visible message differ.  Resolve the
+    latest visible message for only those previews whose sender is the current
+    user in one bounded query (list_conversations is capped at 50 rows).
+    """
+
+    conversation_ids = []
+    for conv in conversations:
+        _preview, _preview_at, last_sender = _viewer_preview_fields(conv, current_user)
+        if last_sender == current_user:
+            conversation_ids.append(conv["name"])
+
+    if not conversation_ids:
+        return {}
+
+    rows = frappe.db.sql(
+        """
+        SELECT
+            c.name AS conversation_id,
+            m.name AS message_id,
+            m.delivered_to_receiver_at AS delivered_at,
+            m.read_by_receiver_at AS read_at
+        FROM `tabAOS Conversation` c
+        LEFT JOIN `tabAOS Message` m
+          ON m.name = (
+                SELECT m2.name
+                FROM `tabAOS Message` m2
+                WHERE m2.conversation = c.name
+                  AND m2.sender = %(current_user)s
+                  AND (
+                        (c.participant_1 = %(current_user)s AND IFNULL(m2.deleted_for_1, 0) = 0)
+                     OR (c.participant_2 = %(current_user)s AND IFNULL(m2.deleted_for_2, 0) = 0)
+                  )
+                ORDER BY m2.creation DESC, m2.name DESC
+                LIMIT 1
+          )
+        WHERE c.name IN %(conversation_ids)s
+        """,
+        {
+            "current_user": current_user,
+            "conversation_ids": tuple(conversation_ids),
+        },
+        as_dict=True,
+    )
+
+    return {
+        row["conversation_id"]: {
+            "message_id": row.get("message_id"),
+            "delivered_at": row.get("delivered_at"),
+            "read_at": row.get("read_at"),
+        }
+        for row in rows
+    }
+
+
 # get_or_create_conversation
 def get_or_create_conversation_impl(**kwargs):
     current_user, err = require_login()
@@ -355,6 +413,7 @@ def list_conversations_impl(**kwargs):
 
         user_map = _fetch_users(list(user_ids))
         blocked_users = get_blocked_user_set(current_user, user_ids)
+        outgoing_statuses = _fetch_latest_outgoing_statuses(conversations, current_user)
 
         results = []
 
@@ -376,6 +435,7 @@ def list_conversations_impl(**kwargs):
             )
 
             last_sender_user = user_map.get(last_sender) if last_sender else None
+            outgoing_status = outgoing_statuses.get(conv["name"]) or {}
             other_blocked = other_user in blocked_users
             last_sender_blocked = bool(last_sender and last_sender in blocked_users)
 
@@ -433,6 +493,14 @@ def list_conversations_impl(**kwargs):
                         and not bool(last_sender_user.get("is_deleted"))
                         else None
                     ),
+                    # Sender-only receipt state for WhatsApp-style conversation
+                    # preview ticks. last_message_id lets realtime clients apply
+                    # a receipt event only when it actually contains the current
+                    # preview message, avoiding stale-event races with newer sends.
+                    "last_message_id": outgoing_status.get("message_id"),
+                    "last_message_is_mine": bool(last_sender == current_user),
+                    "last_message_delivered_at": outgoing_status.get("delivered_at"),
+                    "last_message_read_at": outgoing_status.get("read_at"),
                     "unread_count": unread or 0,
                 }
             )

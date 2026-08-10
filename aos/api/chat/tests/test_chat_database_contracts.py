@@ -5,7 +5,9 @@ from unittest.mock import Mock, patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from aos.api.chat.conversation import list_conversations_impl
 from aos.api.chat.message import list_messages_impl, send_message_impl
+from aos.api.chat.status import mark_delivered_impl, mark_read_impl
 from aos.api.chat.presence import get_presence_impl
 from aos.api.live.share import share_live_to_chat_impl
 from aos.services.live.api import run_live_api
@@ -56,6 +58,53 @@ class TestChatDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(data.get("display_name"))
         self.assertTrue(data.get("last_seen"))
         self.assertTrue(data.get("is_online"))
+
+    def test_conversation_list_exposes_last_outgoing_receipt_state(self):
+        sender, receiver, conversation = self._users_and_conversation()
+        frappe.set_user(sender)
+        with (
+            patch("aos.api.chat.message.rate_limit", return_value=None),
+            patch("aos.api.chat.message.NotificationService.notify_new_message"),
+            patch("aos.api.chat.message.enqueue_conversation_response_metrics_refresh"),
+        ):
+            sent = send_message_impl(
+                conversation_id=conversation.name,
+                content="Receipt preview",
+                idempotency_key="receipt-preview-1",
+            )
+        self.assertTrue(sent.get("ok"), sent)
+
+        with patch("aos.api.chat.conversation.rate_limit", return_value=None):
+            initial = list_conversations_impl(limit=20, offset=0)
+        row = next(item for item in (initial.get("data") or []) if item.get("id") == conversation.name)
+        self.assertTrue(row.get("last_message_id"))
+        self.assertTrue(row.get("last_message_is_mine"))
+        self.assertIsNone(row.get("last_message_delivered_at"))
+        self.assertIsNone(row.get("last_message_read_at"))
+
+        frappe.set_user(receiver)
+        with patch("aos.api.chat.status.rate_limit", return_value=None):
+            delivered = mark_delivered_impl(conversation_id=conversation.name)
+        self.assertTrue(delivered.get("ok"), delivered)
+
+        frappe.set_user(sender)
+        with patch("aos.api.chat.conversation.rate_limit", return_value=None):
+            after_delivery = list_conversations_impl(limit=20, offset=0)
+        row = next(item for item in (after_delivery.get("data") or []) if item.get("id") == conversation.name)
+        self.assertTrue(row.get("last_message_delivered_at"))
+        self.assertIsNone(row.get("last_message_read_at"))
+
+        frappe.set_user(receiver)
+        with patch("aos.api.chat.status.rate_limit", return_value=None):
+            read = mark_read_impl(conversation_id=conversation.name)
+        self.assertTrue(read.get("ok"), read)
+
+        frappe.set_user(sender)
+        with patch("aos.api.chat.conversation.rate_limit", return_value=None):
+            after_read = list_conversations_impl(limit=20, offset=0)
+        row = next(item for item in (after_read.get("data") or []) if item.get("id") == conversation.name)
+        self.assertTrue(row.get("last_message_delivered_at"))
+        self.assertTrue(row.get("last_message_read_at"))
 
     def test_message_idempotency_prevents_duplicate_side_effects(self):
         sender, _receiver, conversation = self._users_and_conversation()
