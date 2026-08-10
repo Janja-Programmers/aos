@@ -24,6 +24,7 @@ from aos.api.shared.user_display import get_user_display
 
 from .constants import (
     SEND_TYPING_LIMIT_PER_MINUTE_PER_USER,
+    GET_PRESENCE_LIMIT_PER_MINUTE_PER_USER,
     PRESENCE_BROADCAST_THROTTLE_SECONDS,
     ONLINE_THRESHOLD_SECONDS,
 )
@@ -83,16 +84,17 @@ def _presence_payload(user: str) -> dict:
     """
 
     summary = _get_user_summary(user)
-    last_active = summary.get("last_active")
+    unavailable = bool(summary.get("is_deleted") or summary.get("is_deactivated"))
+    last_active = None if unavailable else summary.get("last_active")
 
     return {
         "user": summary["user"],
         "display_name": summary["display_name"],
         "avatar": summary["avatar"],
-        "is_live": bool(summary.get("is_live")) if not bool(summary.get("is_deleted")) else False,
-        "live_id": summary.get("live_id") if not bool(summary.get("is_deleted")) else None,
-        "live_status": summary.get("live_status") if not bool(summary.get("is_deleted")) else None,
-        "is_online": _is_online(last_active),
+        "is_live": bool(summary.get("is_live")) if not unavailable else False,
+        "live_id": summary.get("live_id") if not unavailable else None,
+        "live_status": summary.get("live_status") if not unavailable else None,
+        "is_online": _is_online(last_active) if not unavailable else False,
         "last_seen": last_active,
     }
 
@@ -272,6 +274,44 @@ def schedule_presence_update_to_peers(user: str) -> None:
 
     after_commit(lambda: publish_presence_update(user=user, to_user=None))
 
+
+
+def get_presence_impl(**kwargs):
+    """Return the other participant's current privacy-safe presence snapshot."""
+    current_user, err = require_login()
+    if err:
+        return err
+
+    rl = rate_limit(
+        key=rate_limit_key("chat", "presence", "get", current_user),
+        ttl_seconds=60,
+        limit=GET_PRESENCE_LIMIT_PER_MINUTE_PER_USER,
+        message="Too many presence requests. Please try again shortly.",
+    )
+    if rl:
+        return rl
+
+    conv_id = kwargs.get("conversation_id")
+    if not conv_id:
+        return fail("conversation_id is required.", error="VALIDATION_ERROR")
+
+    try:
+        conv_row = _get_conversation_participants(conv_id)
+        if not conv_row:
+            return fail("Conversation not found.", error="NOT_FOUND", http_status=404)
+        if not _validate_participant(conv_row, current_user):
+            return fail("Not allowed.", error="PERMISSION_DENIED", http_status=403)
+
+        peer = _get_other_participant(conv_row, current_user)
+        if not peer:
+            return fail("Conversation not found.", error="NOT_FOUND", http_status=404)
+        if peer in get_blocked_user_set(current_user, [peer]):
+            return fail("Not allowed.", error="PERMISSION_DENIED", http_status=403)
+
+        return ok("Presence fetched.", data=_presence_payload(peer))
+    except Exception:
+        frappe.log_error("Chat operation failed.", "AOS Get Presence Failed")
+        return fail("Failed to fetch presence.", error="INTERNAL_ERROR", http_status=500)
 
 # Typing
 def send_typing_event_impl(**kwargs):

@@ -44,6 +44,7 @@ from aos.api.chat.status import (
     mark_read_impl as _mark_read_impl,
 )
 from aos.api.chat.presence import (
+    get_presence_impl as _get_presence_impl,
     send_typing_event_impl as _send_typing_event_impl,
 )
 
@@ -154,3 +155,9 @@ def mark_read(**kwargs):
 def send_typing_event(**kwargs):
     """Send typing indicator for a conversation."""
     return _call("send_typing_event", _send_typing_event_impl, kwargs)
+
+
+@frappe.whitelist(methods=["GET", "POST"])
+def get_presence(**kwargs):
+    """Return the other participant's current online/last-seen snapshot."""
+    return _call("get_presence", _get_presence_impl, kwargs)

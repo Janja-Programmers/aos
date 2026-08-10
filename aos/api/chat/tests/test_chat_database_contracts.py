@@ -6,6 +6,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from aos.api.chat.message import list_messages_impl, send_message_impl
+from aos.api.chat.presence import get_presence_impl
 from aos.api.live.share import share_live_to_chat_impl
 from aos.services.live.api import run_live_api
 from aos.services.live.endpoints import ENDPOINT_SPECS as LIVE_ENDPOINT_SPECS
@@ -39,6 +40,22 @@ class TestChatDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
             operation_name="share_live_to_chat",
             transactional=True,
         )
+
+
+    def test_presence_snapshot_returns_peer_public_identity_and_last_seen(self):
+        sender, receiver, conversation = self._users_and_conversation()
+        frappe.db.set_value("User", receiver, "last_active", frappe.utils.now_datetime(), update_modified=False)
+        frappe.set_user(sender)
+        with patch("aos.api.chat.presence.rate_limit", return_value=None):
+            response = get_presence_impl(conversation_id=conversation.name)
+
+        self.assertTrue(response.get("ok"), response)
+        data = response.get("data") or {}
+        self.assertTrue(str(data.get("user") or "").startswith("ACC-"))
+        self.assertNotIn("@", str(data.get("user") or ""))
+        self.assertTrue(data.get("display_name"))
+        self.assertTrue(data.get("last_seen"))
+        self.assertTrue(data.get("is_online"))
 
     def test_message_idempotency_prevents_duplicate_side_effects(self):
         sender, _receiver, conversation = self._users_and_conversation()

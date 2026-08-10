@@ -49,6 +49,7 @@ ENDPOINT_SPECS: dict[str, EndpointSpec] = {
     "mark_delivered": _spec({"conversation_id"}, ids=(("conversation_id", CONVERSATION_ID_RE),)),
     "mark_read": _spec({"conversation_id"}, ids=(("conversation_id", CONVERSATION_ID_RE),)),
     "send_typing_event": _spec({"conversation_id", "is_typing"}, ids=(("conversation_id", CONVERSATION_ID_RE),)),
+    "get_presence": _spec({"conversation_id"}, ids=(("conversation_id", CONVERSATION_ID_RE),)),
 }
 
 TRANSACTIONAL_ENDPOINTS = frozenset({

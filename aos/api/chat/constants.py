@@ -74,6 +74,7 @@ MARK_READ_LIMIT_PER_MINUTE_PER_USER = 600
 # Typing events are frequent but lightweight.
 # Frontend should still debounce typing calls.
 SEND_TYPING_LIMIT_PER_MINUTE_PER_USER = 600
+GET_PRESENCE_LIMIT_PER_MINUTE_PER_USER = 120
 
 # Prevent presence events from being broadcast too frequently.
 PRESENCE_BROADCAST_THROTTLE_SECONDS = 10

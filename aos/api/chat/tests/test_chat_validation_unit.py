@@ -148,6 +148,13 @@ class TestChatPublicValidation(unittest.TestCase):
             )["is_typing"],
             1,
         )
+        self.assertEqual(
+            validate_public_kwargs(
+                {"conversation_id": "CONV-2026-00001"},
+                ENDPOINT_SPECS["get_presence"],
+            ),
+            {"conversation_id": "CONV-2026-00001"},
+        )
 
     def test_idempotency_key_is_bounded(self):
         clean = validate_public_kwargs(

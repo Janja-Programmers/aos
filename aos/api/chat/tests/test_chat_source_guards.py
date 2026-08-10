@@ -21,7 +21,7 @@ class TestChatSourceGuards(unittest.TestCase):
     def test_public_v1_surface_is_complete_and_thin(self):
         source = _source("aos/api/v1/chat/__init__.py")
         endpoints = re.findall(r"^def ([a-z_]+)\(\*\*kwargs\):", source, flags=re.MULTILINE)
-        self.assertEqual(len(endpoints), 16)
+        self.assertEqual(len(endpoints), 17)
         self.assertEqual(len(endpoints), len(set(endpoints)))
         self.assertIn("run_chat_api(", source)
         self.assertIn("ENDPOINT_SPECS[name]", source)
@@ -166,7 +166,7 @@ class TestChatSourceGuards(unittest.TestCase):
         for endpoint in (
             "open_conversation", "list_conversations", "send_message", "list_messages",
             "forward_message", "edit_message", "delete_messages", "toggle_message_reaction",
-            "translate_message", "mark_delivered", "mark_read", "send_typing_event",
+            "translate_message", "mark_delivered", "mark_read", "send_typing_event", "get_presence",
         ):
             self.assertIn(f"aos.api.v1.chat.__init__.{endpoint}", registry)
         self.assertIn("aos.api.v1.live.__init__.share_live_to_chat", registry)
@@ -222,6 +222,9 @@ class TestChatSourceGuards(unittest.TestCase):
         typing_block = presence.split("def send_typing_event_impl", 1)[1]
         self.assertIn("get_blocked_user_set", typing_block)
         self.assertIn('return fail("Not allowed.", error="PERMISSION_DENIED", http_status=403)', typing_block)
+        self.assertIn("def get_presence_impl", presence)
+        self.assertIn("_presence_payload(peer)", presence)
+        self.assertIn("GET_PRESENCE_LIMIT_PER_MINUTE_PER_USER", presence)
         reactions = _source("aos/api/chat/reactions.py")
         validation = reactions.split("def _validate_message_can_be_reacted_to", 1)[1].split("def _validate_emoji", 1)[0]
         self.assertIn("get_blocked_user_set", validation)

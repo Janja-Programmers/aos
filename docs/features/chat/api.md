@@ -34,6 +34,7 @@ Clients must branch on `error`, not the human message.
 | `mark_delivered` | POST | `conversation_id` |
 | `mark_read` | POST | `conversation_id` |
 | `send_typing_event` | POST | `conversation_id`, `is_typing` |
+| `get_presence` | GET/POST | `conversation_id` |
 
 `cmd` is accepted only as Frappe transport metadata. Other unknown fields fail closed.
 

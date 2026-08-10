@@ -11,3 +11,6 @@ Presence is intentionally coarse and privacy-aware.
 - Presence payloads use public account/display identity helpers; they must not expose raw Frappe User identifiers.
 
 `send_typing_event` is transient and rate-limited at 600/minute/user. Clients should debounce and auto-clear typing after a short timeout if a false event is missed.
+
+
+`get_presence` returns the other participant's current privacy-safe snapshot for an authenticated conversation member. It is intended for initial screen hydration and reconnect recovery; realtime `aos_presence_update` remains authoritative for subsequent changes. The endpoint is block-aware and rate-limited at 120 requests/minute/user.

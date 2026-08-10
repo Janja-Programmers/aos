@@ -378,6 +378,12 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
+    "endpoint": "aos.api.v1.chat.__init__.get_presence",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
     "endpoint": "aos.api.v1.chat.__init__.list_conversations",
     "access": "authenticated",
     "policy": "baseline_authenticated",
