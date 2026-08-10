@@ -85,3 +85,8 @@ Shared authentication/account/media/translation codes remain backward-compatible
 ```
 
 Generic `send_message` accepts a Live reference only while that Live is active. New Live sharing should normally use the feature-owned endpoint documented in `sharing.md`.
+
+
+### Starred-message navigation
+
+`list_starred_messages` includes the canonical public `conversation_id` on each returned message so web/mobile clients can reopen the exact conversation containing the starred message. This does not expose participant internals; callers only receive starred messages from conversations they already belong to.

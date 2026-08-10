@@ -236,21 +236,24 @@ def _serialize_starred_messages(
     results: List[Dict[str, Any]] = []
 
     for msg in messages:
-        results.append(
-            _serialize_message(
-                msg,
-                attachments_map=attachments_map,
-                user_map=user_map,
-                ad_map=ad_map,
-                short_map=short_map,
-                live_map=live_map,
-                current_user=current_user,
-                reply_map=reply_map,
-                is_starred=msg.name in starred_ids,
-                reactions=reaction_summaries.get(msg.name, []),
-                my_reaction=my_reactions.get(msg.name),
-            )
+        payload = _serialize_message(
+            msg,
+            attachments_map=attachments_map,
+            user_map=user_map,
+            ad_map=ad_map,
+            short_map=short_map,
+            live_map=live_map,
+            current_user=current_user,
+            reply_map=reply_map,
+            is_starred=msg.name in starred_ids,
+            reactions=reaction_summaries.get(msg.name, []),
+            my_reaction=my_reactions.get(msg.name),
         )
+        # Starred-message navigation needs the public conversation id so clients
+        # can reopen the exact thread without exposing any private participant
+        # identity. The caller is already a participant in this conversation.
+        payload["conversation_id"] = msg.conversation
+        results.append(payload)
 
     return results
 

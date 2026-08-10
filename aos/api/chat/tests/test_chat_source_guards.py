@@ -248,5 +248,10 @@ class TestChatSourceGuards(unittest.TestCase):
             self.assertTrue((ROOT / "docs/features/chat" / name).is_file(), name)
 
 
+
+    def test_starred_messages_expose_public_conversation_id_for_navigation(self):
+        source = _source("aos/api/chat/stars.py")
+        self.assertIn('payload["conversation_id"] = msg.conversation', source)
+
 if __name__ == "__main__":
     unittest.main()
