@@ -19,8 +19,8 @@ class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.prefix = self.make_prefix("verification")
         self.created_users: list[str] = []
         frappe.set_user("Administrator")
-        self.owner = self.make_user("owner", with_preference=False)
-        self.other = self.make_user("other", with_preference=False)
+        self.owner = self.make_user("owner")
+        self.other = self.make_user("other")
         self.media = self.make_media(
             owner=self.owner,
             purpose="verification_document",
