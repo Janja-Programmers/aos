@@ -493,6 +493,14 @@ class AOSFeatureTestMixin:
             (email_like,),
         )
         frappe.db.sql("DELETE FROM `tabAOS Seller` WHERE user LIKE %s", (email_like,))
+
+        # Verification evidence must be removed before private Media/Profile rows.
+        frappe.db.sql(
+            "DELETE FROM `tabAOS Verification Document` WHERE parent IN "
+            "(SELECT name FROM `tabAOS Verification Request` WHERE user LIKE %s)",
+            (email_like,),
+        )
+        frappe.db.sql("DELETE FROM `tabAOS Verification Request` WHERE user LIKE %s", (email_like,))
         frappe.db.sql("DELETE FROM `tabAOS Media Object` WHERE owner_user LIKE %s OR object_key LIKE %s", (email_like, path_like))
 
         frappe.db.sql("DELETE FROM `tabAOS Report Reason` WHERE title LIKE %s", (like,))

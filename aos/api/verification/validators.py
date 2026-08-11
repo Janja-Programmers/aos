@@ -1,85 +1,76 @@
-"""
-Verification validators.
-"""
+"""Compatibility adapters for the centralized Verification validator."""
 
 from __future__ import annotations
 
 import frappe
 
-from aos.services.media.media_service import (
-    MediaNotFoundError,
-    MediaPermissionError,
-    MediaValidationError,
-)
+from aos.services.verification.constants import VERIFICATION_TYPES
+from aos.services.verification.errors import VerificationValidationError
+from aos.api.verification.media import normalize_verification_documents_for_submit
+from aos.services.verification.validation import normalize_submit_payload
 
-from .media import normalize_verification_documents_for_submit
-
-
-ALLOWED_VERIFICATION_TYPES = [
-    "Business",
-    "Individual",
-]
+ALLOWED_VERIFICATION_TYPES = sorted(VERIFICATION_TYPES)
 
 
 def validate_verification_type(verification_type: str):
-    """Validate verification type."""
-
-    if not verification_type:
-        frappe.throw("Verification type is required.")
-
-    if verification_type not in ALLOWED_VERIFICATION_TYPES:
-        frappe.throw("Invalid verification type.")
+    try:
+        normalize_submit_payload(
+            {
+                "verification_type": verification_type,
+                "verification_documents": [{"document_type": "compat", "media_id": "MEDIA-COMPAT"}],
+                **(
+                    {"legal_name": "Compatibility User", "phone_number": "+254700000000"}
+                    if verification_type == "Individual"
+                    else {
+                        "business_name": "Compatibility Business",
+                        "business_type": "Sole Proprietorship",
+                        "business_category": "Compatibility",
+                        "business_phone_number": "+254700000000",
+                        "business_email": "compat@example.com",
+                        "business_address": "Compatibility",
+                    }
+                ),
+            }
+        )
+    except VerificationValidationError as exc:
+        if "document media" not in str(exc).lower():
+            frappe.throw(str(exc), frappe.ValidationError)
 
 
 def validate_business_verification(kwargs: dict):
-    """Validate business verification fields."""
-
-    required_fields = {
-        "business_name": "Business name",
-        "business_type": "Business type",
-        "business_category": "Business category",
-        "business_phone_number": "Business phone number",
-        "business_email": "Business email",
-        "business_address": "Business address",
-    }
-
-    for fieldname, label in required_fields.items():
-        value = kwargs.get(fieldname)
-
-        if not value:
-            frappe.throw(f"{label} is required.")
+    payload = dict(kwargs or {})
+    payload["verification_type"] = "Business"
+    payload.setdefault("verification_documents", [{"document_type": "compat", "media_id": "MEDIA-COMPAT"}])
+    try:
+        normalize_submit_payload(payload)
+    except VerificationValidationError as exc:
+        if "document media" not in str(exc).lower():
+            frappe.throw(str(exc), frappe.ValidationError)
 
 
 def validate_individual_verification(kwargs: dict):
-    """Validate individual verification fields."""
-
-    required_fields = {
-        "legal_name": "Legal name",
-        "phone_number": "Phone number",
-    }
-
-    for fieldname, label in required_fields.items():
-        value = kwargs.get(fieldname)
-
-        if not value:
-            frappe.throw(f"{label} is required.")
+    payload = dict(kwargs or {})
+    payload["verification_type"] = "Individual"
+    payload.setdefault("verification_documents", [{"document_type": "compat", "media_id": "MEDIA-COMPAT"}])
+    try:
+        normalize_submit_payload(payload)
+    except VerificationValidationError as exc:
+        if "document media" not in str(exc).lower():
+            frappe.throw(str(exc), frappe.ValidationError)
 
 
 def validate_verification_documents(documents: list, *, user: str | None = None):
-    """Validate and normalize verification documents.
-
-    Verification submissions use private MinIO-backed media objects. The caller
-    should pass the current user so ownership,
-    purpose, and status can be enforced before the request is saved.
-    """
-
+    """Legacy adapter around the strict document/media boundary."""
     if not user:
-        frappe.throw("User is required for verification document validation.")
-
+        frappe.throw("User is required for verification document validation.", frappe.ValidationError)
     try:
         return normalize_verification_documents_for_submit(
             user=user,
-            documents=documents,
+            documents=[dict(row or {}) for row in (documents or [])],
         )
-    except (MediaNotFoundError, MediaPermissionError, MediaValidationError) as exc:
-        frappe.throw(str(exc))
+    except VerificationValidationError as exc:
+        frappe.throw(str(exc), frappe.ValidationError)
+    except Exception:
+        # Do not leak Media existence/ownership details through a compatibility
+        # validator that older callers may expose directly.
+        frappe.throw("Invalid verification document media.", frappe.ValidationError)

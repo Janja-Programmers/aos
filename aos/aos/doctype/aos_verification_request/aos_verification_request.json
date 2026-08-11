@@ -1,6 +1,6 @@
 {
  "actions": [],
- "allow_rename": 1,
+ "allow_rename": 0,
  "autoname": "naming_series:",
  "creation": "2026-03-16 19:55:18.425506",
  "doctype": "DocType",
@@ -25,9 +25,11 @@
   "business_phone_number",
   "column_break_wwvt",
   "business_type",
+  "business_website",
   "business_address",
   "documents_tab",
-  "verification_documents"
+  "verification_documents",
+  "submission_idempotency_hash"
  ],
  "fields": [
   {
@@ -62,25 +64,29 @@
   {
    "fieldname": "business_name",
    "fieldtype": "Data",
-   "label": "Business Name"
+   "label": "Business Name",
+   "length": 180
   },
   {
    "fieldname": "business_type",
    "fieldtype": "Select",
    "label": "Business Type",
-   "options": "\nSole Proprietorship\nPartnership\nLimited Company\nCorporation"
+   "options": "\nSole Proprietorship\nPartnership\nLimited Company\nCorporation",
+   "length": 64
   },
   {
    "fieldname": "business_category",
    "fieldtype": "Data",
    "label": "Business Category",
-   "link_filters": "[]"
+   "link_filters": "[]",
+   "length": 140
   },
   {
    "fieldname": "business_phone_number",
    "fieldtype": "Data",
    "label": "Business Phone Number",
-   "options": "Phone"
+   "options": "Phone",
+   "length": 32
   },
   {
    "fieldname": "column_break_wwvt",
@@ -89,7 +95,8 @@
   {
    "fieldname": "business_email",
    "fieldtype": "Data",
-   "label": "Business Email"
+   "label": "Business Email",
+   "length": 254
   },
   {
    "depends_on": "eval: doc.status == \"Rejected\"",
@@ -104,6 +111,12 @@
    "label": "Verification Documents",
    "options": "AOS Verification Document",
    "reqd": 1
+  },
+  {
+   "fieldname": "business_website",
+   "fieldtype": "Data",
+   "label": "Business Website",
+   "length": 300
   },
   {
    "fieldname": "business_address",
@@ -150,12 +163,14 @@
   {
    "fieldname": "legal_name",
    "fieldtype": "Data",
-   "label": "Legal Name"
+   "label": "Legal Name",
+   "length": 160
   },
   {
    "fieldname": "phone_number",
    "fieldtype": "Data",
-   "label": "Phone Number"
+   "label": "Phone Number",
+   "length": 32
   },
   {
    "default": "VER-.YYYY.-.#####",
@@ -163,10 +178,19 @@
    "fieldtype": "Select",
    "label": "Series",
    "options": "VER-.YYYY.-.#####"
+  },
+  {
+   "fieldname": "submission_idempotency_hash",
+   "fieldtype": "Data",
+   "label": "Submission Idempotency Hash",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "length": 64
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
+ "index_web_pages_for_search": 0,
  "links": [],
  "modified": "2026-05-11 18:58:46.216686",
  "modified_by": "Administrator",
@@ -177,14 +201,14 @@
  "permissions": [
   {
    "create": 1,
-   "delete": 1,
+   "delete": 0,
    "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 1,
+   "share": 0,
    "write": 1
   }
  ],

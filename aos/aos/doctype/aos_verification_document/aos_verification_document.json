@@ -1,6 +1,6 @@
 {
  "actions": [],
- "allow_rename": 1,
+ "allow_rename": 0,
  "creation": "2026-03-16 20:01:03.973336",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -19,13 +19,15 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Document Type",
-   "reqd": 1
+   "reqd": 1,
+   "length": 140
   },
   {
    "fieldname": "document_number",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Document Number"
+   "label": "Document Number",
+   "length": 160
   },
   {
    "fieldname": "issue_date",
@@ -59,7 +61,7 @@
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
+ "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
  "modified": "2026-03-17 11:24:42.104216",

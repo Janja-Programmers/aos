@@ -1,29 +1,31 @@
-"""Verification media helpers.
+"""Legacy Verification media compatibility helpers.
 
 Verification documents are sensitive and must use private MinIO-backed
-AOS Media Object records with purpose ``verification_document``.
+``AOS Media Object`` records with purpose ``verification_document``.  New code
+should use :mod:`aos.services.verification`; these helpers remain intentionally
+small so older imports cannot bypass the hardened Verification boundary.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-import frappe
-
 from aos.services.media.media_service import (
     MediaNotFoundError,
     MediaPermissionError,
     MediaService,
     MediaValidationError,
-    serialize_media_doc,
 )
+from aos.services.verification.errors import VerificationValidationError
+from aos.services.verification.serializers import serialize_document
+from aos.services.verification.validation import normalize_documents
 
 VERIFICATION_DOCUMENT_PURPOSE = "verification_document"
 VERIFICATION_DOCUMENT_FIELD = "verification_documents"
 
 
 def extract_document_media_id(row: dict[str, Any]) -> str:
-    """Return the media id from supported verification document keys."""
+    """Return the media id from supported legacy document keys."""
     value = (
         row.get("media")
         or row.get("media_id")
@@ -34,17 +36,15 @@ def extract_document_media_id(row: dict[str, Any]) -> str:
 
 
 def validate_verification_document_media(*, user: str, media_id: str):
-    """Validate one uploaded verification document media object."""
+    """Validate one private uploaded Verification media object for ``user``."""
     service = MediaService()
     doc = service.assert_media_ready_for_attach(
         media_id=media_id,
         user=user,
         purpose=VERIFICATION_DOCUMENT_PURPOSE,
     )
-
     if doc.visibility != "Private":
         raise MediaValidationError("Verification document media must be private")
-
     return doc
 
 
@@ -53,51 +53,39 @@ def normalize_verification_documents_for_submit(
     user: str,
     documents: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Validate and normalize verification document payloads for submission.
+    """Strictly normalize legacy document payloads and verify media ownership.
 
-    Returned rows are safe to append directly to AOS Verification Request's child
-    table. The media object is not attached here because the parent request name
-    may not exist until after save.
+    The parent request may not exist yet, so this does not attach the media.
     """
-    if not documents:
-        frappe.throw("Verification documents are required.")
-
-    if not isinstance(documents, list):
-        frappe.throw("Verification documents must be a list.")
+    try:
+        rows = normalize_documents(documents)
+    except VerificationValidationError:
+        raise
 
     normalized: list[dict[str, Any]] = []
-    seen: set[str] = set()
-
-    for row in documents:
-        if not isinstance(row, dict):
-            frappe.throw("Invalid verification document payload.")
-
-        media_id = extract_document_media_id(row)
-        if not media_id:
-            frappe.throw("Each verification document must include media_id.")
-
-        if media_id in seen:
-            frappe.throw(f"Duplicate verification document media: {media_id}")
-        seen.add(media_id)
-
-        media_doc = validate_verification_document_media(user=user, media_id=media_id)
-
+    for row in rows:
+        try:
+            media_doc = validate_verification_document_media(user=user, media_id=row["media_id"])
+        except (MediaNotFoundError, MediaPermissionError, MediaValidationError) as exc:
+            # Avoid exposing existence/ownership of arbitrary private media IDs.
+            raise VerificationValidationError(
+                "Invalid verification document media.", code="VERIFICATION_INVALID_DOCUMENT"
+            ) from exc
         normalized.append(
             {
-                "document_type": row.get("document_type"),
-                "document_number": row.get("document_number"),
-                "issue_date": row.get("issue_date"),
-                "expiry_date": row.get("expiry_date"),
+                "document_type": row["document_type"],
+                "document_number": row["document_number"],
+                "issue_date": row["issue_date"],
+                "expiry_date": row["expiry_date"],
                 "media": media_doc.name,
                 "attachment": "",
             }
         )
-
     return normalized
 
 
 def attach_verification_document_media(*, user: str, verification_name: str, media_ids: list[str]) -> None:
-    """Mark uploaded verification document media as attached to the request."""
+    """Attach already validated private media to an existing Verification request."""
     service = MediaService()
     for media_id in media_ids:
         service.attach_media(
@@ -111,27 +99,17 @@ def attach_verification_document_media(*, user: str, verification_name: str, med
 
 
 def serialize_verification_document(row, *, user: str | None = None, include_url: bool = False) -> dict[str, Any]:
-    """Serialize a verification document row without exposing permanent private URLs."""
-    data = {
-        "document_type": row.document_type,
-        "document_number": row.document_number,
-        "issue_date": row.issue_date,
-        "expiry_date": row.expiry_date,
-        "media": row.media or None,
-        "media_id": row.media or None,
-    }
+    """Serialize a document with masking and optional authorized short-lived URL.
 
-    if not row.media:
+    This compatibility helper deliberately does not return raw Media Object
+    metadata (storage keys, checksums, original filenames, or permanent URLs).
+    """
+    data = serialize_document(row)
+    if not getattr(row, "media", None) or not include_url:
         return data
 
     try:
-        service = MediaService()
-        media_doc = service.get_media_doc(row.media)
-        url = service.get_url(media_id=row.media, user=user) if include_url else None
-        data["media_object"] = serialize_media_doc(media_doc, url=url)
-        if include_url:
-            data["url"] = url
+        data["url"] = MediaService().get_url(media_id=row.media, user=user)
     except (MediaNotFoundError, MediaPermissionError, MediaValidationError):
-        data["media_object"] = None
-
+        data["url"] = None
     return data

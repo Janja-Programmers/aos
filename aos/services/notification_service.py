@@ -489,20 +489,31 @@ class NotificationService:
             event="aos_review_rejected",
         )
 
-    # SELLER VERIFICATION
+    # VERIFICATION
     @classmethod
     def notify_verification_approved(
         cls,
         *,
         user: str,
+        verification_id: str | None = None,
+        decision_token: str | None = None,
     ):
+        account_id = public_account_id_for_user(user)
+        payload = {"account_id": account_id}
+        if verification_id:
+            payload["verification_id"] = verification_id
         return cls.notify(
             user=user,
             type="verification_approved",
             title="Verification Approved ✅",
-            body="Your seller verification has been approved.",
-            payload={},
+            body="Your verification has been approved.",
+            payload=payload,
             event="aos_verification_approved",
+            dedupe_key=(
+                f"verification_approved:{verification_id}:{decision_token or 'legacy'}"
+                if verification_id
+                else None
+            ),
         )
 
     @classmethod
@@ -510,14 +521,25 @@ class NotificationService:
         cls,
         *,
         user: str,
+        verification_id: str | None = None,
+        decision_token: str | None = None,
     ):
+        account_id = public_account_id_for_user(user)
+        payload = {"account_id": account_id}
+        if verification_id:
+            payload["verification_id"] = verification_id
         return cls.notify(
             user=user,
             type="verification_rejected",
             title="Verification Rejected",
-            body="Your seller verification was rejected.",
-            payload={},
+            body="Your verification was rejected.",
+            payload=payload,
             event="aos_verification_rejected",
+            dedupe_key=(
+                f"verification_rejected:{verification_id}:{decision_token or 'legacy'}"
+                if verification_id
+                else None
+            ),
         )
 
     # SHORTS

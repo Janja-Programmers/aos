@@ -159,6 +159,7 @@ def cleanup_deleted_account_features(user: str) -> dict[str, int]:
 
     summary["wishlist_items_removed"] = _remove_wishlist_items(user=user)
     summary["saved_searches_disabled"] = _disable_saved_searches(user=user)
+    summary.update(_cleanup_verification_documents(user=user))
     summary["verification_requests_revoked"] = _revoke_verification_requests(user=user, now=now)
     summary["notifications_marked_read"] = _mark_notifications_read(user=user)
 
@@ -878,6 +879,104 @@ def _disable_saved_searches(*, user: str) -> int:
         set_params=(now_datetime(),),
         where_params=(user,),
     )
+
+
+def _cleanup_verification_documents(*, user: str, batch_size: int = 250) -> dict[str, int]:
+    """Release raw identity evidence while retaining the decision record.
+
+    Account deletion is recoverable, but a restored account must resubmit fresh
+    evidence from the existing Revoked state. Media is only orphaned here; the
+    normal private-media cleanup job performs object-store deletion after the
+    purpose's short retention window, avoiding storage I/O while account rows
+    are locked. A failed media release retains its child reference so a later
+    idempotent deletion/reconciliation pass can safely retry it.
+    """
+    summary = {
+        "verification_documents_released": 0,
+        "verification_document_rows_removed": 0,
+    }
+    if not (_doctype_exists("AOS Verification Request") and _doctype_exists("AOS Verification Document")):
+        return summary
+
+    from aos.services.media.media_service import MediaService
+
+    request_names = frappe.get_all(
+        "AOS Verification Request",
+        filters={"user": user},
+        pluck="name",
+        order_by="name asc",
+    )
+    if not request_names:
+        return summary
+
+    service = MediaService()
+    size = max(1, min(int(batch_size or 250), 500))
+    cursor = ""
+    while True:
+        filters = {
+            "parent": ["in", request_names],
+            "parenttype": "AOS Verification Request",
+        }
+        if cursor:
+            filters["name"] = [">", cursor]
+        rows = frappe.get_all(
+            "AOS Verification Document",
+            filters=filters,
+            fields=["name", "parent", "media"],
+            order_by="name asc",
+            limit_page_length=size,
+        )
+        if not rows:
+            break
+
+        removable_names: list[str] = []
+        for row in rows:
+            cursor = str(row.name)
+            media_id = str(row.media or "").strip()
+            if not media_id:
+                removable_names.append(cursor)
+                continue
+            try:
+                media = service.get_media_doc(media_id)
+                if (
+                    media.status == "Attached"
+                    and media.attached_doctype == "AOS Verification Request"
+                    and media.attached_name == row.parent
+                ):
+                    service.release_media(
+                        media_id=media_id,
+                        user=user,
+                        attached_doctype="AOS Verification Request",
+                        attached_name=row.parent,
+                        system=True,
+                    )
+                    summary["verification_documents_released"] += 1
+                elif media.status == "Attached":
+                    # Never detach private media that points at a different
+                    # resource. Keep this evidence row for explicit repair.
+                    frappe.log_error(
+                        "verification_document_attachment_mismatch",
+                        "Account deletion Verification cleanup",
+                    )
+                    continue
+                removable_names.append(cursor)
+            except Exception:
+                # Keep the sensitive relation if release cannot be confirmed;
+                # losing the reference would make safe object cleanup harder.
+                frappe.log_error(
+                    "verification_document_release_failed",
+                    "Account deletion Verification cleanup",
+                )
+
+        if removable_names:
+            frappe.db.sql(
+                "DELETE FROM `tabAOS Verification Document` WHERE name IN %s",
+                (tuple(removable_names),),
+            )
+            summary["verification_document_rows_removed"] += len(removable_names)
+        if len(rows) < size:
+            break
+    return summary
 
 
 def _revoke_verification_requests(*, user: str, now) -> int:

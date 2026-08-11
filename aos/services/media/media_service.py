@@ -561,6 +561,10 @@ class MediaService:
             return self._public_url_for_doc(doc)
 
         minutes = self._normalize_download_expiry(expiry_minutes)
+        if getattr(doc, "purpose", None) == "verification_document":
+            # Identity evidence is more sensitive than ordinary private media;
+            # keep reviewer/owner signed access deliberately short-lived.
+            minutes = min(minutes, 10)
         try:
             return self.storage.presigned_get_url(doc.bucket, doc.object_key, expiry_minutes=minutes)
         except StorageUnavailableError as exc:
@@ -1018,13 +1022,24 @@ class MediaService:
         clean_user = str(user or "").strip()
         if not clean_user or clean_user == "Guest":
             raise MediaPermissionError("Authentication is required", code="AUTH_REQUIRED")
+        roles = set(frappe.get_roles(clean_user) or [])
+        if getattr(doc, "purpose", None) == "verification_document":
+            if "System Manager" in roles:
+                return
+            # Before submission the uploader may preview their confirmed upload.
+            # Once attached, both Media ownership and parent-request ownership
+            # must still match. Released/orphaned evidence is not readable merely
+            # because the account originally uploaded it.
+            if doc.owner_user == clean_user and doc.status == "Uploaded" and not doc.attached_name:
+                return
+            if doc.owner_user == clean_user and self._user_can_read_verification_document(doc, clean_user):
+                return
+            raise MediaPermissionError("You cannot access this media", code="MEDIA_ACCESS_DENIED")
         if doc.owner_user == clean_user:
             return
-        if "System Manager" in set(frappe.get_roles(clean_user) or []):
+        if "System Manager" in roles:
             return
         if self._user_can_read_chat_attachment(doc, clean_user):
-            return
-        if self._user_can_read_verification_document(doc, clean_user):
             return
         raise MediaPermissionError("You cannot access this media", code="MEDIA_ACCESS_DENIED")
 
@@ -1537,23 +1552,28 @@ class _ValidatedObject:
 
 
 def serialize_media_doc(doc, *, url: str | None = None, include_private_fields: bool = False) -> dict:
+    verification_evidence = getattr(doc, "purpose", None) == "verification_document"
     data = {
         "id": doc.name,
         "media_id": doc.name,
         "purpose": doc.purpose,
         "status": doc.status,
         "visibility": doc.visibility,
-        "original_filename": doc.original_filename,
+        "original_filename": None if verification_evidence else doc.original_filename,
         "content_type": doc.content_type,
         "size_bytes": int(doc.size_bytes or 0),
-        "checksum_sha256": str(getattr(doc, "checksum", "") or "") or None,
+        "checksum_sha256": (
+            None
+            if verification_evidence
+            else str(getattr(doc, "checksum", "") or "") or None
+        ),
         "width": int(doc.width or 0) if doc.width else None,
         "height": int(doc.height or 0) if doc.height else None,
         "duration_seconds": float(doc.duration_seconds or 0) if doc.duration_seconds else None,
         "url": url,
         "attached": bool(getattr(doc, "attached_doctype", "") and getattr(doc, "attached_name", "")),
     }
-    if include_private_fields:
+    if include_private_fields and not verification_evidence:
         data.update(
             {
                 "bucket": doc.bucket,
