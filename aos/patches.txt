@@ -51,3 +51,7 @@ aos.patches.v1_0.install_call_indexes
 # Shared human-report moderation hardening.
 aos.patches.v1_0.harden_reports_subsystem
 aos.patches.v1_0.install_report_indexes
+
+# Activity Center data reconciliation must run before its schema-only indexes.
+aos.patches.v1_0.harden_activity_subsystem
+aos.patches.v1_0.install_activity_indexes

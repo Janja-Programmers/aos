@@ -12,6 +12,7 @@ from typing import Any
 import frappe
 
 from aos.services.activity_service import ActivityService
+from aos.services.sellers.identity import public_seller_id_for_name
 
 AD_DOCTYPE = "AOS Ad"
 AD_REPORT_DOCTYPE = "AOS Ad Report"
@@ -144,9 +145,9 @@ def _load_ad_target(ad_id: str | None) -> dict[str, Any] | None:
         "target_image": _get_primary_ad_image(ad.name),
         "route_type": ROUTE_TYPE_AD,
         "route_id": ad.name,
+        "_seller_user": seller_user,
         "metadata": {
-            "seller": ad.seller,
-            "seller_user": seller_user,
+            "seller": public_seller_id_for_name(ad.seller),
             "category": ad.category,
             "location": ad.location,
             "country": ad.country,
@@ -163,7 +164,7 @@ def _safe_record(action_name: str, fn, *args, **kwargs) -> str | bool | None:
         return fn(*args, **kwargs)
     except Exception:
         frappe.log_error(
-            frappe.get_traceback(),
+            "Ads activity history operation failed.",
             f"AOS Activity Center Ads Hook Failed: {action_name}",
         )
         return None
@@ -186,8 +187,9 @@ def record_ad_view_activity(
     if not target:
         return None
 
+    seller_user = target.pop("_seller_user", None)
     metadata = target.pop("metadata", None) or {}
-    if metadata.get("seller_user") == user:
+    if seller_user == user:
         return None
 
     return _safe_record(
@@ -215,6 +217,7 @@ def record_ad_wishlist_activity(
     if not target:
         return None
 
+    target.pop("_seller_user", None)
     metadata = target.pop("metadata", None)
 
     return _safe_record(
@@ -261,6 +264,7 @@ def record_ad_posted_activity(
     if not target:
         return None
 
+    target.pop("_seller_user", None)
     metadata = target.pop("metadata", None)
 
     return _safe_record(
@@ -290,6 +294,7 @@ def record_ad_report_activity(
     if not target:
         return None
 
+    target.pop("_seller_user", None)
     metadata = target.pop("metadata", None) or {}
     metadata.update(
         {

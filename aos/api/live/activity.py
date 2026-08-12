@@ -168,12 +168,8 @@ def record_live_join_activity(
         return None
 
     metadata = target.pop("metadata", None) or {}
-    metadata.update(
-        {
-            "session_id": session_id,
-            "view_id": view_id,
-        }
-    )
+    # Session/view identifiers are analytics internals and are intentionally
+    # not persisted in user-facing Activity Center history.
 
     return _safe_record(
         "record_live_join_activity",

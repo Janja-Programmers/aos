@@ -23,6 +23,7 @@
     "route_id",
     "metadata_section",
     "unique_key",
+    "active_key",
     "metadata_json"
   ],
   "fields": [
@@ -50,7 +51,8 @@
       "in_list_view": 1,
       "in_standard_filter": 1,
       "label": "Activity Type",
-      "reqd": 1
+      "reqd": 1,
+      "length": 80
     },
     {
       "default": "Active",
@@ -120,12 +122,14 @@
       "fieldname": "target_image",
       "fieldtype": "Data",
       "label": "Target Image URL",
-      "description": "Snapshot URL only. Do not upload files here."
+      "description": "Snapshot URL only. Do not upload files here.",
+      "length": 500
     },
     {
       "fieldname": "route_type",
       "fieldtype": "Data",
-      "label": "Route Type"
+      "label": "Route Type",
+      "length": 80
     },
     {
       "fieldname": "route_id",
@@ -141,7 +145,17 @@
       "fieldname": "unique_key",
       "fieldtype": "Data",
       "in_standard_filter": 1,
-      "label": "Unique Key"
+      "label": "Unique Key",
+      "length": 128
+    },
+    {
+      "fieldname": "active_key",
+      "fieldtype": "Data",
+      "hidden": 1,
+      "read_only": 1,
+      "label": "Active Integrity Key",
+      "description": "Server-managed uniqueness key for active history rows.",
+      "length": 64
     },
     {
       "fieldname": "metadata_json",
@@ -158,21 +172,24 @@
   "owner": "Administrator",
   "permissions": [
     {
-      "create": 1,
-      "delete": 1,
-      "email": 1,
-      "export": 1,
-      "print": 1,
+      "create": 0,
+      "delete": 0,
+      "email": 0,
+      "export": 0,
+      "print": 0,
       "read": 1,
       "report": 1,
       "role": "System Manager",
-      "share": 1,
-      "write": 1
+      "share": 0,
+      "write": 0
     }
   ],
   "row_format": "Dynamic",
   "rows_threshold_for_grid_search": 20,
   "sort_field": "last_occurrence_at",
   "sort_order": "DESC",
-  "states": []
+  "states": [],
+  "allow_rename": 0,
+  "index_web_pages_for_search": 0,
+  "track_changes": 0
 }

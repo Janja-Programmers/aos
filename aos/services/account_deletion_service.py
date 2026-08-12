@@ -178,6 +178,12 @@ def cleanup_deleted_account_features(user: str) -> dict[str, int]:
     # accounts no longer keep personalization or reporter identity rows.
     summary.update(_cleanup_review_account_data(user=user))
 
+    # Activity Center is private personalization/history, not retained audit.
+    # Remove the deleted account's own history and redact/hide profile-history
+    # snapshots owned by other users so deleted-account PII is not retained in
+    # the presentation projection.
+    summary.update(_cleanup_activity_account_data(user=user, sellers=sellers))
+
     follow_summary = _remove_social_graph(user=user)
     summary.update(follow_summary)
 
@@ -1214,6 +1220,129 @@ def _cleanup_review_account_data(*, user: str) -> dict[str, int]:
         "review_reports_removed": reports_removed,
         "review_reaction_totals_recalculated": counters_recalculated,
     }
+
+
+def _cleanup_activity_account_data(
+    *,
+    user: str,
+    sellers: list[str] | None = None,
+) -> dict[str, int]:
+    """Remove private history and scrub retained snapshots for a deleted account."""
+    if not _doctype_exists("AOS User Activity"):
+        return {
+            "activity_rows_removed": 0,
+            "activity_profile_rows_redacted": 0,
+            "activity_content_rows_redacted": 0,
+        }
+
+    own_rows = _delete_counted(
+        "AOS User Activity",
+        where_sql="user = %s",
+        where_params=(user,),
+    )
+
+    public_id = ""
+    try:
+        from aos.services.accounts.identity import public_account_id_for_user
+
+        public_id = str(public_account_id_for_user(user) or "").strip()
+    except Exception:
+        public_id = ""
+
+    profile_clauses = ["(target_doctype = 'User' AND target_name = %s)"]
+    profile_params: list[Any] = [user]
+    if public_id:
+        profile_clauses.append("(route_type = 'profile' AND route_id = %s)")
+        profile_params.append(public_id)
+
+    profile_where = " OR ".join(profile_clauses)
+    profile_redacted = _redact_activity_history_rows(
+        user=user,
+        where_sql=f"({profile_where})",
+        where_params=tuple(profile_params),
+        title="Deleted account",
+        subtitle="Profile",
+    )
+
+    # Activity snapshots are presentation data, not retained content archives.
+    # When account deletion makes authored marketplace/video/live targets
+    # unavailable, scrub those snapshots in other users' private history too.
+    sellers = list(sellers or _seller_names_for_user(user))
+    content_clauses: list[str] = []
+    content_params: list[Any] = []
+
+    if sellers and _doctype_exists("AOS Ad"):
+        placeholders = _placeholders(sellers)
+        content_clauses.append(
+            f"(route_type = 'ad' AND route_id IN "
+            f"(SELECT name FROM `tabAOS Ad` WHERE seller IN ({placeholders})))"
+        )
+        content_params.extend(sellers)
+
+    if _doctype_exists("AOS Short"):
+        short_owner_parts = ["owner = %s"]
+        short_params: list[Any] = [user]
+        if sellers:
+            placeholders = _placeholders(sellers)
+            short_owner_parts.append(f"seller IN ({placeholders})")
+            short_params.extend(sellers)
+        content_clauses.append(
+            "(route_type = 'short' AND route_id IN "
+            f"(SELECT name FROM `tabAOS Short` WHERE {' OR '.join(short_owner_parts)}))"
+        )
+        content_params.extend(short_params)
+
+    if _doctype_exists("AOS Live Stream"):
+        content_clauses.append(
+            "(route_type = 'live' AND route_id IN "
+            "(SELECT name FROM `tabAOS Live Stream` WHERE host_user = %s))"
+        )
+        content_params.append(user)
+
+    content_redacted = 0
+    if content_clauses:
+        content_redacted = _redact_activity_history_rows(
+            user=user,
+            where_sql=f"({' OR '.join(content_clauses)})",
+            where_params=tuple(content_params),
+            title="Unavailable content",
+            subtitle="Removed",
+        )
+
+    return {
+        "activity_rows_removed": own_rows,
+        "activity_profile_rows_redacted": profile_redacted,
+        "activity_content_rows_redacted": content_redacted,
+    }
+
+
+def _redact_activity_history_rows(
+    *,
+    user: str,
+    where_sql: str,
+    where_params: tuple[Any, ...],
+    title: str,
+    subtitle: str,
+) -> int:
+    conditions = f"user != %s AND ({where_sql})"
+    params = (user, *where_params)
+    count = _count_rows("AOS User Activity", conditions, params)
+    if count <= 0:
+        return 0
+    frappe.db.sql(
+        f"""
+        UPDATE `tabAOS User Activity`
+        SET status = 'Hidden',
+            active_key = NULL,
+            target_title = %s,
+            target_subtitle = %s,
+            target_image = '',
+            metadata_json = '{{}}'
+        WHERE {conditions}
+        """,
+        (title, subtitle, *params),
+    )
+    return count
 
 def _remove_social_graph(*, user: str) -> dict[str, int]:
     repository = SocialRepository()

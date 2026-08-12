@@ -11,6 +11,7 @@ from typing import Any
 
 import frappe
 
+from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.sellers.identity import public_seller_id_for_name
 
 from aos.services.activity_service import ActivityService
@@ -127,7 +128,7 @@ def _load_short_target(short_id: str | None) -> dict[str, Any] | None:
         "route_type": ROUTE_TYPE_SHORT,
         "route_id": short.name,
         "metadata": {
-            "short_owner": short.owner,
+            "short_owner": public_account_id_for_user(short.owner),
             "seller": public_seller_id_for_name(short.seller),
             "ad": short.ad,
             "short_status": short.status,
@@ -143,6 +144,17 @@ def _merge_metadata(base: dict[str, Any] | None, extra: dict[str, Any] | None) -
     if extra:
         merged.update(extra)
     return merged
+
+
+def _safe_record(action_name: str, fn, *args, **kwargs) -> str | bool | None:
+    try:
+        return fn(*args, **kwargs)
+    except Exception:
+        frappe.log_error(
+            "Shorts activity history operation failed.",
+            f"AOS Activity Center Shorts Hook Failed: {action_name}",
+        )
+        return None
 
 
 # RECORDING HOOKS
@@ -165,7 +177,9 @@ def record_short_watch_activity(
         {"watch_ms": int(watch_ms or 0)},
     )
 
-    return ActivityService.record_or_update_activity(
+    return _safe_record(
+        "record_short_watch_activity",
+        ActivityService.record_or_update_activity,
         user=user,
         activity_group=SHORT_ACTIVITY_GROUP,
         activity_type=SHORT_WATCH_ACTIVITY,
@@ -190,7 +204,9 @@ def record_short_like_activity(
 
     metadata = target.pop("metadata", None)
 
-    return ActivityService.record_or_update_activity(
+    return _safe_record(
+        "record_short_like_activity",
+        ActivityService.record_or_update_activity,
         user=user,
         activity_group=SHORT_ACTIVITY_GROUP,
         activity_type=SHORT_LIKE_ACTIVITY,
@@ -209,10 +225,12 @@ def hide_short_like_activity(
     if not user:
         return False
 
-    return ActivityService.hide_activity_by_unique_key(
+    return bool(_safe_record(
+        "hide_short_like_activity",
+        ActivityService.hide_activity_by_unique_key,
         user=user,
         unique_key=short_like_unique_key(short_id),
-    )
+    ))
 
 
 def record_short_comment_activity(
@@ -245,7 +263,9 @@ def record_short_comment_activity(
 
     target["target_subtitle"] = _compact_text(comment_text, max_len=160) or "Commented on a short"
 
-    return ActivityService.record_activity(
+    return _safe_record(
+        "record_short_comment_activity",
+        ActivityService.record_activity,
         user=user,
         activity_group=SHORT_ACTIVITY_GROUP,
         activity_type=SHORT_COMMENT_ACTIVITY,
@@ -264,10 +284,12 @@ def hide_short_comment_activity(
     if not user or not comment_id:
         return False
 
-    return ActivityService.hide_activity_by_unique_key(
+    return bool(_safe_record(
+        "hide_short_comment_activity",
+        ActivityService.hide_activity_by_unique_key,
         user=user,
         unique_key=short_comment_unique_key(comment_id),
-    )
+    ))
 
 
 def record_short_report_activity(
@@ -292,7 +314,9 @@ def record_short_report_activity(
 
     target["target_subtitle"] = "Reported a short"
 
-    return ActivityService.record_activity(
+    return _safe_record(
+        "record_short_report_activity",
+        ActivityService.record_activity,
         user=user,
         activity_group=SHORT_ACTIVITY_GROUP,
         activity_type=SHORT_REPORT_ACTIVITY,
@@ -318,7 +342,9 @@ def record_short_repost_activity(
     metadata = target.pop("metadata", None)
     target["target_subtitle"] = "Reposted a short"
 
-    return ActivityService.record_or_update_activity(
+    return _safe_record(
+        "record_short_repost_activity",
+        ActivityService.record_or_update_activity,
         user=user,
         activity_group=SHORT_ACTIVITY_GROUP,
         activity_type=SHORT_REPOST_ACTIVITY,
@@ -337,7 +363,9 @@ def hide_short_repost_activity(
     if not user:
         return False
 
-    return ActivityService.hide_activity_by_unique_key(
+    return bool(_safe_record(
+        "hide_short_repost_activity",
+        ActivityService.hide_activity_by_unique_key,
         user=user,
         unique_key=short_repost_unique_key(short_id),
-    )
+    ))

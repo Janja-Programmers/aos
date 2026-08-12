@@ -119,7 +119,7 @@ def _load_user_target(target_user: str | None) -> dict[str, Any] | None:
 
     return {
         "target_doctype": USER_DOCTYPE,
-        "target_name": target_user,
+        "target_name": public_user,
         "target_title": title,
         "target_subtitle": "Profile",
         "target_image": display.get("avatar") or display.get("user_image") or "",

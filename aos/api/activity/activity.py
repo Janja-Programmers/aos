@@ -1,75 +1,57 @@
-"""Activity Center API implementation."""
+"""Private Activity Center API implementation."""
 
 from __future__ import annotations
+
+import uuid
 
 import frappe
 
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
-from aos.api.shared.responses import ok, fail
-from aos.services.activity_service import ActivityService, ACTIVITY_DOCTYPE, ACTIVE_STATUS
-
-from .constants import (
-    LIST_ACTIVITY_LIMIT_PER_MINUTE_PER_USER,
-    HIDE_ACTIVITY_LIMIT_PER_MINUTE_PER_USER,
+from aos.api.shared.responses import fail, ok
+from aos.services.accounts.http import set_private_no_store
+from aos.services.activity.constants import (
+    ACTIVE_STATUS,
+    ACTIVITY_DOCTYPE,
     CLEAR_ACTIVITY_LIMIT_PER_MINUTE_PER_USER,
-    DEFAULT_ACTIVITY_LIMIT,
-    MAX_ACTIVITY_LIMIT,
-    ACTIVITY_GROUP_MAX_LEN,
-    ACTIVITY_TYPE_MAX_LEN,
+    CLEAR_FIELDS,
+    HIDE_ACTIVITY_LIMIT_PER_MINUTE_PER_USER,
+    HIDE_FIELDS,
+    LIST_ACTIVITY_LIMIT_PER_MINUTE_PER_USER,
+    LIST_FIELDS,
 )
+from aos.services.activity.errors import ActivityError
+from aos.services.activity.observability import activity_log
+from aos.services.activity.validation import (
+    ensure_known_fields,
+    normalize_activity_id,
+    normalize_group_filter,
+    normalize_limit,
+    normalize_start,
+    normalize_type_filter,
+)
+from aos.services.activity_service import ActivityService
 
 
-def _to_int(value, default: int) -> int:
+def _domain_error(exc: ActivityError):
     try:
-        return int(value)
+        frappe.local.response["http_status_code"] = exc.http_status
     except Exception:
-        return default
+        pass
+    return fail(exc.message, error=exc.code)
 
 
-def _validate_limit(value):
-    limit = _to_int(value, DEFAULT_ACTIVITY_LIMIT)
-
-    if limit <= 0:
-        return None, fail("Limit must be greater than zero.", error="VALIDATION_ERROR")
-
-    if limit > MAX_ACTIVITY_LIMIT:
-        limit = MAX_ACTIVITY_LIMIT
-
-    return limit, None
-
-
-def _validate_start(value):
-    start = _to_int(value, 0)
-    return max(start, 0)
-
-
-def _normalize_group(value: str | None):
-    value = (value or "").strip()
-
-    if not value:
-        return None, None
-
-    if len(value) > ACTIVITY_GROUP_MAX_LEN:
-        return None, fail("Activity group is too long.", error="VALIDATION_ERROR")
-
-    return ActivityService.normalize_group(value), None
-
-
-def _normalize_type(value: str | None):
-    value = (value or "").strip()
-
-    if not value:
-        return None, None
-
-    if len(value) > ACTIVITY_TYPE_MAX_LEN:
-        return None, fail("Activity type is too long.", error="VALIDATION_ERROR")
-
-    return ActivityService.normalize_type(value), None
+def _rollback_savepoint(savepoint: str) -> None:
+    try:
+        frappe.db.rollback(save_point=savepoint)
+    except Exception:
+        # Never roll back the caller's full transaction from Activity Center.
+        pass
 
 
 def list_activity_impl(**kwargs):
-    """List current user's private Activity Center rows."""
+    """List only the current user's active private Activity Center rows."""
+    set_private_no_store()
     current_user, err = require_login()
     if err:
         return err
@@ -83,90 +65,71 @@ def list_activity_impl(**kwargs):
     if rl:
         return rl
 
-    limit, err = _validate_limit(kwargs.get("limit"))
-    if err:
-        return err
-
-    start = _validate_start(kwargs.get("start"))
-
-    group, err = _normalize_group(
-        kwargs.get("group") or kwargs.get("activity_group")
-    )
-    if err:
-        return err
-
-    activity_type, err = _normalize_type(
-        kwargs.get("type") or kwargs.get("activity_type")
-    )
-    if err:
-        return err
-
-    filters = {
-        "user": current_user,
-        "status": ACTIVE_STATUS,
-    }
-
-    if group:
-        filters["activity_group"] = group
-
-    if activity_type:
-        filters["activity_type"] = activity_type
-
-    fields = [
-        "name",
-        "activity_group",
-        "activity_type",
-        "status",
-        "target_doctype",
-        "target_name",
-        "target_title",
-        "target_subtitle",
-        "target_image",
-        "route_type",
-        "route_id",
-        "metadata_json",
-        "occurred_at",
-        "last_occurrence_at",
-        "count",
-    ]
-
     try:
-        total = frappe.db.count(ACTIVITY_DOCTYPE, filters=filters)
+        ensure_known_fields(kwargs, LIST_FIELDS)
+        limit = normalize_limit(kwargs.get("limit"))
+        start = normalize_start(kwargs.get("start"))
+        group = normalize_group_filter(kwargs)
+        activity_type = normalize_type_filter(kwargs)
 
+        filters = {"user": current_user, "status": ACTIVE_STATUS}
+        if group:
+            filters["activity_group"] = group
+        if activity_type:
+            filters["activity_type"] = activity_type
+
+        fields = [
+            "name",
+            "activity_group",
+            "activity_type",
+            "status",
+            "target_doctype",
+            "target_name",
+            "target_title",
+            "target_subtitle",
+            "target_image",
+            "route_type",
+            "route_id",
+            "metadata_json",
+            "occurred_at",
+            "last_occurrence_at",
+            "count",
+        ]
+        total = int(frappe.db.count(ACTIVITY_DOCTYPE, filters=filters) or 0)
         rows = frappe.get_all(
             ACTIVITY_DOCTYPE,
             filters=filters,
             fields=fields,
-            order_by="last_occurrence_at desc, creation desc",
+            order_by="last_occurrence_at desc, creation desc, name desc",
             limit_start=start,
             limit_page_length=limit,
         )
-
         items = [ActivityService.serialize_activity(row) for row in rows]
-
+        activity_log("activity.listed", count=len(items), activity_group=group, activity_type=activity_type)
         return ok(
             "Activity fetched.",
             data={
                 "items": items,
-                "total": int(total or 0),
+                "total": total,
                 "limit": limit,
                 "start": start,
-                "has_more": (start + len(items)) < int(total or 0),
-                "group": group,
-                "type": activity_type,
+                "has_more": (start + len(items)) < total,
+                "group": group or None,
+                "type": activity_type or None,
             },
         )
-
+    except ActivityError as exc:
+        activity_log("activity.listed", outcome="rejected")
+        return _domain_error(exc)
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS List Activity Failed",
-        )
+        activity_log("activity.listed", outcome="failure")
+        frappe.log_error("Activity list operation failed.", "AOS List Activity Failed")
         return fail("Failed to fetch activity.", error="INTERNAL_ERROR")
 
 
 def hide_activity_impl(**kwargs):
-    """Hide one activity item from current user's Activity Center."""
+    """Hide one current-user Activity Center item idempotently."""
+    set_private_no_store()
     current_user, err = require_login()
     if err:
         return err
@@ -180,33 +143,33 @@ def hide_activity_impl(**kwargs):
     if rl:
         return rl
 
-    activity_id = (kwargs.get("activity_id") or kwargs.get("id") or "").strip()
-    if not activity_id:
-        return fail("Activity ID is required.", error="VALIDATION_ERROR")
-
     try:
-        hidden = ActivityService.hide_activity(
-            user=current_user,
-            activity_id=activity_id,
-        )
+        ensure_known_fields(kwargs, HIDE_FIELDS)
+        activity_id = normalize_activity_id(kwargs)
+    except ActivityError as exc:
+        activity_log("activity.hidden", outcome="rejected")
+        return _domain_error(exc)
 
+    savepoint = f"aos_activity_hide_{uuid.uuid4().hex[:12]}"
+    frappe.db.savepoint(savepoint)
+    try:
+        hidden = ActivityService.hide_activity(user=current_user, activity_id=activity_id)
         if not hidden:
+            _rollback_savepoint(savepoint)
+            activity_log("activity.hidden", outcome="not_found")
             return fail("Activity not found.", error="NOT_FOUND")
-
-        frappe.db.commit()
+        activity_log("activity.hidden", activity_id=activity_id)
         return ok("Activity hidden.", data={"id": activity_id})
-
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Hide Activity Failed",
-        )
-        frappe.db.rollback()
+        _rollback_savepoint(savepoint)
+        activity_log("activity.hidden", outcome="failure")
+        frappe.log_error("Activity hide operation failed.", "AOS Hide Activity Failed")
         return fail("Failed to hide activity.", error="INTERNAL_ERROR")
 
 
 def clear_activity_impl(**kwargs):
-    """Clear matching activity items for the current user."""
+    """Clear current-user Activity Center items, optionally by group/type."""
+    set_private_no_store()
     current_user, err = require_login()
     if err:
         return err
@@ -220,40 +183,38 @@ def clear_activity_impl(**kwargs):
     if rl:
         return rl
 
-    group, err = _normalize_group(
-        kwargs.get("group") or kwargs.get("activity_group")
-    )
-    if err:
-        return err
+    try:
+        ensure_known_fields(kwargs, CLEAR_FIELDS)
+        group = normalize_group_filter(kwargs)
+        activity_type = normalize_type_filter(kwargs)
+    except ActivityError as exc:
+        activity_log("activity.cleared", outcome="rejected")
+        return _domain_error(exc)
 
-    activity_type, err = _normalize_type(
-        kwargs.get("type") or kwargs.get("activity_type")
-    )
-    if err:
-        return err
-
+    savepoint = f"aos_activity_clear_{uuid.uuid4().hex[:12]}"
+    frappe.db.savepoint(savepoint)
     try:
         cleared_count = ActivityService.clear_activity(
             user=current_user,
+            activity_group=group or None,
+            activity_type=activity_type or None,
+        )
+        activity_log(
+            "activity.cleared",
+            count=cleared_count,
             activity_group=group,
             activity_type=activity_type,
         )
-
-        frappe.db.commit()
-
         return ok(
             "Activity cleared.",
             data={
                 "cleared_count": cleared_count,
-                "group": group,
-                "type": activity_type,
+                "group": group or None,
+                "type": activity_type or None,
             },
         )
-
     except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "AOS Clear Activity Failed",
-        )
-        frappe.db.rollback()
+        _rollback_savepoint(savepoint)
+        activity_log("activity.cleared", outcome="failure")
+        frappe.log_error("Activity clear operation failed.", "AOS Clear Activity Failed")
         return fail("Failed to clear activity.", error="INTERNAL_ERROR")
