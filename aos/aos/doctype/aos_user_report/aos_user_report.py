@@ -3,61 +3,81 @@
 
 from __future__ import annotations
 
+import hashlib
+
 import frappe
 from frappe.model.document import Document
-from frappe.utils import now
+
+from aos.services.reports.errors import ReportError
+from aos.services.reports.lifecycle import prepare_new_report, stamp_review_metadata, validate_report_lifecycle
+from aos.services.reports.moderation import apply_admin_action_once
+from aos.services.reports.repository import locked_previous_report
+from aos.services.reports.policy import require_reportable_user
+from aos.services.reports.validation import normalize_reason, validate_active_reason
 
 
 class AOSUserReport(Document):
+    def before_insert(self):
+        session_user = str(getattr(frappe.session, "user", "") or "")
+        if session_user not in {"", "Guest", "Administrator"}:
+            self.reported_by = session_user
+        prepare_new_report(self)
+
     def validate(self):
+        previous = locked_previous_report(self)
         self._validate_users()
-        self._validate_reason()
-        self._prevent_duplicate_active_reports()
-        self._validate_admin_action()
+        try:
+            self._validate_reason(previous)
+            if previous is None:
+                require_reportable_user(target_user=self.reported_user, reporter=self.reported_by)
+            self._set_active_key()
+            self._prevent_duplicate_active_reports()
+            validate_report_lifecycle(self, previous, actor=str(getattr(frappe.session, "user", "") or ""))
+        except ReportError as exc:
+            frappe.throw(str(exc), frappe.ValidationError)
 
     def before_save(self):
-        self._stamp_review_metadata()
+        try:
+            stamp_review_metadata(
+                self,
+                locked_previous_report(self),
+                actor=str(getattr(frappe.session, "user", "") or ""),
+            )
+        except ReportError as exc:
+            frappe.throw(str(exc), frappe.ValidationError)
 
     def on_update(self):
-        self._apply_admin_action()
+        apply_admin_action_once(self, self.get_doc_before_save())
 
     def _validate_users(self):
         if not self.reported_user:
-            frappe.throw("Reported user is required.")
-
+            frappe.throw("Reported user is required.", exc=frappe.ValidationError)
         if not self.reported_by:
-            frappe.throw("Reported by is required.")
-
+            frappe.throw("Reported by is required.", exc=frappe.ValidationError)
         if self.reported_user == self.reported_by:
-            frappe.throw("You cannot report yourself.")
-
+            frappe.throw("You cannot report yourself.", exc=frappe.ValidationError)
         if not frappe.db.exists("User", self.reported_user):
-            frappe.throw("Reported user does not exist.")
-
+            frappe.throw("Reported user does not exist.", exc=frappe.DoesNotExistError)
         if not frappe.db.exists("User", self.reported_by):
-            frappe.throw("Reporting user does not exist.")
+            frappe.throw("Reporting user does not exist.", exc=frappe.DoesNotExistError)
 
-    def _validate_reason(self):
-        if not self.reason:
-            frappe.throw("Reason is required.")
+    def _validate_reason(self, previous):
+        self.reason = normalize_reason(self.reason)
+        if previous is None:
+            validate_active_reason(self.reason)
+        elif not frappe.db.exists("AOS Report Reason", self.reason):
+            frappe.throw("Invalid report reason.", exc=frappe.ValidationError)
 
-        reason = frappe.db.get_value(
-            "AOS Report Reason",
-            self.reason,
-            ["name", "is_active"],
-            as_dict=True,
-        )
-
-        if not reason:
-            frappe.throw("Invalid report reason.")
-
-        if not int(reason.is_active or 0):
-            frappe.throw("Selected report reason is inactive.")
+    def _set_active_key(self):
+        if self.status != "Rejected" and self.reported_user and self.reported_by:
+            material = f"{self.reported_user}\x1f{self.reported_by}".encode("utf-8")
+            self.active_key = hashlib.sha256(material).hexdigest()
+        else:
+            self.active_key = None
 
     def _prevent_duplicate_active_reports(self):
         if not self.reported_user or not self.reported_by:
             return
-
         exists = frappe.db.exists(
             "AOS User Report",
             {
@@ -67,82 +87,5 @@ class AOSUserReport(Document):
                 "name": ["!=", self.name],
             },
         )
-
         if exists:
-            frappe.throw("You have already reported this user.")
-
-    def _validate_admin_action(self):
-        if not self.admin_action:
-            return
-
-        if self.status != "Resolved":
-            frappe.throw("Admin action can only be applied when status is Resolved.")
-
-    def _apply_admin_action(self):
-        if not self.admin_action or self.status != "Resolved":
-            return
-
-        previous = self.get_doc_before_save()
-
-        # Only run moderation when admin action changes.
-        if previous and previous.admin_action == self.admin_action:
-            return
-
-        if self.admin_action == "Suspend User":
-            frappe.db.set_value(
-                "User",
-                self.reported_user,
-                "enabled",
-                0,
-                update_modified=False,
-            )
-
-            if frappe.db.exists("AOS Profile", self.reported_user):
-                updates = {}
-                meta = frappe.get_meta("AOS Profile")
-
-                if meta.has_field("account_status"):
-                    updates["account_status"] = "Suspended"
-
-                if meta.has_field("is_deleted"):
-                    updates["is_deleted"] = 0
-
-                if updates:
-                    frappe.db.set_value(
-                        "AOS Profile",
-                        self.reported_user,
-                        updates,
-                        update_modified=False,
-                    )
-
-        elif self.admin_action == "Warn User":
-            # Warning delivery can be implemented later through notifications/email.
-            pass
-
-        elif self.admin_action == "Dismiss Report":
-            # Explicit no-op for moderation audit clarity.
-            pass
-
-    def _stamp_review_metadata(self):
-        """Stamp moderation metadata before the report update is saved."""
-        if frappe.session.user == "Guest":
-            return
-
-        previous = self.get_doc_before_save()
-
-        # Do not stamp on initial report creation.
-        if not previous:
-            return
-
-        status_changed = previous.status != self.status
-        admin_action_changed = previous.admin_action != self.admin_action
-
-        if not status_changed and not admin_action_changed:
-            return
-
-        # Only review states/actions should stamp metadata.
-        if self.status == "Reviewing" and not self.admin_action:
-            return
-
-        self.reviewed_by = frappe.session.user
-        self.reviewed_on = now()
+            frappe.throw("You have already reported this user.", exc=frappe.ValidationError)

@@ -498,7 +498,14 @@ class ReviewService:
 
     def report(self, *, user: str, payload: dict[str, Any]) -> dict[str, Any]:
         ensure_known_fields(payload, self.REPORT_FIELDS)
-        review_id = normalize_identifier(payload.get("review_id") or payload.get("review"), field="review")
+        review_value = str(payload.get("review") or "").strip()
+        review_id_value = str(payload.get("review_id") or "").strip()
+        if review_value and review_id_value and review_value != review_id_value:
+            raise ReviewValidationError(
+                "Conflicting review values.",
+                code="INVALID_REVIEW_REQUEST",
+            )
+        review_id = normalize_identifier(review_id_value or review_value, field="review")
         reason = normalize_report_reason(payload.get("reason"))
         details = normalize_report_details(payload.get("details"))
         if not frappe.db.exists("AOS Report Reason", {"name": reason, "is_active": 1}):
@@ -506,6 +513,12 @@ class ReviewService:
                 "Invalid report reason.",
                 code="INVALID_REVIEW_REPORT_REASON",
             )
+        locked = frappe.db.sql(
+            "SELECT name FROM `tabAOS Review` WHERE name = %s LIMIT 1 FOR UPDATE",
+            (review_id,),
+        )
+        if not locked:
+            raise ReviewNotFoundError("Review not found.")
         review = frappe.db.get_value("AOS Review", review_id, ["name", "reviewer", "status"], as_dict=True)
         if not review or review.status != STATUS_APPROVED:
             raise ReviewNotFoundError("Review not found.")

@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import now_datetime
 
-from aos.services.ads.indexing import enqueue_discovery_refresh
-from aos.services.ads.lifecycle import validate_status_transition
-from aos.services.ads.mutations import apply_transition, lock_ad
-from aos.services.sellers.policy import set_seller_status
-
-_MODERATOR_ROLES = frozenset({"System Manager", "AOS Moderator"})
+from aos.services.reports.errors import ReportError
+from aos.services.reports.lifecycle import prepare_new_report, stamp_review_metadata, validate_report_lifecycle
+from aos.services.reports.moderation import apply_admin_action_once
+from aos.services.reports.repository import locked_previous_report
+from aos.services.reports.validation import normalize_reason, validate_active_reason
 
 
 class AOSAdReport(Document):
@@ -20,32 +18,47 @@ class AOSAdReport(Document):
         ad = frappe.db.get_value("AOS Ad", self.ad, ["seller", "status"], as_dict=True)
         if not ad or ad.status != "Active":
             frappe.throw("Ad not found.", exc=frappe.DoesNotExistError)
+        seller = frappe.db.get_value("AOS Seller", ad.seller, ["name", "status"], as_dict=True)
+        if not seller or seller.status != "Active":
+            frappe.throw("Ad not found.", exc=frappe.DoesNotExistError)
         self.seller = ad.seller
+        prepare_new_report(self)
 
     def validate(self):
-        self.details = str(self.details or "").strip()[:2000]
-        if not frappe.db.exists("AOS Report Reason", {"name": self.reason, "is_active": 1}):
-            frappe.throw("Invalid report reason.", exc=frappe.ValidationError)
-        self._validate_duplicate()
-        self._validate_moderator_change()
-        if self.admin_action and self.status != "Resolved":
-            frappe.throw("Admin action requires a resolved report.", exc=frappe.ValidationError)
+        previous = locked_previous_report(self)
+        try:
+            self._validate_reason(previous)
+            self._validate_duplicate()
+            validate_report_lifecycle(self, previous, actor=str(getattr(frappe.session, "user", "") or ""))
+        except ReportError as exc:
+            frappe.throw(str(exc), frappe.ValidationError)
 
     def before_save(self):
-        previous = self.get_doc_before_save()
-        if previous and (previous.status != self.status or previous.admin_action != self.admin_action):
-            self.reviewed_by = frappe.session.user
-            self.reviewed_on = now_datetime()
+        try:
+            stamp_review_metadata(
+                self,
+                locked_previous_report(self),
+                actor=str(getattr(frappe.session, "user", "") or ""),
+            )
+        except ReportError as exc:
+            frappe.throw(str(exc), frappe.ValidationError)
 
     def after_insert(self):
         self._recompute_ad_total_reports()
 
     def on_update(self):
-        self._apply_admin_action_once()
+        apply_admin_action_once(self, self.get_doc_before_save())
         self._recompute_if_status_changed()
 
     def on_trash(self):
         self._recompute_ad_total_reports()
+
+    def _validate_reason(self, previous):
+        self.reason = normalize_reason(self.reason)
+        if previous is None:
+            validate_active_reason(self.reason)
+        elif not frappe.db.exists("AOS Report Reason", self.reason):
+            frappe.throw("Invalid report reason.", exc=frappe.ValidationError)
 
     def _validate_duplicate(self):
         if not self.ad or not self.reported_by:
@@ -55,47 +68,6 @@ class AOSAdReport(Document):
             {"ad": self.ad, "reported_by": self.reported_by, "name": ["!=", self.name]},
         ):
             frappe.throw("You have already reported this ad.", exc=frappe.ValidationError)
-
-    def _validate_moderator_change(self):
-        if self.is_new():
-            return
-        previous = self.get_doc_before_save()
-        if not previous or (previous.status == self.status and previous.admin_action == self.admin_action):
-            return
-        roles = set(frappe.get_roles(frappe.session.user))
-        if not roles.intersection(_MODERATOR_ROLES):
-            frappe.throw("Moderator permission is required.", exc=frappe.PermissionError)
-
-    def _apply_admin_action_once(self):
-        if self.status != "Resolved" or not self.admin_action:
-            return
-        previous = self.get_doc_before_save()
-        if previous and previous.admin_action == self.admin_action and previous.status == self.status:
-            return
-        if self.admin_action == "Suspended Ad":
-            lock_ad(self.ad)
-            ad = frappe.get_doc("AOS Ad", self.ad)
-            if ad.status != "Suspended":
-                transition = validate_status_transition(ad.status, "Suspended", action="suspend")
-                apply_transition(ad, transition)
-                ad.save(ignore_permissions=True)
-                enqueue_discovery_refresh(ad.name, status=ad.status, source="ad_report_suspend")
-        elif self.admin_action == "Suspended Seller":
-            set_seller_status(
-                self.seller,
-                status="Suspended",
-                reason_code="AD_REPORT_MODERATION",
-                source="ad_report",
-                actor=str(frappe.session.user or ""),
-            )
-            for ad_id in frappe.get_all(
-                "AOS Ad",
-                filters={"seller": self.seller, "status": "Active"},
-                pluck="name",
-                order_by="name asc",
-                limit=500,
-            ):
-                enqueue_discovery_refresh(ad_id, status="Suspended", source="seller_report_suspend")
 
     def _recompute_ad_total_reports(self):
         if not self.ad:

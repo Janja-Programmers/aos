@@ -1,6 +1,6 @@
 {
  "actions": [],
- "allow_rename": 1,
+ "allow_rename": 0,
  "autoname": "naming_series:",
  "creation": "2026-03-04 13:20:44.477731",
  "doctype": "DocType",
@@ -121,7 +121,7 @@
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
+ "index_web_pages_for_search": 0,
  "links": [],
  "modified": "2026-03-05 02:24:32.225377",
  "modified_by": "Administrator",
@@ -132,14 +132,14 @@
  "permissions": [
   {
    "create": 1,
-   "delete": 1,
+   "delete": 0,
    "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 1,
+   "share": 0,
    "write": 1
   }
  ],
@@ -160,5 +160,6 @@
    "color": "Red",
    "title": "Rejected"
   }
- ]
+ ],
+ "track_changes": 1
 }

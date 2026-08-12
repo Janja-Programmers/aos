@@ -168,6 +168,11 @@ def cleanup_deleted_account_features(user: str) -> dict[str, int]:
     # participant. This is intentionally idempotent and bounded.
     summary.update(_cleanup_chat_private_state(user=user))
 
+    # Reports are private reporter-owned moderation data. Remove rows submitted
+    # by the deleted account while retaining reports about its public content or
+    # account for staff audit. Ad aggregates are rebuilt from remaining rows.
+    summary.update(_cleanup_report_account_data(user=user))
+
     # Marketplace trust history is retained and rendered through the Accounts
     # deleted-user serializer. Private reactions/reports are removed so deleted
     # accounts no longer keep personalization or reporter identity rows.
@@ -1099,6 +1104,66 @@ def _cleanup_chat_private_state(*, user: str) -> dict[str, int]:
         total += len(rows)
     summary["chat_conversations_deactivated"] = total
     return summary
+
+
+def _cleanup_report_account_data(*, user: str) -> dict[str, int]:
+    """Remove private reports submitted by a deleted account.
+
+    Reports *about* the account/content are retained for moderation audit. This
+    mirrors the existing Review-report privacy policy and keeps the caller's
+    account-deletion transaction authoritative.
+    """
+
+    user_reports_removed = _delete_counted(
+        "AOS User Report",
+        where_sql="reported_by = %s",
+        where_params=(user,),
+    )
+    short_reports_removed = _delete_counted(
+        "AOS Short Report",
+        where_sql="reported_by = %s",
+        where_params=(user,),
+    )
+
+    ad_reports_removed = 0
+    affected_ads: set[str] = set()
+    if _doctype_exists("AOS Ad Report"):
+        while True:
+            rows = frappe.get_all(
+                "AOS Ad Report",
+                filters={"reported_by": user},
+                fields=["name", "ad"],
+                order_by="name asc",
+                limit_page_length=250,
+            )
+            if not rows:
+                break
+            names = [str(row.name) for row in rows if row.name]
+            affected_ads.update(str(row.ad) for row in rows if row.ad)
+            if not names:
+                break
+            frappe.db.sql(
+                "DELETE FROM `tabAOS Ad Report` WHERE name IN %(names)s",
+                {"names": tuple(names)},
+            )
+            ad_reports_removed += len(names)
+
+    for ad_id in sorted(affected_ads):
+        if frappe.db.exists("AOS Ad", ad_id):
+            total = frappe.db.count(
+                "AOS Ad Report",
+                {"ad": ad_id, "status": ["!=", "Rejected"]},
+            )
+            frappe.db.set_value(
+                "AOS Ad", ad_id, "total_reports", int(total or 0), update_modified=False
+            )
+
+    return {
+        "user_reports_removed": user_reports_removed,
+        "short_reports_removed": short_reports_removed,
+        "ad_reports_removed": ad_reports_removed,
+        "ad_report_totals_recalculated": len(affected_ads),
+    }
 
 
 def _cleanup_review_account_data(*, user: str) -> dict[str, int]:

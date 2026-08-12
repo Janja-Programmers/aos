@@ -91,14 +91,14 @@
  "permissions": [
   {
    "create": 1,
-   "delete": 1,
+   "delete": 0,
    "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 1,
+   "share": 0,
    "write": 1
   }
  ],
@@ -106,5 +106,8 @@
  "sort_order": "DESC",
  "modified": "2026-07-28 12:00:00.000000",
  "modified_by": "Administrator",
- "owner": "Administrator"
+ "owner": "Administrator",
+ "allow_rename": 0,
+ "track_changes": 1,
+ "index_web_pages_for_search": 0
 }

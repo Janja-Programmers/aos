@@ -1,74 +1,80 @@
 # Copyright (c) 2026, Africa Online Stores and contributors
 # For license information, please see license.txt
 
+from __future__ import annotations
+
 import hashlib
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import now_datetime
+
+from aos.services.reports.errors import ReportError
+from aos.services.reports.lifecycle import prepare_new_report, stamp_review_metadata, validate_report_lifecycle
+from aos.services.reports.moderation import apply_admin_action_once
+from aos.services.reports.repository import locked_previous_report
+from aos.services.reports.validation import normalize_reason, validate_active_reason
 
 
 class AOSShortReport(Document):
     def before_insert(self):
-        self._set_defaults()
+        user = str(getattr(frappe.session, "user", "") or "")
+        if user not in {"", "Guest", "Administrator"}:
+            self.reported_by = user
+        prepare_new_report(self)
 
     def validate(self):
-        self._validate_short()
+        previous = locked_previous_report(self)
+        self._validate_short(previous)
         self._validate_reporter()
-        self._validate_reason()
-        self._set_active_key()
-        self._prevent_duplicate_active_report()
-        self._sync_review_fields()
+        try:
+            self._validate_reason(previous)
+            self._set_active_key()
+            self._prevent_duplicate_active_report()
+            validate_report_lifecycle(self, previous, actor=str(getattr(frappe.session, "user", "") or ""))
+        except ReportError as exc:
+            frappe.throw(str(exc), frappe.ValidationError)
 
-    def _set_defaults(self):
-        if not self.status:
-            self.status = "Reviewing"
+    def before_save(self):
+        try:
+            stamp_review_metadata(
+                self,
+                locked_previous_report(self),
+                actor=str(getattr(frappe.session, "user", "") or ""),
+            )
+        except ReportError as exc:
+            frappe.throw(str(exc), frappe.ValidationError)
 
-        if not self.reported_by:
-            self.reported_by = frappe.session.user
+    def on_update(self):
+        apply_admin_action_once(self, self.get_doc_before_save())
 
-    def _validate_short(self):
+    def _validate_short(self, previous):
         if not self.short:
-            frappe.throw("Short is required")
-
+            frappe.throw("Short is required.", exc=frappe.ValidationError)
         short = frappe.db.get_value(
             "AOS Short",
             self.short,
             ["name", "owner", "status", "visibility_status"],
             as_dict=True,
         )
-
         if not short:
-            frappe.throw("Short not found")
-
-        if short.status != "ready" or short.visibility_status != "visible":
-            frappe.throw("Short is not available")
-
-        self.short_owner = short.owner
+            frappe.throw("Short not found.", exc=frappe.DoesNotExistError)
+        if previous is None and (short.status != "ready" or short.visibility_status != "visible"):
+            frappe.throw("Short is not available.", exc=frappe.DoesNotExistError)
+        if previous is None:
+            self.short_owner = short.owner
 
     def _validate_reporter(self):
         if not self.reported_by or self.reported_by == "Guest":
-            frappe.throw("Login required to report a short")
-
+            frappe.throw("Login required to report a short.", exc=frappe.PermissionError)
         if self.reported_by == self.short_owner:
-            frappe.throw("You cannot report your own short")
+            frappe.throw("You cannot report your own short.", exc=frappe.PermissionError)
 
-    def _validate_reason(self):
-        if not self.reason:
-            frappe.throw("Reason is required")
-
-        reason = frappe.db.get_value(
-            "AOS Report Reason",
-            self.reason,
-            ["name", "is_active"],
-            as_dict=True,
-        )
-
-        if not reason:
-            frappe.throw("Invalid report reason")
-
-        if not int(reason.is_active or 0):
-            frappe.throw("Selected report reason is inactive")
+    def _validate_reason(self, previous):
+        self.reason = normalize_reason(self.reason)
+        if previous is None:
+            validate_active_reason(self.reason)
+        elif not frappe.db.exists("AOS Report Reason", self.reason):
+            frappe.throw("Invalid report reason.", exc=frappe.ValidationError)
 
     def _set_active_key(self):
         if self.status == "Reviewing" and self.short and self.reported_by:
@@ -88,16 +94,5 @@ class AOSShortReport(Document):
             },
             "name",
         )
-
         if existing:
-            frappe.throw("You have already reported this short")
-
-    def _sync_review_fields(self):
-        if self.status == "Reviewing":
-            return
-
-        if not self.reviewed_by:
-            self.reviewed_by = frappe.session.user
-
-        if not self.reviewed_on:
-            self.reviewed_on = now_datetime()
+            frappe.throw("You have already reported this short.", exc=frappe.ValidationError)

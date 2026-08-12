@@ -472,6 +472,11 @@ class AOSFeatureTestMixin:
         frappe.db.sql("DELETE FROM `tabAOS Conversation` WHERE participant_1 LIKE %s OR participant_2 LIKE %s", (email_like, email_like))
 
         frappe.db.sql("DELETE FROM `tabAOS Review Reaction` WHERE user LIKE %s", (email_like,))
+        frappe.db.sql(
+            "DELETE FROM `tabAOS Review Report` WHERE reported_by LIKE %s OR "
+            "review IN (SELECT name FROM `tabAOS Review` WHERE reviewer LIKE %s)",
+            (email_like, email_like),
+        )
         frappe.db.sql("DELETE FROM `tabAOS Review Image` WHERE parent IN (SELECT name FROM `tabAOS Review` WHERE reviewer LIKE %s)", (email_like,))
         frappe.db.sql("DELETE FROM `tabAOS Review` WHERE reviewer LIKE %s OR ad IN (SELECT name FROM `tabAOS Ad` WHERE title LIKE %s)", (email_like, like))
 
