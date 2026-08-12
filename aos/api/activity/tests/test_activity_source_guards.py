@@ -42,6 +42,14 @@ class TestActivityProductionSourceGuards(unittest.TestCase):
         self.assertNotIn("frappe.db.commit", source)
         self.assertNotIn("frappe.db.rollback()", source)
 
+    def test_public_activity_errors_use_stable_safe_messages(self):
+        source = _source("aos/api/activity/activity.py")
+        self.assertIn("_PUBLIC_ACTIVITY_ERROR_MESSAGES", source)
+        self.assertIn('"VALIDATION_ERROR": "Invalid activity request."', source)
+        self.assertIn('"NOT_FOUND": "Activity not found."', source)
+        self.assertNotIn("fail(exc.message", source)
+        self.assertNotIn("str(exc)", source)
+
     def test_request_validation_is_strict_alias_aware_and_bounded(self):
         source = _source("aos/services/activity/validation.py")
         constants = _source("aos/services/activity/constants.py")

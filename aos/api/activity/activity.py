@@ -33,12 +33,16 @@ from aos.services.activity.validation import (
 from aos.services.activity_service import ActivityService
 
 
+_PUBLIC_ACTIVITY_ERROR_MESSAGES = {
+    "VALIDATION_ERROR": "Invalid activity request.",
+    "NOT_FOUND": "Activity not found.",
+}
+
+
 def _domain_error(exc: ActivityError):
-    try:
-        frappe.local.response["http_status_code"] = exc.http_status
-    except Exception:
-        pass
-    return fail(exc.message, error=exc.code)
+    code = str(getattr(exc, "code", "VALIDATION_ERROR") or "VALIDATION_ERROR").strip().upper()
+    message = _PUBLIC_ACTIVITY_ERROR_MESSAGES.get(code, "Invalid activity request.")
+    return fail(message, error=code, http_status=exc.http_status)
 
 
 def _rollback_savepoint(savepoint: str) -> None:
