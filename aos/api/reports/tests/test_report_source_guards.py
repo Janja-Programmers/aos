@@ -93,10 +93,10 @@ class TestReportProductionSourceGuards(unittest.TestCase):
         self.assertNotIn('doc.reported_by = request.get(', block)
 
     def test_duplicate_integrity_is_database_backed_for_every_report_type(self):
-        patch = _source("aos/patches/v1_0/harden_reports_subsystem.py")
+        indexes = _source("aos/patches/v1_0/install_report_indexes.py")
         user_schema = json.loads(_source("aos/aos/doctype/aos_user_report/aos_user_report.json"))
         self.assertIn("active_key", {row.get("fieldname") for row in user_schema["fields"]})
-        self.assertIn("uq_aos_user_report_active", patch)
+        self.assertIn("uq_aos_user_report_active", indexes)
         self.assertIn("uq_aos_ad_report_user_ad", _source("aos/patches/v1_0/harden_ads_subsystem.py"))
         self.assertIn("uq_short_report_active", _source("aos/patches/v1_0/install_shorts_indexes.py"))
         self.assertIn("uq_aos_review_report_user", _source("aos/patches/v1_0/harden_reviews_subsystem.py"))
@@ -210,7 +210,52 @@ class TestReportProductionSourceGuards(unittest.TestCase):
         self.assertIn("_BATCH_SIZE = 250", source)
         self.assertIn("LIMIT %s", source)
         self.assertNotIn("frappe.db.commit", source)
+        self.assertNotIn("frappe.db.add_index", source)
+        self.assertNotIn("frappe.db.add_unique", source)
+        self.assertNotIn("frappe.reload_doc", source)
         self.assertIn("status = 'Rejected'", source)
+
+    def test_report_index_repair_runs_after_shared_hardening_and_is_schema_only(self):
+        patches = _source("aos/patches.txt")
+        harden = "aos.patches.v1_0.harden_reports_subsystem"
+        repair = "aos.patches.v1_0.install_report_indexes"
+        self.assertIn(repair, patches)
+        self.assertLess(patches.index(harden), patches.index(repair))
+
+        harden_source = _source("aos/patches/v1_0/harden_reports_subsystem.py")
+        self.assertNotIn("frappe.reload_doc", harden_source)
+
+        source = _source("aos/patches/v1_0/install_report_indexes.py")
+        for index_name in (
+            "uq_short_report_active",
+            "idx_short_report_review",
+            "uq_aos_ad_report_user_ad",
+            "uq_aos_review_report_user",
+        ):
+            self.assertIn(index_name, source)
+        self.assertNotIn("frappe.db.commit", source)
+        self.assertNotIn("frappe.db.rollback", source)
+        tree = ast.parse(source)
+        forbidden = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr in {"set_value", "insert", "save", "delete"}:
+                forbidden.append(f"{node.func.attr}@{node.lineno}")
+            if node.func.attr == "sql" and node.args:
+                query = node.args[0]
+                literal = ""
+                if isinstance(query, ast.Constant) and isinstance(query.value, str):
+                    literal = query.value
+                elif isinstance(query, ast.JoinedStr):
+                    literal = "".join(
+                        value.value
+                        for value in query.values
+                        if isinstance(value, ast.Constant) and isinstance(value.value, str)
+                    )
+                if literal.lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE", "REPLACE", "TRUNCATE")):
+                    forbidden.append(f"sql-dml@{node.lineno}")
+        self.assertEqual(forbidden, [])
 
     def test_rate_limit_registry_covers_every_public_report_endpoint(self):
         registry = json.loads(_source("ci/public-endpoint-rate-limits.json"))

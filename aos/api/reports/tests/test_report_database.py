@@ -43,6 +43,17 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.cleanup_feature_rows()
         frappe.set_user("Administrator")
 
+    def test_report_domain_indexes_exist_after_migrate(self):
+        from aos.patches.v1_0.install_report_indexes import INDEX_DEFINITIONS
+
+        for doctype, index_name, _columns, _unique in INDEX_DEFINITIONS:
+            rows = frappe.db.sql(
+                """SELECT INDEX_NAME FROM information_schema.STATISTICS
+                   WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=%s AND INDEX_NAME=%s LIMIT 1""",
+                (f"tab{doctype}", index_name),
+            )
+            self.assertTrue(rows, f"missing Report domain index {index_name}")
+
     def _make_approved_review(self):
         frappe.set_user("Administrator")
         review = frappe.get_doc(

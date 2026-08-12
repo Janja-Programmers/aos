@@ -1,9 +1,9 @@
 """Harden human-report persistence, review queues, and duplicate integrity.
 
-The existing model supports User, Ad, Short, and Review reports. Ad/Short/Review
-uniqueness is already installed by their owning hardened domains. This patch
-adds the missing User-report integrity boundary and the shared Report-reason
-query index without deleting legitimate moderation history.
+The existing model supports User, Ad, Short, and Review reports. This data-only
+patch reconciles legacy User-report duplicates and backfills the hidden active
+key without deleting legitimate moderation history. Schema/index installation
+is performed by the companion ``install_report_indexes`` patch.
 """
 
 from __future__ import annotations
@@ -14,43 +14,19 @@ import frappe
 
 _BATCH_SIZE = 250
 
-_INDEXES = {
-    "idx_aos_user_report_backlog": ("AOS User Report", ["status", "creation", "name"]),
-    "idx_aos_user_report_target": ("AOS User Report", ["reported_user", "status", "creation", "name"]),
-    "idx_aos_user_report_reporter": ("AOS User Report", ["reported_by", "creation", "name"]),
-    "idx_aos_report_reason_active": ("AOS Report Reason", ["is_active", "sort_order", "title"]),
-}
-
 
 def execute() -> None:
-    for doctype in (
-        "aos_report_reason",
-        "aos_user_report",
-        "aos_ad_report",
-        "aos_short_report",
-        "aos_review_report",
-    ):
-        frappe.reload_doc("aos", "doctype", doctype, force=True)
-
+    # This is a post-model-sync data patch. Re-loading Report DocTypes here
+    # is both unnecessary and unsafe: Frappe schema sync can remove manually
+    # installed indexes owned by the Ads, Shorts, and Reviews domains. The
+    # normal migrate model-sync phase has already applied source-controlled
+    # DocType schema before this patch runs.
     _normalize_blank_statuses()
     duplicates = _reconcile_user_report_duplicates()
     _backfill_user_active_keys()
 
-    for name, (doctype, fields) in _INDEXES.items():
-        if _supports(doctype, fields) and not _index_exists(doctype, name):
-            frappe.db.add_index(doctype, fields, index_name=name)
-
-    if _supports("AOS User Report", ["active_key"]) and not _index_exists(
-        "AOS User Report", "uq_aos_user_report_active", unique_only=True
-    ):
-        frappe.db.add_unique(
-            "AOS User Report",
-            ["active_key"],
-            constraint_name="uq_aos_user_report_active",
-        )
-
     frappe.logger("aos.reports", allow_site=True).info(
-        "reports_schema_hardening_complete duplicate_user_reports_rejected=%s",
+        "reports_data_hardening_complete duplicate_user_reports_rejected=%s",
         duplicates,
     )
 
@@ -154,20 +130,3 @@ def _supports(doctype: str, fields: list[str]) -> bool:
         frappe.db.has_column(doctype, field) for field in fields
     )
 
-
-def _index_exists(doctype: str, name: str, *, unique_only: bool = False) -> bool:
-    unique_clause = "AND NON_UNIQUE = 0" if unique_only else ""
-    return bool(
-        frappe.db.sql(
-            f"""
-            SELECT INDEX_NAME
-            FROM information_schema.STATISTICS
-            WHERE TABLE_SCHEMA = DATABASE()
-              AND TABLE_NAME = %s
-              AND INDEX_NAME = %s
-              {unique_clause}
-            LIMIT 1
-            """,
-            (f"tab{doctype}", name),
-        )
-    )
