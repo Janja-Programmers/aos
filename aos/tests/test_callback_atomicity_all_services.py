@@ -394,7 +394,10 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 								raise RuntimeError("secret SQL /srv/private token=https://internal.invalid")
 							return original_save(doc, *args, **kwargs)
 
-						with patch.object(job_class, "save", new=failing_job_save):
+						with (
+							patch.object(job_class, "save", new=failing_job_save),
+							patch.object(adapter.api_module.frappe, "log_error"),
+						):
 							response = self._invoke(adapter, payload)
 						self.assertFalse(response["ok"], response)
 						self.assertEqual(self._snapshot(fixture, outbox), before)
@@ -425,7 +428,10 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 								raise RuntimeError("private token file:///srv/secret database SQL")
 							return original_save(doc, *args, **kwargs)
 
-						with patch.object(outbox_class, "save", new=failing_outbox_save):
+						with (
+							patch.object(outbox_class, "save", new=failing_outbox_save),
+							patch.object(adapter.api_module.frappe, "log_error"),
+						):
 							response = self._invoke(adapter, payload)
 						self.assertFalse(response["ok"], response)
 						self.assertEqual(self._snapshot(fixture, outbox), before)
@@ -452,7 +458,10 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 								raise RuntimeError("domain write failed with secret token")
 							return original_save(doc, *args, **kwargs)
 
-						with patch.object(domain_class, "save", new=failing_domain_save):
+						with (
+							patch.object(domain_class, "save", new=failing_domain_save),
+							patch.object(adapter.api_module.frappe, "log_error"),
+						):
 							response = self._invoke(adapter, payload)
 						self.assertFalse(response["ok"], response)
 						self.assertEqual(self._snapshot(fixture, outbox), before)
