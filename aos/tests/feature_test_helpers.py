@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import uuid
 from types import SimpleNamespace
 from typing import Any
@@ -447,6 +448,58 @@ class AOSFeatureTestMixin:
             duration_seconds=None,
         )
 
+
+    def _cleanup_short_rows_with_deadlock_retry(
+        self,
+        *,
+        email_like: str,
+        like: str,
+        path_like: str,
+        max_attempts: int = 5,
+        base_delay_seconds: float = 0.05,
+    ) -> None:
+        """Delete prefix-scoped Shorts fixtures with bounded deadlock retries."""
+        attempts = max(1, int(max_attempts or 1))
+        for attempt in range(attempts):
+            try:
+                frappe.db.sql("DELETE FROM `tabAOS Short Comment Like` WHERE user LIKE %s", (email_like,))
+                frappe.db.sql(
+                    "DELETE FROM `tabAOS Short Comment` WHERE user LIKE %s OR "
+                    "short IN (SELECT name FROM `tabAOS Short` WHERE file_key LIKE %s)",
+                    (email_like, path_like),
+                )
+                frappe.db.sql(
+                    "DELETE FROM `tabAOS Short Like` WHERE user LIKE %s OR "
+                    "short IN (SELECT name FROM `tabAOS Short` WHERE file_key LIKE %s)",
+                    (email_like, path_like),
+                )
+                frappe.db.sql(
+                    "DELETE FROM `tabAOS Short Save` WHERE user LIKE %s OR "
+                    "short IN (SELECT name FROM `tabAOS Short` WHERE file_key LIKE %s)",
+                    (email_like, path_like),
+                )
+                frappe.db.sql(
+                    "DELETE FROM `tabAOS Short Report` WHERE reported_by LIKE %s OR "
+                    "short IN (SELECT name FROM `tabAOS Short` WHERE file_key LIKE %s)",
+                    (email_like, path_like),
+                )
+                frappe.db.sql(
+                    "DELETE FROM `tabAOS Short View` WHERE user LIKE %s OR session_id LIKE %s OR "
+                    "short IN (SELECT name FROM `tabAOS Short` WHERE file_key LIKE %s)",
+                    (email_like, like, path_like),
+                )
+                frappe.db.sql("DELETE FROM `tabAOS Short` WHERE file_key LIKE %s", (path_like,))
+                frappe.db.commit()
+                return
+            except frappe.QueryDeadlockError:
+                frappe.db.rollback()
+                if attempt == attempts - 1:
+                    raise
+                time.sleep(base_delay_seconds * (2**attempt))
+            except Exception:
+                frappe.db.rollback()
+                raise
+
     def cleanup_feature_rows(self):
         like = f"{self.prefix}%"
         email_like = f"{self.prefix}-%@example.com"
@@ -480,13 +533,17 @@ class AOSFeatureTestMixin:
         frappe.db.sql("DELETE FROM `tabAOS Review Image` WHERE parent IN (SELECT name FROM `tabAOS Review` WHERE reviewer LIKE %s)", (email_like,))
         frappe.db.sql("DELETE FROM `tabAOS Review` WHERE reviewer LIKE %s OR ad IN (SELECT name FROM `tabAOS Ad` WHERE title LIKE %s)", (email_like, like))
 
-        frappe.db.sql("DELETE FROM `tabAOS Short Comment Like` WHERE user LIKE %s", (email_like,))
-        frappe.db.sql("DELETE FROM `tabAOS Short Comment` WHERE user LIKE %s OR short IN (SELECT name FROM `tabAOS Short` WHERE file_key LIKE %s)", (email_like, path_like))
-        frappe.db.sql("DELETE FROM `tabAOS Short Like` WHERE user LIKE %s OR short IN (SELECT name FROM `tabAOS Short` WHERE file_key LIKE %s)", (email_like, path_like))
-        frappe.db.sql("DELETE FROM `tabAOS Short Save` WHERE user LIKE %s OR short IN (SELECT name FROM `tabAOS Short` WHERE file_key LIKE %s)", (email_like, path_like))
-        frappe.db.sql("DELETE FROM `tabAOS Short Report` WHERE reported_by LIKE %s OR short IN (SELECT name FROM `tabAOS Short` WHERE file_key LIKE %s)", (email_like, path_like))
-        frappe.db.sql("DELETE FROM `tabAOS Short View` WHERE user LIKE %s OR session_id LIKE %s OR short IN (SELECT name FROM `tabAOS Short` WHERE file_key LIKE %s)", (email_like, like, path_like))
-        frappe.db.sql("DELETE FROM `tabAOS Short` WHERE file_key LIKE %s", (path_like,))
+        # Shorts are high-contention tables because media/analytics workers and
+        # other feature tests can touch them independently. Release locks acquired
+        # by the earlier cleanup phase, then retry this entire idempotent phase on
+        # a MariaDB deadlock. A deadlock rolls back the current transaction, so
+        # retrying a single DELETE would be incorrect; the whole phase must replay.
+        frappe.db.commit()
+        self._cleanup_short_rows_with_deadlock_retry(
+            email_like=email_like,
+            like=like,
+            path_like=path_like,
+        )
 
         frappe.db.sql("DELETE FROM `tabAOS Ad Report` WHERE reported_by LIKE %s OR ad IN (SELECT name FROM `tabAOS Ad` WHERE title LIKE %s)", (email_like, like))
         frappe.db.sql("DELETE FROM `tabAOS Wishlist` WHERE user LIKE %s OR ad IN (SELECT name FROM `tabAOS Ad` WHERE title LIKE %s)", (email_like, like))
