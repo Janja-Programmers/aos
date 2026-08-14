@@ -203,7 +203,7 @@ def _sync_mentions(
         if not mentioned_user or not creator_is_available(mentioned_user):
             continue
 
-        frappe.get_doc(
+        mention_doc = frappe.get_doc(
             {
                 "doctype": "AOS Short Mention",
                 "short": short_id,
@@ -213,7 +213,8 @@ def _sync_mentions(
                 "token": mention.get("token"),
                 "source_type": source_type,
             }
-        ).insert(ignore_permissions=True)
+        )
+        mention_doc.insert(ignore_permissions=True)
 
         if should_notify(actor=mentioned_by, recipient=mentioned_user):
             try:
@@ -223,6 +224,7 @@ def _sync_mentions(
                     short_id=short_id,
                     comment_id=comment_id,
                     source_type=source_type,
+                    event_identity=mention_doc.name,
                 )
             except Exception:
                 frappe.log_error(

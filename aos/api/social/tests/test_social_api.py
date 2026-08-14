@@ -158,11 +158,11 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
             search = search_users_impl(query="Feature Target")
         self.assertEqual(search["data"]["items"], [])
 
-    def test_notification_outbox_failure_rolls_back_follow_and_notification(self):
+    def test_notification_failure_does_not_roll_back_follow(self):
         with (
             patch("aos.api.social.toggle_follow.rate_limit", return_value=None),
             patch(
-                "aos.services.social.service.create_notification_delivery_job",
+                "aos.services.social.service.NotificationService.notify_follow",
                 side_effect=RuntimeError("outbox unavailable"),
             ),
         ):
@@ -170,8 +170,9 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
                 account_id=public_account_id_for_user(self.target),
                 action="follow",
             )
-        self.assertEqual(response["error"], "SOCIAL_INTERNAL_ERROR")
-        self.assertFalse(
+        self.assertTrue(response["ok"], response)
+        self.assertTrue(response["data"]["changed"])
+        self.assertTrue(
             frappe.db.exists(
                 "AOS Follow",
                 {"follower_user": self.actor, "following_user": self.target},
@@ -220,13 +221,11 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
         service = SocialService()
         with (
             patch.object(service.repository, "recent_follow_notification_exists", return_value=True),
-            patch("aos.services.social.service.frappe.get_doc") as get_doc,
-            patch("aos.services.social.service.create_notification_delivery_job") as create_job,
+            patch("aos.services.social.service.NotificationService.notify_follow") as notify_follow,
         ):
             result = service._notify_follow_atomic(recipient=self.target, actor=self.actor)
         self.assertEqual(result, "deduplicated")
-        get_doc.assert_not_called()
-        create_job.assert_not_called()
+        notify_follow.assert_not_called()
 
     def test_account_deletion_social_cleanup_is_bounded_and_complete(self):
         self._toggle(account_id=public_account_id_for_user(self.target), action="follow")

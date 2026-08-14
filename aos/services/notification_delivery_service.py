@@ -10,13 +10,25 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import uuid
 from dataclasses import dataclass
 from typing import Any
 
 import frappe
 import requests
 from frappe.utils import now_datetime
+
+from aos.api.shared.account_status import get_account_state
+from aos.api.shared.blocking import is_blocked_between
+from aos.api.shared.db import is_duplicate_entry_error
+from aos.services.accounts.identity import public_account_id_for_user
+from aos.services.notifications.contracts import canonical_event, contract_for
+from aos.services.notifications.devices import (
+	PushDeviceValidationError,
+	get_token_hash,
+	normalize_device_type,
+	normalize_push_token,
+)
+from aos.services.notifications.observability import notification_log
 
 from aos.services.transactional_outbox import (
 	OutboxConflictError,
@@ -27,6 +39,7 @@ from aos.services.transactional_outbox import (
 	outbox_dispatch_context,
 	record_companion_dispatch_outcome,
 	sanitized_dispatch_error,
+	stable_idempotency_key,
 	validate_callback_idempotency,
 )
 from aos.utils.aos_config import clean_url, get_env, get_env_bool, get_env_int, get_first_env
@@ -34,6 +47,14 @@ from aos.utils.aos_config import clean_url, get_env, get_env_bool, get_env_int, 
 
 class NotificationDeliveryError(RuntimeError):
 	"""Raised when notification-delivery orchestration fails."""
+
+
+VALID_DELIVERY_KINDS = frozenset({"persistent", "transient"})
+VALID_PUSH_PRIORITIES = frozenset({"", "high", "normal"})
+VALID_ANDROID_NOTIFICATION_PRIORITIES = frozenset({"", "min", "low", "default", "high", "max"})
+TRANSIENT_INCOMING_CALL_EVENT = "aos_incoming_call"
+MAX_DELIVERY_DATA_BYTES = 16 * 1024
+MAX_STORED_CALLBACK_BYTES = 64 * 1024
 
 
 @dataclass(frozen=True)
@@ -134,31 +155,315 @@ def _get_active_push_tokens(user: str) -> list[dict[str, str]]:
 
 	deduped: dict[str, dict[str, str]] = {}
 	for row in rows:
-		token = _clean(row.get("token"))
-		token_hash = _clean(row.get("token_hash"))
-		if not token or not token_hash:
+		try:
+			token = normalize_push_token(row.get("token"))
+			device_type = normalize_device_type(row.get("device_type"))
+		except PushDeviceValidationError:
+			notification_log(
+				"notification.device_registration_skipped",
+				platform=_clean(row.get("device_type"))[:20],
+				outcome="skipped",
+				reason="invalid_registration",
+			)
+			continue
+		token_hash = _clean(row.get("token_hash")).lower()
+		if token_hash != get_token_hash(token):
+			notification_log(
+				"notification.device_registration_skipped",
+				platform=device_type,
+				outcome="skipped",
+				reason="token_hash_mismatch",
+			)
 			continue
 		deduped[token_hash] = {
 			"token": token,
 			"token_hash": token_hash,
-			"device_type": _clean(row.get("device_type")) or "android",
+			"device_type": device_type,
 		}
 
 	return list(deduped.values())
 
 
 def _sanitize_payload(payload: dict[str, Any]) -> dict[str, Any]:
-	sanitized = dict(payload)
-	tokens = sanitized.get("tokens") or []
-	sanitized["tokens"] = [
-		{
-			"token_hash": token.get("token_hash"),
-			"device_type": token.get("device_type"),
-		}
-		for token in tokens
-		if isinstance(token, dict)
-	]
-	return sanitized
+	"""Store request diagnostics without duplicating notification body/data or raw tokens."""
+	tokens = payload.get("tokens") or []
+	return {
+		"job_id": _clean(payload.get("job_id"))[:200],
+		"notification_id": _clean(payload.get("notification_id"))[:180] or None,
+		"delivery_kind": _clean(payload.get("delivery_kind"))[:40],
+		"channel": _clean(payload.get("channel"))[:40],
+		"event": _clean(payload.get("event"))[:80],
+		"options": payload.get("options") if isinstance(payload.get("options"), dict) else {},
+		"tokens": [
+			{
+				"token_hash": _clean(token.get("token_hash"))[:64],
+				"device_type": _clean(token.get("device_type"))[:20],
+			}
+			for token in tokens[:5000]
+			if isinstance(token, dict) and _clean(token.get("token_hash"))
+		],
+	}
+
+
+
+def _bounded_json_object(value: Any, *, max_bytes: int = MAX_DELIVERY_DATA_BYTES) -> dict[str, Any]:
+	if value is None:
+		value = {}
+	if not isinstance(value, dict):
+		raise NotificationDeliveryError("Notification delivery payload must be an object")
+	encoded = json.dumps(value, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
+	if len(encoded) > max_bytes:
+		raise NotificationDeliveryError("Notification delivery payload is too large")
+	return value
+
+
+def _normalize_job_input(
+	*,
+	user: str,
+	event: str,
+	title: str,
+	body: str,
+	delivery_kind: str,
+	priority: str | None,
+	ttl_seconds: int | None,
+	android_channel_id: str | None,
+	android_notification_priority: str | None,
+) -> dict[str, Any]:
+	user = _clean(user)
+	event = _clean(event)
+	title = _clean(title)
+	body = _clean(body)
+	delivery_kind = _clean(delivery_kind).lower() or "persistent"
+	priority = _clean(priority).lower() or None
+	android_channel_id = _clean(android_channel_id) or None
+	android_notification_priority = _clean(android_notification_priority).lower() or None
+	if not user or not frappe.db.exists("User", user):
+		raise NotificationDeliveryError("Delivery user is required")
+	if not event or len(event) > 80:
+		raise NotificationDeliveryError("Invalid notification delivery event")
+	if not title or len(title) > 140:
+		raise NotificationDeliveryError("Invalid notification delivery title")
+	if not body or len(body) > 500:
+		raise NotificationDeliveryError("Invalid notification delivery body")
+	if delivery_kind not in VALID_DELIVERY_KINDS:
+		raise NotificationDeliveryError("Invalid notification delivery kind")
+	if (priority or "") not in VALID_PUSH_PRIORITIES:
+		raise NotificationDeliveryError("Invalid notification delivery priority")
+	if (android_notification_priority or "") not in VALID_ANDROID_NOTIFICATION_PRIORITIES:
+		raise NotificationDeliveryError("Invalid Android notification priority")
+	if android_channel_id and len(android_channel_id) > 100:
+		raise NotificationDeliveryError("Invalid Android notification channel")
+	if ttl_seconds is not None:
+		try:
+			ttl_seconds = int(ttl_seconds)
+		except (TypeError, ValueError) as exc:
+			raise NotificationDeliveryError("Invalid notification delivery TTL") from exc
+		if ttl_seconds < 0 or ttl_seconds > 86400:
+			raise NotificationDeliveryError("Invalid notification delivery TTL")
+	return {
+		"user": user,
+		"event": event,
+		"title": title,
+		"body": body,
+		"delivery_kind": delivery_kind,
+		"priority": priority,
+		"ttl_seconds": ttl_seconds,
+		"android_channel_id": android_channel_id,
+		"android_notification_priority": android_notification_priority,
+	}
+
+
+def _stable_delivery_idempotency_key(
+	*, notification_id: str | None, delivery_kind: str, event: str, user: str, explicit_key: str | None
+) -> str:
+	if explicit_key:
+		return stable_idempotency_key("notification_delivery", "explicit", explicit_key)
+	if notification_id:
+		return stable_idempotency_key("notification_delivery", "notification", notification_id)
+	return stable_idempotency_key("notification_delivery", delivery_kind, event, user)
+
+
+def _recipient_delivery_suppression_reason(user: str) -> str | None:
+	if not user or not frappe.db.exists("User", user):
+		return "recipient_missing"
+	try:
+		enabled = frappe.db.get_value("User", user, "enabled")
+		if enabled is not None and not bool(int(enabled or 0)):
+			return "recipient_disabled"
+	except Exception:
+		return "recipient_unavailable"
+	try:
+		state = get_account_state(user)
+		if state.get("exists") and (
+			state.get("is_deleted") or state.get("is_deactivated") or state.get("is_suspended")
+		):
+			return "recipient_inactive"
+	except Exception:
+		return "recipient_unavailable"
+	return None
+
+
+def _delivery_suppression_reason(job) -> str | None:
+	reason = _recipient_delivery_suppression_reason(_clean(job.user))
+	if reason:
+		return reason
+
+	if _clean(job.delivery_kind).lower() == "persistent":
+		if not job.notification or not frappe.db.exists("AOS Notification", job.notification):
+			return "notification_missing"
+		row = frappe.db.get_value(
+			"AOS Notification", job.notification, ["user", "type", "actor"], as_dict=True
+		) or {}
+		if _clean(row.get("user")) != _clean(job.user):
+			return "notification_owner_mismatch"
+		try:
+			contract = contract_for(_clean(row.get("type")))
+			if canonical_event(_clean(row.get("type"))) != _clean(job.event):
+				return "notification_contract_mismatch"
+		except Exception:
+			return "notification_contract_mismatch"
+		actor = _clean(row.get("actor")) or None
+		if actor and contract.actor_scoped:
+			actor_reason = _recipient_delivery_suppression_reason(actor)
+			if actor_reason:
+				return "actor_unavailable"
+			try:
+				if is_blocked_between(job.user, actor):
+					return "blocked_relationship"
+			except Exception:
+				# Policy uncertainty is privacy-sensitive. Suppress this delivery
+				# without mutating or failing the owning business domain.
+				return "relationship_unavailable"
+		return None
+
+	if _clean(job.event) != TRANSIENT_INCOMING_CALL_EVENT:
+		return "unsupported_transient_event"
+	data = _json_loads(job.payload_json, {})
+	call_id = _clean(data.get("call_id") or data.get("id")) if isinstance(data, dict) else ""
+	if not call_id or not frappe.db.exists("AOS Call", call_id):
+		return "call_missing"
+	call = frappe.db.get_value("AOS Call", call_id, ["caller", "receiver", "status"], as_dict=True) or {}
+	if _clean(call.get("receiver")) != _clean(job.user):
+		return "call_recipient_mismatch"
+	if _clean(call.get("status")).lower() not in {"initiated", "ringing"}:
+		return "call_not_ringing"
+	caller = _clean(call.get("caller"))
+	if not caller:
+		return "call_actor_missing"
+	if _recipient_delivery_suppression_reason(caller):
+		return "actor_unavailable"
+	try:
+		if is_blocked_between(job.user, caller):
+			return "blocked_relationship"
+	except Exception:
+		return "relationship_unavailable"
+	return None
+
+
+def _safe_callback_reason(value: Any, *, fallback: str | None = None) -> str | None:
+	"""Return only bounded code-like callback diagnostics.
+
+	The companion is authenticated, but provider/library exception text may still
+	contain payload fragments or other sensitive values. Persist only identifiers
+	and short reason codes; arbitrary text is replaced by the supplied fallback.
+	"""
+	clean = _clean(value)[:240]
+	if clean and all(ch.isalnum() or ch in "._:-" for ch in clean):
+		return clean
+	return fallback
+
+
+def _safe_callback_int(value: Any, *, maximum: int = 5000) -> int:
+	try:
+		number = int(value or 0)
+	except (TypeError, ValueError):
+		return 0
+	return max(0, min(number, maximum))
+
+
+def _safe_acceptance_id(value: Any) -> str | None:
+	clean = _clean(value).lower()
+	if len(clean) == 24 and all(ch in "0123456789abcdef" for ch in clean):
+		return clean
+	return None
+
+
+def _sanitize_callback_payload(payload: dict[str, Any]) -> dict[str, Any]:
+	"""Persist bounded provider diagnostics without tokens or arbitrary provider payloads."""
+	provider_responses = payload.get("provider_responses")
+	if not isinstance(provider_responses, list):
+		provider_responses = []
+	clean_responses: list[dict[str, Any]] = []
+	for response in provider_responses[:50]:
+		if not isinstance(response, dict):
+			continue
+		raw_errors = response.get("errors")
+		if not isinstance(raw_errors, list):
+			raw_errors = []
+		clean_errors: list[dict[str, Any]] = []
+		for error in raw_errors[:100]:
+			if not isinstance(error, dict):
+				continue
+			token_hash = _clean(error.get("token_hash")).lower()
+			if len(token_hash) != 64 or any(ch not in "0123456789abcdef" for ch in token_hash):
+				token_hash = ""
+			device_type = _clean(error.get("device_type")).lower()
+			if device_type not in {"android", "ios", "web"}:
+				device_type = ""
+			clean_errors.append(
+				{
+					"token_hash": token_hash or None,
+					"device_type": device_type or None,
+					"inactive": bool(error.get("inactive")),
+					"error_class": _safe_callback_reason(error.get("error_class")),
+					"code": _safe_callback_reason(error.get("code")),
+					"error_code": _safe_callback_reason(error.get("error_code")),
+					"http_status": _safe_callback_int(error.get("http_status"), maximum=599) or None,
+					"error_category": _safe_callback_reason(error.get("error_category")),
+				}
+			)
+		raw_acceptance_ids = response.get("provider_acceptance_ids")
+		if not isinstance(raw_acceptance_ids, list):
+			raw_acceptance_ids = []
+		acceptance_ids = [
+			clean
+			for value in raw_acceptance_ids[:500]
+			if (clean := _safe_acceptance_id(value))
+		]
+		clean_responses.append(
+			{
+				"chunk_index": _safe_callback_int(response.get("chunk_index"), maximum=100000),
+				"delivery_mode": _safe_callback_reason(response.get("delivery_mode")),
+				"success_count": _safe_callback_int(response.get("success_count")),
+				"failure_count": _safe_callback_int(response.get("failure_count")),
+				"provider_acceptance_ids": acceptance_ids,
+				"errors": clean_errors,
+			}
+		)
+	raw_inactive = payload.get("inactive_token_hashes")
+	if not isinstance(raw_inactive, list):
+		raw_inactive = []
+	inactive_hashes = []
+	for value in raw_inactive[:2000]:
+		token_hash = _clean(value).lower()
+		if len(token_hash) == 64 and all(ch in "0123456789abcdef" for ch in token_hash):
+			inactive_hashes.append(token_hash)
+	clean = {
+		"job_id": _clean(payload.get("job_id"))[:200],
+		"status": _safe_callback_reason(payload.get("status")),
+		"channel": _safe_callback_reason(payload.get("channel")),
+		"token_count": _safe_callback_int(payload.get("token_count")),
+		"success_count": _safe_callback_int(payload.get("success_count")),
+		"failure_count": _safe_callback_int(payload.get("failure_count")),
+		"inactive_token_hashes": sorted(set(inactive_hashes)),
+		"provider_responses": clean_responses,
+		"error": _safe_callback_reason(payload.get("error")),
+	}
+	encoded = json.dumps(clean, ensure_ascii=False, default=str).encode("utf-8")
+	if len(encoded) <= MAX_STORED_CALLBACK_BYTES:
+		return clean
+	clean["provider_responses"] = []
+	return clean
 
 
 def create_notification_delivery_job(
@@ -174,48 +479,99 @@ def create_notification_delivery_job(
 	ttl_seconds: int | None = None,
 	android_channel_id: str | None = None,
 	android_notification_priority: str | None = None,
+	idempotency_key: str | None = None,
 	enqueue: bool = True,
 ) -> object | None:
 	config = get_notification_delivery_config()
 	if not config.enabled:
 		return None
 
-	user = _clean(user)
-	if not user:
-		raise NotificationDeliveryError("Delivery user is required")
+	values = _normalize_job_input(
+		user=user,
+		event=event,
+		title=title,
+		body=body,
+		delivery_kind=delivery_kind,
+		priority=priority,
+		ttl_seconds=ttl_seconds,
+		android_channel_id=android_channel_id,
+		android_notification_priority=android_notification_priority,
+	)
+	notification_id = _clean(notification_id) or None
+	if values["delivery_kind"] == "persistent":
+		if not notification_id or not frappe.db.exists("AOS Notification", notification_id):
+			raise NotificationDeliveryError("Persistent delivery requires an existing notification")
+		notification = frappe.db.get_value(
+			"AOS Notification", notification_id, ["user", "type"], as_dict=True
+		) or {}
+		if _clean(notification.get("user")) != values["user"]:
+			raise NotificationDeliveryError("Notification delivery owner mismatch")
+		try:
+			if canonical_event(_clean(notification.get("type"))) != values["event"]:
+				raise NotificationDeliveryError("Notification delivery event mismatch")
+		except NotificationDeliveryError:
+			raise
+		except Exception as exc:
+			raise NotificationDeliveryError("Unsupported notification delivery type") from exc
+	else:
+		if notification_id:
+			raise NotificationDeliveryError("Transient delivery cannot reference an inbox notification")
+		if values["event"] != TRANSIENT_INCOMING_CALL_EVENT:
+			raise NotificationDeliveryError("Unsupported transient notification event")
 
-	data_payload = dict(payload or {})
-	if event:
-		data_payload["event"] = event
+	data_payload = _bounded_json_object(dict(payload or {}))
+	data_payload["event"] = values["event"]
+	data_payload = _bounded_json_object(_stringify_data(data_payload))
+	stable_key = _stable_delivery_idempotency_key(
+		notification_id=notification_id,
+		delivery_kind=values["delivery_kind"],
+		event=values["event"],
+		user=values["user"],
+		explicit_key=_clean(idempotency_key) or None,
+	)
 
 	job = frappe.get_doc(
 		{
 			"doctype": "AOS Notification Delivery Job",
-			"user": user,
+			"user": values["user"],
 			"notification": notification_id,
-			"delivery_kind": delivery_kind or "persistent",
+			"delivery_kind": values["delivery_kind"],
 			"channel": "push",
-			"event": event,
-			"title": title,
-			"body": body,
-			"priority": priority,
-			"ttl_seconds": ttl_seconds,
-			"android_channel_id": android_channel_id,
-			"android_notification_priority": android_notification_priority,
+			"event": values["event"],
+			"title": values["title"],
+			"body": values["body"],
+			"priority": values["priority"],
+			"ttl_seconds": values["ttl_seconds"],
+			"android_channel_id": values["android_channel_id"],
+			"android_notification_priority": values["android_notification_priority"],
 			"status": "Queued",
 			"attempt_count": 0,
 			"max_attempts": config.max_attempts,
-			"idempotency_key": uuid.uuid4().hex,
-			"payload_json": _json_dumps(_stringify_data(data_payload)),
+			"idempotency_key": stable_key,
+			"payload_json": _json_dumps(data_payload),
 		}
 	)
-	job.insert(ignore_permissions=True)
+	try:
+		job.insert(ignore_permissions=True)
+	except Exception as exc:
+		if not is_duplicate_entry_error(exc):
+			raise
+		existing_name = frappe.db.get_value(
+			"AOS Notification Delivery Job", {"idempotency_key": stable_key}, "name"
+		)
+		if not existing_name:
+			raise
+		job = frappe.get_doc("AOS Notification Delivery Job", existing_name)
+		notification_log(
+			"notification.delivery_job_deduplicated",
+			job_id=job.name,
+			delivery_kind=job.delivery_kind,
+			outcome="deduplicated",
+		)
 
 	if enqueue:
 		enqueue_notification_delivery_dispatch(job.name)
-
 	return job
-
 
 def enqueue_notification_delivery_dispatch(delivery_job_id: str) -> object:
 	config = get_notification_delivery_config()
@@ -241,7 +597,7 @@ def build_notification_delivery_payload(job) -> dict[str, Any]:
 		"notification_id": job.notification,
 		"delivery_kind": job.delivery_kind,
 		"channel": job.channel,
-		"user": job.user,
+		"user": public_account_id_for_user(job.user) or "recipient",
 		"event": job.event,
 		"title": job.title,
 		"body": job.body,
@@ -272,6 +628,26 @@ def dispatch_notification_delivery_job(delivery_job_id: str) -> object:
 		return job
 
 	config = get_notification_delivery_config()
+	suppression_reason = _delivery_suppression_reason(job)
+	if suppression_reason:
+		job.status = "Skipped"
+		job.last_error = suppression_reason
+		job.completed_at = now_datetime()
+		job.save(ignore_permissions=True)
+		complete_outbox_without_callback(
+			job_doctype="AOS Notification Delivery Job",
+			job_name=job.name,
+			status="skipped",
+		)
+		frappe.db.commit()
+		notification_log(
+			"notification.delivery_suppressed",
+			job_id=job.name,
+			delivery_kind=job.delivery_kind,
+			outcome="skipped",
+			reason=suppression_reason,
+		)
+		return job
 	if not config.enabled:
 		job.status = "Cancelled"
 		job.last_error = "Notification delivery is disabled"
@@ -363,6 +739,29 @@ def dispatch_notification_delivery_job(delivery_job_id: str) -> object:
 		raise
 
 
+def _callback_count(payload: dict[str, Any], field: str, *, default: int = 0) -> int:
+	try:
+		value = int(payload.get(field) if payload.get(field) is not None else default)
+	except (TypeError, ValueError) as exc:
+		raise NotificationDeliveryError("Invalid notification delivery callback count") from exc
+	if value < 0 or value > 5000:
+		raise NotificationDeliveryError("Invalid notification delivery callback count")
+	return value
+
+
+def _callback_token_hashes(payload: dict[str, Any]) -> list[str]:
+	raw = payload.get("inactive_token_hashes") or []
+	if not isinstance(raw, list) or len(raw) > 2000:
+		raise NotificationDeliveryError("Invalid inactive token hashes")
+	values: list[str] = []
+	for item in raw:
+		value = _clean(item).lower()
+		if len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value):
+			raise NotificationDeliveryError("Invalid inactive token hashes")
+		values.append(value)
+	return sorted(set(values))
+
+
 def handle_notification_delivery_callback(payload: dict[str, Any]) -> object:
 	job_id = _clean(payload.get("job_id"))
 	if not job_id:
@@ -373,12 +772,16 @@ def handle_notification_delivery_callback(payload: dict[str, Any]) -> object:
 	job = frappe.get_doc("AOS Notification Delivery Job", job_id)
 	incoming_status = _clean(payload.get("status")).lower()
 	canonical_status = {"completed": "delivered", "ready": "delivered"}.get(incoming_status, incoming_status)
+	if canonical_status not in {"delivered", "skipped", "failed"}:
+		raise NotificationDeliveryError("Invalid notification delivery callback status")
 	validation = validate_callback_idempotency(job, payload, callback_status=canonical_status)
 	if validation.duplicate:
 		return job
 
-	terminal_statuses = {"Delivered", "Skipped", "Failed"}
+	terminal_statuses = {"Delivered", "Skipped", "Failed", "Cancelled"}
 	if job.status in terminal_statuses:
+		if job.status == "Cancelled":
+			return job
 		if job.status == "Delivered" and incoming_status in {"delivered", "completed", "ready"}:
 			mark_outbox_callback(
 				job_doctype="AOS Notification Delivery Job",
@@ -401,21 +804,22 @@ def handle_notification_delivery_callback(payload: dict[str, Any]) -> object:
 				job_name=job.name,
 				callback_status="failed",
 				success=False,
-				error=_clean(payload.get("error")) or "Notification delivery failed",
+				error=_safe_callback_reason(
+					payload.get("error"), fallback="notification_delivery_failed"
+				),
 			)
 			return job
 		raise NotificationDeliveryError(f"Notification delivery job is already {job.status}")
 
-	job.response_payload = json.dumps(payload, ensure_ascii=False, default=str)
+	job.response_payload = json.dumps(_sanitize_callback_payload(payload), ensure_ascii=False, default=str)
 	job.callback_received_at = now_datetime()
-	job.success_count = int(payload.get("success_count") or 0)
-	job.failure_count = int(payload.get("failure_count") or 0)
-	job.token_count = int(payload.get("token_count") or job.token_count or 0)
+	job.success_count = _callback_count(payload, "success_count")
+	job.failure_count = _callback_count(payload, "failure_count")
+	job.token_count = _callback_count(payload, "token_count", default=int(job.token_count or 0))
+	if job.success_count + job.failure_count > job.token_count:
+		raise NotificationDeliveryError("Invalid notification delivery callback counts")
 
-	inactive_hashes = payload.get("inactive_token_hashes") or []
-	if not isinstance(inactive_hashes, list):
-		inactive_hashes = []
-	inactive_hashes = [_clean(value) for value in inactive_hashes if _clean(value)]
+	inactive_hashes = _callback_token_hashes(payload)
 	job.inactive_count = len(inactive_hashes)
 	job.inactive_token_hashes = json.dumps(inactive_hashes, ensure_ascii=False)
 
@@ -437,7 +841,7 @@ def handle_notification_delivery_callback(payload: dict[str, Any]) -> object:
 	if incoming_status == "skipped":
 		job.status = "Skipped"
 		job.completed_at = now_datetime()
-		job.last_error = _clean(payload.get("message")) or None
+		job.last_error = _safe_callback_reason(payload.get("message"))
 		job.save(ignore_permissions=True)
 		mark_outbox_callback(
 			job_doctype="AOS Notification Delivery Job",
@@ -450,7 +854,10 @@ def handle_notification_delivery_callback(payload: dict[str, Any]) -> object:
 	if incoming_status == "failed":
 		job.save(ignore_permissions=True)
 		return mark_notification_delivery_job_failed(
-			job.name, _clean(payload.get("error")) or "Notification delivery failed", commit=False
+			job.name,
+			_safe_callback_reason(payload.get("error"), fallback="notification_delivery_failed")
+			or "notification_delivery_failed",
+			commit=False,
 		)
 
 	raise NotificationDeliveryError("Invalid notification delivery callback status")
@@ -463,8 +870,11 @@ def _deactivate_inactive_tokens(token_hashes: list[str]) -> None:
 		frappe.db.set_value(
 			"AOS Push Token",
 			{"token_hash": token_hash},
-			"is_active",
-			0,
+			{
+				"is_active": 0,
+				"active_device_key": None,
+				"last_used_at": now_datetime(),
+			},
 			update_modified=False,
 		)
 
@@ -498,7 +908,7 @@ def retry_queued_notification_delivery_jobs(limit: int = 100) -> dict[str, int]:
 	rows = frappe.get_all(
 		"AOS Notification Delivery Job",
 		filters={
-			"status": ["in", ["Queued", "Failed"]],
+			"status": "Queued",
 			"attempt_count": ["<", config.max_attempts],
 		},
 		pluck="name",

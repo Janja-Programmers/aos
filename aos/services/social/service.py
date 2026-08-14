@@ -11,9 +11,7 @@ from typing import Any, Callable
 import frappe
 
 from aos.api.shared.formatters import humanize_count
-from aos.api.shared.user_display import get_user_display
-from aos.services.accounts.identity import public_account_id_for_user
-from aos.services.notification_delivery_service import create_notification_delivery_job
+from aos.services.notification_service import NotificationService
 
 from .constants import FOLLOW_NOTIFICATION_DEDUPE_SECONDS
 from .errors import SocialPermissionError, SocialValidationError
@@ -77,9 +75,11 @@ class SocialService:
             notification = "not_requested"
 
             if desired and not current:
-                _name, changed = self.repository.insert_follow(follower=actor, target=target)
+                follow_name, changed = self.repository.insert_follow(follower=actor, target=target)
                 if changed:
-                    notification = self._notify_follow_atomic(recipient=target, actor=actor)
+                    notification = self._notify_follow_atomic(
+                        recipient=target, actor=actor, follow_name=follow_name
+                    )
                     if activity_callback:
                         activity_callback(user=actor, target_user=target)
             elif not desired and current:
@@ -284,37 +284,31 @@ class SocialService:
                 "next_cursor": next_cursor,
             }
 
-    def _notify_follow_atomic(self, *, recipient: str, actor: str) -> str:
+    def _notify_follow_atomic(
+        self, *, recipient: str, actor: str, follow_name: str | None = None
+    ) -> str:
         if self.repository.recent_follow_notification_exists(
             recipient=recipient,
             actor=actor,
             seconds=FOLLOW_NOTIFICATION_DEDUPE_SECONDS,
         ):
             return "deduplicated"
-        display = get_user_display(actor)
-        actor_name = str(display.get("display_name") or "AOS User")[:120]
-        public_id = public_account_id_for_user(actor)
-        payload = {"follower": public_id, "account_id": public_id}
-        notification = frappe.get_doc(
-            {
-                "doctype": "AOS Notification",
-                "user": recipient,
-                "type": "follow",
-                "title": "New Follower",
-                "body": f"{actor_name} started following you",
-                "actor": actor,
-                "payload": payload,
-            }
-        )
-        notification.insert(ignore_permissions=True)
-        job = create_notification_delivery_job(
-            user=recipient,
-            event="aos_follow",
-            title="New Follower",
-            body=f"{actor_name} started following you",
-            payload=payload,
-            notification_id=notification.name,
-            delivery_kind="persistent",
-            enqueue=True,
-        )
-        return "outbox_created" if job else "delivery_disabled"
+        try:
+            doc = NotificationService.notify_follow(
+                user=recipient,
+                follower=actor,
+                dedupe_key=(
+                    f"social:follow:{follow_name}:{recipient}"
+                    if follow_name
+                    else None
+                ),
+            )
+        except Exception:
+            # Notification is infrastructure. A broken delivery integration must
+            # never invalidate the already-authorized Social graph mutation.
+            try:
+                frappe.log_error(frappe.get_traceback(), "AOS Follow Notification Failed")
+            except Exception:
+                pass
+            return "notification_failed"
+        return "outbox_created" if doc else "suppressed_or_disabled"

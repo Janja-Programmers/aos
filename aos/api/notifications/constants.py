@@ -1,64 +1,29 @@
-"""
-Notification API constants.
+"""Notification API constants and stable category aliases."""
 
-Includes:
-- Notification categories
-- Pagination limits
-- Rate limits for notification endpoints
-"""
-
-
-# NOTIFICATION CATEGORIES
-NOTIFICATION_CATEGORY_ALL = "all"
-NOTIFICATION_CATEGORY_COMMUNICATION = "communication"
-NOTIFICATION_CATEGORY_ACTIVITY = "activity"
-NOTIFICATION_CATEGORY_MARKETPLACE = "marketplace"
-NOTIFICATION_CATEGORY_ACCOUNT = "account"
-
-
-NOTIFICATION_CATEGORY_TYPES = {
-    NOTIFICATION_CATEGORY_COMMUNICATION: (
-        "message",
-        "missed_call",
-    ),
-    NOTIFICATION_CATEGORY_ACTIVITY: (
-        "follow",
-        "new_short",
-        "short_like",
-        "short_comment",
-        "comment_reply",
-        "live_started",
-    ),
-    NOTIFICATION_CATEGORY_MARKETPLACE: (
-        "ad_approved",
-        "ad_rejected",
-        "ad_expired",
-        "review_received",
-        "review_approved",
-        "review_rejected",
-    ),
-    NOTIFICATION_CATEGORY_ACCOUNT: (
-        "verification_approved",
-        "verification_rejected",
-    ),
-}
-
-
-VALID_NOTIFICATION_CATEGORIES = (
-    NOTIFICATION_CATEGORY_ALL,
-    NOTIFICATION_CATEGORY_COMMUNICATION,
-    NOTIFICATION_CATEGORY_ACTIVITY,
-    NOTIFICATION_CATEGORY_MARKETPLACE,
-    NOTIFICATION_CATEGORY_ACCOUNT,
+from aos.services.notifications.contracts import (
+    CATEGORY_ACCOUNT,
+    CATEGORY_ACTIVITY,
+    CATEGORY_ALL,
+    CATEGORY_COMMUNICATION,
+    CATEGORY_MARKETPLACE,
+    CATEGORY_TYPES,
+    VALID_CATEGORIES,
 )
 
+# Stable public aliases retained for existing imports/mobile clients.
+NOTIFICATION_CATEGORY_ALL = CATEGORY_ALL
+NOTIFICATION_CATEGORY_COMMUNICATION = CATEGORY_COMMUNICATION
+NOTIFICATION_CATEGORY_ACTIVITY = CATEGORY_ACTIVITY
+NOTIFICATION_CATEGORY_MARKETPLACE = CATEGORY_MARKETPLACE
+NOTIFICATION_CATEGORY_ACCOUNT = CATEGORY_ACCOUNT
+NOTIFICATION_CATEGORY_TYPES = CATEGORY_TYPES
+VALID_NOTIFICATION_CATEGORIES = VALID_CATEGORIES
 
-# PAGINATION
+# Pagination
 NOTIFICATION_DEFAULT_LIMIT = 20
 NOTIFICATION_MAX_LIMIT = 50
 
-
-# RATE LIMITS
+# Rate limits
 REGISTER_PUSH_TOKEN_LIMIT_PER_MINUTE_PER_USER = 30
 DEACTIVATE_PUSH_TOKEN_LIMIT_PER_MINUTE_PER_USER = 30
 LIST_NOTIFICATIONS_LIMIT_PER_MINUTE_PER_USER = 60

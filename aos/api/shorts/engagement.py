@@ -88,13 +88,14 @@ def toggle_like_impl(**kwargs):
 
         # LIKE
         if not existing:
-            frappe.get_doc(
+            like_doc = frappe.get_doc(
                 {
                     "doctype": "AOS Short Like",
                     "short": short_id,
                     "user": user,
                 }
-            ).insert(ignore_permissions=True)
+            )
+            like_doc.insert(ignore_permissions=True)
 
             liked = True
             message = "Liked."
@@ -111,6 +112,7 @@ def toggle_like_impl(**kwargs):
                     user=short.owner,
                     actor=user,
                     short_id=short_id,
+                    event_identity=like_doc.name,
                 )
 
         # UNLIKE

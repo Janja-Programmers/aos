@@ -30,7 +30,15 @@ def settings(**overrides):
 def payload() -> dict:
 	return {
 		"job_id": "job-1",
-		"user": "test-user@example.invalid",
+		"notification_id": "NTF-2026-00001",
+		"delivery_kind": "persistent",
+		"channel": "push",
+		"user": "ACC-2026-00001",
+		"event": "aos_new_message",
+		"title": "New Message",
+		"body": "You have a new message",
+		"data": {"event": "aos_new_message", "message_id": "MSG-2026-00001"},
+		"options": {},
 		"callback_url": "https://callback.invalid/notification",
 		"tokens": [],
 	}
@@ -110,6 +118,39 @@ def test_signature_and_request_validation(monkeypatch):
 	assert response.status_code == 422
 	assert response.json()["error"] == "VALIDATION_ERROR"
 	assert isinstance(response.json()["data"]["fields"], list)
+
+
+def test_job_contract_rejects_unknown_fields_and_unsafe_callback(monkeypatch):
+	monkeypatch.setattr(main, "get_settings", lambda: settings())
+	client = TestClient(main.app)
+
+	unknown = {**payload(), "provider_options": {"arbitrary": True}}
+	body, headers = signed(unknown)
+	assert client.post("/jobs", content=body, headers=headers).status_code == 422
+
+	unsafe = {**payload(), "callback_url": "file:///etc/passwd"}
+	body, headers = signed(unsafe)
+	assert client.post("/jobs", content=body, headers=headers).status_code == 422
+
+
+def test_transient_contract_allows_only_existing_incoming_call_event(monkeypatch):
+	monkeypatch.setattr(main, "get_settings", lambda: settings())
+	client = TestClient(main.app)
+	transient = {
+		**payload(),
+		"notification_id": None,
+		"delivery_kind": "transient",
+		"event": "aos_incoming_call",
+	}
+	body, headers = signed(transient)
+	# Queue dependencies may be unavailable in this focused contract test; 422 is
+	# the important forbidden outcome for a valid canonical transient payload.
+	response = client.post("/jobs", content=body, headers=headers)
+	assert response.status_code != 422
+
+	bad = {**transient, "event": "generic_call_notification"}
+	body, headers = signed(bad)
+	assert client.post("/jobs", content=body, headers=headers).status_code == 422
 
 
 def test_blank_secret_fails_closed(monkeypatch):

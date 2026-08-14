@@ -1,11 +1,25 @@
 from __future__ import annotations
 
+import uuid
+
 import frappe
 
+from aos.api.shared.account_status import get_account_state
+from aos.api.shared.blocking import is_blocked_between
 from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.user_display import get_user_display
 from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.notification_delivery_service import create_notification_delivery_job
+from aos.services.notifications.contracts import (
+    MAX_NOTIFICATION_BODY_LENGTH,
+    MAX_NOTIFICATION_DEDUPE_KEY_LENGTH,
+    MAX_NOTIFICATION_TITLE_LENGTH,
+    NotificationContractError,
+    canonical_event,
+    contract_for,
+    validate_persistent_payload,
+)
+from aos.services.notifications.observability import notification_log
 from aos.services.social.constants import MAX_SOCIAL_EVENT_FANOUT
 from aos.services.social.repository import SocialRepository
 
@@ -35,6 +49,77 @@ class NotificationService:
     INCOMING_CALL_ANDROID_CHANNEL_ID = "aos_calls"
     INCOMING_CALL_ANDROID_NOTIFICATION_PRIORITY = "max"
 
+    @staticmethod
+    def _rollback_savepoint(savepoint: str) -> None:
+        try:
+            frappe.db.rollback(save_point=savepoint)
+        except Exception:
+            # Notification infrastructure never owns the caller's full transaction.
+            pass
+
+    @staticmethod
+    def _recipient_available(user: str) -> bool:
+        user = str(user or "").strip()
+        if not user or not frappe.db.exists("User", user):
+            return False
+        try:
+            enabled = frappe.db.get_value("User", user, "enabled")
+            if enabled is not None and not bool(int(enabled or 0)):
+                return False
+        except Exception:
+            return False
+        try:
+            state = get_account_state(user)
+        except Exception:
+            return False
+        if state.get("exists") and (
+            state.get("is_deleted")
+            or state.get("is_deactivated")
+            or state.get("is_suspended")
+        ):
+            return False
+        return True
+
+    @classmethod
+    def _delivery_allowed(cls, *, user: str, actor: str | None, notification_type: str | None = None) -> bool:
+        if not cls._recipient_available(user):
+            return False
+        if actor and actor == user:
+            return False
+        if actor and notification_type:
+            try:
+                contract = contract_for(notification_type)
+                if contract.actor_scoped and not cls._recipient_available(actor):
+                    return False
+                if contract.actor_scoped and is_blocked_between(user, actor):
+                    return False
+            except NotificationContractError:
+                return False
+            except Exception:
+                # A policy lookup failure suppresses Notification only; it never
+                # invalidates the authoritative business-domain transaction.
+                return False
+        return True
+
+    @staticmethod
+    def _normalize_copy(*, title: str, body: str, dedupe_key: str | None) -> tuple[str, str, str | None]:
+        # Builders own notification copy, but some copy includes bounded user
+        # content (message previews, ad titles, comments). Normalize it before
+        # persistence/provider delivery instead of dropping an otherwise-valid
+        # business notification solely because its preview was long.
+        title = " ".join(str(title or "").replace("\x00", "").split())
+        body = " ".join(str(body or "").replace("\x00", "").split())
+        dedupe = str(dedupe_key or "").replace("\x00", "").strip() or None
+        if not title:
+            raise NotificationContractError("Invalid notification title.")
+        if not body:
+            raise NotificationContractError("Invalid notification body.")
+        title = title[:MAX_NOTIFICATION_TITLE_LENGTH]
+        body = body[:MAX_NOTIFICATION_BODY_LENGTH]
+        if dedupe and len(dedupe) > MAX_NOTIFICATION_DEDUPE_KEY_LENGTH:
+            raise NotificationContractError("Notification dedupe key is too long.")
+        return title, body, dedupe
+
     # CORE
     @staticmethod
     def _display_name(user: str | None) -> str:
@@ -43,9 +128,11 @@ class NotificationService:
             return ""
 
         try:
-            return get_user_display(user).get("display_name") or user
+            return get_user_display(user).get("display_name") or "AOS User"
         except Exception:
-            return user
+            # Internal User.name is commonly an email and must never become a
+            # lock-screen/inbox display fallback.
+            return "AOS User"
 
     @staticmethod
     def _create_notification(
@@ -111,38 +198,28 @@ class NotificationService:
         android_channel_id: str | None = None,
         android_notification_priority: str | None = None,
         notification_id: str | None = None,
+        idempotency_key: str | None = None,
     ):
-        """
-        Deliver a notification or transient event through push.
-
-        Optional push options are mainly used by incoming calls.
-        The external notification-delivery worker translates these into provider configs.
-        """
+        """Create the durable push-delivery job inside the caller transaction."""
         push_payload = dict(payload or {})
-
         if event:
             push_payload["event"] = event
 
-        try:
-            create_notification_delivery_job(
-                user=user,
-                event=event,
-                title=title,
-                body=body,
-                payload=push_payload,
-                notification_id=notification_id,
-                delivery_kind="persistent" if notification_id else "transient",
-                priority=priority,
-                ttl_seconds=ttl_seconds,
-                android_channel_id=android_channel_id,
-                android_notification_priority=android_notification_priority,
-                enqueue=True,
-            )
-        except Exception:
-            frappe.log_error(
-                frappe.get_traceback(),
-                "Notification delivery enqueue failed",
-            )
+        return create_notification_delivery_job(
+            user=user,
+            event=event,
+            title=title,
+            body=body,
+            payload=push_payload,
+            notification_id=notification_id,
+            delivery_kind="persistent" if notification_id else "transient",
+            priority=priority,
+            ttl_seconds=ttl_seconds,
+            android_channel_id=android_channel_id,
+            android_notification_priority=android_notification_priority,
+            idempotency_key=idempotency_key,
+            enqueue=True,
+        )
 
     # GENERIC ENTRY POINTS
     @classmethod
@@ -162,47 +239,107 @@ class NotificationService:
         android_notification_priority: str | None = None,
         dedupe_key: str | None = None,
     ):
+        """Persist one canonical notification and its outbox intent atomically.
+
+        Notification is infrastructure: failures roll back only this notification
+        savepoint and never the surrounding business operation.
         """
-        Create a persistent notification and deliver its push notification.
-        """
+        user = str(user or "").strip()
+        actor = str(actor or "").strip() or None
+        notification_type = str(type or "").strip()
         if not user:
             return None
 
-        payload = payload or {}
-
-        # Prevent self-notifications before both DB persistence and push.
-        if actor and actor == user:
+        try:
+            contract = contract_for(notification_type)
+            resolved_event = str(event or contract.event).strip()
+            if resolved_event != canonical_event(notification_type):
+                raise NotificationContractError("Notification event does not match its type.")
+            clean_payload = validate_persistent_payload(notification_type, payload or {})
+            title, body, dedupe_key = cls._normalize_copy(
+                title=title, body=body, dedupe_key=dedupe_key
+            )
+        except NotificationContractError as exc:
+            notification_log(
+                "notification.intent_rejected",
+                notification_type=notification_type,
+                outcome="rejected",
+                reason=exc.__class__.__name__,
+            )
             return None
 
-        # 1. Save persistent notification.
-        doc = cls._create_notification(
-            user=user,
-            type=type,
-            title=title,
-            body=body,
-            actor=actor,
-            payload=payload,
-            dedupe_key=dedupe_key,
-        )
+        if not cls._delivery_allowed(
+            user=user, actor=actor, notification_type=notification_type
+        ):
+            notification_log(
+                "notification.intent_suppressed",
+                account_id=public_account_id_for_user(user),
+                notification_type=notification_type,
+                outcome="suppressed",
+                reason="recipient_or_policy",
+            )
+            return None
 
-        # 2. Deliver push notification only for the newly-created row. A
-        # database dedupe conflict returns the authoritative existing document
-        # and must not create a second delivery job.
-        if not (doc and getattr(doc.flags, "aos_dedupe_existing", False)):
-            cls._deliver(
+        savepoint = f"aos_notification_{uuid.uuid4().hex[:12]}"
+        frappe.db.savepoint(savepoint)
+        try:
+            doc = cls._create_notification(
                 user=user,
-                event=event or type,
+                type=notification_type,
                 title=title,
                 body=body,
-                payload=payload,
+                actor=actor,
+                payload=clean_payload,
+                dedupe_key=dedupe_key,
+            )
+            if not doc:
+                cls._rollback_savepoint(savepoint)
+                return None
+
+            # Always ensure the durable delivery job/outbox exists. The job has a
+            # deterministic idempotency key derived from the persistent
+            # notification, so a duplicate producer retry repairs legacy/partial
+            # divergence without creating a second push job.
+            cls._deliver(
+                user=user,
+                event=resolved_event,
+                title=title,
+                body=body,
+                payload=clean_payload,
                 priority=priority,
                 ttl_seconds=ttl_seconds,
                 android_channel_id=android_channel_id,
                 android_notification_priority=android_notification_priority,
-                notification_id=doc.name if doc else None,
+                notification_id=doc.name,
             )
-
-        return doc
+            existing = bool(getattr(doc.flags, "aos_dedupe_existing", False))
+            notification_log(
+                "notification.intent_deduplicated" if existing else "notification.intent_created",
+                notification_id=doc.name,
+                account_id=public_account_id_for_user(user),
+                notification_type=notification_type,
+                category=contract.category,
+                outcome="deduplicated" if existing else "created",
+            )
+            return doc
+        except Exception as exc:
+            cls._rollback_savepoint(savepoint)
+            notification_log(
+                "notification.intent_failed",
+                account_id=public_account_id_for_user(user),
+                notification_type=notification_type,
+                category=contract.category,
+                outcome="failed",
+                reason=exc.__class__.__name__,
+            )
+            try:
+                frappe.log_error(
+                    frappe.get_traceback(),
+                    "AOS Notification intent failed",
+                )
+            except Exception:
+                pass
+            return None
 
     @classmethod
     def deliver_transient(
@@ -218,35 +355,62 @@ class NotificationService:
         ttl_seconds: int | None = None,
         android_channel_id: str | None = None,
         android_notification_priority: str | None = None,
+        idempotency_key: str | None = None,
     ):
-        """
-        Deliver a transient push event without creating an
-        AOS Notification record.
-
-        Use this for short-lived events such as incoming calls where the event
-        should be handled immediately but should not appear in the persistent
-        notification inbox.
-        """
-        if not user:
+        """Create a transient push-only outbox intent without inbox persistence."""
+        user = str(user or "").strip()
+        actor = str(actor or "").strip() or None
+        event = str(event or "").strip()
+        if not user or not event:
+            return None
+        if event != "aos_incoming_call":
+            notification_log(
+                "notification.transient_rejected",
+                outcome="rejected",
+                reason="unsupported_event",
+            )
+            return None
+        if not cls._delivery_allowed(user=user, actor=actor):
             return None
 
-        # Prevent self-notifications before push delivery.
-        if actor and actor == user:
+        try:
+            title, body, _ = cls._normalize_copy(title=title, body=body, dedupe_key=None)
+        except NotificationContractError:
             return None
 
-        cls._deliver(
-            user=user,
-            event=event,
-            title=title,
-            body=body,
-            payload=payload or {},
-            priority=priority,
-            ttl_seconds=ttl_seconds,
-            android_channel_id=android_channel_id,
-            android_notification_priority=android_notification_priority,
-        )
-
-        return None
+        savepoint = f"aos_notification_transient_{uuid.uuid4().hex[:10]}"
+        frappe.db.savepoint(savepoint)
+        try:
+            job = cls._deliver(
+                user=user,
+                event=event,
+                title=title,
+                body=body,
+                payload=payload or {},
+                priority=priority,
+                ttl_seconds=ttl_seconds,
+                android_channel_id=android_channel_id,
+                android_notification_priority=android_notification_priority,
+                idempotency_key=idempotency_key,
+            )
+            notification_log(
+                "notification.transient_queued",
+                job_id=getattr(job, "name", None),
+                account_id=public_account_id_for_user(user),
+                delivery_kind="transient",
+                outcome="queued" if job else "disabled",
+            )
+            return None
+        except Exception as exc:
+            cls._rollback_savepoint(savepoint)
+            notification_log(
+                "notification.transient_failed",
+                account_id=public_account_id_for_user(user),
+                delivery_kind="transient",
+                outcome="failed",
+                reason=exc.__class__.__name__,
+            )
+            return None
 
     # CHAT
     @classmethod
@@ -327,6 +491,7 @@ class NotificationService:
             android_notification_priority=(
                 cls.INCOMING_CALL_ANDROID_NOTIFICATION_PRIORITY
             ),
+            idempotency_key=f"incoming_call:{call_id}:{user}",
         )
 
     @classmethod
@@ -369,6 +534,7 @@ class NotificationService:
         *,
         user: str,
         follower: str,
+        dedupe_key: str | None = None,
     ):
         follower_name = cls._display_name(follower)
 
@@ -380,6 +546,7 @@ class NotificationService:
             actor=follower,
             payload={"follower": public_account_id_for_user(follower)},
             event="aos_follow",
+            dedupe_key=dedupe_key,
         )
 
     # ADS
@@ -465,6 +632,7 @@ class NotificationService:
             actor=actor,
             payload={"review_id": review_id, "ad_id": ad_id},
             event="aos_review_received",
+            dedupe_key=f"review:received:{review_id}:{user}",
         )
 
     @classmethod
@@ -476,6 +644,7 @@ class NotificationService:
             body="Your review is now visible.",
             payload={"review_id": review_id, "ad_id": ad_id},
             event="aos_review_approved",
+            dedupe_key=f"review:approved:{review_id}:{user}",
         )
 
     @classmethod
@@ -487,6 +656,7 @@ class NotificationService:
             body="Your review was not approved. You can edit and resubmit it.",
             payload={"review_id": review_id, "ad_id": ad_id},
             event="aos_review_rejected",
+            dedupe_key=f"review:rejected:{review_id}:{user}",
         )
 
     # VERIFICATION
@@ -588,6 +758,7 @@ class NotificationService:
                     "actor": actor_public_id,
                 },
                 event="aos_new_short",
+                dedupe_key=f"short:new:{short_id}:{user}",
             )
 
         return None
@@ -599,6 +770,7 @@ class NotificationService:
         user: str,
         actor: str,
         short_id: str,
+        event_identity: str | None = None,
     ):
         """
         Notify a short owner that their short was liked.
@@ -620,6 +792,7 @@ class NotificationService:
                 "actor": actor_public_id,
             },
             event="aos_short_like",
+            dedupe_key=(f"short:like:{event_identity}:{user}" if event_identity else None),
         )
 
     @classmethod
@@ -630,6 +803,7 @@ class NotificationService:
         actor: str,
         short_id: str,
         content: str | None = None,
+        event_identity: str | None = None,
     ):
         """
         Notify a short owner that their short received a comment.
@@ -657,6 +831,7 @@ class NotificationService:
                 "content": preview,
             },
             event="aos_short_comment",
+            dedupe_key=(f"short:comment:{event_identity}:{user}" if event_identity else None),
         )
 
     @classmethod
@@ -668,6 +843,7 @@ class NotificationService:
         short_id: str,
         comment_id: str | None = None,
         source_type: str | None = None,
+        event_identity: str | None = None,
     ):
         """Notify a user that they were mentioned in a short caption/comment."""
         actor_name = cls._display_name(actor)
@@ -692,6 +868,7 @@ class NotificationService:
             actor=actor,
             payload=payload,
             event="aos_short_mention",
+            dedupe_key=(f"short:mention:{event_identity}:{user}" if event_identity else None),
         )
 
     @classmethod
@@ -703,6 +880,7 @@ class NotificationService:
         comment_id: str,
         short_id: str | None = None,
         content: str | None = None,
+        event_identity: str | None = None,
     ):
         """
         Notify a comment owner that someone replied.
@@ -735,6 +913,7 @@ class NotificationService:
             actor=actor,
             payload=payload,
             event="aos_comment_reply",
+            dedupe_key=(f"short:reply:{event_identity}:{user}" if event_identity else None),
         )
 
     # LIVE

@@ -346,6 +346,7 @@ def add_comment_impl(**kwargs):
                 actor=user,
                 short_id=short_id,
                 content=comment,
+                event_identity=doc.name,
             )
 
 
@@ -459,6 +460,7 @@ def reply_comment_impl(**kwargs):
                 short_id=parent.short,
                 comment_id=parent.name,
                 content=comment,
+                event_identity=doc.name,
             )
 
 

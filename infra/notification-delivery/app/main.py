@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from typing import Any
+import json
+from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Header, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.config import get_settings
 from app.durable_lifecycle import (
@@ -18,26 +20,72 @@ from app.queue import get_queue, get_redis
 from app.security import verify_signature
 
 
-class NotificationDeliveryJobRequest(BaseModel):
-	job_id: str = Field(min_length=1)
+class _StrictModel(BaseModel):
+	model_config = ConfigDict(extra="forbid")
+
+
+class PushToken(_StrictModel):
+	token: str = Field(min_length=20, max_length=4096)
+	token_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+	device_type: Literal["android", "ios", "web"]
+
+	@field_validator("token")
+	@classmethod
+	def _validate_token(cls, value: str) -> str:
+		if any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in value):
+			raise ValueError("invalid token format")
+		return value
+
+
+class PushOptions(_StrictModel):
+	priority: Literal["high", "normal"] | None = None
+	ttl_seconds: int | None = Field(default=None, ge=0, le=86400)
+	android_channel_id: str | None = Field(default=None, min_length=1, max_length=100)
+	android_notification_priority: Literal["min", "low", "default", "high", "max"] | None = None
+
+
+class NotificationDeliveryJobRequest(_StrictModel):
+	job_id: str = Field(min_length=1, max_length=200)
 	idempotency_key: str | None = Field(default=None, min_length=8, max_length=200)
-	dispatch_id: str | None = Field(default=None, min_length=8, max_length=200)
+	dispatch_id: str | None = Field(default=None, min_length=8, max_length=240)
 	dispatch_generation: int = Field(default=0, ge=0, le=1000)
-	dispatch_token: str | None = Field(default=None, min_length=16, max_length=140)
-	notification_id: str | None = None
-	delivery_kind: str = "persistent"
-	channel: str = "push"
-	user: str = Field(min_length=1)
-	event: str | None = None
-	title: str = ""
-	body: str = ""
-	data: dict[str, Any] | None = None
-	options: dict[str, Any] | None = None
-	tokens: list[dict[str, Any]] = Field(default_factory=list)
-	callback_url: str = Field(min_length=1)
+	dispatch_token: str | None = Field(default=None, min_length=16, max_length=180)
+	notification_id: str | None = Field(default=None, max_length=180)
+	delivery_kind: Literal["persistent", "transient"] = "persistent"
+	channel: Literal["push"] = "push"
+	user: str = Field(min_length=1, max_length=180)
+	event: str = Field(min_length=1, max_length=80)
+	title: str = Field(min_length=1, max_length=140)
+	body: str = Field(min_length=1, max_length=500)
+	data: dict[str, str] = Field(default_factory=dict)
+	options: PushOptions = Field(default_factory=PushOptions)
+	tokens: list[PushToken] = Field(default_factory=list, max_length=5000)
+	callback_url: str = Field(min_length=1, max_length=1000)
+
+	@field_validator("callback_url")
+	@classmethod
+	def _validate_callback_url(cls, value: str) -> str:
+		parsed = urlsplit(value)
+		if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+			raise ValueError("invalid callback URL")
+		return value
+
+	@model_validator(mode="after")
+	def _validate_contract(self):
+		if self.delivery_kind == "persistent" and not self.notification_id:
+			raise ValueError("persistent delivery requires notification_id")
+		if self.delivery_kind == "transient":
+			if self.notification_id:
+				raise ValueError("transient delivery cannot reference notification_id")
+			if self.event != "aos_incoming_call":
+				raise ValueError("unsupported transient event")
+		encoded = json.dumps(self.data, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+		if len(encoded) > 16 * 1024:
+			raise ValueError("notification data is too large")
+		return self
 
 
-class InternalJobLookupRequest(BaseModel):
+class InternalJobLookupRequest(_StrictModel):
 	job_id: str = Field(min_length=1, max_length=200)
 	idempotency_key: str | None = Field(default=None, min_length=8, max_length=200)
 
@@ -99,7 +147,6 @@ async def create_job(
 		"callback_state": decision["callback_state"],
 		"terminal_result_type": decision.get("terminal_result_type") or None,
 		"result_digest": decision.get("result_digest") or None,
-
 	}
 
 

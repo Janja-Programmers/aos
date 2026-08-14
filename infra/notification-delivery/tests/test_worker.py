@@ -71,3 +71,81 @@ def test_persisted_provider_success_prevents_duplicate_push_send(monkeypatch, re
 	assert first["status"] == "delivered"
 	assert second["status"] == "delivered"
 	assert calls == ["provider-send"]
+
+
+def test_fully_transient_provider_failure_uses_bounded_rq_retry(monkeypatch):
+	monkeypatch.setattr(
+		worker,
+		"_send_push",
+		lambda _payload: {
+			"status": "failed",
+			"success_count": 0,
+			"failure_count": 2,
+			"inactive_token_hashes": [],
+			"provider_responses": [],
+			"retryable_failure_count": 2,
+			"error": "transient_provider_failure:UnavailableError",
+		},
+	)
+	monkeypatch.setattr(worker, "_rq_retries_left", lambda: 2)
+	with pytest.raises(worker.RetryableWorkError):
+		worker._perform_notification_work(
+			{
+				"job_id": "job-retryable",
+				"callback_url": "https://callback.invalid/notification",
+				"tokens": [{"token": "token-1"}, {"token": "token-2"}],
+			}
+		)
+
+
+def test_retryable_provider_failure_becomes_terminal_when_retry_budget_is_exhausted(monkeypatch):
+	monkeypatch.setattr(
+		worker,
+		"_send_push",
+		lambda _payload: {
+			"status": "failed",
+			"success_count": 0,
+			"failure_count": 1,
+			"inactive_token_hashes": [],
+			"provider_responses": [],
+			"retryable_failure_count": 1,
+			"error": "transient_provider_failure:UnavailableError",
+		},
+	)
+	monkeypatch.setattr(worker, "_rq_retries_left", lambda: 0)
+	result = worker._perform_notification_work(
+		{
+			"job_id": "job-retry-exhausted",
+			"callback_url": "https://callback.invalid/notification",
+			"tokens": [{"token": "token-1"}],
+		}
+	)
+	assert result["status"] == "failed"
+	assert result["failure_count"] == 1
+
+
+def test_partial_success_is_not_retried_to_avoid_duplicate_device_delivery(monkeypatch):
+	monkeypatch.setattr(
+		worker,
+		"_send_push",
+		lambda _payload: {
+			"status": "delivered",
+			"success_count": 1,
+			"failure_count": 1,
+			"inactive_token_hashes": [],
+			"provider_responses": [],
+			"retryable_failure_count": 1,
+			"error": "transient_provider_failure:UnavailableError",
+		},
+	)
+	monkeypatch.setattr(worker, "_rq_retries_left", lambda: 2)
+	result = worker._perform_notification_work(
+		{
+			"job_id": "job-partial",
+			"callback_url": "https://callback.invalid/notification",
+			"tokens": [{"token": "token-1"}, {"token": "token-2"}],
+		}
+	)
+	assert result["status"] == "delivered"
+	assert result["success_count"] == 1
+	assert result["failure_count"] == 1

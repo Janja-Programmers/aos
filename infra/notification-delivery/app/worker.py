@@ -19,9 +19,14 @@ except Exception:  # pragma: no cover - import failure handled at runtime
 	messaging = None
 
 from app.config import get_settings
-from app.durable_lifecycle import deliver_callback, execute_work_job
+from app.durable_lifecycle import RetryableWorkError, deliver_callback, execute_work_job
 from app.queue import get_queue, get_redis
 from app.security import build_signature
+
+try:
+	from rq import get_current_job
+except Exception:  # pragma: no cover
+	get_current_job = None
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +213,41 @@ def _is_inactive_token_error(detail: dict[str, Any] | str) -> bool:
 	return any(needle in text_lower for needle in needles)
 
 
+def _is_retryable_provider_error(detail: dict[str, Any] | str) -> bool:
+	if isinstance(detail, dict):
+		text = " ".join(str(value or "") for value in detail.values()).lower()
+		status_code = detail.get("http_status")
+	else:
+		text = str(detail or "").lower()
+		status_code = None
+	if isinstance(status_code, int) and status_code in {408, 425, 429, 500, 502, 503, 504}:
+		return True
+	return any(
+		needle in text
+		for needle in (
+			"unavailable",
+			"internalerror",
+			"internal-error",
+			"resourceexhausted",
+			"resource-exhausted",
+			"quota-exceeded",
+			"deadline",
+			"timeout",
+			"temporar",
+		)
+	)
+
+
+def _rq_retries_left() -> int:
+	if get_current_job is None:
+		return 0
+	try:
+		job = get_current_job()
+		return max(0, int(getattr(job, "retries_left", 0) or 0)) if job else 0
+	except Exception:
+		return 0
+
+
 def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
 	settings = get_settings()
 	tokens = payload.get("tokens") if isinstance(payload.get("tokens"), list) else []
@@ -220,6 +260,7 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
 			"failure_count": 0,
 			"inactive_token_hashes": [],
 			"provider_responses": [],
+			"retryable_failure_count": 0,
 			"error": None,
 		}
 
@@ -238,10 +279,13 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
 	success_count = 0
 	failure_count = 0
 	inactive_hashes: list[str] = []
+	retryable_failure_count = 0
 	provider_responses: list[dict[str, Any]] = []
 	first_error: str | None = None
 
 	data_payload = _stringify_data(payload.get("data") if isinstance(payload.get("data"), dict) else {})
+	if len(_json_bytes(data_payload)) > 3500:
+		raise ValueError("FCM data payload is too large")
 	options = payload.get("options") if isinstance(payload.get("options"), dict) else {}
 	is_native_incoming = _is_transient_incoming_call(payload)
 
@@ -305,7 +349,12 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
 				token_meta = chunk[idx] if idx < len(chunk) else {}
 				inactive = _is_inactive_token_error(item.exception)
 				error_detail = _exception_detail(item.exception)
-				error_detail["error_category"] = "inactive_token" if inactive else "provider_failure"
+				retryable = (not inactive) and _is_retryable_provider_error(error_detail)
+				if retryable:
+					retryable_failure_count += 1
+				error_detail["error_category"] = (
+					"inactive_token" if inactive else "transient_provider_failure" if retryable else "provider_failure"
+				)
 				token_hash = str(token_meta.get("token_hash") or "").strip()
 
 				if inactive and token_hash:
@@ -350,6 +399,7 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
 		"failure_count": failure_count,
 		"inactive_token_hashes": sorted(set(inactive_hashes)),
 		"provider_responses": provider_responses,
+		"retryable_failure_count": retryable_failure_count,
 		"error": first_error,
 	}
 
@@ -363,6 +413,13 @@ def _perform_notification_work(payload: dict[str, Any]) -> dict[str, Any]:
 
 	try:
 		result = _send_push(payload)
+		if (
+			result.get("status") == "failed"
+			and int(result.get("success_count") or 0) == 0
+			and int(result.get("retryable_failure_count") or 0) > 0
+			and _rq_retries_left() > 0
+		):
+			raise RetryableWorkError("Notification provider temporarily unavailable")
 		status_payload = {
 			"job_id": job_id,
 			"idempotency_key": payload.get("idempotency_key"),
@@ -384,8 +441,11 @@ def _perform_notification_work(payload: dict[str, Any]) -> dict[str, Any]:
 		}
 		return status_payload
 
-	except Exception:
-		logger.exception("Notification delivery job failed")
+	except Exception as exc:
+		# Provider exception text can contain sensitive transport material. Log
+		# only the exception class; durable lifecycle metrics retain the safe
+		# error category used for retry/reconciliation.
+		logger.error("Notification delivery job failed error_class=%s", exc.__class__.__name__)
 		raise
 
 

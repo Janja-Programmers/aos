@@ -3,81 +3,86 @@
 
 from __future__ import annotations
 
-import hashlib
 import frappe
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 
-
-def get_token_hash(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
+from aos.services.notifications.devices import (
+    PushDeviceValidationError,
+    get_token_hash,
+    normalize_device_id,
+    normalize_device_type,
+    normalize_push_token,
+)
 
 
 class AOSPushToken(Document):
     def before_insert(self):
-        """
-        Validate and normalize before insert.
-        """
+        self._validate_and_normalize(touch_last_seen=True)
 
-        if not self.user:
+    def validate(self):
+        self._validate_and_normalize(touch_last_seen=False)
+
+    def _validate_and_normalize(self, *, touch_last_seen: bool) -> None:
+        user = str(self.user or "").strip()
+        if not user or not frappe.db.exists("User", user):
             frappe.throw("User is required.")
 
-        if not self.token:
-            frappe.throw("FCM token is required.")
+        try:
+            token = normalize_push_token(self.token)
+            device_type = normalize_device_type(self.device_type)
+            device_id = normalize_device_id(self.device_id)
+        except PushDeviceValidationError as exc:
+            frappe.throw(str(exc))
 
-        if not self.device_type:
-            frappe.throw("Device type is required.")
-
-        # Generate token hash
-        self.token_hash = get_token_hash(self.token)
-
-        # Normalize defaults
+        self.user = user
+        self.token = token
+        self.token_hash = get_token_hash(token)
+        self.device_type = device_type
+        self.device_id = device_id
         if self.is_active is None:
             self.is_active = 1
-
-        if not self.last_used_at:
+        self.is_active = 1 if bool(int(self.is_active or 0)) else 0
+        if touch_last_seen and not self.last_used_at:
             self.last_used_at = now_datetime()
-
-        self._sync_active_device_key()
-
-    def before_save(self):
-        """
-        Ensure hash consistency + update timestamp.
-        """
-        if self.token:
-            self.token_hash = get_token_hash(self.token)
-
-        self.last_used_at = now_datetime()
         self._sync_active_device_key()
 
     def _sync_active_device_key(self):
-        """Populate DB-enforced active device uniqueness key.
-
-        Only active rows with a non-empty device_id receive a key. Multiple
-        inactive rows, or rows without device_id, are allowed.
-        """
         device_id = str(self.device_id or "").strip()
-
         if bool(self.is_active) and self.user and device_id:
             self.active_device_key = f"{self.user}|{device_id}"
             return
-
         self.active_device_key = None
 
     def deactivate(self):
-        """
-        Deactivate this token (e.g., logout).
-        """
         if self.is_active:
-            self.db_set("is_active", 0, update_modified=False)
-            self.db_set("active_device_key", None, update_modified=False)
+            frappe.db.set_value(
+                "AOS Push Token",
+                self.name,
+                {
+                    "is_active": 0,
+                    "active_device_key": None,
+                    "last_used_at": now_datetime(),
+                },
+                update_modified=False,
+            )
 
     def activate(self):
-        """
-        Reactivate token.
-        """
         if not self.is_active:
             self.is_active = 1
             self._sync_active_device_key()
-            self.db_set("is_active", 1, update_modified=False)
-            self.db_set("active_device_key", self.active_device_key, update_modified=False)
+            frappe.db.set_value(
+                "AOS Push Token",
+                self.name,
+                {
+                    "is_active": 1,
+                    "active_device_key": self.active_device_key,
+                    "last_used_at": now_datetime(),
+                },
+                update_modified=False,
+            )
+
+
+# Compatibility export retained for existing imports.
+def get_token_hash_compat(token: str) -> str:
+    return get_token_hash(token)

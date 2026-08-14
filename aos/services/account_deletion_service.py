@@ -162,6 +162,10 @@ def cleanup_deleted_account_features(user: str) -> dict[str, int]:
     summary.update(_cleanup_verification_documents(user=user))
     summary["verification_requests_revoked"] = _revoke_verification_requests(user=user, now=now)
     summary["notifications_marked_read"] = _mark_notifications_read(user=user)
+    summary["notification_delivery_jobs_cancelled"] = _cancel_notification_delivery_jobs(
+        user=user, now=now
+    )
+    summary["push_tokens_removed"] = _remove_push_tokens(user=user)
 
     # Chat history remains available to the other participant, but the deleted
     # account must not retain private personalization or remain an active inbox
@@ -1021,6 +1025,84 @@ def _mark_notifications_read(*, user: str) -> int:
     )
 
 
+def _cancel_notification_delivery_jobs(
+    *, user: str, now, reason: str = "recipient_account_deleted"
+) -> int:
+    """Neutralize all undelivered work while retaining terminal delivery audit rows."""
+    reason = str(reason or "recipient_account_deleted").strip()[:120]
+    if reason not in {"recipient_account_deleted", "recipient_account_deactivated"}:
+        reason = "recipient_account_unavailable"
+    if not _doctype_exists("AOS Notification Delivery Job"):
+        return 0
+
+    pending_statuses = ("Queued", "Dispatching", "Processing")
+    total = 0
+    while True:
+        names = frappe.get_all(
+            "AOS Notification Delivery Job",
+            filters={"user": user, "status": ["in", list(pending_statuses)]},
+            pluck="name",
+            order_by="creation asc, name asc",
+            limit=500,
+        )
+        if not names:
+            return total
+
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Notification Delivery Job`
+            SET status = 'Cancelled', completed_at = %s, last_error = %s,
+                request_payload = NULL
+            WHERE name IN %s AND status IN ('Queued', 'Dispatching', 'Processing')
+            """,
+            (now, reason, tuple(names)),
+        )
+
+        if _doctype_exists("AOS Transactional Outbox"):
+            frappe.db.sql(
+                """
+                UPDATE `tabAOS Transactional Outbox`
+                SET status = 'Cancelled', completed_at = %s, next_attempt_at = NULL,
+                    claimed_by = NULL, claim_token = NULL, claimed_at = NULL, lease_expires_at = NULL,
+                    last_error = %s
+                WHERE service_type = 'notification_delivery'
+                  AND job_doctype = 'AOS Notification Delivery Job'
+                  AND job_name IN %s
+                  AND status NOT IN ('Completed', 'Completed With Failure', 'Failed', 'Dead Letter', 'Cancelled')
+                """,
+                (now, reason, tuple(names)),
+            )
+        total += len(names)
+
+
+def _deactivate_push_tokens(*, user: str, now) -> int:
+    """Disable provider registrations when an account loses login access."""
+    if not _doctype_exists("AOS Push Token"):
+        return 0
+    count = _count_rows("AOS Push Token", "user = %s AND is_active = 1", (user,))
+    if count:
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Push Token`
+            SET is_active = 0, active_device_key = NULL, last_used_at = %s
+            WHERE user = %s AND is_active = 1
+            """,
+            (now, user),
+        )
+    return count
+
+
+def _remove_push_tokens(*, user: str) -> int:
+    """Provider registration identifiers are private state, not retained history."""
+    if not _doctype_exists("AOS Push Token"):
+        return 0
+    return _delete_counted(
+        "AOS Push Token",
+        where_sql="user = %s",
+        where_params=(user,),
+    )
+
+
 
 _CHAT_PRIVATE_USER_FIELDS = {
     "AOS Message Star": "user",
@@ -1442,4 +1524,8 @@ def deactivate_account_features(user: str) -> dict[str, int]:
         "live_view_sessions_closed": _close_live_view_rows(user=user, now=now),
         "live_cohost_rows_closed": _close_live_cohost_rows(user=user, now=now),
         "notifications_marked_read": _mark_notifications_read(user=user),
+        "notification_delivery_jobs_cancelled": _cancel_notification_delivery_jobs(
+            user=user, now=now, reason="recipient_account_deactivated"
+        ),
+        "push_tokens_deactivated": _deactivate_push_tokens(user=user, now=now),
     }
