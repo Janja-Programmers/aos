@@ -18,6 +18,12 @@ class _FakeMessaging:
 	def AndroidConfig(self, **kwargs):
 		return SimpleNamespace(**kwargs)
 
+	def APNSConfig(self, **kwargs):
+		return SimpleNamespace(**kwargs)
+
+	def WebpushConfig(self, **kwargs):
+		return SimpleNamespace(**kwargs)
+
 	def MulticastMessage(self, **kwargs):
 		return SimpleNamespace(**kwargs)
 
@@ -86,6 +92,10 @@ def test_android_incoming_call_is_data_only_and_collapsible(monkeypatch):
 	assert ios_message.notification.title == "Incoming Call"
 	assert ios_message.notification.body == "AOS User is calling you"
 	assert ios_message.android.collapse_key is None
+	assert ios_message.apns.headers["apns-priority"] == "10"
+	assert int(ios_message.apns.headers["apns-expiration"]) > 0
+	assert ios_message.webpush.headers["TTL"] == "30"
+	assert ios_message.webpush.headers["Urgency"] == "high"
 	assert result["provider_responses"][0]["delivery_mode"] == "android_data_only"
 	assert result["provider_responses"][1]["delivery_mode"] == "alert_and_data"
 
@@ -117,3 +127,69 @@ def test_normal_push_keeps_alert_payload_for_android(monkeypatch):
 	assert message.notification.title == "New Message"
 	assert message.notification.body == "Hello"
 	assert message.android.collapse_key is None
+
+
+def test_normal_web_push_keeps_alert_and_data_with_web_headers(monkeypatch):
+	fake_messaging = _FakeMessaging()
+	monkeypatch.setattr(worker, "messaging", fake_messaging)
+	monkeypatch.setattr(worker, "get_settings", _settings)
+	monkeypatch.setattr(worker, "_init_firebase", lambda: None)
+
+	result = worker._send_push(
+		{
+			"event": "aos_follow",
+			"delivery_kind": "persistent",
+			"title": "New Follower",
+			"body": "Someone followed you",
+			"data": {
+				"event": "aos_follow",
+				"notification_id": "NTF-2026-00001",
+				"notification_type": "follow",
+			},
+			"options": {"priority": "normal", "ttl_seconds": 300},
+			"tokens": [
+				{"token": "web-token", "token_hash": "web-hash", "device_type": "web"},
+			],
+		}
+	)
+
+	assert result["status"] == "delivered"
+	message = fake_messaging.sent[0]
+	assert message.tokens == ["web-token"]
+	assert message.notification.title == "New Follower"
+	assert message.data["notification_id"] == "NTF-2026-00001"
+	assert message.webpush.headers["TTL"] == "300"
+	assert message.webpush.headers["Urgency"] == "normal"
+
+
+def test_firebase_initialization_applies_bounded_http_timeout(monkeypatch, tmp_path):
+	service_account = tmp_path / "firebase.json"
+	service_account.write_text("{}", encoding="utf-8")
+	initialized = []
+
+	class _FirebaseAdmin:
+		_apps = {}
+
+		@staticmethod
+		def initialize_app(credential, options=None):
+			initialized.append((credential, options))
+
+	class _Credentials:
+		@staticmethod
+		def Certificate(path):
+			return {"path": path}
+
+	monkeypatch.setattr(worker, "firebase_admin", _FirebaseAdmin)
+	monkeypatch.setattr(worker, "credentials", _Credentials)
+	monkeypatch.setattr(
+		worker,
+		"get_settings",
+		lambda: SimpleNamespace(
+			dry_run=False,
+			firebase_service_account_path=str(service_account),
+			provider_timeout_seconds=17,
+		),
+	)
+	monkeypatch.setattr(worker, "_FIREBASE_INITIALIZED", False)
+	worker._init_firebase()
+	assert initialized[0][1] == {"httpTimeout": 17}

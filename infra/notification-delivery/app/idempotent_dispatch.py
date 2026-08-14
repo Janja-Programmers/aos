@@ -14,6 +14,11 @@ _SERVICE_TYPE = "notification_delivery"
 _CALLBACK_WORKER = "app.worker.deliver_callback_job"
 
 
+def _provider_retry_intervals(max_retries: int) -> list[int]:
+    """Bounded exponential provider backoff, capped at one hour."""
+    return [min(60 * (2**attempt), 3600) for attempt in range(max(0, int(max_retries or 0)))]
+
+
 def enqueue_idempotent(
     *,
     queue: Any,
@@ -55,7 +60,10 @@ def dispatch_details(payload: dict[str, Any], queue: Any) -> dict[str, Any]:
         job_timeout=settings.job_timeout_seconds,
         result_ttl=settings.result_ttl_seconds,
         failure_ttl=settings.failure_ttl_seconds,
-        retry=Retry(max=3, interval=[60, 300, 900]),
+        retry=Retry(
+            max=settings.provider_max_retries,
+            interval=_provider_retry_intervals(settings.provider_max_retries),
+        ),
         callback_timeout_seconds=int(getattr(settings, "callback_job_timeout_seconds", 120)),
         callback_max_attempts=int(getattr(settings, "callback_max_attempts", 8)),
         durable_result_ttl_seconds=int(getattr(settings, "durable_result_ttl_seconds", settings.result_ttl_seconds)),

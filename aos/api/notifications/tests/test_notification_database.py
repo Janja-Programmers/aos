@@ -13,7 +13,9 @@ from aos.api.notifications.notification import (
     mark_all_notifications_read_impl,
     mark_notification_read_impl,
 )
+from aos.api.notifications.push_config import get_push_config_impl
 from aos.api.notifications.token import deactivate_push_token_impl, register_push_token_impl
+from aos.api.social.block import block_user_impl
 from aos.services.account_deletion_service import (
     _cancel_notification_delivery_jobs,
     _deactivate_push_tokens,
@@ -23,6 +25,7 @@ from aos.services.accounts.identity import ensure_public_account_id
 from aos.services.notification_delivery_service import create_notification_delivery_job
 from aos.services.notification_service import NotificationService
 from aos.services.notifications.devices import get_token_hash
+from aos.services.notifications.web_push import WebPushConfig
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
@@ -70,6 +73,10 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
     def _without_device_limits():
         return patch("aos.api.notifications.token.rate_limit", return_value=None)
 
+    @staticmethod
+    def _without_push_config_limits():
+        return patch("aos.api.notifications.push_config.rate_limit", return_value=None)
+
     def _notify_follow(self, *, user: str | None = None, actor: str | None = None, dedupe_key: str | None = None):
         with patch("aos.services.notification_service.NotificationService._deliver"):
             return NotificationService.notify_follow(
@@ -103,6 +110,7 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
             unknown = list_notifications_impl(unexpected="x")
         self.assertTrue(listed.get("ok"), listed)
         self.assertIn(notification.name, {item["id"] for item in listed["data"]["items"]})
+        self.assertGreaterEqual(listed["data"]["unread_count"], 1)
         self.assertEqual(unknown.get("error"), "VALIDATION_ERROR")
         self.assertNotIn(self.owner, repr(listed["data"]["items"]))
 
@@ -128,6 +136,137 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(all_read.get("ok"), all_read)
         self.assertEqual(int(frappe.db.get_value("AOS Notification", first.name, "is_read") or 0), 1)
         self.assertEqual(int(frappe.db.get_value("AOS Notification", second.name, "is_read") or 0), 1)
+
+    def test_notification_center_realtime_creation_is_post_commit_recipient_scoped_and_public_safe(self):
+        manager = frappe.db.after_commit
+        with patch.object(manager, "add") as add_callback:
+            with patch("aos.services.notification_service.NotificationService._deliver"):
+                notification = NotificationService.notify_follow(
+                    user=self.owner,
+                    follower=self.actor,
+                    dedupe_key=f"{self.prefix}:realtime-created",
+                )
+        self.assertTrue(notification)
+        add_callback.assert_called_once()
+        callback = add_callback.call_args.args[0]
+
+        with patch("aos.services.notifications.realtime.frappe.publish_realtime") as publish:
+            callback()
+        publish.assert_called_once()
+        call = publish.call_args.kwargs
+        self.assertEqual(call["event"], "aos_notification_center")
+        self.assertEqual(call["user"], self.owner)
+        self.assertNotIn("room", call)
+        message = call["message"]
+        self.assertEqual(message["action"], "created")
+        self.assertEqual(message["notification"]["id"], notification.name)
+        self.assertGreaterEqual(message["unread_count"], 1)
+        self.assertNotIn(self.owner, repr(message))
+        self.assertNotIn(self.actor, repr(message))
+
+    def test_realtime_creation_rechecks_social_block_before_foreground_delivery(self):
+        manager = frappe.db.after_commit
+        with patch.object(manager, "add") as add_callback:
+            with patch("aos.services.notification_service.NotificationService._deliver"):
+                notification = NotificationService.notify_follow(
+                    user=self.owner,
+                    follower=self.actor,
+                    dedupe_key=f"{self.prefix}:realtime-block-recheck",
+                )
+        self.assertTrue(notification)
+        callback = add_callback.call_args.args[0]
+
+        frappe.set_user(self.owner)
+        with patch("aos.api.social.block.rate_limit", return_value=None):
+            blocked = block_user_impl(account_id=ensure_public_account_id(self.actor))
+        self.assertTrue(blocked.get("ok"), blocked)
+
+        with patch("aos.services.notifications.realtime.frappe.publish_realtime") as publish:
+            callback()
+        publish.assert_not_called()
+
+    def test_read_mutations_return_authoritative_unread_count_and_schedule_realtime_once(self):
+        first = self._notify_follow(dedupe_key=f"{self.prefix}:realtime-read-one")
+        second = self._notify_follow(dedupe_key=f"{self.prefix}:realtime-read-two")
+        with self._without_inbox_limits():
+            with patch("aos.api.notifications.notification.publish_state_after_commit") as publish_state:
+                one = mark_notification_read_impl(notification_id=first.name)
+                repeated = mark_notification_read_impl(notification_id=first.name)
+                all_read = mark_all_notifications_read_impl()
+        self.assertEqual(one["data"]["unread_count"], 1)
+        self.assertEqual(repeated["data"]["unread_count"], 1)
+        self.assertEqual(all_read["data"]["unread_count"], 0)
+        actions = [call.kwargs["action"] for call in publish_state.call_args_list]
+        self.assertEqual(actions.count("read"), 1)
+        self.assertEqual(actions.count("read_all"), 1)
+        self.assertEqual(int(frappe.db.get_value("AOS Notification", second.name, "is_read") or 0), 1)
+
+    def test_duplicate_notification_retry_does_not_emit_duplicate_realtime_creation(self):
+        dedupe_key = f"{self.prefix}:realtime-dedupe"
+        with patch("aos.services.notification_service.NotificationService._deliver"):
+            with patch(
+                "aos.services.notification_service.publish_created_after_commit"
+            ) as publish_created:
+                first = NotificationService.notify_follow(
+                    user=self.owner, follower=self.actor, dedupe_key=dedupe_key
+                )
+                second = NotificationService.notify_follow(
+                    user=self.owner, follower=self.actor, dedupe_key=dedupe_key
+                )
+        self.assertEqual(first.name, second.name)
+        publish_created.assert_called_once_with(user=self.owner, notification_id=first.name)
+
+    def test_web_push_bootstrap_is_authenticated_strict_and_public_only(self):
+        frappe.set_user("Guest")
+        with self._without_push_config_limits():
+            guest = get_push_config_impl()
+        self.assertFalse(guest.get("ok"))
+
+        frappe.set_user(self.owner)
+        public_config = WebPushConfig(
+            enabled=True,
+            api_key="AOSFirebasePublicApiKey0123456789abcdef",
+            auth_domain="auth.aos.example",
+            project_id="aos-production-2026",
+            messaging_sender_id="123456789012",
+            app_id="1:123456789012:web:abcdef0123456789",
+            vapid_public_key="B" + "a" * 86,
+        )
+        with self._without_push_config_limits():
+            with patch(
+                "aos.api.notifications.push_config.get_web_push_config",
+                return_value=public_config,
+            ):
+                response = get_push_config_impl()
+                unknown = get_push_config_impl(unexpected="x")
+        self.assertTrue(response.get("ok"), response)
+        self.assertEqual(unknown.get("error"), "VALIDATION_ERROR")
+        data = response["data"]
+        self.assertTrue(data["enabled"])
+        self.assertEqual(data["firebase"]["projectId"], "aos-production-2026")
+        self.assertEqual(data["vapidPublicKey"], "B" + "a" * 86)
+        serialized = repr(data).lower()
+        for forbidden in ("private_key", "service_account", "callback_secret", "service_secret"):
+            self.assertNotIn(forbidden, serialized)
+
+    def test_persistent_delivery_data_includes_canonical_inbox_identity(self):
+        notification = self._notify_follow(dedupe_key=f"{self.prefix}:fcm-identity")
+        job = create_notification_delivery_job(
+            user=self.owner,
+            event="aos_follow",
+            title="New Follower",
+            body="AOS User started following you",
+            payload={"follower": ensure_public_account_id(self.actor)},
+            notification_id=notification.name,
+            delivery_kind="persistent",
+            enqueue=False,
+        )
+        import json
+
+        data = json.loads(job.payload_json)
+        self.assertEqual(data["event"], "aos_follow")
+        self.assertEqual(data["notification_id"], notification.name)
+        self.assertEqual(data["notification_type"], "follow")
 
     def test_cursor_pagination_is_stable_when_creation_timestamps_tie(self):
         docs = [

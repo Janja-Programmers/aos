@@ -243,6 +243,29 @@ class TestProductionConfigValidation(FrappeTestCase):
 		self.assertIn("BACKUP_AGE_RECIPIENT", {issue["key"] for issue in report["errors"]})
 		self.assertNotIn("age1example-change-me", str(report))
 
+	def test_enabled_notification_web_push_requires_complete_public_firebase_bootstrap(self):
+		env = self._valid_env()
+		env["NOTIFICATION_WEB_PUSH_ENABLED"] = "true"
+		report = validate_production_config(env=env, site_config=self._valid_site_config())
+		keys = {issue["key"] for issue in report["errors"]}
+		self.assertIn("NOTIFICATION_FIREBASE_WEB_API_KEY", keys)
+		self.assertIn("NOTIFICATION_FIREBASE_WEB_VAPID_PUBLIC_KEY", keys)
+
+	def test_enabled_notification_web_push_accepts_complete_public_firebase_bootstrap(self):
+		env = self._valid_env()
+		env.update(
+			{
+				"NOTIFICATION_WEB_PUSH_ENABLED": "true",
+				"NOTIFICATION_FIREBASE_WEB_API_KEY": "AOSFirebasePublicApiKey0123456789abcdef",
+				"NOTIFICATION_FIREBASE_WEB_PROJECT_ID": "aos-production-2026",
+				"NOTIFICATION_FIREBASE_WEB_MESSAGING_SENDER_ID": "123456789012",
+				"NOTIFICATION_FIREBASE_WEB_APP_ID": "1:123456789012:web:abcdef0123456789",
+				"NOTIFICATION_FIREBASE_WEB_VAPID_PUBLIC_KEY": "B" + "a" * 86,
+			}
+		)
+		report = validate_production_config(env=env, site_config=self._valid_site_config())
+		self.assertTrue(report["ready"], report)
+
 	def test_example_environment_file_mount_is_rejected(self):
 		env = self._valid_env()
 		env["AOS_ENV_FILE_PATH"] = "/etc/aos/backup.env.example"

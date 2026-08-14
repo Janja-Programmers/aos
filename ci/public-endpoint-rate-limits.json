@@ -738,6 +738,12 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
+    "endpoint": "aos.api.v1.notifications.__init__.get_push_config",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
     "endpoint": "aos.api.v1.notifications.__init__.list_notifications",
     "access": "authenticated",
     "policy": "baseline_authenticated",

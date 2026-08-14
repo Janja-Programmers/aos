@@ -30,6 +30,7 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         self.assertEqual(
             functions,
             {
+                "get_push_config",
                 "register_push_token",
                 "deactivate_push_token",
                 "list_notifications",
@@ -39,17 +40,21 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
                 "clear_notifications",
             },
         )
-        self.assertEqual(source.count("_client_kwargs(kwargs)"), 7)
+        self.assertEqual(source.count("_client_kwargs(kwargs)"), 8)
 
     def test_private_endpoints_are_rate_limited_no_store_and_do_not_own_full_transaction(self):
         inbox = _source("aos/api/notifications/notification.py")
         devices = _source("aos/api/notifications/token.py")
+        push_config = _source("aos/api/notifications/push_config.py")
         self.assertEqual(inbox.count("set_private_no_store()"), 5)
         self.assertEqual(devices.count("set_private_no_store()"), 2)
+        self.assertEqual(push_config.count("set_private_no_store()"), 1)
         self.assertIn("LIST_NOTIFICATIONS_LIMIT_PER_MINUTE_PER_USER", inbox)
         self.assertIn("REGISTER_PUSH_TOKEN_LIMIT_PER_MINUTE_PER_USER", devices)
+        self.assertIn("GET_PUSH_CONFIG_LIMIT_PER_MINUTE_PER_USER", push_config)
         self.assertNotIn("frappe.db.commit", inbox)
         self.assertNotIn("frappe.db.commit", devices)
+        self.assertNotIn("frappe.db.commit", push_config)
         self.assertNotIn("frappe.db.rollback()", inbox)
         self.assertNotIn("frappe.db.rollback()", devices)
 
@@ -58,8 +63,11 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         self.assertIn("`user` = %s", source)
         self.assertIn("ORDER BY `creation` DESC, `name` DESC", source)
         self.assertIn("(`creation` < %s OR (`creation` = %s AND `name` < %s))", source)
-        self.assertIn("sanitize_public_payload", source)
-        self.assertIn("get_user_display_map", source)
+        serializer = _source("aos/services/notifications/serializers.py")
+        self.assertIn("serialize_notifications", source)
+        self.assertIn("sanitize_public_payload", serializer)
+        self.assertIn("get_user_display_map", serializer)
+        self.assertIn("unread_count", source)
         for forbidden in ("token_hash", "request_payload", "response_payload", "service_job_id"):
             self.assertNotIn(f'\"{forbidden}\":', source)
 
@@ -68,11 +76,15 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         self.assertIn("frappe.db.savepoint(savepoint)", source)
         self.assertIn("is_duplicate_entry_error", source)
         self.assertIn("dedupe_key", source)
-        self.assertIn("is_blocked_between", source)
+        self.assertIn("persistent_notification_suppression_reason", source)
+        policy = _source("aos/services/notifications/policy.py")
+        self.assertIn("is_blocked_between", policy)
+        self.assertIn("get_account_state", policy)
         self.assertNotIn("frappe.db.commit", source)
         self.assertNotIn("frappe.db.rollback()", source)
         self.assertIn('event != "aos_incoming_call"', source)
         self.assertIn('type="missed_call"', source)
+        self.assertIn("publish_created_after_commit", source)
         self.assertNotIn('type="call"', source)
 
     def test_delivery_jobs_use_transactional_outbox_and_safe_request_diagnostics(self):
@@ -83,8 +95,13 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         self.assertIn("record_companion_dispatch_outcome", source)
         self.assertIn("validate_callback_idempotency", source)
         self.assertIn('TRANSIENT_INCOMING_CALL_EVENT = "aos_incoming_call"', source)
+        self.assertIn("MAX_FCM_ESTIMATED_ENVELOPE_BYTES", source)
+        self.assertIn("MAX_DELIVERY_TOKENS = 500", source)
+        self.assertIn("limit_page_length=MAX_DELIVERY_TOKENS + 1", source)
+        self.assertIn("_validate_fcm_envelope", source)
         self.assertIn('["caller", "receiver", "status"]', source)
-        self.assertIn('is_blocked_between(job.user, caller)', source)
+        self.assertIn('relationship_suppression_reason(_clean(job.user), caller)', source)
+        self.assertIn("persistent_notification_suppression_reason", source)
         self.assertIn('def _safe_callback_reason', source)
         self.assertIn('fallback="notification_delivery_failed"', source)
         sanitizer = source.split("def _sanitize_payload", 1)[1].split("def _bounded_json_object", 1)[0]
@@ -118,8 +135,47 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         self.assertIn("retryable_failure_count", worker)
         self.assertIn("_rq_retries_left", worker)
         self.assertIn("FCM data payload is too large", worker)
+        self.assertIn("FCM notification envelope is too large", worker)
+        self.assertIn("_build_apns_config", worker)
+        self.assertIn("_build_webpush_config", worker)
+        self.assertIn("callback_http_timeout_seconds", worker)
+        self.assertIn('options={"httpTimeout": settings.provider_timeout_seconds}', worker)
+        companion_config = _source("infra/notification-delivery/app/config.py")
+        self.assertIn("provider_timeout_seconds", companion_config)
+        self.assertIn("validate_firebase_configuration", companion_config)
+        dispatch = _source("infra/notification-delivery/app/idempotent_dispatch.py")
+        self.assertIn("provider_max_retries", dispatch)
+        self.assertIn("_provider_retry_intervals", dispatch)
         self.assertNotIn('logger.exception("Notification delivery job failed")', worker)
         self.assertIn('error_class=%s', worker)
+
+    def test_notification_center_realtime_is_recipient_scoped_post_commit_and_public_safe(self):
+        realtime = _source("aos/services/notifications/realtime.py")
+        serializer = _source("aos/services/notifications/serializers.py")
+        service = _source("aos/services/notification_service.py")
+        inbox = _source("aos/api/notifications/notification.py")
+        self.assertIn('EVENT_NOTIFICATION_CENTER = "aos_notification_center"', realtime)
+        self.assertIn('manager.add(_safe_callback)', realtime)
+        self.assertIn('user=user', realtime)
+        self.assertNotIn('room=', realtime)
+        self.assertIn('"action": "created"', realtime)
+        self.assertIn('"unread_count"', realtime)
+        self.assertIn("publish_created_after_commit", service)
+        self.assertIn("persistent_notification_suppression_reason", realtime)
+        self.assertIn("notification.realtime_suppressed", realtime)
+        self.assertIn("publish_state_after_commit", inbox)
+        for forbidden in ('"user":', '"email":', '"token":', '"token_hash":'):
+            self.assertNotIn(forbidden, serializer)
+
+    def test_web_push_bootstrap_exposes_only_public_firebase_material(self):
+        config = _source("aos/services/notifications/web_push.py")
+        endpoint = _source("aos/api/notifications/push_config.py")
+        self.assertIn("NOTIFICATION_WEB_PUSH_ENABLED", config)
+        self.assertIn("NOTIFICATION_FIREBASE_WEB_VAPID_PUBLIC_KEY", config)
+        self.assertIn('"vapidPublicKey"', config)
+        self.assertIn("require_login", endpoint)
+        self.assertNotIn("SERVICE_ACCOUNT", endpoint)
+        self.assertNotIn("PRIVATE_KEY", endpoint)
 
     def test_category_registry_matches_real_producers_including_short_mentions(self):
         contracts = _source("aos/services/notifications/contracts.py")
@@ -163,6 +219,7 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         registry = json.loads(_source("ci/public-endpoint-rate-limits.json"))
         endpoints = {row["endpoint"] for row in registry}
         expected = {
+            "aos.api.v1.notifications.__init__.get_push_config",
             "aos.api.v1.notifications.__init__.register_push_token",
             "aos.api.v1.notifications.__init__.deactivate_push_token",
             "aos.api.v1.notifications.__init__.list_notifications",

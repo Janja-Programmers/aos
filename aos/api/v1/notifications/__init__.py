@@ -10,6 +10,7 @@ import frappe
 
 from aos.api.v1._transport import client_kwargs as _client_kwargs
 
+from aos.api.notifications.push_config import get_push_config_impl as _get_push_config_impl
 from aos.api.notifications.token import (
     register_push_token_impl as _register_push_token_impl,
     deactivate_push_token_impl as _deactivate_push_token_impl,
@@ -21,6 +22,14 @@ from aos.api.notifications.notification import (
     delete_notification_impl as _delete_notification_impl,
     clear_notifications_impl as _clear_notifications_impl,
 )
+
+
+
+@frappe.whitelist(methods=["GET"])
+def get_push_config(**kwargs):
+    """Return authenticated public Firebase Web Messaging bootstrap configuration."""
+    return _get_push_config_impl(**_client_kwargs(kwargs))
+
 
 @frappe.whitelist(methods=["POST"])
 def register_push_token(**kwargs):

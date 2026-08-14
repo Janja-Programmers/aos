@@ -22,6 +22,11 @@ def settings(**overrides):
 		"callback_job_timeout_seconds": 120,
 		"callback_max_attempts": 3,
 		"durable_result_ttl_seconds": 604800,
+		"dry_run": True,
+		"firebase_service_account_path": "/tmp/unused-firebase.json",
+		"provider_max_retries": 3,
+		"provider_timeout_seconds": 20,
+		"callback_http_timeout_seconds": 20,
 	}
 	values.update(overrides)
 	return SimpleNamespace(**values)
@@ -53,6 +58,74 @@ def test_configuration_defaults_and_invalid_integer(monkeypatch):
 	monkeypatch.setenv("NOTIFICATION_MAX_TOKENS_PER_MULTICAST", "invalid")
 	assert config._int("NOTIFICATION_MAX_TOKENS_PER_MULTICAST", 500) == 500
 	assert config.Settings().queue_name == "notification-delivery"
+
+
+
+
+def test_configuration_bounds_provider_retry_and_timeouts(monkeypatch):
+	monkeypatch.setenv("NOTIFICATION_PROVIDER_MAX_RETRIES", "999")
+	monkeypatch.setenv("NOTIFICATION_PROVIDER_TIMEOUT_SECONDS", "1")
+	monkeypatch.setenv("NOTIFICATION_CALLBACK_HTTP_TIMEOUT_SECONDS", "999")
+	config.get_settings.cache_clear()
+	try:
+		resolved = config.get_settings()
+		assert resolved.provider_max_retries == 10
+		assert resolved.provider_timeout_seconds == 5
+		assert resolved.callback_http_timeout_seconds == 120
+	finally:
+		config.get_settings.cache_clear()
+
+
+def test_firebase_configuration_validation_is_local_and_fail_closed(monkeypatch, tmp_path):
+	# Dry-run smoke tests intentionally do not require Firebase credentials.
+	config.validate_firebase_configuration(config.Settings(dry_run=True))
+
+	monkeypatch.setattr(config.importlib.util, "find_spec", lambda _name: object())
+	missing = config.Settings(
+		dry_run=False,
+		firebase_service_account_path=str(tmp_path / "missing.json"),
+	)
+	try:
+		config.validate_firebase_configuration(missing)
+		assert False, "missing Firebase credentials must fail readiness"
+	except RuntimeError as exc:
+		assert "unavailable" in str(exc)
+
+	credential = tmp_path / "firebase.json"
+	credential.write_text(
+		json.dumps(
+			{
+				"project_id": "aos-production",
+				"client_email": "firebase-adminsdk@aos-production.iam.gserviceaccount.com",
+				"private_key": "-----BEGIN PRIVATE KEY-----\nsynthetic\n-----END PRIVATE KEY-----\n",
+			}
+		),
+		encoding="utf-8",
+	)
+	configured = config.Settings(
+		dry_run=False,
+		firebase_service_account_path=str(credential),
+	)
+	config.validate_firebase_configuration(configured)
+
+
+def test_ready_checks_redis_and_firebase_configuration(monkeypatch):
+	class Redis:
+		def ping(self):
+			return True
+
+	checks = []
+	monkeypatch.setattr(main, "get_redis", lambda: Redis())
+	monkeypatch.setattr(main, "get_settings", lambda: settings(dry_run=False))
+	monkeypatch.setattr(
+		main,
+		"validate_firebase_configuration",
+		lambda value: checks.append(value.firebase_service_account_path),
+	)
+	response = TestClient(main.app).get("/ready")
+	assert response.status_code == 200
+	assert response.json() == {"ok": True, "ready": True}
+	assert checks == ["/tmp/unused-firebase.json"]
 
 
 def test_signature_checks():
@@ -118,6 +191,38 @@ def test_signature_and_request_validation(monkeypatch):
 	assert response.status_code == 422
 	assert response.json()["error"] == "VALIDATION_ERROR"
 	assert isinstance(response.json()["data"]["fields"], list)
+
+
+def test_job_contract_bounds_per_recipient_device_fanout(monkeypatch):
+	monkeypatch.setattr(main, "get_settings", lambda: settings())
+	client = TestClient(main.app)
+	many_tokens = [
+		{
+			"token": f"web-token-{index:04d}-abcdefghijklmnopqrstuvwxyz",
+			"token_hash": f"{index:064x}"[-64:],
+			"device_type": "web",
+		}
+		for index in range(501)
+	]
+	body, headers = signed({**payload(), "tokens": many_tokens})
+	response = client.post("/jobs", content=body, headers=headers)
+	assert response.status_code == 422
+	assert response.json()["error"] == "VALIDATION_ERROR"
+
+
+def test_job_contract_rejects_oversized_total_fcm_envelope(monkeypatch):
+	monkeypatch.setattr(main, "get_settings", lambda: settings())
+	client = TestClient(main.app)
+	oversized = {
+		**payload(),
+		"title": "😀" * 140,
+		"body": "😀" * 500,
+		"data": {"padding": "x" * 1200},
+	}
+	body, headers = signed(oversized)
+	response = client.post("/jobs", content=body, headers=headers)
+	assert response.status_code == 422
+	assert response.json()["error"] == "VALIDATION_ERROR"
 
 
 def test_job_contract_rejects_unknown_fields_and_unsafe_callback(monkeypatch):

@@ -10,9 +10,10 @@ import frappe
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
-from aos.api.shared.user_display import get_user_display_map
 from aos.services.accounts.http import set_private_no_store
-from aos.services.notifications.contracts import sanitize_public_payload
+from aos.services.notifications.realtime import publish_state_after_commit
+from aos.services.notifications.repository import get_unread_count
+from aos.services.notifications.serializers import serialize_notifications
 from aos.services.notifications.validation import (
     NotificationInputError,
     reject_unknown_fields,
@@ -111,34 +112,6 @@ def _list_rows(
     )
 
 
-def _serialize_notifications(rows: list[Any]) -> list[dict[str, Any]]:
-    actors = {str(row.actor).strip() for row in rows if getattr(row, "actor", None)}
-    actor_map = get_user_display_map(actors) if actors else {}
-    items: list[dict[str, Any]] = []
-    for notification in rows:
-        actor_display = actor_map.get(notification.actor) if notification.actor else None
-        actor_deleted = bool(actor_display.get("is_deleted")) if actor_display else False
-        items.append(
-            {
-                "id": notification.name,
-                "type": notification.type,
-                "title": notification.title,
-                "body": notification.body,
-                "actor": actor_display.get("user") if actor_display else None,
-                "actor_display_name": actor_display.get("display_name") if actor_display else None,
-                "actor_avatar": actor_display.get("avatar") if actor_display else None,
-                "actor_is_deleted": actor_deleted,
-                "actor_is_live": bool(actor_display.get("is_live")) if actor_display and not actor_deleted else False,
-                "actor_live_id": actor_display.get("live_id") if actor_display and not actor_deleted else None,
-                "actor_live_status": actor_display.get("live_status") if actor_display and not actor_deleted else None,
-                "payload": sanitize_public_payload(notification.type, notification.payload or {}),
-                "is_read": bool(int(notification.is_read or 0)),
-                "created_at": notification.creation,
-            }
-        )
-    return items
-
-
 def list_notifications_impl(**kwargs):
     set_private_no_store()
     current_user, err = require_login()
@@ -188,7 +161,8 @@ def list_notifications_impl(**kwargs):
             "Notifications fetched.",
             data={
                 "category": category,
-                "items": _serialize_notifications(page),
+                "items": serialize_notifications(page),
+                "unread_count": get_unread_count(current_user),
                 "next_cursor": page[-1].name if has_more and page else None,
             },
         )
@@ -216,17 +190,41 @@ def mark_notification_read_impl(**kwargs):
     except NotificationInputError as exc:
         return _input_error(str(exc))
     try:
-        exists = frappe.db.exists("AOS Notification", {"name": notification_id, "user": current_user})
-        if not exists:
-            return fail("Notification not found.", error="NOT_FOUND")
-        frappe.db.set_value(
-            "AOS Notification",
-            {"name": notification_id, "user": current_user, "is_read": 0},
-            "is_read",
-            1,
-            update_modified=False,
+        rows = frappe.db.sql(
+            """
+            SELECT name, is_read
+            FROM `tabAOS Notification`
+            WHERE name = %s AND user = %s
+            LIMIT 1
+            FOR UPDATE
+            """,
+            (notification_id, current_user),
+            as_dict=True,
         )
-        return ok("Notification marked as read.", data={"notification_id": notification_id})
+        row = rows[0] if rows else None
+        if not row:
+            return fail("Notification not found.", error="NOT_FOUND")
+        was_unread = not bool(int(row.get("is_read") or 0))
+        if was_unread:
+            frappe.db.set_value(
+                "AOS Notification",
+                {"name": notification_id, "user": current_user, "is_read": 0},
+                "is_read",
+                1,
+                update_modified=False,
+            )
+            publish_state_after_commit(
+                user=current_user,
+                action="read",
+                notification_id=notification_id,
+            )
+        return ok(
+            "Notification marked as read.",
+            data={
+                "notification_id": notification_id,
+                "unread_count": get_unread_count(current_user),
+            },
+        )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Mark Notification Read Failed")
         return fail("Failed to update notification.", error="INTERNAL_ERROR")
@@ -250,11 +248,17 @@ def mark_all_notifications_read_impl(**kwargs):
     except NotificationInputError as exc:
         return _input_error(str(exc))
     try:
-        frappe.db.sql(
-            "UPDATE `tabAOS Notification` SET is_read = 1 WHERE user = %s AND is_read = 0",
-            (current_user,),
+        unread_before = get_unread_count(current_user)
+        if unread_before:
+            frappe.db.sql(
+                "UPDATE `tabAOS Notification` SET is_read = 1 WHERE user = %s AND is_read = 0",
+                (current_user,),
+            )
+            publish_state_after_commit(user=current_user, action="read_all")
+        return ok(
+            "All notifications marked as read.",
+            data={"unread_count": get_unread_count(current_user)},
         )
-        return ok("All notifications marked as read.")
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Mark All Notifications Read Failed")
         return fail("Failed to update notifications.", error="INTERNAL_ERROR")
@@ -280,12 +284,33 @@ def delete_notification_impl(**kwargs):
         return _input_error(str(exc))
     savepoint = f"aos_notification_delete_{uuid.uuid4().hex[:10]}"
     try:
-        exists = frappe.db.exists("AOS Notification", {"name": notification_id, "user": current_user})
-        if not exists:
+        locked = frappe.db.sql(
+            """
+            SELECT name
+            FROM `tabAOS Notification`
+            WHERE name = %s AND user = %s
+            LIMIT 1
+            FOR UPDATE
+            """,
+            (notification_id, current_user),
+            as_dict=True,
+        )
+        if not locked:
             return fail("Notification not found.", error="NOT_FOUND")
         frappe.db.savepoint(savepoint)
         frappe.db.delete("AOS Notification", {"name": notification_id, "user": current_user})
-        return ok("Notification deleted.", data={"notification_id": notification_id})
+        publish_state_after_commit(
+            user=current_user,
+            action="deleted",
+            notification_id=notification_id,
+        )
+        return ok(
+            "Notification deleted.",
+            data={
+                "notification_id": notification_id,
+                "unread_count": get_unread_count(current_user),
+            },
+        )
     except Exception:
         _rollback_savepoint(savepoint)
         frappe.log_error(frappe.get_traceback(), "AOS Delete Notification Failed")
@@ -322,9 +347,19 @@ def clear_notifications_impl(**kwargs):
         if deleted_count:
             frappe.db.savepoint(savepoint)
             frappe.db.delete("AOS Notification", filters)
+            publish_state_after_commit(
+                user=current_user,
+                action="cleared",
+                category=category,
+                deleted_count=deleted_count,
+            )
         return ok(
             "Notifications cleared." if deleted_count else "No notifications to clear.",
-            data={"category": category, "deleted_count": deleted_count},
+            data={
+                "category": category,
+                "deleted_count": deleted_count,
+                "unread_count": get_unread_count(current_user),
+            },
         )
     except Exception:
         _rollback_savepoint(savepoint)

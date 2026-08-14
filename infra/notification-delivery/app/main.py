@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 from fastapi import FastAPI, Header, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.config import get_settings
+from app.config import get_settings, validate_firebase_configuration
 from app.durable_lifecycle import (
 	authorize_work_replay,
 	job_status,
@@ -59,7 +59,7 @@ class NotificationDeliveryJobRequest(_StrictModel):
 	body: str = Field(min_length=1, max_length=500)
 	data: dict[str, str] = Field(default_factory=dict)
 	options: PushOptions = Field(default_factory=PushOptions)
-	tokens: list[PushToken] = Field(default_factory=list, max_length=5000)
+	tokens: list[PushToken] = Field(default_factory=list, max_length=500)
 	callback_url: str = Field(min_length=1, max_length=1000)
 
 	@field_validator("callback_url")
@@ -80,8 +80,18 @@ class NotificationDeliveryJobRequest(_StrictModel):
 			if self.event != "aos_incoming_call":
 				raise ValueError("unsupported transient event")
 		encoded = json.dumps(self.data, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-		if len(encoded) > 16 * 1024:
+		if len(encoded) > 3500:
 			raise ValueError("notification data is too large")
+		estimated = json.dumps(
+			{
+				"notification": {"title": self.title, "body": self.body},
+				"data": self.data,
+			},
+			separators=(",", ":"),
+			ensure_ascii=False,
+		).encode("utf-8")
+		if len(estimated) > 3500:
+			raise ValueError("notification envelope is too large")
 		return self
 
 
@@ -112,9 +122,14 @@ def ready():
 		redis = get_redis()
 		redis.ping()
 		dependency_ready("redis")
-		return {"ok": True, "ready": True}
 	except Exception as exc:
 		return readiness_error("redis", exc)
+	try:
+		validate_firebase_configuration(get_settings())
+		dependency_ready("firebase_config")
+	except Exception as exc:
+		return readiness_error("firebase_config", exc)
+	return {"ok": True, "ready": True}
 
 
 async def _verified_json(request: Request, signature: str | None) -> bytes:

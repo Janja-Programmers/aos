@@ -4,8 +4,6 @@ import uuid
 
 import frappe
 
-from aos.api.shared.account_status import get_account_state
-from aos.api.shared.blocking import is_blocked_between
 from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.user_display import get_user_display
 from aos.services.accounts.identity import public_account_id_for_user
@@ -20,6 +18,11 @@ from aos.services.notifications.contracts import (
     validate_persistent_payload,
 )
 from aos.services.notifications.observability import notification_log
+from aos.services.notifications.policy import (
+    persistent_notification_suppression_reason,
+    transient_recipient_suppression_reason,
+)
+from aos.services.notifications.realtime import publish_created_after_commit
 from aos.services.social.constants import MAX_SOCIAL_EVENT_FANOUT
 from aos.services.social.repository import SocialRepository
 
@@ -56,50 +59,6 @@ class NotificationService:
         except Exception:
             # Notification infrastructure never owns the caller's full transaction.
             pass
-
-    @staticmethod
-    def _recipient_available(user: str) -> bool:
-        user = str(user or "").strip()
-        if not user or not frappe.db.exists("User", user):
-            return False
-        try:
-            enabled = frappe.db.get_value("User", user, "enabled")
-            if enabled is not None and not bool(int(enabled or 0)):
-                return False
-        except Exception:
-            return False
-        try:
-            state = get_account_state(user)
-        except Exception:
-            return False
-        if state.get("exists") and (
-            state.get("is_deleted")
-            or state.get("is_deactivated")
-            or state.get("is_suspended")
-        ):
-            return False
-        return True
-
-    @classmethod
-    def _delivery_allowed(cls, *, user: str, actor: str | None, notification_type: str | None = None) -> bool:
-        if not cls._recipient_available(user):
-            return False
-        if actor and actor == user:
-            return False
-        if actor and notification_type:
-            try:
-                contract = contract_for(notification_type)
-                if contract.actor_scoped and not cls._recipient_available(actor):
-                    return False
-                if contract.actor_scoped and is_blocked_between(user, actor):
-                    return False
-            except NotificationContractError:
-                return False
-            except Exception:
-                # A policy lookup failure suppresses Notification only; it never
-                # invalidates the authoritative business-domain transaction.
-                return False
-        return True
 
     @staticmethod
     def _normalize_copy(*, title: str, body: str, dedupe_key: str | None) -> tuple[str, str, str | None]:
@@ -268,15 +227,16 @@ class NotificationService:
             )
             return None
 
-        if not cls._delivery_allowed(
-            user=user, actor=actor, notification_type=notification_type
-        ):
+        policy_reason = persistent_notification_suppression_reason(
+            user=user, notification_type=notification_type, actor=actor
+        )
+        if policy_reason:
             notification_log(
                 "notification.intent_suppressed",
                 account_id=public_account_id_for_user(user),
                 notification_type=notification_type,
                 outcome="suppressed",
-                reason="recipient_or_policy",
+                reason=policy_reason,
             )
             return None
 
@@ -313,6 +273,11 @@ class NotificationService:
                 notification_id=doc.name,
             )
             existing = bool(getattr(doc.flags, "aos_dedupe_existing", False))
+            if not existing:
+                # Realtime is a post-commit foreground transport only. It must
+                # never escape a rolled-back business mutation and duplicate
+                # producer retries must not emit duplicate creation events.
+                publish_created_after_commit(user=user, notification_id=doc.name)
             notification_log(
                 "notification.intent_deduplicated" if existing else "notification.intent_created",
                 notification_id=doc.name,
@@ -370,7 +335,7 @@ class NotificationService:
                 reason="unsupported_event",
             )
             return None
-        if not cls._delivery_allowed(user=user, actor=actor):
+        if transient_recipient_suppression_reason(user=user, actor=actor):
             return None
 
         try:

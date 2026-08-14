@@ -760,6 +760,16 @@ def _check_firebase(issues: list[dict[str, Any]], env: Mapping[str, Any] | None)
 			remediation="Set NOTIFICATION_DRY_RUN=false before production release.",
 		)
 
+	if not notification_enabled and _bool_env(env, ("NOTIFICATION_WEB_PUSH_ENABLED",), False):
+		_redacted_issue(
+			issues,
+			severity="error",
+			category="notifications",
+			key="NOTIFICATION_WEB_PUSH_ENABLED",
+			message="Firebase Web Messaging cannot be enabled while Notification delivery is disabled.",
+			remediation="Enable Notification delivery or disable web push.",
+		)
+
 	if not notification_enabled:
 		_redacted_issue(
 			issues,
@@ -796,6 +806,26 @@ def _check_firebase(issues: list[dict[str, Any]], env: Mapping[str, Any] | None)
 			message="Firebase service account path still looks like a placeholder/default value.",
 			remediation="Set the Firebase service account path to the production secret file location.",
 		)
+
+	if _bool_env(env, ("NOTIFICATION_WEB_PUSH_ENABLED",), False):
+		required_web_push = (
+			"NOTIFICATION_FIREBASE_WEB_API_KEY",
+			"NOTIFICATION_FIREBASE_WEB_PROJECT_ID",
+			"NOTIFICATION_FIREBASE_WEB_MESSAGING_SENDER_ID",
+			"NOTIFICATION_FIREBASE_WEB_APP_ID",
+			"NOTIFICATION_FIREBASE_WEB_VAPID_PUBLIC_KEY",
+		)
+		for web_key in required_web_push:
+			web_value, _ = _env_value(env, web_key)
+			if not web_value or _is_placeholder(web_value):
+				_redacted_issue(
+					issues,
+					severity="error",
+					category="notifications",
+					key=web_key,
+					message="Firebase Web Messaging is enabled but required public bootstrap configuration is missing or placeholder.",
+					remediation=f"Set {web_key} to the production Firebase Web Messaging public value.",
+				)
 
 
 def _check_ai_services(issues: list[dict[str, Any]], env: Mapping[str, Any] | None) -> None:

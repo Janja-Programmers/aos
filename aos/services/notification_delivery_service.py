@@ -17,11 +17,9 @@ import frappe
 import requests
 from frappe.utils import now_datetime
 
-from aos.api.shared.account_status import get_account_state
-from aos.api.shared.blocking import is_blocked_between
 from aos.api.shared.db import is_duplicate_entry_error
 from aos.services.accounts.identity import public_account_id_for_user
-from aos.services.notifications.contracts import canonical_event, contract_for
+from aos.services.notifications.contracts import canonical_event
 from aos.services.notifications.devices import (
 	PushDeviceValidationError,
 	get_token_hash,
@@ -29,6 +27,11 @@ from aos.services.notifications.devices import (
 	normalize_push_token,
 )
 from aos.services.notifications.observability import notification_log
+from aos.services.notifications.policy import (
+	account_availability_reason,
+	persistent_notification_suppression_reason,
+	relationship_suppression_reason,
+)
 
 from aos.services.transactional_outbox import (
 	OutboxConflictError,
@@ -53,7 +56,9 @@ VALID_DELIVERY_KINDS = frozenset({"persistent", "transient"})
 VALID_PUSH_PRIORITIES = frozenset({"", "high", "normal"})
 VALID_ANDROID_NOTIFICATION_PRIORITIES = frozenset({"", "min", "low", "default", "high", "max"})
 TRANSIENT_INCOMING_CALL_EVENT = "aos_incoming_call"
-MAX_DELIVERY_DATA_BYTES = 16 * 1024
+MAX_DELIVERY_DATA_BYTES = 3500
+MAX_FCM_ESTIMATED_ENVELOPE_BYTES = 3500
+MAX_DELIVERY_TOKENS = 500
 MAX_STORED_CALLBACK_BYTES = 64 * 1024
 
 
@@ -151,7 +156,17 @@ def _get_active_push_tokens(user: str) -> list[dict[str, str]]:
 		"AOS Push Token",
 		filters={"user": user, "is_active": 1},
 		fields=["token", "token_hash", "device_type"],
+		order_by="last_used_at desc, modified desc, name desc",
+		limit_page_length=MAX_DELIVERY_TOKENS + 1,
 	)
+	if len(rows) > MAX_DELIVERY_TOKENS:
+		notification_log(
+			"notification.delivery_device_cap_applied",
+			account_id=public_account_id_for_user(user),
+			outcome="capped",
+			reason="active_registration_limit",
+		)
+		rows = rows[:MAX_DELIVERY_TOKENS]
 
 	deduped: dict[str, dict[str, str]] = {}
 	for row in rows:
@@ -215,6 +230,19 @@ def _bounded_json_object(value: Any, *, max_bytes: int = MAX_DELIVERY_DATA_BYTES
 	if len(encoded) > max_bytes:
 		raise NotificationDeliveryError("Notification delivery payload is too large")
 	return value
+
+
+def _validate_fcm_envelope(*, title: str, body: str, data: dict[str, Any]) -> None:
+	# FCM documents a 4096-byte payload limit for token-targeted messages. Keep
+	# explicit headroom for provider serialization/platform metadata rather than
+	# accepting an internal job that can only fail permanently at Firebase.
+	estimated = {
+		"notification": {"title": str(title or ""), "body": str(body or "")},
+		"data": data,
+	}
+	encoded = json.dumps(estimated, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
+	if len(encoded) > MAX_FCM_ESTIMATED_ENVELOPE_BYTES:
+		raise NotificationDeliveryError("Notification delivery envelope is too large")
 
 
 def _normalize_job_input(
@@ -284,23 +312,8 @@ def _stable_delivery_idempotency_key(
 
 
 def _recipient_delivery_suppression_reason(user: str) -> str | None:
-	if not user or not frappe.db.exists("User", user):
-		return "recipient_missing"
-	try:
-		enabled = frappe.db.get_value("User", user, "enabled")
-		if enabled is not None and not bool(int(enabled or 0)):
-			return "recipient_disabled"
-	except Exception:
-		return "recipient_unavailable"
-	try:
-		state = get_account_state(user)
-		if state.get("exists") and (
-			state.get("is_deleted") or state.get("is_deactivated") or state.get("is_suspended")
-		):
-			return "recipient_inactive"
-	except Exception:
-		return "recipient_unavailable"
-	return None
+	reason = account_availability_reason(user)
+	return f"recipient_{reason}" if reason else None
 
 
 def _delivery_suppression_reason(job) -> str | None:
@@ -317,24 +330,15 @@ def _delivery_suppression_reason(job) -> str | None:
 		if _clean(row.get("user")) != _clean(job.user):
 			return "notification_owner_mismatch"
 		try:
-			contract = contract_for(_clean(row.get("type")))
 			if canonical_event(_clean(row.get("type"))) != _clean(job.event):
 				return "notification_contract_mismatch"
 		except Exception:
 			return "notification_contract_mismatch"
-		actor = _clean(row.get("actor")) or None
-		if actor and contract.actor_scoped:
-			actor_reason = _recipient_delivery_suppression_reason(actor)
-			if actor_reason:
-				return "actor_unavailable"
-			try:
-				if is_blocked_between(job.user, actor):
-					return "blocked_relationship"
-			except Exception:
-				# Policy uncertainty is privacy-sensitive. Suppress this delivery
-				# without mutating or failing the owning business domain.
-				return "relationship_unavailable"
-		return None
+		return persistent_notification_suppression_reason(
+			user=_clean(job.user),
+			notification_type=_clean(row.get("type")),
+			actor=_clean(row.get("actor")) or None,
+		)
 
 	if _clean(job.event) != TRANSIENT_INCOMING_CALL_EVENT:
 		# Existing/internal transient jobs are an established durable-delivery
@@ -355,14 +359,9 @@ def _delivery_suppression_reason(job) -> str | None:
 	caller = _clean(call.get("caller"))
 	if not caller:
 		return "call_actor_missing"
-	if _recipient_delivery_suppression_reason(caller):
+	if account_availability_reason(caller):
 		return "actor_unavailable"
-	try:
-		if is_blocked_between(job.user, caller):
-			return "blocked_relationship"
-	except Exception:
-		return "relationship_unavailable"
-	return None
+	return relationship_suppression_reason(_clean(job.user), caller)
 
 
 def _safe_callback_reason(value: Any, *, fallback: str | None = None) -> str | None:
@@ -503,6 +502,7 @@ def create_notification_delivery_job(
 		android_notification_priority=android_notification_priority,
 	)
 	notification_id = _clean(notification_id) or None
+	notification_type: str | None = None
 	if values["delivery_kind"] == "persistent":
 		if not notification_id or not frappe.db.exists("AOS Notification", notification_id):
 			raise NotificationDeliveryError("Persistent delivery requires an existing notification")
@@ -511,8 +511,9 @@ def create_notification_delivery_job(
 		) or {}
 		if _clean(notification.get("user")) != values["user"]:
 			raise NotificationDeliveryError("Notification delivery owner mismatch")
+		notification_type = _clean(notification.get("type")) or None
 		try:
-			if canonical_event(_clean(notification.get("type"))) != values["event"]:
+			if canonical_event(notification_type or "") != values["event"]:
 				raise NotificationDeliveryError("Notification delivery event mismatch")
 		except NotificationDeliveryError:
 			raise
@@ -524,9 +525,17 @@ def create_notification_delivery_job(
 		if values["event"] != TRANSIENT_INCOMING_CALL_EVENT:
 			raise NotificationDeliveryError("Unsupported transient notification event")
 
-	data_payload = _bounded_json_object(dict(payload or {}))
+	# Bound the final FCM data envelope, including server-owned transport fields,
+	# before the durable job is accepted. This avoids creating a job that can only
+	# fail later once notification_id/type are appended at dispatch time.
+	data_payload = dict(payload or {})
 	data_payload["event"] = values["event"]
+	if notification_id:
+		data_payload["notification_id"] = notification_id
+	if notification_type:
+		data_payload["notification_type"] = notification_type
 	data_payload = _bounded_json_object(_stringify_data(data_payload))
+	_validate_fcm_envelope(title=values["title"], body=values["body"], data=data_payload)
 	stable_key = _stable_delivery_idempotency_key(
 		notification_id=notification_id,
 		delivery_kind=values["delivery_kind"],
@@ -595,6 +604,21 @@ def enqueue_notification_delivery_dispatch(delivery_job_id: str) -> object:
 def build_notification_delivery_payload(job) -> dict[str, Any]:
 	dispatch_context = outbox_dispatch_context(job_doctype="AOS Notification Delivery Job", job_name=job.name)
 	tokens = _get_active_push_tokens(job.user)
+	data = _json_loads(job.payload_json, {})
+	if not isinstance(data, dict):
+		data = {}
+	data = _stringify_data(data)
+	if job.notification:
+		# Persistent FCM consumers need the canonical inbox identity for
+		# dedupe/reconciliation. Notification IDs are already the public API
+		# boundary; no DocType/internal User identifiers are added here.
+		data["notification_id"] = str(job.notification)
+		notification_type = frappe.db.get_value("AOS Notification", job.notification, "type")
+		if notification_type:
+			data["notification_type"] = str(notification_type)
+	data["event"] = str(job.event or "")
+	data = _bounded_json_object(data)
+	_validate_fcm_envelope(title=job.title, body=job.body, data=data)
 	return {
 		**dispatch_context,
 		"job_id": job.name,
@@ -606,7 +630,7 @@ def build_notification_delivery_payload(job) -> dict[str, Any]:
 		"event": job.event,
 		"title": job.title,
 		"body": job.body,
-		"data": _json_loads(job.payload_json, {}),
+		"data": data,
 		"options": {
 			"priority": job.priority,
 			"ttl_seconds": job.ttl_seconds,

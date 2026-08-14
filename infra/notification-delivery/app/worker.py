@@ -54,7 +54,12 @@ def _callback(callback_url: str, payload: dict[str, Any]) -> Any:
 		"X-AOS-Callback-Timestamp": timestamp,
 		"X-AOS-Notification-Callback-Signature": build_signature(settings.callback_secret, signed_payload),
 	}
-	response = requests.post(callback_url, data=body, headers=headers, timeout=20)
+	response = requests.post(
+        callback_url,
+        data=body,
+        headers=headers,
+        timeout=settings.callback_http_timeout_seconds,
+    )
 	return response
 
 
@@ -126,6 +131,44 @@ def _build_android_config(
 	)
 
 
+def _ttl_seconds(options: dict[str, Any] | None) -> int | None:
+	value = (options or {}).get("ttl_seconds")
+	if value is None:
+		return None
+	try:
+		return max(0, min(int(value), 86400))
+	except (TypeError, ValueError):
+		return None
+
+
+def _build_apns_config(options: dict[str, Any] | None):
+	if not messaging:
+		return None
+	options = options or {}
+	priority = _normalize_android_priority(options.get("priority"))
+	ttl_seconds = _ttl_seconds(options)
+	headers: dict[str, str] = {}
+	if priority:
+		headers["apns-priority"] = "10" if priority == "high" else "5"
+	if ttl_seconds is not None:
+		headers["apns-expiration"] = str(int(time.time()) + ttl_seconds)
+	return messaging.APNSConfig(headers=headers) if headers else None
+
+
+def _build_webpush_config(options: dict[str, Any] | None):
+	if not messaging:
+		return None
+	options = options or {}
+	priority = _normalize_android_priority(options.get("priority"))
+	ttl_seconds = _ttl_seconds(options)
+	headers: dict[str, str] = {}
+	if priority:
+		headers["Urgency"] = "high" if priority == "high" else "normal"
+	if ttl_seconds is not None:
+		headers["TTL"] = str(ttl_seconds)
+	return messaging.WebpushConfig(headers=headers) if headers else None
+
+
 def _is_transient_incoming_call(payload: dict[str, Any]) -> bool:
 	return (
 		str(payload.get("event") or "").strip() == "aos_incoming_call"
@@ -163,7 +206,7 @@ def _init_firebase() -> None:
 
 	if not firebase_admin._apps:
 		cred = credentials.Certificate(str(service_account_path))
-		firebase_admin.initialize_app(cred)
+		firebase_admin.initialize_app(cred, options={"httpTimeout": settings.provider_timeout_seconds})
 
 	_FIREBASE_INITIALIZED = True
 
@@ -271,6 +314,7 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
 			"failure_count": 0,
 			"inactive_token_hashes": [],
 			"provider_responses": [{"dry_run": True, "count": len(tokens)}],
+			"retryable_failure_count": 0,
 			"error": None,
 		}
 
@@ -286,6 +330,15 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
 	data_payload = _stringify_data(payload.get("data") if isinstance(payload.get("data"), dict) else {})
 	if len(_json_bytes(data_payload)) > 3500:
 		raise ValueError("FCM data payload is too large")
+	estimated_envelope = {
+		"notification": {
+			"title": str(payload.get("title") or ""),
+			"body": str(payload.get("body") or ""),
+		},
+		"data": data_payload,
+	}
+	if len(_json_bytes(estimated_envelope)) > 3500:
+		raise ValueError("FCM notification envelope is too large")
 	options = payload.get("options") if isinstance(payload.get("options"), dict) else {}
 	is_native_incoming = _is_transient_incoming_call(payload)
 
@@ -312,6 +365,8 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
 			collapse_key=_incoming_call_collapse_key(data_payload) if data_only else None,
 			include_notification_options=not data_only,
 		)
+		apns_config = _build_apns_config(options)
+		webpush_config = _build_webpush_config(options)
 		for chunk in _chunk(group_tokens, max(1, min(settings.max_tokens_per_multicast, 500))):
 			token_values = [row["token"] for row in chunk if row.get("token")]
 			if not token_values:
@@ -329,6 +384,8 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
 				data=data_payload,
 				tokens=token_values,
 				android=android_config,
+				apns=apns_config,
+				webpush=webpush_config,
 			)
 
 			response = messaging.send_each_for_multicast(message)
