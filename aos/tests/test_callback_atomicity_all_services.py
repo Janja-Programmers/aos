@@ -563,9 +563,13 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 						raise RuntimeError("forced outbox completion failure")
 					return original_save(doc, *args, **kwargs)
 
-				with patch.object(outbox_class, "save", new=failing_outbox_save):
+				with (
+					patch.object(outbox_class, "save", new=failing_outbox_save),
+					patch.object(adapter.api_module.frappe, "log_error") as log_error,
+				):
 					response = self._invoke(adapter, payload)
 				self.assertFalse(response["ok"], response)
+				log_error.assert_called_once()
 				self.assertEqual(frappe.db.get_value("AOS Push Token", token_name, "is_active"), 1)
 				fixture.job.reload()
 				outbox.reload()

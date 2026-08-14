@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import unittest
 from unittest.mock import patch
 
@@ -9,11 +8,26 @@ from aos.services.notifications.web_push import WebPushConfigurationError, get_w
 
 class TestNotificationWebPushConfig(unittest.TestCase):
     def test_disabled_is_safe_default(self):
-        with patch.dict(os.environ, {"NOTIFICATION_WEB_PUSH_ENABLED": "false"}, clear=False):
+        with patch(
+            "aos.services.notifications.web_push.get_env_bool",
+            return_value=False,
+        ):
             self.assertEqual(get_web_push_config().public_payload(), {"enabled": False})
 
     def test_enabled_requires_complete_public_configuration(self):
-        with patch.dict(os.environ, {"NOTIFICATION_WEB_PUSH_ENABLED": "true"}, clear=False):
+        # Patch the configuration boundary rather than os.environ. ``get_env``
+        # intentionally falls back to the deployment .env for host Bench
+        # processes, so environment-only patching is not isolated on staging.
+        with (
+            patch(
+                "aos.services.notifications.web_push.get_env_bool",
+                return_value=True,
+            ),
+            patch(
+                "aos.services.notifications.web_push.get_env",
+                return_value="",
+            ),
+        ):
             with self.assertRaises(WebPushConfigurationError):
                 get_web_push_config()
 
@@ -31,7 +45,16 @@ class TestNotificationWebPushConfig(unittest.TestCase):
             "NOTIFICATION_FIREBASE_SERVICE_ACCOUNT_PATH": "/run/secrets/private.json",
             "NOTIFICATION_SERVICE_SECRET": "server-only-secret-value",
         }
-        with patch.dict(os.environ, env, clear=False):
+        with (
+            patch(
+                "aos.services.notifications.web_push.get_env_bool",
+                return_value=True,
+            ),
+            patch(
+                "aos.services.notifications.web_push.get_env",
+                side_effect=lambda name, default=None: env.get(name, default),
+            ),
+        ):
             payload = get_web_push_config().public_payload()
         self.assertTrue(payload["enabled"])
         self.assertEqual(payload["firebase"]["projectId"], "aos-production-2026")

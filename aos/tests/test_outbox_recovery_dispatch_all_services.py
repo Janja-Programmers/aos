@@ -332,9 +332,13 @@ class TestOutboxRecoveryDispatchAllServices(FrappeTestCase):
 					self.assertIsNotNone(claim)
 					_mark_enqueue_accepted(outbox.name, str(claim["claim_token"]))
 					frappe.db.commit()
-					with patch.object(module.requests, "post", side_effect=TimeoutError("response lost")):
+					with (
+						patch.object(module.requests, "post", side_effect=TimeoutError("response lost")),
+						patch.object(frappe, "log_error") as log_error,
+					):
 						with self.assertRaises(TimeoutError):
 							dispatch_claimed_outbox(outbox.name, str(claim["claim_token"]))
+					log_error.assert_called_once()
 					outbox.reload()
 					fixture.job.reload()
 					self.assertEqual(outbox.status, "Dispatch Uncertain")

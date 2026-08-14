@@ -319,15 +319,19 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         )
 
     def test_notification_infrastructure_failure_rolls_back_only_notification_savepoint(self):
-        with patch(
-            "aos.services.notification_service.NotificationService._deliver",
-            side_effect=RuntimeError("outbox unavailable"),
+        with (
+            patch(
+                "aos.services.notification_service.NotificationService._deliver",
+                side_effect=RuntimeError("outbox unavailable"),
+            ),
+            patch("aos.services.notification_service.frappe.log_error") as log_error,
         ):
             doc = NotificationService.notify_follow(
                 user=self.owner,
                 follower=self.actor,
                 dedupe_key=f"{self.prefix}:failed-intent",
             )
+        log_error.assert_called_once()
         self.assertIsNone(doc)
         self.assertFalse(
             frappe.db.exists(

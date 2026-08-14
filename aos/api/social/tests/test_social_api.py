@@ -165,11 +165,13 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
                 "aos.services.social.service.NotificationService.notify_follow",
                 side_effect=RuntimeError("outbox unavailable"),
             ),
+            patch("aos.services.social.service.frappe.log_error") as log_error,
         ):
             response = toggle_follow_impl(
                 account_id=public_account_id_for_user(self.target),
                 action="follow",
             )
+        log_error.assert_called_once()
         self.assertTrue(response["ok"], response)
         self.assertTrue(response["data"]["changed"])
         self.assertTrue(
