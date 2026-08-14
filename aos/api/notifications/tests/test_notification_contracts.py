@@ -15,6 +15,7 @@ from aos.services.notifications.devices import (
     normalize_device_id,
     normalize_device_type,
     normalize_push_token,
+    normalize_registration_kind,
     token_fingerprint,
 )
 
@@ -107,12 +108,16 @@ class TestNotificationContracts(unittest.TestCase):
         self.assertEqual(token_fingerprint(token=normalized), digest[:12])
         self.assertEqual(normalize_device_type("ANDROID"), "android")
         self.assertEqual(normalize_device_id("device-01"), "device-01")
+        self.assertEqual(normalize_registration_kind(None), "token")
+        self.assertEqual(normalize_registration_kind("FID"), "fid")
 
         for invalid in ("short", "token with spaces and enough length"):
             with self.assertRaises(PushDeviceValidationError):
                 normalize_push_token(invalid)
         with self.assertRaises(PushDeviceValidationError):
             normalize_device_type("desktop")
+        with self.assertRaises(PushDeviceValidationError):
+            normalize_registration_kind("topic")
         with self.assertRaises(PushDeviceValidationError):
             normalize_device_id("unsafe/device")
 

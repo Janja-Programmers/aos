@@ -29,9 +29,10 @@ class _FakeMessaging:
 
 	def send_each_for_multicast(self, message):
 		self.sent.append(message)
+		targets = getattr(message, "tokens", None) or getattr(message, "fids", None) or []
 		responses = [
 			SimpleNamespace(success=True, message_id=f"provider-{idx}", exception=None)
-			for idx, _token in enumerate(message.tokens)
+			for idx, _target in enumerate(targets)
 		]
 		return SimpleNamespace(
 			success_count=len(responses),
@@ -193,3 +194,45 @@ def test_firebase_initialization_applies_bounded_http_timeout(monkeypatch, tmp_p
 	monkeypatch.setattr(worker, "_FIREBASE_INITIALIZED", False)
 	worker._init_firebase()
 	assert initialized[0][1] == {"httpTimeout": 17}
+
+
+def test_mixed_legacy_tokens_and_fids_use_the_matching_firebase_target_field(monkeypatch):
+	fake_messaging = _FakeMessaging()
+	monkeypatch.setattr(worker, "messaging", fake_messaging)
+	monkeypatch.setattr(worker, "get_settings", _settings)
+	monkeypatch.setattr(worker, "_init_firebase", lambda: None)
+
+	result = worker._send_push(
+		{
+			"event": "aos_follow",
+			"delivery_kind": "persistent",
+			"title": "New follower",
+			"body": "Someone followed you",
+			"data": {"event": "aos_follow"},
+			"options": {"priority": "normal"},
+			"tokens": [
+				{
+					"token": "legacy-registration-token",
+					"token_hash": "a" * 64,
+					"device_type": "android",
+					"registration_kind": "token",
+				},
+				{
+					"token": "firebase-installation-id",
+					"token_hash": "b" * 64,
+					"device_type": "web",
+					"registration_kind": "fid",
+				},
+			],
+		}
+	)
+
+	assert result["status"] == "delivered"
+	assert result["success_count"] == 2
+	assert len(fake_messaging.sent) == 2
+	legacy_message, fid_message = fake_messaging.sent
+	assert legacy_message.tokens == ["legacy-registration-token"]
+	assert not hasattr(legacy_message, "fids")
+	assert fid_message.fids == ["firebase-installation-id"]
+	assert not hasattr(fid_message, "tokens")
+	assert [row["registration_kind"] for row in result["provider_responses"]] == ["token", "fid"]

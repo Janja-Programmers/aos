@@ -7,6 +7,7 @@
   "user",
   "token",
   "token_hash",
+  "registration_kind",
   "column_break_ngzk",
   "device_type",
   "device_id",
@@ -26,7 +27,7 @@
   {
    "fieldname": "token",
    "fieldtype": "Long Text",
-   "label": "FCM Token",
+   "label": "FCM Registration Identifier",
    "reqd": 1
   },
   {
@@ -67,6 +68,15 @@
    "label": "Token Hash",
    "reqd": 1,
    "unique": 1
+  },
+  {
+   "default": "token",
+   "fieldname": "registration_kind",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Registration Kind",
+   "options": "token\nfid",
+   "reqd": 1
   },
   {
    "fieldname": "active_device_key",

@@ -13,6 +13,7 @@ from aos.services.notifications.devices import (
     normalize_device_id,
     normalize_device_type,
     normalize_push_token,
+    normalize_registration_kind,
 )
 
 
@@ -32,6 +33,7 @@ class AOSPushToken(Document):
             token = normalize_push_token(self.token)
             device_type = normalize_device_type(self.device_type)
             device_id = normalize_device_id(self.device_id)
+            registration_kind = normalize_registration_kind(self.registration_kind)
         except PushDeviceValidationError as exc:
             frappe.throw(str(exc))
 
@@ -40,6 +42,7 @@ class AOSPushToken(Document):
         self.token_hash = get_token_hash(token)
         self.device_type = device_type
         self.device_id = device_id
+        self.registration_kind = registration_kind
         if self.is_active is None:
             self.is_active = 1
         self.is_active = 1 if bool(int(self.is_active or 0)) else 0

@@ -447,6 +447,49 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(deactivated.get("ok"), deactivated)
         self.assertEqual(int(frappe.db.get_value("AOS Push Token", row_name, "is_active") or 0), 0)
 
+    def test_fid_registration_coexists_with_legacy_token_contract(self):
+        fid = "c1234567890abcdefghijkl"
+        device_id = f"{self.prefix}-web-fid"
+        with self._without_device_limits():
+            registered = register_push_token_impl(
+                token=fid,
+                registration_kind="fid",
+                device_type="web",
+                device_id=device_id,
+            )
+        self.assertTrue(registered.get("ok"), registered)
+        row_name = registered["data"]["id"]
+        row = frappe.db.get_value(
+            "AOS Push Token",
+            row_name,
+            ["token_hash", "registration_kind", "device_type", "is_active"],
+            as_dict=True,
+        )
+        self.assertEqual(row.token_hash, get_token_hash(fid))
+        self.assertEqual(row.registration_kind, "fid")
+        self.assertEqual(row.device_type, "web")
+        self.assertEqual(int(row.is_active or 0), 1)
+        self.assertNotIn(fid, repr(registered))
+
+        # Omitting registration_kind preserves the legacy registration-token API.
+        legacy = "fcm_legacy_token_abcdefghijklmnopqrstuvwxyz_0123456789"
+        with self._without_device_limits():
+            legacy_result = register_push_token_impl(
+                token=legacy, device_type="android", device_id=f"{self.prefix}-legacy"
+            )
+        self.assertTrue(legacy_result.get("ok"), legacy_result)
+        self.assertEqual(
+            frappe.db.get_value(
+                "AOS Push Token", legacy_result["data"]["id"], "registration_kind"
+            ),
+            "token",
+        )
+
+        with self._without_device_limits():
+            deactivated = deactivate_push_token_impl(token=fid, registration_kind="fid")
+        self.assertTrue(deactivated.get("ok"), deactivated)
+        self.assertEqual(int(frappe.db.get_value("AOS Push Token", row_name, "is_active") or 0), 0)
+
     def test_account_deactivation_disables_device_tokens(self):
         token = "fcm_deactivate_token_abcdefghijklmnopqrstuvwxyz_0123456789"
         with self._without_device_limits():

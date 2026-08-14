@@ -15,17 +15,28 @@ Frappe owns:
 - `AOS Notification Delivery Job` lifecycle;
 - `AOS Transactional Outbox` atomic enqueue/claim/reconciliation;
 - recipient/account/block/privacy policy at materialization and again before dispatch;
-- provider-result persistence and invalid-token deactivation.
+- provider-result persistence and invalid-registration deactivation.
 
 The private `infra/notification-delivery` companion owns:
 
 - Firebase Admin / Firebase Cloud Messaging provider calls;
 - Android/APNs-through-FCM/WebPush-through-FCM provider configuration;
 - provider timeout and bounded exponential worker retry;
-- batching and per-token provider classification;
+- batching and per-registration provider classification;
 - signed callback to Frappe.
 
-There is no direct APNs/PushKit adapter. Android, iOS, and web registration tokens are delivered by Firebase Admin. There is no email/SMS delivery implementation.
+There is no direct APNs/PushKit adapter. Android, iOS, and web targets are delivered by Firebase Admin. AOS supports both legacy FCM registration tokens and Firebase Installation IDs (FIDs); existing rows default to `token`, while new clients can explicitly register `fid`. There is no email/SMS delivery implementation.
+
+## Firebase target migration compatibility
+
+AOS intentionally supports both Firebase target generations during migration:
+
+- `registration_kind=token` uses `messaging.MulticastMessage(tokens=[...])` for existing mobile/web registrations;
+- `registration_kind=fid` uses `messaging.MulticastMessage(fids=[...])` for Firebase Installation IDs.
+
+The repository pins `firebase-admin==7.5.0`, which supports both target types. Frappe sends at most 500 active registrations for a recipient in one delivery job. The companion further separates token and FID targets into homogeneous provider calls so Firebase response ordering maps deterministically back to the private registration hash. Existing callers that omit `registration_kind` remain token-based without a migration-time client rollout.
+
+`AOS Push Token.token` remains the legacy database/API field name and stores the opaque identifier for either kind; it is not exposed publicly. `token_hash` remains a SHA-256 privacy-safe lookup/deactivation key across both target kinds.
 
 ## End-to-end flow
 
@@ -97,13 +108,13 @@ Production provider success must still be verified with an actual canary device/
 
 ## Partial delivery
 
-Frappe bounds one recipient delivery to the 500 most recently used active registrations, matching the provider multicast boundary and preventing pathological registration fanout from creating an unbounded signed request. The companion sends in provider-sized chunks and records success/failure classifications. Fully transient provider failures participate in the configured bounded retry budget. Partial success is terminally recorded instead of resending the entire audience and knowingly duplicating already-successful devices. Invalid/unregistered token hashes are returned to Frappe and deactivate matching registrations.
+Frappe bounds one recipient delivery to the 500 most recently used active registrations, matching the provider multicast boundary and preventing pathological registration fanout from creating an unbounded signed request. The companion sends in provider-sized chunks and records success/failure classifications. Fully transient provider failures participate in the configured bounded retry budget. Partial success is terminally recorded instead of resending the entire audience and knowingly duplicating already-successful devices. Invalid/unregistered registration hashes are returned to Frappe and deactivate matching registrations.
 
 ## Privacy and security boundaries
 
 The public API cannot choose a recipient/actor or manufacture arbitrary notifications. Persistent payload contracts reject unknown/nested arbitrary fields. Public serialization exposes canonical account IDs and safe actor snapshots rather than internal Frappe User/email identifiers.
 
-Push tokens are sensitive provider identifiers. They are stored server-side, never returned by ordinary serializers, and diagnostics use SHA-256 hashes or short fingerprints. Persisted delivery request diagnostics omit raw tokens, notification title/body, arbitrary data payloads, callback URLs, and credentials. Provider acceptance IDs are hashed by the companion before callback.
+Firebase registration tokens and FIDs are sensitive provider identifiers. They are stored server-side, never returned by ordinary serializers, and diagnostics use SHA-256 hashes or short fingerprints. Persisted delivery request diagnostics omit raw tokens, notification title/body, arbitrary data payloads, callback URLs, and credentials. Provider acceptance IDs are hashed by the companion before callback.
 
 Before external dispatch, Frappe re-checks the recipient's account state. Actor-scoped events also re-check actor availability and the canonical Social block relationship. A privacy-policy lookup that cannot be resolved safely suppresses delivery rather than risking disclosure.
 
@@ -111,9 +122,9 @@ Signed callbacks accept only modeled terminal statuses/counts/token hashes. Call
 
 ## Device ownership
 
-Authenticated token registration validates platform, token length/structure, and modeled device ID. A provider token has one canonical owner. Token rotation reuses the existing canonical row. When a different signed-in account claims the same modeled device, older active registrations for that device are deactivated. Database uniqueness remains the final concurrency arbiter.
+Authenticated Firebase registration validates platform, opaque identifier length/structure, registration kind, and modeled device ID. A provider registration has one canonical owner. Identifier rotation reuses the existing canonical row. When a different signed-in account claims the same modeled device, older active registrations for that device are deactivated. Database uniqueness remains the final concurrency arbiter.
 
-Invalid/unregistered FCM token hashes returned by the worker deactivate matching Frappe registrations. Account deactivation disables token rows and cancels pending Notification jobs/outbox work. Account deletion removes token rows and cancels all pending Notification jobs/outbox work in bounded batches.
+Invalid/unregistered Firebase target hashes returned by the worker deactivate matching Frappe registrations, whether the target is a legacy registration token or a FID. Account deactivation disables token rows and cancels pending Notification jobs/outbox work. Account deletion removes token rows and cancels all pending Notification jobs/outbox work in bounded batches.
 
 ## Firebase Web Messaging bootstrap
 
@@ -134,7 +145,7 @@ NOTIFICATION_FIREBASE_WEB_VAPID_PUBLIC_KEY=...
 
 Only API key, project/sender/app identifiers, optional public Firebase fields, and the VAPID **public** key are returned. Firebase Admin service-account credentials and private keys remain secret-mounted server configuration. Restrict the Firebase Web API key to the intended browser origins/APIs in Google Cloud/Firebase configuration.
 
-The browser frontend remains responsible for permission UX, Firebase service-worker registration, `getToken`/rotation, and calling AOS's authenticated token registration/deactivation endpoints.
+The browser frontend remains responsible for permission UX, Firebase service-worker registration, and registration lifecycle. New web code should use Firebase `register()`/`onRegistered()` and upload the resulting FID with `registration_kind=fid`; legacy `getToken()` clients remain supported during migration. The frontend calls AOS's existing authenticated registration/deactivation endpoints in either case.
 
 ## Services
 

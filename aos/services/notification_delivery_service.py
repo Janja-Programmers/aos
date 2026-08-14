@@ -25,6 +25,7 @@ from aos.services.notifications.devices import (
 	get_token_hash,
 	normalize_device_type,
 	normalize_push_token,
+	normalize_registration_kind,
 )
 from aos.services.notifications.observability import notification_log
 from aos.services.notifications.policy import (
@@ -155,7 +156,7 @@ def _get_active_push_tokens(user: str) -> list[dict[str, str]]:
 	rows = frappe.get_all(
 		"AOS Push Token",
 		filters={"user": user, "is_active": 1},
-		fields=["token", "token_hash", "device_type"],
+		fields=["token", "token_hash", "device_type", "registration_kind"],
 		order_by="last_used_at desc, modified desc, name desc",
 		limit_page_length=MAX_DELIVERY_TOKENS + 1,
 	)
@@ -173,6 +174,7 @@ def _get_active_push_tokens(user: str) -> list[dict[str, str]]:
 		try:
 			token = normalize_push_token(row.get("token"))
 			device_type = normalize_device_type(row.get("device_type"))
+			registration_kind = normalize_registration_kind(row.get("registration_kind"))
 		except PushDeviceValidationError:
 			notification_log(
 				"notification.device_registration_skipped",
@@ -194,6 +196,7 @@ def _get_active_push_tokens(user: str) -> list[dict[str, str]]:
 			"token": token,
 			"token_hash": token_hash,
 			"device_type": device_type,
+			"registration_kind": registration_kind,
 		}
 
 	return list(deduped.values())
@@ -213,6 +216,7 @@ def _sanitize_payload(payload: dict[str, Any]) -> dict[str, Any]:
 			{
 				"token_hash": _clean(token.get("token_hash"))[:64],
 				"device_type": _clean(token.get("device_type"))[:20],
+				"registration_kind": _clean(token.get("registration_kind"))[:10],
 			}
 			for token in tokens[:5000]
 			if isinstance(token, dict) and _clean(token.get("token_hash"))
@@ -414,10 +418,14 @@ def _sanitize_callback_payload(payload: dict[str, Any]) -> dict[str, Any]:
 			device_type = _clean(error.get("device_type")).lower()
 			if device_type not in {"android", "ios", "web"}:
 				device_type = ""
+			registration_kind = _clean(error.get("registration_kind") or "token").lower()
+			if registration_kind not in {"token", "fid"}:
+				registration_kind = ""
 			clean_errors.append(
 				{
 					"token_hash": token_hash or None,
 					"device_type": device_type or None,
+					"registration_kind": registration_kind or None,
 					"inactive": bool(error.get("inactive")),
 					"error_class": _safe_callback_reason(error.get("error_class")),
 					"code": _safe_callback_reason(error.get("code")),
@@ -438,6 +446,11 @@ def _sanitize_callback_payload(payload: dict[str, Any]) -> dict[str, Any]:
 			{
 				"chunk_index": _safe_callback_int(response.get("chunk_index"), maximum=100000),
 				"delivery_mode": _safe_callback_reason(response.get("delivery_mode")),
+				"registration_kind": (
+					_clean(response.get("registration_kind")).lower()
+					if _clean(response.get("registration_kind")).lower() in {"token", "fid"}
+					else None
+				),
 				"success_count": _safe_callback_int(response.get("success_count")),
 				"failure_count": _safe_callback_int(response.get("failure_count")),
 				"provider_acceptance_ids": acceptance_ids,

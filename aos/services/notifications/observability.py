@@ -18,6 +18,7 @@ def notification_log(event: str, **fields: Any) -> None:
         "notification_type",
         "delivery_kind",
         "platform",
+        "registration_kind",
         "attempt",
         "outcome",
         "reason",

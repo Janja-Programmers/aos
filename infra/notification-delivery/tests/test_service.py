@@ -193,6 +193,22 @@ def test_signature_and_request_validation(monkeypatch):
 	assert isinstance(response.json()["data"]["fields"], list)
 
 
+def test_job_contract_accepts_fid_and_defaults_legacy_rows_to_token():
+	legacy = main.PushToken(
+		token="legacy-registration-token-abcdefghijklmnopqrstuvwxyz",
+		token_hash="a" * 64,
+		device_type="android",
+	)
+	assert legacy.registration_kind == "token"
+	fid = main.PushToken(
+		token="firebase-installation-id",
+		token_hash="b" * 64,
+		device_type="web",
+		registration_kind="fid",
+	)
+	assert fid.registration_kind == "fid"
+
+
 def test_job_contract_bounds_per_recipient_device_fanout(monkeypatch):
 	monkeypatch.setattr(main, "get_settings", lambda: settings())
 	client = TestClient(main.app)

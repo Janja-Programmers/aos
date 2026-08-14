@@ -176,6 +176,13 @@ def _is_transient_incoming_call(payload: dict[str, Any]) -> bool:
 	)
 
 
+def _registration_kind(registration: dict[str, Any]) -> str:
+	kind = str(registration.get("registration_kind") or "token").strip().lower()
+	if kind not in {"token", "fid"}:
+		raise ValueError("Invalid Firebase registration kind")
+	return kind
+
+
 def _is_android_token(token: dict[str, Any]) -> bool:
 	return str(token.get("device_type") or "").strip().lower() == "android"
 
@@ -347,19 +354,30 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
 	# backgrounded/terminated, preventing the mobile background handler from
 	# presenting native CallKit/ConnectionService UI. iOS/web retain the existing
 	# alert+data contract because this service does not model APNs PushKit tokens.
-	groups: list[tuple[str, list[dict[str, Any]], bool]] = []
+	#
+	# Firebase Admin 7.5+ supports both legacy registration tokens and Firebase
+	# Installation IDs (FIDs). Keep each provider request target-homogeneous so
+	# response ordering maps exactly back to the registration metadata.
+	groups: list[tuple[str, str, list[dict[str, Any]], bool]] = []
+
+	def add_target_groups(delivery_mode: str, registrations: list[dict[str, Any]], data_only: bool) -> None:
+		for registration_kind in ("token", "fid"):
+			selected = [row for row in registrations if _registration_kind(row) == registration_kind]
+			if selected:
+				groups.append((delivery_mode, registration_kind, selected, data_only))
+
 	if is_native_incoming:
 		android_tokens = [row for row in tokens if _is_android_token(row)]
 		other_tokens = [row for row in tokens if not _is_android_token(row)]
 		if android_tokens:
-			groups.append(("android_data_only", android_tokens, True))
+			add_target_groups("android_data_only", android_tokens, True)
 		if other_tokens:
-			groups.append(("alert_and_data", other_tokens, False))
+			add_target_groups("alert_and_data", other_tokens, False)
 	else:
-		groups.append(("alert_and_data", tokens, False))
+		add_target_groups("alert_and_data", tokens, False)
 
 	chunk_index = 0
-	for delivery_mode, group_tokens, data_only in groups:
+	for delivery_mode, registration_kind, group_tokens, data_only in groups:
 		android_config = _build_android_config(
 			options,
 			collapse_key=_incoming_call_collapse_key(data_payload) if data_only else None,
@@ -368,9 +386,12 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
 		apns_config = _build_apns_config(options)
 		webpush_config = _build_webpush_config(options)
 		for chunk in _chunk(group_tokens, max(1, min(settings.max_tokens_per_multicast, 500))):
-			token_values = [row["token"] for row in chunk if row.get("token")]
-			if not token_values:
+			target_values = [row["token"] for row in chunk if row.get("token")]
+			if not target_values:
 				continue
+			target_kwargs = (
+				{"fids": target_values} if registration_kind == "fid" else {"tokens": target_values}
+			)
 
 			message = messaging.MulticastMessage(
 				notification=(
@@ -382,7 +403,7 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
 					)
 				),
 				data=data_payload,
-				tokens=token_values,
+				**target_kwargs,
 				android=android_config,
 				apns=apns_config,
 				webpush=webpush_config,
@@ -433,6 +454,7 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
 					{
 						"token_hash": token_hash,
 						"device_type": str(token_meta.get("device_type") or ""),
+						"registration_kind": registration_kind,
 						"inactive": inactive,
 						**error_detail,
 					}
@@ -442,6 +464,7 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
 				{
 					"chunk_index": chunk_index,
 					"delivery_mode": delivery_mode,
+					"registration_kind": registration_kind,
 					"success_count": response.success_count,
 					"failure_count": response.failure_count,
 					"provider_acceptance_ids": provider_acceptance_ids[:500],

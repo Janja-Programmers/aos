@@ -116,6 +116,8 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         source = _source("aos/api/notifications/token.py")
         self.assertIn("get_token_hash", source)
         self.assertIn("token_fingerprint", source)
+        self.assertIn("registration_kind", source)
+        self.assertIn("normalize_registration_kind", source)
         self.assertIn("_deactivate_other_tokens_for_device", source)
         self.assertIn("owner != current_user", source)
         self.assertNotIn('"token": token', source.split("return ok(", 1)[1])
@@ -129,6 +131,7 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         worker = _source("infra/notification-delivery/app/worker.py")
         self.assertIn('extra="forbid"', main)
         self.assertIn('Literal["android", "ios", "web"]', main)
+        self.assertIn('Literal["token", "fid"]', main)
         self.assertIn('Literal["persistent", "transient"]', main)
         self.assertIn('event != "aos_incoming_call"', main)
         self.assertIn("RetryableWorkError", worker)
@@ -138,6 +141,8 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         self.assertIn("FCM notification envelope is too large", worker)
         self.assertIn("_build_apns_config", worker)
         self.assertIn("_build_webpush_config", worker)
+        self.assertIn('{"fids": target_values}', worker)
+        self.assertIn('{"tokens": target_values}', worker)
         self.assertIn("callback_http_timeout_seconds", worker)
         self.assertIn('options={"httpTimeout": settings.provider_timeout_seconds}', worker)
         companion_config = _source("infra/notification-delivery/app/config.py")
@@ -199,14 +204,21 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
     def test_notification_migrations_are_registered_data_before_schema(self):
         patches = _source("aos/patches.txt")
         data_name = "aos.patches.v1_0.harden_notification_subsystem"
+        registration_name = "aos.patches.v1_0.backfill_push_registration_kind"
         index_name = "aos.patches.v1_0.install_notification_indexes"
         self.assertIn(data_name, patches)
+        self.assertIn(registration_name, patches)
         self.assertIn(index_name, patches)
-        self.assertLess(patches.index(data_name), patches.index(index_name))
+        self.assertLess(patches.index(data_name), patches.index(registration_name))
+        self.assertLess(patches.index(registration_name), patches.index(index_name))
         data_patch = _source("aos/patches/v1_0/harden_notification_subsystem.py")
+        registration_patch = _source("aos/patches/v1_0/backfill_push_registration_kind.py")
         index_patch = _source("aos/patches/v1_0/install_notification_indexes.py")
         self.assertNotIn("frappe.reload_doc", data_patch)
         self.assertNotIn("frappe.db.commit", data_patch)
+        self.assertNotIn("frappe.db.commit", registration_patch)
+        self.assertIn("registration_kind = 'token'", registration_patch)
+        self.assertIn("registration_kind NOT IN ('token', 'fid')", registration_patch)
         self.assertNotIn("frappe.db.commit", index_patch)
         token_normalizer = data_patch.split("def _normalize_push_tokens", 1)[1].split("def _cancel_undeliverable_jobs", 1)[0]
         self.assertIn("if not names:\n            break", token_normalizer)

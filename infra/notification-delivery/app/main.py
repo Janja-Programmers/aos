@@ -28,6 +28,7 @@ class PushToken(_StrictModel):
 	token: str = Field(min_length=20, max_length=4096)
 	token_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 	device_type: Literal["android", "ios", "web"]
+	registration_kind: Literal["token", "fid"] = "token"
 
 	@field_validator("token")
 	@classmethod

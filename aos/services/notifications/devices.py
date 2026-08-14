@@ -12,6 +12,7 @@ class PushDeviceValidationError(ValueError):
 
 
 VALID_DEVICE_TYPES = frozenset({"android", "ios", "web"})
+VALID_REGISTRATION_KINDS = frozenset({"token", "fid"})
 MIN_PUSH_TOKEN_LENGTH = 20
 MAX_PUSH_TOKEN_LENGTH = 4096
 MAX_DEVICE_ID_LENGTH = 180
@@ -28,6 +29,19 @@ def normalize_push_token(value: Any) -> str:
     if _TOKEN_CONTROL_CHARS.search(token) or any(ch.isspace() for ch in token):
         raise PushDeviceValidationError("Invalid token format.")
     return token
+
+
+def normalize_registration_kind(value: Any) -> str:
+    """Normalize the Firebase target identity kind.
+
+    Legacy AOS clients upload FCM registration tokens and do not send this
+    field, so an omitted value intentionally defaults to ``token``. Newer
+    clients may explicitly register a Firebase Installation ID (FID).
+    """
+    registration_kind = str(value or "token").strip().lower()
+    if registration_kind not in VALID_REGISTRATION_KINDS:
+        raise PushDeviceValidationError("Invalid registration_kind.")
+    return registration_kind
 
 
 def normalize_device_type(value: Any) -> str:

@@ -8,7 +8,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import getdate, now_datetime
 
-from aos.patches.v1_0 import add_seller_location_indexes
+from aos.patches.v1_0 import add_seller_location_indexes, backfill_push_registration_kind
 from aos.patches.v1_0.add_unique_constraints import (
     UNIQUE_CONSTRAINTS,
     execute as apply_unique_constraints,
@@ -65,7 +65,7 @@ class TestMigrationUpgradeSafety(FrappeTestCase, AOSFeatureTestMixin):
             "AOS User Block": ["active_pair_key"],
             "AOS Live Stream View": ["active_identity_key"],
             "AOS Short View": ["identity_key"],
-            "AOS Push Token": ["token_hash", "active_device_key"],
+            "AOS Push Token": ["token_hash", "active_device_key", "registration_kind"],
         }
 
         for doctype, fields in required_fields.items():
@@ -228,6 +228,34 @@ class TestMigrationUpgradeSafety(FrappeTestCase, AOSFeatureTestMixin):
         self.assertTrue(active_rows[0].token_hash)
         self.assertEqual(active_rows[0].active_device_key, f"{user}|{device_id}")
         self.assertFalse(inactive_rows[0].active_device_key)
+
+    def test_push_registration_kind_backfill_is_idempotent_and_fail_closed(self):
+        user = self.make_user("push-kind")
+        device_id = f"{self.prefix}-kind-device"
+        self._insert_legacy_push_token("kind", user, device_id, token="legacy")
+        name = f"{self.prefix}-kind-push-token"
+
+        frappe.db.set_value(
+            "AOS Push Token", name, "registration_kind", "", update_modified=False
+        )
+        backfill_push_registration_kind.execute()
+        backfill_push_registration_kind.execute()
+        self.assertEqual(frappe.db.get_value("AOS Push Token", name, "registration_kind"), "token")
+        self.assertEqual(int(frappe.db.get_value("AOS Push Token", name, "is_active") or 0), 1)
+
+        frappe.db.set_value(
+            "AOS Push Token",
+            name,
+            {
+                "registration_kind": "corrupt",
+                "is_active": 1,
+                "active_device_key": f"{user}|{device_id}",
+            },
+            update_modified=False,
+        )
+        backfill_push_registration_kind.execute()
+        self.assertEqual(int(frappe.db.get_value("AOS Push Token", name, "is_active") or 0), 0)
+        self.assertFalse(frappe.db.get_value("AOS Push Token", name, "active_device_key"))
 
     # RAW LEGACY FIXTURES
 

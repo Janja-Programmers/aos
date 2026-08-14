@@ -14,8 +14,8 @@ The stable public methods are under `aos.api.v1.notifications`:
 | `mark_all_notifications_read` | POST | Mark all notifications that already exist for the authenticated account read. Notifications committed after the update remain unread. |
 | `delete_notification` | POST | Delete one owned inbox notification. |
 | `clear_notifications` | POST | Clear owned inbox notifications, optionally by canonical category. |
-| `register_push_token` | POST | Register/rotate the authenticated account's Android/iOS/web FCM registration token. |
-| `deactivate_push_token` | POST | Deactivate an owned provider token without revealing another account's registration. |
+| `register_push_token` | POST | Register/rotate the authenticated account's Android/iOS/web Firebase target. Existing clients omit `registration_kind` and remain legacy `token`; new clients may send `registration_kind=fid`. |
+| `deactivate_push_token` | POST | Deactivate an owned Firebase target. `registration_kind` defaults to legacy `token` and may be `fid`. |
 
 All endpoints require authentication, reject unknown business fields, set private/no-store response headers, and use the existing AOS rate-limit service. Public account identity is serialized as canonical account IDs rather than internal Frappe User/email values.
 
@@ -58,9 +58,20 @@ Clients must tolerate duplicate/out-of-order transport events and reconcile the 
 - measurement ID when configured;
 - VAPID public key.
 
-It never returns Firebase Admin service-account JSON, private keys, callback/service secrets, provider tokens, or any server credential. Configuration remains server-owned so web clients do not hard-code an independent environment contract.
+It never returns Firebase Admin service-account JSON, private keys, callback/service secrets, provider registration identifiers, or any server credential. Configuration remains server-owned so web clients do not hard-code an independent environment contract.
 
-The frontend still owns browser permission UX, Firebase Messaging initialization, service-worker registration, token rotation, and calling the existing authenticated push-token APIs. Backend configuration alone does not grant browser notification permission.
+The frontend still owns browser permission UX, Firebase Messaging initialization, service-worker registration, Firebase registration/FID rotation, and calling the existing authenticated push-token APIs. Backend configuration alone does not grant browser notification permission.
+
+### Firebase registration identity compatibility
+
+`register_push_token` and `deactivate_push_token` keep their historical endpoint names and `token` argument for mobile/web compatibility. The opaque value in `token` is interpreted by the additional `registration_kind` field:
+
+- omitted or `token` — legacy FCM registration token;
+- `fid` — Firebase Installation ID (FID).
+
+Existing Android/iOS/mobile clients therefore require no change. New Firebase Web Messaging clients should upload the FID in the existing `token` argument together with `registration_kind=fid`. AOS stores `registration_kind` on the private `AOS Push Token` row and forwards it to the delivery companion. The companion sends legacy identifiers using Firebase Admin `tokens=` and FIDs using `fids=`. A single recipient is still capped at 500 active registrations total, regardless of kind.
+
+AOS pins `firebase-admin==7.5.0`, the first Python Admin release used by this repository that supports `fid`/`fids`. Raw registration identifiers of either kind remain private and are never returned by notification/profile serializers or written to logs.
 
 ## Canonical categories and types
 
@@ -95,7 +106,7 @@ The lifecycle is intentionally separated:
 4. A recipient-scoped Notification Center realtime event is registered for **after commit**. It is a foreground hint only.
 5. The transactional outbox dispatches only committed work to the private notification-delivery companion service.
 6. The companion worker sends through Firebase Cloud Messaging (FCM) and signs a callback to Frappe.
-7. Frappe records the bounded delivery result and deactivates provider tokens reported invalid/unregistered.
+7. Frappe records the bounded delivery result and deactivates Firebase registrations reported invalid/unregistered.
 
 A realtime/provider/notification failure is isolated from an already-valid business operation. Notification code uses local savepoints where isolation is required and does not issue a broad rollback or own the producer's commit.
 
@@ -121,7 +132,7 @@ One recipient delivery is bounded to the 500 most recently used active registrat
 
 ## Device registration and privacy
 
-`AOS Push Token` stores Android, iOS, and web FCM registration tokens. Tokens are private provider identifiers and are never returned by normal account/profile/notification serializers or logged in full.
+`AOS Push Token` stores Android, iOS, and web Firebase target identifiers. Historical rows are `registration_kind=token`; newer clients may store `registration_kind=fid`. Both are private provider identifiers and are never returned by normal account/profile/notification serializers or logged in full.
 
 Registration enforces authenticated ownership, canonical platform values, bounded token/device-ID validation, SHA-256 token hashes for lookup/diagnostics, canonical token ownership, modeled device takeover/rotation semantics, and database uniqueness as the final concurrency arbiter.
 

@@ -19,6 +19,7 @@ from aos.services.notifications.devices import (
     normalize_device_id,
     normalize_device_type,
     normalize_push_token,
+    normalize_registration_kind,
     token_fingerprint,
 )
 from aos.services.notifications.observability import notification_log
@@ -50,6 +51,7 @@ def _update_push_token(
     token_hash: str,
     device_type: str,
     device_id: str,
+    registration_kind: str,
 ):
     frappe.db.set_value(
         "AOS Push Token",
@@ -60,6 +62,7 @@ def _update_push_token(
             "token_hash": token_hash,
             "device_type": device_type,
             "device_id": device_id,
+            "registration_kind": registration_kind,
             "is_active": 1,
             "active_device_key": _active_device_key(user=user, device_id=device_id),
             "last_used_at": now_datetime(),
@@ -137,7 +140,9 @@ def _deactivate_other_tokens_for_device(*, device_id: str, keep_name: str):
     )
 
 
-def _register_once(*, user: str, token: str, device_type: str, device_id: str):
+def _register_once(
+    *, user: str, token: str, device_type: str, device_id: str, registration_kind: str
+):
     token_hash = get_token_hash(token)
     existing_token = _find_existing_token(token=token, token_hash=token_hash)
     if existing_token:
@@ -152,6 +157,7 @@ def _register_once(*, user: str, token: str, device_type: str, device_id: str):
             token_hash=token_hash,
             device_type=device_type,
             device_id=device_id,
+            registration_kind=registration_kind,
         )
         return existing_token, "updated"
 
@@ -164,6 +170,7 @@ def _register_once(*, user: str, token: str, device_type: str, device_id: str):
             token_hash=token_hash,
             device_type=device_type,
             device_id=device_id,
+            registration_kind=registration_kind,
         )
         _deactivate_other_tokens_for_device(device_id=device_id, keep_name=existing_device)
         return existing_device, "updated"
@@ -176,6 +183,7 @@ def _register_once(*, user: str, token: str, device_type: str, device_id: str):
             "token_hash": token_hash,
             "device_type": device_type,
             "device_id": device_id,
+            "registration_kind": registration_kind,
             "is_active": 1,
             "active_device_key": _active_device_key(user=user, device_id=device_id),
             "last_used_at": now_datetime(),
@@ -200,10 +208,13 @@ def register_push_token_impl(**kwargs):
     if rl:
         return rl
     try:
-        reject_unknown_fields(kwargs, allowed={"token", "device_type", "device_id"})
+        reject_unknown_fields(
+            kwargs, allowed={"token", "device_type", "device_id", "registration_kind"}
+        )
         token = normalize_push_token(kwargs.get("token"))
         device_type = normalize_device_type(kwargs.get("device_type"))
         device_id = normalize_device_id(kwargs.get("device_id"))
+        registration_kind = normalize_registration_kind(kwargs.get("registration_kind"))
     except (NotificationInputError, PushDeviceValidationError):
         return fail("Invalid push token registration request.", error="VALIDATION_ERROR")
 
@@ -215,6 +226,7 @@ def register_push_token_impl(**kwargs):
             token=token,
             device_type=device_type,
             device_id=device_id,
+            registration_kind=registration_kind,
         )
     except Exception as exc:
         if not is_duplicate_entry_error(exc):
@@ -224,6 +236,7 @@ def register_push_token_impl(**kwargs):
                 "notification.device_registration_failed",
                 account_id=public_account_id_for_user(current_user),
                 platform=device_type,
+                registration_kind=registration_kind,
                 outcome="failed",
                 reason=exc.__class__.__name__,
                 token_fingerprint=token_fingerprint(token=token),
@@ -241,6 +254,7 @@ def register_push_token_impl(**kwargs):
                 token=token,
                 device_type=device_type,
                 device_id=device_id,
+                registration_kind=registration_kind,
             )
         except Exception:
             _rollback_savepoint(recovery)
@@ -251,6 +265,7 @@ def register_push_token_impl(**kwargs):
         "notification.device_registered",
         account_id=public_account_id_for_user(current_user),
         platform=device_type,
+        registration_kind=registration_kind,
         outcome=action,
         token_fingerprint=token_fingerprint(token=token),
     )
@@ -274,8 +289,9 @@ def deactivate_push_token_impl(**kwargs):
     if rl:
         return rl
     try:
-        reject_unknown_fields(kwargs, allowed={"token"})
+        reject_unknown_fields(kwargs, allowed={"token", "registration_kind"})
         token = normalize_push_token(kwargs.get("token"))
+        registration_kind = normalize_registration_kind(kwargs.get("registration_kind"))
     except (NotificationInputError, PushDeviceValidationError):
         return fail("Invalid push token deactivation request.", error="VALIDATION_ERROR")
 
@@ -286,8 +302,12 @@ def deactivate_push_token_impl(**kwargs):
         existing = _find_existing_token(token=token, token_hash=token_hash)
         if not existing:
             return ok("Token not found or already inactive.")
-        owner = frappe.db.get_value("AOS Push Token", existing, "user")
-        if owner != current_user:
+        row = frappe.db.get_value(
+            "AOS Push Token", existing, ["user", "registration_kind"], as_dict=True
+        )
+        owner = row.user if row else None
+        stored_kind = normalize_registration_kind(row.registration_kind if row else None)
+        if owner != current_user or stored_kind != registration_kind:
             # Do not reveal whether a provider token belongs to another account.
             return ok("Token not found or already inactive.")
         frappe.db.set_value(
@@ -309,6 +329,7 @@ def deactivate_push_token_impl(**kwargs):
             outcome="failed",
             reason=exc.__class__.__name__,
             token_fingerprint=token_fingerprint(token_hash=token_hash),
+            registration_kind=registration_kind,
         )
         return fail("Failed to deactivate push token.", error="INTERNAL_ERROR")
 
@@ -317,6 +338,7 @@ def deactivate_push_token_impl(**kwargs):
         account_id=public_account_id_for_user(current_user),
         outcome="deactivated",
         token_fingerprint=token_fingerprint(token_hash=token_hash),
+        registration_kind=registration_kind,
     )
     return ok("Push token deactivated.")
 
