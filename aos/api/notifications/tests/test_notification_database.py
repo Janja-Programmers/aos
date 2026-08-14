@@ -138,8 +138,7 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(int(frappe.db.get_value("AOS Notification", second.name, "is_read") or 0), 1)
 
     def test_notification_center_realtime_creation_is_post_commit_recipient_scoped_and_public_safe(self):
-        manager = frappe.db.after_commit
-        with patch.object(manager, "add") as add_callback:
+        with patch("aos.services.notifications.realtime._after_commit") as after_commit:
             with patch("aos.services.notification_service.NotificationService._deliver"):
                 notification = NotificationService.notify_follow(
                     user=self.owner,
@@ -147,8 +146,8 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
                     dedupe_key=f"{self.prefix}:realtime-created",
                 )
         self.assertTrue(notification)
-        add_callback.assert_called_once()
-        callback = add_callback.call_args.args[0]
+        after_commit.assert_called_once()
+        callback = after_commit.call_args.args[0]
 
         with patch("aos.services.notifications.realtime.frappe.publish_realtime") as publish:
             callback()
@@ -165,8 +164,7 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertNotIn(self.actor, repr(message))
 
     def test_realtime_creation_rechecks_social_block_before_foreground_delivery(self):
-        manager = frappe.db.after_commit
-        with patch.object(manager, "add") as add_callback:
+        with patch("aos.services.notifications.realtime._after_commit") as after_commit:
             with patch("aos.services.notification_service.NotificationService._deliver"):
                 notification = NotificationService.notify_follow(
                     user=self.owner,
@@ -174,7 +172,8 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
                     dedupe_key=f"{self.prefix}:realtime-block-recheck",
                 )
         self.assertTrue(notification)
-        callback = add_callback.call_args.args[0]
+        after_commit.assert_called_once()
+        callback = after_commit.call_args.args[0]
 
         frappe.set_user(self.owner)
         with patch("aos.api.social.block.rate_limit", return_value=None):
