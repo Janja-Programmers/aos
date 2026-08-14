@@ -47,7 +47,11 @@ class AOSNotificationDeliveryJob(Document):
             frappe.throw("Invalid notification delivery title.")
         if not self.body or len(self.body) > 500:
             frappe.throw("Invalid notification delivery body.")
-        if not self.idempotency_key or len(self.idempotency_key) > 200:
+        # Legacy durable jobs may predate transactional-outbox idempotency.
+        # New Notification jobs always receive a stable key in the service layer,
+        # while the outbox backfill intentionally needs to save then reconcile
+        # historical rows with a missing key. Reject only oversized supplied keys.
+        if self.idempotency_key and len(self.idempotency_key) > 200:
             frappe.throw("Invalid notification delivery idempotency key.")
         if (self.priority or "") not in VALID_PRIORITIES:
             frappe.throw("Invalid notification delivery priority.")

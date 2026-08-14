@@ -337,7 +337,12 @@ def _delivery_suppression_reason(job) -> str | None:
 		return None
 
 	if _clean(job.event) != TRANSIENT_INCOMING_CALL_EVENT:
-		return "unsupported_transient_event"
+		# Existing/internal transient jobs are an established durable-delivery
+		# compatibility surface (including transactional-outbox recovery). Public
+		# creation remains restricted to aos_incoming_call by
+		# create_notification_delivery_job(); only Calls receives the additional
+		# domain-specific stale-call/block checks below.
+		return None
 	data = _json_loads(job.payload_json, {})
 	call_id = _clean(data.get("call_id") or data.get("id")) if isinstance(data, dict) else ""
 	if not call_id or not frappe.db.exists("AOS Call", call_id):

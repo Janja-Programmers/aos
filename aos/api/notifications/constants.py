@@ -7,6 +7,7 @@ from aos.services.notifications.contracts import (
     CATEGORY_COMMUNICATION,
     CATEGORY_MARKETPLACE,
     CATEGORY_TYPES,
+    NOTIFICATION_TYPES,
     VALID_CATEGORIES,
 )
 
@@ -18,6 +19,34 @@ NOTIFICATION_CATEGORY_MARKETPLACE = CATEGORY_MARKETPLACE
 NOTIFICATION_CATEGORY_ACCOUNT = CATEGORY_ACCOUNT
 NOTIFICATION_CATEGORY_TYPES = CATEGORY_TYPES
 VALID_NOTIFICATION_CATEGORIES = VALID_CATEGORIES
+
+# Source-visible compatibility inventory. Runtime category ownership remains in
+# aos.services.notifications.contracts; this set exists so established static
+# compatibility audits can detect category removal/renaming without importing
+# Frappe application code. The equality check makes drift fail closed.
+_STATIC_COMPAT_NOTIFICATION_TYPES = frozenset(
+    {
+        "message",
+        "missed_call",
+        "follow",
+        "new_short",
+        "short_like",
+        "short_comment",
+        "short_mention",
+        "comment_reply",
+        "live_started",
+        "ad_approved",
+        "ad_rejected",
+        "ad_expired",
+        "review_received",
+        "review_approved",
+        "review_rejected",
+        "verification_approved",
+        "verification_rejected",
+    }
+)
+if _STATIC_COMPAT_NOTIFICATION_TYPES != NOTIFICATION_TYPES:
+    raise RuntimeError("Notification compatibility inventory is out of sync with canonical contracts.")
 
 # Pagination
 NOTIFICATION_DEFAULT_LIMIT = 20

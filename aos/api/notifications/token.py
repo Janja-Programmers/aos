@@ -204,8 +204,8 @@ def register_push_token_impl(**kwargs):
         token = normalize_push_token(kwargs.get("token"))
         device_type = normalize_device_type(kwargs.get("device_type"))
         device_id = normalize_device_id(kwargs.get("device_id"))
-    except (NotificationInputError, PushDeviceValidationError) as exc:
-        return fail(str(exc), error="VALIDATION_ERROR")
+    except (NotificationInputError, PushDeviceValidationError):
+        return fail("Invalid push token registration request.", error="VALIDATION_ERROR")
 
     savepoint = f"aos_push_register_{uuid.uuid4().hex[:10]}"
     frappe.db.savepoint(savepoint)
@@ -276,8 +276,8 @@ def deactivate_push_token_impl(**kwargs):
     try:
         reject_unknown_fields(kwargs, allowed={"token"})
         token = normalize_push_token(kwargs.get("token"))
-    except (NotificationInputError, PushDeviceValidationError) as exc:
-        return fail(str(exc), error="VALIDATION_ERROR")
+    except (NotificationInputError, PushDeviceValidationError):
+        return fail("Invalid push token deactivation request.", error="VALIDATION_ERROR")
 
     token_hash = get_token_hash(token)
     savepoint = f"aos_push_deactivate_{uuid.uuid4().hex[:10]}"
