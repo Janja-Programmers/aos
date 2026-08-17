@@ -10,6 +10,7 @@ from aos.patches.v1_0 import (
     harden_shorts_subsystem,
     initialize_short_classification_metadata,
     install_shorts_indexes,
+    restore_short_processing_active_index,
 )
 
 
@@ -59,6 +60,18 @@ class TestShortsDatabaseContracts(FrappeTestCase):
         self.assertEqual(forbidden_calls, [])
         self.assertNotIn("_install_indexes()", Path(harden_shorts_subsystem.__file__).read_text())
 
+
+    def test_processing_active_index_repair_patch_is_registered_after_original_index_patch(self):
+        patches = Path(frappe.get_app_path("aos", "patches.txt")).read_text(encoding="utf-8")
+        original = "aos.patches.v1_0.install_shorts_indexes"
+        repair = "aos.patches.v1_0.restore_short_processing_active_index"
+        self.assertIn(original, patches)
+        self.assertIn(repair, patches)
+        self.assertLess(patches.index(original), patches.index(repair))
+
+        source = Path(restore_short_processing_active_index.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("frappe.db.commit", source)
+        self.assertNotIn("frappe.db.rollback", source)
 
     def test_classification_metadata_patch_is_idempotent_and_registered_last(self):
         initialize_short_classification_metadata.execute()

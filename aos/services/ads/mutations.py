@@ -98,5 +98,47 @@ def apply_transition(doc: object, transition: Transition) -> None:
         doc.sold_on = now
 
 
+def expire_ad_locked(doc: object) -> None:
+    """Persist an expiry-only transition for an already locked Active ad.
+
+    Expiration is a trusted scheduler-owned lifecycle mutation.  It must not
+    re-run mutable-content, seller-market, Catalog, or Media validation because
+    those rules may legitimately have changed since the ad was published.
+
+    The caller must hold the AOS Ad row lock and must have validated the
+    Active -> Expired transition before calling this helper.
+    """
+    now = now_datetime()
+    values: dict[str, Any] = {
+        "status": STATUS_EXPIRED,
+        "modified": now,
+        "modified_by": str(getattr(frappe.session, "user", "") or "Administrator"),
+    }
+    if doc.meta.has_field("status_changed_on"):
+        values["status_changed_on"] = now
+    if doc.meta.has_field("expired_on"):
+        values["expired_on"] = now
+
+    frappe.db.set_value("AOS Ad", doc.name, values, update_modified=False)
+
+    seller = str(getattr(doc, "seller", "") or "").strip()
+    if seller:
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Seller`
+            SET total_ads = GREATEST(COALESCE(total_ads, 0) - 1, 0)
+            WHERE name = %s
+            """,
+            (seller,),
+        )
+
+    # Keep the in-memory document coherent for downstream notifications/indexing.
+    doc.status = STATUS_EXPIRED
+    if doc.meta.has_field("status_changed_on"):
+        doc.status_changed_on = now
+    if doc.meta.has_field("expired_on"):
+        doc.expired_on = now
+
+
 def lock_ad(ad_id: str) -> None:
     frappe.db.sql("SELECT name FROM `tabAOS Ad` WHERE name = %s FOR UPDATE", (ad_id,))

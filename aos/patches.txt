@@ -60,3 +60,7 @@ aos.patches.v1_0.harden_notification_subsystem
 aos.patches.v1_0.backfill_push_registration_kind
 aos.patches.v1_0.install_notification_indexes
 
+
+# Hash naming resync can remove the manually-installed Shorts processing
+# uniqueness index on upgraded sites; reassert it after the naming change.
+aos.patches.v1_0.restore_short_processing_active_index

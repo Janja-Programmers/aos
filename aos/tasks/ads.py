@@ -7,7 +7,7 @@ from frappe.utils import getdate, today
 
 from aos.services.ads.indexing import enqueue_discovery_refresh
 from aos.services.ads.lifecycle import validate_status_transition
-from aos.services.ads.mutations import apply_transition, lock_ad
+from aos.services.ads.mutations import expire_ad_locked, lock_ad
 from aos.services.ads.observability import ads_log
 from aos.services.notification_service import NotificationService
 
@@ -36,9 +36,8 @@ def expire_ads() -> None:
             ad = frappe.get_doc("AOS Ad", row.name)
             if ad.status != "Active" or not ad.expires_on or getdate(ad.expires_on) >= getdate(today()):
                 continue
-            transition = validate_status_transition(ad.status, "Expired", action="expire")
-            apply_transition(ad, transition)
-            ad.save(ignore_permissions=True)
+            validate_status_transition(ad.status, "Expired", action="expire")
+            expire_ad_locked(ad)
             seller_user = frappe.db.get_value("AOS Seller", ad.seller, "user")
             if seller_user:
                 NotificationService.notify_ad_expired(user=seller_user, ad_id=ad.name, title=ad.title)
