@@ -433,14 +433,50 @@ def _publisher_owner() -> str:
 	return f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:12]}"
 
 
-def recover_stale_claims(*, now=None, outbox_name: str | None = None) -> int:
+def recover_stale_claims(
+	*, now=None, outbox_name: str | None = None, limit: int = 100
+) -> int:
+	"""Recover expired publisher leases without contending with active workers.
+
+	The previous implementation issued one broad UPDATE across every expired
+	lease. Under production concurrency that UPDATE could deadlock with workers
+	claiming or completing individual outbox rows. Select a bounded batch in
+	deterministic order with ``FOR UPDATE SKIP LOCKED`` first, then mutate only
+	the rows this transaction actually owns. Locked rows are deliberately left
+	for the next recurring publisher run.
+	"""
+
 	current = now or now_datetime()
+	limit = max(1, min(int(limit or 100), 1000))
 	name_filter = " AND name = %s" if outbox_name else ""
-	params: tuple[Any, ...] = (
-		(current, current, _clean(outbox_name, limit=140))
+	select_params: tuple[Any, ...] = (
+		(current, _clean(outbox_name, limit=140), limit)
 		if outbox_name
-		else (current, current)
+		else (current, limit)
 	)
+	rows = frappe.db.sql(
+		f"""
+	    SELECT name
+	    FROM `tab{OUTBOX_DOCTYPE}`
+	    WHERE status IN ('Queued', 'Failed', 'Dispatch Uncertain', 'Reconciliation Pending', 'Claimed', 'Dispatched')
+	      AND lease_expires_at IS NOT NULL
+	      AND lease_expires_at < %s{name_filter}
+	    ORDER BY lease_expires_at ASC, creation ASC, name ASC
+	    LIMIT %s
+	    FOR UPDATE SKIP LOCKED
+	    """,
+		select_params,
+		as_dict=True,
+	)
+	if not rows:
+		return 0
+
+	names = [_clean(row.get("name"), limit=140) for row in rows]
+	names = [name for name in names if name]
+	if not names:
+		return 0
+
+	placeholders = ", ".join(["%s"] * len(names))
 	frappe.db.sql(
 		f"""
 	    UPDATE `tab{OUTBOX_DOCTYPE}`
@@ -449,16 +485,11 @@ def recover_stale_claims(*, now=None, outbox_name: str | None = None) -> int:
 	        claimed_at = NULL, lease_expires_at = NULL, next_attempt_at = %s,
 	        last_error = 'Publisher claim lease expired before completion',
 	        pending_dispatch_reason = 'publisher_lease_expired'
-	    WHERE lease_expires_at IS NOT NULL
-	      AND lease_expires_at < %s{name_filter}
+	    WHERE name IN ({placeholders})
 	    """,
-		params,
+		(current, *names),
 	)
-	# Frappe's sql return value differs by driver; rowcount is available on the cursor.
-	try:
-		return int(frappe.db._cursor.rowcount or 0)
-	except Exception:
-		return 0
+	return len(names)
 
 
 def _companion_status_config(service_type: str) -> tuple[str, str, str]:
@@ -947,7 +978,7 @@ def publish_outbox_records(
 
 	limit = max(1, min(int(limit or 100), 1000))
 	owner = _publisher_owner()
-	recovered = recover_stale_claims(outbox_name=outbox_name)
+	recovered = recover_stale_claims(outbox_name=outbox_name, limit=limit)
 	callback_recovery = recover_overdue_published(limit=limit, outbox_name=outbox_name)
 	frappe.db.commit()
 	claimed = 0

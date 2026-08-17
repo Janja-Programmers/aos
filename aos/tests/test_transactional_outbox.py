@@ -167,6 +167,15 @@ class TestTransactionalOutbox(FrappeTestCase):
 		self.assertIn("lease_expires_at", source)
 		self.assertIn("recover_stale_claims", source)
 
+	def test_stale_claim_recovery_is_bounded_and_skip_locked(self):
+		from aos.services.transactional_outbox import recover_stale_claims
+
+		source = inspect.getsource(recover_stale_claims)
+		self.assertIn("FOR UPDATE SKIP LOCKED", source)
+		self.assertIn("LIMIT %s", source)
+		self.assertIn("WHERE name IN", source)
+		self.assertNotIn("UPDATE `tab{OUTBOX_DOCTYPE}`\n\t    SET", source.split("SELECT name", 1)[0])
+
 	def test_retry_backoff_is_bounded_exponential(self):
 		self.assertEqual(retry_delay_seconds(1), 15)
 		self.assertEqual(retry_delay_seconds(2), 30)

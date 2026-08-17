@@ -77,6 +77,8 @@ Lifecycle status and publisher ownership are independent. The publisher uses:
 
 It does not change the lifecycle status merely to own the row.
 
+Expired publisher leases are recovered in bounded deterministic batches. Recovery selects eligible rows through the existing `(status, lease_expires_at)` index with `FOR UPDATE SKIP LOCKED`, then resets only the rows owned by that recovery transaction. Rows still locked by active workers are skipped and retried by a later recurring publisher run rather than blocking or deadlocking a broad table update. The scheduled publisher also retries a MariaDB `1213` deadlock up to three times after an explicit rollback; persistent deadlocks still fail visibly after the bounded retry.
+
 A matching callback remains eligible during a publisher lease, status reconciliation, or recovery HTTP request. Callback validation accepts authoritative active/proposed correlation in:
 
 - `Queued`

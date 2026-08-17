@@ -23,6 +23,7 @@ from aos.services.transactional_outbox import (
     mark_outbox_callback,
     publish_outbox_records,
     recover_overdue_published,
+    recover_stale_claims,
     validate_callback_idempotency,
 )
 
@@ -387,6 +388,66 @@ class TestTransactionalOutboxRecovery(FrappeTestCase):
             second.rollback()
             first.close()
             second.close()
+
+    def test_stale_claim_recovery_skips_row_locked_by_active_worker(self):
+        """Recovery must never wait on a worker that still owns the row lock."""
+        try:
+            import pymysql
+        except ImportError:
+            self.skipTest("PyMySQL is unavailable in this Frappe test environment")
+
+        job, outbox = self._job_and_outbox()
+        outbox.status = "Queued"
+        outbox.claimed_by = "stale-worker"
+        outbox.claim_token = uuid.uuid4().hex
+        outbox.claimed_at = add_to_date(now_datetime(), seconds=-120, as_datetime=True)
+        outbox.lease_expires_at = add_to_date(now_datetime(), seconds=-60, as_datetime=True)
+        outbox.save(ignore_permissions=True)
+        frappe.db.commit()
+        self.committed_names.extend([(OUTBOX_DOCTYPE, outbox.name), (job.doctype, job.name)])
+
+        config = {
+            "host": getattr(frappe.conf, "db_host", None) or "127.0.0.1",
+            "port": int(getattr(frappe.conf, "db_port", 3306) or 3306),
+            "user": getattr(frappe.conf, "db_user", None) or getattr(frappe.conf, "db_name", ""),
+            "password": getattr(frappe.conf, "db_password", ""),
+            "database": getattr(frappe.conf, "db_name", ""),
+            "autocommit": False,
+        }
+        try:
+            blocker = pymysql.connect(**config)
+        except Exception as exc:
+            self.skipTest(f"Separate MariaDB connection is unavailable: {exc.__class__.__name__}")
+
+        try:
+            with blocker.cursor() as cursor:
+                cursor.execute(
+                    f"SELECT name FROM `tab{OUTBOX_DOCTYPE}` WHERE name=%s FOR UPDATE",
+                    (outbox.name,),
+                )
+                self.assertEqual(cursor.fetchone()[0], outbox.name)
+
+            try:
+                skipped = recover_stale_claims(
+                    now=now_datetime(), outbox_name=outbox.name, limit=1
+                )
+            except Exception as exc:
+                if "SKIP LOCKED" in str(exc).upper() or "syntax" in str(exc).lower():
+                    self.skipTest("CI MariaDB does not support SELECT FOR UPDATE SKIP LOCKED")
+                raise
+            self.assertEqual(skipped, 0)
+        finally:
+            blocker.rollback()
+            blocker.close()
+
+        recovered = recover_stale_claims(
+            now=now_datetime(), outbox_name=outbox.name, limit=1
+        )
+        self.assertEqual(recovered, 1)
+        outbox.reload()
+        self.assertIsNone(outbox.claim_token)
+        self.assertIsNone(outbox.lease_expires_at)
+        self.assertEqual(outbox.pending_dispatch_reason, "publisher_lease_expired")
 
     def test_terminal_failure_callback_is_not_redispatched(self):
         job, outbox = self._job_and_outbox(max_attempts=5)
