@@ -1,5 +1,21 @@
 # Accounts API
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `deactivate_account` | POST | Session required | Client |
+| `get_my_preference` | Any* | Session required | Client |
+| `get_profile` | Any* | Session required | Client |
+| `update_my_preference` | POST | Session required | Client |
+| `update_profile` | POST | Session required | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 All responses use `{ok, message, data}` or `{ok, message, error, data}`. Clients branch on `error`, never message text.
 
 | Method | Endpoint | Auth | Purpose |

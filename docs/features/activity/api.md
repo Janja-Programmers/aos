@@ -1,5 +1,19 @@
 # Activity API
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `clear_activity` | POST | Session required | Client |
+| `hide_activity` | POST | Session required | Client |
+| `list_activity` | GET | Session required | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 ## `list_activity`
 
 Lists only the authenticated user's `Active` Activity Center rows. Optional existing aliases remain supported:

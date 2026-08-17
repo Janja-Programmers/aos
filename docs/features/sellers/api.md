@@ -1,5 +1,24 @@
 # API contract
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `get_my_seller_status` | Any* | Session required | Client |
+| `get_seller` | GET/POST | Guest allowed | Client |
+| `get_seller_location` | GET/POST | Guest allowed | Client |
+| `list_seller_map_points` | GET/POST | Guest allowed | Client |
+| `list_sellers` | GET/POST | Guest allowed | Client |
+| `remove_my_seller_location` | POST | Session required | Client |
+| `set_my_seller_location` | POST | Session required | Client |
+| `update_my_seller` | POST | Session required | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 All endpoints use the canonical envelope:
 
 ```json

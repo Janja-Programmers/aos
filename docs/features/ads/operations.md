@@ -2,7 +2,7 @@
 
 ## Scheduled work
 
-`aos.tasks.ads.expire_ads` runs hourly. It selects at most 200 overdue Active Ads, locks and rechecks each row, applies the explicit `expire` transition, notifies the seller user, and refreshes both discovery integrations. Repeated and overlapping executions are idempotent.
+`aos.tasks.ads.expire_ads` runs hourly. It selects at most 200 overdue Active Ads, locks and rechecks each row, validates the `Active -> Expired` lifecycle transition, then applies a dedicated trusted expiry mutation that changes only lifecycle/expiry metadata and the Seller active-Ad aggregate. It deliberately does **not** call the full Ad `save()` validation path, so a Seller changing currency/location/preferences after publication cannot prevent an already-valid Ad from expiring. The task then notifies the seller and refreshes discovery. Repeated and overlapping executions are idempotent.
 
 Image-search maintenance now treats non-Active Ads, suspended/missing sellers, expired Ads, and Ads without images as unindexable. Public image-search results independently recheck Ad status, seller status, expiry, and blocks before loading authoritative records.
 

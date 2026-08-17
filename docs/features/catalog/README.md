@@ -87,4 +87,4 @@ The repository has no independent Catalog index, moderation job, outbox event, o
 
 Low-cardinality counters are emitted as `aos_catalog_events_total` for read/configuration event and outcome classes. IDs, labels, descriptions, search terms, emails, and media URLs are never metric labels. Configuration rejections and internal data failures are structured-log events; successful public reads are metrics-only to avoid noisy logs.
 
-The additive Catalog patches install bounded-query indexes, normalize only safe defaults, and remove legacy Desk permission overrides so source-controlled `System Manager` access remains authoritative. See [migration.md](migration.md), [testing.md](testing.md), and the public [API contract](../../api/catalog.md).
+The additive Catalog patches install bounded-query indexes, normalize only safe defaults, and remove legacy Desk permission overrides so source-controlled `System Manager` access remains authoritative. See [migration.md](migration.md), [testing.md](testing.md), and the public [API contract](api.md).

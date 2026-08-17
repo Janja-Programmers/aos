@@ -1,5 +1,31 @@
 # AOS Auth and Session API Contract
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `apple_login` | POST | Guest allowed | Client |
+| `change_password` | POST | Session required | Client |
+| `delete_account` | POST | Session required | Client |
+| `forgot_password_request` | POST | Guest allowed | Client |
+| `forgot_password_reset` | POST | Guest allowed | Client |
+| `forgot_password_verify_otp` | POST | Guest allowed | Client |
+| `google_login` | POST | Guest allowed | Client |
+| `login` | POST | Guest allowed | Client |
+| `logout` | POST | Guest allowed | Client |
+| `me` | GET | Guest allowed | Client |
+| `register` | POST | Guest allowed | Client |
+| `request_restore_account` | POST | Guest allowed | Client |
+| `resend_email_otp` | POST | Guest allowed | Client |
+| `restore_account` | POST | Guest allowed | Client |
+| `verify_email_otp` | POST | Guest allowed | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 > Public auth endpoints are versioned. Use `aos.api.v1.auth.*`. Unversioned `aos.api.auth.*` methods are internal and are not supported as public HTTP endpoints.
 
 This document describes the production auth/session/shared contract for the AOS backend auth hardening pass.

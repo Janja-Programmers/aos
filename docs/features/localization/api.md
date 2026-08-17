@@ -1,5 +1,20 @@
 # Localization API v1
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `get_locale_bundle` | Any* | Guest allowed | Client |
+| `get_locations` | Any* | Guest allowed | Client |
+| `resolve_locale_context` | Any* | Guest allowed | Client |
+| `resolve_preference_context` | Any* | Guest allowed | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 AOS treats country, currency, and language as independent values. Country scopes marketplace content and valid ad locations, currency controls posting/display conversion, and language controls localized UI/content. One preference never silently changes another.
 
 ## Ownership boundary

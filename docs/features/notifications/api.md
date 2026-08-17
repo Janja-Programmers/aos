@@ -1,5 +1,24 @@
 # Notifications API
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `clear_notifications` | POST | Session required | Client |
+| `deactivate_push_token` | POST | Session required | Client |
+| `delete_notification` | POST | Session required | Client |
+| `get_push_config` | GET | Session required | Client |
+| `list_notifications` | Any* | Session required | Client |
+| `mark_all_notifications_read` | POST | Session required | Client |
+| `mark_notification_read` | POST | Session required | Client |
+| `register_push_token` | POST | Session required | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 AOS Notifications is an infrastructure/delivery domain. Business domains remain authoritative for the events that may result in a notification. Notification records, foreground realtime hints, and push-delivery work never replace Chat message state, Calls state, Live/Short lifecycle, Social relationships, Ads moderation, Verification decisions, or any other domain state machine.
 
 ## Public API v1

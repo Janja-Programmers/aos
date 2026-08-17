@@ -31,6 +31,20 @@ make infra
 make full-ci
 ```
 
+`make fast` also validates documentation/code drift. For documentation-only work you can run the focused checks directly:
+
+```bash
+python ci/validate_api_documentation.py
+python ci/validate_doc_paths.py
+```
+
+After an intentional whitelisted API change, regenerate the code-derived API reference and feature endpoint inventories, review the diff, then rerun validation:
+
+```bash
+python ci/validate_api_documentation.py --write
+python ci/validate_api_documentation.py
+```
+
 `make fastapi` uses reduced, exactly pinned test dependencies so no model is
 downloaded or initialized. `make compat` is deliberately separate: it installs
 each service's complete hash-locked production dependency graph, runs

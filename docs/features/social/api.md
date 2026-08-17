@@ -1,5 +1,26 @@
 # API contracts
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `block_user` | POST | Session required | Client |
+| `get_block_status` | GET | Session required | Client |
+| `get_followers` | GET | Session required | Client |
+| `get_following` | GET | Session required | Client |
+| `get_friends` | GET | Session required | Client |
+| `get_relationship_status` | GET | Session required | Client |
+| `list_blocked_users` | GET | Session required | Client |
+| `search_users` | GET | Session required | Client |
+| `toggle_follow` | POST | Session required | Client |
+| `unblock_user` | POST | Session required | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 Base path: `/api/method/aos.api.v1.social.<method>`.
 
 All success responses are `{ok:true,message,data}`. Failures are `{ok:false,message,error,data}` with an appropriate HTTP status.

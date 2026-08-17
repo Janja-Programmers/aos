@@ -1,5 +1,33 @@
 # Chat API
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `clear_chat` | POST | Session required | Client |
+| `delete_conversation` | POST | Session required | Client |
+| `delete_messages` | POST | Session required | Client |
+| `edit_message` | POST | Session required | Client |
+| `forward_message` | POST | Session required | Client |
+| `get_presence` | GET/POST | Session required | Client |
+| `list_conversations` | GET/POST | Session required | Client |
+| `list_messages` | GET/POST | Session required | Client |
+| `list_starred_messages` | GET/POST | Session required | Client |
+| `mark_delivered` | POST | Session required | Client |
+| `mark_read` | POST | Session required | Client |
+| `open_conversation` | POST | Session required | Client |
+| `send_message` | POST | Session required | Client |
+| `send_typing_event` | POST | Session required | Client |
+| `toggle_message_reaction` | POST | Session required | Client |
+| `toggle_message_star` | POST | Session required | Client |
+| `translate_message` | POST | Session required | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 Base form: `/api/method/aos.api.v1.chat.<endpoint>`.
 
 Frappe wraps the domain response in its normal `message` property. Domain success/failure envelopes remain:
@@ -37,6 +65,10 @@ Clients must branch on `error`, not the human message.
 | `get_presence` | GET/POST | `conversation_id` |
 
 `cmd` is accepted only as Frappe transport metadata. Other unknown fields fail closed.
+
+### Conversation deletion versus clear-chat
+
+`delete_conversation` and `clear_chat` are both private-to-the-caller history operations. `clear_chat` keeps the conversation active but hides the caller's current visible history. `delete_conversation` performs that same bounded history clearing **and** deactivates the conversation for the caller. If a new message later arrives, the conversation can reappear, but the caller's pre-delete messages stay hidden. Neither operation deletes the peer's history.
 
 `list_conversations` includes `last_message_is_mine`, `last_message_id`, `last_message_delivered_at`, and `last_message_read_at` for WhatsApp-style receipt rendering. Receipt fields are populated only for the current viewer's latest visible outgoing preview. Clients render one sent tick when both receipt timestamps are null, two delivered ticks when only `last_message_delivered_at` is set, and two read ticks when `last_message_read_at` is set. Realtime clients must apply `aos_message_status` to a conversation preview only when the event `message_ids` contains that row's `last_message_id`; this prevents delayed status events for older messages from advancing a newer preview. Incoming previews keep their existing presentation and must not infer receipt state from these fields.
 

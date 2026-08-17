@@ -14,4 +14,4 @@ Allowed transitions:
 - Suspended → Active or Deleted
 - Deleted → no normal transition
 
-Deleted-account restoration requires an explicit trusted path and must never occur as a side effect of Seller lookup or creation.
+Deleted-account restoration uses the explicit Accounts-owned trusted path only and must never occur as a side effect of Seller lookup or creation. Before Accounts marks a Seller `Deleted`, it snapshots `Active` or `Suspended` in `account_delete_previous_status` and stamps `status_reason_code=ACCOUNT_DELETED` plus `status_source=accounts`. Restore reactivates only rows carrying those Accounts lifecycle markers, restores the captured status, clears the snapshot, and leaves manual/moderation deletions untouched.

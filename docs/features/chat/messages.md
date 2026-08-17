@@ -29,7 +29,7 @@ Only the sender may edit a visible, non-deleted editable message. Pure Short/Liv
 - `delete_scope=me` hides the selected messages only for the caller and does not notify the peer.
 - `delete_scope=everyone` is sender-only, respects protected system messages, is idempotent and broadcasts `aos_messages_deleted` after commit.
 - `clear_chat` is private history hiding for the caller and resets that participant's unread state.
-- conversation deletion is a participant-specific soft hide/deactivation, not physical history deletion.
+- `delete_conversation` is participant-specific: under the conversation row lock it clears all messages currently visible to the caller using the same bounded delete-for-me markers as `clear_chat`, resets that participant's unread/preview state, and deactivates the conversation row for that participant. It does not physically delete shared message rows or affect the peer. A later incoming message may reactivate the conversation, but messages cleared by the deleting user remain hidden.
 
 ## Forwarding
 

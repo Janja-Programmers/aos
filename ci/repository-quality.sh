@@ -26,6 +26,8 @@ done <"${CI_ROOT}/ci/service-matrix.txt"
 "${venv}/bin/python" "${CI_ROOT}/ci/validate_actions.py"
 "${venv}/bin/python" "${CI_ROOT}/ci/validate_foundation.py"
 "${venv}/bin/python" "${CI_ROOT}/ci/validate_rate_limit_coverage.py" "${CI_ROOT}"
+"${venv}/bin/python" "${CI_ROOT}/ci/validate_api_documentation.py"
+"${venv}/bin/python" "${CI_ROOT}/ci/validate_doc_paths.py"
 "${venv}/bin/python" "${CI_ROOT}/ci/validate_monitoring.py" "${CI_ROOT}"
 "${venv}/bin/python" "${CI_ROOT}/ci/validate_deployment.py" "${CI_ROOT}"
 

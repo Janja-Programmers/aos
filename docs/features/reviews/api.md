@@ -1,5 +1,26 @@
 # Reviews API v1
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `create_review` | POST | Session required | Client |
+| `delete_review` | POST | Session required | Client |
+| `get_review` | GET | Guest allowed | Client |
+| `get_review_viewer_state` | GET | Guest allowed | Client |
+| `list_my_reviews` | GET | Session required | Client |
+| `list_reviews` | GET | Guest allowed | Client |
+| `list_reviews_received` | GET | Session required | Client |
+| `report_review` | POST | Session required | Client |
+| `toggle_reaction` | POST | Session required | Client |
+| `update_review` | POST | Session required | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 All AOS payloads use `{ok, message, data}` or `{ok, message, error, data}` and are returned inside Frappe's `message` response property. Clients branch on machine fields, never message text. Authenticated requests use the normal Frappe session cookie. JSON bodies cannot set reviewer, seller, target trust, lifecycle, moderation or aggregate fields.
 
 | Endpoint | Method | Auth | Purpose |

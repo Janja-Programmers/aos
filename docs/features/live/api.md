@@ -1,5 +1,40 @@
 # Live API Contracts
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `activate_live_cohost` | POST | Session required | Client |
+| `add_live_message` | POST | Session required | Client |
+| `cancel_live_cohost` | POST | Session required | Client |
+| `delete_live_message` | POST | Session required | Client |
+| `end_live` | POST | Session required | Client |
+| `end_live_cohost` | POST | Session required | Client |
+| `get_live` | GET | Guest allowed | Client |
+| `get_live_cohost` | GET | Session required | Client |
+| `get_live_cohost_token` | POST | Session required | Client |
+| `get_live_token` | POST | Session required | Client |
+| `invite_live_cohost` | POST | Session required | Client |
+| `join_live` | POST | Guest allowed | Client |
+| `list_live_cohosts` | GET | Session required | Client |
+| `list_live_messages` | GET | Guest allowed | Client |
+| `list_live_replies` | GET | Guest allowed | Client |
+| `list_live_streams` | GET | Guest allowed | Client |
+| `reply_live_message` | POST | Session required | Client |
+| `request_live_cohost` | POST | Session required | Client |
+| `respond_live_cohost` | POST | Session required | Client |
+| `send_reaction` | POST | Session required | Client |
+| `share_live_to_chat` | POST | Session required | Client |
+| `start_live` | POST | Session required | Client |
+| `track_join` | POST | Guest allowed | Client |
+| `track_leave` | POST | Guest allowed | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 ## Envelope
 
 Frappe returns the helper result inside its normal `message` property. The domain envelope is:

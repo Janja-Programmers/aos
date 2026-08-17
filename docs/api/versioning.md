@@ -4,7 +4,7 @@ AOS exposes public backend APIs through explicit versioned Frappe method namespa
 
 ## Current public API version
 
-The current public API version is **v1**.
+The current public API version is **v1**. The complete code-derived inventory is [reference.md](reference.md); feature-specific request/response semantics live under [docs/features](../features/README.md).
 
 Public method paths must use:
 

@@ -107,7 +107,7 @@ Save the returned `MEDIA-...` ID. Create/update accepts at most five unique Medi
     "can_edit": true,
     "can_delete": true
   },
-  "moderation_job_id": "MOD-2026-00001",
+  "moderation_job_id": "<opaque-moderation-job-id>",
   "moderation_job_status": "Queued"
 }
 ```

@@ -1,5 +1,21 @@
 # Media API
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `confirm_upload` | POST | Session required | Client |
+| `delete_media` | POST | Session required | Client |
+| `get_media_url` | Any* | Guest allowed | Client |
+| `init_upload` | POST | Session required | Client |
+| `remove_background` | POST | Session required | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 All endpoints return the canonical AOS envelope:
 
 ```json
@@ -75,6 +91,12 @@ The caller must own the media (or be a System Manager), the purpose must permit 
 ```
 
 The source must be an owned, completed image. Output purposes are explicitly allowlisted. The result is a new Media object linked through `derived_from_media`; source bytes are not overwritten.
+
+## Important purpose limits
+
+Upload limits are owned centrally by `aos/services/media/media_purposes.py` and are enforced during `init_upload`/confirmation rather than left to downstream moderation. In particular, `ad_video` currently accepts `video/mp4` or `video/quicktime` up to **200 MiB** and **300 seconds**, with at most one attached Ad video. Files outside that Media policy should be rejected before upload/attachment.
+
+The moderation companion has a separate byte cap for **image inspection**. That inspection cap is not an Ad-video upload limit: moderation records a bounded video-presence signal without downloading the video into the image/Pillow inspection path.
 
 ## Compatibility
 

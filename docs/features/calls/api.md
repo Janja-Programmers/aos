@@ -1,5 +1,30 @@
 # Calls API
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `accept_call` | POST | Session required | Client |
+| `cancel_call` | POST | Session required | Client |
+| `clear_call_history` | POST | Session required | Client |
+| `delete_call_logs` | POST | Session required | Client |
+| `end_call` | POST | Session required | Client |
+| `get_call_group_details` | GET/POST | Session required | Client |
+| `get_call_status` | GET/POST | Session required | Client |
+| `get_call_token` | POST | Session required | Client |
+| `initiate_call` | POST | Session required | Client |
+| `list_calls` | GET/POST | Session required | Client |
+| `mark_call_ringing` | POST | Session required | Client |
+| `reject_call` | POST | Session required | Client |
+| `request_video_upgrade` | POST | Session required | Client |
+| `respond_video_upgrade` | POST | Session required | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 All Calls v1 methods require authentication. The public wrapper accepts only the documented business fields after stripping Frappe's `cmd` transport field. Unknown fields fail closed. `CALL-*` and `CONV-*` inputs must use canonical public identifiers. Public errors are normalized to stable `CALL_*` categories while existing successful response shapes are preserved.
 
 | Endpoint | Method | Allowed fields | App limit/min/user |

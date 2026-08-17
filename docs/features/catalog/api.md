@@ -1,5 +1,18 @@
 # Catalog API v1
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `get_categories` | Any* | Guest allowed | Client |
+| `get_category_schema` | Any* | Guest allowed | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 Catalog endpoints are guest-readable and return the standard AOS envelope. They do not expose seller identity, ownership, moderation notes, storage keys, private Media URLs, or raw Frappe documents.
 
 ## Get categories

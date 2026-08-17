@@ -1,5 +1,29 @@
 # Ads API contract
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `abandon_ad_draft` | POST | Session required | Client |
+| `create_ad` | POST | Session required | Client |
+| `get_ad` | Any* | Guest allowed | Client |
+| `get_my_ad` | Any* | Session required | Client |
+| `get_my_ad_draft` | Any* | Session required | Client |
+| `list_ads` | Any* | Guest allowed | Client |
+| `list_my_ad_drafts` | Any* | Session required | Client |
+| `list_my_ads` | Any* | Session required | Client |
+| `search_ads_by_image` | Any* | Guest allowed | Client |
+| `set_ad_status` | POST | Session required | Client |
+| `submit_ad_draft` | POST | Session required | Client |
+| `update_ad` | POST | Session required | Client |
+| `upsert_ad_draft` | POST | Session required | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 The stable external boundary remains under `/api/method/aos.api.v1.*`.
 
 ## Ads routes
@@ -32,6 +56,10 @@ Mutation endpoints reject unknown fields. Scalars reject arrays/objects, text is
 `create_ad` and a full update of Reviewing/Declined Ads require a complete valid payload, one to four confirmed `ad_image` Media IDs, exactly one primary image, all required Catalog attributes, and valid pricing for the resolved category. Active Ads allow only the existing safe edit subset: title, description, and pricing fields. Category, market, attribute, and Media replacement of an Active Ad require an explicit resubmission workflow rather than an unsafe direct public mutation.
 
 `toggle_wishlist` preserves legacy toggle behavior when `wishlisted` is omitted. Sending `wishlisted=1` or `wishlisted=0` gives idempotent desired-state behavior. Duplicate logical rows are prevented by the database. Adds reject own ads and recheck public eligibility; explicit removal remains available for stale unavailable ads. See `docs/features/wishlist/`.
+
+## Ad Media limits
+
+Ads consume confirmed Media IDs; they do not define a second upload-size policy. The canonical Media registry currently allows one `ad_video` using MP4/QuickTime content up to **200 MiB** and **300 seconds**, while Ad images follow the `ad_image` policy. Oversized/unsupported media must fail in the Media upload pipeline before an Ad reaches automatic moderation. The moderation service's image-inspection byte cap is not a video-size limit.
 
 ## Pagination and sorting
 

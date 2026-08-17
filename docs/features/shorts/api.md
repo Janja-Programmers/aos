@@ -1,5 +1,57 @@
 # Public API
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `add_comment` | POST | Session required | Client |
+| `change_short_sound` | POST | Session required | Client |
+| `create_short` | POST | Session required | Client |
+| `create_short_share_link` | POST | Guest allowed | Client |
+| `create_sound` | POST | Session required | Client |
+| `delete_comment` | POST | Session required | Client |
+| `delete_short` | POST | Session required | Client |
+| `download_short` | Any* | Guest allowed | Client |
+| `favorite_sound` | POST | Session required | Client |
+| `feed_by_ad` | Any* | Guest allowed | Client |
+| `feed_following` | Any* | Session required | Client |
+| `feed_for_you` | Any* | Guest allowed | Client |
+| `general_short_analytics` | Any* | Session required | Client |
+| `get_short` | Any* | Guest allowed | Client |
+| `get_short_analytics` | Any* | Session required | Client |
+| `get_sound` | Any* | Guest allowed | Client |
+| `liked_shorts` | Any* | Session required | Client |
+| `list_comments` | Any* | Guest allowed | Client |
+| `list_replies` | Any* | Guest allowed | Client |
+| `list_sounds` | Any* | Guest allowed | Client |
+| `my_favorite_sounds` | Any* | Session required | Client |
+| `my_shorts` | Any* | Session required | Client |
+| `my_shorts_analytics` | Any* | Session required | Client |
+| `remove_short_sound` | POST | Session required | Client |
+| `reply_comment` | POST | Session required | Client |
+| `reposted_shorts` | Any* | Guest allowed | Client |
+| `retry_processing` | POST | Session required | Client |
+| `saved_shorts` | Any* | Session required | Client |
+| `search_sounds` | Any* | Guest allowed | Client |
+| `share_short_to_chat` | POST | Session required | Client |
+| `sound_shorts` | Any* | Guest allowed | Client |
+| `toggle_comment_like` | POST | Session required | Client |
+| `toggle_like` | POST | Session required | Client |
+| `toggle_repost` | POST | Session required | Client |
+| `toggle_save_short` | POST | Session required | Client |
+| `track_impression` | POST | Guest allowed | Client |
+| `track_share` | POST | Guest allowed | Client |
+| `track_view` | POST | Guest allowed | Client |
+| `update_short_metadata` | POST | Session required | Client |
+| `user_short_analytics` | Any* | Session required | Client |
+| `user_shorts` | Any* | Guest allowed | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 Base method prefix: `aos.api.v1.shorts.`. Responses use `{ok, message, data}` or `{ok:false, message, error, data}`.
 
 ## Upload and management
@@ -50,10 +102,12 @@ Publishing or changing a selected sound returns the durable remix state:
 ```json
 {
   "audio_mix_status": "pending",
-  "audio_mix_job_id": "VIDEO-JOB-2026-00001",
+  "audio_mix_job_id": "<opaque-video-processing-job-id>",
   "audio_mix_job_status": "Queued"
 }
 ```
+
+Internal processing/outbox Job DocType names are opaque hash identifiers. Clients must treat `audio_mix_job_id` as an opaque correlation value and must not parse a prefix or sequence from it.
 
 Clients should poll the canonical Short read endpoint while the mix status is
 `pending` or `processing`. Publication is complete with sound only when the

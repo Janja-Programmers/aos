@@ -2,6 +2,10 @@
 
 A multi-vendor marketplace platform enabling users to buy, sell, post short videos, go live, and communicate via chat and in-app calls across multiple countries.
 
+## Documentation
+
+Start at [`docs/README.md`](docs/README.md). Feature behavior and API semantics live under [`docs/features/`](docs/features/README.md); the complete code-derived HTTP route inventory is [`docs/api/reference.md`](docs/api/reference.md).
+
 ---
 
 # 🚀 Installation

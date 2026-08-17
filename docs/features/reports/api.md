@@ -1,5 +1,20 @@
 # Reports API
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `list_report_reasons` | Any* | Session required | Client |
+| `report_ad` | POST | Session required | Client |
+| `report_short` | POST | Session required | Client |
+| `report_user` | POST | Session required | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 ## Public surface
 
 The existing authenticated v1 surface remains:

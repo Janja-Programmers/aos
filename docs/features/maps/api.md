@@ -1,5 +1,21 @@
 # Maps API contract
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `autocomplete_places` | GET/POST | Guest allowed | Client |
+| `get_route` | POST | Session required | Client |
+| `refresh_route` | POST | Session required | Client |
+| `reverse_geocode` | GET/POST | Guest allowed | Client |
+| `search_places` | GET/POST | Guest allowed | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 All endpoints return the standard AOS `{ok,message,data}` or
 `{ok,message,error,data}` envelope. Framework transport fields such as `cmd`
 are removed by v1 wrappers before strict validation.

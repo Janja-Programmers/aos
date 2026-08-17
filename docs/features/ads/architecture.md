@@ -12,7 +12,7 @@ Media IDs must already have completed the shared Media upload and confirmation p
 
 API implementations do not commit successful business mutations. Frappe's outer request controls durability. A failed response after a partial aggregate mutation explicitly rolls the request transaction back. Scheduled expiry also performs no hidden commit; the scheduler/worker controls transaction durability.
 
-Creation and full resubmission save the aggregate, attach Media, and create the moderation job in the same request transaction. Lifecycle changes lock the Ad before re-reading and applying the transition. Moderation locks and rechecks the current state before applying a callback decision. Wishlist and report creation use logical-pair locks plus database uniqueness as the final race guard.
+Creation and full resubmission save the aggregate, attach Media, and create the moderation job in the same request transaction. User-driven lifecycle changes lock the Ad before re-reading and applying the transition. The scheduler-owned expiry path also locks/rechecks the Ad but uses a narrow trusted lifecycle mutation instead of replaying mutable-content/market validation against historical Ads. Moderation locks and rechecks the current state before applying a callback decision. Wishlist and report creation use logical-pair locks plus database uniqueness as the final race guard.
 
 External discovery updates use the existing durable companion integrations. The Ads layer asks both image-search and search-ranking foundations to refresh after authoritative state changes. Those foundations retain their existing outbox, generation, callback, retry, and stale-result protections.
 

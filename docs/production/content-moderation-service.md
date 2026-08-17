@@ -56,6 +56,10 @@ The first moderation worker is deterministic and rule based:
 
 This is intentional. ML models can replace the worker internals later without changing Frappe APIs, DocTypes, or business lifecycle code.
 
+### Media inspection boundary
+
+`MODERATION_MAX_MEDIA_BYTES` bounds **image bytes loaded into the moderation worker for Pillow inspection**. It is not a general AOS upload limit. Video items are recognized from their canonical Media `content_type`, contribute a bounded `video_present` signal, and are not downloaded into the image-inspection path. Product upload limits remain owned by the Media purpose registry; `ad_video` currently allows up to 200 MiB and 300 seconds.
+
 ## Private service
 
 The service is private and bound to localhost through Docker Compose:
