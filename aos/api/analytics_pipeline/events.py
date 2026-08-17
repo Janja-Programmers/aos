@@ -96,8 +96,8 @@ def track_event_impl(**kwargs):
 
     try:
         event = _extract_event(kwargs)
-    except ValueError as exc:
-        return fail(str(exc), error="VALIDATION_ERROR")
+    except ValueError:
+        return fail("Invalid analytics event.", error="VALIDATION_ERROR")
 
     try:
         job = create_analytics_ingest_job(
@@ -151,8 +151,8 @@ def track_events_impl(**kwargs):
         )
         if batch_bytes > MAX_BATCH_JSON_BYTES:
             raise ValueError("Analytics event batch is too large.")
-    except ValueError as exc:
-        return fail(str(exc), error="VALIDATION_ERROR")
+    except ValueError:
+        return fail("Invalid analytics event batch.", error="VALIDATION_ERROR")
 
     if not normalized:
         return fail("No valid events supplied.", error="VALIDATION_ERROR")

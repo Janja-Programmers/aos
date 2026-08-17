@@ -15,7 +15,7 @@ class TestSavedSearchHardening(AOSFeatureTestMixin, FrappeTestCase):
     def setUp(self):
         self.prefix = self.make_prefix("saved-search")
         self.created_users: list[str] = []
-        self.user = self.make_user("owner", with_preference=False)
+        self.user = self.make_user("owner", with_preference=True)
         frappe.set_user(self.user)
 
     def tearDown(self):
