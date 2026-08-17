@@ -855,6 +855,51 @@ def _check_ai_services(issues: list[dict[str, Any]], env: Mapping[str, Any] | No
 			remediation="Set the image-search Qdrant URL to the production internal Qdrant endpoint.",
 		)
 
+	_check_required_value(
+		issues,
+		env=env,
+		category="ai_ml",
+		keys=("SHORT_CLASSIFICATION_SECRET", "IMAGE_SEARCH_INTERNAL_SECRET"),
+		label="image-search internal request secret",
+		secret=True,
+	)
+
+	allowed_hosts, allowed_hosts_key = _env_value(env, "IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS")
+	file_base_url, file_base_key = _env_value(env, "IMAGE_SEARCH_FILE_BASE_URL")
+	if not allowed_hosts and not file_base_url:
+		_redacted_issue(
+			issues,
+			severity="error",
+			category="ai_ml",
+			key="IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS/IMAGE_SEARCH_FILE_BASE_URL",
+			message="Image-search remote image fetching has no trusted host configured.",
+			remediation="Set IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS to the exact production media/API hostnames or configure IMAGE_SEARCH_FILE_BASE_URL.",
+		)
+	if file_base_url and not _public_url_is_safe(file_base_url, require_https=True):
+		_redacted_issue(
+			issues,
+			severity="error",
+			category="ai_ml",
+			key=file_base_key or "IMAGE_SEARCH_FILE_BASE_URL",
+			message="Image-search file base URL must be a real public HTTPS URL.",
+			remediation="Set IMAGE_SEARCH_FILE_BASE_URL to the production public media/API HTTPS origin.",
+		)
+	if allowed_hosts:
+		invalid_hosts = [
+			host
+			for host in (item.strip() for item in allowed_hosts.split(","))
+			if host and ("://" in host or "/" in host or "@" in host or "*" in host)
+		]
+		if invalid_hosts:
+			_redacted_issue(
+				issues,
+				severity="error",
+				category="ai_ml",
+				key=allowed_hosts_key or "IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS",
+				message="Image-search allowed hosts must contain exact hostnames only, without schemes, paths, credentials, or wildcards.",
+				remediation="Set IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS to a comma-separated list of exact trusted hostnames.",
+			)
+
 
 def _check_maps(
 	issues: list[dict[str, Any]],

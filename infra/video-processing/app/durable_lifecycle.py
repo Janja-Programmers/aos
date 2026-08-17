@@ -218,7 +218,7 @@ def load_result(redis: Any, service_type: str, stable_id: str) -> dict[str, str]
 
 def _record_value(name: str, value: Any) -> str:
     # Terminal callback payloads are already bounded by _safe_payload(), but a
-    # video callback can legitimately exceed 4 KiB (for example when it carries
+    # terminal callback can legitimately exceed 4 KiB (for example when it carries
     # processing metadata). Truncating JSON makes it unparsable and previously
     # caused callbacks to be delivered without job_id/status. Preserve the
     # complete bounded JSON while keeping ordinary diagnostic fields small.

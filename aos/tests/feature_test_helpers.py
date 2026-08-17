@@ -511,6 +511,7 @@ class AOSFeatureTestMixin:
         frappe.db.sql("DELETE FROM `tabAOS Notification` WHERE user LIKE %s OR actor LIKE %s", (email_like, email_like))
         frappe.db.sql("DELETE FROM `tabAOS Push Token` WHERE user LIKE %s OR device_id LIKE %s OR token LIKE %s", (email_like, like, like))
         frappe.db.sql("DELETE FROM `tabAOS User Activity` WHERE user LIKE %s", (email_like,))
+        frappe.db.sql("DELETE FROM `tabAOS Saved Search` WHERE user LIKE %s", (email_like,))
         frappe.db.sql("DELETE FROM `tabAOS User Block` WHERE blocker_user LIKE %s OR blocked_user LIKE %s", (email_like, email_like))
         frappe.db.sql("DELETE FROM `tabAOS User Report` WHERE reported_user LIKE %s OR reported_by LIKE %s", (email_like, email_like))
 

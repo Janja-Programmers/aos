@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 from app import main
 from app.config import Settings
@@ -36,6 +38,36 @@ class FakeService:
 	def replace_ad_images(self, *, ad_id, images):
 		return {"ok": True, "ad_id": ad_id, "indexed_count": len(images), "failed_count": 0}
 
+	def delete_ad_vectors(self, *, ad_id):
+		return {"ok": True, "ad_id": ad_id, "deleted": True}
+
+
+def _signed_internal_headers(monkeypatch, *, method: str, path: str, body: bytes) -> dict[str, str]:
+	from types import SimpleNamespace
+
+	from app.security import build_signature
+
+	timestamp = "1700000000"
+	monkeypatch.setattr(main.time, "time", lambda: float(timestamp))
+	monkeypatch.setattr(
+		main,
+		"get_settings",
+		lambda: SimpleNamespace(internal_secret=TEST_CLASSIFICATION_SECRET),
+	)
+	material = b".".join(
+		[
+			timestamp.encode("ascii"),
+			method.upper().encode("ascii"),
+			path.encode("utf-8"),
+			body,
+		]
+	)
+	return {
+		"Content-Type": "application/json",
+		"X-AOS-Timestamp": timestamp,
+		"X-AOS-Signature": build_signature(TEST_CLASSIFICATION_SECRET, material),
+	}
+
 
 def test_configuration_defaults_and_limits(monkeypatch):
 	monkeypatch.setenv("IMAGE_SEARCH_LIMIT", "0")
@@ -54,14 +86,53 @@ def test_health_does_not_load_or_download_a_model(monkeypatch):
 	assert response.json()["model_loaded"] is False
 
 
-def test_replace_images_uses_service_boundary(monkeypatch):
+def test_replace_images_requires_signed_internal_boundary(monkeypatch):
 	monkeypatch.setattr(main, "get_service", FakeService)
+	monkeypatch.setattr(
+		main,
+		"get_settings",
+		lambda: type("Settings", (), {"internal_secret": TEST_CLASSIFICATION_SECRET})(),
+	)
 	response = TestClient(main.app).post(
 		"/ads/AD-1/replace-images",
 		json={"images": [{"image_url": "/files/synthetic.png", "sort_order": 0}]},
 	)
+	assert response.status_code == 401
+
+
+def test_replace_images_uses_signed_service_boundary(monkeypatch):
+	monkeypatch.setattr(main, "get_service", FakeService)
+	path = "/ads/AD-1/replace-images"
+	body = json.dumps(
+		{"images": [{"image_url": "/files/synthetic.png", "sort_order": 0}]},
+		separators=(",", ":"),
+		sort_keys=True,
+	).encode("utf-8")
+	response = TestClient(main.app).post(
+		path,
+		content=body,
+		headers=_signed_internal_headers(monkeypatch, method="POST", path=path, body=body),
+	)
 	assert response.status_code == 200
 	assert response.json()["indexed_count"] == 1
+
+
+def test_delete_vectors_requires_and_accepts_signed_internal_boundary(monkeypatch):
+	monkeypatch.setattr(main, "get_service", FakeService)
+	monkeypatch.setattr(
+		main,
+		"get_settings",
+		lambda: type("Settings", (), {"internal_secret": TEST_CLASSIFICATION_SECRET})(),
+	)
+	path = "/ads/AD-1/vectors"
+	client = TestClient(main.app)
+	assert client.delete(path).status_code == 401
+	response = client.delete(
+		path,
+		headers=_signed_internal_headers(monkeypatch, method="DELETE", path=path, body=b""),
+	)
+	assert response.status_code == 200
+	assert response.json()["deleted"] is True
 
 
 def test_service_failure_is_not_reported_as_success(monkeypatch):
@@ -70,9 +141,16 @@ def test_service_failure_is_not_reported_as_success(monkeypatch):
 			raise main.VectorStoreError("synthetic vector-store failure")
 
 	monkeypatch.setattr(main, "get_service", FailingService)
+	path = "/ads/AD-1/replace-images"
+	body = json.dumps(
+		{"images": [{"image_url": "/files/synthetic.png", "sort_order": 0}]},
+		separators=(",", ":"),
+		sort_keys=True,
+	).encode("utf-8")
 	response = TestClient(main.app).post(
-		"/ads/AD-1/replace-images",
-		json={"images": [{"image_url": "/files/synthetic.png", "sort_order": 0}]},
+		path,
+		content=body,
+		headers=_signed_internal_headers(monkeypatch, method="POST", path=path, body=body),
 	)
 	assert response.status_code == 503
 

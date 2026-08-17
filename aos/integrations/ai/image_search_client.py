@@ -15,12 +15,16 @@ They run in the external image-search service container.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import hmac
+import json
+import time
 from typing import Any, BinaryIO, Dict, Iterable, List
 from urllib.parse import quote
 
 import requests
 
-from aos.utils.aos_config import get_image_search_service_url
+from aos.utils.aos_config import get_first_env, get_image_search_service_url
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
 
@@ -48,6 +52,7 @@ class ImageSearchClientSettings:
     timeout_seconds: int
     default_limit: int
     max_limit: int
+    internal_secret: str = ""
 
 
 def _clamp_int(value: Any, *, default: int, min_value: int, max_value: int) -> int:
@@ -87,6 +92,7 @@ def get_image_search_client_settings() -> ImageSearchClientSettings:
             timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
             default_limit=DEFAULT_LIMIT,
             max_limit=MAX_LIMIT,
+            internal_secret=str(get_first_env("IMAGE_SEARCH_INTERNAL_SECRET", "SHORT_CLASSIFICATION_SECRET", default="") or ""),
         )
 
     service_url = _clean_url(
@@ -120,8 +126,22 @@ def get_image_search_client_settings() -> ImageSearchClientSettings:
         timeout_seconds=timeout_seconds,
         default_limit=default_limit,
         max_limit=max_limit,
+        internal_secret=str(get_first_env("IMAGE_SEARCH_INTERNAL_SECRET", "SHORT_CLASSIFICATION_SECRET", default="") or ""),
     )
 
+
+
+def _internal_signature(secret: str, *, timestamp: str, method: str, path: str, body: bytes) -> str:
+    material = b".".join(
+        [
+            timestamp.encode("ascii"),
+            method.upper().encode("ascii"),
+            path.encode("utf-8"),
+            body,
+        ]
+    )
+    digest = hmac.new(str(secret or "").encode("utf-8"), material, hashlib.sha256).hexdigest()
+    return f"sha256={digest}"
 
 def _parse_json_response(response: requests.Response) -> Dict[str, Any]:
     try:
@@ -256,13 +276,42 @@ class ImageSearchClient:
         method: str,
         path: str,
         *,
-        json: Dict[str, Any] | None = None,
+        json_payload: Dict[str, Any] | None = None,
+        signed_internal: bool = False,
     ) -> Dict[str, Any]:
+        method = method.upper()
+        request_path = "/" + path.lstrip("/")
+        body = (
+            json.dumps(json_payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+            if json_payload is not None
+            else b""
+        )
+        headers: dict[str, str] = {}
+        if json_payload is not None:
+            headers["Content-Type"] = "application/json"
+        if signed_internal:
+            secret = str(self.settings.internal_secret or "").strip()
+            if not secret:
+                raise ImageSearchUnavailableError("Image search internal authentication is not configured.")
+            timestamp = str(int(time.time()))
+            headers.update(
+                {
+                    "X-AOS-Timestamp": timestamp,
+                    "X-AOS-Signature": _internal_signature(
+                        secret,
+                        timestamp=timestamp,
+                        method=method,
+                        path=request_path,
+                        body=body,
+                    ),
+                }
+            )
         try:
             response = self.session.request(
-                method=method.upper(),
-                url=self._url(path),
-                json=json,
+                method=method,
+                url=self._url(request_path),
+                data=body if body else None,
+                headers=headers or None,
                 timeout=self.settings.timeout_seconds,
             )
         except requests.Timeout:
@@ -345,7 +394,8 @@ class ImageSearchClient:
         result = self._request_json(
             "POST",
             f"/ads/{quote(clean_ad_id, safe='')}/replace-images",
-            json=payload,
+            json_payload=payload,
+            signed_internal=True,
         )
 
         if result.get("ok") is not True:
@@ -376,6 +426,7 @@ class ImageSearchClient:
         result = self._request_json(
             "DELETE",
             f"/ads/{quote(clean_ad_id, safe='')}/vectors",
+            signed_internal=True,
         )
 
         if result.get("ok") is not True:

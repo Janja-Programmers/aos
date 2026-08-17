@@ -78,6 +78,8 @@ class TestProductionConfigValidation(FrappeTestCase):
 			"IMAGE_SEARCH_SERVICE_URL": "http://127.0.0.1:8110",
 			"BACKGROUND_REMOVAL_SERVICE_URL": "http://127.0.0.1:8120",
 			"IMAGE_SEARCH_QDRANT_URL": "http://qdrant:6333",
+			"SHORT_CLASSIFICATION_SECRET": "short-classification-secret-value-0123456789abcdef",
+			"IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS": "files.africaonlinestores.example-prod.com",
 			"TILESERVER_PUBLIC_URL": "https://maps.africaonlinestores.example-prod.com/",
 		}
 
@@ -154,6 +156,27 @@ class TestProductionConfigValidation(FrappeTestCase):
 		self.assertIn("MINIO_PUBLIC_BASE_URL", keys)
 		self.assertIn("LIVEKIT_API_SECRET/LIVEKIT_KEYS", keys)
 		self.assertFalse(report_contains_secret_value(report, "change-this-video-callback-secret"))
+
+	def test_image_search_internal_boundary_fails_closed_without_secret_or_trusted_hosts(self):
+		env = self._valid_env()
+		env.pop("SHORT_CLASSIFICATION_SECRET")
+		env.pop("IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS")
+
+		report = validate_production_config(env=env, site_config=self._valid_site_config())
+
+		self.assertFalse(report["ready"])
+		keys = {issue["key"] for issue in report["errors"]}
+		self.assertIn("SHORT_CLASSIFICATION_SECRET/IMAGE_SEARCH_INTERNAL_SECRET", keys)
+		self.assertIn("IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS/IMAGE_SEARCH_FILE_BASE_URL", keys)
+
+	def test_image_search_allowed_hosts_rejects_wildcards_and_urls(self):
+		env = self._valid_env()
+		env["IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS"] = "*.example.com,https://files.example.com/path"
+
+		report = validate_production_config(env=env, site_config=self._valid_site_config())
+
+		self.assertFalse(report["ready"])
+		self.assertIn("IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS", {issue["key"] for issue in report["errors"]})
 
 	def test_callback_urls_can_be_derived_from_aos_api_domain(self):
 		env = self._valid_env()

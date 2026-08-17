@@ -28,6 +28,7 @@ _APPROVED_COMPONENTS = {
 	"dispatch_token",
 	"short_id",
 	"force",
+	"reason",
 	"callback_url",
 	"raw_video",
 	"sound",

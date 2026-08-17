@@ -148,7 +148,7 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
         self.cleanup_feature_rows()
         frappe.set_user("Administrator")
 
-    def _init_png(self, *, checksum: str | None = None):
+    def _init_png(self, *, checksum: str | None = None, idempotency_key: str | None = None):
         return self.service.init_upload(
             user=self.user,
             purpose="profile_image",
@@ -156,6 +156,7 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
             content_type="image/png",
             size_bytes=len(PNG_64),
             checksum_sha256=checksum,
+            idempotency_key=idempotency_key,
         )[0]
 
     def _upload_staging(self, doc, payload: bytes = PNG_64) -> None:
@@ -195,6 +196,32 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(self.storage.object_exists(confirmed.bucket, confirmed.object_key))
         self.assertEqual(confirmed.checksum, hashlib.sha256(PNG_64).hexdigest())
         self.assertEqual((confirmed.width, confirmed.height), (64, 64))
+
+    def test_init_idempotency_reuses_one_initialized_media_record(self):
+        first = self._init_png(idempotency_key="same-upload-request")
+        second = self._init_png(idempotency_key="same-upload-request")
+
+        self.assertEqual(first.name, second.name)
+        self.assertEqual(
+            frappe.db.count(
+                "AOS Media Object",
+                {
+                    "owner_user": self.user,
+                    "purpose": "profile_image",
+                    "status": "Initialized",
+                    "idempotency_key_hash": first.idempotency_key_hash,
+                },
+            ),
+            1,
+        )
+
+    def test_init_idempotency_serializes_final_check_and_insert_on_user_row(self):
+        import inspect
+
+        source = inspect.getsource(MediaService.init_upload)
+        self.assertIn("tabUser", source)
+        self.assertIn("FOR UPDATE", source)
+        self.assertGreaterEqual(source.count("_find_reusable_initiated_upload"), 2)
 
     def test_confirm_rejects_missing_object(self):
         doc = self._init_png()

@@ -55,7 +55,7 @@ def forgot_password_request_impl(**kwargs):
         return ok(GENERIC_REQUEST_MESSAGE)
 
     user = frappe.get_doc("User", user_name)
-    ver = ensure_ver_doc(user_name, email=email, purpose=PURPOSE)
+    ver = ensure_ver_doc(user_name, email=email, purpose=PURPOSE, for_update=True)
 
     cooldown = enforce_resend_cooldown(ver)
     if cooldown:
@@ -106,7 +106,7 @@ def forgot_password_verify_otp_impl(**kwargs):
         # Do not reveal deleted/restorable state through password-reset OTP.
         return public_otp_invalid()
 
-    ver = get_ver_doc(user_name, purpose=PURPOSE)
+    ver = get_ver_doc(user_name, purpose=PURPOSE, for_update=True)
     err = verify_public_otp(ver, otp, consume=True)
     if err:
         return err
@@ -160,7 +160,7 @@ def forgot_password_reset_impl(**kwargs):
     if deleted_err:
         return deleted_err
 
-    ver = get_ver_doc(user_name, purpose=PURPOSE)
+    ver = get_ver_doc(user_name, purpose=PURPOSE, for_update=True)
     if not ver or not getattr(ver, "reset_token_hash", None):
         return fail("Invalid reset token.", error="TOKEN_INVALID")
 
@@ -173,7 +173,6 @@ def forgot_password_reset_impl(**kwargs):
     try:
         user = frappe.get_doc("User", user_name)
         user.new_password = new_password
-        user.flags.ignore_password_policy = True
         user.save(ignore_permissions=True)
 
         ver.reset_token_hash = ""

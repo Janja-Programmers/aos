@@ -42,6 +42,37 @@ def _clean_ad_id(ad_id: str) -> str:
 	return ad_id
 
 
+def _verify_internal_mutation(
+	*,
+	request: Request,
+	raw_body: bytes,
+	timestamp_header: str | None,
+	signature_header: str | None,
+) -> None:
+	settings = get_settings()
+	secret = str(settings.internal_secret or "").strip()
+	if not secret:
+		raise HTTPException(status_code=503, detail="Internal authentication is not configured")
+	try:
+		timestamp = int(str(timestamp_header or "").strip())
+	except (TypeError, ValueError) as exc:
+		raise HTTPException(status_code=401, detail="Invalid signature") from exc
+	if abs(int(time.time()) - timestamp) > 300:
+		raise HTTPException(status_code=401, detail="Invalid signature")
+	raw_path = request.scope.get("raw_path")
+	path_bytes = raw_path if isinstance(raw_path, bytes) and raw_path else request.url.path.encode("utf-8")
+	material = b".".join(
+		[
+			str(timestamp).encode("ascii"),
+			request.method.upper().encode("ascii"),
+			path_bytes,
+			raw_body,
+		]
+	)
+	if not verify_signature(secret, material, signature_header):
+		raise HTTPException(status_code=401, detail="Invalid signature")
+
+
 def _handle_known_error(exc: Exception) -> None:
 	if isinstance(exc, ImageLoadError):
 		raise HTTPException(status_code=400, detail="The supplied image is invalid.")
@@ -73,10 +104,20 @@ def ready():
 	"/ads/{ad_id}/replace-images",
 	response_model=ReplaceImagesResponse,
 )
-def replace_ad_images(
+async def replace_ad_images(
+	request: Request,
 	payload: ReplaceImagesRequest,
 	ad_id: str = Path(..., min_length=1),
+	x_aos_signature: str | None = Header(default=None),
+	x_aos_timestamp: str | None = Header(default=None),
 ):
+	raw_body = await request.body()
+	_verify_internal_mutation(
+		request=request,
+		raw_body=raw_body,
+		timestamp_header=x_aos_timestamp,
+		signature_header=x_aos_signature,
+	)
 	try:
 		return get_service().replace_ad_images(
 			ad_id=_clean_ad_id(ad_id),
@@ -90,7 +131,18 @@ def replace_ad_images(
 	"/ads/{ad_id}/vectors",
 	response_model=DeleteVectorsResponse,
 )
-def delete_ad_vectors(ad_id: str = Path(..., min_length=1)):
+def delete_ad_vectors(
+	request: Request,
+	ad_id: str = Path(..., min_length=1),
+	x_aos_signature: str | None = Header(default=None),
+	x_aos_timestamp: str | None = Header(default=None),
+):
+	_verify_internal_mutation(
+		request=request,
+		raw_body=b"",
+		timestamp_header=x_aos_timestamp,
+		signature_header=x_aos_signature,
+	)
 	try:
 		return get_service().delete_ad_vectors(ad_id=_clean_ad_id(ad_id))
 	except Exception as exc:

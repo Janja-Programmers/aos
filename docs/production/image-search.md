@@ -47,6 +47,9 @@ Configure the private image-search service URL in `.env` and keep only product l
 ```text
 # .env
 IMAGE_SEARCH_SERVICE_URL=http://127.0.0.1:8110
+IMAGE_SEARCH_FILE_BASE_URL=https://api.example.com
+IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS=api.example.com
+SHORT_CLASSIFICATION_SECRET=<openssl-rand-hex-32>
 
 # AOS Settings
 image_search_service_timeout_seconds: 20
@@ -55,6 +58,10 @@ image_search_max_limit: 100
 ```
 
 Do not configure Qdrant in AOS Settings. Qdrant connection details belong to the image-search service environment.
+
+`SHORT_CLASSIFICATION_SECRET` also authenticates Frappe-to-image-search mutation calls. Internal replace/delete requests are signed over the timestamp, HTTP method, request path, and exact request body; stale or invalid signatures are rejected.
+
+Remote ad-image downloads are restricted to exact hostnames in `IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS` (plus the hostname from `IMAGE_SEARCH_FILE_BASE_URL`). Redirects are not followed. Include every production media/CDN hostname that the service is expected to fetch, and do not use wildcards or URL values in the allowlist.
 
 For a host-based Frappe deployment with Docker Compose services bound privately, use:
 

@@ -130,6 +130,8 @@ class TestOperationalHealth(FrappeTestCase):
             "IMAGE_SEARCH_SERVICE_URL": "http://127.0.0.1:8110",
             "BACKGROUND_REMOVAL_SERVICE_URL": "http://127.0.0.1:8120",
             "IMAGE_SEARCH_QDRANT_URL": "http://qdrant:6333",
+            "SHORT_CLASSIFICATION_SECRET": "short-classification-secret-value-0123456789abcdef",
+            "IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS": "files.africaonlinestores.example-prod.com",
             "TILESERVER_PUBLIC_URL": "https://maps.africaonlinestores.example-prod.com/",
         }
 

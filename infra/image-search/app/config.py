@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from typing import Any
+from urllib.parse import urlsplit
 
 _TRUE_VALUES = {"1", "true", "yes", "y", "on"}
 
@@ -100,7 +101,10 @@ class Settings:
 			minimum=1.0,
 		)
 
-		self.internal_secret = _get_optional_str("IMAGE_SEARCH_INTERNAL_SECRET")
+		self.internal_secret = (
+			_get_optional_str("IMAGE_SEARCH_INTERNAL_SECRET")
+			or _get_optional_str("SHORT_CLASSIFICATION_SECRET")
+		)
 		self.short_classification_max_frames = min(
 			_get_int("IMAGE_SEARCH_SHORT_CLASSIFICATION_MAX_FRAMES", 6, minimum=1),
 			8,
@@ -121,6 +125,16 @@ class Settings:
 		# Optional. Prefer sending absolute URLs from AOS backend. This exists only
 		# as a safe fallback for /files/... values during local development.
 		self.file_base_url = _get_optional_str("IMAGE_SEARCH_FILE_BASE_URL")
+		explicit_hosts = {
+			host.strip().lower().rstrip(".")
+			for host in str(os.getenv("IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS") or "").split(",")
+			if host.strip()
+		}
+		if self.file_base_url:
+			base_host = (urlsplit(self.file_base_url).hostname or "").lower().rstrip(".")
+			if base_host:
+				explicit_hosts.add(base_host)
+		self.allowed_image_hosts = tuple(sorted(explicit_hosts))
 
 	def clamp_limit(self, value: int | None) -> int:
 		if value is None:
@@ -147,6 +161,7 @@ class Settings:
 			"short_classification_max_frames": self.short_classification_max_frames,
 			"short_classification_model_version": self.short_classification_model_version,
 			"file_base_url_configured": bool(self.file_base_url),
+			"allowed_image_host_count": len(self.allowed_image_hosts),
 		}
 
 

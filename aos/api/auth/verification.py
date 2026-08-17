@@ -39,25 +39,49 @@ def generate_reset_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-def get_ver_doc(user_name: str, purpose: str = EMAIL_VERIFICATION_PURPOSE):
-    """Fetch OTP doc for a user + purpose."""
-    name = frappe.db.get_value(
-        "AOS Email Verification",
-        {"user": user_name, "purpose": purpose},
-        "name",
-    )
+def get_ver_doc(
+    user_name: str,
+    purpose: str = EMAIL_VERIFICATION_PURPOSE,
+    *,
+    for_update: bool = False,
+):
+    """Fetch the canonical OTP row for a user + purpose.
+
+    ``for_update=True`` serializes one-time credential consumption, resend, and
+    attempt-counter updates across concurrent web workers.  The row lock is held
+    by the surrounding Frappe transaction until commit/rollback.
+    """
+    if for_update:
+        rows = frappe.db.sql(
+            """
+            SELECT name
+            FROM `tabAOS Email Verification`
+            WHERE user = %s AND purpose = %s
+            LIMIT 1
+            FOR UPDATE
+            """,
+            (user_name, purpose),
+            as_dict=True,
+        )
+        name = rows[0].name if rows else None
+    else:
+        name = frappe.db.get_value(
+            "AOS Email Verification",
+            {"user": user_name, "purpose": purpose},
+            "name",
+        )
     if not name:
         return None
     return frappe.get_doc("AOS Email Verification", name)
 
 
-def ensure_ver_doc(user_name: str, email: str, purpose: str):
+def ensure_ver_doc(user_name: str, email: str, purpose: str, *, for_update: bool = False):
     """Get or create OTP doc for a user + purpose.
 
     The DocType autoname is user-purpose, so concurrent duplicate creation is
     safely collapsed to the existing row.
     """
-    ver = get_ver_doc(user_name, purpose=purpose)
+    ver = get_ver_doc(user_name, purpose=purpose, for_update=for_update)
     if ver:
         return ver
 
@@ -79,9 +103,11 @@ def ensure_ver_doc(user_name: str, email: str, purpose: str):
 
     try:
         doc.insert(ignore_permissions=True)
+        if for_update:
+            return get_ver_doc(user_name, purpose=purpose, for_update=True) or doc
         return doc
     except frappe.DuplicateEntryError:
-        existing = get_ver_doc(user_name, purpose=purpose)
+        existing = get_ver_doc(user_name, purpose=purpose, for_update=for_update)
         if existing:
             return existing
         raise

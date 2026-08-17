@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -35,6 +36,32 @@ class TestAuthDatabaseContracts(FrappeTestCase):
                     ),
                     index["name"],
                 )
+
+    def test_one_time_auth_flows_use_database_row_locks(self):
+        from aos.api.auth import delete_account, otp, password_reset
+        from aos.api.auth.verification import get_ver_doc
+
+        helper_source = inspect.getsource(get_ver_doc)
+        self.assertIn("FOR UPDATE", helper_source)
+        self.assertIn("for_update", helper_source)
+
+        for function in (
+            otp.verify_email_otp_impl,
+            otp.resend_email_otp_impl,
+            password_reset.forgot_password_request_impl,
+            password_reset.forgot_password_verify_otp_impl,
+            password_reset.forgot_password_reset_impl,
+            delete_account.request_restore_account_impl,
+            delete_account.restore_account_impl,
+        ):
+            with self.subTest(function=function.__name__):
+                self.assertIn("for_update=True", inspect.getsource(function))
+
+    def test_auth_never_bypasses_frappe_password_policy(self):
+        from aos.api.auth import password_reset, register
+
+        self.assertNotIn("ignore_password_policy", inspect.getsource(register.register_impl))
+        self.assertNotIn("ignore_password_policy", inspect.getsource(password_reset.forgot_password_reset_impl))
 
     def test_auth_index_patch_is_idempotent(self):
         before = self._existing_auth_indexes()

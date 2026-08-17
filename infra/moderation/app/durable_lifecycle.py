@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import threading
 import time
@@ -18,6 +19,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from rq import Retry, get_current_job
+
+logger = logging.getLogger(__name__)
 
 _ACTIVE_JOB_STATUSES = {"queued", "started", "deferred", "scheduled"}
 _TERMINAL_WORK_STATES = {"work_complete", "work_failed"}
@@ -213,6 +216,16 @@ def load_result(redis: Any, service_type: str, stable_id: str) -> dict[str, str]
     return _decode_map(redis.hgetall(_result_key(service_type, stable_id)) or {})
 
 
+def _record_value(name: str, value: Any) -> str:
+    # Terminal callback payloads are already bounded by _safe_payload(), but a
+    # terminal callback can legitimately exceed 4 KiB (for example when it carries
+    # processing metadata). Truncating JSON makes it unparsable and previously
+    # caused callbacks to be delivered without job_id/status. Preserve the
+    # complete bounded JSON while keeping ordinary diagnostic fields small.
+    limit = 65536 if name == "result_payload" else 4000
+    return _clean(value, limit=limit)
+
+
 def _write_record(
     redis: Any,
     service_type: str,
@@ -222,7 +235,11 @@ def _write_record(
     retention_seconds: int,
 ) -> None:
     key = _result_key(service_type, stable_id)
-    normalized = {name: _clean(value, limit=4000) for name, value in mapping.items() if value is not None}
+    normalized = {
+        name: _record_value(name, value)
+        for name, value in mapping.items()
+        if value is not None
+    }
     desired_ttl = max(3600, int(retention_seconds))
     try:
         existing_ttl = int(redis.ttl(key) or -1)
@@ -682,7 +699,38 @@ def deliver_callback(
     try:
         record = load_result(redis, service_type, stable_id)
         attempt = int(record.get("callback_attempt_count") or 0) + 1
-        result_payload = _parse_json(record.get("result_payload"), {})
+        result_payload = _parse_json(record.get("result_payload"), None)
+        if not isinstance(result_payload, dict):
+            _write_record(
+                redis,
+                service_type,
+                stable_id,
+                {
+                    "callback_status": "dead_letter",
+                    "last_callback_error_category": "CALLBACK_RESULT_INVALID",
+                    "callback_completed_at": _now(),
+                    "next_callback_retry_at": "",
+                },
+                retention_seconds=result_ttl_seconds,
+            )
+            redis.zrem(_callback_pending_key(service_type), _digest(stable_id))
+            _record_metric(redis, service_type, "callback_dead_lettered")
+            return {
+                "ok": False,
+                "callback_status": "dead_letter",
+                "error": "CALLBACK_RESULT_INVALID",
+            }
+
+        # The stable job ID is stored separately from the result JSON. Restore it
+        # defensively for records written by older workers, but never invent
+        # domain output metadata such as duration or object keys.
+        result_payload["job_id"] = (
+            _clean(result_payload.get("job_id"), limit=200)
+            or record.get("stable_job_id")
+            or stable_id
+        )
+        if not result_payload.get("status"):
+            result_payload["status"] = record.get("terminal_result_type") or ""
         result_payload.update(
             {
                 "idempotency_key": stable_id,
@@ -783,6 +831,12 @@ def deliver_callback(
                 redis.zrem(_callback_pending_key(service_type), _digest(stable_id))
                 _record_metric(redis, service_type, "callback_dead_lettered")
                 return {"ok": False, "callback_status": "dead_letter", "error": category}
+            logger.warning(
+                "Companion callback temporarily rejected service=%s status=%s category=%s",
+                service_type,
+                status_code,
+                error_code or "none",
+            )
             raise CallbackDeliveryRetryableError("CALLBACK_TEMPORARY_HTTP_FAILURE")
         except CallbackDeliveryRetryableError:
             raise

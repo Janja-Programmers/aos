@@ -72,7 +72,6 @@ def register_impl(**kwargs):
         user.user_type = "Website User"
         user.send_welcome_email = 0
         user.new_password = password
-        user.flags.ignore_password_policy = True
         user.flags.no_welcome_mail = True
         user.insert(ignore_permissions=True)
 

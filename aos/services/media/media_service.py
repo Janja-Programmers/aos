@@ -149,6 +149,24 @@ class MediaService:
         ) as exc:
             raise MediaStorageError("Storage is temporarily unavailable") from exc
 
+        if idempotency_hash:
+            # The initial lookup above is only a fast path. Serialize the final
+            # check-and-insert boundary across workers so simultaneous retries
+            # with the same key cannot create two initialized uploads.  Locking
+            # the owner User row avoids a new global lock service and is safe
+            # because every media owner is an existing Frappe User.
+            frappe.db.sql(
+                "SELECT name FROM `tabUser` WHERE name = %s FOR UPDATE",
+                (user,),
+            )
+            existing = self._find_reusable_initiated_upload(
+                user=user,
+                purpose=policy.key,
+                idempotency_hash=idempotency_hash,
+            )
+            if existing:
+                return self._issue_upload_url(existing)
+
         final_key = self.generate_object_key(
             owner_user=user,
             purpose_rule=policy,

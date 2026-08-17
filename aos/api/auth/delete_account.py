@@ -108,7 +108,7 @@ def request_restore_account_impl(**kwargs):
         return ok(RESTORE_REQUEST_GENERIC_MESSAGE)
     try:
         user = frappe.get_doc("User", user_name)
-        ver = ensure_ver_doc(user_name, email=email, purpose=RESTORE_PURPOSE)
+        ver = ensure_ver_doc(user_name, email=email, purpose=RESTORE_PURPOSE, for_update=True)
         cooldown = enforce_resend_cooldown(ver)
         if cooldown:
             return cooldown
@@ -138,7 +138,7 @@ def restore_account_impl(**kwargs):
         user_name = frappe.db.get_value("User", {"email": email}, "name")
         if not user_name:
             return public_otp_invalid()
-        ver = get_ver_doc(user_name, purpose=RESTORE_PURPOSE)
+        ver = get_ver_doc(user_name, purpose=RESTORE_PURPOSE, for_update=True)
         verified_err = verify_public_otp(ver, otp, consume=True)
         if verified_err:
             return verified_err

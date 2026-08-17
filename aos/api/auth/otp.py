@@ -45,7 +45,7 @@ def verify_email_otp_impl(**kwargs):
     if not user_name:
         return public_otp_invalid()
 
-    ver = get_ver_doc(user_name, purpose="email_verification")
+    ver = get_ver_doc(user_name, purpose="email_verification", for_update=True)
     err = verify_public_otp(ver, otp, consume=True)
     if err:
         return err
@@ -84,7 +84,7 @@ def resend_email_otp_impl(**kwargs):
     if int(user.enabled or 0) == 1:
         return ok("Account already active.")
 
-    ver = get_ver_doc(user_name, purpose="email_verification")
+    ver = get_ver_doc(user_name, purpose="email_verification", for_update=True)
     if not ver:
         return ok(GENERIC_RESEND_MESSAGE)
 
