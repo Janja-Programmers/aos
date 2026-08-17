@@ -61,8 +61,11 @@ class AOSAd(Document):
             self._validate_owner_boundary()
             self._validate_lifecycle()
             self._validate_seller_state()
-            self._validate_market()
-            self._validate_location()
+            action = self._status_action()
+            lifecycle_only = action in {"expire", "suspend"} and not self._content_requires_full_validation()
+            if not lifecycle_only:
+                self._validate_market()
+                self._validate_location()
             self._validate_mutable_content()
         except (AdsError, CatalogError, MediaError) as exc:
             _throw_domain(exc)

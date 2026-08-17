@@ -74,6 +74,11 @@ class TestMediaPurposePolicies(TestCase):
 				self.assertTrue(policy.prefix)
 				self.assertFalse(policy.prefix.startswith("/"))
 
+	def test_ad_video_upload_limit_matches_product_policy(self):
+		policy = MEDIA_PURPOSES["ad_video"]
+		self.assertEqual(policy.max_size_bytes, 200 * 1024 * 1024)
+		self.assertEqual(policy.max_duration_seconds, 300)
+
 	def test_sensitive_and_immutable_purposes_have_stricter_lifecycle_rules(self):
 		self.assertEqual(
 			MEDIA_PURPOSES["verification_document"].orphan_retention_days,

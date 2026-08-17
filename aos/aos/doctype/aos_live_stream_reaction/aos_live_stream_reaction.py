@@ -6,9 +6,6 @@ from __future__ import annotations
 import frappe
 from frappe.model.document import Document
 
-from aos.services.live_analytics_service import LiveAnalyticsService
-
-
 LIVE_STATUS = "live"
 
 VALID_REACTION_TYPES = {
@@ -26,9 +23,6 @@ class AOSLiveStreamReaction(Document):
         self._validate_user()
         self._validate_reaction_type()
         self._validate_live_is_active()
-
-    def after_insert(self):
-        self._update_live_reaction_count()
 
     # VALIDATIONS
     def _validate_required_fields(self):
@@ -73,14 +67,3 @@ class AOSLiveStreamReaction(Document):
         if live.status != LIVE_STATUS or not live.is_active:
             frappe.throw("Cannot react on inactive live stream.")
 
-    # SIDE EFFECTS
-    def _update_live_reaction_count(self):
-        try:
-            LiveAnalyticsService.handle_reaction(
-                live_id=self.live_stream,
-            )
-        except Exception:
-            frappe.log_error(
-                frappe.get_traceback(),
-                "Live reaction analytics update failed",
-            )

@@ -132,7 +132,7 @@ def send_reaction_impl(**kwargs):
     )
 
     try:
-        LiveRepository().lock_live(live_id)
+        LiveRepository().lock_live_shared(live_id)
         live, err = validate_live_exists(
             live_id
         )

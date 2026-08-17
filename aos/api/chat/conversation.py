@@ -572,23 +572,38 @@ def delete_conversation_impl(**kwargs):
                 error="PERMISSION_DENIED",
             )
 
-        field = (
-            "is_active_1"
-            if conv.participant_1 == current_user
-            else "is_active_2"
-        )
+        from frappe.utils import now_datetime
+        from .clear_chat import _clear_visible_messages_bounded
+        from .preview import recompute_conversation_preview_for_user
 
+        participant_index = 1 if conv.participant_1 == current_user else 2
+        active_field = "is_active_1" if participant_index == 1 else "is_active_2"
+        unread_field = "unread_count_1" if participant_index == 1 else "unread_count_2"
+        changed_at = now_datetime()
+
+        # Deleting a conversation means the same user's existing history is
+        # cleared as well as the list row being hidden. A later incoming
+        # message reactivates the conversation, but old cleared messages stay
+        # hidden for this user.
+        cleared_count = _clear_visible_messages_bounded(
+            conversation_id=conv_id,
+            participant_index=participant_index,
+            changed_at=changed_at,
+        )
         frappe.db.set_value(
             "AOS Conversation",
             conv_id,
-            field,
-            0,
+            {active_field: 0, unread_field: 0},
             update_modified=False,
         )
+        recompute_conversation_preview_for_user(conversation_id=conv_id, user=current_user)
 
         schedule_presence_update_to_peers(current_user)
 
-        return ok("Conversation deleted.")
+        return ok(
+            "Conversation deleted.",
+            data={"conversation_id": conv_id, "cleared_count": cleared_count},
+        )
 
     except Exception:
         frappe.log_error("Chat operation failed.", "AOS Delete Conversation Failed")

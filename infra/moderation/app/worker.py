@@ -57,16 +57,22 @@ def _inspect_image_media(
 	size_bytes = int(item.get("size_bytes") or 0)
 	content_type = str(item.get("content_type") or "").lower()
 
+	# This worker performs byte-bounded image inspection only. Videos are
+	# accepted according to the canonical Media purpose policy and are not
+	# downloaded into memory here, so the image inspection cap must never
+	# reject an otherwise valid ad video.
+	if content_type.startswith("video/"):
+		labels.add("video_present")
+		scores.setdefault("video_present", 0.10)
+		return
+
+	if not content_type.startswith("image/"):
+		return
+
 	if size_bytes and size_bytes > settings.max_media_bytes:
 		labels.add("media_too_large_for_moderation")
 		reasons.append(f"Media {item.get('media_id')} exceeds moderation inspection limit.")
 		scores["media_too_large_for_moderation"] = 0.60
-		return
-
-	if not content_type.startswith("image/"):
-		if content_type.startswith("video/"):
-			labels.add("video_present")
-			scores.setdefault("video_present", 0.10)
 		return
 
 	if not settings.inspect_media:

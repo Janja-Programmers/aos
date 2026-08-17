@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import ast
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from aos.api.live.reactions import send_reaction_impl
 from aos.patches.v1_0 import harden_live_subsystem, install_live_indexes
+from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
 class TestLiveDatabaseContracts(FrappeTestCase):
@@ -94,6 +97,36 @@ class TestLiveDatabaseContracts(FrappeTestCase):
             self.assertIsNotNone(field)
             self.assertTrue(field.hidden)
             self.assertTrue(field.read_only)
+
+
+class TestLiveReactionDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
+    def setUp(self):
+        self.prefix = self.make_prefix("live-reaction-db")
+        self.created_users: list[str] = []
+        frappe.set_user("Administrator")
+        self.configure_test_localization_defaults()
+
+    def tearDown(self):
+        self.cleanup_feature_rows()
+        self.restore_localization_test_state()
+        frappe.set_user("Administrator")
+
+    def test_rapid_host_reactions_do_not_serialize_on_exclusive_live_lock(self):
+        host = self.make_user("reaction-host")
+        live = self.make_live(host=host)
+        frappe.set_user(host)
+
+        with patch("aos.api.live.reactions.rate_limit", return_value=None):
+            responses = [
+                send_reaction_impl(live_id=live.name, reaction_type="like")
+                for _ in range(20)
+            ]
+
+        self.assertTrue(all(response.get("ok") for response in responses), responses)
+        self.assertEqual(
+            frappe.db.count("AOS Live Stream Reaction", {"live_stream": live.name, "user": host}),
+            20,
+        )
 
 
 if __name__ == "__main__":

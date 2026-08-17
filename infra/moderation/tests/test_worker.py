@@ -51,3 +51,27 @@ def test_work_failure_raises(monkeypatch):
 		worker._perform_moderation_work(
 			{"job_id": "job-2", "callback_url": "https://callback.invalid/moderation"}
 		)
+
+
+def test_large_video_is_not_rejected_by_image_inspection_byte_limit(monkeypatch):
+	"""Ad videos follow Media's video policy; this worker only byte-inspects images."""
+	monkeypatch.setattr(worker, "get_settings", moderation_settings)
+	labels: set[str] = set()
+	reasons: list[str] = []
+	scores: dict[str, float] = {}
+
+	worker._inspect_image_media(
+		object(),
+		{
+			"media_id": "MEDIA-VIDEO-1",
+			"content_type": "video/mp4",
+			"size_bytes": 150 * 1024 * 1024,
+		},
+		labels,
+		reasons,
+		scores,
+	)
+
+	assert "video_present" in labels
+	assert "media_too_large_for_moderation" not in labels
+	assert not reasons

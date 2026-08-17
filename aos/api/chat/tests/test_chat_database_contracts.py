@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.api.chat.conversation import list_conversations_impl
+from aos.api.chat.conversation import delete_conversation_impl, list_conversations_impl
 from aos.api.chat.message import list_messages_impl, send_message_impl
 from aos.api.chat.status import mark_delivered_impl, mark_read_impl
 from aos.api.chat.presence import get_presence_impl
@@ -105,6 +105,54 @@ class TestChatDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         row = next(item for item in (after_read.get("data") or []) if item.get("id") == conversation.name)
         self.assertTrue(row.get("last_message_delivered_at"))
         self.assertTrue(row.get("last_message_read_at"))
+
+
+    def test_delete_conversation_also_clears_old_history_for_that_user(self):
+        sender, receiver, conversation = self._users_and_conversation()
+        frappe.set_user(sender)
+        with (
+            patch("aos.api.chat.message.rate_limit", return_value=None),
+            patch("aos.api.chat.message.NotificationService.notify_new_message"),
+            patch("aos.api.chat.message.enqueue_conversation_response_metrics_refresh"),
+        ):
+            first = send_message_impl(
+                conversation_id=conversation.name,
+                content="Old message one",
+                idempotency_key="delete-clear-1",
+            )
+            second = send_message_impl(
+                conversation_id=conversation.name,
+                content="Old message two",
+                idempotency_key="delete-clear-2",
+            )
+        self.assertTrue(first.get("ok"), first)
+        self.assertTrue(second.get("ok"), second)
+
+        frappe.set_user(receiver)
+        with patch("aos.api.chat.conversation.rate_limit", return_value=None):
+            deleted = delete_conversation_impl(conversation_id=conversation.name)
+        self.assertTrue(deleted.get("ok"), deleted)
+        self.assertEqual(deleted.get("data", {}).get("cleared_count"), 2)
+
+        frappe.set_user(sender)
+        with (
+            patch("aos.api.chat.message.rate_limit", return_value=None),
+            patch("aos.api.chat.message.NotificationService.notify_new_message"),
+            patch("aos.api.chat.message.enqueue_conversation_response_metrics_refresh"),
+        ):
+            new_message = send_message_impl(
+                conversation_id=conversation.name,
+                content="New message after delete",
+                idempotency_key="delete-clear-3",
+            )
+        self.assertTrue(new_message.get("ok"), new_message)
+
+        frappe.set_user(receiver)
+        with patch("aos.api.chat.message.rate_limit", return_value=None):
+            history = list_messages_impl(conversation_id=conversation.name, limit=20)
+        self.assertTrue(history.get("ok"), history)
+        ids = [row.get("id") for row in (history.get("data") or [])]
+        self.assertEqual(ids, [new_message.get("data", {}).get("id")])
 
     def test_message_idempotency_prevents_duplicate_side_effects(self):
         sender, _receiver, conversation = self._users_and_conversation()

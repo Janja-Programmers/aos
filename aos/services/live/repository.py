@@ -23,6 +23,24 @@ class LiveRepository:
         )
         return dict(rows[0]) if rows else None
 
+    def lock_live_shared(self, live_id: str) -> dict[str, Any] | None:
+        """Hold a shared lifecycle lock for high-frequency read-side events.
+
+        Concurrent reactions may proceed together, while an end/demotion path
+        requiring an exclusive row lock waits until accepted reactions finish.
+        """
+        rows = frappe.db.sql(
+            """
+            SELECT name, host_user, status, is_active, room_name, started_at, ended_at
+            FROM `tabAOS Live Stream`
+            WHERE name = %s
+            LIMIT 1 LOCK IN SHARE MODE
+            """,
+            (live_id,),
+            as_dict=True,
+        )
+        return dict(rows[0]) if rows else None
+
     def lock_active_host_live(self, host_user: str) -> list[dict[str, Any]]:
         rows = frappe.db.sql(
             """

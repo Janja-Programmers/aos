@@ -195,19 +195,30 @@ def cleanup_deleted_account_features(user: str) -> dict[str, int]:
 
 
 def restore_deleted_account_features(user: str) -> dict[str, int]:
-    """Phase 2 restore policy.
+    """Restore reversible account-owned feature state.
 
-    Restore only reactivates login/profile in Phase 1. Public marketplace/video
-    content is deliberately not republished automatically because listings,
-    prices, videos, and seller trust state may be stale after deletion.
+    Account deletion temporarily removes the Seller capability boundary. A
+    seller deleted specifically by the Accounts lifecycle is restored to the
+    status it held immediately before account deletion. Public listings/videos
+    remain unpublished because their market/moderation freshness must still be
+    re-established separately.
     """
     user = (user or "").strip()
     if not user:
         return {}
 
+    seller_restored = 0
+    if _doctype_exists("AOS Seller"):
+        from aos.services.sellers.policy import restore_seller_after_account_restore
+
+        for seller in _seller_names_for_user(user):
+            _doc, changed = restore_seller_after_account_restore(seller, actor=user)
+            seller_restored += int(bool(changed))
+
     return {
         "public_content_restored": 0,
-        "seller_requires_reactivation": int(bool(_seller_names_for_user(user))),
+        "seller_profiles_restored": seller_restored,
+        "seller_requires_reactivation": 0,
     }
 
 
@@ -502,6 +513,10 @@ def _mark_sellers_deleted(*, sellers: list[str]) -> int:
     return _update_counted(
         "AOS Seller",
         set_sql="""
+            account_delete_previous_status = CASE
+                WHEN status IN ('Active', 'Suspended') THEN status
+                ELSE account_delete_previous_status
+            END,
             status = 'Deleted',
             status_reason_code = 'ACCOUNT_DELETED',
             status_source = 'accounts',

@@ -74,12 +74,19 @@ class RankingService:
                     short_id,
                     source="short_ranking_update",
                 )
+            except frappe.QueryDeadlockError:
+                # MariaDB rolls the transaction back on deadlock. Swallowing it
+                # would make the background job look successful even though
+                # the ranking_score write was lost.
+                raise
             except Exception:
                 frappe.log_error(
                     frappe.get_traceback(),
                     f"Search/ranking short index refresh failed for {short_id}",
                 )
 
+        except frappe.QueryDeadlockError:
+            raise
         except Exception:
             frappe.log_error(
                 frappe.get_traceback(),
