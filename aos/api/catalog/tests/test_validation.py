@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import patch
 
+from aos.services.catalog.constants import MAX_ATTRIBUTE_OPTIONS
 from aos.services.catalog.errors import CatalogValidationError
 from aos.services.catalog.validation import (
     normalize_category_id,
@@ -138,3 +139,126 @@ class TestCatalogValidation(TestCase):
         )
         validate_attribute_document(doc)
         self.assertEqual(doc.options, "")
+
+    @patch("aos.services.catalog.validation.frappe.get_all")
+    def test_category_attribute_override_supports_large_bounded_choice_sets(self, get_all):
+        get_all.return_value = [
+            {"name": "Brand", "field_type": "Select", "options": "", "is_active": 1}
+        ]
+        options = "\n".join(f"Brand {index}" for index in range(150))
+        row = SimpleNamespace(
+            attribute="Brand",
+            sort_order=1,
+            is_active=1,
+            is_required=0,
+            options_override=options,
+        )
+        doc = SimpleNamespace(
+            name="Vehicle Parts & Accessories",
+            category_name="Vehicle Parts & Accessories",
+            parent_aos_category="",
+            is_group=0,
+            is_active=1,
+            is_service=0,
+            sort_order=1,
+            pricing_requirement="Required",
+            allowed_price_types="Fixed\nNegotiable",
+            allowed_price_units="",
+            attributes=[row],
+        )
+
+        validate_category_document(doc)
+
+        self.assertEqual(len(row.options_override.splitlines()), 150)
+
+    @patch("aos.services.catalog.validation.frappe.get_all")
+    def test_category_attribute_override_remains_bounded(self, get_all):
+        get_all.return_value = [
+            {"name": "Brand", "field_type": "Select", "options": "", "is_active": 1}
+        ]
+        options = "\n".join(f"Brand {index}" for index in range(MAX_ATTRIBUTE_OPTIONS + 1))
+        row = SimpleNamespace(
+            attribute="Brand",
+            sort_order=1,
+            is_active=1,
+            is_required=0,
+            options_override=options,
+        )
+        doc = SimpleNamespace(
+            name="Vehicles",
+            category_name="Vehicles",
+            parent_aos_category="",
+            is_group=0,
+            is_active=1,
+            is_service=0,
+            sort_order=1,
+            pricing_requirement="Optional",
+            allowed_price_types="Fixed",
+            allowed_price_units="",
+            attributes=[row],
+        )
+
+        with self.assertRaises(CatalogValidationError):
+            validate_category_document(doc)
+
+    @patch("aos.services.catalog.validation.frappe.get_all")
+    def test_text_attribute_can_be_narrowed_to_category_choices(self, get_all):
+        get_all.return_value = [
+            {"name": "Type of Service", "field_type": "Text", "options": "", "is_active": 1}
+        ]
+        row = SimpleNamespace(
+            attribute="Type of Service",
+            sort_order=1,
+            is_active=1,
+            is_required=1,
+            options_override="Visa Service\nTour Services\nPassport Services",
+        )
+        doc = SimpleNamespace(
+            name="Travel Agents & Tours",
+            category_name="Travel Agents & Tours",
+            parent_aos_category="",
+            is_group=0,
+            is_active=1,
+            is_service=1,
+            sort_order=1,
+            pricing_requirement="Optional",
+            allowed_price_types="Fixed\nNegotiable\nContact for price",
+            allowed_price_units="Per hour\nPer day\nPer job\nPer service\nPer session",
+            attributes=[row],
+        )
+
+        validate_category_document(doc)
+
+        self.assertEqual(
+            row.options_override,
+            "Visa Service\nTour Services\nPassport Services",
+        )
+
+    @patch("aos.services.catalog.validation.frappe.get_all")
+    def test_non_text_non_select_attribute_still_rejects_category_choices(self, get_all):
+        get_all.return_value = [
+            {"name": "Weight", "field_type": "Number", "options": "", "is_active": 1}
+        ]
+        row = SimpleNamespace(
+            attribute="Weight",
+            sort_order=1,
+            is_active=1,
+            is_required=0,
+            options_override="1\n2\n3",
+        )
+        doc = SimpleNamespace(
+            name="Freight",
+            category_name="Freight",
+            parent_aos_category="",
+            is_group=0,
+            is_active=1,
+            is_service=1,
+            sort_order=1,
+            pricing_requirement="Optional",
+            allowed_price_types="Fixed",
+            allowed_price_units="Per job",
+            attributes=[row],
+        )
+
+        with self.assertRaises(CatalogValidationError):
+            validate_category_document(doc)

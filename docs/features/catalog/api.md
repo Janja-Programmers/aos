@@ -85,6 +85,8 @@ The category value must be a scalar string. The endpoint returns the resolved ro
 
 Inactive categories or inactive ancestors are indistinguishable from missing categories. Schema reads are bounded to one category query, one child-row query, and one attribute-definition query.
 
+Category option overrides are authoritative for the category. When an override is supplied for a reusable `Text` attribute, the resolved public schema exposes that attribute as `Select` for that category, preserving free-text behavior in categories that do not define choices.
+
 ## Public error identifiers
 
 | Error | HTTP status | Meaning |

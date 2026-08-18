@@ -126,6 +126,44 @@ class TestCatalogService(TestCase):
         self.assertEqual(schema["attributes"][0]["options"], ["New", "Used"])
         self.assertEqual(repo.calls, {"categories": 1, "rows": 1, "attributes": 1})
 
+    def test_text_attribute_with_category_choices_resolves_as_select(self):
+        definitions = {
+            "Type of Service": {
+                "name": "Type of Service",
+                "label": "Type of Service",
+                "field_type": "Text",
+                "unit": "",
+                "help_text": "",
+                "options": "",
+                "is_active": 1,
+            }
+        }
+        chain = [
+            {
+                "name": "Travel Agents & Tours",
+                "attributes": [
+                    {
+                        "name": "ROW-1",
+                        "idx": 1,
+                        "attribute": "Type of Service",
+                        "sort_order": 1,
+                        "is_required": 1,
+                        "is_active": 1,
+                        "options_override": "Visa Service\nTour Services\nPassport Services",
+                    }
+                ],
+                "attribute_definitions": definitions,
+            }
+        ]
+
+        attribute = resolve_attributes(chain)[0]
+
+        self.assertEqual(attribute["type"], "Select")
+        self.assertEqual(
+            attribute["options"],
+            ["Visa Service", "Tour Services", "Passport Services"],
+        )
+
 
     def test_missing_attribute_definition_fails_closed(self):
         repo = FakeCatalogRepository(

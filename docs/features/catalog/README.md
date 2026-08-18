@@ -39,12 +39,14 @@ System Managers may activate or deactivate categories and attributes through Des
 Schemas resolve root-to-leaf. Later category rows are authoritative:
 
 - an active child row can override required state, order, and choice options;
+- a category-level choice override on a reusable `Text` attribute narrows that attribute to a single-choice `Select` for that category only;
 - an inactive child row removes an inherited attribute;
 - a child may explicitly re-enable an attribute disabled by its parent;
 - duplicate rows are rejected on new writes;
 - legacy duplicate rows are resolved deterministically by child-table order and row name until administrators clean them up.
 
 Attribute definitions, category rows, and categories are loaded in bounded bulk queries. No serializer performs document loads or dynamic SQL.
+Choice sets remain bounded, but category/master attribute choices use a dedicated limit large enough for legitimate taxonomies such as vehicle makes instead of the smaller generic Catalog choice limit.
 
 ## Pricing contract
 

@@ -11,11 +11,13 @@ from .constants import (
     ALLOWED_ATTRIBUTE_TYPES,
     ALLOWED_PRICE_TYPES,
     ALLOWED_PRICING_REQUIREMENTS,
+    MAX_ATTRIBUTE_OPTIONS,
     MAX_CATEGORY_DEPTH,
+    SELECT_ATTRIBUTE_TYPES,
 )
 from .errors import CatalogDataError, CatalogNotFoundError, CatalogValidationError
 from .repository import CatalogRepository
-from .validation import normalize_category_id, split_choices
+from .validation import effective_attribute_field_type, normalize_category_id, split_choices
 
 
 def attribute_key(attribute_name: str) -> str:
@@ -283,15 +285,29 @@ def resolve_attributes(chain_leaf_to_root: list[dict[str, Any]]) -> list[dict[st
             definition = definitions.get(attribute_name)
             if not definition or not int(definition.get("is_active") or 0):
                 continue
-            field_type = str(definition.get("field_type") or "Text").strip()
-            if field_type not in ALLOWED_ATTRIBUTE_TYPES:
+            base_field_type = str(definition.get("field_type") or "Text").strip()
+            if base_field_type not in ALLOWED_ATTRIBUTE_TYPES:
                 raise CatalogDataError("Catalog attribute type is invalid.")
             try:
-                options = split_choices(row.get("options_override"), field="attribute_option")
-                if not options:
-                    options = split_choices(definition.get("options"), field="attribute_option")
+                override_options = split_choices(
+                    row.get("options_override"),
+                    field="attribute_option",
+                    max_items=MAX_ATTRIBUTE_OPTIONS,
+                )
+                definition_options = split_choices(
+                    definition.get("options"),
+                    field="attribute_option",
+                    max_items=MAX_ATTRIBUTE_OPTIONS,
+                )
             except CatalogValidationError as exc:
                 raise CatalogDataError("Catalog attribute options are invalid.") from exc
+            field_type = effective_attribute_field_type(
+                base_field_type,
+                has_options_override=bool(override_options),
+            )
+            options = override_options or definition_options
+            if options and field_type not in SELECT_ATTRIBUTE_TYPES:
+                raise CatalogDataError("Catalog attribute options are invalid.")
             by_attribute[attribute_name] = {
                 "id": attribute_name,
                 "key": attribute_key(attribute_name),

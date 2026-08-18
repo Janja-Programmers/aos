@@ -18,6 +18,7 @@ from .constants import (
     ATTRIBUTE_UNIT_MAX_LENGTH,
     CATEGORY_ID_MAX_LENGTH,
     CATEGORY_NAME_MAX_LENGTH,
+    MAX_ATTRIBUTE_OPTIONS,
     MAX_CATEGORY_ATTRIBUTES,
     MAX_OPTIONS,
     MAX_SORT_ORDER,
@@ -136,6 +137,24 @@ def split_choices(
     return result
 
 
+def effective_attribute_field_type(field_type: Any, *, has_options_override: bool = False) -> str:
+    """Return the category-effective type for an attribute definition.
+
+    Legacy Catalog data uses category-level option overrides on reusable Text
+    attributes. Treating those rows as Text would expose an incoherent public
+    schema (free text plus a choice list), while rejecting them makes valid
+    existing category configuration impossible to maintain. A category-level
+    choice list therefore narrows a Text attribute to a single-choice Select
+    for that category only. Other non-select types remain invalid with option
+    overrides.
+    """
+
+    normalized = str(field_type or "Text").strip() or "Text"
+    if has_options_override and normalized == "Text":
+        return "Select"
+    return normalized
+
+
 def validate_category_document(doc: Any) -> None:
     """Normalize and enforce the repository's two-level category tree contract."""
 
@@ -249,10 +268,19 @@ def _validate_category_attribute_rows(doc: Any) -> None:
         override = split_choices(
             getattr(row, "options_override", None),
             field="attribute_option",
+            max_items=MAX_ATTRIBUTE_OPTIONS,
         )
-        if override and field_type not in SELECT_ATTRIBUTE_TYPES:
+        effective_type = effective_attribute_field_type(
+            field_type,
+            has_options_override=bool(override),
+        )
+        if override and effective_type not in SELECT_ATTRIBUTE_TYPES:
             raise CatalogValidationError("Only select attributes support option overrides.", code="INVALID_CATEGORY_SCHEMA")
-        split_choices(definition.get("options"), field="attribute_option")
+        split_choices(
+            definition.get("options"),
+            field="attribute_option",
+            max_items=MAX_ATTRIBUTE_OPTIONS,
+        )
         row.options_override = "\n".join(override)
 
 
@@ -282,7 +310,11 @@ def validate_attribute_document(doc: Any) -> None:
         max_length=ATTRIBUTE_HELP_TEXT_MAX_LENGTH,
         multiline=True,
     )
-    options = split_choices(getattr(doc, "options", None), field="attribute_option")
+    options = split_choices(
+        getattr(doc, "options", None),
+        field="attribute_option",
+        max_items=MAX_ATTRIBUTE_OPTIONS,
+    )
     if field_type not in SELECT_ATTRIBUTE_TYPES and options:
         raise CatalogValidationError("Only select attributes support options.", code="INVALID_CATEGORY_SCHEMA")
     doc.field_type = field_type
