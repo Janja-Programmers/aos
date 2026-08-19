@@ -281,9 +281,3 @@ on_error = ["aos.utils.metrics.on_error"]
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
 
-
-fixtures = [
-	{"dt": "AOS Category", "filters": [["is_active", "=", 1]]},
-	{"dt": "AOS Ad Attribute", "filters": [["is_active", "=", 1]]},
-	{"dt": "AOS Report Reason", "filters": [["is_active", "=", 1]]},
-]
