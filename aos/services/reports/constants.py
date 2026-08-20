@@ -12,7 +12,6 @@ REPORT_TRANSITIONS = {
     STATUS_REJECTED: frozenset(),
 }
 
-MODERATOR_ROLES = frozenset({"System Manager", "AOS Moderator"})
 TRANSPORT_FIELDS = frozenset({"cmd"})
 
 REPORT_ACTIONS = {

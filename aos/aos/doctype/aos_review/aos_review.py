@@ -18,6 +18,7 @@ from aos.services.reviews.constants import (
 )
 from aos.services.reviews.eligibility import review_key
 from aos.services.reviews.validation import normalize_comment, normalize_rating, normalize_title
+from aos.utils.doctype_permissions import has_doctype_permission
 
 _ALLOWED_TRANSITIONS = {
     STATUS_PENDING: {STATUS_PENDING, STATUS_APPROVED, STATUS_REJECTED, STATUS_HIDDEN, STATUS_WITHDRAWN},
@@ -33,7 +34,7 @@ class AOSReview(Document):
         user = getattr(frappe.session, "user", None) or "Guest"
         if user == "Guest":
             frappe.throw("Login required")
-        if "System Manager" not in set(frappe.get_roles(user) or []):
+        if not has_doctype_permission(user=user, doctype=self.doctype, ptype="create"):
             self.reviewer = user
             self.status = STATUS_PENDING
         self.review_key = review_key(reviewer=self.reviewer, ad_id=self.ad)

@@ -24,6 +24,7 @@ from frappe.exceptions import DoesNotExistError, TimestampMismatchError
 from frappe.utils import add_to_date, now_datetime
 
 from aos.services.callback_correlation import accepted_dispatch_generations
+from aos.utils.doctype_permissions import has_doctype_permission
 
 OUTBOX_DOCTYPE = "AOS Transactional Outbox"
 ACTIVE_STATUSES = ("Queued", "Claimed", "Dispatched", "Published", "Dispatch Uncertain", "Reconciliation Pending", "Failed")
@@ -1438,7 +1439,15 @@ def requeue_dead_letter_outbox(
 	original row and attempt history remain intact.
 	"""
 
-	frappe.only_for("System Manager")
+	if not has_doctype_permission(
+		user=getattr(getattr(frappe, "session", None), "user", None),
+		doctype=OUTBOX_DOCTYPE,
+		ptype="report",
+	):
+		frappe.throw(
+			"Report permission on AOS Transactional Outbox is required.",
+			exc=frappe.PermissionError,
+		)
 	name = _clean(outbox_name, limit=140)
 	expected = _clean(expected_idempotency_key, limit=200)
 	attempts_to_add = max(1, min(int(additional_attempts or 1), 10))
@@ -1511,7 +1520,15 @@ def authorize_terminal_work_replay(
 	companion terminal result and reopens the same durable Frappe job/outbox.
 	It never creates a replacement service-job document.
 	"""
-	frappe.only_for("System Manager")
+	if not has_doctype_permission(
+		user=getattr(getattr(frappe, "session", None), "user", None),
+		doctype=OUTBOX_DOCTYPE,
+		ptype="report",
+	):
+		frappe.throw(
+			"Report permission on AOS Transactional Outbox is required.",
+			exc=frappe.PermissionError,
+		)
 	name = _clean(outbox_name, limit=140)
 	expected = _clean(expected_idempotency_key, limit=200)
 	attempts_to_add = max(1, min(int(additional_attempts or 1), 10))

@@ -53,7 +53,7 @@ A definitive/exhausted failure persists `work_failed`, then schedules a separate
 
 Callback replay resends an existing terminal result and never reruns work.
 
-Work replay is a separate System Manager action and requires exact identity confirmation:
+Work replay is a separate operator action requiring effective Report permission on `AOS Transactional Outbox` plus exact identity confirmation:
 
 ```bash
 bench --site <site> execute aos.tasks.outbox.authorize_terminal_work_replay \

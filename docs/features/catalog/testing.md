@@ -44,7 +44,7 @@ Do not promote based on compile/static checks alone. Focused database tests, the
 
 After `bench --site <site> migrate` and asset rebuild/cache clear:
 
-1. Sign in to Desk as a System Manager and save a category.
+1. Sign in to Desk as a user with `AOS Category` Write permission and save a category.
 2. Upload a valid JPG, PNG, or WebP and confirm progress, preview, Media ID, and persisted image after reload.
 3. Replace the image and confirm the prior Media row is released/replaced rather than remaining attached.
 4. Remove the image and confirm the category reloads without an icon.

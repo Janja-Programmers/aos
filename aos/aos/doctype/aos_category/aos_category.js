@@ -31,8 +31,9 @@
     return stateByForm.get(frm);
   }
 
-  function canManageCategoryImages() {
-    return Array.isArray(frappe.user_roles) && frappe.user_roles.includes("System Manager");
+  function canManageCategoryImages(frm) {
+    const levelZero = frm && frm.perm && frm.perm[0];
+    return Boolean(levelZero && levelZero.write);
   }
 
   function ensureStyles() {
@@ -147,7 +148,7 @@
     }
 
     const state = stateFor(frm);
-    const canManage = canManageCategoryImages();
+    const canManage = canManageCategoryImages(frm);
     const isNew = frm.is_new();
     const mediaId = String(frm.doc.icon_media || "").trim();
     const iconUrl = String(frm.doc.icon || "").trim();
@@ -190,7 +191,7 @@
     if (!canManage) {
       $("<div>", {
         class: "aos-category-icon-status text-danger",
-        text: __("Only System Managers can manage category images."),
+        text: __("You need Write permission on AOS Category to manage category images."),
       }).appendTo($content);
     } else if (isNew) {
       $("<div>", {
@@ -404,7 +405,7 @@
   }
 
   function selectFile(frm) {
-    if (stateFor(frm).busy || frm.is_new() || !canManageCategoryImages()) {
+    if (stateFor(frm).busy || frm.is_new() || !canManageCategoryImages(frm)) {
       return;
     }
 
@@ -508,7 +509,7 @@
   function confirmRemoval(frm) {
     if (
       stateFor(frm).busy ||
-      !canManageCategoryImages() ||
+      !canManageCategoryImages(frm) ||
       (!frm.doc.icon_media && !frm.doc.icon)
     ) {
       return;

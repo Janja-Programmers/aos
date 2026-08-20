@@ -110,7 +110,7 @@ bench --site <site> execute aos.tasks.outbox.authorize_terminal_work_replay \
   }'
 ```
 
-Expected: System Manager and exact-key checks pass, no old work/callback job is active, history is archived, and the same durable job/outbox reopens as `Queued`.
+Expected: outbox Report permission and exact-key checks pass, no old work/callback job is active, history is archived, and the same durable job/outbox reopens as `Queued`.
 
 ## 11. Notification uncertainty
 

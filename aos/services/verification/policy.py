@@ -5,8 +5,9 @@ from __future__ import annotations
 import frappe
 
 from aos.services.sellers.policy import get_or_create_seller, seller_capabilities
+from aos.utils.doctype_permissions import has_doctype_permission
 
-from .constants import REVIEWER_ROLE, TYPE_BUSINESS
+from .constants import TYPE_BUSINESS
 from .errors import VerificationNotFoundError, VerificationPermissionError
 
 
@@ -66,7 +67,11 @@ def is_reviewer(user: str | None) -> bool:
     clean_user = str(user or "").strip()
     if not clean_user or clean_user == "Guest":
         return False
-    return REVIEWER_ROLE in set(frappe.get_roles(clean_user) or [])
+    return has_doctype_permission(
+        user=clean_user,
+        doctype="AOS Verification Request",
+        ptype="write",
+    )
 
 
 def assert_reviewer(user: str | None) -> None:

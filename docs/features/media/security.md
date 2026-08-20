@@ -28,7 +28,7 @@ A Media object cannot be silently attached to a second incompatible resource. Pu
 Verification documents, chat attachments, background-removal sources, and raw Shorts videos use private storage. Their records may not persist a public URL. Access requires authentication and one of:
 
 - uploader ownership;
-- System Manager role;
+- effective Read permission on the attached resource (or on `AOS Media Object` for generic private media);
 - conversation participation for chat attachments;
 - ownership of the attached verification request.
 

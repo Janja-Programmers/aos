@@ -87,7 +87,7 @@ export CHAT_RECEIVER_USER="load-user-2@example.com"
 export LIVE_ID="LIVE-2026-00001"
 ```
 
-Admin diagnostics require a System Manager user and should remain low-rate:
+Admin diagnostics require a user with effective `AOS Settings` Read permission and should remain low-rate:
 
 ```bash
 export ADMIN_EMAIL="admin-load-check@example.com"

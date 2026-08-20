@@ -33,12 +33,12 @@ It does not delete categories, merge duplicate legacy rows, rename identifiers, 
 
 ## Desk permission normalization
 
-`enforce_catalog_desk_permissions` removes legacy `Custom DocPerm` overrides for
-`AOS Category` and `AOS Ad Attribute`. The source-controlled DocType JSON remains
-the single permission authority and grants Catalog Desk CRUD access only to
-`System Manager`. This is a separate patch so sites that already executed the
-original Catalog hardening patch still receive the permission correction. It is
-idempotent and clears only the affected DocType metadata caches.
+`enforce_catalog_desk_permissions` is retained only for patch-history compatibility.
+It no longer deletes `Custom DocPerm` rows. Catalog Desk authorization is resolved
+at runtime by Frappe DocPerm / Custom DocPerm / Role Permissions Manager, so an
+administrator can grant roles such as `AOS Moderator` access to `AOS Category`
+or `AOS Ad Attribute` without changing AOS source code. The patch only clears
+the affected DocType caches and records a low-cardinality migration log entry.
 
-Neither patch contains an explicit commit. Bench/Frappe migration transaction
+The patch contains no explicit commit. Bench/Frappe migration transaction
 ownership remains authoritative.

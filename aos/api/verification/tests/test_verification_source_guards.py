@@ -137,10 +137,12 @@ class TestVerificationProductionSourceGuards(unittest.TestCase):
     def test_review_transitions_are_centralized_and_staff_enforced(self):
         lifecycle = _source("aos/services/verification/lifecycle.py")
         controller = _source("aos/aos/doctype/aos_verification_request/aos_verification_request.py")
-        constants = _source("aos/services/verification/constants.py")
+        policy = _source("aos/services/verification/policy.py")
         self.assertIn("REVIEWER_TRANSITIONS", lifecycle)
         self.assertIn("is_reviewer(actor)", lifecycle)
-        self.assertIn('REVIEWER_ROLE = "System Manager"', constants)
+        self.assertIn("has_doctype_permission", policy)
+        self.assertIn('doctype="AOS Verification Request"', policy)
+        self.assertIn('ptype="write"', policy)
         self.assertIn("validate_status_transition", controller)
         self.assertIn("protect_review_metadata", controller)
         self.assertIn("lock_eligible_profile(self.user)", controller)
@@ -226,7 +228,8 @@ class TestVerificationProductionSourceGuards(unittest.TestCase):
         self.assertIn("Business", readme)
         self.assertIn("Intentionally unsupported", readme)
         self.assertIn("no malware/antivirus", readme)
-        self.assertIn("System Manager", security)
+        self.assertIn("AOS Verification Request", security)
+        self.assertIn("effective Read/Write permission", security)
         self.assertIn("bench --site <site> run-tests --app aos --module aos.api.verification", testing)
 
     def test_verification_observability_has_no_payload_pii_fields(self):

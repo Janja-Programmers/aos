@@ -12,6 +12,7 @@ from aos.services.wishlist.constants import (
     WISHLIST_STATUSES,
 )
 from aos.services.wishlist.counters import apply_wishlist_count_delta
+from aos.utils.doctype_permissions import has_doctype_permission
 
 
 def wishlist_name(user: str, ad: str) -> str:
@@ -47,9 +48,14 @@ class AOSWishlist(Document):
                 frappe.throw("Wishlist ownership cannot be changed.", exc=frappe.ValidationError)
 
         user = str(getattr(frappe.session, "user", "") or "")
-        if user not in {"", "Guest", "Administrator"} and "System Manager" not in frappe.get_roles(user):
-            if user != self.user:
-                frappe.throw("Not permitted.", exc=frappe.PermissionError)
+        permission_type = "create" if self.is_new() else "write"
+        has_admin_permission = has_doctype_permission(
+            user=user,
+            doctype=self.doctype,
+            ptype=permission_type,
+        )
+        if user not in {"", "Guest"} and not has_admin_permission and user != self.user:
+            frappe.throw("Not permitted.", exc=frappe.PermissionError)
 
         if self.status == WISHLIST_STATUS_ACTIVE:
             seller_user = frappe.db.get_value(

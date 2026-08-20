@@ -53,9 +53,10 @@ class TestMediaPurposePolicies(TestCase):
 			list_media_purposes(client_upload_only=True),
 		)
 
-	def test_category_icon_requires_an_administrative_role(self):
+	def test_category_icon_uses_role_permission_manager_capability(self):
 		policy = MEDIA_PURPOSES["category_icon"]
-		self.assertEqual(policy.allowed_roles, frozenset({"System Manager"}))
+		self.assertEqual(policy.required_permission_doctype, "AOS Category")
+		self.assertEqual(policy.required_permission_type, "write")
 		self.assertEqual(
 			policy.allowed_attachment_doctypes,
 			frozenset({"AOS Category"}),

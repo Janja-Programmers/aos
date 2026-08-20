@@ -4,7 +4,7 @@
 
 Guest access is limited to intentionally public list, detail, and image-search routes. Seller management, drafts, wishlist, reporting, and lifecycle operations require an authenticated session. The seller is resolved from the current user; client-supplied owner or seller fields are rejected.
 
-The aggregate controller is a fail-closed second boundary. Non-privileged writes require the seller user to match the session user. Moderator and System Manager changes still require an explicit lifecycle action. Suspended sellers cannot create, edit, renew, mark available, or otherwise republish Ads. System expiry, suspension, and deletion can still hide resources after seller restriction.
+The aggregate controller is a fail-closed second boundary. Non-privileged writes require the seller user to match the session user. Administrative changes by users with effective `AOS Ad` Write permission still require an explicit lifecycle action. Suspended sellers cannot create, edit, renew, mark available, or otherwise republish Ads. System expiry, suspension, and deletion can still hide resources after seller restriction.
 
 ## Input and SQL safety
 

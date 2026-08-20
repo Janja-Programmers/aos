@@ -14,6 +14,7 @@ from typing import Any
 import frappe
 
 from aos.services.accounts.identity import public_account_id_for_user, resolve_account_reference
+from aos.utils.doctype_permissions import has_doctype_permission
 from frappe.utils import add_days, date_diff, getdate, today
 
 from aos.api.shared.auth import require_login
@@ -54,7 +55,6 @@ ENGAGEMENT_FIELDS = (
     "reposts",
 )
 
-STAFF_ROLES = {"System Manager", "AOS Moderator"}
 
 
 # PUBLIC IMPLEMENTATIONS
@@ -64,7 +64,7 @@ def get_short_analytics_impl(**kwargs):
 
     Access:
     - short owner
-    - System Manager / AOS Moderator
+    - users with Report permission on AOS Short
     """
     user, err = require_login()
     if err:
@@ -140,7 +140,7 @@ def user_short_analytics_impl(**kwargs):
 
     Access:
     - the same user
-    - System Manager / AOS Moderator
+    - users with Report permission on AOS Short
     """
     user, err = require_login()
     if err:
@@ -345,8 +345,11 @@ def _normalize_date_range(date_from=None, date_to=None):
 
 
 def _is_staff(user: str) -> bool:
-    roles = set(frappe.get_roles(user) or [])
-    return bool(roles.intersection(STAFF_ROLES))
+    return has_doctype_permission(
+        user=user,
+        doctype="AOS Short",
+        ptype="report",
+    )
 
 
 # SERIALIZATION HELPERS

@@ -77,7 +77,7 @@ Public media returns the canonical public URL. Private media requires an authori
 {"media_id": "MEDIA-2026-00001"}
 ```
 
-The caller must own the media (or be a System Manager), the purpose must permit deletion, and no attachment or feature reference may remain. `force` is rejected for clients. A repeated successful delete is idempotent. A storage outage leaves the record `Delete Pending` for retry and returns `STORAGE_UNAVAILABLE`.
+The caller must own the media or have effective Write permission on `AOS Media Object`, the purpose must permit deletion, and no attachment or feature reference may remain. `force` is rejected for clients. A repeated successful delete is idempotent. A storage outage leaves the record `Delete Pending` for retry and returns `STORAGE_UNAVAILABLE`.
 
 ## Remove background
 

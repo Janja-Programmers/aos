@@ -11,7 +11,7 @@ Allowed reviewer transitions are:
 
 `Resolved` and `Rejected` are terminal. A terminal report cannot return to `Reviewing` or move to the other terminal state through a later/stale save.
 
-Only the existing reviewer policy (System Manager, plus the already-referenced `AOS Moderator` role where present) may change status or `admin_action`. Frappe Desk permissions remain the first boundary and DocType lifecycle checks remain the server-side boundary even for `ignore_permissions` saves.
+Only users with effective Write permission on the concrete Report DocType may change status or `admin_action`. Frappe Desk permissions remain the first boundary and DocType lifecycle checks remain the server-side boundary even for `ignore_permissions` saves.
 
 ## Concurrency
 

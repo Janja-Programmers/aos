@@ -8,7 +8,7 @@ Verification data is sensitive PII. The backend therefore separates public trust
 
 **Owner-visible private data:** `get_my_verification` returns the current account's Verification status and masked evidence identifiers. It does not return reviewer identity or raw private storage metadata.
 
-**Staff-only data:** the full Verification Request and review fields remain protected by the existing System Manager DocType permissions and server-side reviewer checks.
+**Staff-only data:** the full Verification Request and review fields remain protected by effective `AOS Verification Request` DocType permissions and server-side reviewer checks.
 
 **Raw evidence:** `verification_document` Media is always Private. Verification Request and Verification Document DocTypes are not web-search indexed and cannot be renamed through normal Desk rename behavior.
 
@@ -32,7 +32,7 @@ Verification does not accept arbitrary document URLs and performs no server fetc
 
 ## IDOR and privilege boundaries
 
-Submission and retrieval use `frappe.session.user`; no account/User ID is accepted from the client. Private Media access is re-authorized on every signed-URL request. Owners can access only their own attached Verification evidence. System Manager access follows the existing Media reviewer exception and DocType role permission. Clients cannot approve themselves, set `is_verified`, set reviewer identity/timestamps, change another request's owner, or enumerate another account's rejection reason through Verification APIs.
+Submission and retrieval use `frappe.session.user`; no account/User ID is accepted from the client. Private Media access is re-authorized on every signed-URL request. Owners can access only their own attached Verification evidence. Reviewer access follows effective Read/Write permission on the attached `AOS Verification Request`; there is no hardcoded reviewer role exception in Media. Clients cannot approve themselves, set `is_verified`, set reviewer identity/timestamps, change another request's owner, or enumerate another account's rejection reason through Verification APIs.
 
 ## Logging and notifications
 

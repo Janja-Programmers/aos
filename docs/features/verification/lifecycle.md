@@ -4,7 +4,7 @@
 
 New requests are server-created as `Pending`; clients cannot set status.
 
-Reviewer transitions, enforced for the existing System Manager role, are:
+Reviewer transitions, enforced for users with effective Write permission on `AOS Verification Request`, are:
 
 - `Pending -> Reviewing`
 - `Pending -> Approved`

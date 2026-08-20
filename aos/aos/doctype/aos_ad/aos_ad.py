@@ -25,8 +25,8 @@ from aos.services.ads.validation import (
 from aos.services.catalog.errors import CatalogError
 from aos.services.media.media_service import MediaError, MediaService
 from aos.utils.aos_settings import get_aos_settings_snapshot
+from aos.utils.doctype_permissions import has_doctype_permission
 
-_PRIVILEGED_ROLES = frozenset({"System Manager", "AOS Moderator"})
 _SYSTEM_ACTIONS = frozenset({"moderation_allow", "moderation_reject", "moderation_review", "expire", "suspend"})
 
 
@@ -123,14 +123,13 @@ class AOSAd(Document):
         self.country = _clean(self.country)
         self.currency = _clean(self.currency)
 
-    def _roles(self) -> set[str]:
-        user = _clean(getattr(frappe.session, "user", ""))
-        if not user or user == "Guest":
-            return set()
-        return set(frappe.get_roles(user))
-
     def _is_privileged(self) -> bool:
-        return bool(self._roles().intersection(_PRIVILEGED_ROLES))
+        user = _clean(getattr(frappe.session, "user", ""))
+        return has_doctype_permission(
+            user=user,
+            doctype=self.doctype,
+            ptype="write",
+        )
 
     def _seller_user(self) -> str:
         return _clean(frappe.db.get_value("AOS Seller", self.seller, "user"))

@@ -6,8 +6,8 @@ The AOS Catalog domain is the marketplace taxonomy and listing-schema boundary. 
 
 | Entity | Purpose | Owner/capability |
 | --- | --- | --- |
-| `AOS Category` | Two-level public taxonomy, pricing policy, service-unit policy, and category icon reference | System Manager configuration only |
-| `AOS Ad Attribute` | Reusable attribute definition and optional choice set | System Manager configuration only |
+| `AOS Category` | Two-level public taxonomy, pricing policy, service-unit policy, and category icon reference | Frappe Role Permissions (baseline: System Manager) |
+| `AOS Ad Attribute` | Reusable attribute definition and optional choice set | Frappe Role Permissions (baseline: System Manager) |
 | `AOS Category Attribute Row` | Ordered category-to-attribute rule with active, required, and option-override controls | Child table of `AOS Category` |
 | `AOS Ad Attribute Value` | Listing-owned values validated against the resolved category schema | Child table of `AOS Ad`; owned through the Ad |
 
@@ -32,7 +32,7 @@ The established hierarchy is bounded to two levels:
 4. Active children under an inactive parent are retained for staged administration but are hidden from all public reads and rejected for Ads.
 5. Group categories are browseable but are never sellable.
 
-System Managers may activate or deactivate categories and attributes through Desk. Public visibility requires the complete category ancestry to be active. Deleting a category uses the normal Frappe transaction, releases its attached category-icon Media relationship, and invalidates Catalog compatibility caches. Catalog does not introduce a separate moderation workflow; Ad moderation remains authoritative for listings.
+Users with the relevant DocType Write permission may activate or deactivate categories and attributes through Desk. Public visibility requires the complete category ancestry to be active. Deleting a category uses the normal Frappe transaction, releases its attached category-icon Media relationship, and invalidates Catalog compatibility caches. Catalog does not introduce a separate moderation workflow; Ad moderation remains authoritative for listings.
 
 ## Attribute inheritance
 
@@ -56,7 +56,7 @@ Numeric Ad prices and currency/localization behavior remain owned by Ads and Loc
 
 ## Media contract
 
-Category icons use the centralized `category_icon` Media purpose. It is public image media, limited by the Media policy, and attachable to one `AOS Category` by a System Manager. New icon changes require a confirmed Media ID; the legacy URL field is a compatibility cache, not storage authority. Replacement and deletion reuse `MediaService`; Catalog has no storage or presigned-upload implementation.
+Category icons use the centralized `category_icon` Media purpose. It is public image media, limited by the Media policy, and attachable to one `AOS Category` by a user with Write permission on that category. New icon changes require a confirmed Media ID; the legacy URL field is a compatibility cache, not storage authority. Replacement and deletion reuse `MediaService`; Catalog has no storage or presigned-upload implementation.
 
 ### Desk category-image uploader
 
@@ -69,7 +69,7 @@ The `AOS Category` Desk form provides the supported administrative workflow:
 5. Desk calls `aos.api.v1.media.confirm_upload`, assigns the confirmed Media ID, and saves the category.
 6. The category controller attaches the new Media relationship and safely releases the previous one in the request transaction.
 
-Only System Managers see enabled image actions. The server-side Media policy and category controller remain authoritative for role, ownership, purpose, MIME, extension, size, dimensions, checksum, lifecycle, and attachment validation. The raw `icon` cache is hidden and read-only, and `icon_media` is read-only so administrators do not bypass the supported workflow. Failed browser uploads attempt bounded cleanup through `delete_media`; centralized orphan cleanup remains the fallback for ambiguous network outcomes. **Remove image** clears the relationship through a normal category save so the shared Media lifecycle handles release.
+Only users with effective Write permission on `AOS Category` see enabled image actions. The server-side Media policy and category controller remain authoritative for Frappe permissions, ownership, purpose, MIME, extension, size, dimensions, checksum, lifecycle, and attachment validation. The raw `icon` cache is hidden and read-only, and `icon_media` is read-only so administrators do not bypass the supported workflow. Failed browser uploads attempt bounded cleanup through `delete_media`; centralized orphan cleanup remains the fallback for ambiguous network outcomes. **Remove image** clears the relationship through a normal category save so the shared Media lifecycle handles release.
 
 ## Search, moderation, outbox, and notifications
 
@@ -89,4 +89,4 @@ The repository has no independent Catalog index, moderation job, outbox event, o
 
 Low-cardinality counters are emitted as `aos_catalog_events_total` for read/configuration event and outcome classes. IDs, labels, descriptions, search terms, emails, and media URLs are never metric labels. Configuration rejections and internal data failures are structured-log events; successful public reads are metrics-only to avoid noisy logs.
 
-The additive Catalog patches install bounded-query indexes, normalize only safe defaults, and remove legacy Desk permission overrides so source-controlled `System Manager` access remains authoritative. See [migration.md](migration.md), [testing.md](testing.md), and the public [API contract](api.md).
+The additive Catalog patches install bounded-query indexes and normalize only safe defaults. Catalog Desk access is intentionally resolved at runtime through Frappe DocPerm / Custom DocPerm / Role Permissions Manager; the legacy permission patch no longer deletes administrator-configured overrides. See [migration.md](migration.md), [testing.md](testing.md), and the public [API contract](api.md).

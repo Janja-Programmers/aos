@@ -40,7 +40,9 @@ class TestCatalogDeskUploader(TestCase):
         self.assertIn("idempotency_key: idempotencyKey", script)
         self.assertIn("function uploadIdempotencyKey", script)
         self.assertNotIn(').join(":")', script)
-        self.assertIn('frappe.user_roles.includes("System Manager")', script)
+        self.assertIn('frm.perm && frm.perm[0]', script)
+        self.assertIn('levelZero.write', script)
+        self.assertNotIn('frappe.user_roles.includes("System Manager")', script)
         self.assertNotIn("upload_file", script)
         self.assertNotIn("frappe.ui.FileUploader", script)
 

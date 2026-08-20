@@ -15,7 +15,7 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
-Base method prefix: `aos.api.v1.diagnostics.`. Every endpoint is whitelisted for GET/POST transport but performs a server-side admin check. Only `Administrator` or a user with the `System Manager` role may receive the redacted report.
+Base method prefix: `aos.api.v1.diagnostics.`. Every endpoint is whitelisted for GET/POST transport but performs a server-side admin check. Only a user with effective Read permission on `AOS Settings` may receive the redacted report (System Manager has this by default in the source DocType permissions).
 
 - `get_production_config_status` — validates production configuration without returning secrets.
 - `get_operational_health_status` — returns the redacted operational-health report.

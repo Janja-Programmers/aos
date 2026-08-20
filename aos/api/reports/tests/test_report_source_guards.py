@@ -123,7 +123,7 @@ class TestReportProductionSourceGuards(unittest.TestCase):
         self.assertIn("REPORT_TRANSITIONS", lifecycle)
         self.assertIn('STATUS_RESOLVED: frozenset()', constants)
         self.assertIn('STATUS_REJECTED: frozenset()', constants)
-        self.assertIn("require_reviewer(actor)", lifecycle)
+        self.assertIn("require_reviewer(actor, doctype=doc.doctype)", lifecycle)
         self.assertIn("A completed moderation action cannot be changed", lifecycle)
 
     def test_submitted_report_evidence_is_immutable_during_review(self):

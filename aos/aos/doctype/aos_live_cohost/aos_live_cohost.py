@@ -141,8 +141,8 @@ class AOSLiveCoHost(Document):
         Allow permanent administrative deletion only after the live ends.
 
         Runtime APIs use status transitions and soft lifecycle states.
-        System Managers may permanently clear historical co-host records
-        through Desk after the parent live stream has ended.
+        Users with Delete permission may permanently clear historical co-host
+        records through Desk after the parent live stream has ended.
         """
         live_status = frappe.db.get_value(
             LIVE_STREAM_DOCTYPE,

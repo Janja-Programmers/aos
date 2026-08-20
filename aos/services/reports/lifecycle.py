@@ -53,7 +53,7 @@ def validate_report_lifecycle(doc, previous, *, actor: str | None) -> None:
     action_changed = _clean(getattr(previous, "admin_action", "")) != _clean(getattr(doc, "admin_action", ""))
 
     if status_changed or action_changed:
-        require_reviewer(actor)
+        require_reviewer(actor, doctype=doc.doctype)
 
     if status_changed and status not in REPORT_TRANSITIONS.get(old_status, frozenset()):
         raise ReportConflictError("Report status transition is not allowed.")
@@ -81,7 +81,7 @@ def stamp_review_metadata(doc, previous, *, actor: str | None) -> None:
     new_action = _clean(getattr(doc, "admin_action", ""))
     if old_status == new_status and old_action == new_action:
         return
-    require_reviewer(actor)
+    require_reviewer(actor, doctype=doc.doctype)
     if hasattr(doc, "reviewed_by"):
         doc.reviewed_by = actor
     if hasattr(doc, "reviewed_on"):

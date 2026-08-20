@@ -2,7 +2,7 @@
 
 ## Desk review
 
-The authoritative reviewer role remains `System Manager`; no new role was invented. Reviewers use the existing `AOS Verification Request` Desk view. Server-side transition enforcement remains authoritative even if a request is crafted outside the Desk UI.
+Reviewer authorization follows effective Write permission on `AOS Verification Request`. The source DocType JSON grants this to System Manager by default, and administrators may extend it to roles such as `AOS Moderator` through Role Permissions Manager. Reviewers use the existing Desk view. Server-side transition enforcement remains authoritative even if a request is crafted outside the Desk UI.
 
 Reviewers should not copy raw identity evidence into comments/logs. Private evidence should be opened only through the existing authorized Media signed-URL path. Signed URLs must not be pasted into long-lived tickets or logs.
 

@@ -9,6 +9,7 @@ from frappe.model.document import Document
 from aos.services.reviews.aggregates import recompute_review_reaction_counts
 from aos.services.reviews.constants import STATUS_APPROVED
 from aos.services.reviews.validation import normalize_reaction
+from aos.utils.doctype_permissions import has_doctype_permission
 
 
 class AOSReviewReaction(Document):
@@ -16,7 +17,7 @@ class AOSReviewReaction(Document):
         user = getattr(frappe.session, "user", None) or "Guest"
         if user == "Guest":
             frappe.throw("Login required")
-        if "System Manager" not in set(frappe.get_roles(user) or []):
+        if not has_doctype_permission(user=user, doctype=self.doctype, ptype="create"):
             self.user = user
 
     def validate(self):

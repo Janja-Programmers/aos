@@ -34,8 +34,12 @@
     return stateByForm.get(frm);
   }
 
-  function canManageSounds() {
-    return Array.isArray(frappe.user_roles) && frappe.user_roles.includes("System Manager");
+  function canManageSounds(frm) {
+    const levelZero = frm && frm.perm && frm.perm[0];
+    if (!levelZero) {
+      return false;
+    }
+    return frm.is_new() ? Boolean(levelZero.create) : Boolean(levelZero.write);
   }
 
   function ensureStyles() {
@@ -163,7 +167,7 @@
     }
 
     const state = stateFor(frm);
-    const canManage = canManageSounds();
+    const canManage = canManageSounds(frm);
     const mediaId = String(frm.doc.sound_media || "").trim();
     const soundUrl = String(frm.doc.file_url || "").trim();
     const hasAudio = Boolean(mediaId || soundUrl);
@@ -211,7 +215,7 @@
     if (!canManage) {
       $("<div>", {
         class: "aos-sound-status text-danger",
-        text: __("Only System Managers can upload sounds here."),
+        text: __("You need Create/Write permission on AOS Sound to upload sounds here."),
       }).appendTo($content);
     } else if (state.status) {
       $("<div>", {
@@ -426,7 +430,7 @@
   }
 
   function selectFile(frm) {
-    if (stateFor(frm).busy || frm.doc.sound_media || !canManageSounds()) {
+    if (stateFor(frm).busy || frm.doc.sound_media || !canManageSounds(frm)) {
       return;
     }
     const input = document.createElement("input");

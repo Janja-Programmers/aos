@@ -10,7 +10,7 @@ The current product contract returns the processed MP4. A separate watermarked r
 
 ## Desk sound uploader
 
-System Managers can upload reusable audio from the `AOS Sound` Desk form. The form uses the same hardened Media lifecycle as category icons:
+Users with effective Create/Write permission on `AOS Sound` can upload reusable audio from the Desk form. The form uses the same hardened Media lifecycle as category icons:
 
 ```text
 media.init_upload

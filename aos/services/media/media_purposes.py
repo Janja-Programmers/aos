@@ -33,7 +33,8 @@ class MediaPurpose:
     max_items_per_resource: int
     allowed_attachment_doctypes: frozenset[str]
     client_upload_allowed: bool = True
-    allowed_roles: frozenset[str] = frozenset()
+    required_permission_doctype: str | None = None
+    required_permission_type: str = "write"
     require_image_dimensions: bool = False
     min_width: int | None = None
     min_height: int | None = None
@@ -164,7 +165,8 @@ MEDIA_PURPOSES: dict[str, MediaPurpose] = {
         media_kind="image",
         max_items_per_resource=1,
         allowed_attachment_doctypes=frozenset({"AOS Category"}),
-        allowed_roles=frozenset({"System Manager"}),
+        required_permission_doctype="AOS Category",
+        required_permission_type="write",
         require_image_dimensions=True,
         min_width=16,
         min_height=16,

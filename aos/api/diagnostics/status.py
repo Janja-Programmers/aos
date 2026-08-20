@@ -14,6 +14,7 @@ from aos.utils.backup_readiness import validate_backup_readiness
 from aos.utils.job_monitoring import validate_job_monitoring
 from aos.utils.operational_health import validate_operational_health
 from aos.utils.production_config import validate_production_config
+from aos.utils.doctype_permissions import has_doctype_permission
 
 
 def is_admin_user(user: str | None = None) -> bool:
@@ -22,12 +23,11 @@ def is_admin_user(user: str | None = None) -> bool:
     user = user or getattr(frappe.session, "user", None)
     if not user or user == "Guest":
         return False
-    if user == "Administrator":
-        return True
-    try:
-        return "System Manager" in set(frappe.get_roles(user))
-    except Exception:
-        return False
+    return has_doctype_permission(
+        user=user,
+        doctype="AOS Settings",
+        ptype="read",
+    )
 
 
 def _require_admin_or_fail(message: str) -> dict | None:
@@ -40,7 +40,7 @@ def get_production_config_status_impl(**kwargs):
     """Return a redacted production-config readiness report for admins only."""
 
     permission_error = _require_admin_or_fail(
-        "Only a System Manager can view production configuration diagnostics."
+        "Read permission on AOS Settings is required to view production configuration diagnostics."
     )
     if permission_error:
         return permission_error
@@ -53,7 +53,7 @@ def get_operational_health_status_impl(**kwargs):
     """Return a redacted operational-health report for admins only."""
 
     permission_error = _require_admin_or_fail(
-        "Only a System Manager can view operational health diagnostics."
+        "Read permission on AOS Settings is required to view operational health diagnostics."
     )
     if permission_error:
         return permission_error
@@ -66,7 +66,7 @@ def get_job_monitoring_status_impl(**kwargs):
     """Return a redacted production job-monitoring report for admins only."""
 
     permission_error = _require_admin_or_fail(
-        "Only a System Manager can view job monitoring diagnostics."
+        "Read permission on AOS Settings is required to view job monitoring diagnostics."
     )
     if permission_error:
         return permission_error
@@ -79,7 +79,7 @@ def get_backup_readiness_status_impl(**kwargs):
     """Return a redacted backup/restore-readiness report for admins only."""
 
     permission_error = _require_admin_or_fail(
-        "Only a System Manager can view backup readiness diagnostics."
+        "Read permission on AOS Settings is required to view backup readiness diagnostics."
     )
     if permission_error:
         return permission_error

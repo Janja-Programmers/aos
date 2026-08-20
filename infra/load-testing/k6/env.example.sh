@@ -10,7 +10,7 @@ export USER_PASSWORD="replace-with-staging-test-password"
 export SECOND_USER_EMAIL="load-user-2@example.com"
 export SECOND_USER_PASSWORD="replace-with-staging-test-password"
 
-# Optional System Manager account for diagnostics.js only.
+# Optional account with Read permission on AOS Settings for diagnostics.js only.
 export ADMIN_EMAIL="admin-load-check@example.com"
 export ADMIN_PASSWORD="replace-with-staging-admin-password"
 

@@ -1,6 +1,6 @@
 # Diagnostics
 
-Diagnostics exposes redacted production-readiness and operational-health reports to `Administrator` or users with the `System Manager` role. It is an operations/admin API, not an end-user feature.
+Diagnostics exposes redacted production-readiness and operational-health reports to users with effective Read permission on `AOS Settings` (System Manager has this by default). It is an operations/admin API, not an end-user feature.
 
 Start with:
 

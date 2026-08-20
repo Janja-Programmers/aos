@@ -22,13 +22,13 @@ from aos.services.sellers.constants import (
     STATUS_ACTIVE,
 )
 from aos.services.sellers.identity import ensure_public_seller_id, normalize_public_seller_id
+from aos.utils.doctype_permissions import has_doctype_permission
 
 LATITUDE_MIN = -90.0
 LATITUDE_MAX = 90.0
 LONGITUDE_MIN = -180.0
 LONGITUDE_MAX = 180.0
 COUNTRY_CODE_LENGTH = 2
-_PRIVILEGED_ROLES = frozenset({"System Manager", "AOS Moderator"})
 _HTML_TAG_RE = re.compile(r"<\s*/?\s*[A-Za-z][^>]*>")
 _SCRIPT_SCHEME_RE = re.compile(r"(?:javascript|data|vbscript)\s*:", re.IGNORECASE)
 _DISALLOWED_INVISIBLE = frozenset({"\u200b", "\u2060", "\ufeff", *[chr(value) for value in range(0x202A, 0x202F)], *[chr(value) for value in range(0x2066, 0x206A)]})
@@ -69,14 +69,13 @@ class AOSSeller(Document):
         self._validate_and_normalize_location()
         self._validate_metrics()
 
-    def _roles(self) -> set[str]:
-        user = str(getattr(frappe.session, "user", "") or "").strip()
-        if not user or user == "Guest":
-            return set()
-        return set(frappe.get_roles(user))
-
     def _is_privileged(self) -> bool:
-        return bool(self._roles().intersection(_PRIVILEGED_ROLES))
+        user = str(getattr(frappe.session, "user", "") or "").strip()
+        return has_doctype_permission(
+            user=user,
+            doctype=self.doctype,
+            ptype="write",
+        )
 
     def _validate_user(self):
         if not self.user:

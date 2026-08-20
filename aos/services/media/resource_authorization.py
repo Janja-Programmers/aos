@@ -1,10 +1,11 @@
-"""Explicit resource ownership checks for media attachment boundaries."""
+"""Explicit resource ownership and Role Permission Manager checks for Media."""
 
 from __future__ import annotations
 
 import frappe
 
 from aos.services.media.media_purposes import MediaPurpose
+from aos.utils.doctype_permissions import has_doctype_permission
 
 
 class ResourceAuthorizationError(PermissionError):
@@ -23,10 +24,15 @@ def assert_purpose_upload_allowed(*, user: str, policy: MediaPurpose, system: bo
         raise ResourceAuthorizationError("Authentication is required")
     if not policy.client_upload_allowed:
         raise ResourceAuthorizationError("This media purpose is reserved for internal processing")
-    if policy.allowed_roles:
-        roles = set(frappe.get_roles(clean_user) or [])
-        if not roles.intersection(policy.allowed_roles):
-            raise ResourceAuthorizationError("This media purpose requires an administrative role")
+    if policy.required_permission_doctype and not has_doctype_permission(
+        user=clean_user,
+        doctype=policy.required_permission_doctype,
+        ptype=policy.required_permission_type,
+    ):
+        raise ResourceAuthorizationError(
+            f"{policy.required_permission_type.title()} permission for "
+            f"{policy.required_permission_doctype} is required"
+        )
 
 
 def assert_attachment_target_allowed(
@@ -47,17 +53,26 @@ def assert_attachment_target_allowed(
         raise ResourceNotFoundError("Attachment resource was not found")
     if system:
         return
-    if not _user_owns_resource(user=user, doctype=doctype, name=name):
+    if not _user_can_manage_resource(user=user, doctype=doctype, name=name):
         raise ResourceAuthorizationError("You cannot attach media to this resource")
 
 
-def _user_owns_resource(*, user: str, doctype: str, name: str) -> bool:
+def _user_can_manage_resource(*, user: str, doctype: str, name: str) -> bool:
     clean_user = str(user or "").strip()
     if not clean_user or clean_user == "Guest":
         return False
-    if "System Manager" in set(frappe.get_roles(clean_user) or []):
+
+    # Administrative access is defined by Frappe's permission engine so Custom
+    # DocPerm / Role Permissions Manager grants are honored without role names.
+    if has_doctype_permission(
+        user=clean_user,
+        doctype=doctype,
+        ptype="write",
+        docname=name,
+    ):
         return True
 
+    # Product/API ownership remains independent from Desk role permissions.
     if doctype == "AOS Profile":
         return name == clean_user or frappe.db.get_value(doctype, name, "user") == clean_user
     if doctype == "AOS Seller":
@@ -81,6 +96,4 @@ def _user_owns_resource(*, user: str, doctype: str, name: str) -> bool:
         return bool(seller and frappe.db.get_value("AOS Seller", seller, "user") == clean_user)
     if doctype == "AOS Sound":
         return frappe.db.get_value(doctype, name, "owner") == clean_user
-    if doctype == "AOS Category":
-        return False
     return False

@@ -15,7 +15,7 @@ The authoritative human-review states are:
 - Authenticated Short reporting.
 - Authenticated Review reporting through the existing Reviews v1 API.
 - Authenticated listing of active Report Reasons.
-- System Manager Desk review using the exact actions already modeled by each Report DocType.
+- Desk review by users with effective Write permission on the relevant Report DocType, using the exact actions already modeled by that DocType.
 - Server-controlled review metadata, immutable submitted evidence, terminal lifecycle enforcement, and one-shot moderation effects.
 - Duplicate/race protection through target locks plus the existing Ad/Short/Review database uniqueness constraints and the Report hardening constraint for User reports.
 - Account-deletion cleanup of private reports submitted by the deleted account while preserving reports *about* that account/content as moderation history.

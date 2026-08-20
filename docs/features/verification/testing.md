@@ -14,7 +14,7 @@ python -m unittest aos.api.verification.tests.test_verification_source_guards -v
 
 ## Frappe-backed Verification tests
 
-`test_verification_database.py` exercises real request persistence, idempotency, private-media attachment/IDOR checks, self-approval denial, System Manager decisions, profile/Seller projection, rejection/resubmission, notification decision dedupe, evidence immutability, account-state enforcement, and account-deletion evidence cleanup. Validation, lifecycle and serializer modules are in the same feature test package. Run them on a migrated Frappe test/staging site:
+`test_verification_database.py` exercises real request persistence, idempotency, private-media attachment/IDOR checks, self-approval denial, authorized reviewer decisions, profile/Seller projection, rejection/resubmission, notification decision dedupe, evidence immutability, account-state enforcement, and account-deletion evidence cleanup. Validation, lifecycle and serializer modules are in the same feature test package. Run them on a migrated Frappe test/staging site:
 
 ```bash
 bench --site <site> run-tests --app aos --module aos.api.verification

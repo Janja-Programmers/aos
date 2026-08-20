@@ -6,14 +6,14 @@ The authoritative states are:
 
 `Pending -> Reviewing -> Approved | Rejected | Revoked`
 
-The existing reviewer role is **System Manager** through Frappe Desk permissions. There is no separate public reviewer API. Review transitions are enforced again in the DocType controller so manipulated Desk/API saves cannot bypass server policy.
+Reviewer authority is the effective **Write** permission on `AOS Verification Request` through Frappe DocPerm / Custom DocPerm / Role Permissions Manager. The source DocType JSON still grants that capability to System Manager by default, but additional roles may be configured without code changes. There is no separate public reviewer API. Review transitions are enforced again in the DocType controller so manipulated Desk/API saves cannot bypass server policy.
 
 ## Supported workflows
 
 - Authenticated Individual submission with legal name, phone number, and one or more private verification documents.
 - Authenticated Business submission with the repository's existing business fields plus private verification documents. A canonical `AOS Seller` must exist and Seller policy must permit verification submission.
 - Owner-only status retrieval through `get_my_verification`.
-- System Manager review through Desk: `Pending -> Reviewing/Approved/Rejected/Revoked`, `Reviewing -> Approved/Rejected/Revoked`, and `Approved -> Revoked`.
+- Authorized reviewer (effective `AOS Verification Request` Write permission) through Desk: `Pending -> Reviewing/Approved/Rejected/Revoked`, `Reviewing -> Approved/Rejected/Revoked`, and `Approved -> Revoked`.
 - Owner resubmission from `Rejected` or `Revoked`, reusing the same request row and replacing evidence atomically.
 - Approval projection to `AOS Profile.is_verified`; Business approval also reuses the existing Seller projection policy.
 - Canonical `verification_approved` and `verification_rejected` notifications through the transactional notification/outbox architecture.

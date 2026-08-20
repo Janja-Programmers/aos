@@ -5,23 +5,26 @@ from __future__ import annotations
 import frappe
 
 from aos.services.accounts.constants import ACCOUNT_STATUS_ACTIVE
+from aos.utils.doctype_permissions import has_doctype_permission
 
-from .constants import MODERATOR_ROLES
 from .errors import ReportNotFoundError, ReportPermissionError
 
 
-def is_reviewer(user: str | None) -> bool:
+def is_reviewer(user: str | None, *, doctype: str) -> bool:
     actor = str(user or "").strip()
-    if not actor or actor == "Guest":
+    clean_doctype = str(doctype or "").strip()
+    if not actor or actor == "Guest" or not clean_doctype:
         return False
-    if actor == "Administrator":
-        return True
-    return bool(set(frappe.get_roles(actor)).intersection(MODERATOR_ROLES))
+    return has_doctype_permission(
+        user=actor,
+        doctype=clean_doctype,
+        ptype="write",
+    )
 
 
-def require_reviewer(user: str | None) -> None:
-    if not is_reviewer(user):
-        raise ReportPermissionError("Moderator permission is required.")
+def require_reviewer(user: str | None, *, doctype: str) -> None:
+    if not is_reviewer(user, doctype=doctype):
+        raise ReportPermissionError("Write permission on this Report DocType is required.")
 
 
 def require_reportable_user(*, target_user: str, reporter: str) -> None:

@@ -2,7 +2,7 @@
 
 ## Desk review
 
-System Manager uses the existing Report DocTypes in Frappe Desk. Review only from `Reviewing`; choose either `Resolved` or `Rejected`. Where the DocType has `admin_action`, an action may be selected only with `Resolved` and cannot later be changed.
+Users with effective Write permission on the relevant Report DocType use the existing Frappe Desk views. Review only from `Reviewing`; choose either `Resolved` or `Rejected`. Where the DocType has `admin_action`, an action may be selected only with `Resolved` and cannot later be changed.
 
 Use `is_active = 0` to retire a Report Reason. Do not rename/delete reasons because report history references the canonical reason name.
 

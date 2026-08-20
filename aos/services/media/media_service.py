@@ -41,6 +41,7 @@ from aos.services.storage.base import (
 from aos.services.storage.minio_storage import MinioStorage
 from aos.utils.aos_config import get_media_download_expiry_minutes
 from aos.utils.aos_settings import get_aos_settings_snapshot
+from aos.utils.doctype_permissions import has_doctype_permission
 
 ACTIVE_READABLE_STATUSES = {"Uploaded", "Processing", "Ready", "Attached"}
 TERMINAL_STATUSES = {"Failed", "Replaced", "Deleted"}
@@ -1030,7 +1031,25 @@ class MediaService:
             raise MediaPermissionError("Authentication is required", code="AUTH_REQUIRED")
         if doc.owner_user == clean_user:
             return
-        if "System Manager" in set(frappe.get_roles(clean_user) or []):
+
+        attached_doctype = str(getattr(doc, "attached_doctype", "") or "").strip()
+        attached_name = str(getattr(doc, "attached_name", "") or "").strip()
+        if attached_doctype and attached_name and has_doctype_permission(
+            user=clean_user,
+            doctype=attached_doctype,
+            ptype="write",
+            docname=attached_name,
+        ):
+            return
+
+        # Unattached administrative media operations are controlled by the
+        # AOS Media Object DocType permissions, not by a hardcoded role name.
+        if has_doctype_permission(
+            user=clean_user,
+            doctype="AOS Media Object",
+            ptype="write",
+            doc=doc,
+        ):
             return
         raise MediaPermissionError("You cannot manage this media", code="MEDIA_OWNERSHIP_REQUIRED")
 
@@ -1040,22 +1059,35 @@ class MediaService:
         clean_user = str(user or "").strip()
         if not clean_user or clean_user == "Guest":
             raise MediaPermissionError("Authentication is required", code="AUTH_REQUIRED")
-        roles = set(frappe.get_roles(clean_user) or [])
         if getattr(doc, "purpose", None) == "verification_document":
-            if "System Manager" in roles:
-                return
             # Before submission the uploader may preview their confirmed upload.
-            # Once attached, both Media ownership and parent-request ownership
-            # must still match. Released/orphaned evidence is not readable merely
-            # because the account originally uploaded it.
+            # Once attached, access is limited to the request owner or a user
+            # who has read permission on the Verification Request through
+            # Frappe's permission engine. Released/orphaned evidence is not
+            # readable merely because the account originally uploaded it.
             if doc.owner_user == clean_user and doc.status == "Uploaded" and not doc.attached_name:
                 return
-            if doc.owner_user == clean_user and self._user_can_read_verification_document(doc, clean_user):
+            if self._user_can_read_verification_document(doc, clean_user):
                 return
             raise MediaPermissionError("You cannot access this media", code="MEDIA_ACCESS_DENIED")
         if doc.owner_user == clean_user:
             return
-        if "System Manager" in roles:
+
+        attached_doctype = str(getattr(doc, "attached_doctype", "") or "").strip()
+        attached_name = str(getattr(doc, "attached_name", "") or "").strip()
+        if attached_doctype and attached_name and has_doctype_permission(
+            user=clean_user,
+            doctype=attached_doctype,
+            ptype="read",
+            docname=attached_name,
+        ):
+            return
+        if has_doctype_permission(
+            user=clean_user,
+            doctype="AOS Media Object",
+            ptype="read",
+            doc=doc,
+        ):
             return
         if self._user_can_read_chat_attachment(doc, clean_user):
             return
@@ -1092,6 +1124,13 @@ class MediaService:
             return False
         if doc.attached_doctype != "AOS Verification Request" or not doc.attached_name:
             return False
+        if has_doctype_permission(
+            user=user,
+            doctype="AOS Verification Request",
+            ptype="read",
+            docname=doc.attached_name,
+        ):
+            return True
         try:
             return frappe.db.get_value("AOS Verification Request", doc.attached_name, "user") == user
         except Exception:

@@ -10,6 +10,7 @@ from typing import Any
 import frappe
 
 from aos.services.accounts.identity import public_account_id_for_user
+from aos.utils.doctype_permissions import has_doctype_permission
 
 from aos.api.shared.auth import require_login, current_user
 from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
@@ -43,7 +44,6 @@ from aos.api.shorts.constants import (
     SOUND_SOURCE_TYPE_UPLOADED,
     SOUND_SHAREABLE_STATUSES,
     SHORT_CONTENT_MODE_SHOP,
-    SOUND_STAFF_ROLES,
 )
 from aos.api.shorts.validators import (
     validate_limit,
@@ -68,8 +68,11 @@ def _is_staff(user: str | None) -> bool:
     if not user or user == "Guest":
         return False
 
-    roles = set(frappe.get_roles(user) or [])
-    return bool(roles.intersection(SOUND_STAFF_ROLES))
+    return has_doctype_permission(
+        user=user,
+        doctype="AOS Sound",
+        ptype="create",
+    )
 
 
 def _normalize_bool(value, *, default: int = 0) -> int:
