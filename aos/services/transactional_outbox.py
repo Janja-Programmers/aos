@@ -1350,36 +1350,55 @@ def complete_outbox_without_callback(*, job_doctype: str, job_name: str, status:
 	)
 
 
-def mark_outbox_callback(
+def _get_outbox_for_callback_update(*, job_doctype: str, job_name: str) -> Any | None:
+	"""Lock and return the latest outbox row correlated with a durable job.
+
+	Callbacks can race with the publisher and reconciliation workers. Acquiring the
+	row lock here makes ``mark_outbox_callback`` safe even when it is called from a
+	path that does not already use ``execute_callback_atomically``. The explicit
+	lock also guarantees that the document loaded immediately afterwards reflects
+	the latest committed ``modified`` value used by Frappe's optimistic save check.
+	"""
+	rows = frappe.db.sql(
+		f"""
+		SELECT name
+		FROM `tab{OUTBOX_DOCTYPE}`
+		WHERE job_doctype = %s AND job_name = %s
+		LIMIT 1
+		FOR UPDATE
+		""",
+		(job_doctype, job_name),
+	)
+	if not rows:
+		return None
+	return frappe.get_doc(OUTBOX_DOCTYPE, str(rows[0][0]))
+
+
+def _apply_outbox_callback_state(
+	outbox: Any,
 	*,
-	job_doctype: str,
-	job_name: str,
 	callback_status: str,
 	success: bool,
-	error: str | None = None,
-	dispatch_token: str | None = None,
-	dispatch_generation: int | None = None,
-) -> Any | None:
-	name = frappe.db.get_value(
-		OUTBOX_DOCTYPE,
-		{"job_doctype": job_doctype, "job_name": job_name},
-		"name",
-	)
-	if not name:
-		return None
-	outbox = frappe.get_doc(OUTBOX_DOCTYPE, name)
+	error: str | None,
+	dispatch_token: str | None,
+	dispatch_generation: int | None,
+) -> tuple[Any, bool]:
+	"""Validate correlation and apply terminal state; return whether a write is needed."""
 	incoming = _clean(callback_status, limit=120).lower()
 	previous = _clean(outbox.callback_status, limit=120).lower()
 	if outbox.status in FINAL_CALLBACK_STATUSES:
 		if previous == incoming:
-			return outbox
+			return outbox, False
 		raise OutboxConflictError("Conflicting late callback rejected for terminal outbox record.")
 
-	callback_time = now_datetime()
 	correlation = _ACTIVE_CALLBACK_CORRELATION.get() or {}
 	if correlation.get("outbox_name") == outbox.name:
 		dispatch_token = dispatch_token or correlation.get("dispatch_token")
-		dispatch_generation = dispatch_generation if dispatch_generation is not None else correlation.get("dispatch_generation")
+		dispatch_generation = (
+			dispatch_generation
+			if dispatch_generation is not None
+			else correlation.get("dispatch_generation")
+		)
 	supplied_token = _clean(dispatch_token, limit=140)
 	current_token = _clean(outbox.current_dispatch_token, limit=140)
 	proposed_token = _clean(getattr(outbox, "proposed_dispatch_token", None), limit=140)
@@ -1390,11 +1409,9 @@ def mark_outbox_callback(
 		outbox.proposed_dispatch_token = None
 		current_token = proposed_token
 	if supplied_token and current_token and not hmac.compare_digest(supplied_token, current_token):
-		if outbox.status in FINAL_CALLBACK_STATUSES:
-			if previous == incoming:
-				return outbox
-			raise OutboxConflictError("Conflicting stale callback rejected for terminal outbox record.")
 		raise OutboxConflictError("Stale callback from an earlier dispatch generation was rejected.")
+
+	callback_time = now_datetime()
 	outbox.callback_received_at = callback_time
 	outbox.last_callback_at = callback_time
 	outbox.last_callback_dispatch_token = supplied_token or current_token or None
@@ -1406,23 +1423,67 @@ def mark_outbox_callback(
 	outbox.claimed_at = None
 	outbox.lease_expires_at = None
 	outbox.manual_review_reason = None
+	outbox.completed_at = callback_time
+	outbox.next_attempt_at = None
+	outbox.current_dispatch_token = None
 	if success:
 		outbox.status = "Completed"
-		outbox.completed_at = now_datetime()
-		outbox.next_attempt_at = None
 		outbox.last_error = None
-		outbox.current_dispatch_token = None
 	else:
 		# A signed worker-failure callback represents a terminal work result.
 		# Callback transport retries are independent and have already completed;
 		# automatically redispatching this outbox would only replay cached failure.
 		outbox.status = "Completed With Failure"
-		outbox.completed_at = now_datetime()
-		outbox.next_attempt_at = None
 		outbox.last_error = _clean(error) or "Downstream service reported failure"
-		outbox.current_dispatch_token = None
-	_save_outbox(outbox)
-	return outbox
+	return outbox, True
+
+
+def mark_outbox_callback(
+	*,
+	job_doctype: str,
+	job_name: str,
+	callback_status: str,
+	success: bool,
+	error: str | None = None,
+	dispatch_token: str | None = None,
+	dispatch_generation: int | None = None,
+) -> Any | None:
+	"""Persist a terminal callback without allowing a stale outbox overwrite.
+
+	The normal callback API already locks the correlated outbox before domain
+	mutation, but this helper is also reused by internal completion paths. Lock the
+	row locally as a defensive boundary. A bounded retry handles the rare case
+	where Frappe's optimistic ``modified`` check still observes a same-request or
+	legacy concurrent writer; each retry reloads and revalidates the latest state
+	before applying the callback.
+	"""
+	last_mismatch: TimestampMismatchError | None = None
+	for _attempt in range(2):
+		outbox = _get_outbox_for_callback_update(
+			job_doctype=job_doctype,
+			job_name=job_name,
+		)
+		if outbox is None:
+			return None
+		outbox, changed = _apply_outbox_callback_state(
+			outbox,
+			callback_status=callback_status,
+			success=success,
+			error=error,
+			dispatch_token=dispatch_token,
+			dispatch_generation=dispatch_generation,
+		)
+		if not changed:
+			return outbox
+		try:
+			_save_outbox(outbox)
+			return outbox
+		except TimestampMismatchError as exc:
+			last_mismatch = exc
+			continue
+	if last_mismatch is not None:
+		raise last_mismatch
+	return None
 
 
 def requeue_dead_letter_outbox(

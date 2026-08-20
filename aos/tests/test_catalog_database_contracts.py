@@ -29,19 +29,21 @@ class TestCatalogDatabaseContracts(FrappeTestCase):
         self.assertTrue(category_meta.get_field("category_name").unique)
         self.assertTrue(attribute_meta.get_field("label").unique)
 
-    def test_catalog_desk_permissions_are_admin_only(self):
+    def test_catalog_desk_permissions_are_role_managed(self):
+        before = {
+            doctype: frappe.db.count("Custom DocPerm", {"parent": doctype})
+            for doctype in enforce_catalog_desk_permissions.CATALOG_ROLE_MANAGED_DOCTYPES
+        }
+
         enforce_catalog_desk_permissions.execute()
         enforce_catalog_desk_permissions.execute()
 
-        for doctype in enforce_catalog_desk_permissions.CATALOG_ADMIN_DOCTYPES:
-            permissions = frappe.get_meta(doctype).permissions
-            roles = {
-                row.role
-                for row in permissions
-                if row.read or row.write or row.create or row.delete
-            }
-            self.assertEqual(roles, {"System Manager"})
-            self.assertFalse(
-                frappe.db.exists("Custom DocPerm", {"parent": doctype}),
-                f"unexpected Custom DocPerm override remains for {doctype}",
+        for doctype in enforce_catalog_desk_permissions.CATALOG_ROLE_MANAGED_DOCTYPES:
+            self.assertEqual(
+                frappe.db.count("Custom DocPerm", {"parent": doctype}),
+                before[doctype],
+                f"catalog permission patch must preserve Role Permissions Manager overrides for {doctype}",
             )
+            # Loading metadata after the patch also verifies that the cache clear
+            # leaves Frappe's effective permission model usable.
+            self.assertTrue(frappe.get_meta(doctype).permissions)

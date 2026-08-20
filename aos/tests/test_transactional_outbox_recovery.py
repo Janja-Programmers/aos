@@ -280,6 +280,55 @@ class TestTransactionalOutboxRecovery(FrappeTestCase):
                 dispatch_token=old_token,
             )
 
+    def test_callback_completion_retries_once_after_timestamp_mismatch(self):
+        job, outbox = self._job_and_outbox()
+        token = uuid.uuid4().hex
+        outbox.status = "Published"
+        outbox.dispatch_generation = 1
+        outbox.current_dispatch_token = token
+        outbox.save(ignore_permissions=True)
+
+        validate_callback_idempotency(
+            job,
+            {
+                "idempotency_key": job.idempotency_key,
+                "dispatch_id": outbox.idempotency_key,
+                "dispatch_generation": 1,
+                "dispatch_token": token,
+                "status": "ingested",
+            },
+            callback_status="ingested",
+        )
+
+        outbox_class = outbox.__class__
+        original_save = outbox_class.save
+        callback_save_attempts = 0
+
+        def mismatch_once(doc, *args, **kwargs):
+            nonlocal callback_save_attempts
+            if doc.name == outbox.name and doc.status == "Completed":
+                callback_save_attempts += 1
+                if callback_save_attempts == 1:
+                    raise TimestampMismatchError("simulated concurrent outbox update")
+            return original_save(doc, *args, **kwargs)
+
+        with patch.object(outbox_class, "save", new=mismatch_once):
+            marked = mark_outbox_callback(
+                job_doctype=job.doctype,
+                job_name=job.name,
+                callback_status="ingested",
+                success=True,
+                dispatch_token=token,
+                dispatch_generation=1,
+            )
+
+        self.assertEqual(callback_save_attempts, 2)
+        self.assertEqual(marked.status, "Completed")
+        outbox.reload()
+        self.assertEqual(outbox.status, "Completed")
+        self.assertEqual(outbox.callback_status, "ingested")
+        self.assertIsNone(outbox.current_dispatch_token)
+
     def test_scheduled_publisher_recovers_commit_before_immediate_enqueue(self):
         job, outbox = self._job_and_outbox()
         frappe.db.commit()
