@@ -560,6 +560,19 @@ def test_large_terminal_result_is_preserved_and_callback_keeps_job_id(monkeypatc
 	assert captured["status"] == "ready"
 
 
+def test_oversized_terminal_result_stays_valid_json_and_preserves_identity():
+	payload_value = {
+		"job_id": "service-job-1",
+		"status": "ready",
+		"metadata": ["x" * 20000 for _ in range(10)],
+	}
+	rendered = lifecycle._json(payload_value)
+	assert len(rendered) <= lifecycle._RESULT_PAYLOAD_MAX_CHARS
+	stored = lifecycle._parse_json(rendered, None)
+	assert stored["job_id"] == "service-job-1"
+	assert stored["status"] == "ready"
+
+
 def test_invalid_legacy_result_is_dead_lettered_without_malformed_callback(redis_conn):
 	lifecycle._write_record(
 		redis_conn,

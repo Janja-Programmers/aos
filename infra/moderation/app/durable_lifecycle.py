@@ -149,29 +149,78 @@ def _decode_map(raw: dict[Any, Any]) -> dict[str, str]:
     return decoded
 
 
-def _safe_payload(value: Any, *, depth: int = 0) -> Any:
+_RESULT_PAYLOAD_MAX_CHARS = 65536
+_RESULT_STRING_MAX_CHARS = 16000
+
+
+def _safe_payload(value: Any, *, depth: int = 0, string_limit: int = _RESULT_STRING_MAX_CHARS) -> Any:
     """Bound terminal callback data without retaining arbitrary external bodies."""
     if depth > 5:
         return "[bounded]"
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
-        return value[:1000]
+        return value[: max(0, int(string_limit))]
     if isinstance(value, list):
-        return [_safe_payload(item, depth=depth + 1) for item in value[:100]]
+        return [
+            _safe_payload(item, depth=depth + 1, string_limit=string_limit)
+            for item in value[:100]
+        ]
     if isinstance(value, dict):
         result: dict[str, Any] = {}
         for raw_key in list(value.keys())[:80]:
             key = _clean(raw_key, limit=100)
             if not key:
                 continue
-            result[key] = _safe_payload(value[raw_key], depth=depth + 1)
+            result[key] = _safe_payload(
+                value[raw_key],
+                depth=depth + 1,
+                string_limit=string_limit,
+            )
         return result
     return _clean(value, limit=240)
 
 
 def _json(value: Any) -> str:
-    return json.dumps(_safe_payload(value), separators=(",", ":"), sort_keys=True, default=str)
+    """Serialize terminal data as valid JSON without silently clipping normal metadata."""
+
+    def render(string_limit: int) -> str:
+        return json.dumps(
+            _safe_payload(value, string_limit=string_limit),
+            separators=(",", ":"),
+            sort_keys=True,
+            default=str,
+        )
+
+    rendered = render(_RESULT_STRING_MAX_CHARS)
+    if len(rendered) <= _RESULT_PAYLOAD_MAX_CHARS:
+        return rendered
+
+    # Reduce only string values until the complete JSON fits. This preserves the
+    # object shape and, unlike slicing serialized JSON, always stores valid JSON.
+    low, high = 0, _RESULT_STRING_MAX_CHARS
+    best = render(0)
+    if len(best) > _RESULT_PAYLOAD_MAX_CHARS:
+        safe = _safe_payload(value, string_limit=240)
+        if isinstance(safe, dict):
+            essential = {
+                key: safe[key]
+                for key in ("job_id", "status", "error")
+                if key in safe
+            }
+            essential["result_truncated"] = True
+            return json.dumps(essential, separators=(",", ":"), sort_keys=True, default=str)
+        return json.dumps({"result_truncated": True}, separators=(",", ":"), sort_keys=True)
+
+    while low <= high:
+        middle = (low + high) // 2
+        candidate = render(middle)
+        if len(candidate) <= _RESULT_PAYLOAD_MAX_CHARS:
+            best = candidate
+            low = middle + 1
+        else:
+            high = middle - 1
+    return best
 
 
 def _parse_json(value: str | None, default: Any) -> Any:
@@ -583,6 +632,7 @@ def execute_work_job(
         terminal_payload = _safe_payload(terminal_payload)
         completed_epoch = _epoch()
         result_json = _json(terminal_payload)
+        terminal_payload = _parse_json(result_json, terminal_payload)
         _write_record(
             redis,
             service_type,
