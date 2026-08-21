@@ -8,6 +8,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from aos.aos.doctype.aos_sound.aos_sound import AOSSound
+from aos.api.shorts.sounds import create_sound_impl
 
 
 class TestSoundMediaHooks(FrappeTestCase):
@@ -118,6 +119,23 @@ class TestSoundMediaHooks(FrappeTestCase):
         self.assertIn('confirmUpload: "aos.api.v1.media.confirm_upload"', source)
         self.assertIn('xhr.open("PUT", uploadUrl, true)', source)
         self.assertIn("Audio cannot be replaced", (app_root / "aos" / "doctype" / "aos_sound" / "aos_sound.py").read_text(encoding="utf-8"))
+
+    def test_public_create_sound_cannot_spoof_original_source_type(self):
+        with (
+            patch("aos.api.shorts.sounds.require_login", return_value=("user@example.test", None)),
+            patch("aos.api.shorts.sounds.rate_limit", return_value=None),
+            patch("aos.api.shorts.sounds._is_staff", return_value=False),
+        ):
+            response = create_sound_impl(
+                sound_media="MEDIA-2026-00001",
+                title="Spoofed original",
+                artist="Creator",
+                source_type="original",
+                duration_seconds=10,
+            )
+
+        self.assertFalse(response.get("ok"))
+        self.assertEqual(response.get("error"), "VALIDATION_ERROR")
 
     def test_create_sound_api_relies_on_controller_attachment(self):
         app_root = Path(frappe.get_app_path("aos"))

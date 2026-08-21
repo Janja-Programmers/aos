@@ -219,6 +219,29 @@ def _generate_thumbnail(input_path: str, output_path: str) -> tuple[int | None, 
 	raise VideoProcessingError("Thumbnail generation failed")
 
 
+def _extract_original_audio(input_path: str, output_path: str, duration: float) -> None:
+	"""Extract the creator's original audio into a reusable AAC/M4A asset."""
+	cmd = [
+		"ffmpeg",
+		"-y",
+		"-i",
+		input_path,
+		"-vn",
+		"-map",
+		"0:a:0",
+		"-c:a",
+		"aac",
+		"-b:a",
+		"192k",
+		"-movflags",
+		"+faststart",
+		"-t",
+		f"{float(duration):.3f}",
+		output_path,
+	]
+	_run(cmd, "Original audio extraction failed")
+
+
 def _generate_mp4_original(input_path: str, output_path: str, duration: float) -> None:
 	if _has_audio(input_path):
 		cmd = [
@@ -607,6 +630,15 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 				max_bytes=min(settings.max_input_bytes, 134217728),
 			)
 
+		original_audio_path = None
+		# Only a Short whose published sound is its own recording gets an
+		# auto-generated reusable original Sound. A selected catalog/user sound
+		# remains authoritative, and audio-only reprocessing never creates a new
+		# original Sound generation.
+		has_reusable_original_audio = (
+			not is_audio_reprocess and not sound_path and _has_audio(input_path)
+		)
+
 		final_path = os.path.join(work_dir, "final.mp4")
 		if sound_path:
 			_generate_mp4_with_sound(input_path, sound_path, final_path, duration, sound or {})
@@ -615,6 +647,15 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 
 		if not os.path.exists(final_path) or os.path.getsize(final_path) <= 0:
 			raise VideoProcessingError("Final MP4 was not generated")
+
+		if has_reusable_original_audio:
+			original_audio_path = os.path.join(work_dir, "original_audio.m4a")
+			# Extract from the normalized final MP4 rather than the arbitrary upload
+			# codec/container. This gives every reusable Sound a consistent AAC/M4A
+			# representation and avoids a second compatibility surface.
+			_extract_original_audio(final_path, original_audio_path, duration)
+			if not os.path.exists(original_audio_path) or os.path.getsize(original_audio_path) <= 0:
+				raise VideoProcessingError("Original audio was not generated")
 
 		_generate_hls(final_path, work_dir)
 		master_path = os.path.join(work_dir, "master.m3u8")
@@ -638,6 +679,7 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 					or filename.startswith("sound")
 					or filename.startswith("classification_")
 					or filename == "thumbnail.jpg"
+					or filename == "original_audio.m4a"
 				):
 					continue
 				local_path = os.path.join(root, filename)
@@ -660,6 +702,30 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 						strip_output_prefix=True,
 					)
 				)
+
+		original_audio = None
+		if original_audio_path:
+			sound_bucket = str(
+				output.get("sound_bucket")
+				or output.get("thumbnail_bucket")
+				or settings.thumbnail_bucket
+			).strip("/")
+			sound_base = str(output.get("sound_base_path") or "sounds/uploads/original").strip("/")
+			sound_key = f"{sound_base}/{short_id}/{version}/original.m4a"
+			original_audio = _upload_file(
+				client,
+				bucket=sound_bucket,
+				object_key=sound_key,
+				file_path=original_audio_path,
+				content_type="audio/mp4",
+				strip_output_prefix=False,
+			)
+			original_audio.update(
+				{
+					"filename": f"{short_id}_original.m4a",
+					"duration_seconds": duration,
+				}
+			)
 
 		thumbnail = None
 		if not is_audio_reprocess:
@@ -700,6 +766,8 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 		}
 		if thumbnail is not None:
 			callback_payload["thumbnail"] = thumbnail
+		if original_audio is not None:
+			callback_payload["original_audio"] = original_audio
 		if classification is not None:
 			callback_payload["classification"] = classification
 		return callback_payload

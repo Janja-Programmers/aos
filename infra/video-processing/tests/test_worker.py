@@ -76,6 +76,7 @@ def configure_boundaries(monkeypatch, tmp_path):
 		"_download_object",
 		lambda _client, *, destination, **_kwargs: Path(destination).write_bytes(b"video"),
 	)
+	monkeypatch.setattr(worker, "_has_audio", lambda _path: False)
 	monkeypatch.setattr(
 		worker,
 		"_generate_thumbnail",
@@ -113,7 +114,14 @@ def configure_boundaries(monkeypatch, tmp_path):
 		worker,
 		"_upload_file",
 		lambda _client, **kwargs: (
-			uploads.append(kwargs) or {"bucket": kwargs["bucket"], "object_key": kwargs["object_key"]}
+			uploads.append(kwargs)
+			or {
+				"bucket": kwargs["bucket"],
+				"object_key": kwargs["object_key"],
+				"size_bytes": 5,
+				"etag": "test-etag",
+				"content_type": kwargs["content_type"],
+			}
 		),
 	)
 	return work_dir, uploads
@@ -192,6 +200,29 @@ def test_classification_request_is_timestamp_signed(monkeypatch, tmp_path):
 	assert captured["headers"]["X-AOS-Signature"] == worker.build_signature(
 		TEST_CLASSIFICATION_SECRET, signed
 	)
+
+
+def test_original_audio_is_extracted_and_returned_for_reuse(monkeypatch, tmp_path):
+	work_dir, uploads = configure_boundaries(monkeypatch, tmp_path)
+	monkeypatch.setattr(worker, "_has_audio", lambda _path: True)
+	monkeypatch.setattr(
+		worker,
+		"_extract_original_audio",
+		lambda _source, destination, _duration: Path(destination).write_bytes(b"audio"),
+	)
+
+	result = worker._perform_video_work(payload())
+
+	audio = result["original_audio"]
+	assert audio["bucket"] == "aos-public"
+	assert audio["object_key"].endswith(
+		"sounds/uploads/original/SHORT-2026-00001/fixed-version/original.m4a"
+	)
+	assert audio["content_type"] == "audio/mp4"
+	assert audio["duration_seconds"] == 2.5
+	assert audio["size_bytes"] == 5
+	assert any(item.get("content_type") == "audio/mp4" for item in uploads)
+	assert not work_dir.exists()
 
 
 def test_selected_sound_mixes_with_original_audio(monkeypatch, tmp_path):
@@ -292,6 +323,7 @@ def test_audio_reprocess_preserves_visual_metadata(monkeypatch, tmp_path):
 	assert result["status"] == "ready"
 	assert result["reason"] == "audio_reprocess"
 	assert result["sound_applied"] is True
+	assert "original_audio" not in result
 	assert "thumbnail" not in result
 	assert "classification" not in result
 	assert not any(item.get("content_type") == "image/jpeg" for item in uploads)

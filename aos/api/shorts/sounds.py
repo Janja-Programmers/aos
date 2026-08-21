@@ -42,6 +42,7 @@ from aos.api.shorts.constants import (
     SOUND_SOURCE_TYPE_LIBRARY,
     SOUND_SOURCE_TYPE_COMMERCIAL,
     SOUND_SOURCE_TYPE_UPLOADED,
+    SOUND_SOURCE_TYPE_ORIGINAL,
     SOUND_SHAREABLE_STATUSES,
     SHORT_CONTENT_MODE_SHOP,
 )
@@ -146,7 +147,8 @@ def validate_existing_short_sound_for_mode(*, short_id: str, content_mode: str):
     """Validate any existing linked sound against the target content mode.
 
     Used when a short is converted to shop mode without passing a new sound_id.
-    Shop shorts may only keep active commercial-safe sounds.
+    The Short's own original audio remains base media; explicitly selected or
+    reused sounds must be active and commercial-safe for Shop Shorts.
     """
     if content_mode != SHORT_CONTENT_MODE_SHOP:
         return None
@@ -155,6 +157,7 @@ def validate_existing_short_sound_for_mode(*, short_id: str, content_mode: str):
         """
         SELECT
             ss.sound,
+            ss.is_original_audio,
             snd.status,
             snd.is_commercial_safe
         FROM `tabAOS Short Sound` ss
@@ -170,6 +173,12 @@ def validate_existing_short_sound_for_mode(*, short_id: str, content_mode: str):
         return None
 
     sound = row[0]
+
+    # The source Short's own recorded audio is its base media, not an added
+    # music selection. Preserve the pre-original-sound Shop behavior and apply
+    # commercial-safe licensing rules only to explicitly selected/reused sounds.
+    if int(sound.get("is_original_audio") or 0):
+        return None
 
     if sound.get("status") != "active":
         return fail(
@@ -479,6 +488,11 @@ def create_sound_impl(**kwargs):
         return err
 
     staff = _is_staff(user)
+    if source_type == SOUND_SOURCE_TYPE_ORIGINAL:
+        return fail(
+            "Original sounds are created automatically from Short audio.",
+            error="VALIDATION_ERROR",
+        )
     if source_type in {SOUND_SOURCE_TYPE_LIBRARY, SOUND_SOURCE_TYPE_COMMERCIAL} and not staff:
         return fail("Only staff can create library/commercial sounds.", error="FORBIDDEN")
 
@@ -656,15 +670,15 @@ def search_sounds_impl(**kwargs):
             FROM `tabAOS Sound`
             WHERE status = 'active'
               AND (
-                COALESCE(title, '') LIKE %s ESCAPE '\\'
-                OR COALESCE(artist, '') LIKE %s ESCAPE '\\'
+                COALESCE(title, '') LIKE %s ESCAPE '\\\\'
+                OR COALESCE(artist, '') LIKE %s ESCAPE '\\\\'
               )
             ORDER BY
                 CASE
                     WHEN LOWER(COALESCE(title, '')) = LOWER(%s) THEN 0
-                    WHEN LOWER(COALESCE(title, '')) LIKE LOWER(%s) ESCAPE '\\' THEN 1
+                    WHEN LOWER(COALESCE(title, '')) LIKE LOWER(%s) ESCAPE '\\\\' THEN 1
                     WHEN LOWER(COALESCE(artist, '')) = LOWER(%s) THEN 2
-                    WHEN LOWER(COALESCE(artist, '')) LIKE LOWER(%s) ESCAPE '\\' THEN 3
+                    WHEN LOWER(COALESCE(artist, '')) LIKE LOWER(%s) ESCAPE '\\\\' THEN 3
                     ELSE 4
                 END,
                 usage_count DESC,

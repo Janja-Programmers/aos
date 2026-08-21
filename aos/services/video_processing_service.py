@@ -16,6 +16,7 @@ from frappe.utils import now_datetime
 from aos.services.media.media_service import MediaService
 from aos.services.shorts.classification import apply_visual_result
 from aos.services.shorts.media import validate_object_key
+from aos.services.shorts.original_sounds import ensure_original_sound_for_short
 from aos.services.shorts.repository import ShortsRepository
 from aos.services.transactional_outbox import (
 	OutboxConflictError,
@@ -186,6 +187,45 @@ def _validate_thumbnail(short_id: str, thumbnail: dict[str, Any]) -> dict[str, A
 	clean["bucket"] = config.public_bucket
 	clean["object_key"] = key
 	clean["url"] = f"{config.public_base_url.rstrip('/')}/{config.public_bucket}/{key}"
+	return clean
+
+
+def _validate_original_audio(short_id: str, audio: dict[str, Any]) -> dict[str, Any]:
+	"""Validate companion-owned extracted audio before registering it as Media."""
+	config = get_minio_config()
+	bucket = str(audio.get("bucket") or "").strip().strip("/")
+	if bucket != config.public_bucket:
+		raise VideoProcessingError("Original audio bucket is invalid")
+	prefix = f"sounds/uploads/original/{short_id}/"
+	key = validate_object_key(
+		str(audio.get("object_key") or ""),
+		expected_prefix=prefix.rstrip("/"),
+	)
+	if not key.lower().endswith(".m4a"):
+		raise VideoProcessingError("Original audio object is invalid")
+	content_type = str(audio.get("content_type") or "audio/mp4").strip().lower()
+	if content_type not in {"audio/mp4", "audio/aac"}:
+		raise VideoProcessingError("Original audio content type is invalid")
+	try:
+		size_bytes = int(audio.get("size_bytes") or 0)
+		duration_seconds = float(audio.get("duration_seconds") or 0)
+	except (TypeError, ValueError) as exc:
+		raise VideoProcessingError("Original audio metadata is invalid") from exc
+	if size_bytes <= 0:
+		raise VideoProcessingError("Original audio size is invalid")
+	if duration_seconds <= 0 or duration_seconds > get_max_short_duration_seconds():
+		raise VideoProcessingError("Original audio duration is invalid")
+	clean = dict(audio)
+	clean.update(
+		{
+			"bucket": bucket,
+			"object_key": key,
+			"content_type": content_type,
+			"size_bytes": size_bytes,
+			"duration_seconds": duration_seconds,
+			"filename": str(audio.get("filename") or f"{short_id}_original.m4a"),
+		}
+	)
 	return clean
 
 
@@ -387,6 +427,8 @@ def build_video_job_payload(job) -> dict[str, Any]:
 			"output_base_path": f"{minio.base_path}/processed".strip("/"),
 			"thumbnail_bucket": minio.public_bucket,
 			"thumbnail_base_path": "shorts/thumbnails",
+			"sound_bucket": minio.public_bucket,
+			"sound_base_path": "sounds/uploads/original",
 			"max_duration_seconds": get_max_short_duration_seconds(),
 		},
 	}
@@ -533,6 +575,13 @@ def mark_video_job_ready(job, payload: dict[str, Any]) -> object:
 	processed_key, processed_url, _manifest_key, playback_url = _validated_processed_keys(short.name, payload)
 	thumbnail_media_id = None
 	thumbnail = payload.get("thumbnail") if isinstance(payload.get("thumbnail"), dict) else None
+	original_audio = (
+		payload.get("original_audio")
+		if not is_audio_reprocess and isinstance(payload.get("original_audio"), dict)
+		else None
+	)
+	if original_audio is not None:
+		original_audio = _validate_original_audio(short.name, original_audio)
 	# Audio-only reprocessing must not create or attach another thumbnail. The
 	# Short already owns the canonical thumbnail from its initial processing
 	# generation, and short_thumbnail permits only one attachment per Short.
@@ -566,6 +615,10 @@ def mark_video_job_ready(job, payload: dict[str, Any]) -> object:
 		short.audio_mix_error = None
 	short.save(ignore_permissions=True)
 
+	original_sound_id = None
+	if original_audio is not None:
+		original_sound_id = ensure_original_sound_for_short(short=short, audio=original_audio)
+
 	job.status = "Ready"
 	job.callback_received_at = now_datetime()
 	job.completed_at = now_datetime()
@@ -580,6 +633,7 @@ def mark_video_job_ready(job, payload: dict[str, Any]) -> object:
 			"status": "ready",
 			"duration_seconds": duration_seconds,
 			"sound_applied": bool(payload.get("sound_applied")),
+			"original_sound_id": original_sound_id,
 			"classification_status": getattr(short, "classification_status", None),
 			"generation": max(1, int(getattr(job, "generation", 1) or 1)),
 		},

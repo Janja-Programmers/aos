@@ -18,9 +18,24 @@ def _spec(fields: set[str], *, aliases=(), ids=()) -> EndpointSpec:
 
 ENDPOINT_SPECS: dict[str, EndpointSpec] = {
     "create_short": _spec(
-        {"raw_video_media", "media_id", "media", "audience", "allow_comments", "allow_downloads"},
-        aliases=(("raw_video_media", "media_id", "media"),),
-        ids=(("raw_video_media", MEDIA_ID_RE), ("media_id", MEDIA_ID_RE), ("media", MEDIA_ID_RE)),
+        {
+            "raw_video_media", "media_id", "media", "audience",
+            "allow_comments", "allow_downloads", "sound_id",
+            "sound_start_ms", "start_ms", "sound_duration_ms", "duration_ms",
+            "sound_volume", "volume",
+        },
+        aliases=(
+            ("raw_video_media", "media_id", "media"),
+            ("sound_start_ms", "start_ms"),
+            ("sound_duration_ms", "duration_ms"),
+            ("sound_volume", "volume"),
+        ),
+        ids=(
+            ("raw_video_media", MEDIA_ID_RE),
+            ("media_id", MEDIA_ID_RE),
+            ("media", MEDIA_ID_RE),
+            ("sound_id", SOUND_ID_RE),
+        ),
     ),
     "update_short_metadata": _spec(
         {"short_id", "content_mode", "caption", "hashtags", "audience", "allow_comments", "allow_downloads", "ad_id", "sound_id", "sound_start_ms", "start_ms", "sound_duration_ms", "duration_ms", "sound_volume", "volume"},

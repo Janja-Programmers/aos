@@ -146,8 +146,11 @@ def create_short_impl(**kwargs):
     1. aos.api.v1.media.init_upload with purpose=short_video_raw
     2. PUT video to the returned upload_url
     3. aos.api.v1.media.confirm_upload with media_id
-    4. aos.api.v1.shorts.create_short with raw_video_media/media_id
+    4. aos.api.v1.shorts.create_short with raw_video_media/media_id and,
+       optionally, an existing sound_id plus trim/volume settings
 
+    If no reusable sound is selected and the video has audio, the trusted video
+    processor creates a reusable original Sound after processing completes.
     This replaces the old shorts-specific init_upload/confirm_upload endpoints.
     """
     user, err = require_login()
@@ -231,13 +234,30 @@ def create_short_impl(**kwargs):
             attached_field="raw_video_media",
         )
 
+        sound = None
+        sound_id = kwargs.get("sound_id")
+        if sound_id:
+            # TikTok-style reuse: attach the existing Sound before the first
+            # processing generation so the companion can mix it once instead
+            # of requiring an immediate second audio-only reprocess.
+            sound = set_short_sound(
+                short_id=doc.name,
+                sound_id=sound_id,
+                start_ms=kwargs.get("sound_start_ms") or kwargs.get("start_ms"),
+                duration_ms=kwargs.get("sound_duration_ms") or kwargs.get("duration_ms"),
+                volume=(
+                    kwargs.get("sound_volume")
+                    if kwargs.get("sound_volume") is not None
+                    else kwargs.get("volume")
+                ),
+            )
+
         video_job = create_video_processing_job(
             short_id=doc.name,
             force=False,
             reason="short_upload",
             enqueue=True,
         )
-
 
         return ok(
             "Short created and queued for processing.",
@@ -247,6 +267,7 @@ def create_short_impl(**kwargs):
                 "raw_video_media": media_doc.name,
                 "status": frappe.db.get_value("AOS Short", doc.name, "status"),
                 "classification": public_classification(doc),
+                "sound": sound,
                 "video_job_id": video_job.name,
                 "video_job_status": video_job.status,
             },

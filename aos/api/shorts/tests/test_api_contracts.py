@@ -30,6 +30,23 @@ class TestShortsApiContracts(FrappeTestCase):
             validate_public_kwargs({"short_id": "SHORT-2026-00137", "owner": "forged"}, spec)
         self.assertEqual(ctx.exception.code, "SHORTS_UNKNOWN_FIELD")
 
+    def test_create_short_accepts_reusable_sound_selection(self):
+        clean = validate_public_kwargs(
+            {
+                "raw_video_media": "MEDIA-2026-00001",
+                "sound_id": "SOUND-2026-00001",
+                "sound_start_ms": 1000,
+                "sound_duration_ms": 5000,
+                "sound_volume": 0.7,
+            },
+            ENDPOINT_SPECS["create_short"],
+        )
+
+        self.assertEqual(clean["sound_id"], "SOUND-2026-00001")
+        self.assertEqual(clean["sound_start_ms"], 1000)
+        self.assertEqual(clean["sound_duration_ms"], 5000)
+        self.assertEqual(clean["sound_volume"], 0.7)
+
     def test_conflicting_aliases_and_malformed_ids_are_rejected(self):
         with self.assertRaises(ShortsError) as ctx:
             validate_public_kwargs(
@@ -87,6 +104,17 @@ class TestShortsApiContracts(FrappeTestCase):
         self.assertNotIn("user@example.test", key)
         self.assertIn("CASE", str(captured["query"]))
         self.assertEqual(captured["params"], ("%Math%", "%Math%", "Math", "Math%", "Math", "Math%", 20))
+
+    def test_sound_search_sql_executes_on_mariadb(self):
+        # Regression: the backslash escape literal must be encoded as two SQL
+        # backslashes so MariaDB receives one valid ESCAPE character.
+        with (
+            patch("aos.api.shorts.sounds._get_optional_viewer", return_value=None),
+            patch("aos.api.shorts.sounds.rate_limit", return_value=None),
+        ):
+            response = search_sounds_impl(q="test", limit=1)
+
+        self.assertTrue(response.get("ok"), response)
 
     def test_all_feed_candidates_are_advisory_and_order_matches_cursor(self):
         source = self._source("api/shorts/feed.py")
