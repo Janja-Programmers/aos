@@ -11,7 +11,7 @@ import hashlib
 import hmac
 import json
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import frappe
@@ -39,8 +39,8 @@ class AnalyticsPipelineError(RuntimeError):
 @dataclass(frozen=True)
 class AnalyticsPipelineConfig:
 	service_url: str
-	service_secret: str
-	callback_secret: str
+	service_secret: str = field(repr=False)
+	callback_secret: str = field(repr=False)
 	callback_url: str
 	request_timeout_seconds: int
 	max_attempts: int

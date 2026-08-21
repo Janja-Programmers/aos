@@ -14,7 +14,7 @@ They run in the external image-search service container.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import hmac
 import json
@@ -52,7 +52,7 @@ class ImageSearchClientSettings:
     timeout_seconds: int
     default_limit: int
     max_limit: int
-    internal_secret: str = ""
+    internal_secret: str = field(default="", repr=False)
 
 
 def _clamp_int(value: Any, *, default: int, min_value: int, max_value: int) -> int:

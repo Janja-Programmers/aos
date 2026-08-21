@@ -15,7 +15,7 @@ import socket
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import frappe
@@ -74,9 +74,9 @@ class ActiveOutboxDispatchContext:
 	job_name: str
 	stable_dispatch_id: str
 	dispatch_generation: int
-	dispatch_token: str
+	dispatch_token: str = field(repr=False)
 	active_dispatch_generation: int
-	active_dispatch_token: str
+	active_dispatch_token: str = field(repr=False)
 	previous_attempt_count: int
 	recovery_dispatch: bool
 	dispatch_reason: str

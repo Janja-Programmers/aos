@@ -25,7 +25,7 @@ class _StrictModel(BaseModel):
 
 
 class PushToken(_StrictModel):
-	token: str = Field(min_length=20, max_length=4096)
+	token: str = Field(min_length=20, max_length=4096, repr=False)
 	token_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 	device_type: Literal["android", "ios", "web"]
 	registration_kind: Literal["token", "fid"] = "token"
@@ -50,7 +50,7 @@ class NotificationDeliveryJobRequest(_StrictModel):
 	idempotency_key: str | None = Field(default=None, min_length=8, max_length=200)
 	dispatch_id: str | None = Field(default=None, min_length=8, max_length=240)
 	dispatch_generation: int = Field(default=0, ge=0, le=1000)
-	dispatch_token: str | None = Field(default=None, min_length=16, max_length=180)
+	dispatch_token: str | None = Field(default=None, min_length=16, max_length=180, repr=False)
 	notification_id: str | None = Field(default=None, max_length=180)
 	delivery_kind: Literal["persistent", "transient"] = "persistent"
 	channel: Literal["push"] = "push"

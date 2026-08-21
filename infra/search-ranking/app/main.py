@@ -19,7 +19,7 @@ class SearchRankingJobRequest(BaseModel):
 	idempotency_key: str | None = Field(default=None, min_length=8, max_length=200)
 	dispatch_id: str | None = Field(default=None, min_length=8, max_length=200)
 	dispatch_generation: int = Field(default=0, ge=0, le=1000)
-	dispatch_token: str | None = Field(default=None, min_length=16, max_length=140)
+	dispatch_token: str | None = Field(default=None, min_length=16, max_length=140, repr=False)
 	action: str = "upsert"
 	target: dict[str, Any]
 	document: dict[str, Any] | None = None

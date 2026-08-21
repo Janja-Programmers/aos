@@ -116,6 +116,85 @@ def _string_template(node: ast.AST | None) -> str | None:
 	return None
 
 
+SENSITIVE_REPR_EXACT = frozenset(
+	{
+		"password",
+		"passwd",
+		"pwd",
+		"secret",
+		"secret_key",
+		"api_secret",
+		"api_key",
+		"access_key",
+		"private_key",
+		"client_secret",
+		"service_secret",
+		"callback_secret",
+		"request_secret",
+		"internal_secret",
+		"classification_secret",
+		"sid",
+		"session_id",
+		"token",
+		"x_aos_signature",
+		"livekit_keys",
+	}
+)
+
+
+def _is_sensitive_repr_field(name: str) -> bool:
+	normalized = str(name or "").strip().lower().replace("-", "_")
+	return normalized in SENSITIVE_REPR_EXACT or normalized.endswith(
+		("_secret", "_token", "_password", "_passwd", "_pwd")
+	)
+
+
+def _terminal_name(node: ast.AST) -> str:
+	if isinstance(node, ast.Name):
+		return node.id
+	if isinstance(node, ast.Attribute):
+		return node.attr
+	return ""
+
+
+def _has_repr_false(value: ast.AST | None, constructor: str) -> bool:
+	if not isinstance(value, ast.Call) or _terminal_name(value.func) != constructor:
+		return False
+	for keyword in value.keywords:
+		if keyword.arg == "repr" and isinstance(keyword.value, ast.Constant):
+			return keyword.value.value is False
+	return False
+
+
+def unsafe_sensitive_repr_fields(path: Path, text: str) -> list[tuple[int, str, str]]:
+	"""Find secret-bearing dataclass/Pydantic fields that can leak through repr()."""
+	if path.suffix != ".py":
+		return []
+	try:
+		tree = ast.parse(text, filename=str(path))
+	except SyntaxError:
+		return []
+
+	offenders: list[tuple[int, str, str]] = []
+	for node in ast.walk(tree):
+		if not isinstance(node, ast.ClassDef):
+			continue
+		is_dataclass = any(_terminal_name(decorator) == "dataclass" for decorator in node.decorator_list)
+		is_pydantic = any(_terminal_name(base) in {"BaseModel", "BaseSettings"} for base in node.bases)
+		if not (is_dataclass or is_pydantic):
+			continue
+		constructor = "field" if is_dataclass else "Field"
+		for statement in node.body:
+			if not isinstance(statement, ast.AnnAssign) or not isinstance(statement.target, ast.Name):
+				continue
+			field_name = statement.target.id
+			if not _is_sensitive_repr_field(field_name):
+				continue
+			if not _has_repr_false(statement.value, constructor):
+				offenders.append((statement.lineno, node.name, field_name))
+	return offenders
+
+
 def raw_patch_ddl_lines(path: Path, text: str) -> list[int]:
 	if path.suffix != ".py" or "aos/patches" not in path.as_posix():
 		return []
@@ -162,6 +241,11 @@ def main() -> int:
 				f"{relative}:{line_number}: raw DDL through frappe.db.sql; "
 				"use frappe.db.add_index/add_unique or frappe.db.sql_ddl"
 			)
+		for line_number, class_name, field_name in unsafe_sensitive_repr_fields(path, text):
+			errors.append(
+				f"{relative}:{line_number}: secret-bearing field "
+				f"{class_name}.{field_name} must declare repr=False"
+			)
 		# The legacy Frappe app is intentionally not mass-reformatted in this
 		# checkpoint. Conflict/debug/structured-file checks still cover it;
 		# whitespace enforcement applies to all checkpoint-owned/non-app files.
@@ -186,7 +270,10 @@ def main() -> int:
 		for error in errors:
 			print(f"- {error}", file=sys.stderr)
 		return 1
-	print("JSON, TOML, YAML, duplicate keys, conflicts, debug statements, patch DDL, and whitespace: OK")
+	print(
+		"JSON, TOML, YAML, duplicate keys, conflicts, debug statements, patch DDL, "
+		"secret-safe reprs, and whitespace: OK"
+	)
 	return 0
 
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import frappe
@@ -66,8 +66,8 @@ MAX_STORED_CALLBACK_BYTES = 64 * 1024
 @dataclass(frozen=True)
 class NotificationDeliveryConfig:
 	service_url: str
-	service_secret: str
-	callback_secret: str
+	service_secret: str = field(repr=False)
+	callback_secret: str = field(repr=False)
 	callback_url: str
 	request_timeout_seconds: int
 	max_attempts: int

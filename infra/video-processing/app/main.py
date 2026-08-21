@@ -77,7 +77,7 @@ class VideoJobRequest(StrictModel):
 	idempotency_key: str | None = Field(default=None, min_length=8, max_length=200)
 	dispatch_id: str | None = Field(default=None, min_length=8, max_length=200)
 	dispatch_generation: int = Field(default=0, ge=0, le=1000)
-	dispatch_token: str | None = Field(default=None, min_length=16, max_length=140)
+	dispatch_token: str | None = Field(default=None, min_length=16, max_length=140, repr=False)
 	job_generation: int = Field(default=1, ge=1, le=1000000)
 	short_id: str = Field(pattern=r"^SHORT-[0-9]{4}-[0-9]{5,}$")
 	force: bool = False

@@ -94,7 +94,7 @@ def test_job_accepts_original_sound_output_locations(monkeypatch):
 
 	assert response.status_code == 202
 	assert response.json()["service_job_id"] == "rq-original-sound"
-	enqueued_payload = calls[0][0][0]
+	enqueued_payload = calls[0][0][1]
 	assert enqueued_payload["output"]["sound_bucket"] == "aos-public"
 	assert enqueued_payload["output"]["sound_base_path"] == "sounds/uploads/original"
 

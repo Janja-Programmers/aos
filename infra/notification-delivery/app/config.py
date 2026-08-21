@@ -6,6 +6,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,8 +35,8 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = False
 
-    request_secret: str = ""
-    callback_secret: str = ""
+    request_secret: str = Field(default="", repr=False)
+    callback_secret: str = Field(default="", repr=False)
 
     redis_url: str = "redis://notification-redis:6379/0"
     queue_name: str = "notification-delivery"

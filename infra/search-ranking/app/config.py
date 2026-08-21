@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 def _clean(value: object | None, default: str = "") -> str:
@@ -55,8 +55,8 @@ class Settings:
     callback_job_timeout_seconds: int = _int("SEARCH_RANKING_CALLBACK_JOB_TIMEOUT_SECONDS", 120, min_value=30, max_value=900)
     callback_max_attempts: int = _int("SEARCH_RANKING_CALLBACK_MAX_ATTEMPTS", 8, min_value=1, max_value=20)
 
-    request_secret: str = _clean(os.getenv("SEARCH_RANKING_SERVICE_SECRET"), "")
-    callback_secret: str = _clean(os.getenv("SEARCH_RANKING_SERVICE_CALLBACK_SECRET"), "")
+    request_secret: str = field(default=_clean(os.getenv("SEARCH_RANKING_SERVICE_SECRET"), ""), repr=False)
+    callback_secret: str = field(default=_clean(os.getenv("SEARCH_RANKING_SERVICE_CALLBACK_SECRET"), ""), repr=False)
 
     max_ad_candidates: int = _int("SEARCH_RANKING_MAX_AD_CANDIDATES", 500, min_value=10, max_value=5000)
     max_short_candidates: int = _int("SEARCH_RANKING_MAX_SHORT_CANDIDATES", 500, min_value=10, max_value=5000)

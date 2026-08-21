@@ -18,7 +18,7 @@ class ModerationJobRequest(BaseModel):
 	idempotency_key: str | None = Field(default=None, min_length=8, max_length=200)
 	dispatch_id: str | None = Field(default=None, min_length=8, max_length=200)
 	dispatch_generation: int = Field(default=0, ge=0, le=1000)
-	dispatch_token: str | None = Field(default=None, min_length=16, max_length=140)
+	dispatch_token: str | None = Field(default=None, min_length=16, max_length=140, repr=False)
 	target: dict[str, Any]
 	text_items: list[dict[str, Any]] = Field(default_factory=list)
 	media_items: list[dict[str, Any]] = Field(default_factory=list)

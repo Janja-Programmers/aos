@@ -18,7 +18,7 @@ class AnalyticsEvent(BaseModel):
 	event_type: str = Field(min_length=1, max_length=120)
 	event_group: str | None = None
 	user: str | None = None
-	session_id: str | None = None
+	session_id: str | None = Field(default=None, repr=False)
 	source: str | None = None
 	platform: str | None = None
 	country: str | None = None
@@ -37,7 +37,7 @@ class AnalyticsIngestJobRequest(BaseModel):
 	idempotency_key: str | None = Field(default=None, min_length=8, max_length=200)
 	dispatch_id: str | None = Field(default=None, min_length=8, max_length=200)
 	dispatch_generation: int = Field(default=0, ge=0, le=1000)
-	dispatch_token: str | None = Field(default=None, min_length=16, max_length=140)
+	dispatch_token: str | None = Field(default=None, min_length=16, max_length=140, repr=False)
 	source: str | None = None
 	events: list[AnalyticsEvent] = Field(default_factory=list)
 	callback_url: str = Field(min_length=1)

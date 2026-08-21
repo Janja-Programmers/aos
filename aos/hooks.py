@@ -156,6 +156,10 @@ doc_events = {
 		"on_update": "aos.services.localization_service.localization_master_changed",
 		"on_trash": "aos.services.localization_service.localization_master_changed",
 	},
+	"Error Log": {
+		"validate": "aos.utils.secure_logging.redact_error_log_document",
+		"before_insert": "aos.utils.secure_logging.redact_error_log_document",
+	},
 }
 
 
@@ -229,13 +233,19 @@ scheduler_events = {
 
 # Request Events
 # ----------------
-before_request = ["aos.utils.metrics.before_request"]
+before_request = [
+	"aos.utils.secure_logging.install_frappe_traceback_redaction",
+	"aos.utils.metrics.before_request",
+]
 after_request = ["aos.utils.metrics.after_request"]
-on_error = ["aos.utils.metrics.on_error"]
+on_error = [
+	"aos.utils.secure_logging.install_frappe_traceback_redaction",
+	"aos.utils.metrics.on_error",
+]
 
 # Job Events
 # ----------
-# before_job = ["aos.utils.before_job"]
+before_job = ["aos.utils.secure_logging.install_frappe_traceback_redaction"]
 # after_job = ["aos.utils.after_job"]
 
 # User Data Protection

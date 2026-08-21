@@ -9,7 +9,7 @@ this boundary.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from aos.utils.aos_config import get_env, get_env_bool
@@ -27,7 +27,7 @@ class WebPushConfigurationError(RuntimeError):
 @dataclass(frozen=True)
 class WebPushConfig:
     enabled: bool
-    api_key: str = ""
+    api_key: str = field(default="", repr=False)
     auth_domain: str = ""
     project_id: str = ""
     storage_bucket: str = ""

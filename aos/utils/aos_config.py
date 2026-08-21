@@ -11,7 +11,7 @@ Rule of thumb:
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlparse
@@ -182,8 +182,8 @@ def clean_endpoint(value: str | None) -> str:
 @dataclass(frozen=True)
 class MinioConfig:
     endpoint: str
-    access_key: str
-    secret_key: str
+    access_key: str = field(repr=False)
+    secret_key: str = field(repr=False)
     secure: bool
     public_base_url: str
     bucket: str
@@ -289,8 +289,8 @@ def get_minio_config() -> MinioConfig:
 @dataclass(frozen=True)
 class LiveKitConfig:
     endpoint: str
-    api_key: str
-    api_secret: str
+    api_key: str = field(repr=False)
+    api_secret: str = field(repr=False)
 
 
 def _split_livekit_keys(value: str | None) -> tuple[str | None, str | None]:

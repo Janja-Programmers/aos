@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 def _clean(value: object | None, default: str = "") -> str:
@@ -48,12 +48,12 @@ class Settings:
     callback_job_timeout_seconds: int = _int("MODERATION_CALLBACK_JOB_TIMEOUT_SECONDS", 120, min_value=30, max_value=900)
     callback_max_attempts: int = _int("MODERATION_CALLBACK_MAX_ATTEMPTS", 8, min_value=1, max_value=20)
 
-    request_secret: str = _clean(os.getenv("MODERATION_SERVICE_SECRET"), "")
-    callback_secret: str = _clean(os.getenv("MODERATION_SERVICE_CALLBACK_SECRET"), "")
+    request_secret: str = field(default=_clean(os.getenv("MODERATION_SERVICE_SECRET"), ""), repr=False)
+    callback_secret: str = field(default=_clean(os.getenv("MODERATION_SERVICE_CALLBACK_SECRET"), ""), repr=False)
 
     minio_endpoint: str = _clean(os.getenv("MINIO_ENDPOINT"), "minio:9000")
-    minio_access_key: str = _clean(os.getenv("MINIO_ACCESS_KEY") or os.getenv("MINIO_ROOT_USER"), "")
-    minio_secret_key: str = _clean(os.getenv("MINIO_SECRET_KEY") or os.getenv("MINIO_ROOT_PASSWORD"), "")
+    minio_access_key: str = field(default=_clean(os.getenv("MINIO_ACCESS_KEY") or os.getenv("MINIO_ROOT_USER"), ""), repr=False)
+    minio_secret_key: str = field(default=_clean(os.getenv("MINIO_SECRET_KEY") or os.getenv("MINIO_ROOT_PASSWORD"), ""), repr=False)
     minio_secure: bool = _bool("MINIO_SECURE", False)
 
     max_text_chars: int = _int("MODERATION_MAX_TEXT_CHARS", 20000, min_value=1000)
