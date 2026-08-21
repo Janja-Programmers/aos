@@ -47,11 +47,25 @@ class OutputConfig(StrictModel):
 	output_base_path: str = Field(min_length=1, max_length=512)
 	thumbnail_bucket: str = Field(min_length=1, max_length=128)
 	thumbnail_base_path: str = Field(min_length=1, max_length=512)
+	# Optional for compatibility with dispatchers that predate reusable original
+	# Sounds. When supplied, these are where the worker stores the extracted
+	# creator audio that becomes an AOS Sound.
+	sound_bucket: str | None = Field(default=None, min_length=1, max_length=128)
+	sound_base_path: str | None = Field(default=None, min_length=1, max_length=512)
 	max_duration_seconds: int = Field(ge=1, le=3600)
 
-	@field_validator("output_bucket", "output_base_path", "thumbnail_bucket", "thumbnail_base_path")
+	@field_validator(
+		"output_bucket",
+		"output_base_path",
+		"thumbnail_bucket",
+		"thumbnail_base_path",
+		"sound_bucket",
+		"sound_base_path",
+	)
 	@classmethod
-	def validate_output_component(cls, value: str) -> str:
+	def validate_output_component(cls, value: str | None) -> str | None:
+		if value is None:
+			return None
 		clean = value.strip().strip("/")
 		if not clean or ".." in clean.split("/") or "\\" in clean:
 			raise ValueError("Invalid output location")

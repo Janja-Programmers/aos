@@ -69,6 +69,36 @@ def test_health(monkeypatch):
 	assert response.json()["service"] == "aos-video-processing"
 
 
+def test_job_accepts_original_sound_output_locations(monkeypatch):
+	calls = []
+
+	class Queue:
+		def fetch_job(self, _job_id):
+			return None
+
+		def enqueue(self, *args, **kwargs):
+			calls.append((args, kwargs))
+			return SimpleNamespace(id="rq-original-sound")
+
+	monkeypatch.setattr(main, "get_settings", lambda: settings())
+	monkeypatch.setattr(main, "get_queue", Queue)
+	data = payload()
+	data["output"].update(
+		{
+			"sound_bucket": "aos-public",
+			"sound_base_path": "sounds/uploads/original",
+		}
+	)
+	body, headers = signed(data)
+	response = TestClient(main.app).post("/jobs", content=body, headers=headers)
+
+	assert response.status_code == 202
+	assert response.json()["service_job_id"] == "rq-original-sound"
+	enqueued_payload = calls[0][0][0]
+	assert enqueued_payload["output"]["sound_bucket"] == "aos-public"
+	assert enqueued_payload["output"]["sound_base_path"] == "sounds/uploads/original"
+
+
 def test_valid_job_is_enqueued(monkeypatch):
 	calls = []
 
