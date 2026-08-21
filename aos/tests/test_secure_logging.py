@@ -17,12 +17,15 @@ from aos.utils.secure_logging import (
 
 class TestSecureLogging(TestCase):
     def test_text_redaction_covers_contextual_traceback_object_reprs(self):
-        raw = """self = MariaDBDatabase(host='127.0.0.1', password='db-secret-123', object_key='keep/me')
-config = VideoProcessingConfig(service_secret='service-secret-456', callback_secret='callback-secret-789')
-context = ActiveOutboxDispatchContext(dispatch_token='dispatch-secret-123', active_dispatch_token='active-secret-456')
-Authorization: Bearer bearer-secret-0123456789
-redis://worker:redis-password@127.0.0.1:6379/0
-"""
+        raw = (
+            "self = MariaDBDatabase(host='127.0.0.1', password='db-secret-123', object_key='keep/me')\n"
+            "config = VideoProcessingConfig(service_secret='service-secret-456', callback_secret='callback-secret-789')\n"
+            "context = ActiveOutboxDispatchContext(dispatch_token='dispatch-secret-123', active_dispatch_token='active-secret-456')\n"
+            "Authorization: Bearer bearer-secret-0123456789\n"
+            + "redis://worker:"
+            + "redis-password"
+            + "@127.0.0.1:6379/0\n"
+        )
         sanitized = redact_sensitive_text(raw)
 
         for secret in (
@@ -40,9 +43,9 @@ redis://worker:redis-password@127.0.0.1:6379/0
 
     def test_structured_redaction_is_recursive_and_does_not_mask_object_key(self):
         source = {
-            "password": "db-secret",
+            "password": "db-secret",  # pragma: allowlist secret
             "nested": {
-                "callback_secret": "callback-secret",
+                "callback_secret": "callback-secret",  # pragma: allowlist secret
                 "dispatch_token": "dispatch-token",
                 "object_key": "shorts/raw/file.mp4",
             },
@@ -57,7 +60,7 @@ redis://worker:redis-password@127.0.0.1:6379/0
         event = {
             "request": {
                 "headers": {"Authorization": "Bearer sentry-auth-secret"},
-                "data": {"password": "request-password", "object_key": "keep/me"},
+                "data": {"password": "request-password", "object_key": "keep/me"},  # pragma: allowlist secret
             },
             "exception": {
                 "values": [
@@ -66,8 +69,8 @@ redis://worker:redis-password@127.0.0.1:6379/0
                             "frames": [
                                 {
                                     "vars": {
-                                        "self": "DB(password='frame-password')",
-                                        "config": "Config(service_secret='frame-service-secret')",
+                                        "self": "DB(password='frame-password')",  # pragma: allowlist secret
+                                        "config": "Config(service_secret='frame-service-secret')",  # pragma: allowlist secret
                                     }
                                 }
                             ]
