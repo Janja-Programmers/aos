@@ -14,6 +14,7 @@ from aos.api.shorts.constants import (
     DEFAULT_SOUND_STATUS,
     MAX_SOUND_DURATION_SECONDS,
     SOUND_SOURCE_TYPE_COMMERCIAL,
+    SOUND_SOURCE_TYPE_ORIGINAL,
     VALID_SOUND_SOURCE_TYPES,
     VALID_SOUND_STATUSES,
 )
@@ -47,6 +48,7 @@ class AOSSound(Document):
 
     def before_insert(self):
         self._set_defaults()
+        self._bind_original_sound_owner()
 
     def validate(self):
         self._set_defaults()
@@ -87,6 +89,31 @@ class AOSSound(Document):
 
         if getattr(self, "favorite_count", None) in (None, ""):
             self.favorite_count = 0
+
+    def _bind_original_sound_owner(self) -> None:
+        """Bind server-generated original Sounds to their source Short creator.
+
+        Video-processing callbacks are authenticated with the service signature,
+        not a Frappe user session, so Frappe initially stamps new documents with
+        ``owner=Guest``.  Original Sound media is intentionally owned by the
+        Short creator; derive that actor from the immutable source Short instead
+        of bypassing MediaService ownership checks.
+        """
+        if _clean(getattr(self, "source_type", "")).lower() != SOUND_SOURCE_TYPE_ORIGINAL:
+            return
+
+        short_id = _clean(getattr(self, "created_from_short", ""))
+        if not short_id:
+            frappe.throw(_("Original sounds require a source Short"))
+
+        creator = _clean(frappe.db.get_value("AOS Short", short_id, "owner"))
+        if not creator or creator == "Guest":
+            frappe.throw(_("Original sound source Short has no valid creator"))
+
+        # before_insert runs after Frappe's initial user/timestamp stamping, so
+        # this authoritative assignment both persists the correct document owner
+        # and gives MediaService the same actor that owns the extracted audio.
+        self.owner = creator
 
     def _validate_title(self):
         if not self.title:
