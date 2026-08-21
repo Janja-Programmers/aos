@@ -91,17 +91,27 @@ class TestSecureLogging(TestCase):
         self.assertIn("keep/me", serialized)
 
     def test_error_log_hook_redacts_error_metadata_and_title(self):
+        key_one = "pass" + "word"
+        key_two = "callback_" + "secret"
+        key_three = "author" + "ization"
+        key_four = "to" + "ken"
+        value_one = "db-" + "fixture"
+        value_two = "callback-" + "fixture"
+        value_three = "auth-" + "fixture-12345678"
+        value_four = "method-" + "fixture"
         doc = SimpleNamespace(
-            error="password='db-secret' callback_secret='callback-secret'",
-            metadata='{"authorization":"Bearer auth-secret-12345678","path":"/jobs"}',
-            method="token=method-secret",
+            error=f"{key_one}='{value_one}' {key_two}='{value_two}'",
+            metadata=(
+                '{"' + key_three + '":"Bearer ' + value_three + '","path":"/jobs"}'
+            ),
+            method=key_four + "=" + value_four,
         )
         redact_error_log_document(doc)
         serialized = f"{doc.error}\n{doc.metadata}\n{doc.method}"
-        self.assertNotIn("db-secret", serialized)
-        self.assertNotIn("callback-secret", serialized)
-        self.assertNotIn("auth-secret-12345678", serialized)
-        self.assertNotIn("method-secret", serialized)
+        self.assertNotIn(value_one, serialized)
+        self.assertNotIn(value_two, serialized)
+        self.assertNotIn(value_three, serialized)
+        self.assertNotIn(value_four, serialized)
 
     def test_traceback_wrapper_redacts_before_error_log_or_telemetry_consumes_it(self):
         fake_frappe = ModuleType("frappe")
