@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import frappe
+from frappe.exceptions import TimestampMismatchError
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import now_datetime
 
@@ -270,6 +271,62 @@ class TestTransactionalOutbox(FrappeTestCase):
 		terminal = SimpleNamespace(status="Completed")
 		with patch("aos.services.transactional_outbox.frappe.get_doc", return_value=terminal):
 			self.assertIs(dispatch_claimed_outbox("OUTBOX-1", "token"), terminal)
+
+	def test_dispatch_finalization_accepts_concurrent_terminal_callback(self):
+		from aos.services.transactional_outbox import (
+			dispatch_claimed_outbox,
+			record_companion_dispatch_outcome,
+		)
+
+		outbox = MagicMock()
+		outbox.name = "OUTBOX-1"
+		outbox.status = "Queued"
+		outbox.claim_token = "claim-token"
+		outbox.dispatch_kwargs_json = "{}"
+		outbox.dispatch_method = "aos.fake.dispatch"
+		outbox.job_doctype = "AOS Search Index Job"
+		outbox.job_name = "SEARCH-JOB-1"
+		outbox.idempotency_key = "stable-id"
+		outbox.proposed_dispatch_generation = 1
+		outbox.proposed_dispatch_token = "dispatch-token"
+		outbox.dispatch_generation = 0
+		outbox.current_dispatch_token = None
+		outbox.attempt_count = 1
+		outbox.active_dispatch_reason = "initial"
+		outbox.callback_timeout_seconds = 900
+		outbox.redispatch_accepted_count = 0
+		outbox.duplicate_active_dispatch_count = 0
+		outbox.callback_replay_count = 0
+
+		reload_count = 0
+
+		def reload_outbox():
+			nonlocal reload_count
+			reload_count += 1
+			if reload_count == 2:
+				outbox.status = "Completed"
+
+		outbox.reload.side_effect = reload_outbox
+		result = object()
+
+		def accepted_dispatch(**_kwargs):
+			record_companion_dispatch_outcome("enqueued", {"authoritative_generation": 1})
+			return result
+
+		with (
+			patch("aos.services.transactional_outbox.frappe.get_doc", return_value=outbox),
+			patch("aos.services.transactional_outbox.frappe.get_attr", return_value=accepted_dispatch),
+			patch(
+				"aos.services.transactional_outbox._save_outbox",
+				side_effect=TimestampMismatchError("callback committed first"),
+			),
+			patch("aos.services.transactional_outbox.frappe.db.commit") as commit,
+		):
+			self.assertIs(dispatch_claimed_outbox(outbox.name, "claim-token"), result)
+
+		self.assertEqual(reload_count, 2)
+		self.assertEqual(outbox.status, "Completed")
+		commit.assert_called_once()
 
 	def test_dead_letter_replay_requires_exact_key_and_is_bounded(self):
 		outbox = MagicMock()

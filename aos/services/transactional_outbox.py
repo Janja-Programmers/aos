@@ -1153,7 +1153,18 @@ def dispatch_claimed_outbox(outbox_name: str, claim_token: str) -> Any:
 		if outcome not in {"callback_already_completed", "reconciliation_pending", "newer_generation_exists"}:
 			outbox.last_error = None
 		_update_dispatch_outcome_counters(outbox, context)
-		_save_outbox(outbox)
+		try:
+			_save_outbox(outbox)
+		except TimestampMismatchError:
+			# A fast companion callback can commit terminal state after the HTTP
+			# response is accepted but before this dispatcher finalizes its older
+			# in-memory copy. Terminal callback state is authoritative; do not turn
+			# that legitimate race into a dispatch failure.
+			outbox.reload()
+			if outbox.status in TERMINAL_STATUSES:
+				frappe.db.commit()
+				return result
+			raise
 		frappe.db.commit()
 		return result
 	except Exception as exc:
@@ -1355,9 +1366,9 @@ def _get_outbox_for_callback_update(*, job_doctype: str, job_name: str) -> Any |
 
 	Callbacks can race with the publisher and reconciliation workers. Acquiring the
 	row lock here makes ``mark_outbox_callback`` safe even when it is called from a
-	path that does not already use ``execute_callback_atomically``. The explicit
-	lock also guarantees that the document loaded immediately afterwards reflects
-	the latest committed ``modified`` value used by Frappe's optimistic save check.
+	path that does not already use ``execute_callback_atomically``. The document is
+	then loaded from the locked row so correlation and terminal-state validation run
+	against the latest committed infrastructure state.
 	"""
 	rows = frappe.db.sql(
 		f"""
@@ -1438,6 +1449,44 @@ def _apply_outbox_callback_state(
 	return outbox, True
 
 
+_CALLBACK_PERSISTED_FIELDS = (
+	"status",
+	"last_error",
+	"callback_received_at",
+	"last_callback_at",
+	"last_callback_dispatch_token",
+	"completed_dispatch_generation",
+	"callback_status",
+	"callback_deadline_at",
+	"claimed_by",
+	"claim_token",
+	"claimed_at",
+	"lease_expires_at",
+	"manual_review_reason",
+	"completed_at",
+	"next_attempt_at",
+	"dispatch_generation",
+	"current_dispatch_token",
+	"proposed_dispatch_generation",
+	"proposed_dispatch_token",
+)
+
+
+def _persist_outbox_callback_state(outbox: Any) -> None:
+	"""Persist callback-owned state while the outbox row lock is held.
+
+	Callback completion is an infrastructure state transition, not a user document
+	edit. The publisher/recovery paths already update this state machine with locked
+	SQL writes. Using ``Document.save()`` here adds Frappe's optimistic ``modified``
+	check on top of the row lock and can reject an otherwise serialized callback
+	when another infrastructure write advanced ``modified`` before this document
+	instance was materialized. ``db.set_value`` deliberately bypasses document
+	hooks while still updating ``modified``/``modified_by`` for auditability.
+	"""
+	values = {field: getattr(outbox, field, None) for field in _CALLBACK_PERSISTED_FIELDS}
+	frappe.db.set_value(OUTBOX_DOCTYPE, outbox.name, values, update_modified=True)
+
+
 def mark_outbox_callback(
 	*,
 	job_doctype: str,
@@ -1448,42 +1497,32 @@ def mark_outbox_callback(
 	dispatch_token: str | None = None,
 	dispatch_generation: int | None = None,
 ) -> Any | None:
-	"""Persist a terminal callback without allowing a stale outbox overwrite.
+	"""Persist a terminal callback under the correlated outbox row lock.
 
-	The normal callback API already locks the correlated outbox before domain
-	mutation, but this helper is also reused by internal completion paths. Lock the
-	row locally as a defensive boundary. A bounded retry handles the rare case
-	where Frappe's optimistic ``modified`` check still observes a same-request or
-	legacy concurrent writer; each retry reloads and revalidates the latest state
-	before applying the callback.
+	The callback API locks the correlated outbox before domain mutation, and this
+	helper obtains the same lock when called from internal completion paths. Once the
+	latest state has been revalidated under that lock, persist only callback-owned
+	fields directly instead of routing the infrastructure transition through
+	``Document.save()`` and its independent optimistic timestamp check.
 	"""
-	last_mismatch: TimestampMismatchError | None = None
-	for _attempt in range(2):
-		outbox = _get_outbox_for_callback_update(
-			job_doctype=job_doctype,
-			job_name=job_name,
-		)
-		if outbox is None:
-			return None
-		outbox, changed = _apply_outbox_callback_state(
-			outbox,
-			callback_status=callback_status,
-			success=success,
-			error=error,
-			dispatch_token=dispatch_token,
-			dispatch_generation=dispatch_generation,
-		)
-		if not changed:
-			return outbox
-		try:
-			_save_outbox(outbox)
-			return outbox
-		except TimestampMismatchError as exc:
-			last_mismatch = exc
-			continue
-	if last_mismatch is not None:
-		raise last_mismatch
-	return None
+	outbox = _get_outbox_for_callback_update(
+		job_doctype=job_doctype,
+		job_name=job_name,
+	)
+	if outbox is None:
+		return None
+	outbox, changed = _apply_outbox_callback_state(
+		outbox,
+		callback_status=callback_status,
+		success=success,
+		error=error,
+		dispatch_token=dispatch_token,
+		dispatch_generation=dispatch_generation,
+	)
+	if not changed:
+		return outbox
+	_persist_outbox_callback_state(outbox)
+	return outbox
 
 
 def requeue_dead_letter_outbox(

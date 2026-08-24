@@ -178,7 +178,22 @@ class AOSAd(Document):
         if row.status != "Active" and action not in {"expire", "suspend", "delete", "migration"}:
             frappe.throw("Seller account is not active.", exc=frappe.PermissionError)
 
+    def _market_requires_validation(self) -> bool:
+        """Validate the seller market only when the persisted market is being set or changed.
+
+        An Ad's stored country/currency is historical business data and remains
+        authoritative after creation. A later account-preference change must not
+        make unrelated edits or lifecycle actions (for example mark_sold, delete,
+        renew, or mark_available) impossible. Direct attempts to change seller,
+        country, or currency still fail closed against the current preference.
+        """
+        if self.is_new():
+            return True
+        return any(self.has_value_changed(field) for field in ("seller", "country", "currency"))
+
     def _validate_market(self) -> None:
+        if not self._market_requires_validation():
+            return
         seller_user = self._seller_user()
         preference = frappe.db.get_value(
             "AOS User Preference",

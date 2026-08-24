@@ -4,8 +4,10 @@ import json
 from decimal import Decimal
 from unittest.mock import patch
 
+import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from aos.aos.doctype.aos_ad.aos_ad import AOSAd
 from aos.services.ads.errors import AdsConflictError, AdsValidationError
 from aos.services.ads.lifecycle import transition_for_action, validate_status_transition
 from aos.services.ads.validation import (
@@ -141,6 +143,61 @@ class TestAdsDomainValidation(FrappeTestCase):
             normalize_draft_payload({"owner": "attacker@example.com"})
         with self.assertRaises(AdsValidationError):
             normalize_draft_payload(json.dumps({"description": "x" * 70_000}))
+
+    def test_existing_ad_keeps_persisted_market_after_preference_change(self):
+        class ExistingAd:
+            country = "Kenya"
+            currency = "KES"
+
+            @staticmethod
+            def is_new():
+                return False
+
+            @staticmethod
+            def has_value_changed(field):
+                return False
+
+            @staticmethod
+            def _seller_user():
+                return "seller@example.com"
+
+            _market_requires_validation = AOSAd._market_requires_validation
+
+        with patch("aos.aos.doctype.aos_ad.aos_ad.frappe.db.get_value") as get_value:
+            AOSAd._validate_market(ExistingAd())
+
+        get_value.assert_not_called()
+
+    def test_direct_market_change_still_validates_current_preference(self):
+        class ChangedAd:
+            country = "Kenya"
+            currency = "USD"
+
+            @staticmethod
+            def is_new():
+                return False
+
+            @staticmethod
+            def has_value_changed(field):
+                return field == "currency"
+
+            @staticmethod
+            def _seller_user():
+                return "seller@example.com"
+
+            _market_requires_validation = AOSAd._market_requires_validation
+
+        preference = type("Preference", (), {"country": "Kenya", "currency": "KES"})()
+        with (
+            patch(
+                "aos.aos.doctype.aos_ad.aos_ad.frappe.db.get_value",
+                return_value=preference,
+            ) as get_value,
+            self.assertRaises(frappe.ValidationError),
+        ):
+            AOSAd._validate_market(ChangedAd())
+
+        get_value.assert_called_once()
 
     def test_lifecycle_is_explicit_and_idempotent(self):
         transition = transition_for_action("mark_sold", "Active")

@@ -280,7 +280,7 @@ class TestTransactionalOutboxRecovery(FrappeTestCase):
                 dispatch_token=old_token,
             )
 
-    def test_callback_completion_retries_once_after_timestamp_mismatch(self):
+    def test_callback_completion_does_not_depend_on_document_save_timestamp_check(self):
         job, outbox = self._job_and_outbox()
         token = uuid.uuid4().hex
         outbox.status = "Published"
@@ -302,17 +302,13 @@ class TestTransactionalOutboxRecovery(FrappeTestCase):
 
         outbox_class = outbox.__class__
         original_save = outbox_class.save
-        callback_save_attempts = 0
 
-        def mismatch_once(doc, *args, **kwargs):
-            nonlocal callback_save_attempts
+        def guarded_save(doc, *args, **kwargs):
             if doc.name == outbox.name and doc.status == "Completed":
-                callback_save_attempts += 1
-                if callback_save_attempts == 1:
-                    raise TimestampMismatchError("simulated concurrent outbox update")
+                raise TimestampMismatchError("callback completion must use locked direct persistence")
             return original_save(doc, *args, **kwargs)
 
-        with patch.object(outbox_class, "save", new=mismatch_once):
+        with patch.object(outbox_class, "save", new=guarded_save):
             marked = mark_outbox_callback(
                 job_doctype=job.doctype,
                 job_name=job.name,
@@ -322,7 +318,6 @@ class TestTransactionalOutboxRecovery(FrappeTestCase):
                 dispatch_generation=1,
             )
 
-        self.assertEqual(callback_save_attempts, 2)
         self.assertEqual(marked.status, "Completed")
         outbox.reload()
         self.assertEqual(outbox.status, "Completed")
