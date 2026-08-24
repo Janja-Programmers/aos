@@ -333,7 +333,7 @@ def handle_moderation_callback(payload: dict[str, Any]) -> object:
 	if not frappe.db.exists("AOS Moderation Job", job_id):
 		raise ModerationError("Moderation job not found")
 
-	job = frappe.get_doc("AOS Moderation Job", job_id)
+	job = frappe.get_doc("AOS Moderation Job", job_id, for_update=True)
 	incoming_status = str(payload.get("status") or "").strip().lower()
 	canonical_status = "completed" if incoming_status in {"completed", "ready"} else incoming_status
 	validation = validate_callback_idempotency(job, payload, callback_status=canonical_status)

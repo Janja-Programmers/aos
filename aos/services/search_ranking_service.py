@@ -379,7 +379,7 @@ def handle_search_index_callback(payload: dict[str, Any]) -> object:
 		raise SearchRankingError("job_id is required")
 	if not frappe.db.exists("AOS Search Index Job", job_id):
 		raise SearchRankingError("Search index job not found")
-	job = frappe.get_doc("AOS Search Index Job", job_id)
+	job = frappe.get_doc("AOS Search Index Job", job_id, for_update=True)
 	incoming_status = _clean(payload.get("status")).lower()
 	expected_success_status = "Deleted" if job.action == "delete" else "Indexed"
 	canonical_status = (

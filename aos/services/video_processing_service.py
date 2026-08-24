@@ -485,7 +485,7 @@ def handle_video_processing_callback(payload: dict[str, Any]) -> object:
 	if not frappe.db.exists("AOS Video Processing Job", job_id):
 		raise VideoProcessingError("Video processing job not found")
 
-	job = frappe.get_doc("AOS Video Processing Job", job_id)
+	job = frappe.get_doc("AOS Video Processing Job", job_id, for_update=True)
 	payload_generation = max(1, int(payload.get("job_generation") or 1))
 	job_generation = max(1, int(getattr(job, "generation", 1) or 1))
 	if payload_generation != job_generation:

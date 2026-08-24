@@ -811,7 +811,7 @@ def handle_notification_delivery_callback(payload: dict[str, Any]) -> object:
 	if not frappe.db.exists("AOS Notification Delivery Job", job_id):
 		raise NotificationDeliveryError("Notification delivery job not found")
 
-	job = frappe.get_doc("AOS Notification Delivery Job", job_id)
+	job = frappe.get_doc("AOS Notification Delivery Job", job_id, for_update=True)
 	incoming_status = _clean(payload.get("status")).lower()
 	canonical_status = {"completed": "delivered", "ready": "delivered"}.get(incoming_status, incoming_status)
 	if canonical_status not in {"delivered", "skipped", "failed"}:

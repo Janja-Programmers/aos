@@ -364,7 +364,7 @@ def handle_analytics_ingest_callback(payload: dict[str, Any]) -> object:
 	if not frappe.db.exists("AOS Analytics Ingest Job", job_id):
 		raise AnalyticsPipelineError("Analytics ingest job not found")
 
-	job = frappe.get_doc("AOS Analytics Ingest Job", job_id)
+	job = frappe.get_doc("AOS Analytics Ingest Job", job_id, for_update=True)
 	incoming_status = _clean(payload.get("status")).lower()
 	canonical_status = {"completed": "ingested", "ready": "ingested"}.get(incoming_status, incoming_status)
 	validation = validate_callback_idempotency(job, payload, callback_status=canonical_status)

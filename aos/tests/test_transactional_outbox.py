@@ -298,15 +298,9 @@ class TestTransactionalOutbox(FrappeTestCase):
 		outbox.duplicate_active_dispatch_count = 0
 		outbox.callback_replay_count = 0
 
-		reload_count = 0
-
-		def reload_outbox():
-			nonlocal reload_count
-			reload_count += 1
-			if reload_count == 2:
-				outbox.status = "Completed"
-
-		outbox.reload.side_effect = reload_outbox
+		terminal = MagicMock()
+		terminal.name = outbox.name
+		terminal.status = "Completed"
 		result = object()
 
 		def accepted_dispatch(**_kwargs):
@@ -314,7 +308,10 @@ class TestTransactionalOutbox(FrappeTestCase):
 			return result
 
 		with (
-			patch("aos.services.transactional_outbox.frappe.get_doc", return_value=outbox),
+			patch(
+				"aos.services.transactional_outbox.frappe.get_doc",
+				side_effect=[outbox, terminal],
+			) as get_doc,
 			patch("aos.services.transactional_outbox.frappe.get_attr", return_value=accepted_dispatch),
 			patch(
 				"aos.services.transactional_outbox._save_outbox",
@@ -324,8 +321,8 @@ class TestTransactionalOutbox(FrappeTestCase):
 		):
 			self.assertIs(dispatch_claimed_outbox(outbox.name, "claim-token"), result)
 
-		self.assertEqual(reload_count, 2)
-		self.assertEqual(outbox.status, "Completed")
+		self.assertEqual(get_doc.call_count, 2)
+		self.assertEqual(get_doc.call_args_list[1].kwargs, {"for_update": True})
 		commit.assert_called_once()
 
 	def test_dead_letter_replay_requires_exact_key_and_is_bounded(self):
