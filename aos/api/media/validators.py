@@ -29,7 +29,7 @@ def require_upload_init_payload(kwargs: dict):
         missing.append("size_bytes")
     if missing:
         return None, fail("Missing required upload fields.", error="VALIDATION_ERROR", data={"fields": missing})
-    return {
+    payload = {
         "purpose": purpose,
         "filename": filename,
         "content_type": content_type,
@@ -37,8 +37,19 @@ def require_upload_init_payload(kwargs: dict):
         "duration_seconds": kwargs.get("duration_seconds"),
         "checksum_sha256": kwargs.get("checksum_sha256") or kwargs.get("checksum"),
         "idempotency_key": kwargs.get("idempotency_key"),
-        "upload_mode": kwargs.get("upload_mode") or kwargs.get("mode"),
-    }, None
+    }
+
+    # Preserve the pre-multipart service-call contract for existing/direct
+    # upload clients. ``MediaService.init_upload`` already defaults
+    # ``upload_mode`` to None, so forwarding an explicit ``None`` adds no
+    # behavior but does break strict mocks/adapters built against the stable
+    # call shape. Only forward the new option when the caller actually asks
+    # for a mode (for example ``auto`` or ``multipart``).
+    upload_mode = kwargs.get("upload_mode") or kwargs.get("mode")
+    if upload_mode is not None and str(upload_mode).strip():
+        payload["upload_mode"] = upload_mode
+
+    return payload, None
 
 
 def invalid_purpose_response():
