@@ -10,7 +10,7 @@ from app.config import get_settings
 from app.durable_lifecycle import authorize_work_replay, job_status, replay_callback_delivery
 from app.idempotent_dispatch import dispatch_details
 from app.observability import dependency_ready, instrument_app, readiness_error
-from app.queue import get_queue, get_redis
+from app.queue import get_callback_queue, get_queue, get_redis
 from app.security import verify_signature
 
 
@@ -176,7 +176,14 @@ async def internal_job_status(request: Request, x_aos_signature: str | None = He
 		raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid signature")
 	payload = InternalJobLookupRequest.model_validate_json(raw_body)
 	stable_id = payload.idempotency_key or payload.job_id
-	return job_status(get_redis(), "video_processing", stable_id, get_queue())
+	settings = get_settings()
+	return job_status(
+		get_redis(),
+		"video_processing",
+		stable_id,
+		get_queue(),
+		stale_heartbeat_seconds=int(getattr(settings, "stale_heartbeat_seconds", 180)),
+	)
 
 
 @app.post("/internal/jobs/callback/replay", status_code=status.HTTP_202_ACCEPTED)
@@ -197,6 +204,7 @@ async def internal_callback_replay(request: Request, x_aos_signature: str | None
 		callback_max_attempts=settings.callback_max_attempts,
 		result_ttl_seconds=settings.durable_result_ttl_seconds,
 		failure_ttl_seconds=settings.failure_ttl_seconds,
+		callback_queue=get_callback_queue(),
 	)
 
 
@@ -212,4 +220,5 @@ async def internal_work_replay(request: Request, x_aos_signature: str | None = H
 		service_type="video_processing",
 		stable_id=stable_id,
 		result_ttl_seconds=settings.durable_result_ttl_seconds,
+		callback_queue=get_callback_queue(),
 	)

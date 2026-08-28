@@ -605,3 +605,106 @@ def test_invalid_legacy_result_is_dead_lettered_without_malformed_callback(redis
 		"error": "CALLBACK_RESULT_INVALID",
 	}
 	assert load_result(redis_conn, SERVICE_TYPE, STABLE_ID)["callback_status"] == "dead_letter"
+
+
+
+def _seed_stale_started_record(redis_conn, *, replay_count: int = 0):
+	stale_epoch = lifecycle._epoch() - 600
+	lifecycle._write_record(
+		redis_conn,
+		SERVICE_TYPE,
+		STABLE_ID,
+		{
+			"service_type": SERVICE_TYPE,
+			"stable_job_id": "service-job-1",
+			"stable_dispatch_id": "stable-outbox-dispatch-1",
+			"active_generation": 1,
+			"active_token": "a" * 32,
+			"callback_url": "https://callback.invalid/result",
+			"work_state": "started",
+			"work_started_epoch": stale_epoch,
+			"heartbeat_epoch": stale_epoch,
+			"heartbeat_at": "stale",
+			"automatic_work_replay_count": replay_count,
+			"callback_status": "not_ready",
+		},
+		retention_seconds=604800,
+	)
+	redis_conn.set(lifecycle._work_lock_key(SERVICE_TYPE, STABLE_ID), "stale-lock", ex=3600)
+
+
+def test_stale_started_work_is_replayed_and_old_lock_is_cleared(redis_conn, rq_queue):
+	_seed_stale_started_record(redis_conn)
+
+	decision = enqueue_or_reconcile(
+		redis=redis_conn,
+		queue=rq_queue,
+		worker_method="app.worker.process_video_job",
+		callback_worker_method="app.worker.deliver_callback_job",
+		service_type=SERVICE_TYPE,
+		payload=payload(),
+		job_timeout=7200,
+		result_ttl=86400,
+		failure_ttl=604800,
+		retry=Retry(max=1),
+		callback_timeout_seconds=120,
+		callback_max_attempts=3,
+		durable_result_ttl_seconds=604800,
+		stale_heartbeat_seconds=180,
+		max_stale_work_replays=2,
+		allow_stale_work_replay=True,
+	)
+
+	assert decision.outcome == "stale_work_replayed"
+	assert decision.job is not None
+	record = load_result(redis_conn, SERVICE_TYPE, STABLE_ID)
+	assert record["work_state"] == "stale_replay_authorized"
+	assert int(record["automatic_work_replay_count"]) == 1
+	assert redis_conn.get(lifecycle._work_lock_key(SERVICE_TYPE, STABLE_ID)) is None
+
+
+def test_stale_started_work_exhaustion_becomes_terminal_failure_and_callback(redis_conn, rq_queue):
+	_seed_stale_started_record(redis_conn, replay_count=2)
+
+	decision = enqueue_or_reconcile(
+		redis=redis_conn,
+		queue=rq_queue,
+		worker_method="app.worker.process_video_job",
+		callback_worker_method="app.worker.deliver_callback_job",
+		service_type=SERVICE_TYPE,
+		payload=payload(),
+		job_timeout=7200,
+		result_ttl=86400,
+		failure_ttl=604800,
+		retry=Retry(max=1),
+		callback_timeout_seconds=120,
+		callback_max_attempts=3,
+		durable_result_ttl_seconds=604800,
+		stale_heartbeat_seconds=180,
+		max_stale_work_replays=2,
+		allow_stale_work_replay=True,
+	)
+
+	assert decision.outcome == "callback_replay_scheduled"
+	record = load_result(redis_conn, SERVICE_TYPE, STABLE_ID)
+	assert record["work_state"] == "work_failed"
+	assert record["callback_status"] == "pending"
+	terminal = lifecycle._parse_json(record["result_payload"], None)
+	assert terminal["status"] == "failed"
+	assert terminal["error"] == "WORKER_LOST_AFTER_RETRIES"
+	assert rq_queue.fetch_job(record["callback_job_id"]) is not None
+
+
+def test_private_status_marks_stale_orphaned_started_record_failed(redis_conn, rq_queue):
+	_seed_stale_started_record(redis_conn)
+
+	status = job_status(
+		redis_conn,
+		SERVICE_TYPE,
+		STABLE_ID,
+		rq_queue,
+		stale_heartbeat_seconds=180,
+	)
+
+	assert status["state"] == "failed"
+	assert status["work_state"] == "started"

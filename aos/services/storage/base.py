@@ -45,6 +45,16 @@ class ObjectStat:
     metadata: dict[str, str] | None = None
 
 
+@dataclass(frozen=True)
+class MultipartPart:
+    """Authoritative storage metadata for one uploaded multipart part."""
+
+    part_number: int
+    etag: str
+    size: int
+    last_modified: object | None = None
+
+
 @runtime_checkable
 class StorageAdapter(Protocol):
     """Practical storage interface used by the media domain service."""
@@ -54,6 +64,49 @@ class StorageAdapter(Protocol):
     def ensure_bucket(self, bucket: str, *, public_read: bool = False) -> None: ...
 
     def presigned_put_url(self, bucket: str, object_key: str, *, expiry_minutes: int) -> str: ...
+
+    def create_multipart_upload(
+        self,
+        bucket: str,
+        object_key: str,
+        *,
+        content_type: str,
+    ) -> str: ...
+
+    def presigned_upload_part_url(
+        self,
+        bucket: str,
+        object_key: str,
+        *,
+        upload_id: str,
+        part_number: int,
+        expiry_minutes: int,
+    ) -> str: ...
+
+    def list_multipart_parts(
+        self,
+        bucket: str,
+        object_key: str,
+        *,
+        upload_id: str,
+    ) -> list[MultipartPart]: ...
+
+    def complete_multipart_upload(
+        self,
+        bucket: str,
+        object_key: str,
+        *,
+        upload_id: str,
+        parts: list[MultipartPart],
+    ) -> ObjectStat: ...
+
+    def abort_multipart_upload(
+        self,
+        bucket: str,
+        object_key: str,
+        *,
+        upload_id: str,
+    ) -> None: ...
 
     def presigned_get_url(self, bucket: str, object_key: str, *, expiry_minutes: int) -> str: ...
 

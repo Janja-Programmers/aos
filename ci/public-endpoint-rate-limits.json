@@ -678,6 +678,18 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
+    "endpoint": "aos.api.v1.media.__init__.abort_multipart_upload",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Explicit user-owned multipart abort; additionally protected by a per-user application rate limit."
+  },
+  {
+    "endpoint": "aos.api.v1.media.__init__.complete_multipart_upload",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Server-authoritative multipart completion; additionally protected by a per-user application rate limit."
+  },
+  {
     "endpoint": "aos.api.v1.media.__init__.confirm_upload",
     "access": "authenticated",
     "policy": "baseline_authenticated",
@@ -700,6 +712,18 @@
     "access": "authenticated",
     "policy": "baseline_authenticated",
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.media.__init__.multipart_part_urls",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Issues bounded short-lived UploadPart URL batches; protected by a per-user application rate limit."
+  },
+  {
+    "endpoint": "aos.api.v1.media.__init__.multipart_status",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Authoritative resumable-upload status polling; protected by a per-user application rate limit."
   },
   {
     "endpoint": "aos.api.v1.media.__init__.remove_background",

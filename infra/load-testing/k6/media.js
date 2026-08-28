@@ -29,12 +29,18 @@ export default function () {
   if (!sid) return;
 
   group('media upload init', () => {
-    record(postMethod('aos.api.v1.media.init_upload', {
-      purpose: __ENV.MEDIA_PURPOSE || 'ad_image',
-      filename: `k6-load-${__VU}-${__ITER}-${Date.now()}.jpg`,
-      content_type: __ENV.MEDIA_CONTENT_TYPE || 'image/jpeg',
+    const purpose = __ENV.MEDIA_PURPOSE || 'ad_image';
+    const isShortVideo = purpose === 'short_video_raw';
+    const payload = {
+      purpose,
+      filename: __ENV.MEDIA_FILENAME || `k6-load-${__VU}-${__ITER}-${Date.now()}${isShortVideo ? '.mp4' : '.jpg'}`,
+      content_type: __ENV.MEDIA_CONTENT_TYPE || (isShortVideo ? 'video/mp4' : 'image/jpeg'),
       size_bytes: parseInt(__ENV.MEDIA_SIZE_BYTES || '4096', 10),
-    }, sid), 'media.init_upload', {
+    };
+    if (__ENV.MEDIA_DURATION_SECONDS || isShortVideo) {
+      payload.duration_seconds = parseFloat(__ENV.MEDIA_DURATION_SECONDS || '30');
+    }
+    record(postMethod('aos.api.v1.media.init_upload', payload, sid), 'media.init_upload', {
       allowStatuses: [422, 429],
       allowCodes: ['VALIDATION_ERROR', 'RATE_LIMITED'],
     });

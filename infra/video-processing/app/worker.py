@@ -19,7 +19,7 @@ from PIL import Image
 
 from app.config import get_settings
 from app.durable_lifecycle import deliver_callback, execute_work_job
-from app.queue import get_queue, get_redis
+from app.queue import get_callback_queue, get_queue, get_redis
 from app.security import build_signature
 
 logger = logging.getLogger(__name__)
@@ -793,6 +793,7 @@ def process_video_job(payload: dict[str, Any]) -> dict[str, Any]:
 		work_lock_seconds=int(getattr(settings, "job_timeout_seconds", 600)) + 300,
 		callback_timeout_seconds=int(getattr(settings, "callback_job_timeout_seconds", 120)),
 		callback_max_attempts=int(getattr(settings, "callback_max_attempts", 8)),
+		callback_queue=get_callback_queue(),
 	)
 
 

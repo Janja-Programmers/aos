@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import uuid
 from datetime import datetime
@@ -31,6 +32,7 @@ from aos.services.media.resource_authorization import (
     assert_purpose_upload_allowed,
 )
 from aos.services.storage.base import (
+    MultipartPart,
     ObjectStat,
     StorageAdapter,
     StorageConfigurationError,
@@ -39,12 +41,15 @@ from aos.services.storage.base import (
     StorageValidationError,
 )
 from aos.services.storage.minio_storage import MinioStorage
-from aos.utils.aos_config import get_media_download_expiry_minutes
+from aos.utils.aos_config import get_env_int, get_media_download_expiry_minutes
 from aos.utils.aos_settings import get_aos_settings_snapshot
 from aos.utils.doctype_permissions import has_doctype_permission
 
 ACTIVE_READABLE_STATUSES = {"Uploaded", "Processing", "Ready", "Attached"}
 TERMINAL_STATUSES = {"Failed", "Replaced", "Deleted"}
+MIN_MULTIPART_PART_SIZE_BYTES = 5 * 1024 * 1024
+MAX_MULTIPART_PARTS = 10000
+MAX_MULTIPART_PART_URL_BATCH = 20
 
 
 class MediaError(Exception):
@@ -110,16 +115,24 @@ class MediaService:
         filename: str,
         content_type: str,
         size_bytes: int,
+        duration_seconds: float | None = None,
         checksum_sha256: str | None = None,
         idempotency_key: str | None = None,
+        upload_mode: str | None = None,
         system: bool = False,
-    ) -> tuple[object, str, dict[str, str], int]:
+    ) -> tuple[object, str | None, dict[str, str], int]:
         policy = self._get_purpose_or_raise(purpose)
         self._assert_purpose_upload_allowed(user=user, policy=policy, system=system)
 
         clean_filename = self._normalize_filename(filename)
         clean_content_type = self._normalize_content_type(content_type, clean_filename)
         clean_size = self._normalize_size(size_bytes)
+        clean_duration = self._validate_duration(policy, duration_seconds)
+        if policy.processing_required and policy.max_duration_seconds and clean_duration is None:
+            raise MediaValidationError(
+                "Media duration is required before upload",
+                code="DURATION_REQUIRED",
+            )
         clean_checksum = self._normalize_checksum(checksum_sha256)
         validate_filename_extension(clean_filename, policy.allowed_extensions)
         self._validate_upload_request(
@@ -127,6 +140,19 @@ class MediaService:
             content_type=clean_content_type,
             size_bytes=clean_size,
         )
+        selected_upload_mode = self._select_upload_mode(
+            policy=policy,
+            size_bytes=clean_size,
+            requested_mode=upload_mode,
+        )
+        multipart_part_size = 0
+        multipart_part_count = 0
+        if selected_upload_mode == "multipart":
+            multipart_part_size = self._multipart_part_size(policy)
+            multipart_part_count = self._multipart_part_count(
+                size_bytes=clean_size,
+                part_size_bytes=multipart_part_size,
+            )
 
         idempotency_hash = self._hash_idempotency_key(user, policy.key, idempotency_key)
         if idempotency_hash:
@@ -136,13 +162,38 @@ class MediaService:
                 idempotency_hash=idempotency_hash,
             )
             if existing:
-                return self._issue_upload_url(existing)
+                self._assert_idempotent_upload_matches(
+                    existing,
+                    filename=clean_filename,
+                    content_type=clean_content_type,
+                    size_bytes=clean_size,
+                    duration_seconds=clean_duration,
+                    checksum_sha256=clean_checksum,
+                    upload_mode=selected_upload_mode,
+                )
+                return self._issue_upload_contract(existing)
 
         try:
             final_bucket = self.storage.bucket_for_type(policy.bucket_type)
-            staging_bucket = self.storage.bucket_for_type("private")
+            upload_directly_to_final = bool(
+                selected_upload_mode == "multipart"
+                and policy.is_private
+                and getattr(policy, "multipart_upload_to_final", False)
+            )
+            staging_bucket = (
+                final_bucket
+                if upload_directly_to_final
+                else self.storage.bucket_for_type("private")
+            )
+            # A private Short's multipart upload and final object intentionally
+            # share one bucket. Avoid duplicate bucket-existence probes on every
+            # initialization request; those control-plane calls become visible at
+            # high aggregate upload rates.
             self.storage.ensure_bucket(staging_bucket, public_read=False)
-            self.storage.ensure_bucket(final_bucket, public_read=policy.is_public)
+            if final_bucket != staging_bucket:
+                self.storage.ensure_bucket(final_bucket, public_read=policy.is_public)
+            elif policy.is_public:
+                self.storage.ensure_bucket(final_bucket, public_read=True)
         except (
             StorageConfigurationError,
             StorageUnavailableError,
@@ -150,35 +201,58 @@ class MediaService:
         ) as exc:
             raise MediaStorageError("Storage is temporarily unavailable") from exc
 
-        if idempotency_hash:
+        if idempotency_hash or selected_upload_mode == "multipart":
             # The initial lookup above is only a fast path. Serialize the final
-            # check-and-insert boundary across workers so simultaneous retries
-            # with the same key cannot create two initialized uploads.  Locking
-            # the owner User row avoids a new global lock service and is safe
-            # because every media owner is an existing Frappe User.
+            # check-and-insert boundary across workers. This prevents both
+            # duplicate idempotent uploads and concurrent multipart requests
+            # from racing past the per-user active-session quota. Locking the
+            # owner User row avoids a new global lock service and only
+            # serializes upload initialization for the same account.
             frappe.db.sql(
                 "SELECT name FROM `tabUser` WHERE name = %s FOR UPDATE",
                 (user,),
             )
-            existing = self._find_reusable_initiated_upload(
-                user=user,
-                purpose=policy.key,
-                idempotency_hash=idempotency_hash,
-            )
-            if existing:
-                return self._issue_upload_url(existing)
+            if idempotency_hash:
+                existing = self._find_reusable_initiated_upload(
+                    user=user,
+                    purpose=policy.key,
+                    idempotency_hash=idempotency_hash,
+                )
+                if existing:
+                    self._assert_idempotent_upload_matches(
+                        existing,
+                        filename=clean_filename,
+                        content_type=clean_content_type,
+                        size_bytes=clean_size,
+                        duration_seconds=clean_duration,
+                        checksum_sha256=clean_checksum,
+                        upload_mode=selected_upload_mode,
+                    )
+                    return self._issue_upload_contract(existing)
+            if selected_upload_mode == "multipart":
+                self._enforce_active_multipart_limit(user=user)
 
         final_key = self.generate_object_key(
             owner_user=user,
             purpose_rule=policy,
             filename=clean_filename,
         )
-        staging_key = self.generate_staging_object_key(
-            owner_user=user,
-            purpose_rule=policy,
-            filename=clean_filename,
+        staging_key = (
+            final_key
+            if upload_directly_to_final
+            else self.generate_staging_object_key(
+                owner_user=user,
+                purpose_rule=policy,
+                filename=clean_filename,
+            )
         )
-        expires_at = add_to_date(now_datetime(), minutes=self.get_upload_expiry_minutes())
+        expires_at = add_to_date(
+            now_datetime(),
+            minutes=self.get_upload_session_expiry_minutes(
+                policy,
+                upload_mode=selected_upload_mode,
+            ),
+        )
 
         doc = frappe.get_doc(
             {
@@ -188,6 +262,12 @@ class MediaService:
                 "object_key": final_key,
                 "upload_bucket": staging_bucket,
                 "upload_object_key": staging_key,
+                "upload_mode": selected_upload_mode,
+                "multipart_part_size_bytes": multipart_part_size,
+                "multipart_part_count": multipart_part_count,
+                "multipart_last_activity_at": (
+                    now_datetime() if selected_upload_mode == "multipart" else None
+                ),
                 "original_filename": clean_filename,
                 "content_type": clean_content_type,
                 "expected_size_bytes": clean_size,
@@ -199,13 +279,14 @@ class MediaService:
                 "public_url": "",
                 "upload_expires_at": expires_at,
                 "idempotency_key_hash": idempotency_hash,
+                "duration_seconds": clean_duration,
                 "retry_count": 0,
             }
         )
         doc.insert(ignore_permissions=True)
 
         try:
-            result = self._issue_upload_url(doc)
+            result = self._issue_upload_contract(doc)
         except (
             StorageConfigurationError,
             StorageUnavailableError,
@@ -227,8 +308,70 @@ class MediaService:
         )
         return result
 
+    def _issue_upload_contract(
+        self,
+        doc,
+    ) -> tuple[object, str | None, dict[str, str], int]:
+        mode = str(getattr(doc, "upload_mode", "") or "direct").strip().lower()
+        if mode != "multipart":
+            return self._issue_upload_url(doc)
+
+        policy = self._get_purpose_or_raise(doc.purpose)
+        expires_in = self._remaining_upload_session_seconds(doc)
+        if expires_in <= 0:
+            raise MediaValidationError("Upload has expired", code="UPLOAD_EXPIRED")
+        upload_bucket, upload_key = self._upload_identity(doc)
+        upload_id = str(getattr(doc, "multipart_upload_id", "") or "").strip()
+        if not upload_id:
+            try:
+                upload_id = self.storage.create_multipart_upload(
+                    upload_bucket,
+                    upload_key,
+                    content_type=normalize_content_type(doc.content_type),
+                )
+                doc.multipart_upload_id = upload_id
+                doc.multipart_last_activity_at = now_datetime()
+                doc.save(ignore_permissions=True)
+            except (
+                StorageConfigurationError,
+                StorageUnavailableError,
+                StorageValidationError,
+            ):
+                if upload_id:
+                    try:
+                        self.storage.abort_multipart_upload(
+                            upload_bucket,
+                            upload_key,
+                            upload_id=upload_id,
+                        )
+                    except Exception:
+                        pass
+                raise
+            except Exception:
+                if upload_id:
+                    try:
+                        self.storage.abort_multipart_upload(
+                            upload_bucket,
+                            upload_key,
+                            upload_id=upload_id,
+                        )
+                    except Exception:
+                        pass
+                raise
+
+        expires_in = self._remaining_upload_session_seconds(doc)
+        return doc, None, {}, expires_in
+
     def _issue_upload_url(self, doc) -> tuple[object, str, dict[str, str], int]:
-        expiry_minutes = self.get_upload_expiry_minutes()
+        policy = self._get_purpose_or_raise(doc.purpose)
+        remaining_seconds = self._remaining_upload_session_seconds(doc)
+        if remaining_seconds <= 0:
+            raise MediaValidationError("Upload has expired", code="UPLOAD_EXPIRED")
+        configured_minutes = self.get_upload_expiry_minutes(policy)
+        expiry_minutes = min(
+            configured_minutes,
+            max(1, int(math.ceil(remaining_seconds / 60))),
+        )
         upload_bucket = str(getattr(doc, "upload_bucket", "") or doc.bucket)
         upload_key = str(getattr(doc, "upload_object_key", "") or doc.object_key)
         upload_url = self.storage.presigned_put_url(
@@ -236,7 +379,400 @@ class MediaService:
             upload_key,
             expiry_minutes=expiry_minutes,
         )
-        return doc, upload_url, {"Content-Type": normalize_content_type(doc.content_type)}, expiry_minutes * 60
+        return (
+            doc,
+            upload_url,
+            {"Content-Type": normalize_content_type(doc.content_type)},
+            min(remaining_seconds, expiry_minutes * 60),
+        )
+
+    def get_multipart_part_urls(
+        self,
+        *,
+        user: str,
+        media_id: str,
+        start_part: int | None = None,
+        count: int | None = None,
+    ) -> dict[str, object]:
+        """Return a bounded batch of direct-to-storage UploadPart URLs.
+
+        The storage upload id is deliberately never exposed as a first-class API
+        field. It exists only inside the signed URLs and the server-side media
+        record. Clients use ``media_id`` as the durable resumable session id.
+        """
+        doc = self.get_media_doc(media_id)
+        self.assert_user_can_manage(doc, user)
+        self._assert_multipart_mode(doc)
+        self._assert_multipart_session_active(doc)
+
+        total_parts = int(getattr(doc, "multipart_part_count", 0) or 0)
+        safe_start, safe_count = self._normalize_part_url_window(
+            total_parts=total_parts,
+            start_part=start_part,
+            count=count,
+        )
+        upload_id = str(getattr(doc, "multipart_upload_id", "") or "").strip()
+        if not upload_id:
+            raise MediaConflictError(
+                "Multipart upload session is unavailable",
+                code="MULTIPART_SESSION_LOST",
+            )
+
+        policy = self._get_purpose_or_raise(doc.purpose)
+        remaining_seconds = self._remaining_upload_session_seconds(doc)
+        if remaining_seconds <= 0:
+            raise MediaValidationError("Upload has expired", code="UPLOAD_EXPIRED")
+        configured_minutes = self.get_upload_expiry_minutes(policy)
+        expiry_minutes = min(
+            configured_minutes,
+            max(1, int(math.ceil(remaining_seconds / 60))),
+        )
+        upload_bucket, upload_key = self._upload_identity(doc)
+        urls: list[dict[str, object]] = []
+        try:
+            for part_number in range(safe_start, safe_start + safe_count):
+                urls.append(
+                    {
+                        "part_number": part_number,
+                        "expected_size_bytes": self._expected_multipart_part_size(
+                            doc,
+                            part_number,
+                        ),
+                        "upload_url": self.storage.presigned_upload_part_url(
+                            upload_bucket,
+                            upload_key,
+                            upload_id=upload_id,
+                            part_number=part_number,
+                            expiry_minutes=expiry_minutes,
+                        ),
+                    }
+                )
+        except (
+            StorageConfigurationError,
+            StorageUnavailableError,
+            StorageValidationError,
+        ) as exc:
+            self._record_storage_failure(doc, exc)
+            if isinstance(exc, StorageValidationError):
+                raise MediaValidationError(
+                    "Multipart upload request is invalid",
+                    code="VALIDATION_ERROR",
+                ) from exc
+            raise MediaStorageError("Storage is temporarily unavailable") from exc
+
+        now = now_datetime()
+        frappe.db.set_value(
+            "AOS Media Object",
+            doc.name,
+            "multipart_last_activity_at",
+            now,
+            update_modified=False,
+        )
+        doc.multipart_last_activity_at = now
+        return {
+            "media_id": doc.name,
+            "upload_mode": "multipart",
+            "part_size_bytes": int(doc.multipart_part_size_bytes or 0),
+            "part_count": total_parts,
+            "part_url_expires_in": min(remaining_seconds, expiry_minutes * 60),
+            "session_expires_in": self._remaining_upload_session_seconds(doc),
+            "max_parallel_parts": self.get_multipart_max_parallel_parts(),
+            "parts": urls,
+        }
+
+    def get_multipart_status(self, *, user: str, media_id: str) -> dict[str, object]:
+        """Return authoritative resume state from object storage."""
+        doc = self.get_media_doc(media_id)
+        self.assert_user_can_manage(doc, user)
+        self._assert_multipart_mode(doc)
+
+        if doc.status in ACTIVE_READABLE_STATUSES:
+            return self._multipart_status_payload(
+                doc,
+                uploaded_parts=list(range(1, int(doc.multipart_part_count or 0) + 1)),
+                bytes_uploaded=int(doc.expected_size_bytes or doc.size_bytes or 0),
+                storage_complete=True,
+            )
+        if doc.status in {"Failed", "Deleted", "Delete Pending", "Replaced", "Orphaned"}:
+            return self._multipart_status_payload(
+                doc,
+                uploaded_parts=[],
+                bytes_uploaded=0,
+                storage_complete=False,
+            )
+        if doc.status != "Initialized":
+            raise MediaConflictError(
+                "Multipart upload is not resumable in its current state",
+                code="INVALID_STATE",
+            )
+
+        upload_bucket, upload_key = self._upload_identity(doc)
+        try:
+            # If CompleteMultipartUpload succeeded but the request died before
+            # Frappe persisted its terminal metadata, the staging object itself
+            # is the durable source of truth. The completion endpoint can heal it.
+            if self.storage.object_exists(upload_bucket, upload_key):
+                stat = self.storage.stat_object(upload_bucket, upload_key)
+                return self._multipart_status_payload(
+                    doc,
+                    uploaded_parts=list(range(1, int(doc.multipart_part_count or 0) + 1)),
+                    bytes_uploaded=int(stat.size or 0),
+                    storage_complete=True,
+                )
+        except (StorageConfigurationError, StorageUnavailableError) as exc:
+            self._record_storage_failure(doc, exc)
+            raise MediaStorageError("Storage is temporarily unavailable") from exc
+
+        if self._upload_is_expired(doc):
+            self._abort_multipart_storage_best_effort(doc)
+            self._mark_failed(
+                doc,
+                code="UPLOAD_EXPIRED",
+                reason="Multipart upload completion window expired",
+            )
+            return self._multipart_status_payload(
+                doc,
+                uploaded_parts=[],
+                bytes_uploaded=0,
+                storage_complete=False,
+            )
+
+        upload_id = str(getattr(doc, "multipart_upload_id", "") or "").strip()
+        if not upload_id:
+            self._mark_failed(
+                doc,
+                code="MULTIPART_SESSION_LOST",
+                reason="Multipart upload session id is missing",
+            )
+            return self._multipart_status_payload(
+                doc,
+                uploaded_parts=[],
+                bytes_uploaded=0,
+                storage_complete=False,
+            )
+
+        try:
+            parts = self.storage.list_multipart_parts(
+                upload_bucket,
+                upload_key,
+                upload_id=upload_id,
+            )
+        except StorageNotFoundError:
+            self._mark_failed(
+                doc,
+                code="MULTIPART_SESSION_LOST",
+                reason="Multipart upload session no longer exists in storage",
+            )
+            return self._multipart_status_payload(
+                doc,
+                uploaded_parts=[],
+                bytes_uploaded=0,
+                storage_complete=False,
+            )
+        except (StorageConfigurationError, StorageUnavailableError) as exc:
+            self._record_storage_failure(doc, exc)
+            raise MediaStorageError("Storage is temporarily unavailable") from exc
+
+        uploaded_numbers = [int(part.part_number) for part in parts]
+        bytes_uploaded = sum(max(0, int(part.size or 0)) for part in parts)
+        invalid_parts = [
+            int(part.part_number)
+            for part in parts
+            if int(part.size or 0)
+            != self._expected_multipart_part_size(doc, int(part.part_number))
+        ]
+        return self._multipart_status_payload(
+            doc,
+            uploaded_parts=uploaded_numbers,
+            bytes_uploaded=bytes_uploaded,
+            storage_complete=False,
+            invalid_parts=invalid_parts,
+        )
+
+    def complete_multipart_upload(self, *, user: str, media_id: str) -> object:
+        """Atomically close the storage multipart session and confirm media.
+
+        No part ETags are trusted from the client. The server lists authoritative
+        parts from object storage, validates the exact expected shape, completes
+        the upload, then runs the normal media confirmation/magic-byte pipeline.
+        """
+        self._lock_media_row(media_id)
+        doc = self.get_media_doc(media_id)
+        self.assert_user_can_manage(doc, user)
+        self._assert_multipart_mode(doc)
+
+        if doc.status in ACTIVE_READABLE_STATUSES:
+            return doc
+        if doc.status == "Deleted":
+            raise MediaNotFoundError("Media not found", code="MEDIA_NOT_FOUND")
+        if doc.status in {"Failed", "Replaced", "Delete Pending", "Orphaned"}:
+            raise MediaConflictError(
+                "Multipart upload cannot be completed in its current state",
+                code="INVALID_STATE",
+            )
+        if doc.status != "Initialized":
+            raise MediaConflictError("Multipart upload cannot be completed", code="INVALID_STATE")
+
+        upload_bucket, upload_key = self._upload_identity(doc)
+        storage_complete = False
+        try:
+            storage_complete = self.storage.object_exists(upload_bucket, upload_key)
+        except (StorageConfigurationError, StorageUnavailableError) as exc:
+            self._record_storage_failure(doc, exc)
+            raise MediaStorageError("Storage is temporarily unavailable") from exc
+
+        if not storage_complete:
+            if self._upload_is_expired(doc):
+                self._abort_multipart_storage_best_effort(doc)
+                self._mark_failed(
+                    doc,
+                    code="UPLOAD_EXPIRED",
+                    reason="Multipart upload completion window expired",
+                )
+                raise MediaValidationError("Upload has expired", code="UPLOAD_EXPIRED")
+
+            upload_id = str(getattr(doc, "multipart_upload_id", "") or "").strip()
+            if not upload_id:
+                self._mark_failed(
+                    doc,
+                    code="MULTIPART_SESSION_LOST",
+                    reason="Multipart upload session id is missing",
+                )
+                raise MediaConflictError(
+                    "Multipart upload session is unavailable",
+                    code="MULTIPART_SESSION_LOST",
+                )
+
+            try:
+                parts = self.storage.list_multipart_parts(
+                    upload_bucket,
+                    upload_key,
+                    upload_id=upload_id,
+                )
+            except StorageNotFoundError as exc:
+                self._mark_failed(
+                    doc,
+                    code="MULTIPART_SESSION_LOST",
+                    reason="Multipart upload session no longer exists in storage",
+                )
+                raise MediaConflictError(
+                    "Multipart upload session is unavailable",
+                    code="MULTIPART_SESSION_LOST",
+                ) from exc
+            except (StorageConfigurationError, StorageUnavailableError) as exc:
+                self._record_storage_failure(doc, exc)
+                raise MediaStorageError("Storage is temporarily unavailable") from exc
+
+            self._validate_complete_multipart_parts(doc=doc, parts=parts)
+            try:
+                completed_stat = self.storage.complete_multipart_upload(
+                    upload_bucket,
+                    upload_key,
+                    upload_id=upload_id,
+                    parts=parts,
+                )
+            except StorageNotFoundError as exc:
+                # An ambiguous CompleteMultipartUpload response can arrive as
+                # NoSuchUpload after storage already assembled the object. The
+                # staging object is durable truth; heal when it exists and has
+                # the declared size, otherwise treat the session as lost.
+                try:
+                    completed_stat = self.storage.stat_object(upload_bucket, upload_key)
+                except StorageNotFoundError:
+                    self._mark_failed(
+                        doc,
+                        code="MULTIPART_SESSION_LOST",
+                        reason="Multipart upload session disappeared before completion could be reconciled",
+                    )
+                    raise MediaConflictError(
+                        "Multipart upload session is unavailable",
+                        code="MULTIPART_SESSION_LOST",
+                    ) from exc
+                except (StorageConfigurationError, StorageUnavailableError) as stat_exc:
+                    self._record_storage_failure(doc, stat_exc)
+                    raise MediaStorageError("Storage is temporarily unavailable") from stat_exc
+            except StorageValidationError as exc:
+                raise MediaValidationError(
+                    "Multipart upload parts are invalid",
+                    code="MULTIPART_INCOMPLETE",
+                ) from exc
+            except (StorageConfigurationError, StorageUnavailableError) as exc:
+                self._record_storage_failure(doc, exc)
+                raise MediaStorageError("Storage is temporarily unavailable") from exc
+
+            if int(completed_stat.size or 0) != int(doc.expected_size_bytes or 0):
+                self._delete_staging_best_effort(doc)
+                self._mark_failed(
+                    doc,
+                    code="SIZE_MISMATCH",
+                    reason="Completed multipart upload size does not match the declared file size",
+                )
+                raise MediaValidationError(
+                    "Uploaded file size does not match",
+                    code="SIZE_MISMATCH",
+                )
+
+        now = now_datetime()
+        doc.multipart_completed_at = doc.multipart_completed_at or now
+        doc.multipart_last_activity_at = now
+        doc.save(ignore_permissions=True)
+        media_log(
+            "multipart_upload_completed",
+            media_id=doc.name,
+            purpose=doc.purpose,
+            operation="multipart_complete",
+            bytes_count=int(doc.expected_size_bytes or 0),
+        )
+        return self.confirm_upload(user=user, media_id=doc.name)
+
+    def abort_multipart_upload(self, *, user: str, media_id: str) -> object:
+        self._lock_media_row(media_id)
+        doc = self.get_media_doc(media_id)
+        self.assert_user_can_manage(doc, user)
+        self._assert_multipart_mode(doc)
+
+        if doc.status in ACTIVE_READABLE_STATUSES:
+            return doc
+        if doc.status == "Failed" and str(getattr(doc, "failure_code", "") or "") == "UPLOAD_ABORTED":
+            return doc
+        if doc.status != "Initialized":
+            raise MediaConflictError(
+                "Multipart upload cannot be aborted in its current state",
+                code="INVALID_STATE",
+            )
+
+        upload_bucket, upload_key = self._upload_identity(doc)
+        upload_id = str(getattr(doc, "multipart_upload_id", "") or "").strip()
+        if upload_id:
+            try:
+                self.storage.abort_multipart_upload(
+                    upload_bucket,
+                    upload_key,
+                    upload_id=upload_id,
+                )
+            except (StorageConfigurationError, StorageUnavailableError) as exc:
+                self._record_storage_failure(doc, exc)
+                raise MediaStorageError("Storage is temporarily unavailable") from exc
+
+        # A completion that raced with a client cancellation is still private
+        # staging data. Delete it best-effort and leave the normal cleanup marker
+        # as a second line of defense.
+        self._delete_staging_best_effort(doc)
+        doc.status = "Failed"
+        doc.failure_code = "UPLOAD_ABORTED"
+        doc.failure_reason = "Upload was cancelled by the client"
+        doc.failed_at = now_datetime()
+        doc.multipart_aborted_at = now_datetime()
+        doc.multipart_last_activity_at = now_datetime()
+        doc.save(ignore_permissions=True)
+        media_log(
+            "multipart_upload_aborted",
+            media_id=doc.name,
+            purpose=doc.purpose,
+            operation="multipart_abort",
+            outcome="cancelled",
+        )
+        return doc
 
     def confirm_upload(self, *, user: str, media_id: str) -> object:
         self._lock_media_row(media_id)
@@ -898,6 +1434,22 @@ class MediaService:
         return doc
 
     # CLEANUP
+    def cleanup_expired_upload_sessions(self, *, limit: int = 100) -> int:
+        """Close initialized uploads as soon as their server session expires.
+
+        Multipart cleanup must be driven by ``upload_expires_at`` rather than
+        record age so abandoned UploadPart data is aborted on the first hourly
+        cleanup pass after expiry. The older age-based cleanup remains as a
+        compatibility fallback for legacy rows without expiry metadata.
+        """
+        return self._cleanup_by_filters(
+            filters={
+                "status": "Initialized",
+                "upload_expires_at": ["<", now_datetime()],
+            },
+            limit=limit,
+        )
+
     def cleanup_initialized(self, *, older_than_hours: int = 24, limit: int = 100) -> int:
         cutoff = add_to_date(now_datetime(), hours=-max(1, int(older_than_hours)))
         return self._cleanup_by_filters(
@@ -1204,6 +1756,277 @@ class MediaService:
             raise MediaValidationError("Media duration exceeds the allowed limit", code="INVALID_FILE")
         return duration
 
+    def _select_upload_mode(
+        self,
+        *,
+        policy: MediaPurpose,
+        size_bytes: int,
+        requested_mode: str | None,
+    ) -> str:
+        explicit_mode = requested_mode not in (None, "")
+        requested = str(requested_mode or "direct").strip().lower().replace("-", "_")
+        if requested == "single":
+            requested = "direct"
+        if requested not in {"auto", "direct", "multipart"}:
+            raise MediaValidationError("Invalid upload mode", code="VALIDATION_ERROR")
+
+        supports_multipart = bool(
+            int(getattr(policy, "multipart_part_size_bytes", 0) or 0)
+            and int(getattr(policy, "multipart_threshold_bytes", 0) or 0)
+        )
+        threshold = int(getattr(policy, "multipart_threshold_bytes", 0) or 0)
+        multipart_required = supports_multipart and threshold > 0 and int(size_bytes) >= threshold
+
+        # Do not silently change the transport contract under older clients.
+        # Large-file clients must explicitly opt into the resumable contract by
+        # sending upload_mode=auto/multipart. A legacy client that only knows
+        # about one upload_url fails before any bytes are sent instead of being
+        # handed a null direct URL or a fragile oversized single PUT.
+        if multipart_required and not explicit_mode:
+            raise MediaValidationError(
+                "Large upload requires a multipart-capable client",
+                code="MULTIPART_REQUIRED",
+            )
+
+        if requested == "multipart" and not supports_multipart:
+            raise MediaValidationError(
+                "Multipart upload is not supported for this media purpose",
+                code="MULTIPART_NOT_SUPPORTED",
+            )
+        if requested == "direct" and multipart_required:
+            raise MediaValidationError(
+                "Multipart upload is required for this file",
+                code="MULTIPART_REQUIRED",
+            )
+        if requested == "multipart" or (requested == "auto" and multipart_required):
+            return "multipart"
+        return "direct"
+
+    @staticmethod
+    def _multipart_part_size(policy: MediaPurpose) -> int:
+        size = int(getattr(policy, "multipart_part_size_bytes", 0) or 0)
+        if size < MIN_MULTIPART_PART_SIZE_BYTES or size > 5 * 1024 * 1024 * 1024:
+            raise MediaValidationError(
+                "Multipart upload configuration is invalid",
+                code="INVALID_STATE",
+            )
+        return size
+
+    @staticmethod
+    def _multipart_part_count(*, size_bytes: int, part_size_bytes: int) -> int:
+        count = int(math.ceil(int(size_bytes) / int(part_size_bytes)))
+        if count < 1 or count > MAX_MULTIPART_PARTS:
+            raise MediaValidationError(
+                "File requires too many multipart upload parts",
+                code="FILE_TOO_LARGE",
+            )
+        return count
+
+    def _enforce_active_multipart_limit(self, *, user: str) -> None:
+        limit = get_env_int(
+            "AOS_MEDIA_MULTIPART_ACTIVE_LIMIT_PER_USER",
+            6,
+            min_value=1,
+            max_value=50,
+        )
+        active = frappe.db.count(
+            "AOS Media Object",
+            {
+                "owner_user": user,
+                "status": "Initialized",
+                "upload_mode": "multipart",
+                "upload_expires_at": [">", now_datetime()],
+            },
+        )
+        if int(active or 0) >= limit:
+            raise MediaConflictError(
+                "Too many active multipart uploads",
+                code="MULTIPART_ACTIVE_LIMIT",
+            )
+
+    @staticmethod
+    def _assert_multipart_mode(doc) -> None:
+        if str(getattr(doc, "upload_mode", "") or "direct").strip().lower() != "multipart":
+            raise MediaValidationError(
+                "Media does not use multipart upload",
+                code="MULTIPART_NOT_SUPPORTED",
+            )
+
+    def _assert_multipart_session_active(self, doc) -> None:
+        if doc.status != "Initialized":
+            raise MediaConflictError(
+                "Multipart upload is not active",
+                code="INVALID_STATE",
+            )
+        if getattr(doc, "multipart_completed_at", None):
+            raise MediaConflictError(
+                "Multipart upload has already been completed",
+                code="MULTIPART_ALREADY_COMPLETED",
+            )
+        if self._upload_is_expired(doc):
+            self._abort_multipart_storage_best_effort(doc)
+            self._mark_failed(
+                doc,
+                code="UPLOAD_EXPIRED",
+                reason="Multipart upload completion window expired",
+            )
+            raise MediaValidationError("Upload has expired", code="UPLOAD_EXPIRED")
+
+    def _normalize_part_url_window(
+        self,
+        *,
+        total_parts: int,
+        start_part: int | None,
+        count: int | None,
+    ) -> tuple[int, int]:
+        try:
+            start = int(1 if start_part in (None, "") else start_part)
+            requested_count = int(
+                self.get_multipart_part_url_batch_size()
+                if count in (None, "")
+                else count
+            )
+        except (TypeError, ValueError) as exc:
+            raise MediaValidationError(
+                "Multipart part window is invalid",
+                code="VALIDATION_ERROR",
+            ) from exc
+        if start < 1 or start > int(total_parts or 0):
+            raise MediaValidationError(
+                "Multipart start part is invalid",
+                code="VALIDATION_ERROR",
+            )
+        if requested_count < 1 or requested_count > MAX_MULTIPART_PART_URL_BATCH:
+            raise MediaValidationError(
+                "Multipart part URL batch size is invalid",
+                code="VALIDATION_ERROR",
+            )
+        return start, min(requested_count, int(total_parts) - start + 1)
+
+    @staticmethod
+    def _expected_multipart_part_size(doc, part_number: int) -> int:
+        part_size = int(getattr(doc, "multipart_part_size_bytes", 0) or 0)
+        part_count = int(getattr(doc, "multipart_part_count", 0) or 0)
+        expected_size = int(getattr(doc, "expected_size_bytes", 0) or 0)
+        number = int(part_number)
+        if part_size < MIN_MULTIPART_PART_SIZE_BYTES or part_count < 1:
+            raise MediaConflictError(
+                "Multipart upload metadata is invalid",
+                code="INVALID_STATE",
+            )
+        if number < 1 or number > part_count:
+            raise MediaValidationError(
+                "Multipart part number is invalid",
+                code="VALIDATION_ERROR",
+            )
+        if number < part_count:
+            return part_size
+        consumed = part_size * (part_count - 1)
+        final_size = expected_size - consumed
+        if final_size <= 0 or final_size > part_size:
+            raise MediaConflictError(
+                "Multipart upload metadata is invalid",
+                code="INVALID_STATE",
+            )
+        return final_size
+
+    def _validate_complete_multipart_parts(
+        self,
+        *,
+        doc,
+        parts: list[MultipartPart],
+    ) -> None:
+        expected_count = int(getattr(doc, "multipart_part_count", 0) or 0)
+        ordered = sorted(parts or [], key=lambda item: int(item.part_number))
+        if len(ordered) != expected_count:
+            raise MediaConflictError(
+                "Multipart upload is incomplete",
+                code="MULTIPART_INCOMPLETE",
+            )
+        numbers = [int(item.part_number) for item in ordered]
+        if numbers != list(range(1, expected_count + 1)):
+            raise MediaConflictError(
+                "Multipart upload is incomplete",
+                code="MULTIPART_INCOMPLETE",
+            )
+        for part in ordered:
+            if not str(part.etag or "").strip():
+                raise MediaConflictError(
+                    "Multipart upload is incomplete",
+                    code="MULTIPART_INCOMPLETE",
+                )
+            expected_size = self._expected_multipart_part_size(doc, int(part.part_number))
+            if int(part.size or 0) != expected_size:
+                raise MediaValidationError(
+                    "Multipart part size does not match the upload contract",
+                    code="MULTIPART_PART_SIZE_MISMATCH",
+                )
+
+    def _multipart_status_payload(
+        self,
+        doc,
+        *,
+        uploaded_parts: list[int],
+        bytes_uploaded: int,
+        storage_complete: bool,
+        invalid_parts: list[int] | None = None,
+    ) -> dict[str, object]:
+        part_count = int(getattr(doc, "multipart_part_count", 0) or 0)
+        valid_uploaded = sorted(
+            {
+                int(number)
+                for number in uploaded_parts
+                if 1 <= int(number) <= part_count
+            }
+        )
+        invalid = sorted(
+            {
+                int(number)
+                for number in (invalid_parts or [])
+                if 1 <= int(number) <= part_count
+            }
+        )
+        missing = [
+            number
+            for number in range(1, part_count + 1)
+            if number not in set(valid_uploaded)
+        ]
+        retry_parts = sorted(set(missing).union(invalid))
+        expected_bytes = int(getattr(doc, "expected_size_bytes", 0) or 0)
+        safe_uploaded = max(0, min(int(bytes_uploaded or 0), expected_bytes))
+        if doc.status in ACTIVE_READABLE_STATUSES:
+            state = "completed"
+        elif doc.status == "Failed":
+            state = "failed"
+        elif storage_complete:
+            state = "storage_completed"
+        else:
+            state = "uploading"
+        return {
+            "media_id": doc.name,
+            "upload_mode": "multipart",
+            "state": state,
+            "media_status": doc.status,
+            "part_size_bytes": int(getattr(doc, "multipart_part_size_bytes", 0) or 0),
+            "part_count": part_count,
+            "uploaded_parts": valid_uploaded,
+            "missing_parts": missing,
+            "invalid_parts": invalid,
+            # Frontends should drive resume from this union rather than having to
+            # remember that an uploaded-but-wrong-sized part must be overwritten
+            # using the same part number.
+            "retry_parts": retry_parts,
+            "bytes_uploaded": safe_uploaded,
+            "expected_size_bytes": expected_bytes,
+            "progress": (safe_uploaded / expected_bytes) if expected_bytes > 0 else 0.0,
+            "storage_complete": bool(storage_complete),
+            "complete_ready": bool(storage_complete or (not retry_parts and part_count > 0)),
+            "session_expires_in": self._remaining_upload_session_seconds(doc),
+            "max_parallel_parts": self.get_multipart_max_parallel_parts(),
+            "part_url_batch_size": self.get_multipart_part_url_batch_size(),
+            "failure_code": str(getattr(doc, "failure_code", "") or "") or None,
+        }
+
     def _validate_confirmed_object(
         self,
         *,
@@ -1251,10 +2074,24 @@ class MediaService:
                 )
                 actual_size = len(payload)
             else:
-                checksum, actual_size = sha256_chunks(
-                    self.storage.iter_chunks(bucket, object_key, chunk_size=CHUNK_SIZE),
-                    content_type=detected,
-                )
+                expected_checksum = str(
+                    getattr(doc, "expected_checksum", "") or ""
+                ).strip().lower()
+                if expected_checksum or not purpose_rule.processing_required:
+                    # A caller-provided SHA-256 is an explicit integrity contract,
+                    # so verify it end-to-end. Existing non-processing media keeps
+                    # the historical server-side checksum behavior as well.
+                    # Processing-oriented large video uploads otherwise stay on
+                    # the direct-to-object-storage fast path instead of being
+                    # synchronously downloaded through every Frappe web worker
+                    # merely to calculate a hash that no caller requested.
+                    checksum, actual_size = sha256_chunks(
+                        self.storage.iter_chunks(bucket, object_key, chunk_size=CHUNK_SIZE),
+                        content_type=detected,
+                    )
+                else:
+                    checksum = ""
+                    actual_size = int(stat.size)
         except StorageNotFoundError as exc:
             raise MediaValidationError(
                 "Uploaded object is incomplete", code="UPLOAD_INCOMPLETE"
@@ -1314,19 +2151,57 @@ class MediaService:
         return final_stat
 
     def _cleanup_staging_after_finalize(self, doc) -> None:
-        """Remove current staging bytes but retain identity until URL expiry.
+        """Remove staging bytes and close the upload identity safely.
 
-        A presigned PUT cannot be revoked. Keeping the staging identity and a
-        cleanup marker lets reconciliation remove a malicious/accidental late
-        re-upload after confirmation.
+        A direct presigned PUT cannot be revoked, so its staging key is retained
+        behind a cleanup marker until the URL expires. Multipart UploadPart URLs
+        are bound to an upload id that becomes invalid after completion; those
+        identities can be cleared immediately after the staging object is copied.
         """
         upload_bucket, upload_key = self._upload_identity(doc)
         if upload_bucket == doc.bucket and upload_key == doc.object_key:
+            if str(getattr(doc, "upload_mode", "") or "direct").lower() == "multipart":
+                # Multipart completion invalidates every UploadPart URL because
+                # the upload id is closed. Private heavy Shorts therefore upload
+                # directly to their canonical key and can discard the control-
+                # plane identity immediately without a redundant object copy.
+                values = {
+                    "upload_bucket": "",
+                    "upload_object_key": "",
+                    "multipart_upload_id": "",
+                    "staging_cleanup_required": 0,
+                }
+                frappe.db.set_value(
+                    "AOS Media Object",
+                    doc.name,
+                    values,
+                    update_modified=False,
+                )
+                for fieldname, value in values.items():
+                    setattr(doc, fieldname, value)
             return
         try:
             self.storage.delete_object(upload_bucket, upload_key)
         except Exception:
             pass
+
+        if str(getattr(doc, "upload_mode", "") or "direct").lower() == "multipart":
+            values = {
+                "upload_bucket": "",
+                "upload_object_key": "",
+                "multipart_upload_id": "",
+                "staging_cleanup_required": 0,
+            }
+            frappe.db.set_value(
+                "AOS Media Object",
+                doc.name,
+                values,
+                update_modified=False,
+            )
+            for fieldname, value in values.items():
+                setattr(doc, fieldname, value)
+            return
+
         frappe.db.set_value(
             "AOS Media Object",
             doc.name,
@@ -1336,7 +2211,24 @@ class MediaService:
         )
         doc.staging_cleanup_required = 1
 
+    def _abort_multipart_storage_best_effort(self, doc) -> None:
+        if str(getattr(doc, "upload_mode", "") or "direct").lower() != "multipart":
+            return
+        upload_id = str(getattr(doc, "multipart_upload_id", "") or "").strip()
+        if not upload_id:
+            return
+        try:
+            upload_bucket, upload_key = self._upload_identity(doc)
+            self.storage.abort_multipart_upload(
+                upload_bucket,
+                upload_key,
+                upload_id=upload_id,
+            )
+        except Exception:
+            pass
+
     def _delete_staging_best_effort(self, doc) -> None:
+        self._abort_multipart_storage_best_effort(doc)
         try:
             upload_bucket, upload_key = self._upload_identity(doc)
             self.storage.delete_object(upload_bucket, upload_key)
@@ -1349,6 +2241,16 @@ class MediaService:
             pass
 
     def _delete_all_storage_identities(self, doc) -> None:
+        if str(getattr(doc, "upload_mode", "") or "direct").lower() == "multipart":
+            upload_id = str(getattr(doc, "multipart_upload_id", "") or "").strip()
+            if upload_id:
+                upload_bucket, upload_key = self._upload_identity(doc)
+                self.storage.abort_multipart_upload(
+                    upload_bucket,
+                    upload_key,
+                    upload_id=upload_id,
+                )
+
         identities = {(str(doc.bucket or ""), str(doc.object_key or ""))}
         upload_bucket = str(getattr(doc, "upload_bucket", "") or "")
         upload_key = str(getattr(doc, "upload_object_key", "") or "")
@@ -1474,12 +2376,59 @@ class MediaService:
             minutes = config_default
         return max(1, min(minutes, 60))
 
-    def get_upload_expiry_minutes(self) -> int:
+    def get_upload_expiry_minutes(self, purpose_rule: MediaPurpose | None = None) -> int:
+        if purpose_rule and purpose_rule.upload_expiry_minutes:
+            return max(1, min(int(purpose_rule.upload_expiry_minutes), 60))
         try:
             settings = get_aos_settings_snapshot()
             return max(1, min(int(settings.media_presigned_upload_expiry_minutes or 10), 60))
         except Exception:
             return 10
+
+    def get_upload_session_expiry_minutes(
+        self,
+        purpose_rule: MediaPurpose,
+        *,
+        upload_mode: str,
+    ) -> int:
+        if str(upload_mode or "direct").lower() != "multipart":
+            return self.get_upload_expiry_minutes(purpose_rule)
+        default_hours = max(1, min(int(getattr(purpose_rule, "multipart_session_expiry_hours", 24) or 24), 72))
+        hours = get_env_int(
+            "AOS_MEDIA_MULTIPART_SESSION_HOURS",
+            default_hours,
+            min_value=1,
+            max_value=72,
+        )
+        return int(hours) * 60
+
+    def _remaining_upload_session_seconds(self, doc) -> int:
+        value = getattr(doc, "upload_expires_at", None)
+        if not value:
+            return 0
+        try:
+            seconds = int((get_datetime(value) - now_datetime()).total_seconds())
+        except Exception:
+            return 0
+        return max(0, seconds)
+
+    @staticmethod
+    def get_multipart_part_url_batch_size() -> int:
+        return get_env_int(
+            "AOS_MEDIA_MULTIPART_PART_URL_BATCH_SIZE",
+            8,
+            min_value=1,
+            max_value=MAX_MULTIPART_PART_URL_BATCH,
+        )
+
+    @staticmethod
+    def get_multipart_max_parallel_parts() -> int:
+        return get_env_int(
+            "AOS_MEDIA_MULTIPART_MAX_PARALLEL_PARTS",
+            4,
+            min_value=1,
+            max_value=8,
+        )
 
     def _find_reusable_initiated_upload(
         self,
@@ -1506,6 +2455,51 @@ class MediaService:
         if self._upload_is_expired(doc):
             return None
         return doc
+
+    @staticmethod
+    def _assert_idempotent_upload_matches(
+        doc,
+        *,
+        filename: str,
+        content_type: str,
+        size_bytes: int,
+        duration_seconds: float | None,
+        checksum_sha256: str,
+        upload_mode: str,
+    ) -> None:
+        """Fail closed when an idempotency key is reused for different bytes.
+
+        A mobile retry may legitimately repeat ``init_upload`` after a timeout,
+        but the same operation key must never become an alias for another local
+        file. Returning the old presigned/multipart contract in that situation
+        could upload bytes into the wrong Media record and corrupt resume state.
+        """
+
+        try:
+            existing_duration = float(getattr(doc, "duration_seconds", 0) or 0)
+        except (TypeError, ValueError):
+            existing_duration = -1.0
+        expected_duration = float(duration_seconds or 0)
+        duration_matches = abs(existing_duration - expected_duration) <= 0.001
+
+        matches = all(
+            (
+                str(getattr(doc, "original_filename", "") or "") == str(filename),
+                normalize_content_type(getattr(doc, "content_type", ""))
+                == normalize_content_type(content_type),
+                int(getattr(doc, "expected_size_bytes", 0) or 0) == int(size_bytes),
+                duration_matches,
+                str(getattr(doc, "expected_checksum", "") or "").strip().lower()
+                == str(checksum_sha256 or "").strip().lower(),
+                str(getattr(doc, "upload_mode", "") or "direct").strip().lower()
+                == str(upload_mode or "direct").strip().lower(),
+            )
+        )
+        if not matches:
+            raise MediaConflictError(
+                "Idempotency key was already used for a different upload",
+                code="IDEMPOTENCY_CONFLICT",
+            )
 
     @staticmethod
     def _hash_idempotency_key(user: str, purpose: str, key: str | None) -> str:
@@ -1616,6 +2610,7 @@ def serialize_media_doc(doc, *, url: str | None = None, include_private_fields: 
         "purpose": doc.purpose,
         "status": doc.status,
         "visibility": doc.visibility,
+        "upload_mode": str(getattr(doc, "upload_mode", "") or "direct"),
         "original_filename": None if verification_evidence else doc.original_filename,
         "content_type": doc.content_type,
         "size_bytes": int(doc.size_bytes or 0),

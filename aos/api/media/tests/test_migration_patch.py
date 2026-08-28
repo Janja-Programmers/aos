@@ -3,7 +3,7 @@ from __future__ import annotations
 from unittest import TestCase
 from unittest.mock import patch
 
-from aos.patches.v1_0 import harden_media_subsystem
+from aos.patches.v1_0 import add_media_multipart_upload_fields, harden_media_subsystem
 
 
 class TestMediaMigrationPatch(TestCase):
@@ -38,3 +38,21 @@ class TestMediaMigrationPatch(TestCase):
 
         add_index.assert_not_called()
         sql.assert_not_called()
+
+    def test_multipart_upgrade_patch_backfills_legacy_rows_and_adds_active_index(self):
+        with (
+            patch.object(add_media_multipart_upload_fields.frappe.db, "table_exists", return_value=True),
+            patch.object(add_media_multipart_upload_fields.frappe.db, "add_index") as add_index,
+            patch.object(add_media_multipart_upload_fields.frappe.db, "sql") as sql,
+            patch.object(add_media_multipart_upload_fields.frappe, "logger") as logger,
+        ):
+            add_media_multipart_upload_fields.execute()
+
+        self.assertEqual(sql.call_count, 2)
+        add_index.assert_called_once_with(
+            add_media_multipart_upload_fields.DOCTYPE,
+            add_media_multipart_upload_fields.INDEX_FIELDS,
+            index_name=add_media_multipart_upload_fields.INDEX_NAME,
+        )
+        self.assertIn("upload_mode = 'direct'", str(sql.call_args_list[0].args[0]))
+        logger.assert_called_once_with("aos.media", allow_site=True)

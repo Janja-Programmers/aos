@@ -9,6 +9,20 @@ Only one active job key exists for a Short. Every job has a monotonically increa
 The companion requires HMAC-authenticated requests. Callbacks use timestamped HMAC signatures and the transactional-outbox correlation token/generation checks. Durable Redis lifecycle records make repeated dispatch and callback delivery idempotent.
 
 Limits are configured with `VIDEO_MAX_INPUT_BYTES`, `VIDEO_MAX_DURATION_SECONDS`, `VIDEO_MAX_WIDTH`, `VIDEO_MAX_HEIGHT`, `VIDEO_MAX_PIXELS`, `VIDEO_ALLOWED_CODECS`, FFprobe/FFmpeg timeouts and thread limits. Commands use argv lists and never a shell.
+## Upload admission and heavy-video guarantees
+
+The canonical raw-Short admission limit is **300 MiB and 600 seconds (10 minutes)**. `aos.api.v1.media.init_upload` requires `duration_seconds` for `purpose=short_video_raw` and rejects an over-limit duration or size before it issues a presigned PUT URL. The selected duration is persisted on `AOS Media Object` and `create_short` validates it again before creating processing work. The video worker still probes the actual file and applies the same duration ceiling, so a falsified client hint cannot make an over-duration video become ready.
+
+Short upload URLs are valid for 60 minutes. Confirmation uses object-store metadata plus bounded header validation and does not synchronously stream a large processing-oriented video back through Frappe solely to calculate SHA-256 unless the client explicitly supplied a checksum contract. This keeps the upload data plane direct-to-object-storage.
+
+The current raw upload transport is one presigned S3-compatible PUT. It supports the admitted 300 MiB size, but it is not resumable. For unreliable mobile networks and very large production traffic, add multipart/resumable upload as a separate client/storage contract so failed parts can be retried without restarting the entire object.
+
+## Processing concurrency and recovery
+
+Video work and callback delivery use separate RQ queues. `video-worker` consumes only the heavy FFmpeg queue and can be horizontally scaled with `VIDEO_WORKER_REPLICAS`; `video-callback-worker` consumes `VIDEO_CALLBACK_QUEUE_NAME` and is independently scalable with `VIDEO_CALLBACK_WORKER_REPLICAS`, so a ready/failed callback is not forced to wait behind another long transcode or another slow callback.
+
+The whole-job timeout is 7200 seconds and the per-FFmpeg timeout is 3600 seconds. The companion emits a durable heartbeat while work is active. If RQ no longer has an active job and the heartbeat is stale, dispatch reconciliation can automatically replay the work up to `VIDEO_MAX_STALE_WORK_REPLAYS`; after that it persists a terminal `WORKER_LOST_AFTER_RETRIES` failure and schedules the callback. A Short must therefore converge to ready or failed instead of remaining permanently in `processing` after a killed worker.
+
 
 ## Classification stage
 

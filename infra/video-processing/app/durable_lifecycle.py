@@ -140,6 +140,10 @@ def _history_key(service_type: str, stable_id: str, replay_generation: int) -> s
     return f"aos:worker-history:{service_type}:{_digest(stable_id)}:r{max(1, int(replay_generation))}"
 
 
+def _stale_history_key(service_type: str, stable_id: str, replay_count: int) -> str:
+    return f"aos:worker-history:{service_type}:{_digest(stable_id)}:stale{max(1, int(replay_count))}"
+
+
 def _decode_map(raw: dict[Any, Any]) -> dict[str, str]:
     decoded: dict[str, str] = {}
     for key, value in raw.items():
@@ -256,6 +260,8 @@ def _record_metric(redis: Any, service_type: str, event: str, amount: int = 1) -
         "manual_review",
         "durable_ttl_repaired",
         "stale_index_cleaned",
+        "stale_work_replay",
+        "stale_work_terminal_failure",
     }
     if event in allowed:
         redis.hincrby(_metrics_key(service_type), event, max(1, int(amount or 1)))
@@ -359,6 +365,144 @@ def _job_status_text(job: Any) -> str:
     raw = job.get_status(refresh=True)
     value = getattr(raw, "value", raw)
     return str(value or "").lower().split(".")[-1]
+
+
+def _heartbeat_is_stale(record: dict[str, str], stale_after_seconds: int) -> bool:
+    threshold = max(0, int(stale_after_seconds or 0))
+    if threshold <= 0:
+        return False
+    try:
+        heartbeat_epoch = int(
+            record.get("heartbeat_epoch") or record.get("work_started_epoch") or 0
+        )
+    except (TypeError, ValueError):
+        return False
+    return heartbeat_epoch > 0 and (_epoch() - heartbeat_epoch) >= threshold
+
+
+def _reset_stale_started_work(
+    *,
+    redis: Any,
+    service_type: str,
+    stable_id: str,
+    record: dict[str, str],
+    retention_seconds: int,
+) -> int:
+    """Archive and safely reset a video-style local job whose worker disappeared.
+
+    This helper is only reached when callers explicitly enable stale replay and
+    have already established that RQ no longer considers the job active and the
+    durable heartbeat is stale. The work lock must be removed together with the
+    stale result or the replacement RQ job would immediately dedupe itself.
+    """
+    replay_count = int(record.get("automatic_work_replay_count") or 0) + 1
+    history = dict(record)
+    history.update(
+        {
+            "archived_at": _now(),
+            "automatic_work_replay_count": str(replay_count),
+            "archive_reason": "stale_worker_heartbeat",
+        }
+    )
+    history_key = _stale_history_key(service_type, stable_id, replay_count)
+    pipe = redis.pipeline(transaction=True)
+    pipe.hset(history_key, mapping=history)
+    pipe.expire(history_key, max(3600, int(retention_seconds)))
+    pipe.delete(_result_key(service_type, stable_id))
+    pipe.delete(_work_lock_key(service_type, stable_id))
+    pipe.zrem(_heartbeat_key(service_type), _digest(stable_id))
+    pipe.zrem(_callback_pending_key(service_type), _digest(stable_id))
+    pipe.execute()
+    _write_record(
+        redis,
+        service_type,
+        stable_id,
+        {
+            "service_type": service_type,
+            "work_state": "stale_replay_authorized",
+            "automatic_work_replay_count": replay_count,
+            "automatic_work_replay_authorized_at": _now(),
+            "callback_status": "not_ready",
+            "phase": "accepted",
+        },
+        retention_seconds=retention_seconds,
+    )
+    _record_metric(redis, service_type, "stale_work_replay")
+    return replay_count
+
+
+def _persist_stale_worker_failure(
+    *,
+    redis: Any,
+    callback_queue: Any,
+    service_type: str,
+    stable_id: str,
+    payload: dict[str, Any],
+    record: dict[str, str],
+    callback_worker_method: str,
+    callback_timeout_seconds: int,
+    callback_max_attempts: int,
+    result_ttl_seconds: int,
+    failure_ttl_seconds: int,
+) -> None:
+    terminal_payload = {
+        key: payload.get(key)
+        for key in (
+            "job_id",
+            "idempotency_key",
+            "dispatch_id",
+            "dispatch_generation",
+            "dispatch_token",
+            "job_generation",
+            "short_id",
+        )
+        if payload.get(key) is not None
+    }
+    terminal_payload.update(
+        {
+            "status": "failed",
+            "error": "WORKER_LOST_AFTER_RETRIES",
+        }
+    )
+    terminal_payload = _safe_payload(terminal_payload)
+    result_json = _json(terminal_payload)
+    _write_record(
+        redis,
+        service_type,
+        stable_id,
+        {
+            "work_state": "work_failed",
+            "terminal_result_type": "failed",
+            "result_payload": result_json,
+            "result_digest": hashlib.sha256(result_json.encode("utf-8")).hexdigest(),
+            "error_category": "WORKER_LOST_AFTER_RETRIES",
+            "work_error_classification": "worker_lost",
+            "automatic_work_replay_count": int(record.get("automatic_work_replay_count") or 0),
+            "work_completed_at": _now(),
+            "work_completed_epoch": _epoch(),
+            "callback_status": "pending",
+            "callback_attempt_count": 0,
+            "phase": "result_persisted",
+            "heartbeat_at": _now(),
+            "heartbeat_epoch": _epoch(),
+        },
+        retention_seconds=result_ttl_seconds,
+    )
+    redis.delete(_work_lock_key(service_type, stable_id))
+    redis.zrem(_heartbeat_key(service_type), _digest(stable_id))
+    _record_metric(redis, service_type, "stale_work_terminal_failure")
+    _enqueue_callback(
+        redis=redis,
+        queue=callback_queue,
+        service_type=service_type,
+        stable_id=stable_id,
+        generation=max(0, int(payload.get("dispatch_generation") or record.get("active_generation") or 0)),
+        callback_worker_method=callback_worker_method,
+        callback_timeout_seconds=callback_timeout_seconds,
+        callback_max_attempts=callback_max_attempts,
+        result_ttl_seconds=result_ttl_seconds,
+        failure_ttl_seconds=failure_ttl_seconds,
+    )
 
 
 def _enqueue_callback(
@@ -478,6 +622,7 @@ def execute_work_job(
     work_lock_seconds: int,
     callback_timeout_seconds: int,
     callback_max_attempts: int,
+    callback_queue: Any | None = None,
 ) -> dict[str, Any]:
     """Execute work with RQ retry semantics, then persist one terminal result.
 
@@ -487,12 +632,13 @@ def execute_work_job(
     """
     stable_id = _stable_id(payload)
     generation = max(0, int(payload.get("dispatch_generation") or 0))
+    callback_target = callback_queue or queue
     existing = load_result(redis, service_type, stable_id)
     if existing.get("work_state") in _TERMINAL_WORK_STATES:
         _record_metric(redis, service_type, "side_effect_dedupe_hit")
         _enqueue_callback(
             redis=redis,
-            queue=queue,
+            queue=callback_target,
             service_type=service_type,
             stable_id=stable_id,
             generation=int(existing.get("active_generation") or generation),
@@ -674,7 +820,7 @@ def execute_work_job(
         try:
             _enqueue_callback(
                 redis=redis,
-                queue=queue,
+                queue=callback_target,
                 service_type=service_type,
                 stable_id=stable_id,
                 generation=generation,
@@ -949,6 +1095,10 @@ def enqueue_or_reconcile(
     callback_timeout_seconds: int,
     callback_max_attempts: int,
     durable_result_ttl_seconds: int | None = None,
+    callback_queue: Any | None = None,
+    stale_heartbeat_seconds: int = 0,
+    max_stale_work_replays: int = 0,
+    allow_stale_work_replay: bool = False,
 ) -> DispatchDecision:
     """Idempotently enqueue work or reconcile its durable result/callback state."""
     stable_id = _stable_id(payload)
@@ -956,6 +1106,7 @@ def enqueue_or_reconcile(
     requested_generation = max(0, int(payload.get("dispatch_generation") or 0))
     record = load_result(redis, service_type, stable_id)
     existing = _fetch_work_job(queue, service_type, stable_id)
+    callback_target = callback_queue or queue
     enqueue_outcome = "enqueued"
 
     if record.get("work_state") in _TERMINAL_WORK_STATES:
@@ -1006,7 +1157,7 @@ def enqueue_or_reconcile(
             )
         _enqueue_callback(
             redis=redis,
-            queue=queue,
+            queue=callback_target,
             service_type=service_type,
             stable_id=stable_id,
             generation=authoritative,
@@ -1070,30 +1221,114 @@ def enqueue_or_reconcile(
                 record.get("result_digest", ""),
             )
         elif status in {"failed", "stopped", "canceled", "cancelled"} and record.get("work_state") in {"started", "outcome_uncertain"}:
-            _record_metric(redis, service_type, "reconciliation_attempt")
-            return DispatchDecision(
-                existing,
-                "reconciliation_pending",
-                int(record.get("active_generation") or 0),
-                "outcome_uncertain",
-                record.get("callback_status", "not_ready"),
-                record.get("terminal_result_type", ""),
-                record.get("result_digest", ""),
-            )
+            if (
+                allow_stale_work_replay
+                and record.get("work_state") == "started"
+                and _heartbeat_is_stale(record, stale_heartbeat_seconds)
+            ):
+                replay_count = int(record.get("automatic_work_replay_count") or 0)
+                if replay_count < max(0, int(max_stale_work_replays or 0)):
+                    existing.delete()
+                    existing = None
+                    _reset_stale_started_work(
+                        redis=redis,
+                        service_type=service_type,
+                        stable_id=stable_id,
+                        record=record,
+                        retention_seconds=durable_ttl,
+                    )
+                    record = load_result(redis, service_type, stable_id)
+                    enqueue_outcome = "stale_work_replayed"
+                else:
+                    _persist_stale_worker_failure(
+                        redis=redis,
+                        callback_queue=callback_target,
+                        service_type=service_type,
+                        stable_id=stable_id,
+                        payload=payload,
+                        record=record,
+                        callback_worker_method=callback_worker_method,
+                        callback_timeout_seconds=callback_timeout_seconds,
+                        callback_max_attempts=callback_max_attempts,
+                        result_ttl_seconds=durable_ttl,
+                        failure_ttl_seconds=failure_ttl,
+                    )
+                    terminal = load_result(redis, service_type, stable_id)
+                    return DispatchDecision(
+                        existing,
+                        "callback_replay_scheduled",
+                        int(terminal.get("active_generation") or requested_generation),
+                        "work_failed",
+                        "pending",
+                        terminal.get("terminal_result_type", "failed"),
+                        terminal.get("result_digest", ""),
+                    )
+            else:
+                _record_metric(redis, service_type, "reconciliation_attempt")
+                return DispatchDecision(
+                    existing,
+                    "reconciliation_pending",
+                    int(record.get("active_generation") or 0),
+                    "outcome_uncertain",
+                    record.get("callback_status", "not_ready"),
+                    record.get("terminal_result_type", ""),
+                    record.get("result_digest", ""),
+                )
         elif existing is not None:
             existing.delete()
 
     if record.get("work_state") in {"started", "outcome_uncertain"}:
-        _record_metric(redis, service_type, "reconciliation_attempt")
-        return DispatchDecision(
-            None,
-            "reconciliation_pending",
-            int(record.get("active_generation") or 0),
-            record.get("work_state", "outcome_uncertain"),
-            record.get("callback_status", "not_ready"),
-            record.get("terminal_result_type", ""),
-            record.get("result_digest", ""),
-        )
+        if (
+            allow_stale_work_replay
+            and record.get("work_state") == "started"
+            and _heartbeat_is_stale(record, stale_heartbeat_seconds)
+        ):
+            replay_count = int(record.get("automatic_work_replay_count") or 0)
+            if replay_count < max(0, int(max_stale_work_replays or 0)):
+                _reset_stale_started_work(
+                    redis=redis,
+                    service_type=service_type,
+                    stable_id=stable_id,
+                    record=record,
+                    retention_seconds=durable_ttl,
+                )
+                record = load_result(redis, service_type, stable_id)
+                enqueue_outcome = "stale_work_replayed"
+            else:
+                _persist_stale_worker_failure(
+                    redis=redis,
+                    callback_queue=callback_target,
+                    service_type=service_type,
+                    stable_id=stable_id,
+                    payload=payload,
+                    record=record,
+                    callback_worker_method=callback_worker_method,
+                    callback_timeout_seconds=callback_timeout_seconds,
+                    callback_max_attempts=callback_max_attempts,
+                    result_ttl_seconds=durable_ttl,
+                    failure_ttl_seconds=failure_ttl,
+                )
+                terminal = load_result(redis, service_type, stable_id)
+                return DispatchDecision(
+                    None,
+                    "callback_replay_scheduled",
+                    int(terminal.get("active_generation") or requested_generation),
+                    "work_failed",
+                    "pending",
+                    terminal.get("terminal_result_type", "failed"),
+                    terminal.get("result_digest", ""),
+                )
+        else:
+            _record_metric(redis, service_type, "reconciliation_attempt")
+            return DispatchDecision(
+                None,
+                "reconciliation_pending",
+                int(record.get("active_generation") or 0),
+                record.get("work_state", "outcome_uncertain"),
+                record.get("callback_status", "not_ready"),
+                record.get("terminal_result_type", ""),
+                record.get("result_digest", ""),
+            )
 
     job = queue.enqueue(
         worker_method,
@@ -1108,7 +1343,14 @@ def enqueue_or_reconcile(
     return DispatchDecision(job, enqueue_outcome, requested_generation, "queued", "not_ready")
 
 
-def job_status(redis: Any, service_type: str, stable_id: str, queue: Any) -> dict[str, Any]:
+def job_status(
+    redis: Any,
+    service_type: str,
+    stable_id: str,
+    queue: Any,
+    *,
+    stale_heartbeat_seconds: int = 0,
+) -> dict[str, Any]:
     """Return bounded private reconciliation state without result content or tokens."""
     stable_id = _clean(stable_id, limit=200)
     record = load_result(redis, service_type, stable_id)
@@ -1123,7 +1365,14 @@ def job_status(redis: Any, service_type: str, stable_id: str, queue: Any) -> dic
     elif rq_status in _ACTIVE_JOB_STATUSES:
         state = "started" if rq_status == "started" else "queued"
     elif record.get("work_state") in {"started", "outcome_uncertain"}:
-        state = "started" if record.get("work_state") == "started" else "unknown"
+        if (
+            record.get("work_state") == "started"
+            and rq_status not in _ACTIVE_JOB_STATUSES
+            and _heartbeat_is_stale(record, stale_heartbeat_seconds)
+        ):
+            state = "failed"
+        else:
+            state = "started" if record.get("work_state") == "started" else "unknown"
     elif rq_status in {"failed", "stopped", "canceled", "cancelled"}:
         state = "failed"
     else:
@@ -1161,6 +1410,7 @@ def resolve_uncertain_outcome(
     terminal_payload: dict[str, Any] | None = None,
     operator_reference: str | None = None,
     max_manual_resends: int = 3,
+    callback_queue: Any | None = None,
 ) -> dict[str, Any]:
     """Resolve a provider-uncertain result without blind automatic resend."""
     stable_id = _clean(stable_id, limit=200)
@@ -1243,7 +1493,7 @@ def resolve_uncertain_outcome(
     )
     _enqueue_callback(
         redis=redis,
-        queue=queue,
+        queue=callback_queue or queue,
         service_type=service_type,
         stable_id=stable_id,
         generation=int(record.get("active_generation") or 0),
@@ -1265,6 +1515,7 @@ def authorize_work_replay(
     stable_id: str,
     result_ttl_seconds: int,
     max_operator_replays: int = 3,
+    callback_queue: Any | None = None,
 ) -> dict[str, Any]:
     """Explicitly archive and reset one terminal work result for operator replay."""
     stable_id = _clean(stable_id, limit=200)
@@ -1278,9 +1529,10 @@ def authorize_work_replay(
     if work_job is not None and _job_status_text(work_job) == "started":
         raise DurableLifecycleError("Cannot replay work while the previous execution is still running.")
     callback_job = None
+    callback_target = callback_queue or queue
     callback_job_id = _clean(record.get("callback_job_id"), limit=240)
     if callback_job_id:
-        callback_job = queue.fetch_job(callback_job_id)
+        callback_job = callback_target.fetch_job(callback_job_id)
         if callback_job is not None and _job_status_text(callback_job) == "started":
             raise DurableLifecycleError("Cannot replay work while callback delivery is still running.")
 
@@ -1326,6 +1578,7 @@ def replay_callback_delivery(
     callback_max_attempts: int,
     result_ttl_seconds: int,
     failure_ttl_seconds: int,
+    callback_queue: Any | None = None,
 ) -> dict[str, Any]:
     record = load_result(redis, service_type, stable_id)
     if record.get("work_state") not in _TERMINAL_WORK_STATES:
@@ -1345,7 +1598,7 @@ def replay_callback_delivery(
     )
     _, outcome = _enqueue_callback(
         redis=redis,
-        queue=queue,
+        queue=callback_queue or queue,
         service_type=service_type,
         stable_id=stable_id,
         generation=generation,
@@ -1384,6 +1637,8 @@ def render_lifecycle_metrics(redis: Any, service_type: str) -> str:
         "manual_review": "aos_companion_manual_review_total",
         "durable_ttl_repaired": "aos_companion_durable_ttl_repairs_total",
         "stale_index_cleaned": "aos_companion_stale_index_cleanup_total",
+        "stale_work_replay": "aos_companion_stale_work_replays_total",
+        "stale_work_terminal_failure": "aos_companion_stale_work_terminal_failures_total",
     }
     lines: list[str] = [f'aos_companion_lifecycle_metrics_ready{{service_type="{service_type}"}} 1']
     for event, metric_name in names.items():

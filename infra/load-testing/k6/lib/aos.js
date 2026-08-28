@@ -102,7 +102,11 @@ export function unwrapMessage(response) {
 
 export function responseCode(response) {
   const message = unwrapMessage(response);
-  return message && typeof message === 'object' ? message.code : null;
+  if (!message || typeof message !== 'object') return null;
+  // `error` is the canonical AOS machine-readable failure key. Keep the old
+  // `code` fallback only so older staging responses do not make a rehearsal
+  // harness misclassify an intentionally allowed business failure.
+  return message.error || message.code || null;
 }
 
 export function responseOk(response) {
@@ -150,10 +154,18 @@ export function record(response, label, options = {}) {
   return !serverError && statusAllowed && (!requireBusinessOk || responseOk(response) || codeAllowed || (allowRateLimit && response.status === 429));
 }
 
-export function login(email = __ENV.USER_EMAIL, password = __ENV.USER_PASSWORD) {
-  if (!email || !password) return null;
+export function login(identifier = __ENV.USER_EMAIL, password = __ENV.USER_PASSWORD) {
+  if (!identifier || !password) return null;
 
-  const response = postMethod('aos.api.v1.auth.login', { email, password }, null, { flow: 'auth' });
+  // Mobile is deliberate here: AOS returns the SID in the response payload for
+  // mobile clients, which lets k6 reuse the authenticated session explicitly
+  // across control-plane requests and direct object-store PUTs.
+  const response = postMethod(
+    'aos.api.v1.auth.login',
+    { identifier, password, client_type: 'mobile' },
+    null,
+    { flow: 'auth' },
+  );
   const ok = record(response, 'auth.login', {
     allowStatuses: [401, 403, 422, 429],
     allowCodes: ['INVALID_CREDENTIALS', 'NOT_VERIFIED', 'VALIDATION_ERROR', 'RATE_LIMITED'],
@@ -161,7 +173,9 @@ export function login(email = __ENV.USER_EMAIL, password = __ENV.USER_PASSWORD) 
   if (!ok || !responseOk(response)) return null;
 
   const data = responseData(response) || {};
-  return data.sid || null;
+  // Canonical contract: data.session.sid. The direct data.sid fallback keeps
+  // the rehearsal usable against an older staging deployment during rollout.
+  return (data.session && data.session.sid) || data.sid || null;
 }
 
 export function requireLogin(email = __ENV.USER_EMAIL, password = __ENV.USER_PASSWORD) {

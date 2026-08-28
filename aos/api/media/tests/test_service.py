@@ -19,6 +19,7 @@ from aos.services.media.media_service import (
     MediaValidationError,
 )
 from aos.services.storage.base import (
+    MultipartPart,
     ObjectStat,
     StorageNotFoundError,
     StorageUnavailableError,
@@ -40,8 +41,14 @@ class FakeStorage:
         self.objects: dict[tuple[str, str], _Stored] = {}
         self.copy_calls = 0
         self.delete_calls = 0
+        self.iter_chunk_calls = 0
         self.fail_delete = False
         self.fail_stat = False
+        self.multipart_uploads: dict[str, dict[str, object]] = {}
+        self.multipart_create_calls = 0
+        self.multipart_complete_calls = 0
+        self.multipart_abort_calls = 0
+        self.complete_then_not_found_once = False
 
     def bucket_for_type(self, bucket_type: str) -> str:
         return {"public": "aos-public", "private": "aos-private"}[bucket_type]
@@ -54,6 +61,97 @@ class FakeStorage:
 
     def presigned_get_url(self, bucket: str, object_key: str, *, expiry_minutes: int) -> str:
         return f"https://download.example.test/{bucket}/{object_key}?expires={expiry_minutes}"
+
+    def create_multipart_upload(self, bucket: str, object_key: str, *, content_type: str) -> str:
+        self.multipart_create_calls += 1
+        upload_id = f"upload-{uuid.uuid4().hex}"
+        self.multipart_uploads[upload_id] = {
+            "bucket": bucket,
+            "object_key": object_key,
+            "content_type": content_type,
+            "parts": {},
+        }
+        return upload_id
+
+    def presigned_upload_part_url(
+        self,
+        bucket: str,
+        object_key: str,
+        *,
+        upload_id: str,
+        part_number: int,
+        expiry_minutes: int,
+    ) -> str:
+        session = self.multipart_uploads.get(upload_id)
+        if not session:
+            raise StorageNotFoundError("missing multipart session")
+        if session["bucket"] != bucket or session["object_key"] != object_key:
+            raise StorageNotFoundError("multipart identity mismatch")
+        return (
+            f"https://upload.example.test/{bucket}/{object_key}"
+            f"?partNumber={part_number}&uploadId={upload_id}&expires={expiry_minutes}"
+        )
+
+    def upload_multipart_test_part(self, upload_id: str, part_number: int, payload: bytes) -> None:
+        session = self.multipart_uploads[upload_id]
+        parts = session["parts"]
+        assert isinstance(parts, dict)
+        parts[int(part_number)] = bytes(payload)
+
+    def list_multipart_parts(
+        self,
+        bucket: str,
+        object_key: str,
+        *,
+        upload_id: str,
+    ) -> list[MultipartPart]:
+        session = self.multipart_uploads.get(upload_id)
+        if not session:
+            raise StorageNotFoundError("missing multipart session")
+        if session["bucket"] != bucket or session["object_key"] != object_key:
+            raise StorageNotFoundError("multipart identity mismatch")
+        parts = session["parts"]
+        assert isinstance(parts, dict)
+        return [
+            MultipartPart(
+                part_number=number,
+                etag=hashlib.sha256(payload).hexdigest(),
+                size=len(payload),
+            )
+            for number, payload in sorted(parts.items())
+        ]
+
+    def complete_multipart_upload(
+        self,
+        bucket: str,
+        object_key: str,
+        *,
+        upload_id: str,
+        parts: list[MultipartPart],
+    ) -> ObjectStat:
+        session = self.multipart_uploads.get(upload_id)
+        if not session:
+            raise StorageNotFoundError("missing multipart session")
+        stored_parts = session["parts"]
+        assert isinstance(stored_parts, dict)
+        payload = b"".join(stored_parts[part.part_number] for part in parts)
+        content_type = str(session["content_type"])
+        self.put_bytes(
+            bucket=bucket,
+            object_key=object_key,
+            data=payload,
+            content_type=content_type,
+        )
+        self.multipart_complete_calls += 1
+        self.multipart_uploads.pop(upload_id, None)
+        if self.complete_then_not_found_once:
+            self.complete_then_not_found_once = False
+            raise StorageNotFoundError("ambiguous completion response")
+        return self.stat_object(bucket, object_key)
+
+    def abort_multipart_upload(self, bucket: str, object_key: str, *, upload_id: str) -> None:
+        self.multipart_abort_calls += 1
+        self.multipart_uploads.pop(upload_id, None)
 
     def stat_object(self, bucket: str, object_key: str) -> ObjectStat:
         if self.fail_stat:
@@ -79,6 +177,7 @@ class FakeStorage:
         return stored.payload[offset : offset + length]
 
     def iter_chunks(self, bucket: str, object_key: str, *, chunk_size: int = 1024 * 1024):
+        self.iter_chunk_calls += 1
         stored = self.objects.get((bucket, object_key))
         if not stored:
             raise StorageNotFoundError("missing")
@@ -215,6 +314,32 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
             1,
         )
 
+    def test_init_idempotency_rejects_reuse_for_different_file_contract(self):
+        first = self._init_png(idempotency_key="same-upload-request")
+
+        with self.assertRaises(MediaConflictError) as exc:
+            self.service.init_upload(
+                user=self.user,
+                purpose="profile_image",
+                filename="different.png",
+                content_type="image/png",
+                size_bytes=len(PNG_64),
+                idempotency_key="same-upload-request",
+            )
+
+        self.assertEqual(exc.exception.code, "IDEMPOTENCY_CONFLICT")
+        self.assertEqual(
+            frappe.db.count(
+                "AOS Media Object",
+                {
+                    "owner_user": self.user,
+                    "purpose": "profile_image",
+                    "idempotency_key_hash": first.idempotency_key_hash,
+                },
+            ),
+            1,
+        )
+
     def test_init_idempotency_serializes_final_check_and_insert_on_user_row(self):
         import inspect
 
@@ -222,6 +347,330 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
         self.assertIn("tabUser", source)
         self.assertIn("FOR UPDATE", source)
         self.assertGreaterEqual(source.count("_find_reusable_initiated_upload"), 2)
+
+    def test_short_video_requires_duration_before_issuing_large_upload_url(self):
+        with self.assertRaises(MediaValidationError) as exc:
+            self.service.init_upload(
+                user=self.user,
+                purpose="short_video_raw",
+                filename="short.mp4",
+                content_type="video/mp4",
+                size_bytes=1024,
+            )
+        self.assertEqual(exc.exception.code, "DURATION_REQUIRED")
+
+        with self.assertRaises(MediaValidationError):
+            self.service.init_upload(
+                user=self.user,
+                purpose="short_video_raw",
+                filename="short.mp4",
+                content_type="video/mp4",
+                size_bytes=1024,
+                duration_seconds=601,
+            )
+
+    def test_large_short_auto_uses_resumable_multipart_contract(self):
+        size_bytes = (16 * 1024 * 1024) + 1
+        doc, upload_url, upload_headers, expires_in = self.service.init_upload(
+            user=self.user,
+            purpose="short_video_raw",
+            filename="long-short.mp4",
+            content_type="video/mp4",
+            size_bytes=size_bytes,
+            duration_seconds=540,
+            upload_mode="auto",
+        )
+
+        self.assertEqual(doc.upload_mode, "multipart")
+        self.assertIsNone(upload_url)
+        self.assertEqual(upload_headers, {})
+        self.assertEqual(int(doc.multipart_part_size_bytes), 8 * 1024 * 1024)
+        self.assertEqual(int(doc.multipart_part_count), 3)
+        self.assertTrue(doc.multipart_upload_id)
+        self.assertEqual(doc.upload_bucket, doc.bucket)
+        self.assertEqual(doc.upload_object_key, doc.object_key)
+        self.assertEqual(self.storage.multipart_create_calls, 1)
+        self.assertGreater(expires_in, 60 * 60)
+
+    def test_large_short_explicit_direct_upload_is_rejected_before_storage_creation(self):
+        with self.assertRaises(MediaValidationError) as exc:
+            self.service.init_upload(
+                user=self.user,
+                purpose="short_video_raw",
+                filename="long-short.mp4",
+                content_type="video/mp4",
+                size_bytes=(16 * 1024 * 1024) + 1,
+                duration_seconds=540,
+                upload_mode="direct",
+            )
+
+        self.assertEqual(exc.exception.code, "MULTIPART_REQUIRED")
+        self.assertEqual(self.storage.multipart_create_calls, 0)
+
+    def test_large_short_legacy_client_without_upload_mode_is_rejected_before_bytes(self):
+        with self.assertRaises(MediaValidationError) as exc:
+            self.service.init_upload(
+                user=self.user,
+                purpose="short_video_raw",
+                filename="legacy-long-short.mp4",
+                content_type="video/mp4",
+                size_bytes=(16 * 1024 * 1024) + 1,
+                duration_seconds=540,
+            )
+
+        self.assertEqual(exc.exception.code, "MULTIPART_REQUIRED")
+        self.assertEqual(self.storage.multipart_create_calls, 0)
+
+    def test_multipart_part_url_batch_is_bounded_and_upload_id_is_not_api_field(self):
+        doc = self.service.init_upload(
+            user=self.user,
+            purpose="short_video_raw",
+            filename="long-short.mp4",
+            content_type="video/mp4",
+            size_bytes=(24 * 1024 * 1024) + 100,
+            duration_seconds=540,
+            upload_mode="auto",
+        )[0]
+
+        contract = self.service.get_multipart_part_urls(
+            user=self.user,
+            media_id=doc.name,
+            start_part=2,
+            count=2,
+        )
+
+        self.assertNotIn("upload_id", contract)
+        self.assertEqual([part["part_number"] for part in contract["parts"]], [2, 3])
+        self.assertEqual(
+            [part["expected_size_bytes"] for part in contract["parts"]],
+            [8 * 1024 * 1024, 8 * 1024 * 1024],
+        )
+        self.assertTrue(all("uploadId=" in part["upload_url"] for part in contract["parts"]))
+
+    def test_multipart_status_uses_storage_truth_for_resume(self):
+        doc = self.service.init_upload(
+            user=self.user,
+            purpose="short_video_raw",
+            filename="long-short.mp4",
+            content_type="video/mp4",
+            size_bytes=(16 * 1024 * 1024) + 100,
+            duration_seconds=540,
+            upload_mode="auto",
+        )[0]
+        upload_id = str(doc.multipart_upload_id)
+        part_size = int(doc.multipart_part_size_bytes)
+        self.storage.upload_multipart_test_part(upload_id, 1, b"a" * part_size)
+        self.storage.upload_multipart_test_part(upload_id, 2, b"b" * part_size)
+
+        status = self.service.get_multipart_status(user=self.user, media_id=doc.name)
+
+        self.assertEqual(status["uploaded_parts"], [1, 2])
+        self.assertEqual(status["missing_parts"], [3])
+        self.assertEqual(status["bytes_uploaded"], part_size * 2)
+        self.assertFalse(status["complete_ready"])
+        self.assertEqual(status["progress"], (part_size * 2) / ((16 * 1024 * 1024) + 100))
+
+    def test_multipart_status_exposes_invalid_parts_as_retry_parts(self):
+        doc = self.service.init_upload(
+            user=self.user,
+            purpose="short_video_raw",
+            filename="long-short.mp4",
+            content_type="video/mp4",
+            size_bytes=(16 * 1024 * 1024) + 100,
+            duration_seconds=540,
+            upload_mode="auto",
+        )[0]
+        upload_id = str(doc.multipart_upload_id)
+        part_size = int(doc.multipart_part_size_bytes)
+        self.storage.upload_multipart_test_part(upload_id, 1, b"a" * part_size)
+        self.storage.upload_multipart_test_part(upload_id, 2, b"b" * (part_size - 1))
+
+        status = self.service.get_multipart_status(user=self.user, media_id=doc.name)
+
+        self.assertEqual(status["invalid_parts"], [2])
+        self.assertEqual(status["missing_parts"], [3])
+        self.assertEqual(status["retry_parts"], [2, 3])
+        self.assertFalse(status["complete_ready"])
+
+    def test_multipart_completion_validates_parts_assembles_and_confirms(self):
+        payload = b"\x00\x00\x00\x18ftypmp42" + (b"v" * ((16 * 1024 * 1024) + 100))
+        doc = self.service.init_upload(
+            user=self.user,
+            purpose="short_video_raw",
+            filename="long-short.mp4",
+            content_type="video/mp4",
+            size_bytes=len(payload),
+            duration_seconds=540,
+            upload_mode="auto",
+        )[0]
+        upload_id = str(doc.multipart_upload_id)
+        part_size = int(doc.multipart_part_size_bytes)
+        for part_number in range(1, int(doc.multipart_part_count) + 1):
+            start = (part_number - 1) * part_size
+            end = min(len(payload), start + part_size)
+            self.storage.upload_multipart_test_part(upload_id, part_number, payload[start:end])
+
+        confirmed = self.service.complete_multipart_upload(user=self.user, media_id=doc.name)
+        duplicate = self.service.complete_multipart_upload(user=self.user, media_id=doc.name)
+
+        self.assertEqual(confirmed.status, "Uploaded")
+        self.assertEqual(duplicate.name, confirmed.name)
+        self.assertEqual(self.storage.multipart_complete_calls, 1)
+        self.assertEqual(self.storage.copy_calls, 0)
+        self.assertEqual(self.storage.iter_chunk_calls, 0)
+        self.assertTrue(self.storage.object_exists(confirmed.bucket, confirmed.object_key))
+        self.assertEqual(confirmed.multipart_upload_id or "", "")
+        self.assertEqual(confirmed.upload_bucket or "", "")
+        self.assertEqual(confirmed.upload_object_key or "", "")
+
+    def test_multipart_completion_rejects_incomplete_upload_without_assembling(self):
+        doc = self.service.init_upload(
+            user=self.user,
+            purpose="short_video_raw",
+            filename="long-short.mp4",
+            content_type="video/mp4",
+            size_bytes=(16 * 1024 * 1024) + 100,
+            duration_seconds=540,
+            upload_mode="auto",
+        )[0]
+        upload_id = str(doc.multipart_upload_id)
+        self.storage.upload_multipart_test_part(
+            upload_id,
+            1,
+            b"a" * int(doc.multipart_part_size_bytes),
+        )
+
+        with self.assertRaises(MediaConflictError) as exc:
+            self.service.complete_multipart_upload(user=self.user, media_id=doc.name)
+
+        self.assertEqual(exc.exception.code, "MULTIPART_INCOMPLETE")
+        self.assertEqual(self.storage.multipart_complete_calls, 0)
+        doc.reload()
+        self.assertEqual(doc.status, "Initialized")
+
+    def test_multipart_completion_marks_lost_storage_session_terminal(self):
+        doc = self.service.init_upload(
+            user=self.user,
+            purpose="short_video_raw",
+            filename="lost-session-short.mp4",
+            content_type="video/mp4",
+            size_bytes=(16 * 1024 * 1024) + 100,
+            duration_seconds=540,
+            upload_mode="auto",
+        )[0]
+        self.storage.multipart_uploads.pop(str(doc.multipart_upload_id), None)
+
+        with self.assertRaises(MediaConflictError) as exc:
+            self.service.complete_multipart_upload(user=self.user, media_id=doc.name)
+
+        self.assertEqual(exc.exception.code, "MULTIPART_SESSION_LOST")
+        doc.reload()
+        self.assertEqual(doc.status, "Failed")
+        self.assertEqual(doc.failure_code, "MULTIPART_SESSION_LOST")
+
+    def test_multipart_abort_is_idempotent_and_marks_terminal_failure(self):
+        doc = self.service.init_upload(
+            user=self.user,
+            purpose="short_video_raw",
+            filename="long-short.mp4",
+            content_type="video/mp4",
+            size_bytes=(16 * 1024 * 1024) + 100,
+            duration_seconds=540,
+            upload_mode="auto",
+        )[0]
+        upload_id = str(doc.multipart_upload_id)
+
+        aborted = self.service.abort_multipart_upload(user=self.user, media_id=doc.name)
+        duplicate = self.service.abort_multipart_upload(user=self.user, media_id=doc.name)
+
+        self.assertEqual(aborted.status, "Failed")
+        self.assertEqual(aborted.failure_code, "UPLOAD_ABORTED")
+        self.assertEqual(duplicate.name, aborted.name)
+        self.assertNotIn(upload_id, self.storage.multipart_uploads)
+
+    def test_multipart_complete_heals_when_storage_completed_before_frappe_commit(self):
+        payload = b"\x00\x00\x00\x18ftypmp42" + (b"r" * ((16 * 1024 * 1024) + 100))
+        doc = self.service.init_upload(
+            user=self.user,
+            purpose="short_video_raw",
+            filename="recover-short.mp4",
+            content_type="video/mp4",
+            size_bytes=len(payload),
+            duration_seconds=540,
+            upload_mode="auto",
+        )[0]
+        upload_id = str(doc.multipart_upload_id)
+        part_size = int(doc.multipart_part_size_bytes)
+        for part_number in range(1, int(doc.multipart_part_count) + 1):
+            start = (part_number - 1) * part_size
+            end = min(len(payload), start + part_size)
+            self.storage.upload_multipart_test_part(upload_id, part_number, payload[start:end])
+        parts = self.storage.list_multipart_parts(
+            doc.upload_bucket,
+            doc.upload_object_key,
+            upload_id=upload_id,
+        )
+        self.storage.complete_multipart_upload(
+            doc.upload_bucket,
+            doc.upload_object_key,
+            upload_id=upload_id,
+            parts=parts,
+        )
+
+        status = self.service.get_multipart_status(user=self.user, media_id=doc.name)
+        recovered = self.service.complete_multipart_upload(user=self.user, media_id=doc.name)
+
+        self.assertTrue(status["storage_complete"])
+        self.assertTrue(status["complete_ready"])
+        self.assertEqual(recovered.status, "Uploaded")
+
+    def test_multipart_completion_heals_ambiguous_storage_completion_response(self):
+        payload = b"\x00\x00\x00\x18ftypmp42" + (b"a" * ((16 * 1024 * 1024) + 100))
+        doc = self.service.init_upload(
+            user=self.user,
+            purpose="short_video_raw",
+            filename="ambiguous-short.mp4",
+            content_type="video/mp4",
+            size_bytes=len(payload),
+            duration_seconds=540,
+            upload_mode="auto",
+        )[0]
+        upload_id = str(doc.multipart_upload_id)
+        part_size = int(doc.multipart_part_size_bytes)
+        for part_number in range(1, int(doc.multipart_part_count) + 1):
+            start = (part_number - 1) * part_size
+            end = min(len(payload), start + part_size)
+            self.storage.upload_multipart_test_part(upload_id, part_number, payload[start:end])
+        self.storage.complete_then_not_found_once = True
+
+        confirmed = self.service.complete_multipart_upload(user=self.user, media_id=doc.name)
+
+        self.assertEqual(confirmed.status, "Uploaded")
+        self.assertEqual(self.storage.multipart_complete_calls, 1)
+
+    def test_short_video_without_client_checksum_does_not_restream_whole_object_on_confirm(self):
+        payload = b"\x00\x00\x00\x18ftypmp42" + (b"x" * 4096)
+        doc = self.service.init_upload(
+            user=self.user,
+            purpose="short_video_raw",
+            filename="short.mp4",
+            content_type="video/mp4",
+            size_bytes=len(payload),
+            duration_seconds=600,
+        )[0]
+        self.storage.put_bytes(
+            bucket=doc.upload_bucket,
+            object_key=doc.upload_object_key,
+            data=payload,
+            content_type="video/mp4",
+        )
+
+        confirmed = self.service.confirm_upload(user=self.user, media_id=doc.name)
+
+        self.assertEqual(confirmed.status, "Uploaded")
+        self.assertEqual(float(confirmed.duration_seconds), 600.0)
+        self.assertEqual(confirmed.checksum or "", "")
+        self.assertEqual(self.storage.iter_chunk_calls, 0)
 
     def test_confirm_rejects_missing_object(self):
         doc = self._init_png()

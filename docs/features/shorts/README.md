@@ -20,3 +20,5 @@ The public boundary is `aos.api.v1.shorts`. Endpoint wrappers are thin and deleg
 - All list/page sizes and maintenance operations are bounded.
 
 See `classification.md` and the adjacent documents for contracts, operations and deployment guidance.
+
+- [Resumable upload client contract](resumable-upload-client-contract.md)

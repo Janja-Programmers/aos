@@ -14,3 +14,8 @@ def get_redis() -> Redis:
 def get_queue() -> Queue:
     settings = get_settings()
     return Queue(settings.queue_name, connection=get_redis())
+
+
+def get_callback_queue() -> Queue:
+    settings = get_settings()
+    return Queue(settings.callback_queue_name, connection=get_redis())

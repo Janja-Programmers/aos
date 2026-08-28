@@ -41,6 +41,15 @@ class MediaPurpose:
     max_width: int | None = None
     max_height: int | None = None
     max_duration_seconds: int | None = None
+    upload_expiry_minutes: int | None = None
+    multipart_threshold_bytes: int | None = None
+    multipart_part_size_bytes: int | None = None
+    multipart_session_expiry_hours: int = 24
+    # Private multipart uploads can safely assemble directly at their canonical
+    # object key. This avoids an otherwise redundant full-object server-side
+    # copy after completion while retaining the staged-key isolation used by
+    # direct presigned PUTs and public media.
+    multipart_upload_to_final: bool = False
     processing_required: bool = False
     deletion_permitted: bool = True
     replacement_permitted: bool = True
@@ -230,6 +239,11 @@ MEDIA_PURPOSES: dict[str, MediaPurpose] = {
         max_items_per_resource=1,
         allowed_attachment_doctypes=frozenset({"AOS Short"}),
         max_duration_seconds=600,
+        upload_expiry_minutes=60,
+        multipart_threshold_bytes=16 * 1024 * 1024,
+        multipart_part_size_bytes=8 * 1024 * 1024,
+        multipart_session_expiry_hours=24,
+        multipart_upload_to_final=True,
         processing_required=True,
         replacement_permitted=False,
         orphan_retention_days=1,

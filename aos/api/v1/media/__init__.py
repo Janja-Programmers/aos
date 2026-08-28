@@ -9,8 +9,12 @@ from __future__ import annotations
 import frappe
 
 from aos.api.media.upload import (
-    init_upload_impl as _init_upload_impl,
+    abort_multipart_upload_impl as _abort_multipart_upload_impl,
+    complete_multipart_upload_impl as _complete_multipart_upload_impl,
     confirm_upload_impl as _confirm_upload_impl,
+    init_upload_impl as _init_upload_impl,
+    multipart_part_urls_impl as _multipart_part_urls_impl,
+    multipart_status_impl as _multipart_status_impl,
 )
 from aos.api.media.urls import (
     get_media_url_impl as _get_media_url_impl,
@@ -32,6 +36,30 @@ def init_upload(**kwargs):
 def confirm_upload(**kwargs):
     """Execute the v1 media.confirm_upload endpoint."""
     return _confirm_upload_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def multipart_part_urls(**kwargs):
+    """Issue a bounded batch of resumable multipart part upload URLs."""
+    return _multipart_part_urls_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def multipart_status(**kwargs):
+    """Return authoritative object-storage multipart progress for resume."""
+    return _multipart_status_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def complete_multipart_upload(**kwargs):
+    """Assemble and confirm a resumable multipart upload."""
+    return _complete_multipart_upload_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def abort_multipart_upload(**kwargs):
+    """Abort an unfinished resumable multipart upload."""
+    return _abort_multipart_upload_impl(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)

@@ -46,6 +46,7 @@ from aos.api.shorts.sounds import (
 
 from aos.api.shorts.constants import (
     CONFIRM_UPLOAD_LIMIT_PER_MINUTE_PER_USER,
+    MAX_SHORT_DURATION_SECONDS,
     SHORT_CONTENT_MODE_SHOP,
     DEFAULT_SHORT_AUDIENCE,
     VALID_SHORT_AUDIENCES,
@@ -143,10 +144,10 @@ def create_short_impl(**kwargs):
     """Create a short from an uploaded raw-video media object.
 
     Required client flow:
-    1. aos.api.v1.media.init_upload with purpose=short_video_raw
-    2. PUT video to the returned upload_url
-    3. aos.api.v1.media.confirm_upload with media_id
-    4. aos.api.v1.shorts.create_short with raw_video_media/media_id and,
+    1. aos.api.v1.media.init_upload with purpose=short_video_raw and upload_mode=auto
+    2. For direct mode: PUT + media.confirm_upload. For multipart mode:
+       resume/upload parts + media.complete_multipart_upload (which confirms).
+    3. aos.api.v1.shorts.create_short with raw_video_media/media_id and,
        optionally, an existing sound_id plus trim/volume settings
 
     If no reusable sound is selected and the video has audio, the trusted video
@@ -210,6 +211,21 @@ def create_short_impl(**kwargs):
 
         if media_doc.status != "Uploaded":
             return fail("Raw short video media must be uploaded before creating a short.", error="VALIDATION_ERROR")
+
+        try:
+            duration_hint = float(getattr(media_doc, "duration_seconds", 0) or 0)
+        except (TypeError, ValueError):
+            duration_hint = 0
+        if duration_hint <= 0:
+            return fail(
+                "Video duration is required before creating a short.",
+                error="VALIDATION_ERROR",
+            )
+        if duration_hint > MAX_SHORT_DURATION_SECONDS:
+            return fail(
+                f"Short must be <= {MAX_SHORT_DURATION_SECONDS} seconds.",
+                error="VALIDATION_ERROR",
+            )
 
         doc = frappe.get_doc(
             {

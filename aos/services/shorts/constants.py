@@ -126,10 +126,10 @@ MAX_HASHTAGS = 10
 ALLOWED_VIDEO_EXTENSIONS = {"mp4", "mov", "m4v", "webm"}
 
 # Max upload size (bytes) – optional enforcement
-MAX_VIDEO_FILE_SIZE_BYTES = 200 * 1024 * 1024  # 200MB
+MAX_VIDEO_FILE_SIZE_BYTES = 300 * 1024 * 1024  # Must match short_video_raw media policy.
 
 # Processing timeout (seconds)
-VIDEO_PROCESSING_TIMEOUT = 1800  # 30 minutes
+VIDEO_PROCESSING_TIMEOUT = 7200  # 2 hours for worst-case multi-pass 10-minute transcodes.
 
 
 # MANAGEMENT / LIBRARY LISTS

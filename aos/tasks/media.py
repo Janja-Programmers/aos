@@ -29,6 +29,7 @@ def cleanup_media_objects() -> int:
 
         service = MediaService()
         counters = {
+            "expired": service.cleanup_expired_upload_sessions(limit=batch_limit),
             "initialized": service.cleanup_initialized(
                 older_than_hours=initialized_hours,
                 limit=batch_limit,
@@ -45,7 +46,8 @@ def cleanup_media_objects() -> int:
         }
         total = sum(counters.values())
         frappe.logger("aos.media", allow_site=True).info(
-            "media_cleanup_complete initialized=%s unattached=%s delete_pending=%s staging=%s total=%s",
+            "media_cleanup_complete expired=%s initialized=%s unattached=%s delete_pending=%s staging=%s total=%s",
+            counters["expired"],
             counters["initialized"],
             counters["unattached"],
             counters["delete_pending"],

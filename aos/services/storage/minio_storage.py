@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import threading
 import time
 from collections.abc import Callable, Iterable
 from datetime import timedelta
@@ -14,10 +15,12 @@ import frappe
 import urllib3
 from minio import Minio
 from minio.commonconfig import CopySource
+from minio.datatypes import Part
 from minio.error import S3Error
 from urllib3.exceptions import HTTPError, MaxRetryError, ProtocolError, ReadTimeoutError
 
 from aos.services.storage.base import (
+    MultipartPart,
     ObjectStat,
     StorageConfigurationError,
     StorageError,
@@ -28,7 +31,7 @@ from aos.services.storage.base import (
 from aos.utils.aos_config import MinioConfig, get_minio_config
 
 _T = TypeVar("_T")
-_NOT_FOUND_CODES = {"NoSuchKey", "NoSuchBucket", "NoSuchObject", "NotFound"}
+_NOT_FOUND_CODES = {"NoSuchKey", "NoSuchBucket", "NoSuchObject", "NoSuchUpload", "NotFound"}
 _RETRYABLE_CODES = {
     "InternalError",
     "RequestTimeout",
@@ -36,6 +39,17 @@ _RETRYABLE_CODES = {
     "SlowDown",
     "XMinioServerNotInitialized",
 }
+
+# Frappe constructs MediaService objects per API request. Reusing urllib3 pools
+# preserves TCP/TLS connection reuse across those short-lived adapter instances
+# without sharing credentials or MinIO client state between sites. Bucket
+# existence/policy probes are likewise cached per storage endpoint for the life
+# of a worker process; production media buckets are infrastructure, not
+# request-scoped resources.
+_HTTP_POOLS: dict[tuple[bool, int, int], urllib3.PoolManager] = {}
+_HTTP_POOLS_LOCK = threading.Lock()
+_ENSURED_BUCKETS: set[tuple[str, str, bool]] = set()
+_ENSURED_BUCKETS_LOCK = threading.Lock()
 
 
 class MinioStorage:
@@ -69,13 +83,18 @@ class MinioStorage:
     def _build_client(self, *, endpoint: str, secure: bool) -> Minio:
         connect_timeout = max(1, min(int(getattr(self.config, "connect_timeout_seconds", 3)), 30))
         read_timeout = max(1, min(int(getattr(self.config, "read_timeout_seconds", 15)), 300))
-        pool_kwargs = {
-            "timeout": urllib3.Timeout(connect=connect_timeout, read=read_timeout),
-            "retries": False,
-        }
-        if secure:
-            pool_kwargs["cert_reqs"] = "CERT_REQUIRED"
-        http_client = urllib3.PoolManager(**pool_kwargs)
+        pool_key = (bool(secure), connect_timeout, read_timeout)
+        with _HTTP_POOLS_LOCK:
+            http_client = _HTTP_POOLS.get(pool_key)
+            if http_client is None:
+                pool_kwargs = {
+                    "timeout": urllib3.Timeout(connect=connect_timeout, read=read_timeout),
+                    "retries": False,
+                }
+                if secure:
+                    pool_kwargs["cert_reqs"] = "CERT_REQUIRED"
+                http_client = urllib3.PoolManager(**pool_kwargs)
+                _HTTP_POOLS[pool_key] = http_client
         return Minio(
             endpoint=endpoint,
             access_key=self.config.access_key,
@@ -130,6 +149,16 @@ class MinioStorage:
 
     def ensure_bucket(self, bucket: str, *, public_read: bool = False) -> None:
         clean_bucket = self._clean_bucket(bucket)
+        endpoint_key = str(getattr(self.config, "endpoint", "") or "").strip().lower()
+        cache_key = (endpoint_key, clean_bucket, bool(public_read))
+        # A bucket already verified with public policy also satisfies a later
+        # private/existence-only probe for the same endpoint/bucket.
+        public_cache_key = (endpoint_key, clean_bucket, True)
+        with _ENSURED_BUCKETS_LOCK:
+            if cache_key in _ENSURED_BUCKETS or (
+                not public_read and public_cache_key in _ENSURED_BUCKETS
+            ):
+                return
 
         def operation() -> None:
             if not self.client.bucket_exists(clean_bucket):
@@ -142,6 +171,8 @@ class MinioStorage:
                 self._set_public_read_policy(clean_bucket)
 
         self._execute("ensure_bucket", operation, retryable=True)
+        with _ENSURED_BUCKETS_LOCK:
+            _ENSURED_BUCKETS.add(cache_key)
 
     def _set_public_read_policy(self, bucket: str) -> None:
         policy = {
@@ -174,6 +205,188 @@ class MinioStorage:
             )
         except Exception as exc:
             raise StorageUnavailableError("Failed to generate upload URL") from exc
+
+
+    def create_multipart_upload(
+        self,
+        bucket: str,
+        object_key: str,
+        *,
+        content_type: str,
+    ) -> str:
+        """Create an S3 multipart upload without proxying bytes through Frappe.
+
+        MinIO's multipart lifecycle primitives are intentionally private in the
+        pinned 7.2.x SDK. They are isolated in this adapter so the rest of AOS
+        depends only on our stable StorageAdapter contract. A compatibility
+        guard fails closed if a future SDK removes the primitive.
+        """
+        clean_bucket = self._clean_bucket(bucket)
+        clean_key = self._clean_object_key(object_key)
+        method = getattr(self.client, "_create_multipart_upload", None)
+        if not callable(method):
+            raise StorageConfigurationError(
+                "Installed MinIO SDK does not support multipart upload lifecycle"
+            )
+
+        def operation() -> str:
+            value = method(
+                clean_bucket,
+                clean_key,
+                {"Content-Type": str(content_type or "application/octet-stream")},
+            )
+            upload_id = str(value or "").strip()
+            if not upload_id:
+                raise StorageUnavailableError("Storage did not return a multipart upload id")
+            return upload_id
+
+        # CreateMultipartUpload is not idempotent. Retrying after an ambiguous
+        # network failure can create an untracked second upload id. Let the API
+        # request fail and have the caller retry initialization with its AOS
+        # idempotency key instead.
+        return self._execute("multipart_create", operation, retryable=False)
+
+    def presigned_upload_part_url(
+        self,
+        bucket: str,
+        object_key: str,
+        *,
+        upload_id: str,
+        part_number: int,
+        expiry_minutes: int,
+    ) -> str:
+        clean_bucket = self._clean_bucket(bucket)
+        clean_key = self._clean_object_key(object_key)
+        clean_upload_id = self._clean_upload_id(upload_id)
+        safe_part = self._clean_part_number(part_number)
+        minutes = _bounded_expiry(expiry_minutes, maximum=60)
+        try:
+            return self.presign_client.get_presigned_url(
+                "PUT",
+                clean_bucket,
+                clean_key,
+                expires=timedelta(minutes=minutes),
+                extra_query_params={
+                    "partNumber": str(safe_part),
+                    "uploadId": clean_upload_id,
+                },
+            )
+        except Exception as exc:
+            converted = self._convert_exception(exc)
+            if isinstance(converted, StorageValidationError):
+                raise converted from exc
+            raise StorageUnavailableError("Failed to generate multipart part URL") from exc
+
+    def list_multipart_parts(
+        self,
+        bucket: str,
+        object_key: str,
+        *,
+        upload_id: str,
+    ) -> list[MultipartPart]:
+        clean_bucket = self._clean_bucket(bucket)
+        clean_key = self._clean_object_key(object_key)
+        clean_upload_id = self._clean_upload_id(upload_id)
+        method = getattr(self.client, "_list_parts", None)
+        if not callable(method):
+            raise StorageConfigurationError(
+                "Installed MinIO SDK does not support multipart upload lifecycle"
+            )
+
+        def operation() -> list[MultipartPart]:
+            marker = None
+            parts: list[MultipartPart] = []
+            while True:
+                result = method(
+                    clean_bucket,
+                    clean_key,
+                    clean_upload_id,
+                    max_parts=1000,
+                    part_number_marker=marker,
+                )
+                for item in list(getattr(result, "parts", None) or []):
+                    parts.append(
+                        MultipartPart(
+                            part_number=int(getattr(item, "part_number", 0) or 0),
+                            etag=str(getattr(item, "etag", "") or "").strip('"'),
+                            size=int(getattr(item, "size", 0) or 0),
+                            last_modified=getattr(item, "last_modified", None),
+                        )
+                    )
+                if not bool(getattr(result, "is_truncated", False)):
+                    break
+                marker = str(getattr(result, "next_part_number_marker", "") or "").strip()
+                if not marker:
+                    raise StorageUnavailableError("Multipart part listing did not return a continuation marker")
+            return sorted(parts, key=lambda item: item.part_number)
+
+        return self._execute("multipart_list_parts", operation, retryable=True)
+
+    def complete_multipart_upload(
+        self,
+        bucket: str,
+        object_key: str,
+        *,
+        upload_id: str,
+        parts: list[MultipartPart],
+    ) -> ObjectStat:
+        clean_bucket = self._clean_bucket(bucket)
+        clean_key = self._clean_object_key(object_key)
+        clean_upload_id = self._clean_upload_id(upload_id)
+        ordered = sorted(parts or [], key=lambda item: int(item.part_number))
+        if not ordered:
+            raise StorageValidationError("Multipart upload has no parts")
+        expected = list(range(1, len(ordered) + 1))
+        actual = [self._clean_part_number(item.part_number) for item in ordered]
+        if actual != expected:
+            raise StorageValidationError("Multipart parts must be contiguous and 1-based")
+        if any(not str(item.etag or "").strip() for item in ordered):
+            raise StorageValidationError("Multipart part ETag is missing")
+
+        method = getattr(self.client, "_complete_multipart_upload", None)
+        if not callable(method):
+            raise StorageConfigurationError(
+                "Installed MinIO SDK does not support multipart upload lifecycle"
+            )
+
+        sdk_parts = [
+            Part(int(item.part_number), str(item.etag).strip('"'))
+            for item in ordered
+        ]
+
+        def operation() -> None:
+            method(clean_bucket, clean_key, clean_upload_id, sdk_parts)
+
+        # CompleteMultipartUpload is mutating and an HTTP response can be lost
+        # after storage has already assembled the object. Do not retry it here;
+        # the Media service heals that ambiguous result on the next request by
+        # checking for the assembled staging object first.
+        self._execute("multipart_complete", operation, retryable=False)
+        return self.stat_object(clean_bucket, clean_key)
+
+    def abort_multipart_upload(
+        self,
+        bucket: str,
+        object_key: str,
+        *,
+        upload_id: str,
+    ) -> None:
+        clean_bucket = self._clean_bucket(bucket)
+        clean_key = self._clean_object_key(object_key)
+        clean_upload_id = self._clean_upload_id(upload_id)
+        method = getattr(self.client, "_abort_multipart_upload", None)
+        if not callable(method):
+            raise StorageConfigurationError(
+                "Installed MinIO SDK does not support multipart upload lifecycle"
+            )
+
+        def operation() -> None:
+            method(clean_bucket, clean_key, clean_upload_id)
+
+        try:
+            self._execute("multipart_abort", operation, retryable=True)
+        except StorageNotFoundError:
+            return
 
     def presigned_get_url(self, bucket: str, object_key: str, *, expiry_minutes: int) -> str:
         minutes = _bounded_expiry(expiry_minutes, maximum=60)
@@ -406,14 +619,32 @@ class MinioStorage:
 
     @staticmethod
     def _convert_exception(exc: Exception) -> Exception:
-        if isinstance(exc, (StorageNotFoundError, StorageUnavailableError, StorageValidationError)):
+        if isinstance(
+            exc,
+            (
+                StorageNotFoundError,
+                StorageUnavailableError,
+                StorageValidationError,
+                StorageConfigurationError,
+            ),
+        ):
             return exc
         if isinstance(exc, S3Error):
             if exc.code in _NOT_FOUND_CODES:
                 return StorageNotFoundError("Storage object was not found")
             if exc.code in _RETRYABLE_CODES:
                 return StorageUnavailableError("Storage is temporarily unavailable")
-            if exc.code in {"InvalidBucketName", "InvalidObjectName", "XMinioInvalidObjectName", "InvalidArgument"}:
+            if exc.code in {
+                "InvalidBucketName",
+                "InvalidObjectName",
+                "XMinioInvalidObjectName",
+                "InvalidArgument",
+                "InvalidPart",
+                "InvalidPartOrder",
+                "EntityTooSmall",
+                "EntityTooLarge",
+                "MalformedXML",
+            }:
                 return StorageValidationError("Storage input is invalid")
             if exc.code in {"AccessDenied", "InvalidAccessKeyId", "SignatureDoesNotMatch"}:
                 return StorageConfigurationError("Storage authorization failed")
@@ -423,6 +654,23 @@ class MinioStorage:
         if isinstance(exc, ValueError):
             return StorageValidationError("Storage input is invalid")
         return StorageUnavailableError("Storage operation failed")
+
+    @staticmethod
+    def _clean_upload_id(upload_id: str) -> str:
+        value = str(upload_id or "").strip()
+        if not value or len(value) > 2048 or "\x00" in value:
+            raise StorageValidationError("Multipart upload id is invalid")
+        return value
+
+    @staticmethod
+    def _clean_part_number(part_number: int) -> int:
+        try:
+            value = int(part_number)
+        except (TypeError, ValueError) as exc:
+            raise StorageValidationError("Multipart part number is invalid") from exc
+        if value < 1 or value > 10000:
+            raise StorageValidationError("Multipart part number is invalid")
+        return value
 
     @staticmethod
     def _clean_bucket(bucket: str) -> str:

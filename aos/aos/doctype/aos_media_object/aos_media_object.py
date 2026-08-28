@@ -20,6 +20,7 @@ VALID_STATUSES = {
     "Failed", "Orphaned", "Replaced", "Delete Pending", "Deleted",
 }
 VALID_VISIBILITIES = {"Public", "Private"}
+VALID_UPLOAD_MODES = {"direct", "multipart"}
 HEX_64 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -46,10 +47,12 @@ class AOSMediaObject(Document):
             "attached_doctype", "attached_name", "attached_field", "public_url",
             "idempotency_key_hash", "failure_code", "failure_reason", "last_storage_error",
             "processing_error", "derived_from_media", "replaced_by_media",
+            "upload_mode", "multipart_upload_id",
         ):
             setattr(self, field, str(getattr(self, field, "") or "").strip())
         self.visibility = self.visibility or "Private"
         self.status = self.status or "Initialized"
+        self.upload_mode = (self.upload_mode or "direct").lower()
 
     def _validate_required_fields(self):
         if not self.owner_user or not frappe.db.exists("User", self.owner_user):
@@ -66,6 +69,8 @@ class AOSMediaObject(Document):
             frappe.throw("Invalid media status")
         if self.visibility not in VALID_VISIBILITIES:
             frappe.throw("Invalid media visibility")
+        if self.upload_mode not in VALID_UPLOAD_MODES:
+            frappe.throw("Invalid media upload mode")
         policy = get_media_purpose(self.purpose)
         if not policy:
             frappe.throw("Invalid media purpose")
@@ -117,7 +122,13 @@ class AOSMediaObject(Document):
                 self.original_filename = normalize_filename(self.original_filename)
             except ValueError as exc:
                 frappe.throw(str(exc))
-        for field in ("expected_size_bytes", "size_bytes", "retry_count"):
+        for field in (
+            "expected_size_bytes",
+            "size_bytes",
+            "retry_count",
+            "multipart_part_size_bytes",
+            "multipart_part_count",
+        ):
             try:
                 value = int(getattr(self, field, 0) or 0)
             except (TypeError, ValueError):
@@ -130,6 +141,17 @@ class AOSMediaObject(Document):
             if value and not HEX_64.fullmatch(value):
                 frappe.throw(f"Invalid {field}")
             setattr(self, field, value)
+
+        multipart_id = str(getattr(self, "multipart_upload_id", "") or "").strip()
+        if len(multipart_id) > 2048 or "\x00" in multipart_id:
+            frappe.throw("Invalid multipart upload id")
+        if self.upload_mode == "multipart":
+            if int(self.multipart_part_size_bytes or 0) < 5 * 1024 * 1024:
+                frappe.throw("Multipart part size is too small")
+            if int(self.multipart_part_count or 0) < 1 or int(self.multipart_part_count or 0) > 10000:
+                frappe.throw("Invalid multipart part count")
+        elif multipart_id or int(self.multipart_part_size_bytes or 0) or int(self.multipart_part_count or 0):
+            frappe.throw("Direct uploads cannot retain multipart metadata")
 
     def _validate_attachment_state(self):
         has_type = bool(self.attached_doctype)

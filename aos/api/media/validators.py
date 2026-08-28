@@ -34,8 +34,10 @@ def require_upload_init_payload(kwargs: dict):
         "filename": filename,
         "content_type": content_type,
         "size_bytes": size_bytes,
+        "duration_seconds": kwargs.get("duration_seconds"),
         "checksum_sha256": kwargs.get("checksum_sha256") or kwargs.get("checksum"),
         "idempotency_key": kwargs.get("idempotency_key"),
+        "upload_mode": kwargs.get("upload_mode") or kwargs.get("mode"),
     }, None
 
 

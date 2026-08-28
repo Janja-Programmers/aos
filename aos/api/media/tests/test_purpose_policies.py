@@ -80,6 +80,17 @@ class TestMediaPurposePolicies(TestCase):
 		self.assertEqual(policy.max_size_bytes, 200 * 1024 * 1024)
 		self.assertEqual(policy.max_duration_seconds, 300)
 
+	def test_short_video_policy_matches_processing_contract(self):
+		policy = MEDIA_PURPOSES["short_video_raw"]
+		self.assertEqual(policy.max_size_bytes, 300 * 1024 * 1024)
+		self.assertEqual(policy.max_duration_seconds, 600)
+		self.assertEqual(policy.upload_expiry_minutes, 60)
+		self.assertEqual(policy.multipart_threshold_bytes, 16 * 1024 * 1024)
+		self.assertEqual(policy.multipart_part_size_bytes, 8 * 1024 * 1024)
+		self.assertEqual(policy.multipart_session_expiry_hours, 24)
+		self.assertTrue(policy.multipart_upload_to_final)
+		self.assertTrue(policy.processing_required)
+
 	def test_sensitive_and_immutable_purposes_have_stricter_lifecycle_rules(self):
 		self.assertEqual(
 			MEDIA_PURPOSES["verification_document"].orphan_retention_days,

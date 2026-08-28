@@ -8,7 +8,7 @@ from rq import Retry
 
 from app.config import get_settings
 from app.durable_lifecycle import enqueue_or_reconcile
-from app.queue import get_redis
+from app.queue import get_callback_queue, get_redis
 
 _SERVICE_TYPE = "video_processing"
 _CALLBACK_WORKER = "app.worker.deliver_callback_job"
@@ -39,6 +39,10 @@ def enqueue_idempotent(
         callback_timeout_seconds=int(getattr(settings, "callback_job_timeout_seconds", 120)),
         callback_max_attempts=int(getattr(settings, "callback_max_attempts", 8)),
         durable_result_ttl_seconds=int(getattr(settings, "durable_result_ttl_seconds", result_ttl)),
+        callback_queue=get_callback_queue(),
+        stale_heartbeat_seconds=int(getattr(settings, "stale_heartbeat_seconds", 180)),
+        max_stale_work_replays=int(getattr(settings, "max_stale_work_replays", 2)),
+        allow_stale_work_replay=True,
     )
     return decision.job, decision.outcome
 
@@ -59,6 +63,10 @@ def dispatch_details(payload: dict[str, Any], queue: Any) -> dict[str, Any]:
         callback_timeout_seconds=int(getattr(settings, "callback_job_timeout_seconds", 120)),
         callback_max_attempts=int(getattr(settings, "callback_max_attempts", 8)),
         durable_result_ttl_seconds=int(getattr(settings, "durable_result_ttl_seconds", settings.result_ttl_seconds)),
+        callback_queue=get_callback_queue(),
+        stale_heartbeat_seconds=int(getattr(settings, "stale_heartbeat_seconds", 180)),
+        max_stale_work_replays=int(getattr(settings, "max_stale_work_replays", 2)),
+        allow_stale_work_replay=True,
     )
     return {
         "job": decision.job,

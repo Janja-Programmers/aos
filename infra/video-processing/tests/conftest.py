@@ -38,7 +38,10 @@ def isolated_companion_runtime(monkeypatch: pytest.MonkeyPatch, redis_conn, rq_q
 	from app import idempotent_dispatch, main, worker
 
 	monkeypatch.setattr(idempotent_dispatch, "get_redis", lambda: redis_conn)
+	monkeypatch.setattr(idempotent_dispatch, "get_callback_queue", lambda: rq_queue)
 	monkeypatch.setattr(main, "get_redis", lambda: redis_conn)
 	monkeypatch.setattr(main, "get_queue", lambda: rq_queue)
+	monkeypatch.setattr(main, "get_callback_queue", lambda: rq_queue)
 	monkeypatch.setattr(worker, "get_redis", lambda: redis_conn)
 	monkeypatch.setattr(worker, "get_queue", lambda: rq_queue)
+	monkeypatch.setattr(worker, "get_callback_queue", lambda: rq_queue)

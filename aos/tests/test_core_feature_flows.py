@@ -116,6 +116,7 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
             filename="avatar.jpg",
             content_type="image/jpeg",
             size_bytes=1024,
+            duration_seconds=None,
             checksum_sha256=None,
             idempotency_key=None,
         )

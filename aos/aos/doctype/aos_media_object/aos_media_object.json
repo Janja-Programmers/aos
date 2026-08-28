@@ -19,6 +19,13 @@
   "upload_object_key",
   "upload_expires_at",
   "staging_cleanup_required",
+  "upload_mode",
+  "multipart_upload_id",
+  "multipart_part_size_bytes",
+  "multipart_part_count",
+  "multipart_last_activity_at",
+  "multipart_completed_at",
+  "multipart_aborted_at",
   "file_section",
   "original_filename",
   "content_type",
@@ -163,6 +170,54 @@
    "fieldname": "staging_cleanup_required",
    "fieldtype": "Check",
    "label": "Staging Cleanup Required",
+   "read_only": 1
+  },
+  {
+   "default": "direct",
+   "fieldname": "upload_mode",
+   "fieldtype": "Select",
+   "label": "Upload Mode",
+   "options": "direct\nmultipart",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "multipart_upload_id",
+   "fieldtype": "Small Text",
+   "label": "Multipart Upload ID",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "multipart_part_size_bytes",
+   "fieldtype": "Int",
+   "label": "Multipart Part Size Bytes",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "multipart_part_count",
+   "fieldtype": "Int",
+   "label": "Multipart Part Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "multipart_last_activity_at",
+   "fieldtype": "Datetime",
+   "label": "Multipart Last Activity At",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "multipart_completed_at",
+   "fieldtype": "Datetime",
+   "label": "Multipart Completed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "multipart_aborted_at",
+   "fieldtype": "Datetime",
+   "label": "Multipart Aborted At",
    "read_only": 1
   },
   {
@@ -396,7 +451,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-21 00:00:00.000000",
+ "modified": "2026-08-28 12:45:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Media Object",
