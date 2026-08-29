@@ -9,7 +9,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from aos.api.live.reactions import send_reaction_impl
-from aos.api.live.messages import add_live_message_impl, delete_live_message_impl
+from aos.api.live.messages import add_live_message_impl, delete_live_message_impl, list_live_messages_impl
 from aos.patches.v1_0 import harden_live_subsystem, install_live_indexes
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
@@ -183,6 +183,83 @@ class TestLiveReactionDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         clear_comment_state(live_id=live.name)
         self.assertIsNone(current_view_metrics(live_id=live.name))
         self.assertIsNone(current_comment_count(live_id=live.name))
+
+
+class TestLiveInlineReplyDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
+    def setUp(self):
+        self.prefix = self.make_prefix("live-inline-reply-db")
+        self.created_users: list[str] = []
+        frappe.set_user("Administrator")
+        self.configure_test_localization_defaults()
+
+    def tearDown(self):
+        self.cleanup_feature_rows()
+        self.restore_localization_test_state()
+        frappe.set_user("Administrator")
+
+    def test_include_replies_returns_reply_inline_with_parent_context(self):
+        host = self.make_user("inline-reply-host")
+        live = self.make_live(host=host)
+        frappe.set_user(host)
+
+        from aos.api.live.messages import reply_live_message_impl
+
+        with patch("aos.api.live.messages.rate_limit", return_value=None):
+            root = add_live_message_impl(
+                live_id=live.name,
+                content="parent comment",
+                idempotency_key=f"{self.prefix}-root",
+            )
+            reply = reply_live_message_impl(
+                live_id=live.name,
+                parent_message=root["data"]["message"]["message_id"],
+                content="inline reply",
+                idempotency_key=f"{self.prefix}-reply",
+            )
+            listed = list_live_messages_impl(
+                live_id=live.name,
+                include_replies=1,
+                limit=50,
+            )
+
+        self.assertTrue(root.get("ok"), root)
+        self.assertTrue(reply.get("ok"), reply)
+        self.assertTrue(listed.get("ok"), listed)
+        items = listed["data"]["items"]
+        by_id = {item["message_id"]: item for item in items}
+        root_id = root["data"]["message"]["message_id"]
+        reply_id = reply["data"]["message"]["message_id"]
+        self.assertIn(root_id, by_id)
+        self.assertIn(reply_id, by_id)
+        self.assertTrue(by_id[reply_id]["is_reply"])
+        self.assertEqual(by_id[reply_id]["parent_message"], root_id)
+        self.assertEqual(by_id[reply_id]["reply_to"]["message_id"], root_id)
+        self.assertEqual(by_id[reply_id]["reply_to"]["display_name"], by_id[root_id]["display_name"])
+
+    def test_legacy_message_list_remains_root_only(self):
+        host = self.make_user("root-only-host")
+        live = self.make_live(host=host)
+        frappe.set_user(host)
+        from aos.api.live.messages import reply_live_message_impl
+
+        with patch("aos.api.live.messages.rate_limit", return_value=None):
+            root = add_live_message_impl(
+                live_id=live.name,
+                content="root only",
+                idempotency_key=f"{self.prefix}-legacy-root",
+            )
+            reply = reply_live_message_impl(
+                live_id=live.name,
+                parent_message=root["data"]["message"]["message_id"],
+                content="hidden from legacy list",
+                idempotency_key=f"{self.prefix}-legacy-reply",
+            )
+            listed = list_live_messages_impl(live_id=live.name, limit=50)
+
+        self.assertTrue(reply.get("ok"), reply)
+        ids = {item["message_id"] for item in listed["data"]["items"]}
+        self.assertIn(root["data"]["message"]["message_id"], ids)
+        self.assertNotIn(reply["data"]["message"]["message_id"], ids)
 
 
 class TestLiveMessageDeleteDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):

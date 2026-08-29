@@ -195,6 +195,15 @@ def _parse_pagination(
     return start, limit
 
 
+def _parse_bool(value) -> bool:
+    """Parse an API boolean without treating every non-empty string as true."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 # SESSION / LIVE HELPERS
 def _get_optional_current_user() -> str | None:
     return optional_active_user()
@@ -517,6 +526,50 @@ _MESSAGE_SELECT = """
     content, metadata_json, status, parent_message, root_message, reply_count,
     visible_to_host, visible_to_viewers, creation, modified
 """
+
+
+def _serialize_messages_with_reply_context(messages: list) -> list[dict]:
+    """Serialize a message page and batch-attach immediate parent context.
+
+    LIVE chat clients can render replies inline (TikTok-style) without issuing a
+    second request per thread.  The legacy root-only list and list_live_replies
+    APIs remain supported.
+    """
+    items = serialize_live_messages(messages)
+    parent_ids = {
+        str(item.get("parent_message") or "").strip()
+        for item in items
+        if item.get("is_reply") and item.get("parent_message")
+    }
+    parent_ids.discard("")
+    if not parent_ids:
+        return items
+
+    parent_rows = frappe.get_all(
+        LIVE_MESSAGE_DOCTYPE,
+        filters={"name": ["in", sorted(parent_ids)]},
+        fields=live_message_fields(),
+    )
+    parent_map = {
+        str(item.get("message_id")): item
+        for item in serialize_live_messages(parent_rows)
+    }
+
+    for item in items:
+        parent_id = str(item.get("parent_message") or "").strip()
+        parent = parent_map.get(parent_id)
+        if not parent:
+            continue
+        item["reply_to"] = {
+            "message_id": parent.get("message_id"),
+            "user": parent.get("user"),
+            "display_name": parent.get("display_name"),
+            "avatar": parent.get("avatar"),
+            "is_verified": bool(parent.get("is_verified")),
+            "content": parent.get("content") or "",
+        }
+
+    return items
 
 
 def _message_cursor(value: str | None, *, kind: str, scope: str):
@@ -889,7 +942,8 @@ def reply_live_message_impl(**kwargs):
 
         existing = _find_idempotent_comment(live_id=live_id, user=user, key=idempotency_key)
         if existing:
-            return ok("Reply already added.", data={"message": serialize_live_message(existing)})
+            serialized_existing = _serialize_messages_with_reply_context([existing])[0]
+            return ok("Reply already added.", data={"message": serialized_existing})
 
         room_limit = rate_limit(
             key=rate_limit_key("live", "message", "fanout", live_id),
@@ -910,7 +964,7 @@ def reply_live_message_impl(**kwargs):
         if duplicate:
             return ok(
                 "Reply already added.",
-                data={"message": serialize_live_message(message)},
+                data={"message": _serialize_messages_with_reply_context([message])[0]},
             )
 
         record_live_comment_activity(
@@ -921,9 +975,7 @@ def reply_live_message_impl(**kwargs):
             parent_message_id=parent_id,
         )
 
-        serialized = serialize_live_message(
-            message
-        )
+        serialized = _serialize_messages_with_reply_context([message])[0]
 
         publish_live_message(
             live_id,
@@ -991,8 +1043,10 @@ def list_live_messages_impl(**kwargs):
             default_limit=DEFAULT_MESSAGES_LIMIT,
             max_limit=MAX_MESSAGES_LIMIT,
         )
+        include_replies = _parse_bool(kwargs.get("include_replies"))
+        cursor_kind = "live_messages_all" if include_replies else "live_messages"
         cursor_value = str(kwargs.get("cursor") or "").strip()
-        cursor = _message_cursor(cursor_value, kind="live_messages", scope=live_id)
+        cursor = _message_cursor(cursor_value, kind=cursor_kind, scope=live_id)
         is_host = _is_live_host(live, current_user)
         visibility = "visible_to_host" if is_host else "visible_to_viewers"
         params: dict[str, Any] = {
@@ -1007,12 +1061,13 @@ def list_live_messages_impl(**kwargs):
               AND (creation < %(cursor_creation)s
                    OR (creation = %(cursor_creation)s AND name < %(cursor_name)s))
             """
+        parent_filter_sql = "" if include_replies else "AND (parent_message IS NULL OR parent_message='')"
         rows = frappe.db.sql(
             f"""
             SELECT {_MESSAGE_SELECT}
             FROM `tabAOS Live Message`
             WHERE live_stream=%(live_id)s
-              AND (parent_message IS NULL OR parent_message='')
+              {parent_filter_sql}
               AND status='active' AND {visibility}=1
               {cursor_sql}
             ORDER BY creation DESC, name DESC
@@ -1027,7 +1082,7 @@ def list_live_messages_impl(**kwargs):
         if has_more and page:
             last = page[-1]
             next_cursor = encode_cursor({
-                "kind": "live_messages",
+                "kind": cursor_kind,
                 "scope": live_id,
                 "creation": str(last.creation),
                 "name": str(last.name),
@@ -1035,7 +1090,7 @@ def list_live_messages_impl(**kwargs):
         return ok(
             "Live messages fetched.",
             data={
-                "items": serialize_live_messages(page),
+                "items": _serialize_messages_with_reply_context(page),
                 "pagination": {
                     "start": start,
                     "limit": limit,
@@ -1148,7 +1203,7 @@ def list_live_replies_impl(**kwargs):
         return ok(
             "Live replies fetched.",
             data={
-                "items": serialize_live_messages(page),
+                "items": _serialize_messages_with_reply_context(page),
                 "pagination": {
                     "start": start,
                     "limit": limit,

@@ -336,6 +336,12 @@ class TestLiveSourceGuards(unittest.TestCase):
         self.assertIn("ADD_COMMENT_GLOBAL_LIMIT_PER_MINUTE_PER_USER", constants)
         self.assertIn("REPLY_COMMENT_GLOBAL_LIMIT_PER_MINUTE_PER_USER", constants)
         self.assertIn('frappe.get_traceback(),\n            "Delete Live Message Failed"', messages)
+        self.assertIn('include_replies = _parse_bool(kwargs.get("include_replies"))', messages)
+        self.assertIn('parent_filter_sql = "" if include_replies', messages)
+        self.assertIn('def _serialize_messages_with_reply_context', messages)
+        self.assertIn('item["reply_to"] = {', messages)
+        endpoints = _source("aos/services/live/endpoints.py")
+        self.assertIn('"include_replies"', endpoints)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
 
 Comments and replies are persisted in `AOS Live Message`. A successful mutation serializes the committed row and publishes it through `aos_live_message` to the Live room with `after_commit=True`. Broadcast failure cannot roll back the committed comment.
 
-Reconnect recovery uses `list_live_messages` and `list_live_replies`; comments do not depend solely on transient socket memory.
+Reconnect recovery uses durable message APIs; comments do not depend solely on transient socket memory. `list_live_messages` remains root-only by default for compatibility, while `include_replies=1` returns the chronological Live chat stream including replies. `list_live_replies` remains available for clients that still need an explicit thread view.
 
 ## Authorization
 
@@ -26,7 +26,7 @@ Reconnect recovery uses `list_live_messages` and `list_live_replies`; comments d
 
 ## Ordering and pagination
 
-Messages and replies order by `creation ASC, name ASC`. New clients use an HMAC-signed cursor containing endpoint kind, Live/parent scope, creation, and row ID. A cursor cannot be reused across Live streams or between messages and replies. Page reads are bounded.
+Message-list pages are read newest-first (`creation DESC, name DESC`) with bounded signed cursors; clients may render those rows chronologically. Reply-thread pages remain oldest-first. Inline-chat cursors use a distinct `live_messages_all` kind, so a root-only cursor cannot be reused for an inline-reply stream. Each inline reply includes batched `reply_to` parent context without an N+1 query.
 
 ## Deletion
 

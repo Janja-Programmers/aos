@@ -39,7 +39,7 @@ ENDPOINT_SPECS: dict[str, EndpointSpec] = {
         {"live_id", "parent_message", "session_id", "content", "idempotency_key"},
         ids=(("live_id", LIVE_ID_RE), ("parent_message", SAFE_ROW_ID_RE)),
     ),
-    "list_live_messages": _spec({"live_id", "limit", "start", "cursor"}, ids=(("live_id", LIVE_ID_RE),)),
+    "list_live_messages": _spec({"live_id", "limit", "start", "cursor", "include_replies"}, ids=(("live_id", LIVE_ID_RE),)),
     "list_live_replies": _spec({"parent_message", "limit", "start", "cursor"}, ids=(("parent_message", SAFE_ROW_ID_RE),)),
     "delete_live_message": _spec({"message_id"}, ids=(("message_id", SAFE_ROW_ID_RE),)),
     "send_reaction": _spec({"live_id", "reaction_type", "session_id"}, ids=(("live_id", LIVE_ID_RE),)),
