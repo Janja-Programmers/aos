@@ -47,15 +47,24 @@ TRACK_LEAVE_LIMIT_PER_MINUTE_PER_IP = 120
 # LIVE MESSAGES / COMMENTS
 
 # Live chat requires authentication.
+# Per-Live sender budgets keep rapid interaction in one room from poisoning the
+# same user's next Live session. A higher cross-room guard still bounds abuse.
 ADD_COMMENT_LIMIT_PER_MINUTE_PER_USER = 60
 REPLY_COMMENT_LIMIT_PER_MINUTE_PER_USER = 60
+ADD_COMMENT_GLOBAL_LIMIT_PER_MINUTE_PER_USER = 240
+REPLY_COMMENT_GLOBAL_LIMIT_PER_MINUTE_PER_USER = 240
 # Shared room fan-out budget across comments + replies. Durable chat must apply
 # backpressure before a viral room overwhelms websocket fan-out.
 LIVE_COMMENT_FANOUT_LIMIT_PER_MINUTE = 1200
 
 # Message and reply listing can be guest-accessible.
-LIST_COMMENTS_LIMIT_PER_MINUTE_PER_IP = 120
-LIST_REPLIES_LIMIT_PER_MINUTE_PER_IP = 120
+LIST_COMMENTS_LIMIT_PER_MINUTE_PER_IDENTITY = 120
+LIST_REPLIES_LIMIT_PER_MINUTE_PER_IDENTITY = 120
+# Cross-room guard. Per-room keys prevent a healthy viewer from carrying a
+# depleted read bucket from Live A into Live B, while this higher global cap
+# still bounds abusive fan-out across many Live IDs from one client IP.
+LIST_COMMENTS_GLOBAL_LIMIT_PER_MINUTE_PER_IDENTITY = 600
+LIST_REPLIES_GLOBAL_LIMIT_PER_MINUTE_PER_IDENTITY = 600
 
 # Public comment soft deletion requires authentication.
 DELETE_COMMENT_LIMIT_PER_MINUTE_PER_USER = 30

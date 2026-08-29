@@ -56,10 +56,14 @@ from .activity import (
     record_live_comment_activity,
 )
 from .constants import (
+    ADD_COMMENT_GLOBAL_LIMIT_PER_MINUTE_PER_USER,
     ADD_COMMENT_LIMIT_PER_MINUTE_PER_USER,
     DELETE_COMMENT_LIMIT_PER_MINUTE_PER_USER,
-    LIST_COMMENTS_LIMIT_PER_MINUTE_PER_IP,
-    LIST_REPLIES_LIMIT_PER_MINUTE_PER_IP,
+    LIST_COMMENTS_LIMIT_PER_MINUTE_PER_IDENTITY,
+    LIST_REPLIES_LIMIT_PER_MINUTE_PER_IDENTITY,
+    LIST_COMMENTS_GLOBAL_LIMIT_PER_MINUTE_PER_IDENTITY,
+    LIST_REPLIES_GLOBAL_LIMIT_PER_MINUTE_PER_IDENTITY,
+    REPLY_COMMENT_GLOBAL_LIMIT_PER_MINUTE_PER_USER,
     REPLY_COMMENT_LIMIT_PER_MINUTE_PER_USER,
     LIVE_COMMENT_FANOUT_LIMIT_PER_MINUTE,
 )
@@ -117,6 +121,7 @@ DEFAULT_REPLIES_LIMIT = 50
 MAX_REPLIES_LIMIT = 100
 
 GUEST_USER = "Guest"
+MAX_DELETE_DESCENDANTS = 5000
 
 
 # GENERIC HELPERS
@@ -655,21 +660,30 @@ def add_live_message_impl(**kwargs):
     if err:
         return err
 
-    rl = rate_limit(
-        key=rate_limit_key("live", "message", "add", "user", user),
-        ttl_seconds=60,
-        limit=ADD_COMMENT_LIMIT_PER_MINUTE_PER_USER,
-        message="Too many messages. Please slow down.",
-    )
-    if rl:
-        return rl
-
     live_id, err = require_id(
         kwargs.get("live_id"),
         "live_id",
     )
     if err:
         return err
+
+    global_rl = rate_limit(
+        key=rate_limit_key("live", "message", "add", "global", "user", user),
+        ttl_seconds=60,
+        limit=ADD_COMMENT_GLOBAL_LIMIT_PER_MINUTE_PER_USER,
+        message="Too many messages. Please slow down.",
+    )
+    if global_rl:
+        return global_rl
+
+    room_rl = rate_limit(
+        key=rate_limit_key("live", "message", "add", live_id, "user", user),
+        ttl_seconds=60,
+        limit=ADD_COMMENT_LIMIT_PER_MINUTE_PER_USER,
+        message="Too many messages. Please slow down.",
+    )
+    if room_rl:
+        return room_rl
 
     session_id = _normalize_session_id(
         kwargs.get("session_id")
@@ -763,7 +777,7 @@ def add_live_message_impl(**kwargs):
 
     except Exception:
         frappe.log_error(
-            "Live operation failed.",
+            frappe.get_traceback(),
             "Add Live Message Failed",
         )
         return fail(
@@ -778,21 +792,30 @@ def reply_live_message_impl(**kwargs):
     if err:
         return err
 
-    rl = rate_limit(
-        key=rate_limit_key("live", "message", "reply", "user", user),
-        ttl_seconds=60,
-        limit=REPLY_COMMENT_LIMIT_PER_MINUTE_PER_USER,
-        message="Too many replies.",
-    )
-    if rl:
-        return rl
-
     live_id, err = require_id(
         kwargs.get("live_id"),
         "live_id",
     )
     if err:
         return err
+
+    global_rl = rate_limit(
+        key=rate_limit_key("live", "message", "reply", "global", "user", user),
+        ttl_seconds=60,
+        limit=REPLY_COMMENT_GLOBAL_LIMIT_PER_MINUTE_PER_USER,
+        message="Too many replies.",
+    )
+    if global_rl:
+        return global_rl
+
+    room_rl = rate_limit(
+        key=rate_limit_key("live", "message", "reply", live_id, "user", user),
+        ttl_seconds=60,
+        limit=REPLY_COMMENT_LIMIT_PER_MINUTE_PER_USER,
+        message="Too many replies.",
+    )
+    if room_rl:
+        return room_rl
 
     parent_id, err = require_id(
         kwargs.get("parent_message"),
@@ -919,7 +942,7 @@ def reply_live_message_impl(**kwargs):
 
     except Exception:
         frappe.log_error(
-            "Live operation failed.",
+            frappe.get_traceback(),
             "Reply Live Message Failed",
         )
         return fail(
@@ -930,25 +953,35 @@ def reply_live_message_impl(**kwargs):
 
 # LIST LIVE MESSAGES
 def list_live_messages_impl(**kwargs):
-    ip = request_ip()
-    rl = rate_limit(
-        key=rate_limit_key("live", "message", "list", "ip", ip),
-        ttl_seconds=60,
-        limit=LIST_COMMENTS_LIMIT_PER_MINUTE_PER_IP,
-        message="Too many requests.",
-    )
-    if rl:
-        return rl
-
     live_id, err = require_id(kwargs.get("live_id"), "live_id")
     if err:
         return err
+
+    current_user = _get_optional_current_user()
+    rate_kind = "user" if current_user else "ip"
+    rate_identity = current_user or request_ip()
+    global_rl = rate_limit(
+        key=rate_limit_key("live", "message", "list", "global", rate_kind, rate_identity),
+        ttl_seconds=60,
+        limit=LIST_COMMENTS_GLOBAL_LIMIT_PER_MINUTE_PER_IDENTITY,
+        message="Too many requests.",
+    )
+    if global_rl:
+        return global_rl
+
+    room_rl = rate_limit(
+        key=rate_limit_key("live", "message", "list", live_id, rate_kind, rate_identity),
+        ttl_seconds=60,
+        limit=LIST_COMMENTS_LIMIT_PER_MINUTE_PER_IDENTITY,
+        message="Too many requests.",
+    )
+    if room_rl:
+        return room_rl
 
     try:
         live, err = validate_live_exists(live_id)
         if err:
             return err
-        current_user = _get_optional_current_user()
         access_err = validate_live_social_access(live=live, user=current_user)
         if access_err:
             return access_err
@@ -1017,25 +1050,36 @@ def list_live_messages_impl(**kwargs):
     except ValueError:
         return fail("Invalid Live cursor or pagination values.", error="LIVE_INVALID_CURSOR")
     except Exception:
-        frappe.log_error("Live operation failed.", "List Live Messages Failed")
+        frappe.log_error(frappe.get_traceback(), "List Live Messages Failed")
         return fail("Failed to fetch live messages.", error="INTERNAL_ERROR")
 
 
 # LIST LIVE REPLIES
 def list_live_replies_impl(**kwargs):
-    ip = request_ip()
-    rl = rate_limit(
-        key=rate_limit_key("live", "message", "replies", "ip", ip),
-        ttl_seconds=60,
-        limit=LIST_REPLIES_LIMIT_PER_MINUTE_PER_IP,
-        message="Too many requests.",
-    )
-    if rl:
-        return rl
-
     parent_id, err = require_id(kwargs.get("parent_message"), "parent_message")
     if err:
         return err
+
+    current_user = _get_optional_current_user()
+    rate_kind = "user" if current_user else "ip"
+    rate_identity = current_user or request_ip()
+    global_rl = rate_limit(
+        key=rate_limit_key("live", "message", "replies", "global", rate_kind, rate_identity),
+        ttl_seconds=60,
+        limit=LIST_REPLIES_GLOBAL_LIMIT_PER_MINUTE_PER_IDENTITY,
+        message="Too many requests.",
+    )
+    if global_rl:
+        return global_rl
+
+    thread_rl = rate_limit(
+        key=rate_limit_key("live", "message", "replies", parent_id, rate_kind, rate_identity),
+        ttl_seconds=60,
+        limit=LIST_REPLIES_LIMIT_PER_MINUTE_PER_IDENTITY,
+        message="Too many requests.",
+    )
+    if thread_rl:
+        return thread_rl
 
     try:
         parent, err = _get_live_message(parent_id)
@@ -1051,7 +1095,6 @@ def list_live_replies_impl(**kwargs):
         live, err = validate_live_exists(parent.live_stream)
         if err:
             return err
-        current_user = _get_optional_current_user()
         access_err = validate_live_social_access(live=live, user=current_user)
         if access_err:
             return access_err
@@ -1120,8 +1163,98 @@ def list_live_replies_impl(**kwargs):
     except ValueError:
         return fail("Invalid Live cursor or pagination values.", error="LIVE_INVALID_CURSOR")
     except Exception:
-        frappe.log_error("Live operation failed.", "List Live Replies Failed")
+        frappe.log_error(frappe.get_traceback(), "List Live Replies Failed")
         return fail("Failed to fetch live replies.", error="INTERNAL_ERROR")
+
+
+# DELETE HELPERS
+def _collect_descendant_message_ids(message_id: str) -> list[str]:
+    """Return descendant replies with an explicit safety bound.
+
+    Live replies may target comments or replies, so deletion must walk the
+    whole thread branch. Keep the traversal bounded so a corrupt/cyclic tree
+    cannot turn one moderation request into an unbounded database operation.
+    """
+    if not message_id:
+        return []
+
+    collected: list[str] = []
+    seen = {message_id}
+    pending = [message_id]
+
+    while pending:
+        parents = pending
+        pending = []
+        children = frappe.get_all(
+            LIVE_MESSAGE_DOCTYPE,
+            filters={"parent_message": ["in", parents]},
+            pluck="name",
+            limit_page_length=MAX_DELETE_DESCENDANTS + 1,
+        )
+        for child_id in children:
+            child_id = str(child_id or "").strip()
+            if not child_id or child_id in seen:
+                continue
+            seen.add(child_id)
+            collected.append(child_id)
+            if len(collected) > MAX_DELETE_DESCENDANTS:
+                frappe.throw("Live message thread is too large to delete in one request.")
+            pending.append(child_id)
+
+    return collected
+
+
+def _soft_delete_messages(message_ids: list[str]) -> None:
+    """Soft-delete message rows without invoking per-row Document hooks."""
+    ids = list(dict.fromkeys(str(value or "").strip() for value in message_ids if value))
+    if not ids:
+        return
+
+    placeholders = ", ".join(["%s"] * len(ids))
+    frappe.db.sql(
+        f"""
+        UPDATE `tabAOS Live Message`
+        SET status=%s,
+            active_idempotency_key=NULL,
+            modified=NOW(),
+            modified_by=%s
+        WHERE name IN ({placeholders})
+          AND status<>%s
+        """,
+        (DELETED_STATUS, frappe.session.user, *ids, DELETED_STATUS),
+    )
+
+
+def _sync_reply_counts(parent_ids: set[str]) -> None:
+    """Repair direct active-reply counts for surviving parent messages."""
+    ids = sorted({str(value or "").strip() for value in parent_ids if value})
+    if not ids:
+        return
+
+    placeholders = ", ".join(["%s"] * len(ids))
+    rows = frappe.db.sql(
+        f"""
+        SELECT parent_message, COUNT(*) AS reply_count
+        FROM `tabAOS Live Message`
+        WHERE parent_message IN ({placeholders})
+          AND message_kind=%s
+          AND message_type=%s
+          AND status=%s
+        GROUP BY parent_message
+        """,
+        (*ids, COMMENT_KIND, REPLY_TYPE, ACTIVE_STATUS),
+        as_dict=True,
+    )
+    counts = {str(row.parent_message): int(row.reply_count or 0) for row in rows}
+    for parent_id in ids:
+        if frappe.db.exists(LIVE_MESSAGE_DOCTYPE, parent_id):
+            frappe.db.set_value(
+                LIVE_MESSAGE_DOCTYPE,
+                parent_id,
+                "reply_count",
+                counts.get(parent_id, 0),
+                update_modified=False,
+            )
 
 
 # DELETE LIVE MESSAGE
@@ -1214,6 +1347,9 @@ def delete_live_message_impl(**kwargs):
                 "name",
                 "user",
                 "parent_message",
+                "message_kind",
+                "message_type",
+                "status",
             ],
         )
 
@@ -1241,9 +1377,16 @@ def delete_live_message_impl(**kwargs):
             affected_parent_ids
         )
 
-        LiveAnalyticsService.sync_comment_count(
-            live_id=message.live_stream,
+        deleted_comment_count = sum(
+            1
+            for row in affected_rows
+            if row.message_kind == COMMENT_KIND and row.status == ACTIVE_STATUS
         )
+        if deleted_comment_count:
+            LiveAnalyticsService.handle_comment_deleted(
+                live_id=message.live_stream,
+                count=deleted_comment_count,
+            )
 
         publish_live_message_deleted(
             message.live_stream,
@@ -1264,7 +1407,7 @@ def delete_live_message_impl(**kwargs):
 
     except Exception:
         frappe.log_error(
-            "Live operation failed.",
+            frappe.get_traceback(),
             "Delete Live Message Failed",
         )
         return fail(

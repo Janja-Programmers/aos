@@ -509,7 +509,7 @@ def track_join_impl(**kwargs):
             return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
 
         frappe.log_error(
-            "Live operation failed.",
+            frappe.get_traceback(),
             "Track Join Failed",
         )
 
@@ -642,7 +642,7 @@ def track_leave_impl(**kwargs):
 
     except Exception:
         frappe.log_error(
-            "Live operation failed.",
+            frappe.get_traceback(),
             "Track Leave Failed",
         )
         return fail(

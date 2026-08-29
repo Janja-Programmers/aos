@@ -316,5 +316,27 @@ class TestLiveSourceGuards(unittest.TestCase):
             self.assertTrue((ROOT / "docs/features/live" / name).is_file(), name)
 
 
+    def test_live_message_delete_helpers_and_scoped_read_limits_are_present(self):
+        messages = _source("aos/api/live/messages.py")
+        constants = _source("aos/api/live/constants.py")
+        for helper in (
+            "def _collect_descendant_message_ids",
+            "def _soft_delete_messages",
+            "def _sync_reply_counts",
+        ):
+            self.assertIn(helper, messages)
+        self.assertIn('rate_limit_key("live", "message", "list", live_id, rate_kind, rate_identity)', messages)
+        self.assertIn('rate_limit_key("live", "message", "list", "global", rate_kind, rate_identity)', messages)
+        self.assertIn('rate_kind = "user" if current_user else "ip"', messages)
+        self.assertIn("LIST_COMMENTS_GLOBAL_LIMIT_PER_MINUTE_PER_IDENTITY", constants)
+        self.assertIn('rate_limit_key("live", "message", "add", live_id, "user", user)', messages)
+        self.assertIn('rate_limit_key("live", "message", "add", "global", "user", user)', messages)
+        self.assertIn('rate_limit_key("live", "message", "reply", live_id, "user", user)', messages)
+        self.assertIn('rate_limit_key("live", "message", "reply", "global", "user", user)', messages)
+        self.assertIn("ADD_COMMENT_GLOBAL_LIMIT_PER_MINUTE_PER_USER", constants)
+        self.assertIn("REPLY_COMMENT_GLOBAL_LIMIT_PER_MINUTE_PER_USER", constants)
+        self.assertIn('frappe.get_traceback(),\n            "Delete Live Message Failed"', messages)
+
+
 if __name__ == "__main__":
     unittest.main()
