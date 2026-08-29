@@ -3,11 +3,12 @@ from __future__ import annotations
 import uuid
 
 import frappe
+from frappe.exceptions import TimestampMismatchError
 from frappe.tests.utils import FrappeTestCase
 
 from aos.api.live.tracking import track_join_impl
 from aos.api.notifications.token import register_push_token_impl
-from aos.api.shorts.tracking import track_view_impl
+from aos.api.shorts.tracking import _update_short_view_watch_progress, track_view_impl
 from aos.api.social.block import block_user_impl
 from aos.patches.v1_0.add_unique_constraints import (
     USER_ACTION_UNIQUE_CONSTRAINTS,
@@ -152,6 +153,67 @@ class TestUserActionUniqueness(AOSFeatureTestMixin, FrappeTestCase):
             ),
             2500,
         )
+
+    def test_short_view_progress_retries_timestamp_mismatch_and_keeps_max_watch(self):
+        class ConcurrentView:
+            def __init__(self):
+                self.watch_ms = 1000
+                self.last_seen_at = None
+                self.save_calls = 0
+                self.reload_calls = 0
+
+            def save(self, *, ignore_permissions=False):
+                self.save_calls += 1
+                if self.save_calls == 1:
+                    raise TimestampMismatchError("simulated concurrent progress update")
+
+            def reload(self):
+                self.reload_calls += 1
+                # Another request committed more progress before this retry.
+                self.watch_ms = 2000
+
+        doc = ConcurrentView()
+        changed = _update_short_view_watch_progress(doc, 2500)
+
+        self.assertTrue(changed)
+        self.assertEqual(doc.watch_ms, 2500)
+        self.assertEqual(doc.save_calls, 2)
+        self.assertEqual(doc.reload_calls, 1)
+
+    def test_short_track_view_survives_ranking_enqueue_failure(self):
+        user = self._make_user("ranking-queue")
+        short = self._make_short(user)
+        session_id = f"{self.prefix}-ranking-session"
+        frappe.set_user(user)
+
+        from unittest.mock import patch
+
+        with (
+            patch("aos.api.shorts.tracking.emit_analytics_event"),
+            patch(
+                "aos.api.shorts.tracking.frappe.enqueue",
+                side_effect=RuntimeError("simulated Redis/worker outage"),
+            ),
+            patch("aos.api.shorts.tracking.frappe.log_error") as log_error,
+        ):
+            result = track_view_impl(
+                short_id=short.name,
+                watch_ms=2500,
+                session_id=session_id,
+            )
+
+        self.assertTrue(result.get("ok"), result)
+        self.assertEqual(
+            frappe.db.count(
+                "AOS Short View",
+                {
+                    "short": short.name,
+                    "identity_key": f"user:{user}",
+                },
+            ),
+            1,
+        )
+        log_error.assert_called()
 
     def test_push_token_double_registration_keeps_one_active_device_token(self):
         user = self._make_user("push")

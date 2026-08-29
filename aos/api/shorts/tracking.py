@@ -13,6 +13,7 @@ import time
 
 import frappe
 from aos.api.shared.auth import current_user
+from frappe.exceptions import TimestampMismatchError
 from frappe.utils import now_datetime, getdate
 
 from aos.api.shared.rate_limit import rate_limit, request_ip
@@ -81,6 +82,55 @@ def _short_view_identity_key(*, user: str | None, session_id: str | None) -> str
     if session_id:
         return f"session:{session_id}"
     return None
+
+
+def _update_short_view_watch_progress(doc, watch_ms: int, *, max_attempts: int = 3) -> bool:
+    """Persist monotonic watch progress and tolerate normal concurrent updates.
+
+    Mobile/web players can report progress for the same daily view from overlapping
+    requests.  A normal ``Document.save`` performs Frappe's optimistic modified-time
+    check and can therefore raise ``TimestampMismatchError`` even though both requests
+    are valid.  Reloading and retrying preserves the greatest observed watch time while
+    still running the AOS Short View validation/qualification hooks.
+    """
+    target_watch_ms = max(0, int(watch_ms or 0))
+    attempts = max(1, int(max_attempts or 1))
+
+    for attempt in range(attempts):
+        current_watch_ms = int(doc.watch_ms or 0)
+        new_watch_ms = max(current_watch_ms, target_watch_ms)
+
+        if new_watch_ms == current_watch_ms:
+            return False
+
+        doc.watch_ms = new_watch_ms
+        doc.last_seen_at = now_datetime()
+
+        try:
+            doc.save(ignore_permissions=True)
+            return True
+        except TimestampMismatchError:
+            if attempt + 1 >= attempts:
+                raise
+            doc.reload()
+
+    return False
+
+
+def _enqueue_short_score_update(short_id: str) -> None:
+    """Best-effort ranking refresh; queue availability must not fail view tracking."""
+    try:
+        frappe.enqueue(
+            "aos.api.shorts.tasks.update_short_score_task",
+            short_id=short_id,
+            queue="short",
+            enqueue_after_commit=True,
+        )
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Shorts View Ranking Enqueue Failed",
+        )
 
 
 def _insert_event_once(
@@ -246,13 +296,7 @@ def track_view_impl(**kwargs):
         else:
             doc = frappe.get_doc("AOS Short View", name)
 
-            new_watch_ms = max(doc.watch_ms or 0, watch_ms)
-
-            if new_watch_ms != doc.watch_ms:
-                doc.watch_ms = new_watch_ms
-                doc.last_seen_at = now_datetime()
-                doc.save(ignore_permissions=True)
-
+            if _update_short_view_watch_progress(doc, watch_ms):
                 should_update_ranking = True
 
         # Record private Activity Center watch history for logged-in users only.
@@ -268,8 +312,8 @@ def track_view_impl(**kwargs):
                 )
             except Exception:
                 frappe.log_error(
-                    "Shorts operation failed.",
-                    "record_short_watch_activity failed",
+                    frappe.get_traceback(),
+                    "AOS Shorts Watch Activity Failed",
                 )
 
 
@@ -289,16 +333,16 @@ def track_view_impl(**kwargs):
                     metadata={"qualified_candidate": True},
                 )
             except Exception:
-                frappe.log_error("Shorts operation failed.", "short view analytics emit failed")
+                frappe.log_error(
+                    frappe.get_traceback(),
+                    "AOS Shorts View Analytics Emit Failed",
+                )
 
-        # TRIGGER RANKING (ASYNC)
+        # TRIGGER RANKING (ASYNC). Ranking is secondary to durable view tracking;
+        # a transient Redis/worker enqueue problem must not turn a valid view into
+        # an INTERNAL_ERROR response and provoke duplicate client retries.
         if should_update_ranking:
-            frappe.enqueue(
-                "aos.api.shorts.tasks.update_short_score_task",
-                short_id=short_id,
-                queue="short",
-                enqueue_after_commit=True,
-            )
+            _enqueue_short_score_update(short_id)
 
         return ok(
             "View tracked.",
@@ -317,13 +361,9 @@ def track_view_impl(**kwargs):
 
                 if existing_name:
                     doc = frappe.get_doc("AOS Short View", existing_name)
-                    new_watch_ms = max(doc.watch_ms or 0, watch_ms)
-
-                    if new_watch_ms != doc.watch_ms:
-                        doc.watch_ms = new_watch_ms
-                        doc.last_seen_at = now_datetime()
-                        doc.save(ignore_permissions=True)
-
+                    updated = _update_short_view_watch_progress(doc, watch_ms)
+                    if updated:
+                        _enqueue_short_score_update(short_id)
 
                     return ok(
                         "View tracked.",
@@ -332,11 +372,14 @@ def track_view_impl(**kwargs):
 
             except Exception:
                 frappe.log_error(
-                    "Shorts operation failed.",
-                    "track_view duplicate recovery failed",
+                    frappe.get_traceback(),
+                    "AOS Shorts Track View Duplicate Recovery Failed",
                 )
 
-        frappe.log_error("Shorts operation failed.", "track_view failed")
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AOS Shorts Track View Failed",
+        )
         return fail("Failed to track view", error="INTERNAL_ERROR")
 
 
