@@ -9,14 +9,18 @@ Rules:
 - Only logged-in users can react.
 - The live host can react without a viewer session.
 - Non-host users must own an active view session for the live.
-- Reactions are immutable event records tied to a User.
-- Each accepted reaction is published immediately through realtime.
+- Reaction taps are ephemeral UI events accumulated atomically in Redis.
+- Durable reaction_count is periodically materialized on the Live row.
+- Room fan-out is sampled under extreme reaction storms.
 - API and realtime use the same canonical reaction payload.
 """
 
 from __future__ import annotations
 
+import uuid
+
 import frappe
+from frappe.utils import now_datetime
 
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit, rate_limit_key
@@ -24,6 +28,11 @@ from aos.api.shared.responses import fail, ok
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
 from aos.services.live.repository import LiveRepository
+from aos.services.live.ephemeral import (
+    increment_reaction,
+    schedule_hot_counter_materialization,
+    should_publish_reaction,
+)
 
 from .constants import (
     SEND_REACTION_LIMIT_PER_MINUTE_PER_USER,
@@ -69,23 +78,22 @@ def _normalize_reaction_type(
 
 # SERIALIZATION
 def _serialize_reaction(
-    reaction,
     *,
+    live_id: str,
+    reaction_type: str,
     user_payload: dict,
 ) -> dict:
-    """
-    Build the canonical reaction payload used by both the API response and
-    realtime event.
-    """
+    """Build the canonical ephemeral reaction payload."""
+    reaction_id = f"lr:{uuid.uuid4().hex}"
     return {
-        "id": reaction.name,
-        "reaction_id": reaction.name,
-        "live_id": reaction.live_stream,
-        "reaction_type": reaction.reaction_type,
+        "id": reaction_id,
+        "reaction_id": reaction_id,
+        "live_id": live_id,
+        "reaction_type": reaction_type,
         "user": user_payload["user"],
         "display_name": user_payload["display_name"],
         "avatar": user_payload["avatar"],
-        "created_at": reaction.creation,
+        "created_at": now_datetime(),
     }
 
 
@@ -153,31 +161,38 @@ def send_reaction_impl(**kwargs):
         if err:
             return err
 
-        reaction = frappe.new_doc(
-            LIVE_REACTION_DOCTYPE
-        )
+        user_payload = get_user_display(user)
 
-        reaction.live_stream = live_id
-        reaction.user = user
-        reaction.reaction_type = reaction_type
-
-        reaction.insert(
-            ignore_permissions=True
+        increment = increment_reaction(
+            live_id=live_id,
+            reaction_type=reaction_type,
         )
-
-        user_payload = get_user_display(
-            user
-        )
+        if increment is None:
+            # Degraded mode when Redis is unavailable: preserve correctness by
+            # falling back to the legacy durable event row.
+            reaction = frappe.new_doc(LIVE_REACTION_DOCTYPE)
+            reaction.live_stream = live_id
+            reaction.user = user
+            reaction.reaction_type = reaction_type
+            reaction.insert(ignore_permissions=True)
+            schedule_hot_counter_materialization(live_id=live_id)
+        elif increment.should_flush:
+            schedule_hot_counter_materialization(live_id=live_id)
+        # Never update the Live parent while this request holds a shared
+        # lifecycle lock. Redis is authoritative during the active burst; the
+        # viewer trailing job / periodic reconciler materializes the total.
 
         serialized = _serialize_reaction(
-            reaction,
+            live_id=live_id,
+            reaction_type=reaction_type,
             user_payload=user_payload,
         )
 
-        publish_reaction(
-            live_id=live_id,
-            reaction=serialized,
-        )
+        if should_publish_reaction(live_id=live_id):
+            publish_reaction(
+                live_id=live_id,
+                reaction=serialized,
+            )
 
         return ok(
             "Reaction sent.",

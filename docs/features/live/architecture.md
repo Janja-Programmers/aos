@@ -7,9 +7,10 @@
 3. `aos.services.live.api.run_live_api` validates the strict endpoint contract.
 4. Mutation endpoints establish an operation savepoint and snapshot Frappe callback managers and the transactional-outbox registration flag.
 5. The established implementation module performs authorization and domain work.
-6. Persistent state, activity, notification/outbox, and realtime intents remain in the caller-managed transaction.
-7. Realtime uses `after_commit=True`; external LiveKit room work is enqueued with `enqueue_after_commit=True`.
-8. On a handled failure, the operation rolls back to its savepoint and restores callback state without rolling back the caller's outer transaction.
+6. Durable state, activity, notification/outbox, and realtime intents remain in the caller-managed transaction; high-frequency counters/reactions use bounded Redis accumulators.
+7. Participant operations use shared lifecycle/relationship locks; incompatible end/block mutations retain exclusive locks.
+8. Realtime uses `after_commit=True`; external LiveKit room work is enqueued with `enqueue_after_commit=True`.
+9. On a handled failure, the operation rolls back to its savepoint and restores callback state without rolling back the caller's outer transaction.
 
 ## Domain boundaries
 
@@ -22,7 +23,8 @@
 ### Policy and persistence
 
 - `aos/services/live/policy.py`: account availability and bidirectional block policy through canonical Social services.
-- `aos/services/live/repository.py`: bounded lock/read primitives.
+- `aos/services/live/repository.py`: bounded exclusive/shared lifecycle lock and read primitives.
+- `aos/services/live/ephemeral.py`: Redis-backed viewer metrics, comment counters, reaction aggregation, and fan-out sampling.
 - `aos/services/live/cursor.py`: HMAC-signed opaque cursors.
 
 ### LiveKit boundary
@@ -46,7 +48,7 @@
 | AOS Live Stream | Host ownership, lifecycle, room, cover, counters, cleanup intent |
 | AOS Live Stream View | One immutable viewer/session join and its presence/watch duration |
 | AOS Live Message | Comments, replies, system/co-host messages, soft deletion |
-| AOS Live Stream Reaction | Existing immutable reaction event rows |
+| AOS Live Stream Reaction | Legacy/degraded-mode durable reaction events; hot taps are Redis-aggregated |
 | AOS Live CoHost | Invite/request/accept/activate/end workflow |
 | AOS LiveKit Webhook Event | Verified event-ID deduplication and processing outcome |
 
@@ -60,7 +62,7 @@ Database correctness is enforced first. Unique keys are the final concurrency bo
 - one active idempotent comment per Live/author/key: `active_idempotency_key`;
 - one webhook event per LiveKit event ID.
 
-LiveKit cannot share the database transaction. The backend therefore records authoritative state, commits it, performs the external operation in a worker, and repairs drift every five minutes.
+LiveKit cannot share the database transaction. The backend therefore records authoritative state, commits it, performs external operations in workers, and repairs drift every five minutes. High-frequency ephemeral counters are materialized outside participant shared-lock transactions, so adding web workers increases concurrency instead of creating one hot parent-row queue.
 
 ## Circular-import control
 

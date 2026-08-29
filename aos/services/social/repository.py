@@ -31,6 +31,27 @@ class SocialRepository:
             {"users": users},
         )
 
+    def lock_account_pair_shared(self, *, user_a: str, user_b: str) -> None:
+        """Share-lock account rows for read-side relationship decisions.
+
+        Live viewers may validate access concurrently. Canonical Social
+        mutations still use :meth:`lock_account_pair`, whose exclusive lock
+        waits for these readers before changing block/follow state.
+        """
+        users = tuple(sorted({str(user_a), str(user_b)}))
+        if len(users) != 2:
+            return
+        frappe.db.sql(
+            """
+            SELECT name
+            FROM `tabUser`
+            WHERE name IN %(users)s
+            ORDER BY name ASC
+            LOCK IN SHARE MODE
+            """,
+            {"users": users},
+        )
+
     def account_state(self, user: str) -> dict[str, Any] | None:
         rows = frappe.db.sql(
             """

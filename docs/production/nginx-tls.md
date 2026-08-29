@@ -18,7 +18,7 @@ Allow:
 - TCP 22 for SSH, restricted where possible
 - TCP 80 and 443 for Nginx and certificate issuance
 - TCP 7881 for LiveKit RTC fallback
-- UDP 50000-50010 for LiveKit media
+- UDP 7882 for LiveKit media
 
 Keep Docker service ports 6333, 8002, 8080, 8081, 8100, 9100, and 9101 bound to `127.0.0.1`.
 

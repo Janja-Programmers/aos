@@ -23,9 +23,13 @@ class LivePolicy:
         return state
 
     def lock_relationship(self, *, host_user: str, viewer: str | None) -> None:
-        """Serialize access decisions with canonical Social block mutations."""
+        """Protect read-side access decisions without serializing viewers.
+
+        A shared lock lets many Live viewers validate the same host at once,
+        while canonical Social mutations retain exclusive account-pair locks.
+        """
         if viewer and viewer != host_user:
-            self.social.lock_account_pair(user_a=host_user, user_b=viewer)
+            self.social.lock_account_pair_shared(user_a=host_user, user_b=viewer)
 
     def require_view_access(self, *, host_user: str, viewer: str | None) -> None:
         self.require_account_available(host_user)

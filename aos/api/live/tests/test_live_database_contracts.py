@@ -123,10 +123,22 @@ class TestLiveReactionDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
             ]
 
         self.assertTrue(all(response.get("ok") for response in responses), responses)
+
+        # High-frequency reactions are aggregated in Redis rather than writing
+        # one MariaDB row per tap. Reconciliation materializes the exact total.
+        from aos.services.live.ephemeral import _reaction_key
+        from aos.services.live_analytics_service import LiveAnalyticsService
+
         self.assertEqual(
             frappe.db.count("AOS Live Stream Reaction", {"live_stream": live.name, "user": host}),
+            0,
+        )
+        self.assertEqual(LiveAnalyticsService.sync_reaction_count(live_id=live.name), 20)
+        self.assertEqual(
+            int(frappe.db.get_value("AOS Live Stream", live.name, "reaction_count") or 0),
             20,
         )
+        frappe.cache().delete(_reaction_key(live.name))
 
 
 if __name__ == "__main__":

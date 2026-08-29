@@ -1,9 +1,16 @@
 port: 7880
 
+# Shared room/routing state. A single LiveKit node works with this today and
+# additional nodes can join the same Redis when capacity grows.
+redis:
+  address: livekit-redis:6379
+  db: 0
+
 rtc:
   tcp_port: 7881
-  port_range_start: 50000
-  port_range_end: 50010
+  # UDP mux avoids allocating two host ports per participant and is much safer
+  # for dense self-hosted deployments than the former 50000-50010 range.
+  udp_port: 7882
   use_external_ip: true
 
 logging:

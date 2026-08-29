@@ -27,6 +27,7 @@ from aos.api.shared.responses import fail, ok
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
 from aos.services.livekit_service import LiveKitService
+from aos.services.live.repository import LiveRepository
 from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.live.livekit import participant_identity, participant_metadata
 
@@ -303,20 +304,10 @@ def get_live_token_impl(**kwargs):
     )
 
     try:
-        # Serialize token issuance with Live termination. Without the row lock,
-        # a request that read `live` immediately before end_live could return a
-        # token after the Live had already become terminal.
-        locked_live = frappe.db.sql(
-            """
-            SELECT name
-            FROM `tabAOS Live Stream`
-            WHERE name = %s
-            LIMIT 1
-            FOR UPDATE
-            """,
-            (live_id,),
-            as_dict=True,
-        )
+        # Share-lock token issuance against lifecycle termination. Many viewers
+        # may obtain tokens concurrently, while end_live's exclusive lock waits
+        # until all accepted issuance decisions finish.
+        locked_live = LiveRepository().lock_live_shared(live_id)
         if not locked_live:
             return fail("Live stream not found.", error="NOT_FOUND")
 

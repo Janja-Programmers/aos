@@ -9,7 +9,7 @@ AOS Live is a Frappe-owned, LiveKit-backed public live-stream feature. The deplo
 - role-scoped LiveKit tokens for host, co-host, and viewer;
 - persistent viewer sessions and engagement counters;
 - persistent comments and replies with committed realtime fanout;
-- persistent reaction events with realtime fanout;
+- Redis-aggregated reactions with bounded realtime fanout and durable materialized totals;
 - one co-host slot with invite and request workflows;
 - follower `live_started` notifications through bounded background fanout;
 - verified LiveKit webhooks and background room reconciliation.

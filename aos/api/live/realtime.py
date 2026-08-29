@@ -23,6 +23,9 @@ Privacy:
 
 from __future__ import annotations
 
+import hashlib
+import time
+
 from collections.abc import Iterable
 
 import frappe
@@ -302,32 +305,67 @@ def publish_live_ended(
 
 
 # VIEWER COUNT EVENTS
-def publish_viewer_count(
-    live_id: str,
-    viewer_count: int,
-):
-    """
-    Publish the current viewer count immediately.
+def _viewer_count_gate_key(live_id: str) -> str:
+    digest = hashlib.sha256(str(live_id or "").encode("utf-8")).hexdigest()[:24]
+    return f"aos:live:viewer-count-publish:v1:{digest}"
 
-    Viewer identities and session IDs are never included.
-    """
-    if not live_id:
-        return
 
+def _publish_viewer_count_now(live_id: str, viewer_count: int) -> None:
     _publish_to_live_room(
         event=EVENT_LIVE_VIEWER_COUNT,
         live_id=live_id,
         message={
             "live_id": live_id,
-            "viewer_count": max(
-                int(
-                    viewer_count
-                    or 0
-                ),
-                0,
-            ),
+            "viewer_count": max(int(viewer_count or 0), 0),
         },
     )
+
+
+def publish_viewer_count(
+    live_id: str,
+    viewer_count: int,
+):
+    """Coalesce viewer-count fan-out while guaranteeing a trailing update.
+
+    A viral join storm must not broadcast one room event per entrant. The first
+    change in each one-second bucket is published immediately and schedules one
+    trailing worker read of the durable counter. Terminal zero bypasses the
+    throttle so clients see Live shutdown promptly.
+    """
+    if not live_id:
+        return
+    count = max(int(viewer_count or 0), 0)
+    if count == 0:
+        _publish_viewer_count_now(live_id, 0)
+        return
+
+    try:
+        cache = frappe.cache()
+        gate_key = _viewer_count_gate_key(live_id)
+        sequence = int(cache.incr(gate_key) or 0)
+        try:
+            cache.expire(gate_key, 1)
+        except Exception:
+            pass
+        if sequence > 1:
+            return
+    except Exception:
+        _publish_viewer_count_now(live_id, count)
+        return
+
+    _publish_viewer_count_now(live_id, count)
+    try:
+        frappe.enqueue(
+            "aos.tasks.live.publish_coalesced_viewer_count",
+            queue="short",
+            enqueue_after_commit=True,
+            job_id=f"aos_live_viewer_count:{hashlib.sha256(str(live_id).encode()).hexdigest()[:24]}:{int(time.time())}",
+            live_id=live_id,
+            delay_seconds=0.35,
+        )
+    except Exception:
+        # The immediate after-commit event already preserves correctness.
+        pass
 
 
 # LIVE MESSAGE EVENTS

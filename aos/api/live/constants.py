@@ -49,6 +49,9 @@ TRACK_LEAVE_LIMIT_PER_MINUTE_PER_IP = 120
 # Live chat requires authentication.
 ADD_COMMENT_LIMIT_PER_MINUTE_PER_USER = 60
 REPLY_COMMENT_LIMIT_PER_MINUTE_PER_USER = 60
+# Shared room fan-out budget across comments + replies. Durable chat must apply
+# backpressure before a viral room overwhelms websocket fan-out.
+LIVE_COMMENT_FANOUT_LIMIT_PER_MINUTE = 1200
 
 # Message and reply listing can be guest-accessible.
 LIST_COMMENTS_LIMIT_PER_MINUTE_PER_IP = 120

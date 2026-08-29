@@ -13,6 +13,12 @@ Secrets are read only on the server. They are never returned in an API serialize
 
 `AOS Settings.livekit_live_token_ttl_minutes` controls Live token lifetime. Default: 15 minutes. Effective range: 1–30 minutes. The pre-existing call-token TTL remains independent.
 
+## Self-hosted transport and scale
+
+The checked-in LiveKit configuration uses UDP mux on `7882/udp` instead of the former 11-port range and a dedicated `livekit-redis` coordination service. This removes the small fixed UDP-range ceiling and makes the deployment topology ready for additional LiveKit nodes. `7881/tcp` remains the RTC fallback port and `7880` remains signaling/API behind the reverse proxy.
+
+Additional LiveKit nodes increase aggregate room capacity; a single room still has to fit on one media node. Size CPU/network and test the largest intended room before production traffic.
+
 ## Server-generated rooms and identities
 
 Room names are generated as `live:<LIVE-ID>` by the Live Stream controller and are immutable. Clients cannot supply room names.

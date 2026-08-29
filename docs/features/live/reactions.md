@@ -8,14 +8,18 @@
 - `love`
 - `wow`
 
-## Rules
+## High-volume model
 
-Reactions require an authenticated participant. Host may react without a viewer row; non-host must own the active viewer session and pass canonical block/account policy. Ended Lives reject reactions.
+Reactions require an authenticated participant. The host may react without a viewer row; a non-host must own the active viewer session and pass the canonical account/block policy. Ended Lives reject reactions.
 
-Each accepted reaction uses a persistent `AOS Live Stream Reaction` event row and emits `aos_live_reaction` after commit. Reaction writes take a **shared** Live lifecycle lock so rapid taps do not serialize behind an exclusive parent-row lock; start/end and other lifecycle transitions retain the stronger lifecycle lock boundary. The reaction endpoint intentionally does not update the hot `AOS Live Stream.reaction_count` row on every tap. `LiveAnalyticsService.sync_reaction_count()` reconciles the derived aggregate from immutable reaction rows during the established Live reconciliation cycle.
+New reaction taps are **Redis-first**. A tap increments an atomic per-Live accumulator and returns the same public reaction payload as before. A viral stream therefore does not create one MariaDB row or one parent-row counter update per tap. `AOS Live Stream.reaction_count` is a materialized aggregate refreshed by the trailing viewer-counter worker and the recurring Live reconciler, then finalized exactly when the Live ends. Existing `AOS Live Stream Reaction` rows remain supported as a degradation/legacy source.
 
-The endpoint is limited to **600 accepted attempts per authenticated user per minute**. This permits normal rapid-tap UI behavior while keeping abuse bounded. Payloads expose public account display data, not email/internal User IDs.
+Realtime animation is intentionally lossy under extreme load while counting is not: every accepted tap is counted, but at most 20 reaction animation events per second per Live are published to the room. This keeps heart/fire/clap UI responsive without allowing one room to create unbounded websocket amplification.
 
-## Product boundary
+The participant request takes a shared Live lifecycle lock and a shared relationship lock. `end_live`, block/unblock, and other incompatible mutations retain exclusive locks and therefore wait for already-accepted participant decisions without serializing viewers against each other.
 
-The current product already persists reaction events, so this hardening preserves that behavior. It does not add per-user history/list endpoints or expose participant reaction histories. Retention/aggregation-window changes require an explicit product migration and are deferred.
+The endpoint remains limited to 600 attempts per authenticated user per minute. Payloads expose public account display data, not email/internal User IDs.
+
+## Recovery
+
+If Frappe Redis is unavailable, the endpoint falls back to the legacy durable reaction row. Periodic reconciliation derives the correct aggregate from Redis when present or legacy rows otherwise. Terminal finalization materializes the last total and clears the temporary Redis keys.

@@ -18,39 +18,72 @@ class LiveAnalyticsService:
 
     @classmethod
     def handle_comment_added(cls, *, live_id: str):
+        """Increment the active comment counter without writing the Live row."""
         if not live_id:
             return None
-        try:
-            frappe.db.sql(
-                """
-                UPDATE `tabAOS Live Stream`
-                SET comment_count = COALESCE(comment_count, 0) + 1
-                WHERE name = %s
-                """,
-                (live_id,),
-            )
-            return cls._get_live_counter(live_id=live_id, fieldname="comment_count")
-        except Exception:
-            cls._log_failure("comment_increment")
-            return None
+        from aos.services.live.ephemeral import (
+            change_comment_count,
+            current_comment_count,
+            schedule_hot_counter_materialization,
+        )
+
+        current = current_comment_count(live_id=live_id)
+        base = current if current is not None else cls._get_live_counter(
+            live_id=live_id, fieldname="comment_count"
+        )
+        count = change_comment_count(live_id=live_id, base=int(base or 0), delta=1)
+        schedule_hot_counter_materialization(live_id=live_id)
+        return count
 
     @classmethod
-    def handle_comment_deleted(cls, *, live_id: str):
+    def handle_comment_deleted(cls, *, live_id: str, count: int = 1):
         if not live_id:
             return None
-        try:
-            frappe.db.sql(
-                """
-                UPDATE `tabAOS Live Stream`
-                SET comment_count = GREATEST(COALESCE(comment_count, 0) - 1, 0)
-                WHERE name = %s
-                """,
-                (live_id,),
-            )
-            return cls._get_live_counter(live_id=live_id, fieldname="comment_count")
-        except Exception:
-            cls._log_failure("comment_decrement")
+        from aos.services.live.ephemeral import (
+            change_comment_count,
+            current_comment_count,
+            schedule_hot_counter_materialization,
+        )
+
+        current = current_comment_count(live_id=live_id)
+        base = current if current is not None else cls._get_live_counter(
+            live_id=live_id, fieldname="comment_count"
+        )
+        updated = change_comment_count(
+            live_id=live_id,
+            base=int(base or 0),
+            delta=-max(0, int(count or 0)),
+        )
+        schedule_hot_counter_materialization(live_id=live_id)
+        return updated
+
+    @classmethod
+    def get_comment_count(cls, *, live_id: str) -> int | None:
+        if not live_id:
             return None
+        from aos.services.live.ephemeral import current_comment_count
+
+        cached = current_comment_count(live_id=live_id)
+        if cached is not None:
+            return cached
+        return cls._get_live_counter(live_id=live_id, fieldname="comment_count")
+
+    @classmethod
+    def materialize_comment_count(cls, *, live_id: str):
+        """Flush the Redis comment counter outside participant locks."""
+        if not live_id:
+            return None
+        count = cls.get_comment_count(live_id=live_id)
+        if count is None:
+            return None
+        frappe.db.set_value(
+            LIVE_STREAM_DOCTYPE,
+            live_id,
+            "comment_count",
+            max(0, int(count or 0)),
+            update_modified=False,
+        )
+        return max(0, int(count or 0))
 
     @classmethod
     def sync_comment_count(cls, *, live_id: str):
@@ -77,27 +110,12 @@ class LiveAnalyticsService:
                 count,
                 update_modified=False,
             )
+            from aos.services.live.ephemeral import set_comment_count
+
+            set_comment_count(live_id=live_id, count=count)
             return count
         except Exception:
             cls._log_failure("comment_reconcile")
-            return None
-
-    @classmethod
-    def handle_reaction(cls, *, live_id: str):
-        if not live_id:
-            return None
-        try:
-            frappe.db.sql(
-                """
-                UPDATE `tabAOS Live Stream`
-                SET reaction_count = COALESCE(reaction_count, 0) + 1
-                WHERE name = %s
-                """,
-                (live_id,),
-            )
-            return cls._get_live_counter(live_id=live_id, fieldname="reaction_count")
-        except Exception:
-            cls._log_failure("reaction_increment")
             return None
 
     @classmethod
@@ -105,27 +123,171 @@ class LiveAnalyticsService:
         if not live_id:
             return None
         try:
-            rows = frappe.db.sql(
-                """
-                SELECT COUNT(*) AS count
-                FROM `tabAOS Live Stream Reaction`
-                WHERE live_stream = %s
-                """,
-                (live_id,),
-                as_dict=True,
-            )
-            count = max(0, int((rows[0] if rows else {}).get("count") or 0))
+            # New reactions are Redis-aggregated to avoid one MariaDB insert
+            # per tap. Legacy rows remain a durable fallback for streams that
+            # have no active accumulator.
+            from aos.services.live.ephemeral import current_reaction_total
+
+            count = current_reaction_total(live_id=live_id)
+            if count is None:
+                rows = frappe.db.sql(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM `tabAOS Live Stream Reaction`
+                    WHERE live_stream = %s
+                    """,
+                    (live_id,),
+                    as_dict=True,
+                )
+                count = max(0, int((rows[0] if rows else {}).get("count") or 0))
             frappe.db.set_value(
                 LIVE_STREAM_DOCTYPE,
                 live_id,
                 "reaction_count",
-                count,
+                max(0, int(count or 0)),
                 update_modified=False,
             )
-            return count
+            return max(0, int(count or 0))
         except Exception:
             cls._log_failure("reaction_reconcile")
             return None
+
+    @classmethod
+    def _materialized_view_metrics(cls, *, live_id: str) -> dict[str, int] | None:
+        if not live_id:
+            return None
+        row = frappe.db.get_value(
+            LIVE_STREAM_DOCTYPE,
+            live_id,
+            [
+                "viewer_count",
+                "total_views",
+                "total_joins",
+                "unique_viewers",
+                "peak_viewers",
+                "total_watch_time_seconds",
+            ],
+            as_dict=True,
+        )
+        if not row:
+            return None
+        return {
+            "viewer_count": max(0, int(row.viewer_count or 0)),
+            "total_views": max(0, int(row.total_views or 0)),
+            "total_joins": max(0, int(row.total_joins or 0)),
+            "unique_viewers": max(0, int(row.unique_viewers or 0)),
+            "peak_viewers": max(0, int(row.peak_viewers or 0)),
+            "total_watch_time_seconds": max(0, int(row.total_watch_time_seconds or 0)),
+        }
+
+    @classmethod
+    def get_view_metrics(cls, *, live_id: str) -> dict[str, int] | None:
+        """Read Redis hot metrics first, then the materialized Live row."""
+        if not live_id:
+            return None
+        from aos.services.live.ephemeral import current_view_metrics
+
+        cached = current_view_metrics(live_id=live_id)
+        return cached if cached is not None else cls._materialized_view_metrics(live_id=live_id)
+
+    @classmethod
+    def handle_view_joined(cls, *, live_id: str):
+        """Increment hot-path view metrics atomically in Redis."""
+        if not live_id:
+            return None
+        from aos.services.live.ephemeral import increment_view_metrics
+
+        base = cls._materialized_view_metrics(live_id=live_id) or {}
+        metrics = increment_view_metrics(live_id=live_id, base=base)
+        if metrics is not None:
+            return metrics
+
+        # Redis degradation: derive current presence without writing the shared-
+        # locked Live row. Full materialization is recovered by reconciliation.
+        try:
+            fallback = dict(base)
+            fallback["viewer_count"] = max(
+                0,
+                int(
+                    frappe.db.count(
+                        "AOS Live Stream View",
+                        {"live_stream": live_id, "is_active": 1},
+                    )
+                    or 0
+                ),
+            )
+            fallback["peak_viewers"] = max(
+                int(fallback.get("peak_viewers") or 0),
+                int(fallback["viewer_count"]),
+            )
+            return fallback
+        except Exception:
+            cls._log_failure("viewer_increment")
+            return base or None
+
+    @classmethod
+    def handle_view_left(cls, *, live_id: str, watch_duration_seconds: int = 0):
+        return cls.handle_views_left(
+            live_id=live_id,
+            count=1,
+            watch_duration_seconds=watch_duration_seconds,
+        )
+
+    @classmethod
+    def handle_views_left(
+        cls,
+        *,
+        live_id: str,
+        count: int,
+        watch_duration_seconds: int = 0,
+    ):
+        if not live_id:
+            return None
+        from aos.services.live.ephemeral import decrement_view_metrics
+
+        base = cls._materialized_view_metrics(live_id=live_id) or {}
+        metrics = decrement_view_metrics(
+            live_id=live_id,
+            base=base,
+            count=max(0, int(count or 0)),
+            watch_duration_seconds=max(0, int(watch_duration_seconds or 0)),
+        )
+        if metrics is not None:
+            return metrics
+        try:
+            fallback = dict(base)
+            fallback["viewer_count"] = max(
+                0,
+                int(
+                    frappe.db.count(
+                        "AOS Live Stream View",
+                        {"live_stream": live_id, "is_active": 1},
+                    )
+                    or 0
+                ),
+            )
+            return fallback
+        except Exception:
+            cls._log_failure("viewer_decrement")
+            return base or None
+
+    @classmethod
+    def materialize_view_metrics(cls, *, live_id: str):
+        """Flush Redis view metrics to the Live row outside participant locks."""
+        if not live_id:
+            return None
+        from aos.services.live.ephemeral import current_view_metrics
+
+        metrics = current_view_metrics(live_id=live_id)
+        if metrics is None:
+            return cls._materialized_view_metrics(live_id=live_id)
+        frappe.db.set_value(
+            LIVE_STREAM_DOCTYPE,
+            live_id,
+            metrics,
+            update_modified=False,
+        )
+        return metrics
 
     @classmethod
     def sync_view_metrics(cls, *, live_id: str):
@@ -188,6 +350,13 @@ class LiveAnalyticsService:
                 values,
                 update_modified=False,
             )
+            state = frappe.db.get_value(
+                LIVE_STREAM_DOCTYPE, live_id, ["status", "is_active"], as_dict=True
+            )
+            if state and (str(state.status or "") == "ended" or not bool(state.is_active)):
+                from aos.services.live.ephemeral import clear_view_metrics
+
+                clear_view_metrics(live_id=live_id)
             return values
         except Exception:
             cls._log_failure("viewer_reconcile")

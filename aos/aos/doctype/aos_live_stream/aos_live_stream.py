@@ -7,8 +7,6 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import get_datetime, now_datetime
 
-from aos.services.live_analytics_service import LiveAnalyticsService
-
 
 LIVE_STREAM_DOCTYPE = "AOS Live Stream"
 LIVE_VIEW_DOCTYPE = "AOS Live Stream View"
@@ -56,22 +54,37 @@ class AOSLiveStream(Document):
         self._set_room_name()
 
     def on_update(self):
-        """
-        Finalize related viewer sessions when the live transitions to ended.
+        """Make termination O(1); finalize large viewer sets asynchronously.
 
-        This runs after the Live Stream has been saved, ensuring:
-        - active view sessions are closed
-        - viewer_count becomes zero
-        - total views and watch time are synchronized
+        Once ``status=ended`` is durable, participant APIs reject further
+        interaction. Closing thousands of historical view rows inside this
+        request only increases lock time, so the bounded finalizer owns that
+        work after commit.
         """
         if not self._has_transitioned_to_ended():
             return
 
-        self._close_active_view_sessions()
-
-        LiveAnalyticsService.sync_view_metrics(
-            live_id=self.name,
+        frappe.db.set_value(
+            LIVE_STREAM_DOCTYPE,
+            self.name,
+            "viewer_count",
+            0,
+            update_modified=False,
         )
+        try:
+            frappe.enqueue(
+                "aos.tasks.live.finalize_ended_live_views",
+                queue="short",
+                enqueue_after_commit=True,
+                live_id=self.name,
+            )
+        except Exception:
+            # The recurring Live reconciler discovers terminal streams that
+            # still have active view rows, so queue degradation is recoverable.
+            frappe.log_error(
+                frappe.get_traceback(),
+                "Live view finalization enqueue failed",
+            )
 
     # VALIDATIONS
     def _validate_host_user(self):
@@ -226,58 +239,6 @@ class AOSLiveStream(Document):
             return
 
         self.is_active = 0
-
-    def _close_active_view_sessions(self):
-        """Close active viewer rows in deterministic bounded batches.
-
-        A large Live must not materialize every viewer document inside the end
-        request. The SQL mirrors the view controller's close calculations and
-        preserves the caller-managed transaction.
-        """
-        ended_at = (
-            get_datetime(self.ended_at)
-            if self.ended_at
-            else now_datetime()
-        )
-        while True:
-            names = frappe.db.sql(
-                """
-                SELECT name
-                FROM `tabAOS Live Stream View`
-                WHERE live_stream = %s AND is_active = 1
-                ORDER BY creation ASC, name ASC
-                LIMIT 500
-                FOR UPDATE
-                """,
-                (self.name,),
-                pluck=True,
-            )
-            if not names:
-                return
-            frappe.db.sql(
-                """
-                UPDATE `tabAOS Live Stream View`
-                SET is_active = 0,
-                    active_identity_key = NULL,
-                    left_at = COALESCE(left_at, %(ended_at)s),
-                    last_seen_at = %(ended_at)s,
-                    watch_duration_seconds = GREATEST(
-                        COALESCE(watch_duration_seconds, 0),
-                        COALESCE(TIMESTAMPDIFF(SECOND, joined_at, %(ended_at)s), 0),
-                        0
-                    ),
-                    qualified = CASE
-                        WHEN GREATEST(
-                            COALESCE(watch_duration_seconds, 0),
-                            COALESCE(TIMESTAMPDIFF(SECOND, joined_at, %(ended_at)s), 0),
-                            0
-                        ) >= 5 THEN 1 ELSE 0
-                    END,
-                    modified = %(ended_at)s
-                WHERE name IN %(names)s
-                """,
-                {"names": tuple(names), "ended_at": ended_at},
-            )
 
     # COMPUTATIONS
     def _compute_duration(self):

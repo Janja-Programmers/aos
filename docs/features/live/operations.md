@@ -2,7 +2,8 @@
 
 ## Required services
 
-- Frappe web workers, background workers, scheduler, Redis, and MariaDB.
+- Frappe web workers, background workers, scheduler, Redis, and MariaDB. Frappe Redis is required for hot Live counters/rate limits.
+- Dedicated LiveKit Redis for room/routing coordination in the self-hosted media stack.
 - LiveKit server reachable from clients by WebSocket and from workers by the corresponding HTTP(S) admin endpoint.
 - LiveKit API key/secret available only to the backend.
 - Notification/outbox worker operational.
@@ -21,6 +22,8 @@
 3. Configure webhook URL and ensure reverse proxy preserves raw body and `Authorization`.
 4. Confirm workers can make HTTPS admin requests to LiveKit.
 5. Confirm edge/API baseline rate limits include all public methods and do not block the signed webhook.
+6. Expose LiveKit RTC TCP `7881/tcp` and UDP mux `7882/udp`; signaling `7880` remains proxied/private.
+7. Confirm `livekit-redis` is healthy before LiveKit starts.
 
 ## Privacy-safe observability
 
@@ -65,6 +68,8 @@ Do not print returned LiveKit tokens or inspect them in shared logs.
 - growing count of ended Lives with `room_cleanup_pending=1`;
 - active Live with unavailable host;
 - viewer counter drift/negative-value invariant violation;
+- Redis hot-counter/materialization failures;
+- room chat fan-out rate-limit pressure;
 - queue depth and scheduler silence.
 
 ## Staging happy path

@@ -61,6 +61,7 @@ from .constants import (
     LIST_COMMENTS_LIMIT_PER_MINUTE_PER_IP,
     LIST_REPLIES_LIMIT_PER_MINUTE_PER_IP,
     REPLY_COMMENT_LIMIT_PER_MINUTE_PER_USER,
+    LIVE_COMMENT_FANOUT_LIMIT_PER_MINUTE,
 )
 from .realtime import (
     publish_live_message,
@@ -687,7 +688,7 @@ def add_live_message_impl(**kwargs):
         )
 
     try:
-        LiveRepository().lock_live(live_id)
+        LiveRepository().lock_live_shared(live_id)
         live, err = validate_live_exists(
             live_id
         )
@@ -711,6 +712,15 @@ def add_live_message_impl(**kwargs):
         existing = _find_idempotent_comment(live_id=live_id, user=user, key=idempotency_key)
         if existing:
             return ok("Message already added.", data={"message": serialize_live_message(existing)})
+
+        room_limit = rate_limit(
+            key=rate_limit_key("live", "message", "fanout", live_id),
+            ttl_seconds=60,
+            limit=LIVE_COMMENT_FANOUT_LIMIT_PER_MINUTE,
+            message="Live chat is moving too quickly. Please try again shortly.",
+        )
+        if room_limit:
+            return room_limit
 
         message, duplicate = _create_comment_idempotently(
             live_id=live_id,
@@ -808,7 +818,7 @@ def reply_live_message_impl(**kwargs):
         )
 
     try:
-        LiveRepository().lock_live(live_id)
+        LiveRepository().lock_live_shared(live_id)
         live, err = validate_live_exists(
             live_id
         )
@@ -857,6 +867,15 @@ def reply_live_message_impl(**kwargs):
         existing = _find_idempotent_comment(live_id=live_id, user=user, key=idempotency_key)
         if existing:
             return ok("Reply already added.", data={"message": serialize_live_message(existing)})
+
+        room_limit = rate_limit(
+            key=rate_limit_key("live", "message", "fanout", live_id),
+            ttl_seconds=60,
+            limit=LIVE_COMMENT_FANOUT_LIMIT_PER_MINUTE,
+            message="Live chat is moving too quickly. Please try again shortly.",
+        )
+        if room_limit:
+            return room_limit
 
         message, duplicate = _create_comment_idempotently(
             live_id=live_id,

@@ -17,7 +17,7 @@ Required public ports:
 - `80/tcp`
 - `443/tcp`
 - `7881/tcp` for LiveKit TCP fallback
-- `50000-50010/udp` for LiveKit media
+- `7882/udp` for LiveKit media
 
 Do not publicly expose Qdrant, Image Search, Background Removal, MinIO console, Nominatim, Valhalla, Translation, TileServer raw port, or Frappe worker ports.
 

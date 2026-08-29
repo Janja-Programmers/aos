@@ -12,14 +12,16 @@ Rules:
 - The host does not use viewer tracking.
 - The host is never included in viewer metrics.
 - user is optional and only stored for authenticated viewers.
-- Viewer count is derived from AOS Live Stream View.
-- A viewer-joined system message is created only for a new view session.
+- Durable viewer history is stored in AOS Live Stream View; hot counters use Redis.
+- Viewer-joined host events are ephemeral and sampled during join storms.
 - Repeated track_join calls for the same active session are idempotent.
 - Viewer identities and session IDs are not broadcast to the live room.
 - Host-only system messages are not returned to viewers.
 """
 
 from __future__ import annotations
+
+import uuid
 
 import frappe
 from frappe.utils import now_datetime
@@ -33,13 +35,13 @@ from aos.api.shared.validators import require_id
 from aos.services.live_analytics_service import LiveAnalyticsService
 from aos.services.live.repository import LiveRepository
 from aos.services.live.participants import enqueue_view_removal
+from aos.services.live.ephemeral import should_publish_viewer_joined
 
 from .activity import record_live_join_activity
 from .constants import (
     TRACK_JOIN_LIMIT_PER_MINUTE_PER_IP,
     TRACK_LEAVE_LIMIT_PER_MINUTE_PER_IP,
 )
-from .messages import create_live_system_message
 from .realtime import (
     publish_live_message_to_user,
     publish_viewer_count,
@@ -219,35 +221,14 @@ def _get_latest_view_by_session(
     )
 
 
-def _sync_view_metrics(
-    live_id: str,
-) -> dict:
-    """
-    Synchronize derived view counters from AOS Live Stream View.
-
-    LiveAnalyticsService is the canonical owner of Live analytics.
-    """
-
-    metrics = LiveAnalyticsService.sync_view_metrics(
-        live_id=live_id,
-    )
-
-    if metrics:
-        return metrics
-
-    viewer_count = frappe.db.count(
-        LIVE_VIEW_DOCTYPE,
-        filters={
-            "live_stream": live_id,
-            "is_active": 1,
-        },
-    )
-
-    return {
-        "viewer_count": int(
-            viewer_count or 0
-        ),
+def _current_view_metrics(live_id: str) -> dict:
+    """Read hot/materialized counters without upgrading participant locks."""
+    metrics = LiveAnalyticsService.get_view_metrics(live_id=live_id)
+    return metrics or {
+        "viewer_count": 0,
         "total_views": 0,
+        "total_joins": 0,
+        "unique_viewers": 0,
         "peak_viewers": 0,
         "total_watch_time_seconds": 0,
     }
@@ -277,18 +258,11 @@ def _create_view_session(
 
 
 # SYSTEM MESSAGE HELPERS
-def _build_join_message_content(
-    viewer: str | None,
-) -> str:
+def _build_join_message_content(viewer: str | None, *, display: dict | None = None) -> str:
     if not viewer:
         return GUEST_JOINED_MESSAGE
-
-    display = get_user_display(
-        viewer
-    )
-
-    display_name = display.get("display_name") or "A viewer"
-
+    payload = display or get_user_display(viewer)
+    display_name = payload.get("display_name") or "A viewer"
     return f"{display_name} joined."
 
 
@@ -298,28 +272,59 @@ def _create_viewer_joined_message(
     viewer: str | None,
     session_id: str,
 ):
-    """
-    Persist and publish a host-only viewer-joined system message.
+    """Publish an ephemeral host-only join event.
 
-    This function is called only after a genuine non-host view session has
-    been created.
+    ``AOS Live Stream View`` is already the durable join history. Persisting a
+    second ``AOS Live Message`` row for every entrant doubles write volume on
+    viral Lives without adding durable information.
     """
-    message = create_live_system_message(
-        live_id=live.name,
-        message_type="viewer_joined",
-        content=_build_join_message_content(
-            viewer
+    display = get_user_display(viewer) if viewer else {}
+    account_id = display.get("user") if viewer else None
+    now = now_datetime()
+    event_id = f"presence:{uuid.uuid4().hex}"
+    message = {
+        "id": event_id,
+        "message_id": event_id,
+        "live_stream": live.name,
+        "kind": "system",
+        "message_kind": "system",
+        "message_type": "viewer_joined",
+        "user": account_id,
+        "display_name": display.get("display_name") if viewer else None,
+        "avatar": display.get("avatar") if viewer else None,
+        "is_verified": False,
+        "total_followers": 0,
+        "total_followers_display": "0",
+        "actor": (
+            {
+                "user": account_id,
+                "account_id": display.get("account_id"),
+                "display_name": display.get("display_name"),
+                "avatar": display.get("avatar"),
+            }
+            if viewer
+            else None
         ),
-        user=viewer,
-        target_user=viewer,
-        metadata={
-            "is_guest": viewer is None,
-        },
-        visible_to_host=True,
-        visible_to_viewers=False,
-        publish=False,
-    )
-
+        "target_user": account_id,
+        "target": None,
+        "content": _build_join_message_content(viewer, display=display),
+        "metadata": {"is_guest": viewer is None},
+        "status": "active",
+        "parent_message": None,
+        "root_message": None,
+        "reply_count": 0,
+        "reply_count_display": "0",
+        "visible_to_host": True,
+        "visible_to_viewers": False,
+        "is_comment": False,
+        "is_reply": False,
+        "is_system": True,
+        "is_cohost_event": False,
+        "is_gift": False,
+        "is_moderation": False,
+        "creation": now,
+        "modified": now,
+    }
     publish_live_message_to_user(
         user=live.host_user,
         live_id=live.name,
@@ -356,7 +361,7 @@ def track_join_impl(**kwargs):
         return rl
 
     try:
-        LiveRepository().lock_live(live_id)
+        LiveRepository().lock_live_shared(live_id)
         live, err = validate_live_exists(
             live_id
         )
@@ -397,22 +402,20 @@ def track_join_impl(**kwargs):
         )
 
         if existing:
-            active_view = frappe.get_doc(LIVE_VIEW_DOCTYPE, existing.name)
-            active_view.save(ignore_permissions=True)
-            metrics = _sync_view_metrics(
-                live_id
+            # Idempotent join retries are heartbeat-only. Avoid Document.save()
+            # and counter/broadcast churn when clients race or reconnect quickly.
+            frappe.db.set_value(
+                LIVE_VIEW_DOCTYPE,
+                existing.name,
+                "last_seen_at",
+                now_datetime(),
+                update_modified=False,
             )
-
-            viewer_count = int(
-                metrics.get("viewer_count") or 0
-            )
-
-            publish_viewer_count(
-                live_id,
-                viewer_count,
-            )
+            metrics = _current_view_metrics(live_id)
+            viewer_count = int(metrics.get("viewer_count") or 0)
 
             live.reload()
+            live.viewer_count = viewer_count
 
             return ok(
                 "Already joined.",
@@ -441,26 +444,23 @@ def track_join_impl(**kwargs):
             view_id=view.name,
         )
 
-        metrics = _sync_view_metrics(
-            live_id
-        )
-
-        viewer_count = int(
-            metrics.get("viewer_count") or 0
-        )
+        metrics = LiveAnalyticsService.handle_view_joined(live_id=live_id) or _current_view_metrics(live_id)
+        viewer_count = int(metrics.get("viewer_count") or 0)
 
         publish_viewer_count(
             live_id,
             viewer_count,
         )
 
-        _create_viewer_joined_message(
-            live=live,
-            viewer=viewer,
-            session_id=session_id,
-        )
+        if should_publish_viewer_joined(live_id=live_id):
+            _create_viewer_joined_message(
+                live=live,
+                viewer=viewer,
+                session_id=session_id,
+            )
 
         live.reload()
+        live.viewer_count = viewer_count
 
         return ok(
             "Joined live session.",
@@ -485,11 +485,11 @@ def track_join_impl(**kwargs):
             )
 
             if existing:
-                metrics = _sync_view_metrics(live_id)
+                metrics = _current_view_metrics(live_id)
                 viewer_count = int(metrics.get("viewer_count") or 0)
-                publish_viewer_count(live_id, viewer_count)
 
                 live.reload()
+                live.viewer_count = viewer_count
 
                 return ok(
                     "Already joined.",
@@ -581,13 +581,15 @@ def track_leave_impl(**kwargs):
                 live_id=live_id, session_id=session_id, viewer=viewer
             )
             if prior and not bool(prior.is_active):
-                metrics = _sync_view_metrics(live_id)
+                metrics = _current_view_metrics(live_id)
+                viewer_count = int(metrics.get("viewer_count") or 0)
                 live.reload()
+                live.viewer_count = viewer_count
                 return ok(
                     "Already left.",
                     data={
                         "view_id": prior.name,
-                        "viewer_count": int(metrics.get("viewer_count") or 0),
+                        "viewer_count": viewer_count,
                         "live": serialize_live(
                             live, viewer=viewer, session_id=session_id
                         ),
@@ -608,13 +610,11 @@ def track_leave_impl(**kwargs):
         )
         enqueue_view_removal(view.name)
 
-        metrics = _sync_view_metrics(
-            live_id
-        )
-
-        viewer_count = int(
-            metrics.get("viewer_count") or 0
-        )
+        metrics = LiveAnalyticsService.handle_view_left(
+            live_id=live_id,
+            watch_duration_seconds=int(view.watch_duration_seconds or 0),
+        ) or _current_view_metrics(live_id)
+        viewer_count = int(metrics.get("viewer_count") or 0)
 
         publish_viewer_count(
             live_id,
@@ -622,6 +622,7 @@ def track_leave_impl(**kwargs):
         )
 
         live.reload()
+        live.viewer_count = viewer_count
 
         return ok(
             "Left live session.",

@@ -91,9 +91,12 @@ class TestLiveSourceGuards(unittest.TestCase):
 
     def test_realtime_publications_are_after_commit(self):
         source = _source("aos/api/live/realtime.py")
-        calls = source.count("frappe.publish_realtime(")
-        self.assertGreater(calls, 0)
-        self.assertEqual(calls, source.count("after_commit=True"))
+        marker = "frappe.publish_realtime("
+        starts = [m.start() for m in re.finditer(re.escape(marker), source)]
+        self.assertGreater(len(starts), 0)
+        for start in starts:
+            snippet = source[start : start + 400]
+            self.assertIn("after_commit=True", snippet)
 
     def test_reconciliation_patch_is_bounded_and_has_no_external_calls(self):
         source = _source("aos/patches/v1_0/harden_live_subsystem.py")
@@ -196,6 +199,79 @@ class TestLiveSourceGuards(unittest.TestCase):
             source = _source(relative)
             self.assertIn("rate_limit_key", source)
             self.assertNotIn("aos:live:", source)
+
+    def test_high_volume_participant_paths_use_shared_lifecycle_locks(self):
+        repository = _source("aos/services/live/repository.py")
+        social = _source("aos/services/social/repository.py")
+        policy = _source("aos/services/live/policy.py")
+        self.assertIn("LOCK IN SHARE MODE", repository)
+        self.assertIn("def lock_account_pair_shared", social)
+        self.assertIn("LOCK IN SHARE MODE", social)
+        self.assertIn("lock_account_pair_shared", policy)
+
+        for relative in (
+            "aos/api/live/messages.py",
+            "aos/api/live/tracking.py",
+            "aos/api/live/token.py",
+            "aos/api/live/reactions.py",
+        ):
+            self.assertIn("lock_live_shared", _source(relative), relative)
+
+        live_api = _source("aos/api/live/live.py")
+        join = live_api.split("def join_live_impl", 1)[1].split("# END LIVE", 1)[0]
+        end = live_api.split("def end_live_impl", 1)[1]
+        self.assertIn("lock_live_shared", join)
+        self.assertIn("lock_live(live_id)", end)
+
+    def test_shared_live_requests_never_upgrade_to_parent_writes(self):
+        tracking = _source("aos/api/live/tracking.py")
+        reactions = _source("aos/api/live/reactions.py")
+        analytics = _source("aos/services/live_analytics_service.py")
+
+        join = tracking.split("def track_join_impl", 1)[1].split("# TRACK LEAVE", 1)[0]
+        self.assertNotIn("sync_view_metrics", join)
+        self.assertNotIn('set_value(\n                    "AOS Live Stream"', join)
+        self.assertNotIn('set_value(\n                    "AOS Live Stream"', reactions)
+        self.assertNotIn("handle_reaction", reactions)
+
+        hot_view = analytics.split("def handle_view_joined", 1)[1].split("def materialize_view_metrics", 1)[0]
+        self.assertNotIn("UPDATE `tabAOS Live Stream`", hot_view)
+        self.assertNotIn("sync_view_metrics", hot_view)
+
+    def test_hot_live_state_is_redis_backed_and_fanout_is_coalesced(self):
+        ephemeral = _source("aos/services/live/ephemeral.py")
+        realtime = _source("aos/api/live/realtime.py")
+        tasks = _source("aos/tasks/live.py")
+        tracking = _source("aos/api/live/tracking.py")
+
+        self.assertIn("_VIEW_JOIN_LUA", ephemeral)
+        self.assertIn("increment_view_metrics", ephemeral)
+        self.assertIn("increment_reaction", ephemeral)
+        self.assertIn("REACTION_PUBLISH_LIMIT_PER_SECOND", ephemeral)
+        self.assertIn("publish_coalesced_viewer_count", realtime)
+        self.assertIn("materialize_view_metrics", tasks)
+        self.assertNotIn("frappe.new_doc(\n        LIVE_MESSAGE_DOCTYPE", tracking.split("def _create_viewer_joined_message", 1)[1].split("# TRACK JOIN", 1)[0])
+
+    def test_live_end_cleanup_is_bounded_and_recoverable(self):
+        live_doc = _source("aos/aos/doctype/aos_live_stream/aos_live_stream.py")
+        tasks = _source("aos/tasks/live.py")
+        self.assertIn("aos.tasks.live.finalize_ended_live_views", live_doc)
+        self.assertNotIn("def _close_active_view_sessions", live_doc)
+        finalizer = tasks.split("def finalize_ended_live_views", 1)[1].split("def ", 1)[0]
+        self.assertIn("LIMIT 500", finalizer)
+        self.assertIn("enqueue_after_commit=True", finalizer)
+        self.assertIn("pending_terminal_views", tasks)
+
+    def test_livekit_production_config_uses_udp_mux_and_redis(self):
+        livekit = _source("infra/livekit/livekit.yaml")
+        compose = _source("docker-compose.yml")
+        self.assertIn("redis:", livekit)
+        self.assertIn("address: livekit-redis:6379", livekit)
+        self.assertIn("udp_port: 7882", livekit)
+        self.assertNotIn("port_range_start", livekit)
+        self.assertNotIn("port_range_end", livekit)
+        self.assertIn("livekit-redis:", compose)
+        self.assertIn("LIVEKIT_UDP_PORT:-7882", compose)
 
     def test_notification_deduplication_is_database_enforced(self):
         payload = json.loads(_source("aos/aos/doctype/aos_notification/aos_notification.json"))

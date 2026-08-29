@@ -149,7 +149,10 @@ def _touch_participant(room_name: str, identity: str) -> str:
         view.left_at = now_datetime()
         view.is_active = 0
         view.save(ignore_permissions=True)
-        LiveAnalyticsService.sync_view_metrics(live_id=live.name)
+        LiveAnalyticsService.handle_view_left(
+            live_id=live.name,
+            watch_duration_seconds=int(view.watch_duration_seconds or 0),
+        )
         enqueue_view_removal(row.name)
         return "participant_denied"
     frappe.db.set_value(
@@ -185,7 +188,10 @@ def _leave_participant(room_name: str, identity: str) -> str:
     view.left_at = now_datetime()
     view.is_active = 0
     view.save(ignore_permissions=True)
-    metrics = LiveAnalyticsService.sync_view_metrics(live_id=live.name) or {}
+    metrics = LiveAnalyticsService.handle_view_left(
+        live_id=live.name,
+        watch_duration_seconds=int(view.watch_duration_seconds or 0),
+    ) or LiveAnalyticsService.get_view_metrics(live_id=live.name) or {}
     from aos.api.live.realtime import publish_viewer_count
 
     publish_viewer_count(live.name, max(0, int(metrics.get("viewer_count") or 0)))

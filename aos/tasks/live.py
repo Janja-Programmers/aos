@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import frappe
 from frappe.utils import add_days, add_to_date, now_datetime
 
@@ -16,6 +18,50 @@ from aos.services.live.observability import live_log
 from aos.services.live_analytics_service import LiveAnalyticsService
 
 BATCH_SIZE = 100
+
+
+def materialize_hot_live_counters(*, live_id: str, delay_seconds: float = 0.35) -> dict[str, object]:
+    """Persist Redis hot counters outside participant shared-lock transactions."""
+    delay = max(0.0, min(float(delay_seconds or 0), 1.0))
+    if delay:
+        time.sleep(delay)
+    row = frappe.db.get_value(
+        "AOS Live Stream", live_id, ["status", "is_active"], as_dict=True
+    )
+    if not row:
+        return {"ok": True, "outcome": "not_found"}
+    if str(row.status or "") != "live" or not bool(row.is_active):
+        return {"ok": True, "outcome": "not_active"}
+    views = LiveAnalyticsService.materialize_view_metrics(live_id=live_id) or {}
+    comments = LiveAnalyticsService.materialize_comment_count(live_id=live_id)
+    reactions = LiveAnalyticsService.sync_reaction_count(live_id=live_id)
+    return {
+        "ok": True,
+        "outcome": "materialized",
+        "viewer_count": max(0, int(views.get("viewer_count") or 0)),
+        "comment_count": max(0, int(comments or 0)),
+        "reaction_count": max(0, int(reactions or 0)),
+    }
+
+
+def publish_coalesced_viewer_count(*, live_id: str, delay_seconds: float = 0.35) -> dict[str, object]:
+    """Publish the trailing materialized viewer count for a coalesced burst."""
+    row = frappe.db.get_value(
+        "AOS Live Stream", live_id, ["status", "is_active"], as_dict=True
+    )
+    if not row:
+        return {"ok": True, "outcome": "not_found"}
+    if str(row.status or "") == "ended" or not bool(row.is_active):
+        count = 0
+    else:
+        result = materialize_hot_live_counters(
+            live_id=live_id, delay_seconds=delay_seconds
+        )
+        count = max(0, int(result.get("viewer_count") or 0))
+    from aos.api.live.realtime import _publish_viewer_count_now
+
+    _publish_viewer_count_now(live_id, count)
+    return {"ok": True, "outcome": "published", "viewer_count": count}
 
 
 def ensure_live_room(*, live_id: str) -> dict[str, object]:
@@ -97,6 +143,93 @@ def cleanup_live_room(*, live_id: str) -> dict[str, object]:
         )
     live_log("room_cleanup", outcome="success" if result.ok else "failure", reason=result.category)
     return {"ok": result.ok, "outcome": result.category}
+
+
+def finalize_ended_live_views(*, live_id: str) -> dict[str, object]:
+    """Close at most 500 terminal view rows per transaction/job.
+
+    The next batch is queued after commit. If enqueueing fails,
+    ``reconcile_live_state`` rediscovers the remaining active rows.
+    """
+    live = frappe.db.get_value(
+        "AOS Live Stream",
+        live_id,
+        ["status", "is_active", "ended_at"],
+        as_dict=True,
+    )
+    if not live or str(live.status or "") != "ended" or bool(live.is_active):
+        return {"ok": True, "outcome": "not_ended", "closed": 0}
+
+    ended_at = live.ended_at or now_datetime()
+    names = frappe.db.sql(
+        """
+        SELECT name
+        FROM `tabAOS Live Stream View`
+        WHERE live_stream = %s AND is_active = 1
+        ORDER BY creation ASC, name ASC
+        LIMIT 500
+        FOR UPDATE
+        """,
+        (live_id,),
+        pluck=True,
+    )
+    if not names:
+        LiveAnalyticsService.sync_view_metrics(live_id=live_id)
+        LiveAnalyticsService.sync_comment_count(live_id=live_id)
+        LiveAnalyticsService.sync_reaction_count(live_id=live_id)
+        from aos.services.live.ephemeral import clear_comment_state, clear_reaction_state
+
+        clear_comment_state(live_id=live_id)
+        clear_reaction_state(live_id=live_id)
+        publish_viewer_count(live_id, 0)
+        return {"ok": True, "outcome": "complete", "closed": 0}
+
+    frappe.db.sql(
+        """
+        UPDATE `tabAOS Live Stream View`
+        SET is_active = 0,
+            active_identity_key = NULL,
+            left_at = COALESCE(left_at, %(ended_at)s),
+            last_seen_at = %(ended_at)s,
+            watch_duration_seconds = GREATEST(
+                COALESCE(watch_duration_seconds, 0),
+                COALESCE(TIMESTAMPDIFF(SECOND, joined_at, %(ended_at)s), 0),
+                0
+            ),
+            qualified = CASE
+                WHEN GREATEST(
+                    COALESCE(watch_duration_seconds, 0),
+                    COALESCE(TIMESTAMPDIFF(SECOND, joined_at, %(ended_at)s), 0),
+                    0
+                ) >= 5 THEN 1 ELSE 0
+            END,
+            modified = %(ended_at)s
+        WHERE name IN %(names)s
+        """,
+        {"names": tuple(names), "ended_at": ended_at},
+    )
+
+    if len(names) < 500:
+        LiveAnalyticsService.sync_view_metrics(live_id=live_id)
+        LiveAnalyticsService.sync_comment_count(live_id=live_id)
+        LiveAnalyticsService.sync_reaction_count(live_id=live_id)
+        from aos.services.live.ephemeral import clear_comment_state, clear_reaction_state
+
+        clear_comment_state(live_id=live_id)
+        clear_reaction_state(live_id=live_id)
+        publish_viewer_count(live_id, 0)
+        return {"ok": True, "outcome": "complete", "closed": len(names)}
+
+    try:
+        frappe.enqueue(
+            "aos.tasks.live.finalize_ended_live_views",
+            queue="short",
+            enqueue_after_commit=True,
+            live_id=live_id,
+        )
+    except Exception:
+        live_log("view_finalize_enqueue", outcome="failure", reason="dependency")
+    return {"ok": True, "outcome": "continued", "closed": len(names)}
 
 
 def _remove_tracked_participant(*, live_id: str, identity: str) -> dict[str, object]:
@@ -189,6 +322,7 @@ def _close_missing_viewers(live_id: str, identities: tuple[str, ...]) -> int:
     present = set(identities)
     cutoff = add_to_date(now_datetime(), minutes=-2)
     closed = 0
+    closed_watch_seconds = 0
     for row in rows:
         authorized = bool(row.is_authorized)
         identity_present = bool(
@@ -205,8 +339,13 @@ def _close_missing_viewers(live_id: str, identities: tuple[str, ...]) -> int:
         view.save(ignore_permissions=True)
         enqueue_view_removal(view.name)
         closed += 1
+        closed_watch_seconds += max(0, int(view.watch_duration_seconds or 0))
     if closed:
-        metrics = LiveAnalyticsService.sync_view_metrics(live_id=live_id) or {}
+        metrics = LiveAnalyticsService.handle_views_left(
+            live_id=live_id,
+            count=closed,
+            watch_duration_seconds=closed_watch_seconds,
+        ) or LiveAnalyticsService.get_view_metrics(live_id=live_id) or {}
         publish_viewer_count(live_id, max(0, int(metrics.get("viewer_count") or 0)))
     return closed
 
@@ -288,9 +427,28 @@ def reconcile_live_state() -> dict[str, int]:
         "rooms_cleaned": 0,
         "cohosts_expired": 0,
         "hosts_ended": 0,
+        "ended_views_finalized": 0,
         "failed": 0,
     }
     result["cohosts_expired"] = _expire_pending_cohosts()
+
+    pending_terminal_views = frappe.db.sql(
+        """
+        SELECT DISTINCT v.live_stream AS name
+        FROM `tabAOS Live Stream View` v
+        INNER JOIN `tabAOS Live Stream` l ON l.name = v.live_stream
+        WHERE v.is_active = 1 AND l.status = 'ended' AND l.is_active = 0
+        ORDER BY v.live_stream ASC
+        LIMIT 1
+        """,
+        as_dict=True,
+    )
+    for row in pending_terminal_views:
+        try:
+            outcome = finalize_ended_live_views(live_id=row.name)
+            result["ended_views_finalized"] += int(outcome.get("closed") or 0)
+        except Exception:
+            result["failed"] += 1
 
     ended = frappe.get_all(
         "AOS Live Stream",
@@ -337,7 +495,12 @@ def reconcile_live_state() -> dict[str, int]:
                 result["viewers_closed"] += _close_missing_viewers(
                     row.name, participants.participants
                 )
-                LiveAnalyticsService.sync_live_metrics(live_id=row.name)
+                # Hot counters are maintained incrementally. Materialize their
+                # O(1) Redis state here; full historical reconciliation is
+                # reserved for terminal/recovery paths.
+                LiveAnalyticsService.materialize_view_metrics(live_id=row.name)
+                LiveAnalyticsService.materialize_comment_count(live_id=row.name)
+                LiveAnalyticsService.sync_reaction_count(live_id=row.name)
                 frappe.db.set_value(
                     "AOS Live Stream",
                     row.name,

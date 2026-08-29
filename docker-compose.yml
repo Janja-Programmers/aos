@@ -269,6 +269,41 @@ services:
     networks:
       - aos_net
 
+  livekit-redis:
+    image: redis:7.4.5-alpine@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+    container_name: aos-livekit-redis
+    restart: unless-stopped
+
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - ${LIVEKIT_REDIS_MAXMEMORY:-256mb}
+      - --maxmemory-policy
+      - noeviction
+
+    volumes:
+      - livekit_redis_data:/data
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+    mem_limit: "${LIVEKIT_REDIS_MEMORY_LIMIT:-384m}"
+    cpus: "${LIVEKIT_REDIS_CPU_LIMIT:-0.50}"
+    pids_limit: "${LIVEKIT_REDIS_PIDS_LIMIT:-256}"
+
+    stop_grace_period: 30s
+    logging: *common-logging
+    <<: *common-security
+
+    networks:
+      - aos_net
+
   livekit:
     image: livekit/livekit-server:v1.9.12@sha256:2c13cbf2edcbf13ea7b20d05c10b394d04d8fb3fe358269cff845a90b4de9576
     container_name: aos-livekit
@@ -288,8 +323,12 @@ services:
       # RTC TCP fallback is accessed directly.
       - "${LIVEKIT_TCP_BIND_ADDRESS:-0.0.0.0}:${LIVEKIT_TCP_PORT:-7881}:7881/tcp"
 
-      # WebRTC UDP media range is accessed directly.
-      - "${LIVEKIT_UDP_BIND_ADDRESS:-0.0.0.0}:${LIVEKIT_UDP_PORT_START:-50000}-${LIVEKIT_UDP_PORT_END:-50010}:${LIVEKIT_UDP_PORT_START:-50000}-${LIVEKIT_UDP_PORT_END:-50010}/udp"
+      # WebRTC UDP mux is accessed directly. One host port serves all participants.
+      - "${LIVEKIT_UDP_BIND_ADDRESS:-0.0.0.0}:${LIVEKIT_UDP_PORT:-7882}:7882/udp"
+
+    depends_on:
+      livekit-redis:
+        condition: service_healthy
 
     volumes:
       - ./infra/livekit/livekit.yaml:/etc/livekit/livekit.yaml:ro
@@ -1271,6 +1310,9 @@ volumes:
   analytics_redis_data:
     external: true
     name: aos_analytics_redis_data
+
+  livekit_redis_data:
+    name: aos_livekit_redis_data
 
 networks:
   aos_net:
