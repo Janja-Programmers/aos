@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 
 import frappe
 from frappe.utils import now_datetime
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.db import is_duplicate_entry_error
+from aos.api.shared.db import (
+    is_duplicate_entry_error,
+    rollback_deadlocked_transaction,
+)
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 from aos.services.accounts.http import set_private_no_store
@@ -71,7 +75,26 @@ def _update_push_token(
     )
 
 
+def _lock_push_token_row(name: str):
+    rows = frappe.db.sql(
+        """
+        SELECT name, user, token, token_hash, device_id
+        FROM `tabAOS Push Token`
+        WHERE name = %s
+        LIMIT 1
+        FOR UPDATE
+        """,
+        (name,),
+        as_dict=True,
+    )
+    return rows[0] if rows else None
+
+
 def _find_existing_token(*, token: str, token_hash: str):
+    # Candidate discovery must stay non-locking. Locking an absent secondary
+    # key with SELECT ... FOR UPDATE creates InnoDB gap locks; two simultaneous
+    # first-time registrations can then deadlock when they both proceed toward
+    # an insert. Discover first, then lock only the candidate primary-key row.
     rows = frappe.db.sql(
         """
         SELECT name
@@ -79,33 +102,53 @@ def _find_existing_token(*, token: str, token_hash: str):
         WHERE token_hash = %s
         ORDER BY is_active DESC, modified DESC, name DESC
         LIMIT 1
-        FOR UPDATE
         """,
         (token_hash,),
         as_dict=True,
     )
     if rows:
-        return rows[0].name
-    # Compatibility for pre-hash legacy rows. Lock the winner before ownership
-    # transfer so concurrent registrations cannot race through a stale read.
-    rows = frappe.db.sql(
+        locked = _lock_push_token_row(rows[0].name)
+        if locked and str(locked.token_hash or "").strip().lower() == token_hash:
+            return locked.name
+
+    # Compatibility only for genuinely pre-hash legacy rows. ``token`` is a
+    # Long Text field and therefore has no useful equality index. A locking
+    # scan here used to make every first-time token registration take broad
+    # InnoDB row/gap locks, creating avoidable 1213 deadlocks under concurrent
+    # app startup. Discover a possible legacy row without locks, then acquire a
+    # single primary-key lock and revalidate it before ownership transfer.
+    legacy_rows = frappe.db.sql(
         """
         SELECT name
         FROM `tabAOS Push Token`
         WHERE token = %s
+          AND COALESCE(token_hash, '') = ''
         ORDER BY is_active DESC, modified DESC, name DESC
         LIMIT 1
-        FOR UPDATE
         """,
         (token,),
         as_dict=True,
     )
-    return rows[0].name if rows else None
+    if not legacy_rows:
+        return None
+
+    locked = _lock_push_token_row(legacy_rows[0].name)
+    if not locked:
+        return None
+    locked_token = str(locked.token or "").strip()
+    locked_hash = str(locked.token_hash or "").strip().lower()
+    if locked_token != token or (locked_hash and locked_hash != token_hash):
+        return None
+    return locked.name
 
 
 def _find_existing_device(*, user: str, device_id: str) -> str | None:
     if not device_id:
         return None
+
+    # As with token lookup, avoid a gap lock when the modeled device has no
+    # registration yet. The active_device_key unique constraint remains the
+    # final arbiter for concurrent inserts; duplicate recovery handles its race.
     rows = frappe.db.sql(
         """
         SELECT name
@@ -113,12 +156,21 @@ def _find_existing_device(*, user: str, device_id: str) -> str | None:
         WHERE user = %s AND device_id = %s
         ORDER BY is_active DESC, modified DESC, name DESC
         LIMIT 1
-        FOR UPDATE
         """,
         (user, device_id),
         as_dict=True,
     )
-    return rows[0].name if rows else None
+    if not rows:
+        return None
+
+    locked = _lock_push_token_row(rows[0].name)
+    if not locked:
+        return None
+    if str(locked.user or "").strip() != user:
+        return None
+    if str(locked.device_id or "").strip() != device_id:
+        return None
+    return locked.name
 
 
 def _deactivate_other_tokens_for_device(*, device_id: str, keep_name: str):
@@ -194,6 +246,77 @@ def _register_once(
     return doc.name, "registered"
 
 
+_REGISTER_DEADLOCK_ATTEMPTS = 3
+_REGISTER_DEADLOCK_BACKOFF_SECONDS = 0.05
+
+
+def _register_attempt(
+    *, user: str, token: str, device_type: str, device_id: str, registration_kind: str
+):
+    """Run one savepoint-isolated registration with duplicate arbitration."""
+
+    savepoint = f"aos_push_register_{uuid.uuid4().hex[:10]}"
+    frappe.db.savepoint(savepoint)
+    try:
+        return _register_once(
+            user=user,
+            token=token,
+            device_type=device_type,
+            device_id=device_id,
+            registration_kind=registration_kind,
+        )
+    except frappe.QueryDeadlockError:
+        # MariaDB already aborted the full transaction. A savepoint rollback is
+        # no longer meaningful; the bounded outer retry resets DB state.
+        raise
+    except Exception as exc:
+        if not is_duplicate_entry_error(exc):
+            _rollback_savepoint(savepoint)
+            raise
+
+        # Unique constraints arbitrate concurrent token/device claims. Roll back
+        # only this endpoint's work and resolve the winner deterministically.
+        _rollback_savepoint(savepoint)
+        recovery = f"aos_push_register_recovery_{uuid.uuid4().hex[:10]}"
+        frappe.db.savepoint(recovery)
+        try:
+            return _register_once(
+                user=user,
+                token=token,
+                device_type=device_type,
+                device_id=device_id,
+                registration_kind=registration_kind,
+            )
+        except frappe.QueryDeadlockError:
+            raise
+        except Exception:
+            _rollback_savepoint(recovery)
+            raise
+
+
+def _register_with_deadlock_retry(
+    *, user: str, token: str, device_type: str, device_id: str, registration_kind: str
+):
+    """Retry only transient MariaDB deadlock victims, with bounded backoff."""
+
+    for attempt in range(_REGISTER_DEADLOCK_ATTEMPTS):
+        try:
+            return _register_attempt(
+                user=user,
+                token=token,
+                device_type=device_type,
+                device_id=device_id,
+                registration_kind=registration_kind,
+            )
+        except frappe.QueryDeadlockError:
+            rollback_deadlocked_transaction()
+            if attempt >= _REGISTER_DEADLOCK_ATTEMPTS - 1:
+                raise
+            time.sleep(_REGISTER_DEADLOCK_BACKOFF_SECONDS * (attempt + 1))
+
+    raise RuntimeError("Push token registration deadlock retry loop exited unexpectedly.")
+
+
 def register_push_token_impl(**kwargs):
     set_private_no_store()
     current_user, err = require_login()
@@ -218,10 +341,8 @@ def register_push_token_impl(**kwargs):
     except (NotificationInputError, PushDeviceValidationError):
         return fail("Invalid push token registration request.", error="VALIDATION_ERROR")
 
-    savepoint = f"aos_push_register_{uuid.uuid4().hex[:10]}"
-    frappe.db.savepoint(savepoint)
     try:
-        name, action = _register_once(
+        name, action = _register_with_deadlock_retry(
             user=current_user,
             token=token,
             device_type=device_type,
@@ -229,37 +350,17 @@ def register_push_token_impl(**kwargs):
             registration_kind=registration_kind,
         )
     except Exception as exc:
-        if not is_duplicate_entry_error(exc):
-            _rollback_savepoint(savepoint)
-            frappe.log_error(frappe.get_traceback(), "AOS Register Push Token Failed")
-            notification_log(
-                "notification.device_registration_failed",
-                account_id=public_account_id_for_user(current_user),
-                platform=device_type,
-                registration_kind=registration_kind,
-                outcome="failed",
-                reason=exc.__class__.__name__,
-                token_fingerprint=token_fingerprint(token=token),
-            )
-            return fail("Failed to register push token.", error="INTERNAL_ERROR")
-
-        # Unique constraints arbitrate concurrent token/device claims. Roll back
-        # only this endpoint's work and resolve the winner deterministically.
-        _rollback_savepoint(savepoint)
-        recovery = f"aos_push_register_recovery_{uuid.uuid4().hex[:10]}"
-        frappe.db.savepoint(recovery)
-        try:
-            name, action = _register_once(
-                user=current_user,
-                token=token,
-                device_type=device_type,
-                device_id=device_id,
-                registration_kind=registration_kind,
-            )
-        except Exception:
-            _rollback_savepoint(recovery)
-            frappe.log_error(frappe.get_traceback(), "AOS Push Token Duplicate Recovery Failed")
-            return fail("Failed to register push token.", error="INTERNAL_ERROR")
+        frappe.log_error(frappe.get_traceback(), "AOS Register Push Token Failed")
+        notification_log(
+            "notification.device_registration_failed",
+            account_id=public_account_id_for_user(current_user),
+            platform=device_type,
+            registration_kind=registration_kind,
+            outcome="failed",
+            reason=exc.__class__.__name__,
+            token_fingerprint=token_fingerprint(token=token),
+        )
+        return fail("Failed to register push token.", error="INTERNAL_ERROR")
 
     notification_log(
         "notification.device_registered",

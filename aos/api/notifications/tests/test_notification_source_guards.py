@@ -126,6 +126,40 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         self.assertNotIn('"token"', observability)
         self.assertNotIn('"payload"', observability)
 
+    def test_push_token_registration_uses_narrow_row_locks_and_bounded_deadlock_retry(self):
+        source = _source("aos/api/notifications/token.py")
+        tree = ast.parse(source)
+        functions = {
+            node.name: node
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+
+        for function_name in ("_find_existing_token", "_find_existing_device"):
+            sql_literals = [
+                node.value
+                for node in ast.walk(functions[function_name])
+                if isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and "tabAOS Push Token" in node.value
+            ]
+            self.assertTrue(sql_literals)
+            self.assertTrue(all("FOR UPDATE" not in sql.upper() for sql in sql_literals))
+
+        lock_literals = [
+            node.value
+            for node in ast.walk(functions["_lock_push_token_row"])
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and "tabAOS Push Token" in node.value
+        ]
+        self.assertEqual(len(lock_literals), 1)
+        self.assertIn("WHERE name = %s", lock_literals[0])
+        self.assertIn("FOR UPDATE", lock_literals[0].upper())
+        self.assertIn("COALESCE(token_hash, '') = ''", source)
+        self.assertIn("_REGISTER_DEADLOCK_ATTEMPTS = 3", source)
+        self.assertIn("rollback_deadlocked_transaction()", source)
+
     def test_companion_request_models_are_strict_and_provider_retries_are_bounded(self):
         main = _source("infra/notification-delivery/app/main.py")
         worker = _source("infra/notification-delivery/app/worker.py")

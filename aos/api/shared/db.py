@@ -34,6 +34,17 @@ def is_duplicate_entry_error(exc: BaseException) -> bool:
     return "Duplicate entry" in text or "1062" in text
 
 
+def rollback_deadlocked_transaction() -> None:
+    """Reset DB connection state after MariaDB aborts a deadlocked transaction.
+
+    InnoDB rolls back the whole transaction when it chooses it as a deadlock
+    victim.  Calling Frappe's rollback here clears callbacks/savepoints and
+    leaves the connection ready for a bounded idempotent retry.
+    """
+
+    frappe.db.rollback()
+
+
 def first_existing_name(doctype: str, filters: dict[str, Any]) -> str | None:
     """Return the first matching document name for duplicate recovery."""
 
