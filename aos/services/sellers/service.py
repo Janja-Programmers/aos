@@ -275,13 +275,13 @@ class SellerService:
             conditions.append(
                 """
                 (
-                    p.display_name LIKE %s ESCAPE '\\'
-                    OR s.business_category LIKE %s ESCAPE '\\'
-                    OR s.about_business LIKE %s ESCAPE '\\'
-                    OR s.location_name LIKE %s ESCAPE '\\'
-                    OR s.display_address LIKE %s ESCAPE '\\'
-                    OR s.locality LIKE %s ESCAPE '\\'
-                    OR s.region LIKE %s ESCAPE '\\'
+                    p.display_name LIKE %s ESCAPE '\\\\'
+                    OR s.business_category LIKE %s ESCAPE '\\\\'
+                    OR s.about_business LIKE %s ESCAPE '\\\\'
+                    OR s.location_name LIKE %s ESCAPE '\\\\'
+                    OR s.display_address LIKE %s ESCAPE '\\\\'
+                    OR s.locality LIKE %s ESCAPE '\\\\'
+                    OR s.region LIKE %s ESCAPE '\\\\'
                 )
                 """
             )

@@ -63,7 +63,9 @@ def require_allowed_sql_identifier(
 def safe_like_contains(value: object) -> str:
     """Return an escaped LIKE pattern for a contains search.
 
-    The caller must use ``LIKE %s ESCAPE '\\'``.
+    The caller must use an explicit backslash ESCAPE clause. When this is
+    embedded in a Python SQL string, encode the backslash twice so MariaDB
+    receives a valid two-backslash SQL literal for one escape character.
     """
 
     return f"%{escape_like_literal(value)}%"
@@ -72,7 +74,9 @@ def safe_like_contains(value: object) -> str:
 def safe_like_prefix(value: object) -> str:
     """Return an escaped LIKE pattern for a prefix search.
 
-    The caller must use ``LIKE %s ESCAPE '\\'``.
+    The caller must use an explicit backslash ESCAPE clause. When this is
+    embedded in a Python SQL string, encode the backslash twice so MariaDB
+    receives a valid two-backslash SQL literal for one escape character.
     """
 
     return f"{escape_like_literal(value)}%"

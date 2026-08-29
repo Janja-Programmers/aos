@@ -121,6 +121,24 @@ class TestSellerAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertNotIn("email", data)
         self.assertNotIn("phone", data)
 
+    def test_public_list_search_executes_on_mariadb(self):
+        frappe.set_user(self.owner)
+        with self._without_rate_limit("aos.api.sellers.update_my_seller.rate_limit"):
+            updated = update_my_seller_impl(
+                business_category="Imtiaz Market",
+                expected_version=0,
+            )
+
+        self.assertTrue(updated.get("ok"), updated)
+
+        frappe.set_user(self.viewer)
+        with self._without_rate_limit("aos.api.sellers.list_sellers.rate_limit"):
+            listing = list_sellers_impl(search="Imtiaz", limit=20)
+
+        self.assertTrue(listing.get("ok"), listing)
+        ids = {entry.get("seller_id") for entry in listing.get("data", {}).get("items", [])}
+        self.assertIn(self.seller.public_id, ids)
+
     def test_suspended_seller_is_hidden_and_capabilities_fail_closed(self):
         frappe.set_user("Administrator")
         set_seller_status(

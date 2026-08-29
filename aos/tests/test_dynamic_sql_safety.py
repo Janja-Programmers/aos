@@ -186,7 +186,8 @@ class TestDynamicSqlSafety(FrappeTestCase):
             response = list_sellers.list_sellers_impl(search="50%_off")
 
         self.assertTrue(response.get("ok"), response)
-        self.assertIn("ESCAPE", captured["query"])
+        self.assertIn("ESCAPE '\\\\'", captured["query"])
+        self.assertNotIn("ESCAPE '\\'", captured["query"])
         self.assertIn("%50\\%\\_off%", captured["params"])
 
     def test_seller_invalid_sort_is_rejected_before_sql(self):
