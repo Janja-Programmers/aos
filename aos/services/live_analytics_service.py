@@ -130,6 +130,18 @@ class LiveAnalyticsService:
 
             count = current_reaction_total(live_id=live_id)
             if count is None:
+                # Never let cache loss/expiry regress an already materialized
+                # Redis-era total back to the legacy event-row count. Legacy
+                # rows remain useful as a floor for pre-aggregation streams.
+                materialized = max(
+                    0,
+                    int(
+                        frappe.db.get_value(
+                            LIVE_STREAM_DOCTYPE, live_id, "reaction_count"
+                        )
+                        or 0
+                    ),
+                )
                 rows = frappe.db.sql(
                     """
                     SELECT COUNT(*) AS count
@@ -139,7 +151,8 @@ class LiveAnalyticsService:
                     (live_id,),
                     as_dict=True,
                 )
-                count = max(0, int((rows[0] if rows else {}).get("count") or 0))
+                legacy = max(0, int((rows[0] if rows else {}).get("count") or 0))
+                count = max(materialized, legacy)
             frappe.db.set_value(
                 LIVE_STREAM_DOCTYPE,
                 live_id,

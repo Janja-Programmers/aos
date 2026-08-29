@@ -126,7 +126,6 @@ class TestLiveReactionDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
 
         # High-frequency reactions are aggregated in Redis rather than writing
         # one MariaDB row per tap. Reconciliation materializes the exact total.
-        from aos.services.live.ephemeral import _reaction_key
         from aos.services.live_analytics_service import LiveAnalyticsService
 
         self.assertEqual(
@@ -138,7 +137,51 @@ class TestLiveReactionDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
             int(frappe.db.get_value("AOS Live Stream", live.name, "reaction_count") or 0),
             20,
         )
-        frappe.cache().delete(_reaction_key(live.name))
+        from aos.services.live.ephemeral import clear_reaction_state
+
+        clear_reaction_state(live_id=live.name)
+
+    def test_hot_live_redis_hashes_round_trip_through_frappe_wrapper(self):
+        """Protect raw numeric hashes from RedisWrapper pickle/namespace mixing."""
+        host = self.make_user("hot-state-host")
+        live = self.make_live(host=host)
+
+        from aos.services.live.ephemeral import (
+            change_comment_count,
+            clear_comment_state,
+            clear_view_metrics,
+            current_comment_count,
+            current_view_metrics,
+            increment_view_metrics,
+        )
+
+        base = {
+            "viewer_count": 0,
+            "total_views": 0,
+            "total_joins": 0,
+            "unique_viewers": 0,
+            "peak_viewers": 0,
+            "total_watch_time_seconds": 0,
+        }
+        joined = increment_view_metrics(live_id=live.name, base=base)
+        self.assertIsNotNone(joined)
+        self.assertEqual(joined["viewer_count"], 1)
+        self.assertEqual(joined["total_joins"], 1)
+        cached_view = current_view_metrics(live_id=live.name)
+        self.assertIsNotNone(cached_view)
+        self.assertEqual(cached_view["viewer_count"], 1)
+        self.assertEqual(cached_view["total_joins"], 1)
+
+        self.assertEqual(
+            change_comment_count(live_id=live.name, base=0, delta=1),
+            1,
+        )
+        self.assertEqual(current_comment_count(live_id=live.name), 1)
+
+        clear_view_metrics(live_id=live.name)
+        clear_comment_state(live_id=live.name)
+        self.assertIsNone(current_view_metrics(live_id=live.name))
+        self.assertIsNone(current_comment_count(live_id=live.name))
 
 
 if __name__ == "__main__":

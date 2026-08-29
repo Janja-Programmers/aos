@@ -248,6 +248,17 @@ class TestLiveSourceGuards(unittest.TestCase):
         self.assertIn("increment_view_metrics", ephemeral)
         self.assertIn("increment_reaction", ephemeral)
         self.assertIn("REACTION_PUBLISH_LIMIT_PER_SECOND", ephemeral)
+        # Frappe RedisWrapper pickles hash values and only some wrapper methods
+        # apply the site prefix. Hot counters must therefore use explicitly
+        # namespaced keys plus raw Redis hash/Lua operations consistently.
+        self.assertIn("cache.make_key(_reaction_key(live_id))", ephemeral)
+        self.assertIn("cache.make_key(_view_key(live_id))", ephemeral)
+        self.assertIn("cache.make_key(_comment_key(live_id))", ephemeral)
+        self.assertIn('cache.execute_command("HGETALL", key)', ephemeral)
+        self.assertNotIn("cache.hgetall(", ephemeral)
+        self.assertNotIn("cache.hget(", ephemeral)
+        self.assertNotIn("cache.hset(", ephemeral)
+        self.assertIn("cache.make_key(_viewer_count_gate_key(live_id))", realtime)
         self.assertIn("publish_coalesced_viewer_count", realtime)
         self.assertIn("materialize_view_metrics", tasks)
         self.assertNotIn("frappe.new_doc(\n        LIVE_MESSAGE_DOCTYPE", tracking.split("def _create_viewer_joined_message", 1)[1].split("# TRACK JOIN", 1)[0])

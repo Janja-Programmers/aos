@@ -43,7 +43,7 @@ def schedule_hot_counter_materialization(*, live_id: str) -> None:
     should_enqueue = True
     try:
         cache = frappe.cache()
-        gate_key = f"aos:live:hot-materialize:v1:{digest}"
+        gate_key = cache.make_key(f"aos:live:hot-materialize:v1:{digest}")
         sequence = _as_int(cache.incr(gate_key))
         try:
             cache.expire(gate_key, HOT_MATERIALIZE_GATE_SECONDS)
@@ -90,6 +90,18 @@ def _as_int(value, default: int = 0) -> int:
         return default
 
 
+
+_REACTION_INCREMENT_LUA = """
+if redis.call('HEXISTS', KEYS[1], 'base') == 0 then
+  redis.call('HSET', KEYS[1], 'base', ARGV[1], 'delta_total', 0)
+end
+local delta = redis.call('HINCRBY', KEYS[1], 'delta_total', 1)
+redis.call('HINCRBY', KEYS[1], 'type:' .. ARGV[2], 1)
+redis.call('EXPIRE', KEYS[1], ARGV[3])
+local base = tonumber(redis.call('HGET', KEYS[1], 'base') or '0')
+return {base + delta, delta}
+"""
+
 @dataclass(frozen=True)
 class ReactionIncrement:
     total: int
@@ -115,30 +127,34 @@ def increment_reaction(*, live_id: str, reaction_type: str) -> ReactionIncrement
         return None
     try:
         cache = frappe.cache()
-        key = _reaction_key(live_id)
-        delta = _as_int(cache.hincrby(key, "delta_total", 1))
-        cache.hincrby(key, f"type:{reaction_type}", 1)
+        key = cache.make_key(_reaction_key(live_id))
 
-        base_raw = cache.hget(key, "base")
-        if base_raw is None:
-            base = _initial_reaction_base(live_id)
-            try:
-                cache.hsetnx(key, "base", base)
-            except Exception:
-                # RedisWrapper implementations used by older Frappe releases
-                # may not expose hsetnx directly; hset is safe because every
-                # contender computes the same durable base before any flush.
-                cache.hset(key, "base", base)
-            base_raw = cache.hget(key, "base")
-        base = _as_int(base_raw)
-        try:
-            cache.expire(key, REACTION_STATE_TTL_SECONDS)
-        except Exception:
-            pass
-        total = max(0, base + delta)
+        # Frappe's RedisWrapper pickles hset/hget values and its inherited
+        # Redis numeric/Lua commands do not add the site prefix. Hot Live
+        # hashes therefore use one consistent raw Redis representation on an
+        # explicitly site-namespaced key. Never mix RedisWrapper.hset/hget
+        # with HINCRBY/EVAL on these hashes.
+        base_raw = cache.execute_command("HGET", key, "base")
+        base = (
+            _initial_reaction_base(live_id)
+            if base_raw is None
+            else _as_int(base_raw)
+        )
+        values = cache.eval(
+            _REACTION_INCREMENT_LUA,
+            1,
+            key,
+            max(0, int(base or 0)),
+            reaction_type,
+            REACTION_STATE_TTL_SECONDS,
+        )
+        if not values or len(values) < 2:
+            return None
+        total = max(0, _as_int(values[0]))
+        delta = max(0, _as_int(values[1]))
         return ReactionIncrement(
             total=total,
-            delta=max(0, delta),
+            delta=delta,
             should_flush=delta == 1 or delta % REACTION_DB_FLUSH_EVERY == 0,
         )
     except Exception:
@@ -151,8 +167,8 @@ def current_reaction_total(*, live_id: str) -> int | None:
         return None
     try:
         cache = frappe.cache()
-        key = _reaction_key(live_id)
-        raw = cache.hgetall(key) or {}
+        key = cache.make_key(_reaction_key(live_id))
+        raw = cache.execute_command("HGETALL", key) or {}
         if not raw:
             return None
         base = _as_int(raw.get(b"base", raw.get("base")))
@@ -168,7 +184,7 @@ def should_publish_reaction(*, live_id: str) -> bool:
         return False
     try:
         cache = frappe.cache()
-        key = _publish_key(live_id)
+        key = cache.make_key(_publish_key(live_id))
         count = _as_int(cache.incr(key))
         try:
             cache.expire(key, 1)
@@ -183,8 +199,10 @@ def should_publish_reaction(*, live_id: str) -> bool:
 def clear_reaction_state(*, live_id: str) -> None:
     try:
         cache = frappe.cache()
-        cache.delete(_reaction_key(live_id))
-        cache.delete(_publish_key(live_id))
+        cache.delete(
+            cache.make_key(_reaction_key(live_id)),
+            cache.make_key(_publish_key(live_id)),
+        )
     except Exception:
         pass
 
@@ -195,7 +213,9 @@ def should_publish_viewer_joined(*, live_id: str) -> bool:
         return False
     try:
         cache = frappe.cache()
-        key = f"aos:live:viewer-joined-publish:v1:{_live_digest(live_id)}"
+        key = cache.make_key(
+            f"aos:live:viewer-joined-publish:v1:{_live_digest(live_id)}"
+        )
         count = _as_int(cache.incr(key))
         try:
             cache.expire(key, 1)
@@ -289,7 +309,7 @@ def increment_view_metrics(*, live_id: str, base: dict[str, int]) -> dict[str, i
         values = cache.eval(
             _VIEW_JOIN_LUA,
             1,
-            _view_key(live_id),
+            cache.make_key(_view_key(live_id)),
             int(base.get("viewer_count") or 0),
             int(base.get("total_views") or 0),
             int(base.get("total_joins") or 0),
@@ -315,7 +335,7 @@ def decrement_view_metrics(
         values = cache.eval(
             _VIEW_LEAVE_LUA,
             1,
-            _view_key(live_id),
+            cache.make_key(_view_key(live_id)),
             int(base.get("viewer_count") or 0),
             int(base.get("total_views") or 0),
             int(base.get("total_joins") or 0),
@@ -333,7 +353,8 @@ def decrement_view_metrics(
 
 def current_view_metrics(*, live_id: str) -> dict[str, int] | None:
     try:
-        raw = frappe.cache().hgetall(_view_key(live_id)) or {}
+        cache = frappe.cache()
+        raw = cache.execute_command("HGETALL", cache.make_key(_view_key(live_id))) or {}
         if not raw:
             return None
         def field(name: str) -> int:
@@ -352,7 +373,8 @@ def current_view_metrics(*, live_id: str) -> dict[str, int] | None:
 
 def clear_view_metrics(*, live_id: str) -> None:
     try:
-        frappe.cache().delete(_view_key(live_id))
+        cache = frappe.cache()
+        cache.delete(cache.make_key(_view_key(live_id)))
     except Exception:
         pass
 
@@ -371,10 +393,11 @@ return value
 
 def change_comment_count(*, live_id: str, base: int, delta: int) -> int | None:
     try:
-        value = frappe.cache().eval(
+        cache = frappe.cache()
+        value = cache.eval(
             _COMMENT_CHANGE_LUA,
             1,
-            _comment_key(live_id),
+            cache.make_key(_comment_key(live_id)),
             max(0, int(base or 0)),
             int(delta or 0),
             COMMENT_STATE_TTL_SECONDS,
@@ -386,7 +409,10 @@ def change_comment_count(*, live_id: str, base: int, delta: int) -> int | None:
 
 def current_comment_count(*, live_id: str) -> int | None:
     try:
-        raw = frappe.cache().hget(_comment_key(live_id), "count")
+        cache = frappe.cache()
+        raw = cache.execute_command(
+            "HGET", cache.make_key(_comment_key(live_id)), "count"
+        )
         return None if raw is None else max(0, _as_int(raw))
     except Exception:
         return None
@@ -394,15 +420,24 @@ def current_comment_count(*, live_id: str) -> int | None:
 
 def set_comment_count(*, live_id: str, count: int) -> None:
     try:
-        key = _comment_key(live_id)
-        frappe.cache().hset(key, mapping={"initialized": 1, "count": max(0, int(count or 0))})
-        frappe.cache().expire(key, COMMENT_STATE_TTL_SECONDS)
+        cache = frappe.cache()
+        key = cache.make_key(_comment_key(live_id))
+        cache.execute_command(
+            "HSET",
+            key,
+            "initialized",
+            1,
+            "count",
+            max(0, int(count or 0)),
+        )
+        cache.expire(key, COMMENT_STATE_TTL_SECONDS)
     except Exception:
         pass
 
 
 def clear_comment_state(*, live_id: str) -> None:
     try:
-        frappe.cache().delete(_comment_key(live_id))
+        cache = frappe.cache()
+        cache.delete(cache.make_key(_comment_key(live_id)))
     except Exception:
         pass

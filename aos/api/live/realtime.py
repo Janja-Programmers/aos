@@ -341,7 +341,7 @@ def publish_viewer_count(
 
     try:
         cache = frappe.cache()
-        gate_key = _viewer_count_gate_key(live_id)
+        gate_key = cache.make_key(_viewer_count_gate_key(live_id))
         sequence = int(cache.incr(gate_key) or 0)
         try:
             cache.expire(gate_key, 1)
