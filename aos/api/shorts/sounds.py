@@ -611,12 +611,13 @@ def list_sounds_impl(**kwargs):
                 owner, created_from_short, creation
             FROM `tabAOS Sound`
             WHERE status = 'active'
+              AND source_type <> %s
               {source_clause}
               {where_cursor}
             ORDER BY creation DESC, name DESC
             LIMIT %s
             """,
-            (*source_params, *params_cursor, limit + 1),
+            (SOUND_SOURCE_TYPE_ORIGINAL, *source_params, *params_cursor, limit + 1),
             as_dict=True,
         )
 
@@ -669,6 +670,7 @@ def search_sounds_impl(**kwargs):
                 owner, created_from_short, creation
             FROM `tabAOS Sound`
             WHERE status = 'active'
+              AND source_type <> %s
               AND (
                 COALESCE(title, '') LIKE %s ESCAPE '\\\\'
                 OR COALESCE(artist, '') LIKE %s ESCAPE '\\\\'
@@ -686,7 +688,7 @@ def search_sounds_impl(**kwargs):
                 name DESC
             LIMIT %s
             """,
-            (like, like, q, prefix, q, prefix, limit),
+            (SOUND_SOURCE_TYPE_ORIGINAL, like, like, q, prefix, q, prefix, limit),
             as_dict=True,
         )
         return ok("Sounds fetched.", data={"items": _serialize_sound_rows(rows, viewer=viewer)})
@@ -821,11 +823,12 @@ def my_favorite_sounds_impl(**kwargs):
             INNER JOIN `tabAOS Sound` snd ON snd.name = fav.sound
             WHERE fav.user = %s
               AND snd.status = 'active'
+              AND snd.source_type <> %s
               {where_cursor}
             ORDER BY fav.creation DESC, fav.name DESC
             LIMIT %s
             """,
-            (user, *params_cursor, limit + 1),
+            (user, SOUND_SOURCE_TYPE_ORIGINAL, *params_cursor, limit + 1),
             as_dict=True,
         )
         has_more = len(rows) > limit

@@ -9,7 +9,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from aos.api.shorts.management import get_short_impl, my_shorts_impl
-from aos.api.shorts.sounds import search_sounds_impl
+from aos.api.shorts.sounds import list_sounds_impl, my_favorite_sounds_impl, search_sounds_impl
 from aos.api.shorts.utils import decode_cursor, encode_cursor
 from aos.services.shorts.errors import ShortsCursorError, ShortsError
 from aos.services.shorts.endpoints import ENDPOINT_SPECS
@@ -103,7 +103,48 @@ class TestShortsApiContracts(FrappeTestCase):
         self.assertTrue(key.startswith("aos:rl:shorts:sounds:search:user:sha256:"), key)
         self.assertNotIn("user@example.test", key)
         self.assertIn("CASE", str(captured["query"]))
-        self.assertEqual(captured["params"], ("%Math%", "%Math%", "Math", "Math%", "Math", "Math%", 20))
+        self.assertEqual(captured["params"], ("original", "%Math%", "%Math%", "Math", "Math%", "Math", "Math%", 20))
+
+    def test_sound_catalog_discovery_excludes_original_audio(self):
+        captured: list[tuple[str, tuple[object, ...]]] = []
+
+        def fake_sql(query, params=None, **kwargs):
+            captured.append((str(query), tuple(params or ())))
+            return []
+
+        with (
+            patch("aos.api.shorts.sounds._get_optional_viewer", return_value=None),
+            patch("aos.api.shorts.sounds.require_login", return_value=("user@example.test", None)),
+            patch("aos.api.shorts.sounds.rate_limit", return_value=None),
+            patch("aos.api.shorts.sounds.frappe.db.sql", side_effect=fake_sql),
+        ):
+            listed = list_sounds_impl(limit=20)
+            searched = search_sounds_impl(q="original", limit=20)
+            favorites = my_favorite_sounds_impl(limit=20)
+
+        self.assertTrue(listed.get("ok"), listed)
+        self.assertTrue(searched.get("ok"), searched)
+        self.assertTrue(favorites.get("ok"), favorites)
+        self.assertEqual(len(captured), 3)
+
+        list_query, list_params = captured[0]
+        search_query, search_params = captured[1]
+        favorite_query, favorite_params = captured[2]
+
+        self.assertIn("AND source_type <> %s", list_query)
+        self.assertEqual(list_params[0], "original")
+        self.assertIn("AND source_type <> %s", search_query)
+        self.assertEqual(search_params[0], "original")
+        self.assertIn("AND snd.source_type <> %s", favorite_query)
+        self.assertEqual(favorite_params[1], "original")
+
+    def test_original_sound_remains_available_from_short_context(self):
+        source = self._source("api/shorts/sounds.py")
+        start = source.index("def get_short_sound_map")
+        end = source.index("def set_short_sound", start)
+        short_context = source[start:end]
+        self.assertIn("ss.is_original_audio", short_context)
+        self.assertNotIn("snd.source_type <> %s", short_context)
 
     def test_sound_search_sql_executes_on_mariadb(self):
         # Regression: the backslash escape literal must be encoded as two SQL
