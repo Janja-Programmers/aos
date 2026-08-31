@@ -39,6 +39,7 @@ from aos.api.shorts.activity import record_short_watch_activity
 from aos.services.analytics_pipeline_service import emit_analytics_event
 from aos.services.shorts.analytics import bounded_watch_ms, event_key
 from aos.services.shorts.repository import ShortsRepository
+from aos.services.shorts.recommendation import RecommendationService
 
 
 # COMMON
@@ -193,6 +194,7 @@ def track_impression_impl(**kwargs):
         )
         if created:
             ShortsRepository().increment_counter(short_id, "impression_count", 1)
+            RecommendationService.invalidate_profile(user=user, session_id=session_id)
 
         if created:
             try:
@@ -299,6 +301,9 @@ def track_view_impl(**kwargs):
             if _update_short_view_watch_progress(doc, watch_ms):
                 should_update_ranking = True
 
+        if should_update_ranking:
+            RecommendationService.invalidate_profile(user=user, session_id=session_id)
+
         # Record private Activity Center watch history for logged-in users only.
         # Guests still contribute to analytics/views but do not get account history.
         # Activity Center is secondary; a concurrency error there must not fail
@@ -363,6 +368,7 @@ def track_view_impl(**kwargs):
                     doc = frappe.get_doc("AOS Short View", existing_name)
                     updated = _update_short_view_watch_progress(doc, watch_ms)
                     if updated:
+                        RecommendationService.invalidate_profile(user=user, session_id=session_id)
                         _enqueue_short_score_update(short_id)
 
                     return ok(
@@ -417,6 +423,7 @@ def track_share_impl(**kwargs):
         )
         if created:
             ShortsRepository().increment_counter(short_id, "share_count", 1)
+            RecommendationService.invalidate_profile(user=user, session_id=session_id)
 
         if created:
             try:

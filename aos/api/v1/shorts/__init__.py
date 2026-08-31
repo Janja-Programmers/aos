@@ -17,6 +17,9 @@ from aos.api.shorts.feed import (
     feed_following_impl as _feed_following_impl,
     feed_by_ad_impl as _feed_by_ad_impl,
 )
+from aos.api.shorts.recommendation import (
+    recommendation_feedback_impl as _recommendation_feedback_impl,
+)
 from aos.api.shorts.engagement import (
     toggle_like_impl as _toggle_like_impl,
 )
@@ -111,6 +114,12 @@ def feed_following(**kwargs):
 def feed_by_ad(**kwargs):
     """Execute the v1 shorts.feed_by_ad endpoint."""
     return _call("feed_by_ad", _feed_by_ad_impl, kwargs)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def recommendation_feedback(**kwargs):
+    """Execute the v1 shorts.recommendation_feedback endpoint."""
+    return _call("recommendation_feedback", _recommendation_feedback_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])

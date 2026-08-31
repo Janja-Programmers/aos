@@ -17,8 +17,9 @@ The public boundary is `aos.api.v1.shorts`. Endpoint wrappers are thin and deleg
 - Processing callbacks are signed, generation-aware and replay-safe.
 - Content mode is assigned automatically; creator-provided mode values are not authoritative and `all` is never persisted.
 - Feed cursors are HMAC-signed, expiring and tamper-evident.
+- For You is recommendation-first, with global ranking retained as a quality feature and deterministic fail-open path.
 - All list/page sizes and maintenance operations are bounded.
 
-See `classification.md` and the adjacent documents for contracts, operations and deployment guidance.
+See `classification.md`, `recommendations.md`, and the adjacent documents for contracts, operations and deployment guidance.
 
 - [Resumable upload client contract](resumable-upload-client-contract.md)

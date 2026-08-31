@@ -16,6 +16,7 @@ import frappe
 
 from aos.services.shorts.analytics import event_key
 from aos.services.shorts.repository import ShortsRepository
+from aos.services.shorts.recommendation import RecommendationService
 from aos.services.accounts.identity import resolve_account_reference
 
 from aos.api.shared.db import is_duplicate_entry_error
@@ -186,6 +187,8 @@ def toggle_save_short_impl(**kwargs):
             saved = False
             message = "Removed from saved shorts."
 
+
+        RecommendationService.invalidate_profile(user=user, session_id=None)
 
         save_count = frappe.db.get_value("AOS Short", short_id, "save_count") or 0
 
@@ -510,6 +513,8 @@ def toggle_repost_impl(**kwargs):
             reposted = True
             message = "Reposted."
 
+
+        RecommendationService.invalidate_profile(user=user, session_id=None)
 
         repost_count = frappe.db.get_value("AOS Short", short_id, "repost_count") or 0
         share_count = frappe.db.get_value("AOS Short", short_id, "share_count") or 0

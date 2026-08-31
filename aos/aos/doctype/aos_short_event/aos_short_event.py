@@ -63,6 +63,9 @@ class AOSShortEvent(Document):
             "save",
             "download",
             "repost",
+            "not_interested",
+            "hide_creator",
+            "hide_sound",
         }
 
         if self.event_type not in allowed:

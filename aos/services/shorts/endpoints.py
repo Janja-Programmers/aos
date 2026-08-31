@@ -42,9 +42,10 @@ ENDPOINT_SPECS: dict[str, EndpointSpec] = {
         aliases=(("sound_start_ms", "start_ms"), ("sound_duration_ms", "duration_ms"), ("sound_volume", "volume")),
         ids=(("short_id", SHORT_ID_RE), ("sound_id", SOUND_ID_RE)),
     ),
-    "feed_for_you": _spec({"limit", "cursor", "content_mode", "mode"}, aliases=(("content_mode", "mode"),)),
+    "feed_for_you": _spec({"limit", "cursor", "content_mode", "mode", "session_id"}, aliases=(("content_mode", "mode"),)),
     "feed_following": _spec({"limit", "cursor", "content_mode", "mode"}, aliases=(("content_mode", "mode"),)),
     "feed_by_ad": _spec({"ad_id", "limit", "cursor"}),
+    "recommendation_feedback": _spec({"short_id", "action", "session_id", "event_id"}, ids=(("short_id", SHORT_ID_RE),)),
     "toggle_like": _spec({"short_id"}, ids=(("short_id", SHORT_ID_RE),)),
     "toggle_save_short": _spec({"short_id"}, ids=(("short_id", SHORT_ID_RE),)),
     "saved_shorts": _spec({"limit", "cursor"}),
@@ -96,7 +97,7 @@ ENDPOINT_SPECS: dict[str, EndpointSpec] = {
 }
 
 MUTATING_ENDPOINTS = frozenset({
-    "create_short", "update_short_metadata", "toggle_like", "toggle_save_short",
+    "create_short", "update_short_metadata", "recommendation_feedback", "toggle_like", "toggle_save_short",
     "toggle_repost", "download_short", "create_short_share_link", "share_short_to_chat",
     "add_comment", "reply_comment", "delete_comment", "toggle_comment_like",
     "track_impression", "track_view", "track_share", "delete_short", "retry_processing",

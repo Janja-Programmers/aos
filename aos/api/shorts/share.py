@@ -23,6 +23,7 @@ from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
 from aos.services.shorts.analytics import event_key
 from aos.services.shorts.repository import ShortsRepository
+from aos.services.shorts.recommendation import RecommendationService
 
 from aos.services.chat.errors import ChatError
 from aos.services.chat.service import ChatService
@@ -129,6 +130,7 @@ def _increment_share_count(
             raise
     if counted:
         ShortsRepository().increment_counter(short_id, "share_count", 1)
+        RecommendationService.invalidate_profile(user=user, session_id=session_id)
     return int(frappe.db.get_value("AOS Short", short_id, "share_count") or 0)
 
 

@@ -30,6 +30,7 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 | `my_favorite_sounds` | Any* | Session required | Client |
 | `my_shorts` | Any* | Session required | Client |
 | `my_shorts_analytics` | Any* | Session required | Client |
+| `recommendation_feedback` | POST | Guest allowed | Client |
 | `remove_short_sound` | POST | Session required | Client |
 | `reply_comment` | POST | Session required | Client |
 | `reposted_shorts` | Any* | Guest allowed | Client |

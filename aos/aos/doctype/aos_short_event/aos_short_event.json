@@ -56,7 +56,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Event Type",
-   "options": "impression\nplay\npause\nprogress\ncomplete\nlike\ncomment\nopen_ad\nopen_seller\nfollow_click\nshare\nsave\ndownload\nrepost",
+   "options": "impression\nplay\npause\nprogress\ncomplete\nlike\ncomment\nopen_ad\nopen_seller\nfollow_click\nshare\nsave\ndownload\nrepost\nnot_interested\nhide_creator\nhide_sound",
    "reqd": 1,
    "search_index": 1
   },

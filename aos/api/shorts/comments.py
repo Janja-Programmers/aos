@@ -25,6 +25,7 @@ from aos.api.shared.formatters import humanize_count
 from aos.api.shared.validators import require_id
 
 from aos.services.notification_service import NotificationService
+from aos.services.shorts.recommendation import RecommendationService
 
 from aos.api.shorts.validators import (
     validate_comment_text,
@@ -350,6 +351,8 @@ def add_comment_impl(**kwargs):
             )
 
 
+        RecommendationService.invalidate_profile(user=user, session_id=None)
+
         frappe.enqueue(
             RANKING_TASK,
             short_id=short_id,
@@ -463,6 +466,8 @@ def reply_comment_impl(**kwargs):
                 event_identity=doc.name,
             )
 
+
+        RecommendationService.invalidate_profile(user=user, session_id=None)
 
         frappe.enqueue(
             RANKING_TASK,

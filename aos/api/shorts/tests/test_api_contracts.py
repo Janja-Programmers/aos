@@ -13,6 +13,7 @@ from aos.api.shorts.sounds import list_sounds_impl, my_favorite_sounds_impl, sea
 from aos.api.shorts.utils import decode_cursor, encode_cursor
 from aos.services.shorts.errors import ShortsCursorError, ShortsError
 from aos.services.shorts.endpoints import ENDPOINT_SPECS
+from aos.services.shorts.recommendation import RecommendationProfile, RecommendationService, _hashtags, _watch_signal
 from aos.services.shorts.validation import validate_public_kwargs
 
 
@@ -157,13 +158,46 @@ class TestShortsApiContracts(FrappeTestCase):
 
         self.assertTrue(response.get("ok"), response)
 
-    def test_all_feed_candidates_are_advisory_and_order_matches_cursor(self):
+    def test_for_you_feed_is_personalized_but_keeps_ranked_fail_open(self):
         source = self._source("api/shorts/feed.py")
-        self.assertNotIn("if not candidate_ids", source)
-        self.assertNotIn("s.name IN %(candidate_ids)s", source)
+        self.assertIn("RecommendationService.get_slice", source)
+        self.assertIn("_short_candidate_sql(recommendation.ids)", source)
+        self.assertIn("FIELD(s.name", source)
+        self.assertIn("RecommendationService.build_cursor", source)
         self.assertIn("COALESCE(s.ranking_score, 0) DESC", source)
-        self.assertIn("EXISTS (", source)
         self.assertIn("filter_viewable_rows", source)
+        self.assertIn("audience_clause", source)
+        self.assertIn("session_id = str(kwargs.get(\"session_id\")", source)
+
+    def test_recommendation_signals_reward_completion_and_parse_hashtags(self):
+        self.assertLess(_watch_signal(0.05, 400), 0)
+        self.assertGreater(_watch_signal(0.99, 12_000), _watch_signal(0.65, 8_000))
+        self.assertEqual(_hashtags('["#Cars", "DIY", "cars"]'), ["cars", "diy"])
+
+    def test_recommendation_diversity_avoids_immediate_creator_repetition(self):
+        pool = [
+            {"id": "A", "score": 10.0, "freshness": 1.0, "affinity": 1.0, "creator": "u1", "sound": "s1", "mode": "vibes"},
+            {"id": "B", "score": 9.9, "freshness": 1.0, "affinity": 1.0, "creator": "u1", "sound": "s2", "mode": "vibes"},
+            {"id": "C", "score": 9.6, "freshness": 1.0, "affinity": 0.8, "creator": "u2", "sound": "s3", "mode": "learn"},
+        ]
+        ordered = RecommendationService._diversify(pool)
+        self.assertEqual([row["id"] for row in ordered[:2]], ["A", "C"])
+
+    def test_explicit_recommendation_feedback_is_in_public_contract(self):
+        spec = ENDPOINT_SPECS["recommendation_feedback"]
+        clean = validate_public_kwargs(
+            {
+                "short_id": "SHORT-2026-00137",
+                "action": "not_interested",
+                "session_id": "guest-session",
+                "event_id": "event-1",
+            },
+            spec,
+        )
+        self.assertEqual(clean["action"], "not_interested")
+        source = self._source("api/shorts/recommendation.py")
+        self.assertIn("VALID_RECOMMENDATION_FEEDBACK_ACTIONS", source)
+        self.assertIn("RecommendationService.invalidate_profile", source)
 
     def test_my_shorts_profile_scope_is_strictly_supported(self):
         spec = ENDPOINT_SPECS["my_shorts"]
@@ -214,6 +248,7 @@ class TestShortsApiContracts(FrappeTestCase):
             "services/video_processing_service.py",
             "patches/v1_0/harden_shorts_subsystem.py",
             "patches/v1_0/install_shorts_indexes.py",
+            "patches/v1_0/install_shorts_recommendation_indexes.py",
             "patches/v1_0/initialize_short_classification_metadata.py",
         ]
         offenders: list[str] = []

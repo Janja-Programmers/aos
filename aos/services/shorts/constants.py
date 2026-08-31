@@ -23,6 +23,31 @@ RANKING_WEIGHT_COMPLETION = 2.0
 RECENCY_HALF_LIFE_HOURS = 24
 
 
+# PERSONALIZED RECOMMENDATION
+# Recommendation state is cached in Redis; durable interactions remain the SSOT.
+RECOMMENDATION_PROFILE_CACHE_TTL_SECONDS = 60
+RECOMMENDATION_FEED_SESSION_TTL_SECONDS = 20 * 60
+RECOMMENDATION_HISTORY_LOOKBACK_DAYS = 60
+RECOMMENDATION_RECENT_SEEN_DAYS = 14
+RECOMMENDATION_HISTORY_MAX_ROWS = 500
+RECOMMENDATION_CANDIDATE_POOL_SIZE = 600
+# Re-score after roughly 6-7 web pages so recent session behavior can affect
+# the feed instead of freezing hundreds of future items at once.
+RECOMMENDATION_FEED_SESSION_MAX_ITEMS = 120
+RECOMMENDATION_QUALITY_CANDIDATES = 320
+RECOMMENDATION_FRESH_CANDIDATES = 180
+RECOMMENDATION_COLLABORATIVE_CANDIDATES = 140
+# Fetch a wider candidate window than one page so privacy/block filtering can
+# remove rows without creating tiny pages.
+RECOMMENDATION_SESSION_WINDOW_MULTIPLIER = 8
+RECOMMENDATION_FEEDBACK_LIMIT_PER_MINUTE_PER_IP = 120
+VALID_RECOMMENDATION_FEEDBACK_ACTIONS = {
+    "not_interested",
+    "hide_creator",
+    "hide_sound",
+}
+
+
 # TRACKING (VIEWS / IMPRESSIONS)
 
 # Minimum watch time to qualify as a view (ms)

@@ -40,7 +40,7 @@ from aos.services.shorts.policy import audience_sql, filter_viewable_rows
 from aos.api.shorts.mentions import get_short_mentions_map
 from aos.api.shorts.sounds import get_short_sound_map
 from aos.services.accounts.identity import public_account_id_for_user
-from aos.services.search_ranking_service import short_feed_candidates
+from aos.services.shorts.recommendation import RecommendationService
 from aos.services.social.repository import SocialRepository
 from aos.services.social.serializers import relationship_map as social_relationship_map
 
@@ -237,7 +237,14 @@ def _build_viewer_state(
     }
 
 
-def _build_response(rows, limit: int, *, viewer: str | None = None):
+def _build_response(
+    rows,
+    limit: int,
+    *,
+    viewer: str | None = None,
+    next_cursor_override: str | None = None,
+    has_more_override: bool | None = None,
+):
     if not rows:
         return ok(
             "Feed fetched.",
@@ -260,7 +267,11 @@ def _build_response(rows, limit: int, *, viewer: str | None = None):
             },
         )
 
-    has_more = len(safe_rows) > limit
+    has_more = (
+        bool(has_more_override)
+        if has_more_override is not None
+        else len(safe_rows) > limit
+    )
     visible_rows = safe_rows[:limit]
 
     short_ids = [
@@ -305,8 +316,8 @@ def _build_response(rows, limit: int, *, viewer: str | None = None):
         for row in visible_rows
     ]
 
-    next_cursor = None
-    if has_more:
+    next_cursor = next_cursor_override if has_more else None
+    if has_more and next_cursor is None:
         last = visible_rows[-1]
         next_cursor = build_ranked_cursor(
             ranking_score=last.get("ranking_score"),
@@ -402,34 +413,81 @@ def feed_for_you_impl(**kwargs):
 
     try:
         viewer = _get_optional_viewer()
+        session_id = str(kwargs.get("session_id") or "").strip()[:140] or None
         limit = _get_limit(kwargs)
         cursor = kwargs.get("cursor")
+        requested_mode = kwargs.get("content_mode") or kwargs.get("mode")
 
-        mode_clause, mode_params, mode_err = _build_content_mode_filter(
-            kwargs.get("content_mode") or kwargs.get("mode")
-        )
+        mode_clause, mode_params, mode_err = _build_content_mode_filter(requested_mode)
         if mode_err:
             return mode_err
 
-        # Candidate retrieval is advisory only. It must never narrow the canonical
-        # feed or change cursor ordering; an empty/partial ranking response falls
-        # back to the complete deterministic database feed.
-        if not cursor:
-            try:
-                short_feed_candidates(
-                    viewer=viewer,
-                    content_mode=kwargs.get("content_mode") or kwargs.get("mode"),
-                    limit=limit + 1,
-                    offset=0,
-                )
-            except Exception:
-                frappe.log_error(
-                    "Short ranking candidate lookup failed; database fallback used.",
-                    "AOS Shorts Ranking Fallback",
-                )
-
         audience_clause, audience_params = _build_audience_where_clause(viewer)
 
+        # Personalized recommendation uses a Redis-backed, signed feed session
+        # so each actor receives stable pagination even though their score is
+        # different from the global ranking_score stored on AOS Short.
+        # Recommendation is advisory for ordering only: canonical SQL audience
+        # and batched Social/privacy policy remain the authorization boundary.
+        recommendation = RecommendationService.get_slice(
+            viewer=viewer,
+            session_id=session_id,
+            content_mode=requested_mode,
+            cursor=cursor,
+            limit=limit,
+        )
+        if recommendation and recommendation.ids:
+            candidate_clause, candidate_order = _short_candidate_sql(recommendation.ids)
+            rows = frappe.db.sql(
+                f"""
+                {_select_short_rows_sql()}
+
+                WHERE
+                    s.status = 'ready'
+                    AND s.visibility_status = 'visible'
+                    {mode_clause}
+                    {audience_clause}
+                    {candidate_clause}
+
+                ORDER BY {candidate_order}
+                """,
+                (*mode_params, *audience_params),
+                as_dict=True,
+            )
+
+            safe_rows = _filter_viewable_rows(
+                rows,
+                viewer=viewer,
+                limit=max(limit, len(rows)),
+            )
+            if safe_rows:
+                visible_rows = safe_rows[:limit]
+                last_id = str(visible_rows[-1].get("name") or "")
+                try:
+                    consumed = recommendation.ids.index(last_id) + 1
+                except ValueError:
+                    consumed = min(len(recommendation.ids), limit)
+                next_offset = recommendation.offset + consumed
+                has_more = next_offset < recommendation.total
+                next_cursor = None
+                if has_more:
+                    next_cursor = RecommendationService.build_cursor(
+                        feed_id=recommendation.feed_id,
+                        next_offset=next_offset,
+                        viewer=viewer,
+                        session_id=session_id,
+                        content_mode=requested_mode,
+                    )
+                return _build_response(
+                    rows,
+                    limit,
+                    viewer=viewer,
+                    next_cursor_override=next_cursor,
+                    has_more_override=has_more,
+                )
+
+        # Fail-open fallback: Redis/recommendation outages and legacy ranking
+        # cursors keep the established globally-ranked feed fully functional.
         where_cursor, params_cursor = build_ranked_cursor_where_clause(
             score_field="s.ranking_score",
             created_field="s.creation",
@@ -462,7 +520,7 @@ def feed_for_you_impl(**kwargs):
         return _build_response(rows, limit, viewer=viewer)
 
     except Exception:
-        frappe.log_error("Shorts operation failed.", "feed_for_you failed")
+        frappe.log_error(frappe.get_traceback(), "AOS Shorts For You Feed Failed")
         return fail("Failed to fetch feed", error="INTERNAL_ERROR")
 
 

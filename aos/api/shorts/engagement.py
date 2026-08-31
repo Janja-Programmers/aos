@@ -17,6 +17,7 @@ from aos.api.shared.formatters import humanize_count
 from aos.api.shared.validators import require_id
 
 from aos.services.notification_service import NotificationService
+from aos.services.shorts.recommendation import RecommendationService
 
 from aos.api.shorts.constants import (
     LIKE_TOGGLE_RATE_LIMIT_PER_MINUTE,
@@ -132,6 +133,8 @@ def toggle_like_impl(**kwargs):
                 short_id=short_id,
             )
 
+
+        RecommendationService.invalidate_profile(user=user, session_id=None)
 
         # Read canonical count after AOS Short Like hooks update the metric.
         like_count = frappe.db.get_value("AOS Short", short_id, "like_count") or 0

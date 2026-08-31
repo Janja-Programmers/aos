@@ -25,7 +25,7 @@ required_docs = {
     "README.md", "architecture.md", "api.md", "upload-lifecycle.md", "processing.md",
     "feeds.md", "privacy.md", "media.md", "interactions.md", "notifications.md",
     "analytics.md", "moderation.md", "migration.md", "operations.md", "testing.md",
-    "classification.md",
+    "classification.md", "recommendations.md",
 }
 docs_dir = ROOT / "docs/features/shorts"
 require(required_docs <= {p.name for p in docs_dir.glob("*.md")}, "required Shorts docs are incomplete")
@@ -64,6 +64,14 @@ require("s.name IN %(candidate_ids)s" not in feed, "All feed still uses exhausti
 require("if not candidate_ids" not in feed, "All feed still empties on missing ranking candidates")
 require("COALESCE(s.ranking_score, 0) DESC" in feed, "feed and cursor ranking order are inconsistent")
 require("EXISTS (" in feed, "Following feed is not duplicate-safe")
+require("RecommendationService.get_slice" in feed, "For You is not recommendation-first")
+require("RecommendationService.build_cursor" in feed, "personalized feed does not use stable recommendation cursors")
+recommendation = source("aos/services/shorts/recommendation.py")
+for token in ("_collaborative_candidates", "_diversify", "seen_short_ids", "suppressed_short_ids", "ranking_score"):
+    require(token in recommendation, f"recommendation hardening token missing: {token}")
+feedback = source("aos/api/shorts/recommendation.py")
+require("VALID_RECOMMENDATION_FEEDBACK_ACTIONS" in feedback, "explicit recommendation feedback is missing")
+require("RecommendationService.invalidate_profile" in feedback, "recommendation feedback does not invalidate profile cache")
 
 
 classification = source("aos/services/shorts/classification.py")
@@ -148,6 +156,7 @@ transaction_roots = [
     ROOT / "aos/services/video_processing_service.py",
     ROOT / "aos/patches/v1_0/harden_shorts_subsystem.py",
     ROOT / "aos/patches/v1_0/install_shorts_indexes.py",
+    ROOT / "aos/patches/v1_0/install_shorts_recommendation_indexes.py",
     ROOT / "aos/patches/v1_0/initialize_short_classification_metadata.py",
 ]
 for root in transaction_roots:
@@ -165,22 +174,31 @@ for root in transaction_roots:
 patches = source("aos/patches.txt")
 data_patch = "aos.patches.v1_0.harden_shorts_subsystem"
 index_patch = "aos.patches.v1_0.install_shorts_indexes"
+recommendation_index_patch = "aos.patches.v1_0.install_shorts_recommendation_indexes"
 classification_patch = "aos.patches.v1_0.initialize_short_classification_metadata"
 require(data_patch in patches, "Shorts data migration not registered")
 require(index_patch in patches, "Shorts index migration not registered")
+require(recommendation_index_patch in patches, "Shorts recommendation index migration not registered")
 require(classification_patch in patches, "Shorts classification migration not registered")
 if data_patch in patches and index_patch in patches:
     require(patches.index(data_patch) < patches.index(index_patch), "Shorts index patch must follow data reconciliation")
-if index_patch in patches and classification_patch in patches:
+if index_patch in patches and recommendation_index_patch in patches:
     require(
-        patches.index(index_patch) < patches.index(classification_patch),
-        "Shorts classification metadata patch must follow schema/index migration",
+        patches.index(index_patch) < patches.index(recommendation_index_patch),
+        "Shorts recommendation indexes must follow core Shorts indexes",
+    )
+if recommendation_index_patch in patches and classification_patch in patches:
+    require(
+        patches.index(recommendation_index_patch) < patches.index(classification_patch),
+        "Shorts classification metadata patch must follow recommendation indexes",
     )
 data_patch_source = source("aos/patches/v1_0/harden_shorts_subsystem.py")
 index_patch_source = source("aos/patches/v1_0/install_shorts_indexes.py")
+recommendation_index_patch_source = source("aos/patches/v1_0/install_shorts_recommendation_indexes.py")
 classification_patch_source = source("aos/patches/v1_0/initialize_short_classification_metadata.py")
 require("frappe.db.commit" not in data_patch_source, "Shorts data migration commits")
 require("frappe.db.commit" not in index_patch_source, "Shorts index migration commits")
+require("frappe.db.commit" not in recommendation_index_patch_source, "Shorts recommendation index migration commits")
 require("frappe.db.commit" not in classification_patch_source, "Shorts classification migration commits")
 require("ALTER TABLE" not in classification_patch_source, "Shorts classification migration mixes DML and DDL")
 require("ALTER TABLE" not in data_patch_source, "Shorts data migration mixes DML and DDL")
