@@ -640,7 +640,7 @@ def reindex_active_ads(limit: int = 1000, enqueue: bool = True) -> dict[str, Any
 		"AOS Ad",
 		filters={"status": "Active"},
 		fields=["name"],
-		limit_page_length=max(1, int(limit)),
+		limit=max(1, int(limit)),
 		order_by="modified desc",
 	)
 	queued = 0
@@ -661,7 +661,7 @@ def reindex_visible_shorts(limit: int = 1000, enqueue: bool = True) -> dict[str,
 		"AOS Short",
 		filters={"status": "ready", "visibility_status": "visible"},
 		fields=["name"],
-		limit_page_length=max(1, int(limit)),
+		limit=max(1, int(limit)),
 		order_by="modified desc",
 	)
 	queued = 0

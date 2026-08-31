@@ -536,7 +536,7 @@ def _close_cohost_workflows_for_live(
             },
             fields=["name"],
             order_by="creation asc, name asc",
-            limit_page_length=100,
+            limit=100,
         )
         if not rows:
             return cleanup

@@ -33,7 +33,7 @@ class CatalogRepository:
             "AOS Category",
             fields=_CATEGORY_FIELDS,
             order_by="sort_order asc, category_name asc, name asc",
-            limit_page_length=MAX_CATEGORIES + 1,
+            limit=MAX_CATEGORIES + 1,
         )
         if len(rows or []) > MAX_CATEGORIES:
             raise CatalogDataError("Catalog category limit exceeded.")
@@ -61,7 +61,7 @@ class CatalogRepository:
                 "is_active",
             ],
             order_by="parent asc, idx asc, name asc",
-            limit_page_length=limit + 1,
+            limit=limit + 1,
         )
         if len(rows or []) > limit:
             raise CatalogDataError("Catalog attribute row limit exceeded.")
@@ -77,6 +77,6 @@ class CatalogRepository:
             "AOS Ad Attribute",
             filters={"name": ["in", names]},
             fields=["name", "label", "field_type", "unit", "help_text", "options", "is_active"],
-            limit_page_length=len(names),
+            limit=len(names),
         )
         return {str(row["name"]): dict(row) for row in (rows or [])}

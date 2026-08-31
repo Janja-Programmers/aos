@@ -7,6 +7,7 @@ import time
 import frappe
 
 from aos.api.shared.db import is_duplicate_entry_error
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.validators import require_id, require_session_for_guest
@@ -101,7 +102,11 @@ def recommendation_feedback_impl(**kwargs):
             },
         )
     except frappe.ValidationError as exc:
-        return fail(str(exc), error="VALIDATION_ERROR")
+        return safe_fail_from_exception(
+            exc,
+            fallback="Invalid recommendation feedback.",
+            error="VALIDATION_ERROR",
+        )
     except Exception:
         frappe.log_error(
             frappe.get_traceback(),

@@ -254,7 +254,7 @@ def _validate_category_attribute_rows(doc: Any) -> None:
             "AOS Ad Attribute",
             filters={"name": ["in", attribute_names]},
             fields=["name", "field_type", "options", "is_active"],
-            limit_page_length=MAX_CATEGORY_ATTRIBUTES,
+            limit=MAX_CATEGORY_ATTRIBUTES,
         )
     }
     if len(attribute_docs) != len(attribute_names):

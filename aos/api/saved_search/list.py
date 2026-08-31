@@ -65,8 +65,8 @@ def list_saved_searches_impl(**kwargs):
         filters={"user": user, "is_active": 1},
         fields=["name", "title", "params_json", "use_count", "last_used"],
         order_by="last_used desc, name desc",
-        start=offset,
-        limit_page_length=limit + 1,
+        offset=offset,
+        limit=limit + 1,
     )
     has_more = len(rows) > limit
     items = rows[:limit]

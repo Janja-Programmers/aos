@@ -105,8 +105,8 @@ def list_activity_impl(**kwargs):
             filters=filters,
             fields=fields,
             order_by="last_occurrence_at desc, creation desc, name desc",
-            limit_start=start,
-            limit_page_length=limit,
+            offset=start,
+            limit=limit,
         )
         items = [ActivityService.serialize_activity(row) for row in rows]
         activity_log("activity.listed", count=len(items), activity_group=group, activity_type=activity_type)

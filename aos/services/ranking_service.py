@@ -167,7 +167,7 @@ class RankingService:
                 "AOS Short",
                 filters={"status": "ready"},
                 fields=["name"],
-                limit_page_length=limit,
+                limit=limit,
                 order_by="modified desc",
             )
 

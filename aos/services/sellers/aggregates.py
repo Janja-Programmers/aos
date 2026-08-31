@@ -26,8 +26,8 @@ def reconcile_seller_ad_counts(*, dry_run: bool = True, batch_size: int = 100) -
             "AOS Seller",
             fields=["name", "total_ads"],
             order_by="name asc",
-            limit_start=offset,
-            limit_page_length=size,
+            offset=offset,
+            limit=size,
         )
         if not sellers:
             break

@@ -329,7 +329,7 @@ class ReviewService:
             fields=self._review_fields(),
             order_by=PUBLIC_SORTS[sort],
             limit=limit,
-            start=offset,
+            offset=offset,
         )
         total = frappe.db.count("AOS Review", filters)
         distribution = rating_distribution(ad_id)
@@ -366,7 +366,7 @@ class ReviewService:
             fields=self._review_fields(),
             order_by=SELF_SORTS[sort],
             limit=limit,
-            start=offset,
+            offset=offset,
         )
         total = frappe.db.count("AOS Review", filters)
         return {

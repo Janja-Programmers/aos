@@ -127,8 +127,8 @@ def get_locations_impl(**kwargs):
 			filters=filters,
 			fields=["name", "location", "country", "sort_order"],
 			order_by="sort_order asc, location asc, name asc",
-			limit_start=offset,
-			limit_page_length=limit + 1,
+			offset=offset,
+			limit=limit + 1,
 		)
 		has_more = len(rows) > limit
 		visible_rows = rows[:limit]

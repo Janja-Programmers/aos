@@ -10,6 +10,8 @@ from aos.patches.v1_0 import (
     harden_shorts_subsystem,
     initialize_short_classification_metadata,
     install_shorts_indexes,
+    reconcile_short_event_key_uniqueness,
+    restore_short_event_key_index,
     restore_short_processing_active_index,
 )
 
@@ -60,6 +62,24 @@ class TestShortsDatabaseContracts(FrappeTestCase):
         self.assertEqual(forbidden_calls, [])
         self.assertNotIn("_install_indexes()", Path(harden_shorts_subsystem.__file__).read_text())
 
+
+    def test_short_event_unique_index_repair_is_registered_after_reconciliation(self):
+        patches = Path(frappe.get_app_path("aos", "patches.txt")).read_text(encoding="utf-8")
+        reconcile = "aos.patches.v1_0.reconcile_short_event_key_uniqueness"
+        repair = "aos.patches.v1_0.restore_short_event_key_index"
+        self.assertIn(reconcile, patches)
+        self.assertIn(repair, patches)
+        self.assertLess(patches.index(reconcile), patches.index(repair))
+
+        repair_source = Path(restore_short_event_key_index.__file__).read_text(encoding="utf-8")
+        self.assertIn("uq_short_event_key", repair_source)
+        self.assertIn("unique=True", repair_source)
+        self.assertNotIn("frappe.db.commit", repair_source)
+        self.assertNotIn("frappe.db.rollback", repair_source)
+
+        reconcile_source = Path(reconcile_short_event_key_uniqueness.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("add_unique", reconcile_source)
+        self.assertNotIn("add_index", reconcile_source)
 
     def test_processing_active_index_repair_patch_is_registered_after_original_index_patch(self):
         patches = Path(frappe.get_app_path("aos", "patches.txt")).read_text(encoding="utf-8")

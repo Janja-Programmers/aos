@@ -1244,7 +1244,7 @@ def _collect_descendant_message_ids(message_id: str) -> list[str]:
             LIVE_MESSAGE_DOCTYPE,
             filters={"parent_message": ["in", parents]},
             pluck="name",
-            limit_page_length=MAX_DELETE_DESCENDANTS + 1,
+            limit=MAX_DELETE_DESCENDANTS + 1,
         )
         for child_id in children:
             child_id = str(child_id or "").strip()

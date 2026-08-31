@@ -33,7 +33,7 @@ def list_report_reasons_impl(**kwargs):
             filters={"is_active": 1},
             fields=["name", "title", "icon_key", "sort_order"],
             order_by="sort_order asc, title asc",
-            limit_page_length=200,
+            limit=200,
         )
         return ok(
             "Report reasons fetched.",

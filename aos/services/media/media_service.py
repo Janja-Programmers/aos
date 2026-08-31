@@ -1485,7 +1485,7 @@ class MediaService:
                 "upload_object_key",
                 "upload_expires_at",
             ],
-            limit_page_length=max(1, min(int(limit or 100), 500)),
+            limit=max(1, min(int(limit or 100), 500)),
             order_by="upload_expires_at asc, modified asc",
         )
         cleaned = 0
@@ -1524,7 +1524,7 @@ class MediaService:
             "AOS Media Object",
             filters=filters,
             fields=["name", "status", "purpose", "attached_doctype", "attached_name"],
-            limit_page_length=max(1, min(int(limit or 100), 500)),
+            limit=max(1, min(int(limit or 100), 500)),
             order_by="creation asc",
         )
         cleaned = 0
@@ -2447,7 +2447,7 @@ class MediaService:
             },
             fields=["name"],
             order_by="creation desc",
-            limit_page_length=1,
+            limit=1,
         )
         if not rows:
             return None

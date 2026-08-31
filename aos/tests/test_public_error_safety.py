@@ -59,6 +59,33 @@ class TestPublicErrorSafety(FrappeTestCase):
         self.assertEqual(frappe.local.response.get("http_status_code"), 422)
         self.assertTrue(log_error.called)
 
+    def test_frappe_get_all_calls_use_modern_pagination_keywords(self):
+        offenders = []
+        app_root = Path(__file__).resolve().parents[1]
+        deprecated = {"limit_page_length", "limit_start", "page_length", "start"}
+
+        for path in app_root.rglob("*.py"):
+            if "/tests/" in path.as_posix() or path.name.startswith("test_"):
+                continue
+            text = path.read_text(encoding="utf-8")
+            tree = ast.parse(text)
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                    continue
+                if node.func.attr not in {"get_all", "get_list"}:
+                    continue
+                owner = node.func.value
+                if not isinstance(owner, ast.Name) or owner.id != "frappe":
+                    continue
+                for keyword in node.keywords:
+                    if keyword.arg in deprecated:
+                        offenders.append(f"{path}:{node.lineno}: {keyword.arg}")
+
+        self.assertFalse(
+            offenders,
+            "Deprecated Frappe pagination keywords remain:\n" + "\n".join(offenders),
+        )
+
     def test_public_api_fail_calls_do_not_use_raw_exception_strings(self):
         offenders = []
         app_root = Path(__file__).resolve().parents[1]

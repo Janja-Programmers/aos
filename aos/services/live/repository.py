@@ -61,5 +61,5 @@ class LiveRepository:
             filters={"status": "live", "is_active": 1},
             pluck="room_name",
             order_by="modified asc, name asc",
-            limit_page_length=max(1, min(int(limit), 500)),
+            limit=max(1, min(int(limit), 500)),
         )

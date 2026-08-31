@@ -954,7 +954,7 @@ def _cleanup_verification_documents(*, user: str, batch_size: int = 250) -> dict
             filters=filters,
             fields=["name", "parent", "media"],
             order_by="name asc",
-            limit_page_length=size,
+            limit=size,
         )
         if not rows:
             break
@@ -1237,7 +1237,7 @@ def _cleanup_report_account_data(*, user: str) -> dict[str, int]:
                 filters={"reported_by": user},
                 fields=["name", "ad"],
                 order_by="name asc",
-                limit_page_length=250,
+                limit=250,
             )
             if not rows:
                 break

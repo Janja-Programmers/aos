@@ -97,7 +97,7 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         self.assertIn('TRANSIENT_INCOMING_CALL_EVENT = "aos_incoming_call"', source)
         self.assertIn("MAX_FCM_ESTIMATED_ENVELOPE_BYTES", source)
         self.assertIn("MAX_DELIVERY_TOKENS = 500", source)
-        self.assertIn("limit_page_length=MAX_DELIVERY_TOKENS + 1", source)
+        self.assertIn("limit=MAX_DELIVERY_TOKENS + 1", source)
         self.assertIn("_validate_fcm_envelope", source)
         self.assertIn('["caller", "receiver", "status"]', source)
         self.assertIn('relationship_suppression_reason(_clean(job.user), caller)', source)

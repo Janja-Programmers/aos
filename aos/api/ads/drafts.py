@@ -594,8 +594,8 @@ def list_my_ad_drafts_impl(**kwargs):
             filters={"user": user, "status": "Draft"},
             fields=["name", "title_hint", "country_hint", "location_hint", "payload_json", "modified"],
             order_by="modified desc, name desc",
-            start=offset,
-            page_length=limit,
+            offset=offset,
+            limit=limit,
         )
         items = [_build_draft_list_item(row, default_currency) for row in rows]
         return ok(

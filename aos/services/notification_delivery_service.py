@@ -158,7 +158,7 @@ def _get_active_push_tokens(user: str) -> list[dict[str, str]]:
 		filters={"user": user, "is_active": 1},
 		fields=["token", "token_hash", "device_type", "registration_kind"],
 		order_by="last_used_at desc, modified desc, name desc",
-		limit_page_length=MAX_DELIVERY_TOKENS + 1,
+		limit=MAX_DELIVERY_TOKENS + 1,
 	)
 	if len(rows) > MAX_DELIVERY_TOKENS:
 		notification_log(

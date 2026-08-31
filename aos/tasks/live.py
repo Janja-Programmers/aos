@@ -455,7 +455,7 @@ def reconcile_live_state() -> dict[str, int]:
         filters={"status": "ended", "room_cleanup_pending": 1},
         fields=["name"],
         order_by="modified asc, name asc",
-        limit_page_length=BATCH_SIZE,
+        limit=BATCH_SIZE,
     )
     for index, row in enumerate(ended):
         savepoint = f"aos_live_cleanup_{index}"
@@ -475,7 +475,7 @@ def reconcile_live_state() -> dict[str, int]:
         filters={"status": "live", "is_active": 1},
         fields=["name", "room_name", "host_user"],
         order_by="last_reconciled_at asc, modified asc, name asc",
-        limit_page_length=min(BATCH_SIZE, 25),
+        limit=min(BATCH_SIZE, 25),
     )
     for index, row in enumerate(active):
         savepoint = f"aos_live_reconcile_{index}"
@@ -527,7 +527,7 @@ def cleanup_live_webhook_events() -> int:
         filters={"creation": ["<", cutoff], "status": ["in", ["processed", "ignored"]]},
         pluck="name",
         order_by="creation asc, name asc",
-        limit_page_length=500,
+        limit=500,
     )
     if rows:
         frappe.db.delete("AOS LiveKit Webhook Event", {"name": ["in", rows]})

@@ -362,7 +362,7 @@ def get_all_countries() -> list[dict[str, Any]]:
 		"Country",
 		fields=["name", "code"],
 		order_by="name asc",
-		limit_page_length=0,
+		limit=0,
 	)
 	return [
 		{
@@ -389,7 +389,7 @@ def get_enabled_currencies(default: str | None = None) -> list[dict[str, Any]]:
 		filters=filters,
 		fields=fields,
 		order_by="name asc",
-		limit_page_length=0,
+		limit=0,
 	)
 	return [
 		{
@@ -418,7 +418,7 @@ def get_enabled_languages(default: str | None = None) -> list[dict[str, Any]]:
 		filters=filters,
 		fields=fields,
 		order_by="language_name asc, name asc",
-		limit_page_length=0,
+		limit=0,
 	)
 	return [
 		{
