@@ -1,4 +1,4 @@
-# AOS (Africa Online Stores)
+# AOS (Africa Online Space)
 
 A multi-vendor marketplace platform enabling users to buy, sell, post short videos, go live, and communicate via chat and in-app calls across multiple countries.
 
