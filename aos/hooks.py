@@ -1,8 +1,8 @@
 app_name = "aos"
 app_title = "AOS"
-app_publisher = "Africa Online Stores"
+app_publisher = "Africa Online Space"
 app_description = "A multi-vendor marketplace platform enabling users to buy, sell, go live, and communicate via chat and in-app calls across multiple countries."
-app_email = "info@africaonlinestores.com"
+app_email = "info@africaonlinespace.com"
 app_license = "mit"
 
 # Apps
