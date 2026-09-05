@@ -166,6 +166,39 @@ class TestLocalizationAPI(AOSFeatureTestMixin, FrappeTestCase):
 		self.assertEqual(response, limited)
 		loader.assert_not_called()
 
+	def test_public_v1_wrappers_strip_only_frappe_cmd_transport_metadata(self):
+		from aos.api.v1 import localization as v1_localization
+
+		with patch.object(v1_localization, "_get_locale_bundle_impl", return_value={"ok": True}) as bundle_impl:
+			v1_localization.get_locale_bundle(cmd="aos.api.v1.localization.get_locale_bundle", legacy=True)
+			bundle_impl.assert_called_once_with(legacy=True)
+
+		with patch.object(v1_localization, "_resolve_locale_context_impl", return_value={"ok": True}) as context_impl:
+			v1_localization.resolve_locale_context(
+				cmd="aos.api.v1.localization.resolve_locale_context", country="Kenya", forged="x"
+			)
+			context_impl.assert_called_once_with(country="Kenya", forged="x")
+
+		with patch.object(v1_localization, "_get_locations_impl", return_value={"ok": True}) as locations_impl:
+			v1_localization.get_locations(
+				cmd="aos.api.v1.localization.get_locations", country="Kenya", q="Nairobi", unexpected="x"
+			)
+			locations_impl.assert_called_once_with(country="Kenya", q="Nairobi", unexpected="x")
+
+	def test_public_v1_cmd_is_ignored_but_real_unknown_fields_still_fail_closed(self):
+		from aos.api.v1 import localization as v1_localization
+
+		with patch("aos.api.localization.bundle.localization_rate_limit", return_value=None):
+			response = v1_localization.get_locale_bundle(cmd="aos.api.v1.localization.get_locale_bundle")
+		self.assertTrue(response.get("ok"), response)
+
+		response = v1_localization.get_locale_bundle(
+			cmd="aos.api.v1.localization.get_locale_bundle",
+			legacy=True,
+		)
+		self.assertEqual(response["error"], "LOCALIZATION_UNKNOWN_FIELD")
+		self.assertEqual(response["data"]["fields"], ["legacy"])
+
 	def test_removed_resolve_preference_context_endpoint_is_absent(self):
 		from aos.api.v1 import localization as v1_localization
 

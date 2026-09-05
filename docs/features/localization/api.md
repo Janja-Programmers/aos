@@ -501,6 +501,8 @@ These routes are owned by Accounts but are part of the finalized frontend Locali
 
 ## E. Frontend contract
 
+Frappe transport metadata such as the framework-owned `cmd` routing field is stripped by the public v1 wrapper before strict Localization validation. Clients must not send or depend on `cmd`; every other unknown client field remains rejected.
+
 ### Canonical routes
 
 ```text
