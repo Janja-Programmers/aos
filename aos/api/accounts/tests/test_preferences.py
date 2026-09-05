@@ -35,9 +35,23 @@ class AccountPreferenceIntegrationTests(AOSFeatureTestMixin, IntegrationTestCase
 
 	def test_preference_read_uses_current_schema_without_metadata_compatibility_probe(self):
 		user = self.make_user("schema-hot-path")
-		with patch("aos.services.user_preference_service.frappe.get_meta") as get_meta:
+		expected = frappe._dict(
+			name=f"preference-{self.prefix}",
+			user=user,
+			country="Kenya",
+			currency="KES",
+			language="en-US",
+			location="",
+		)
+		cache = MagicMock()
+		with (
+			patch("aos.services.user_preference_service.frappe.get_meta") as get_meta,
+			patch("aos.services.user_preference_service.frappe.db.get_value", return_value=expected),
+			patch("aos.services.user_preference_service.frappe.cache", return_value=cache),
+		):
 			pref = get_user_preference(user, use_cache=False)
 		self.assertIsNotNone(pref)
+		self.assertEqual(pref.user, user)
 		get_meta.assert_not_called()
 
 	def test_get_preference_rejects_legacy_or_unknown_fields(self):

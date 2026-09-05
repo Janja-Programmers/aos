@@ -92,7 +92,7 @@ class IntegrationTestAOSSettings(AOSFeatureTestMixin, IntegrationTestCase):
 			settings.reload()
 			settings.default_country = alternative
 			settings.save(ignore_permissions=True)
-			with patch("aos.api.localization.bundle.rate_limit", return_value=None):
+			with patch("aos.api.localization.bundle.localization_rate_limit", return_value=None):
 				response = get_locale_bundle_impl()
 			self.assertTrue(response.get("ok"), response)
 			self.assertEqual(response["data"]["defaults"]["country"], alternative)
