@@ -74,7 +74,7 @@ class AOSFeatureTestMixin:
         ).insert(ignore_permissions=True)
 
     def preference_defaults(self) -> tuple[str, str, str]:
-        from aos.services.localization_service import (
+        from aos.services.localization import (
             validate_country,
             validate_currency,
             validate_language,
@@ -207,7 +207,7 @@ class AOSFeatureTestMixin:
 
     @staticmethod
     def _clear_localization_test_caches() -> None:
-        from aos.services.localization_service import clear_localization_cache
+        from aos.services.localization import clear_localization_cache
         from aos.utils.aos_settings import clear_aos_settings_cache
 
         clear_aos_settings_cache()

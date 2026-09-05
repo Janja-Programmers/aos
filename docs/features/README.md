@@ -16,7 +16,7 @@ Feature documentation is the canonical human-readable description of AOS busines
 | [Chat](chat/README.md) | Conversations, messages, attachments, reactions, receipts, presence and translation | [API](chat/api.md) |
 | [Diagnostics](diagnostics/README.md) | System-Manager production/health/readiness reports | [API](diagnostics/api.md) |
 | [Live](live/README.md) | Live lifecycle, LiveKit, participants/co-hosts, comments, reactions and tracking | [API](live/api.md) |
-| [Localization](localization/README.md) | Country/language/currency bundles and preference context | [API](localization/api.md) |
+| [Localization](localization/api.md) | Country/language/currency/location contract and preferences (single authoritative document) | [API](localization/api.md) |
 | [Maps](maps/README.md) | Geocoding, routing and seller-location services | [API](maps/api.md) |
 | [Media](media/README.md) | Upload/confirm/read/delete lifecycle, object storage and processing | [API](media/api.md) |
 | [Notifications](notifications/README.md) | In-app notifications, push tokens and delivery handoff | [API](notifications/api.md) |

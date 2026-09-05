@@ -142,19 +142,19 @@ app_license = "mit"
 
 doc_events = {
 	"Country": {
-		"after_insert": "aos.services.localization_service.localization_master_changed",
-		"on_update": "aos.services.localization_service.localization_master_changed",
-		"on_trash": "aos.services.localization_service.localization_master_changed",
+		"after_insert": "aos.services.localization.localization_master_changed",
+		"on_update": "aos.services.localization.localization_master_changed",
+		"on_trash": "aos.services.localization.localization_master_changed",
 	},
 	"Currency": {
-		"after_insert": "aos.services.localization_service.localization_master_changed",
-		"on_update": "aos.services.localization_service.localization_master_changed",
-		"on_trash": "aos.services.localization_service.localization_master_changed",
+		"after_insert": "aos.services.localization.localization_master_changed",
+		"on_update": "aos.services.localization.localization_master_changed",
+		"on_trash": "aos.services.localization.localization_master_changed",
 	},
 	"Language": {
-		"after_insert": "aos.services.localization_service.localization_master_changed",
-		"on_update": "aos.services.localization_service.localization_master_changed",
-		"on_trash": "aos.services.localization_service.localization_master_changed",
+		"after_insert": "aos.services.localization.localization_master_changed",
+		"on_update": "aos.services.localization.localization_master_changed",
+		"on_trash": "aos.services.localization.localization_master_changed",
 	},
 	"Error Log": {
 		"validate": "aos.utils.secure_logging.redact_error_log_document",

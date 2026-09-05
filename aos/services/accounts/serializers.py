@@ -7,7 +7,7 @@ from typing import Any, Iterable
 import frappe
 
 from aos.api.shared.formatters import humanize_count, to_non_negative_int
-from aos.services.localization_service import serialize_preference as serialize_localization_preference
+from aos.services.localization import serialize_preference as serialize_localization_preference
 from aos.services.media.media_service import MediaService
 from aos.services.sellers.identity import public_seller_id_for_name
 from aos.services.social.repository import SocialRepository

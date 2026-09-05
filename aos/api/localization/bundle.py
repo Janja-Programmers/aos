@@ -2,25 +2,27 @@ from __future__ import annotations
 
 import frappe
 
-from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
 from aos.api.shared.responses import fail, ok
-from aos.services.localization_service import get_locale_bundle_payload
+from aos.services.localization import get_locale_bundle_payload
 
-from .constants import LOCALE_BUNDLE_LIMIT_PER_MIN_PER_IP
+from .constants import LOCALE_BUNDLE_LIMIT_PER_MINUTE
+from .throttle import localization_rate_limit
+from .validation import reject_unknown_fields
 
 
-def get_locale_bundle_impl(**_kwargs):
+def get_locale_bundle_impl(**kwargs):
 	"""Return cached, validated localization master data and defaults."""
 
-	limited = rate_limit(
-		key=rate_limit_key("localization", "bundle", "ip", request_ip()),
-		ttl_seconds=60,
-		limit=LOCALE_BUNDLE_LIMIT_PER_MIN_PER_IP,
+	invalid = reject_unknown_fields(kwargs, allowed=set())
+	if invalid:
+		return invalid
+	limited = localization_rate_limit(
+		endpoint="bundle",
+		limit=LOCALE_BUNDLE_LIMIT_PER_MINUTE,
 		message="Too many requests. Please try again later.",
 	)
 	if limited:
 		return limited
-
 	try:
 		payload, error = get_locale_bundle_payload()
 		if error:

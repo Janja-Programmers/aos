@@ -230,8 +230,7 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
 	return snap
 
 
-def clear_aos_settings_cache() -> None:
-	"""Invalidate settings-derived localization and FX state after updates."""
+def _delete_aos_settings_cache() -> None:
 	try:
 		cache = frappe.cache()
 	except Exception:
@@ -240,7 +239,15 @@ def clear_aos_settings_cache() -> None:
 		try:
 			cache.delete_value(key)
 		except Exception:
-			pass
+			continue
+
+
+def clear_aos_settings_cache() -> None:
+	"""Invalidate now and post-commit so another node cannot retain stale settings."""
+	_delete_aos_settings_cache()
+	manager = getattr(frappe.db, "after_commit", None)
+	if manager is not None and hasattr(manager, "add"):
+		manager.add(_delete_aos_settings_cache)
 
 
 def _parse_config_list(raw: str | None) -> list[str]:

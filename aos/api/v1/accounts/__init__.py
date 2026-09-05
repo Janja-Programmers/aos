@@ -32,7 +32,7 @@ def update_profile(**kwargs):
     return _update_profile_impl(**kwargs)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET"])
 def get_my_preference(**kwargs):
     """Execute the v1 accounts.get_my_preference endpoint."""
     return _get_my_preference_impl(**kwargs)

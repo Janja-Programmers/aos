@@ -9,7 +9,6 @@ from aos.services.accounts.identity import generate_public_account_id
 INDEXES = {
     "idx_aos_profile_lifecycle": ("AOS Profile", ["account_status", "is_deleted", "restore_deadline"]),
     "idx_aos_profile_public_identity": ("AOS Profile", ["public_id"]),
-    "idx_aos_preference_market_location": ("AOS User Preference", ["country", "location", "user"]),
 }
 
 

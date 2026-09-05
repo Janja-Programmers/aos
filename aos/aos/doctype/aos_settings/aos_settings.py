@@ -4,7 +4,7 @@
 import frappe
 from frappe.model.document import Document
 
-from aos.services.localization_service import (
+from aos.services.localization import (
 	clear_localization_cache,
 	validate_country,
 	validate_currency,

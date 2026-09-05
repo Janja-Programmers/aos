@@ -53,7 +53,7 @@
 ## Localization
 
 - [ ] `AOS Settings` default country, currency, and language resolve to valid enabled master records.
-- [ ] Locale bundle returns schema version `1.1` and the expected defaults.
+- [ ] Locale bundle returns schema version `2.0` and the expected defaults.
 - [ ] Guest header/default resolution and authenticated stored-preference resolution pass smoke tests.
 - [ ] Location pagination returns stable, non-overlapping pages and excludes inactive rows.
 - [ ] `idx_aos_location_country_active_order` exists after migration.

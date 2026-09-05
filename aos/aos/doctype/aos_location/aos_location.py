@@ -6,7 +6,7 @@ from __future__ import annotations
 import frappe
 from frappe.model.document import Document
 
-from aos.services.localization_service import clear_localization_cache, validate_country
+from aos.services.localization import validate_country
 
 LOCATION_MAX_LENGTH = 140
 
@@ -52,12 +52,3 @@ class AOSLocation(Document):
 				"Location already exists in this country.",
 				frappe.DuplicateEntryError,
 			)
-
-	def after_insert(self):
-		clear_localization_cache()
-
-	def on_update(self):
-		clear_localization_cache()
-
-	def on_trash(self):
-		clear_localization_cache()

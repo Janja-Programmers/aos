@@ -27,21 +27,21 @@ def resolve_country(value: str | None):
         - Country.code (e.g. "KE")
     """
 
-    from aos.services.localization_service import validate_country
+    from aos.services.localization import validate_country
     return validate_country(value, required=False)
 
 
 def resolve_language(value: str | None):
     """Resolve a language input to Language.name."""
 
-    from aos.services.localization_service import validate_language
+    from aos.services.localization import validate_language
     return validate_language(value, required=False)
 
 
 def resolve_currency(value: str | None):
     """Resolve a currency input to Currency.name."""
 
-    from aos.services.localization_service import validate_currency
+    from aos.services.localization import validate_currency
     return validate_currency(value, required=False)
 
 

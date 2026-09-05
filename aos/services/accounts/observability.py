@@ -23,7 +23,19 @@ _ALLOWED_EVENTS = {
     "account.restored",
 }
 _ALLOWED_OUTCOMES = {"success", "rejected", "failure"}
-_ALLOWED_FIELDS = {"display_name", "legal_name", "phone", "date_of_birth", "gender", "bio", "location", "avatar"}
+_ALLOWED_FIELDS = {
+    "display_name",
+    "legal_name",
+    "phone",
+    "date_of_birth",
+    "gender",
+    "bio",
+    "location",
+    "avatar",
+    "country",
+    "currency",
+    "language",
+}
 
 
 def _opaque(user: str) -> str:

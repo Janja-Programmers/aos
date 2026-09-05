@@ -11,7 +11,7 @@ from aos.api.shared.locale_hints import accept_language_hint, geo_country_hint
 from aos.api.shared.responses import fail
 from aos.services.accounts.identity import ensure_public_account_id
 from aos.services.accounts.observability import account_log
-from aos.services.localization_service import resolve_guest_context
+from aos.services.localization import resolve_guest_context
 from aos.services.user_preference_service import clear_user_preference_cache, get_user_preference
 
 

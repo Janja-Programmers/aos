@@ -94,6 +94,61 @@ class IntegrationTestAOSUserPreference(AOSFeatureTestMixin, IntegrationTestCase)
 		self.assertEqual(preference.country, country)
 		self.assertEqual(preference.currency, currency)
 
+	def test_controller_rejects_location_from_another_country(self):
+		user = self.make_user("cross-country-location", with_preference=False)
+		country, language, currency = self.preference_defaults()
+		other_countries = frappe.get_all("Country", filters={"name": ["!=", country]}, pluck="name", limit=1)
+		if not other_countries:
+			self.skipTest("Two countries required")
+		location = frappe.get_doc(
+			{
+				"doctype": "AOS Location",
+				"country": other_countries[0],
+				"location": f"{self.prefix} Other Market",
+				"is_active": 1,
+			}
+		).insert(ignore_permissions=True)
+
+		preference = frappe.get_doc(
+			{
+				"doctype": "AOS User Preference",
+				"user": user,
+				"country": country,
+				"language": language,
+				"currency": currency,
+				"location": location.name,
+			}
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			preference.insert(ignore_permissions=True)
+
+	def test_controller_rejects_inactive_location(self):
+		user = self.make_user("inactive-location", with_preference=False)
+		country, language, currency = self.preference_defaults()
+		location = frappe.get_doc(
+			{
+				"doctype": "AOS Location",
+				"country": country,
+				"location": f"{self.prefix} Inactive",
+				"is_active": 0,
+			}
+		).insert(ignore_permissions=True)
+
+		preference = frappe.get_doc(
+			{
+				"doctype": "AOS User Preference",
+				"user": user,
+				"country": country,
+				"language": language,
+				"currency": currency,
+				"location": location.name,
+			}
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			preference.insert(ignore_permissions=True)
+
 	def test_database_contract_enforces_one_preference_per_user(self):
 		user = self.make_user("unique-pref", with_preference=False)
 		country, language, currency = self.preference_defaults()

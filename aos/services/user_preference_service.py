@@ -8,11 +8,12 @@ from typing import Any
 import frappe
 
 from aos.api.shared.responses import fail
-from aos.services.localization_service import validate_country, validate_currency, validate_language
+from aos.services.localization import validate_country, validate_currency, validate_language
 
 USER_PREFERENCE_CACHE_SCHEMA = "v2"
 USER_PREFERENCE_CACHE_TTL_SECONDS = 300
 PREFERENCE_FIELDS = ("country", "currency", "language", "location")
+PREFERENCE_DB_FIELDS = ("name", "user", *PREFERENCE_FIELDS)
 
 
 def _cache_key(user: str) -> str:
@@ -20,28 +21,27 @@ def _cache_key(user: str) -> str:
     return f"aos:user_pref:v3:{digest}"
 
 
-def clear_user_preference_cache(user: str | None) -> None:
-    user = str(user or "").strip()
-    if not user:
-        return
+def _delete_user_preference_cache(user: str) -> None:
     try:
         frappe.cache().delete_value(_cache_key(user))
     except Exception:
-        pass
+        return
+
+
+def clear_user_preference_cache(user: str | None) -> None:
+    """Invalidate now and again after commit to prevent stale cross-node refill."""
+    user = str(user or "").strip()
+    if not user:
+        return
+    _delete_user_preference_cache(user)
+    manager = getattr(frappe.db, "after_commit", None)
+    if manager is None or not hasattr(manager, "add"):
+        return
+    manager.add(lambda: _delete_user_preference_cache(user))
 
 
 def clear_user_preference_cache_for_doc(doc: Any, _method: str | None = None) -> None:
     clear_user_preference_cache(getattr(doc, "user", None))
-
-
-def _preference_fields() -> list[str]:
-    fields = ["name", "user", "country", "currency", "language"]
-    try:
-        if frappe.get_meta("AOS User Preference").has_field("location"):
-            fields.append("location")
-    except Exception:
-        pass
-    return fields
 
 
 def get_user_preference(user: str, *, use_cache: bool = True):
@@ -66,12 +66,12 @@ def get_user_preference(user: str, *, use_cache: bool = True):
     preference = frappe.db.get_value(
         "AOS User Preference",
         {"user": user},
-        _preference_fields(),
+        list(PREFERENCE_DB_FIELDS),
         as_dict=True,
     )
     if not preference:
         return None
-    payload = {field: preference.get(field) for field in _preference_fields()}
+    payload = {field: preference.get(field) for field in PREFERENCE_DB_FIELDS}
     if cache is not None:
         try:
             cache.set_value(
@@ -88,7 +88,7 @@ def get_user_preference_for_update(user: str):
     user = str(user or "").strip()
     if not user or user == "Guest":
         return None
-    select_fields = ", ".join(_preference_fields())
+    select_fields = ", ".join(PREFERENCE_DB_FIELDS)
     rows = frappe.db.sql(
         f"""
         SELECT {select_fields}
@@ -192,8 +192,6 @@ def update_user_preference(
     doc.country = next_country
     doc.currency = next_currency
     doc.language = next_language
-    if hasattr(doc, "location"):
-        doc.location = next_location
+    doc.location = next_location
     doc.save(ignore_permissions=True)
-    clear_user_preference_cache(user)
     return doc, None

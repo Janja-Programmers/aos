@@ -9,7 +9,7 @@ import frappe
 from aos.api.shared.account_status import get_account_state
 from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.accounts.serializers import seller_summary
-from aos.services.localization_service import serialize_preference as serialize_localization_preference
+from aos.services.localization import serialize_preference as serialize_localization_preference
 from aos.services.user_preference_service import get_user_preference, is_country_locked
 
 
