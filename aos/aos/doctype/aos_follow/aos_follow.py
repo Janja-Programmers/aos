@@ -38,10 +38,10 @@ class AOSFollow(Document):
         if not frappe.db.exists("User", self.follower_user):
             frappe.throw("Follower user does not exist.")
 
-        if not frappe.db.exists("AOS Profile", self.following_user):
+        if not frappe.db.exists("AOS Profile", {"user": self.following_user}):
             frappe.throw("Following user profile does not exist.")
 
-        if not frappe.db.exists("AOS Profile", self.follower_user):
+        if not frappe.db.exists("AOS Profile", {"user": self.follower_user}):
             frappe.throw("Follower user profile does not exist.")
 
 
@@ -71,7 +71,7 @@ class AOSFollow(Document):
             """
             UPDATE `tabAOS Profile`
             SET total_followers = total_followers + 1
-            WHERE name = %s
+            WHERE user = %s
             """,
             (self.following_user,),
         )
@@ -80,7 +80,7 @@ class AOSFollow(Document):
             """
             UPDATE `tabAOS Profile`
             SET total_following = total_following + 1
-            WHERE name = %s
+            WHERE user = %s
             """,
             (self.follower_user,),
         )
@@ -90,7 +90,7 @@ class AOSFollow(Document):
             """
             UPDATE `tabAOS Profile`
             SET total_followers = GREATEST(total_followers - 1, 0)
-            WHERE name = %s
+            WHERE user = %s
             """,
             (self.following_user,),
         )
@@ -99,7 +99,7 @@ class AOSFollow(Document):
             """
             UPDATE `tabAOS Profile`
             SET total_following = GREATEST(total_following - 1, 0)
-            WHERE name = %s
+            WHERE user = %s
             """,
             (self.follower_user,),
         )

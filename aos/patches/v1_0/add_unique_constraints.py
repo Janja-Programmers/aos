@@ -164,12 +164,12 @@ def _dedupe_social_follows():
                 """
                 UPDATE `tabAOS Profile` p
                 SET total_followers = (
-                        SELECT COUNT(*) FROM `tabAOS Follow` f WHERE f.following_user = p.name
+                        SELECT COUNT(*) FROM `tabAOS Follow` f WHERE f.following_user = p.user
                     ),
                     total_following = (
-                        SELECT COUNT(*) FROM `tabAOS Follow` f WHERE f.follower_user = p.name
+                        SELECT COUNT(*) FROM `tabAOS Follow` f WHERE f.follower_user = p.user
                     )
-                WHERE p.name IN %(users)s
+                WHERE p.user IN %(users)s
                 """,
                 {"users": (group.follower_user, group.following_user)},
             )

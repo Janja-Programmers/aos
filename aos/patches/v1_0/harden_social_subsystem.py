@@ -311,8 +311,8 @@ def _reconcile_profile_counters() -> None:
         frappe.db.sql(
             """
             UPDATE `tabAOS Profile` p
-            SET total_followers = (SELECT COUNT(*) FROM `tabAOS Follow` f WHERE f.following_user = p.name),
-                total_following = (SELECT COUNT(*) FROM `tabAOS Follow` f WHERE f.follower_user = p.name)
+            SET total_followers = (SELECT COUNT(*) FROM `tabAOS Follow` f WHERE f.following_user = p.user),
+                total_following = (SELECT COUNT(*) FROM `tabAOS Follow` f WHERE f.follower_user = p.user)
             WHERE p.name IN %(names)s
             """,
             {"names": names},

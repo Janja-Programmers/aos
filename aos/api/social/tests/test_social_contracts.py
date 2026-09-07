@@ -78,6 +78,17 @@ class TestSocialStaticContracts(TestCase):
         self.assertIn("active_social_blocks_closed", purge)
         self.assertIn("10_000", (ROOT / "aos/services/accounts/constants.py").read_text())
 
+
+    def test_social_counters_use_profile_user_relationship_not_document_name(self):
+        repository = (ROOT / "aos/services/social/repository.py").read_text()
+        follow = (ROOT / "aos/aos/doctype/aos_follow/aos_follow.py").read_text()
+        self.assertIn("f.following_user = p.user", repository)
+        self.assertIn("f.follower_user = p.user", repository)
+        self.assertIn("WHERE p.user IN %(users)s", repository)
+        self.assertIn("WHERE user = %s", follow)
+        self.assertNotIn("f.following_user = p.name", repository)
+        self.assertNotIn("f.follower_user = p.name", repository)
+
     def test_database_constraints_are_the_duplicate_boundary(self):
         follow = (ROOT / "aos/aos/doctype/aos_follow/aos_follow.py").read_text()
         block = (ROOT / "aos/aos/doctype/aos_user_block/aos_user_block.py").read_text()

@@ -3,11 +3,13 @@ from __future__ import annotations
 import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_to_date, now_datetime
+from unittest.mock import patch
 
 from aos.services.account_purge_service import purge_expired_deleted_account
 from aos.services.accounts.lifecycle_service import AccountLifecycleService
+from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.accounts.serializers import serialize_public_profile
-from aos.services.social.repository import SocialRepository
+from aos.services.social.service import SocialService
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
@@ -24,16 +26,25 @@ class TestRecoverableAccountDeletion(AOSFeatureTestMixin, FrappeTestCase):
         frappe.set_user("Administrator")
 
     def _follow(self, *, follower: str, following: str) -> str:
-        doc = frappe.get_doc(
-            {
-                "doctype": "AOS Follow",
-                "follower_user": follower,
-                "following_user": following,
-            }
+        with patch(
+            "aos.services.social.service.SocialService._notify_follow_atomic",
+            return_value="test",
+        ):
+            result = SocialService().toggle_follow(
+                actor=follower,
+                payload={
+                    "account_id": public_account_id_for_user(following),
+                    "action": "follow",
+                },
+            )
+        self.assertTrue(result["changed"], result)
+        edge = frappe.db.get_value(
+            "AOS Follow",
+            {"follower_user": follower, "following_user": following},
+            "name",
         )
-        doc.insert(ignore_permissions=True)
-        SocialRepository().sync_counters([follower, following])
-        return str(doc.name)
+        self.assertTrue(edge)
+        return str(edge)
 
     def test_delete_restore_preserves_social_graph_counts_and_verification(self):
         owner = self.make_user("owner")

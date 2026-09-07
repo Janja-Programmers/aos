@@ -208,12 +208,12 @@ class SocialRepository:
                 """
                 UPDATE `tabAOS Profile` p
                 SET p.total_followers = (
-                        SELECT COUNT(*) FROM `tabAOS Follow` f WHERE f.following_user = p.name
+                        SELECT COUNT(*) FROM `tabAOS Follow` f WHERE f.following_user = p.user
                     ),
                     p.total_following = (
-                        SELECT COUNT(*) FROM `tabAOS Follow` f WHERE f.follower_user = p.name
+                        SELECT COUNT(*) FROM `tabAOS Follow` f WHERE f.follower_user = p.user
                     )
-                WHERE p.name IN %(users)s
+                WHERE p.user IN %(users)s
                 """,
                 {"users": chunk},
             )
@@ -221,14 +221,14 @@ class SocialRepository:
     def profile_totals(self, *, viewer: str, target: str) -> dict[str, int]:
         rows = frappe.db.sql(
             """
-            SELECT name, total_followers, total_following
+            SELECT user, total_followers, total_following
             FROM `tabAOS Profile`
-            WHERE name IN %(users)s
+            WHERE user IN %(users)s
             """,
             {"users": tuple(sorted({viewer, target}))},
             as_dict=True,
         )
-        by_user = {str(row.name): row for row in rows}
+        by_user = {str(row.user): row for row in rows}
         return {
             "target_total_followers": max(0, int(getattr(by_user.get(target), "total_followers", 0) or 0)),
             "current_total_following": max(0, int(getattr(by_user.get(viewer), "total_following", 0) or 0)),
@@ -336,7 +336,7 @@ class SocialRepository:
                        f.creation AS sort_at, p.total_followers, p.total_following, p.is_verified,
                        u.full_name, u.user_image
                 FROM `tabAOS Follow` f
-                INNER JOIN `tabAOS Profile` p ON p.name = f.following_user
+                INNER JOIN `tabAOS Profile` p ON p.user = f.following_user
                 INNER JOIN `tabUser` u ON u.name = f.following_user
                 WHERE f.follower_user = %(viewer)s {active_sql}
                   {block_sql.replace('TARGET_EXPR', target)} {search_sql} {cursor_sql}
@@ -345,7 +345,7 @@ class SocialRepository:
             """
             count_sql = f"""
                 SELECT COUNT(*) AS total FROM `tabAOS Follow` f
-                INNER JOIN `tabAOS Profile` p ON p.name = f.following_user
+                INNER JOIN `tabAOS Profile` p ON p.user = f.following_user
                 INNER JOIN `tabUser` u ON u.name = f.following_user
                 WHERE f.follower_user = %(viewer)s {active_sql}
                   {block_sql.replace('TARGET_EXPR', target)} {search_sql}
@@ -360,7 +360,7 @@ class SocialRepository:
                        f.creation AS sort_at, p.total_followers, p.total_following, p.is_verified,
                        u.full_name, u.user_image
                 FROM `tabAOS Follow` f
-                INNER JOIN `tabAOS Profile` p ON p.name = f.follower_user
+                INNER JOIN `tabAOS Profile` p ON p.user = f.follower_user
                 INNER JOIN `tabUser` u ON u.name = f.follower_user
                 WHERE f.following_user = %(viewer)s {active_sql}
                   {block_sql.replace('TARGET_EXPR', target)} {search_sql} {cursor_sql}
@@ -369,7 +369,7 @@ class SocialRepository:
             """
             count_sql = f"""
                 SELECT COUNT(*) AS total FROM `tabAOS Follow` f
-                INNER JOIN `tabAOS Profile` p ON p.name = f.follower_user
+                INNER JOIN `tabAOS Profile` p ON p.user = f.follower_user
                 INNER JOIN `tabUser` u ON u.name = f.follower_user
                 WHERE f.following_user = %(viewer)s {active_sql}
                   {block_sql.replace('TARGET_EXPR', target)} {search_sql}
@@ -387,7 +387,7 @@ class SocialRepository:
                 FROM `tabAOS Follow` f1
                 INNER JOIN `tabAOS Follow` f2
                   ON f2.follower_user = f1.following_user AND f2.following_user = f1.follower_user
-                INNER JOIN `tabAOS Profile` p ON p.name = f1.following_user
+                INNER JOIN `tabAOS Profile` p ON p.user = f1.following_user
                 INNER JOIN `tabUser` u ON u.name = f1.following_user
                 WHERE f1.follower_user = %(viewer)s {active_sql}
                   {block_sql.replace('TARGET_EXPR', target)} {search_sql} {cursor_sql}
@@ -398,7 +398,7 @@ class SocialRepository:
                 SELECT COUNT(*) AS total FROM `tabAOS Follow` f1
                 INNER JOIN `tabAOS Follow` f2
                   ON f2.follower_user = f1.following_user AND f2.following_user = f1.follower_user
-                INNER JOIN `tabAOS Profile` p ON p.name = f1.following_user
+                INNER JOIN `tabAOS Profile` p ON p.user = f1.following_user
                 INNER JOIN `tabUser` u ON u.name = f1.following_user
                 WHERE f1.follower_user = %(viewer)s {active_sql}
                   {block_sql.replace('TARGET_EXPR', target)} {search_sql}
@@ -477,7 +477,7 @@ class SocialRepository:
                    COALESCE(NULLIF(p.account_status, ''), 'Active') AS account_status,
                    COALESCE(p.is_deleted, 0) AS is_deleted
             FROM `tabAOS User Block` b
-            LEFT JOIN `tabAOS Profile` p ON p.name = b.blocked_user
+            LEFT JOIN `tabAOS Profile` p ON p.user = b.blocked_user
             LEFT JOIN `tabUser` u ON u.name = b.blocked_user
             WHERE b.blocker_user = %(viewer)s AND b.status = %(status)s {cursor_sql}
             ORDER BY b.blocked_at DESC, b.name DESC
