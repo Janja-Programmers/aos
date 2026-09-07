@@ -62,7 +62,7 @@ Owner documentation: [docs/features/analytics/api.md](../features/analytics/api.
 
 ## Auth (15)
 
-Owner documentation: [docs/features/auth/api.md](../features/auth/api.md)
+Owner documentation: [docs/features/authentication.md](../features/authentication.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|

@@ -6,7 +6,7 @@ Feature documentation is the canonical human-readable description of AOS busines
 
 | Feature | Ownership | API |
 |---|---|---|
-| [Auth](auth/README.md) | Registration, login/session, OTP, password reset/change, delete/restore authentication flow | [API](auth/api.md) |
+| [Authentication](authentication.md) | Registration, login/session, OTP, social login, password recovery/change, delete/restore authentication flow | [Contract](authentication.md) |
 | [Accounts](accounts/README.md) | Profile, preferences, account lifecycle, cross-domain deletion/restore ownership | [API](accounts/api.md) |
 | [Activity](activity/README.md) | Private user activity history and cleanup | [API](activity/api.md) |
 | [Ads](ads/README.md) | Marketplace Ad/draft lifecycle, discovery, Media references and moderation triggers | [API](ads/api.md) |

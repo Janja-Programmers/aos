@@ -86,7 +86,7 @@ app_license = "mit"
 # ------------
 
 # before_install = "aos.install.before_install"
-# after_install = "aos.install.after_install"
+after_install = "aos.install.after_install"
 
 # Uninstallation
 # ------------
@@ -163,6 +163,8 @@ doc_events = {
 }
 
 
+on_login = ["aos.api.auth.session_hooks.enforce_aos_website_login"]
+
 # Scheduled Tasks
 # ---------------
 
@@ -211,9 +213,13 @@ scheduler_events = {
 # Overriding Methods
 # ------------------------------
 #
-# override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "aos.event.get_events"
-# }
+override_whitelisted_methods = {
+	"frappe.core.doctype.user.user.sign_up": "aos.api.auth.framework_guards.block_frappe_signup",
+	"frappe.core.doctype.user.user.reset_password": "aos.api.auth.framework_guards.guard_frappe_reset_password",
+	"frappe.core.doctype.user.user.update_password": "aos.api.auth.framework_guards.guard_frappe_update_password",
+	"frappe.core.doctype.user.user.change_password": "aos.api.auth.framework_guards.guard_frappe_change_password",
+	"frappe.core.doctype.user.user.verify_password": "aos.api.auth.framework_guards.guard_frappe_verify_password",
+}
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,

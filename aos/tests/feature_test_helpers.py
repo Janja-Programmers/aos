@@ -570,6 +570,7 @@ class AOSFeatureTestMixin:
         frappe.db.sql("DELETE FROM `tabAOS Location` WHERE location LIKE %s", (like,))
         frappe.db.sql("DELETE FROM `tabAOS Category` WHERE category_name LIKE %s", (like,))
 
+        frappe.db.sql("DELETE FROM `tabAOS Auth Identity` WHERE user LIKE %s OR email_at_link LIKE %s", (email_like, email_like))
         frappe.db.sql("DELETE FROM `tabAOS Email Verification` WHERE user LIKE %s OR email LIKE %s", (email_like, email_like))
         frappe.db.sql("DELETE FROM `tabAOS User Preference` WHERE user LIKE %s", (email_like,))
         frappe.db.sql("DELETE FROM `tabAOS Profile` WHERE user LIKE %s", (email_like,))

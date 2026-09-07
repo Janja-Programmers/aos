@@ -35,7 +35,7 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
         self.cleanup_feature_rows()
         frappe.set_user("Administrator")
 
-    def test_auth_register_creates_profile_preference_and_blocks_duplicate(self):
+    def test_auth_register_creates_profile_preference_and_accepts_duplicate_retry(self):
         email = f"{self.prefix}-signup@example.com"
         country, language, currency = self.preference_defaults()
 
@@ -45,9 +45,10 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
         frappe.set_user("Guest")
 
         with (
-            patch("aos.api.auth.register.rate_limit", return_value=None),
-            patch("aos.api.auth.register.generate_otp", return_value="123456"),
-            patch("aos.api.auth.register.send_otp_email") as send_email,
+            patch("aos.api.auth.register.auth_rate_limit", return_value=None),
+            patch("aos.api.auth.register.auth_ip_limit", return_value=None),
+            patch("aos.api.auth.otp_service.generate_otp", return_value="123456"),
+            patch("aos.api.auth.otp_service.queue_otp_email") as send_email,
         ):
             first = register_impl(
                 email=email,
@@ -68,8 +69,8 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
 
         self.created_users.append(email)
         self.assertTrue(first.get("ok"), first)
-        self.assertFalse(second.get("ok"), second)
-        self.assertEqual(second.get("error"), "ALREADY_EXISTS")
+        self.assertTrue(second.get("ok"), second)
+        self.assertNotIn("error", second)
         self.assertTrue(frappe.db.exists("User", email))
         self.assertTrue(frappe.db.exists("AOS Profile", email))
         self.assertTrue(frappe.db.exists("AOS User Preference", {"user": email}))

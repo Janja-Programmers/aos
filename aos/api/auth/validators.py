@@ -10,14 +10,16 @@ from __future__ import annotations
 import re
 from typing import Any
 
+import frappe
+
 from aos.api.shared.responses import fail
 
 
 EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-IDENTIFIER_MAX_LEN = 254
-EMAIL_MAX_LEN = 254
+IDENTIFIER_MAX_LEN = 140
+EMAIL_MAX_LEN = 140
 NAME_MAX_LEN = 140
-PASSWORD_MAX_LEN = 1024
+PASSWORD_MAX_LEN = 128
 OTP_MAX_LEN = 12
 TOKEN_MAX_LEN = 4096
 REASON_MAX_LEN = 300
@@ -119,10 +121,8 @@ def require_email(value: Any, field: str = "email"):
 
 
 def require_identifier(value: Any, field: str = "identifier"):
-    identifier, err = require_string(value, field, max_length=IDENTIFIER_MAX_LEN)
-    if err:
-        return None, err
-    return identifier.lower(), None
+    """Canonical login identifier: a normalized email address only."""
+    return require_email(value, field=field)
 
 
 def require_password(value: Any, field: str = "password"):
@@ -133,6 +133,12 @@ def require_otp(value: Any, field: str = "otp"):
     otp, err = require_string(value, field, max_length=OTP_MAX_LEN)
     if err:
         return None, err
+    if not re.fullmatch(r"\d{6}", otp):
+        return None, fail(
+            "OTP must be exactly six digits.",
+            error="VALIDATION_ERROR",
+            data={"field": field},
+        )
     return otp, None
 
 
@@ -146,8 +152,8 @@ def normalize_email(email: str) -> str:
 
 
 def normalize_identifier(identifier: str) -> str:
-    """Normalize a trusted string login identifier."""
-    return identifier.strip().lower()[:IDENTIFIER_MAX_LEN]
+    """Normalize a trusted canonical login email."""
+    return normalize_email(identifier)
 
 
 def normalize_name(full_name: str) -> str:
@@ -175,7 +181,7 @@ def validate_registration_inputs(email: Any, password: Any, full_name: Any):
     if password_err:
         return None, password_err
 
-    pw_err = validate_password_strength(password_value)
+    pw_err = validate_password_strength(password_value, user_data=(name_value, email_value))
     if pw_err:
         return None, pw_err
 
@@ -195,10 +201,8 @@ def validate_email(email: str):
 
 def validate_login_inputs(identifier: str, password: str):
     # Internal helper for already type-checked values.
-    if not identifier:
-        return fail("Email or username is required.", error="VALIDATION_ERROR", data={"field": "identifier"})
-    if len(identifier) > IDENTIFIER_MAX_LEN:
-        return fail("Email or username is too long.", error="VALIDATION_ERROR", data={"field": "identifier"})
+    if not identifier or not EMAIL_REGEX.match(identifier):
+        return fail("A valid email is required.", error="VALIDATION_ERROR", data={"field": "identifier"})
     if not isinstance(password, str) or not password:
         return fail("Password is required.", error="VALIDATION_ERROR", data={"field": "password"})
     if len(password) > PASSWORD_MAX_LEN:
@@ -206,13 +210,36 @@ def validate_login_inputs(identifier: str, password: str):
     return None
 
 
-def validate_password_strength(password: str):
+def validate_password_strength(password: str, *, user_data: tuple | None = None):
+    """Apply the AOS baseline and Frappe's configured password policy.
+
+    Authentication deliberately does not reproduce zxcvbn/scoring rules. Frappe
+    remains authoritative for the site's configurable strength policy.
+    """
     if not isinstance(password, str) or not password:
         return fail("Password is required.", error="VALIDATION_ERROR", data={"field": "password"})
     if len(password) < 8:
         return fail("Password must be at least 8 characters long.", error="VALIDATION_ERROR", data={"field": "password"})
     if len(password) > PASSWORD_MAX_LEN:
         return fail("Password is too long.", error="VALIDATION_ERROR", data={"field": "password"})
+    try:
+        from frappe.core.doctype.user.user import test_password_strength
+
+        result = test_password_strength(password, user_data=user_data) or {}
+        feedback = result.get("feedback") or {}
+        if feedback and not feedback.get("password_policy_validation_passed", False):
+            return fail(
+                "Password does not meet the required policy.",
+                error="VALIDATION_ERROR",
+                data={"field": "password"},
+            )
+    except Exception as exc:
+        # Never include the password or traceback/local variables in this log.
+        frappe.log_error(
+            message=f"Password policy evaluation failed: {type(exc).__name__}",
+            title="AOS Auth Password Policy Failed",
+        )
+        return fail("Authentication service temporarily unavailable.", error="SERVICE_UNAVAILABLE")
     return None
 
 

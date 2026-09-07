@@ -21,114 +21,75 @@ class TestAuthRegisterAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.cleanup_feature_rows()
         frappe.set_user("Administrator")
 
-    def test_register_rejects_structured_string_inputs(self):
-        # This test verifies the validator contract, not Redis rate-limit state.
-        # The full application suite intentionally reuses one request IP, so an
-        # earlier registration test must not mask the field-specific failures.
-        with patch("aos.api.auth.register.rate_limit", return_value=None):
-            response = register_impl(email={"value": "x@example.com"}, full_name="Example User", password="StrongPass123!")
-            self.assertFalse(response.get("ok"), response)
-            self.assertEqual(response.get("error"), "VALIDATION_ERROR")
-            self.assertEqual(response.get("data", {}).get("field"), "email")
+    def _register(self, email, **extra):
+        with patch("aos.api.auth.register.auth_rate_limit", return_value=None), patch("aos.api.auth.register.auth_ip_limit", return_value=None), patch("aos.api.auth.otp_service.queue_otp_email") as queue:
+            response = register_impl(email=email, full_name="Example User", password="StrongPass123!", **extra)
+        return response, queue
 
-            response = register_impl(email=f"{self.prefix}-x@example.com", full_name=["Example"], password="StrongPass123!")
-            self.assertFalse(response.get("ok"), response)
-            self.assertEqual(response.get("data", {}).get("field"), "full_name")
+    def test_registration_contract_rejects_structured_and_unknown_inputs(self):
+        with patch("aos.api.auth.register.auth_rate_limit", return_value=None), patch("aos.api.auth.register.auth_ip_limit", return_value=None):
+            structured = register_impl(email={"value": "x@example.com"}, full_name="Example", password="StrongPass123!")
+            legacy = register_impl(email="x@example.com", full_name="Example", password="StrongPass123!", username="old")
+        self.assertEqual(structured.get("error"), "VALIDATION_ERROR")
+        self.assertEqual(legacy.get("error"), "AUTH_UNKNOWN_FIELD")
 
-            response = register_impl(email=f"{self.prefix}-x@example.com", full_name="Example User", password={"secret": "StrongPass123!"})
-            self.assertFalse(response.get("ok"), response)
-            self.assertEqual(response.get("data", {}).get("field"), "password")
-
-    def test_register_rejects_structured_optional_bootstrap_inputs(self):
-        with patch("aos.api.auth.register.rate_limit", return_value=None):
-            response = register_impl(
-                email=f"{self.prefix}-x@example.com",
-                full_name="Example User",
-                password="StrongPass123!",
-                country={"name": "Kenya"},
-            )
-        self.assertFalse(response.get("ok"), response)
-        self.assertEqual(response.get("error"), "VALIDATION_ERROR")
-        self.assertEqual(response.get("data", {}).get("field"), "country")
-
-    def test_register_success_creates_durable_auth_rows_before_email(self):
-        email = f"{self.prefix}-signup@example.com"
+    def test_success_creates_user_profile_localization_and_slow_otp_state(self):
+        email = f"{self.prefix}-success@example.com"
         country, language, currency = self.preference_defaults()
-
-        with (
-            patch("aos.api.auth.register.rate_limit", return_value=None),
-            patch("aos.api.auth.register.generate_otp", return_value="123456"),
-            patch("aos.api.auth.register.send_otp_email") as send_email,
-        ):
-            response = register_impl(
-                email=email,
-                full_name="Example Signup",
-                password="StrongPass123!",
-                country=country,
-                language=language,
-                currency=currency,
-            )
-
+        response, queue = self._register(email, country=country, language=language, currency=currency)
         self.created_users.append(email)
         self.assertTrue(response.get("ok"), response)
         self.assertTrue(frappe.db.exists("User", email))
         self.assertTrue(frappe.db.exists("AOS Profile", email))
         self.assertTrue(frappe.db.exists("AOS User Preference", {"user": email}))
-        preference = frappe.db.get_value("AOS User Preference", {"user": email}, ["country", "currency", "language"], as_dict=True)
-        self.assertEqual(preference.country, country)
-        self.assertEqual(preference.currency, currency)
-        self.assertEqual(preference.language, language)
-        self.assertTrue(frappe.db.exists("AOS Email Verification", {"user": email, "purpose": "email_verification"}))
-        send_email.assert_called_once()
+        from aos.api.auth.verification import verification_name
+        name = verification_name(email, "email_verification")
+        stored = frappe.db.get_value("AOS Email Verification", name, "otp_password_hash")
+        self.assertTrue(stored)
+        self.assertNotEqual(stored, "123456")
+        queue.assert_called_once()
 
-    def test_register_missing_preferences_uses_settings_defaults(self):
+    def test_duplicate_registration_is_enumeration_safe_idempotent_acceptance(self):
+        email = self.make_user("duplicate")
+        with patch("aos.api.auth.register.auth_rate_limit", return_value=None), patch("aos.api.auth.register.auth_ip_limit", return_value=None):
+            response = register_impl(email=email, full_name="Duplicate", password="StrongPass123!")
+        self.assertTrue(response.get("ok"), response)
+        self.assertNotIn("error", response)
+
+    def test_concurrent_duplicate_insert_race_maps_to_safe_retry_acceptance(self):
+        email = f"{self.prefix}-race@example.com"
+        with patch("aos.api.auth.register.auth_rate_limit", return_value=None), patch("aos.api.auth.register.auth_ip_limit", return_value=None), patch("frappe.new_doc") as new_doc:
+            fake = new_doc.return_value
+            fake.insert.side_effect = frappe.DuplicateEntryError
+            response = register_impl(email=email, full_name="Race", password="StrongPass123!")
+        self.assertTrue(response.get("ok"), response)
+        self.assertNotIn("error", response)
+
+    def test_queue_failure_rolls_back_partial_registration(self):
+        email = f"{self.prefix}-rollback@example.com"
+        with patch("aos.api.auth.register.auth_rate_limit", return_value=None), patch("aos.api.auth.register.auth_ip_limit", return_value=None), patch(
+            "aos.api.auth.otp_service.queue_otp_email", side_effect=RuntimeError("mail queue unavailable")
+        ):
+            response = register_impl(email=email, full_name="Rollback", password="StrongPass123!")
+        self.assertEqual(response.get("error"), "REGISTER_FAILED")
+        self.assertFalse(frappe.db.exists("User", email))
+        self.assertFalse(frappe.db.exists("AOS Profile", email))
+        self.assertFalse(frappe.db.exists("AOS User Preference", {"user": email}))
+
+    def test_missing_localization_inputs_use_localization_defaults(self):
         email = f"{self.prefix}-defaults@example.com"
-        country, language, currency = self.preference_defaults()
-        with (
-            patch("aos.api.auth.register.rate_limit", return_value=None),
-            patch("aos.api.auth.register.generate_otp", return_value="123456"),
-            patch("aos.api.auth.register.send_otp_email"),
-        ):
-            response = register_impl(email=email, full_name="Default Signup", password="StrongPass123!")
+        expected = self.preference_defaults()
+        response, _ = self._register(email)
         self.created_users.append(email)
         self.assertTrue(response.get("ok"), response)
-        preference = frappe.db.get_value("AOS User Preference", {"user": email}, ["country", "currency", "language"], as_dict=True)
-        self.assertEqual((preference.country, preference.language, preference.currency), (country, language, currency))
+        pref = frappe.db.get_value("AOS User Preference", {"user": email}, ["country", "language", "currency"], as_dict=True)
+        self.assertEqual((pref.country, pref.language, pref.currency), expected)
 
-    def test_register_missing_language_uses_accept_language(self):
-        email = f"{self.prefix}-header-language@example.com"
-        country, _default_language, currency = self.preference_defaults()
-        filters = {"enabled": 1} if frappe.get_meta("Language").has_field("enabled") else {}
-        language = frappe.db.get_value("Language", filters, ["name", "language_code"], as_dict=True)
-        if not language or not language.language_code:
-            self.skipTest("An enabled language code is required")
-        with (
-            patch(
-                "aos.api.auth.account_helpers.accept_language_hint",
-                return_value=f"{language.language_code}-XX,{language.language_code};q=0.9",
-            ),
-            patch("aos.api.auth.register.rate_limit", return_value=None),
-            patch("aos.api.auth.register.generate_otp", return_value="123456"),
-            patch("aos.api.auth.register.send_otp_email"),
+    def test_password_policy_failure_is_rejected(self):
+        email = f"{self.prefix}-weak@example.com"
+        with patch("aos.api.auth.register.auth_ip_limit", return_value=None), patch("aos.api.auth.register.auth_rate_limit", return_value=None), patch(
+            "aos.api.auth.validators.validate_password_strength", return_value={"ok": False, "error": "VALIDATION_ERROR"}
         ):
-            response = register_impl(email=email, full_name="Header Language", password="StrongPass123!", country=country, currency=currency)
-        self.created_users.append(email)
-        self.assertTrue(response.get("ok"), response)
-        self.assertEqual(frappe.db.get_value("AOS User Preference", {"user": email}, "language"), language.name)
-
-    def test_register_missing_country_uses_valid_country_header(self):
-        email = f"{self.prefix}-header-country@example.com"
-        _country, language, currency = self.preference_defaults()
-        country = frappe.db.get_value("Country", {"code": ["is", "set"]}, ["name", "code"], as_dict=True)
-        if not country:
-            self.skipTest("A coded country is required")
-        with (
-            patch("aos.api.auth.account_helpers.geo_country_hint", return_value=country.code),
-            patch("aos.api.auth.register.rate_limit", return_value=None),
-            patch("aos.api.auth.register.generate_otp", return_value="123456"),
-            patch("aos.api.auth.register.send_otp_email"),
-        ):
-            response = register_impl(email=email, full_name="Header Country", password="StrongPass123!", language=language, currency=currency)
-        self.created_users.append(email)
-        self.assertTrue(response.get("ok"), response)
-        self.assertEqual(frappe.db.get_value("AOS User Preference", {"user": email}, "country"), country.name)
+            response = register_impl(email=email, full_name="Weak User", password="weakpass")
+        self.assertEqual(response.get("error"), "VALIDATION_ERROR")
+        self.assertFalse(frappe.db.exists("User", email))

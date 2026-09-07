@@ -10,19 +10,35 @@ class SessionRevocationError(RuntimeError):
     pass
 
 
-def revoke_all_sessions(user: str) -> int:
-    """Delete all server sessions for one internal User.name without committing."""
+def _clear_session_cache(sids: tuple[str, ...]) -> None:
+    cache = frappe.cache()
+    for sid in sids:
+        cache.hdel("session", sid)
+
+
+def _after_commit(callback) -> None:
+    # Frappe 17 transaction callbacks are authoritative for cache invalidation.
+    # Do not invalidate session cache before the DB transaction commits.
+    frappe.db.after_commit.add(callback)
+
+
+def revoke_all_sessions(user: str, *, keep_sid: str | None = None) -> int:
+    """Delete exact session rows without committing and invalidate exact Redis keys."""
     if not user:
         return 0
     try:
-        rows = frappe.db.sql("SELECT COUNT(*) AS count FROM `tabSessions` WHERE user = %s", (user,), as_dict=True)
-        count = int(rows[0].get("count") or 0) if rows else 0
-        frappe.db.sql("DELETE FROM `tabSessions` WHERE user = %s", (user,))
-        try:
-            frappe.cache().delete_keys(f"*{user}*")
-        except Exception:
-            pass
-        return count
+        params: list[str] = [user]
+        where = "user = %s"
+        if keep_sid:
+            where += " AND sid != %s"
+            params.append(keep_sid)
+        rows = frappe.db.sql(f"SELECT sid FROM `tabSessions` WHERE {where}", tuple(params), as_dict=True)
+        sids = tuple(str(row.get("sid") or "") for row in rows if row.get("sid"))
+        if sids:
+            placeholders = ",".join(["%s"] * len(sids))
+            frappe.db.sql(f"DELETE FROM `tabSessions` WHERE sid IN ({placeholders})", sids)
+            _after_commit(lambda: _clear_session_cache(sids))
+        return len(sids)
     except Exception as exc:
         raise SessionRevocationError("Unable to revoke account sessions") from exc
 
@@ -63,7 +79,7 @@ def revoke_verification_tokens(user: str) -> int:
         frappe.db.sql(
             """
             UPDATE `tabAOS Email Verification`
-            SET is_used = 1, reset_token_hash = '', reset_token_expires_at = NULL
+            SET is_used = 1, otp_password_hash = '', reset_token_hash = '', reset_token_expires_at = NULL
             WHERE user = %s
             """,
             (user,),
@@ -74,7 +90,6 @@ def revoke_verification_tokens(user: str) -> int:
 
 
 def revoke_account_access(user: str) -> dict[str, int]:
-    """Fail closed: lifecycle transitions must not succeed with live access."""
     return {
         "sessions_revoked": revoke_all_sessions(user),
         "push_tokens_revoked": revoke_push_tokens(user),

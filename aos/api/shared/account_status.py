@@ -78,8 +78,8 @@ def deleted_account_response(*, restorable: bool | None = None):
     )
 
 
-def ensure_account_active(user: str):
-    state = get_account_state(user)
+def ensure_account_active(user: str, *, state: dict[str, Any] | None = None):
+    state = state or get_account_state(user)
     if state.get("is_deleted"):
         return deleted_account_response(restorable=bool(state.get("can_restore")))
     if state.get("is_deactivated"):

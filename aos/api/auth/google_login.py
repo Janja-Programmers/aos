@@ -1,193 +1,23 @@
-"""Google social login implementation."""
+"""Google OIDC login endpoint implementation."""
 
 from __future__ import annotations
 
-import frappe
-
-from aos.api.shared.account_status import ensure_account_active, get_account_state
-from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
-from aos.api.shared.responses import ok, fail
 from aos.utils.aos_settings import get_google_oauth_client_ids
 
 from .constants import GOOGLE_LOGIN_LIMIT_PER_HOUR_PER_IP
-from .account_helpers import ensure_auth_bootstrap, safe_log_auth_event
-from .serializers import serialize_auth_payload
-from .validators import optional_bootstrap_inputs, optional_string, require_email, require_token, validate_client_type
+from .contracts import reject_unknown_fields
 from .google_jwt import verify_google_id_token
-
-
-def _include_sid(client_type: str) -> bool:
-    return client_type == "mobile"
-
-
-def _get_google_client_ids():
-    """Read Google OAuth Client IDs from the AOS Settings snapshot."""
-    return get_google_oauth_client_ids()
-
-
-def _bootstrap_new_google_user(email: str, full_name: str | None, bootstrap_inputs: dict):
-    """Create all AOS identity rows for a new Google user atomically.
-
-    New social-login bootstrap must be all-or-nothing. If profile/preference
-    creation fails after User insert, rollback the whole transaction so no
-    partial enabled account remains.
-    """
-
-    try:
-        user = frappe.new_doc("User")
-        user.email = email
-        user.first_name = full_name or email.split("@")[0]
-        user.enabled = 1
-        user.user_type = "Website User"
-        user.send_welcome_email = 0
-        user.flags.no_welcome_mail = True
-        user.insert(ignore_permissions=True)
-
-        user_name = user.name
-        pref, pref_err = ensure_auth_bootstrap(user_name, **bootstrap_inputs)
-        if pref_err:
-            frappe.db.rollback()
-            return None, pref_err
-
-        # Account bootstrap is durable before any session is created.
-        frappe.db.commit()
-        return user_name, None
-
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), "AOS Google User Bootstrap Failed")
-        frappe.db.rollback()
-        return None, fail("Could not create account.", error="USER_CREATE_FAILED")
-
-
-def _ensure_existing_google_user_ready(user_name: str, email: str, bootstrap_inputs: dict):
-    """Validate account state and repair preference for an existing user.
-
-    Existing users are never deleted/rolled back by social-login repair failure.
-    """
-
-    state = get_account_state(user_name)
-    if state.get("is_deleted"):
-        return fail(
-            "This account was previously deleted. Please restore it instead.",
-            error="ACCOUNT_DELETED_RESTORABLE" if state.get("can_restore") else "ACCOUNT_DELETED",
-            data={"can_restore": bool(state.get("can_restore"))},
-        )
-
-    active_err = ensure_account_active(user_name)
-    if active_err:
-        return active_err
-
-    enabled = frappe.db.get_value("User", user_name, "enabled")
-    if int(enabled or 0) != 1:
-        safe_log_auth_event("AOS Social Login Disabled User", identifier=email, user=user_name, reason="disabled")
-        return fail("Account disabled.", error="ACCOUNT_DISABLED", http_status=403)
-
-    pref, pref_err = ensure_auth_bootstrap(user_name, **bootstrap_inputs)
-    if pref_err:
-        return pref_err
-
-    frappe.db.commit()
-    return None
+from .social_login import social_login_impl
 
 
 def google_login_impl(**kwargs):
-    """
-    Login/Register using Google Sign-In (ID Token).
-
-    - Validates audience using settings client IDs
-    - Atomically creates User + AOS Profile + AOS User Preference for new users
-    - Repairs missing preference for existing users without deleting existing state
-    - Creates session only after required AOS identity rows are durable
-    """
-
-    id_token, token_err = require_token(kwargs.get("id_token"), "id_token")
-    if token_err:
-        return token_err
-
-    client_type, client_type_err = validate_client_type(kwargs.get("client_type"))
-    if client_type_err:
-        return client_type_err
-
-    bootstrap_inputs, bootstrap_err = optional_bootstrap_inputs(kwargs)
-    if bootstrap_err:
-        return bootstrap_err
-
-    rl = rate_limit(
-        key=rate_limit_key("auth", "google", "ip", request_ip()),
-        ttl_seconds=60 * 60,
-        limit=GOOGLE_LOGIN_LIMIT_PER_HOUR_PER_IP,
-        message="Too many attempts. Please try again later.",
+    unknown = reject_unknown_fields(kwargs, {"id_token", "client_type", "country", "currency", "language"})
+    if unknown:
+        return unknown
+    return social_login_impl(
+        provider="google",
+        verify_token=verify_google_id_token,
+        audiences=get_google_oauth_client_ids(),
+        request_kwargs=kwargs,
+        ip_limit=GOOGLE_LOGIN_LIMIT_PER_HOUR_PER_IP,
     )
-    if rl:
-        return rl
-
-    allowed_audiences = _get_google_client_ids()
-    if not allowed_audiences:
-        return fail("Google OAuth client IDs not configured.", error="CONFIG_ERROR")
-
-    try:
-        claims = verify_google_id_token(
-            id_token=id_token,
-            allowed_audiences=allowed_audiences,
-        )
-
-    except ValueError as e:
-        code = str(e) or "TOKEN_INVALID"
-
-        if code == "TOKEN_EXPIRED":
-            return fail("Google token expired.", error="TOKEN_EXPIRED", http_status=401)
-
-        if code in {"AUD_INVALID", "ISS_INVALID"}:
-            return fail("Google token not allowed.", error="TOKEN_INVALID", http_status=401)
-
-        if code == "EMAIL_NOT_VERIFIED":
-            return fail("Google email not verified.", error="EMAIL_NOT_VERIFIED", http_status=401)
-
-        if code == "AUDIENCE_NOT_CONFIGURED":
-            return fail("Google audience not configured.", error="CONFIG_ERROR")
-
-        return fail("Invalid Google token.", error="TOKEN_INVALID", http_status=401)
-
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), "AOS Google Token Verify Failed")
-        return fail("Could not verify Google token.", error="TOKEN_VERIFY_FAILED")
-
-    email, email_err = require_email(claims.get("email"), field="email")
-    if email_err:
-        return fail("Google account email missing.", error="TOKEN_INVALID")
-
-    full_name, full_name_err = optional_string(
-        claims.get("name") or claims.get("given_name"),
-        "full_name",
-        max_length=140,
-    )
-    if full_name_err:
-        full_name = None
-
-    user_name = frappe.db.get_value("User", {"email": email}, "name")
-
-    if user_name:
-        ready_err = _ensure_existing_google_user_ready(user_name, email, bootstrap_inputs)
-        if ready_err:
-            return ready_err
-    else:
-        user_name, bootstrap_err = _bootstrap_new_google_user(email, full_name, bootstrap_inputs)
-        if bootstrap_err:
-            return bootstrap_err
-
-    try:
-        lm = frappe.local.login_manager
-        lm.login_as(user_name)
-
-        sid = getattr(frappe.session, "sid", None)
-        if not sid:
-            return fail("Login failed.", error="LOGIN_FAILED", http_status=401)
-
-        return ok(
-            "Login successful.",
-            data=serialize_auth_payload(user_name, sid=sid, include_sid=_include_sid(client_type)),
-        )
-
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), "AOS Google Login Failed")
-        return fail("Login failed.", error="LOGIN_FAILED", http_status=401)

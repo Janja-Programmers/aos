@@ -16,7 +16,7 @@ FEATURE_DOCS = {
 	"activity": "docs/features/activity/api.md",
 	"ads": "docs/features/ads/api.md",
 	"analytics_pipeline": "docs/features/analytics/api.md",
-	"auth": "docs/features/auth/api.md",
+	"auth": "docs/features/authentication.md",
 	"calls": "docs/features/calls/api.md",
 	"catalog": "docs/features/catalog/api.md",
 	"chat": "docs/features/chat/api.md",

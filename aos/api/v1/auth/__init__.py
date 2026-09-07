@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import frappe
 
+from aos.api.auth.contracts import execute_auth_endpoint
+
 from aos.api.auth.register import (
     register_impl as _register_impl,
 )
@@ -43,88 +45,88 @@ from aos.api.auth.delete_account import (
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def register(**kwargs):
     """Execute the v1 auth.register endpoint."""
-    return _register_impl(**kwargs)
+    return execute_auth_endpoint(_register_impl, kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def verify_email_otp(**kwargs):
     """Execute the v1 auth.verify_email_otp endpoint."""
-    return _verify_email_otp_impl(**kwargs)
+    return execute_auth_endpoint(_verify_email_otp_impl, kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def resend_email_otp(**kwargs):
     """Execute the v1 auth.resend_email_otp endpoint."""
-    return _resend_email_otp_impl(**kwargs)
+    return execute_auth_endpoint(_resend_email_otp_impl, kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def login(**kwargs):
     """Execute the v1 auth.login endpoint."""
-    return _login_impl(**kwargs)
+    return execute_auth_endpoint(_login_impl, kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def google_login(**kwargs):
     """Execute the v1 auth.google_login endpoint."""
-    return _google_login_impl(**kwargs)
+    return execute_auth_endpoint(_google_login_impl, kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def apple_login(**kwargs):
     """Execute the v1 auth.apple_login endpoint."""
-    return _apple_login_impl(**kwargs)
+    return execute_auth_endpoint(_apple_login_impl, kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def me(**kwargs):
     """Execute the v1 auth.me endpoint."""
-    return _me_impl(**kwargs)
+    return execute_auth_endpoint(_me_impl, kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def logout(**kwargs):
     """Execute the v1 auth.logout endpoint."""
-    return _logout_impl(**kwargs)
+    return execute_auth_endpoint(_logout_impl, kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def forgot_password_request(**kwargs):
     """Execute the v1 auth.forgot_password_request endpoint."""
-    return _forgot_password_request_impl(**kwargs)
+    return execute_auth_endpoint(_forgot_password_request_impl, kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def forgot_password_verify_otp(**kwargs):
     """Execute the v1 auth.forgot_password_verify_otp endpoint."""
-    return _forgot_password_verify_otp_impl(**kwargs)
+    return execute_auth_endpoint(_forgot_password_verify_otp_impl, kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def forgot_password_reset(**kwargs):
     """Execute the v1 auth.forgot_password_reset endpoint."""
-    return _forgot_password_reset_impl(**kwargs)
+    return execute_auth_endpoint(_forgot_password_reset_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def change_password(**kwargs):
     """Execute the v1 auth.change_password endpoint."""
-    return _change_password_impl(**kwargs)
+    return execute_auth_endpoint(_change_password_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def delete_account(**kwargs):
     """Execute the v1 auth.delete_account endpoint."""
-    return _delete_account_impl(**kwargs)
+    return execute_auth_endpoint(_delete_account_impl, kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def request_restore_account(**kwargs):
     """Execute the v1 auth.request_restore_account endpoint."""
-    return _request_restore_account_impl(**kwargs)
+    return execute_auth_endpoint(_request_restore_account_impl, kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def restore_account(**kwargs):
     """Execute the v1 auth.restore_account endpoint."""
-    return _restore_account_impl(**kwargs)
+    return execute_auth_endpoint(_restore_account_impl, kwargs)

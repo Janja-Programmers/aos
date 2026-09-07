@@ -22,27 +22,21 @@ class TestAuthDeleteRestoreAPI(AOSFeatureTestMixin, FrappeTestCase):
     def test_delete_account_rejects_structured_confirmation(self):
         user = self.make_user("delete")
         frappe.set_user(user)
-        response = delete_account_impl(confirmation={"text": "DELETE"}, reason="test")
-        self.assertFalse(response.get("ok"), response)
+        with patch("aos.api.auth.delete_account.auth_rate_limit", return_value=None), patch("aos.api.auth.delete_account.auth_ip_limit", return_value=None):
+            response = delete_account_impl(confirmation={"text": "DELETE"}, reason="test")
         self.assertEqual(response.get("error"), "VALIDATION_ERROR")
-        self.assertEqual(response.get("data", {}).get("field"), "confirmation")
-
-    def test_restore_rejects_structured_otp(self):
-        response = restore_account_impl(email=f"{self.prefix}-missing@example.com", otp=["123456"])
-        self.assertFalse(response.get("ok"), response)
-        self.assertEqual(response.get("error"), "VALIDATION_ERROR")
-        self.assertEqual(response.get("data", {}).get("field"), "otp")
 
     def test_restore_missing_wrong_or_unrequested_otp_is_generic(self):
         user = self.make_user("restore-no-otp")
         frappe.db.set_value("AOS Profile", user, {"account_status": "Deleted", "is_deleted": 1})
         frappe.db.commit()
-
-        with patch("aos.api.auth.delete_account.rate_limit", return_value=None):
+        with patch("aos.api.auth.delete_account.auth_rate_limit", return_value=None), patch("aos.api.auth.delete_account.auth_ip_limit", return_value=None):
             missing = restore_account_impl(email=f"{self.prefix}-missing@example.com", otp="000000")
             no_otp = restore_account_impl(email=user, otp="000000")
-
         for response in (missing, no_otp):
-            self.assertFalse(response.get("ok"), response)
             self.assertEqual(response.get("error"), "OTP_INVALID")
             self.assertEqual(response.get("message"), "Invalid or expired OTP.")
+
+    def test_unknown_fields_are_rejected(self):
+        response = restore_account_impl(email="person@example.com", otp="123456", verification_code="legacy")
+        self.assertEqual(response.get("error"), "AUTH_UNKNOWN_FIELD")

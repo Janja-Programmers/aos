@@ -21,7 +21,7 @@ class TestResponseStatusMapping(FrappeTestCase):
         self.assertEqual(frappe.local.response.get("http_status_code"), 200)
 
     def test_validation_codes_use_unprocessable_entity(self):
-        for code in ("VALIDATION_ERROR", "EMAIL_MISSING", "INVALID_AD", "PASSWORD_MISMATCH"):
+        for code in ("VALIDATION_ERROR", "EMAIL_MISSING", "INVALID_AD", "PASSWORD_MISMATCH", "PASSWORD_REUSED"):
             with self.subTest(code=code):
                 self.assertEqual(http_status_for_code(code), 422)
 
@@ -95,6 +95,7 @@ class TestResponseStatusMapping(FrappeTestCase):
             "IMAGE_SEARCH_UNAVAILABLE",
             "MAP_SERVICE_ERROR",
             "SERVICE_UNAVAILABLE",
+            "ACCOUNT_BOOTSTRAP_UNAVAILABLE",
             "TRANSLATION_UNAVAILABLE",
         ):
             with self.subTest(code=code):
