@@ -10,6 +10,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from aos.services.accounts.identity import profile_name_for_user
 from aos.services.media.media_service import (
     MediaConflictError,
     MediaNotFoundError,
@@ -732,7 +733,7 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
                 user=self.user,
                 purpose="profile_image",
                 attached_doctype="AOS Profile",
-                attached_name=self.other_user,
+                attached_name=profile_name_for_user(self.other_user),
                 attached_field="profile_image_media",
             )
 
@@ -745,7 +746,7 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
             user=self.user,
             purpose="profile_image",
             attached_doctype="AOS Profile",
-            attached_name=self.user,
+            attached_name=profile_name_for_user(self.user),
             attached_field="profile_image_media",
         )
         with self.assertRaises(MediaConflictError):

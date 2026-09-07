@@ -7,6 +7,7 @@ from frappe.exceptions import TimestampMismatchError
 from frappe.tests.utils import FrappeTestCase
 
 from aos.api.auth.user_controller import mark_aos_managed_website_user_creation
+from aos.services.accounts.identity import public_account_id_for_user
 
 from aos.api.live.tracking import track_join_impl
 from aos.api.notifications.token import register_push_token_impl
@@ -76,8 +77,8 @@ class TestUserActionUniqueness(AOSFeatureTestMixin, FrappeTestCase):
         blocked = self._make_user("blocked")
         frappe.set_user(blocker)
 
-        first = block_user_impl(target_user=blocked, reason="spam")
-        second = block_user_impl(target_user=blocked, reason="spam again")
+        first = block_user_impl(target_user=public_account_id_for_user(blocked), reason="spam")
+        second = block_user_impl(target_user=public_account_id_for_user(blocked), reason="spam again")
 
         self.assertTrue(first.get("ok"), first)
         self.assertTrue(second.get("ok"), second)

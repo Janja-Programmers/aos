@@ -90,7 +90,7 @@ def _serialize_reaction(
         "reaction_id": reaction_id,
         "live_id": live_id,
         "reaction_type": reaction_type,
-        "user": user_payload["user"],
+        "user": user_payload["account_id"],
         "display_name": user_payload["display_name"],
         "avatar": user_payload["avatar"],
         "created_at": now_datetime(),

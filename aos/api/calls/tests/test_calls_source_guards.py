@@ -58,8 +58,8 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
             self.assertIn("after_commit", keywords)
             self.assertIsInstance(keywords["after_commit"], ast.Constant)
             self.assertTrue(keywords["after_commit"].value)
-        self.assertIn('"ended_by": ended_by.get("user")', source)
-        self.assertIn('"video_upgrade_requested_by": upgrade_requester.get("user")', source)
+        self.assertIn('"ended_by": ended_by.get("account_id")', source)
+        self.assertIn('"video_upgrade_requested_by": upgrade_requester.get("account_id")', source)
         self.assertNotIn('"ended_by": call.ended_by', source)
 
     def test_call_token_requires_participant_state_and_public_identity(self):

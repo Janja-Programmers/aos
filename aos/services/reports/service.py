@@ -13,7 +13,7 @@ from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shorts.activity import record_short_report_activity
 from aos.api.shorts.visibility import can_view_short
 from aos.api.social.activity import record_block_user_activity, record_report_user_activity
-from aos.services.accounts.identity import resolve_account_reference
+from aos.services.accounts.identity import public_account_id_for_user, resolve_account_reference
 from aos.services.social.service import SocialService
 
 from .constants import (
@@ -106,7 +106,7 @@ class ReportService:
             try:
                 block_data = SocialService().block(
                     actor=user,
-                    payload={"target_user": target_user, "reason": f"Reported user: {reason}"},
+                    payload={"target_user": public_account_id_for_user(target_user), "reason": f"Reported user: {reason}"},
                     activity_callback=block_activity_callback,
                 )
                 response["block_status"] = block_data

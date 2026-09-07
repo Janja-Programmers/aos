@@ -355,7 +355,7 @@ class SellerService:
                 row,
                 display=displays.get(row.user) or {},
                 relationship=relationships.get(row.user) or guest_relationship(
-                    target_user=(displays.get(row.user) or {}).get("user")
+                    target_user=(displays.get(row.user) or {}).get("account_id")
                 ),
             )
             item["seller"] = public_id
@@ -580,7 +580,7 @@ class SellerService:
         unique = sorted({str(target).strip() for target in targets if target})
         if not viewer or viewer == "Guest" or not unique:
             return {
-                target: guest_relationship(target_user=(displays.get(target) or {}).get("user"))
+                target: guest_relationship(target_user=(displays.get(target) or {}).get("account_id"))
                 for target in unique
             }
         return social_relationship_map(

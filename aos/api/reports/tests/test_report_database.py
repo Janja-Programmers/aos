@@ -25,6 +25,9 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.reporter = self.make_user("reporter")
         self.target = self.make_user("target")
         self.other = self.make_user("other")
+        self.reporter_account_id = ensure_public_account_id(self.reporter)
+        self.target_account_id = ensure_public_account_id(self.target)
+        self.other_account_id = ensure_public_account_id(self.other)
         self.seller_owner = self.make_user("seller")
         self.short_owner = self.make_user("short-owner")
         self.review_author = self.make_user("review-author")
@@ -73,7 +76,7 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         return review
 
     def _report_user(self, **overrides):
-        payload = {"target_user": self.target, "reason": self.reason, "details": "Threatening messages"}
+        payload = {"target_user": self.target_account_id, "reason": self.reason, "details": "Threatening messages"}
         payload.update(overrides)
         with (
             patch("aos.api.reports.report_user.rate_limit", return_value=None),
@@ -141,7 +144,7 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
 
     def test_user_report_unknown_and_conflicting_aliases_are_rejected(self):
         unknown = self._report_user(extra_field="not allowed")
-        conflict = self._report_user(user=self.other)
+        conflict = self._report_user(user=self.other_account_id)
         self.assertFalse(unknown.get("ok"), unknown)
         self.assertEqual(unknown.get("error"), "VALIDATION_ERROR")
         self.assertFalse(conflict.get("ok"), conflict)
@@ -149,7 +152,7 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertFalse(frappe.db.exists("AOS User Report", {"reported_by": self.reporter}))
 
     def test_user_cannot_report_self_or_suspended_target(self):
-        self_report = self._report_user(target_user=self.reporter)
+        self_report = self._report_user(target_user=self.reporter_account_id)
         self.assertFalse(self_report.get("ok"), self_report)
         frappe.set_user("Administrator")
         frappe.db.set_value("AOS Profile", {"user": self.target}, "account_status", "Suspended")
@@ -339,7 +342,7 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
             patch("aos.api.reports.report_user.rate_limit", return_value=None),
             patch("aos.api.reports.report_user.record_report_user_activity", return_value=None),
         ):
-            about_deleted = report_user_impl(target_user=self.reporter, reason=self.reason)
+            about_deleted = report_user_impl(target_user=self.reporter_account_id, reason=self.reason)
         self.assertTrue(about_deleted.get("ok"), about_deleted)
 
         frappe.set_user("Administrator")

@@ -261,7 +261,7 @@ def serialize_user(
     )
 
     return {
-        "user": display["user"],
+        "user": display["account_id"],
         "display_name": display[
             "display_name"
         ],
@@ -1615,7 +1615,7 @@ def serialize_live(
         ),
 
         # Compatibility flat host fields.
-        "host_user": host["user"],
+        "host_user": host["account_id"],
         "host_display_name": host[
             "display_name"
         ],

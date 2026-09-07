@@ -131,7 +131,7 @@ class TestAuthSecurityContracts(AOSFeatureTestMixin, FrappeTestCase):
         from aos.api.v1 import auth as public_auth
 
         source = inspect.getsource(public_auth)
-        self.assertEqual(source.count("execute_auth_endpoint("), 15)
+        self.assertEqual(source.count("execute_auth_endpoint("), 16)
         self.assertNotIn("return _login_impl(**kwargs)", source)
         self.assertNotIn("return _register_impl(**kwargs)", source)
 
