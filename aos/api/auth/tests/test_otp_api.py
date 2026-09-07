@@ -61,6 +61,10 @@ class TestAuthOtpAPI(AOSFeatureTestMixin, FrappeTestCase):
     def test_resend_unknown_active_and_cooldown_share_generic_response(self):
         active = self.make_user("active")
         pending = self._verification_user("pending")
+        pending_ver = ensure_ver_doc(pending, email=pending, purpose="email_verification")
+        pending_ver.last_sent_at = now_datetime()
+        pending_ver.save(ignore_permissions=True)
+        frappe.db.commit()
         with patch("aos.api.auth.otp.auth_rate_limit", return_value=None), patch("aos.api.auth.otp.auth_ip_limit", return_value=None), patch("aos.api.auth.otp.issue_otp") as issue:
             unknown = resend_email_otp_impl(email=f"{self.prefix}-missing@example.com")
             active_response = resend_email_otp_impl(email=active)

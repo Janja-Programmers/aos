@@ -6,7 +6,7 @@ from __future__ import annotations
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from aos.api.auth.account_helpers import ensure_user_preference
+from aos.api.auth.account_helpers import create_user_preference
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 EXTRA_TEST_RECORD_DEPENDENCIES = []
@@ -46,8 +46,8 @@ class IntegrationTestAOSUserPreference(AOSFeatureTestMixin, IntegrationTestCase)
 		user = self.make_user("bootstrap", with_preference=False)
 		self.assertFalse(frappe.db.exists("AOS User Preference", {"user": user}))
 
-		pref, err = ensure_user_preference(user)
-		second_pref, second_err = ensure_user_preference(user)
+		pref, err = create_user_preference(user)
+		second_pref, second_err = create_user_preference(user)
 
 		self.assertIsNone(err)
 		self.assertIsNone(second_err)

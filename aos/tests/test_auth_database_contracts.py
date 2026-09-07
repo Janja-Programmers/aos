@@ -74,8 +74,8 @@ class TestAuthDatabaseContracts(FrappeTestCase):
             "frappe.core.doctype.user.user.sign_up",
             "frappe.core.doctype.user.user.reset_password",
             "frappe.core.doctype.user.user.update_password",
-            "frappe.core.doctype.user.user.change_password",
             "frappe.core.doctype.user.user.verify_password",
         }
         self.assertTrue(required.issubset(hooks.override_whitelisted_methods))
         self.assertEqual(hooks.after_install, "aos.install.after_install")
+        self.assertIn("aos.api.auth.user_controller.AOSAuthUserMixin", hooks.extend_doctype_class.get("User", []))

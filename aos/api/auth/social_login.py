@@ -15,6 +15,7 @@ from .rate_limits import auth_ip_limit, auth_rate_limit
 from .serializers import serialize_auth_bootstrap, serialize_session
 from .session_policy import session_policy_error
 from .social_identity import bind_identity, get_bound_user
+from .user_controller import mark_aos_managed_website_user_creation
 from .validators import optional_bootstrap_inputs, require_email, require_token, validate_client_type
 
 
@@ -38,6 +39,7 @@ def _create_social_user(*, email: str, full_name: str, bootstrap: dict):
     user.user_type = "Website User"
     user.send_welcome_email = 0
     user.flags.no_welcome_mail = True
+    mark_aos_managed_website_user_creation(user)
     user.insert(ignore_permissions=True)
     _pref, err = create_auth_bootstrap(user.name, **bootstrap)
     if err:

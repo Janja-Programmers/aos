@@ -11,6 +11,7 @@ from .constants import REGISTER_LIMIT_PER_HOUR_PER_EMAIL, REGISTER_LIMIT_PER_HOU
 from .contracts import reject_unknown_fields
 from .otp_service import issue_otp
 from .rate_limits import auth_ip_limit, auth_rate_limit
+from .user_controller import mark_aos_managed_website_user_creation
 from .validators import optional_bootstrap_inputs, validate_registration_inputs
 from .verification import EMAIL_VERIFICATION_PURPOSE, ensure_ver_doc
 
@@ -55,6 +56,7 @@ def register_impl(**kwargs):
         user.send_welcome_email = 0
         user.new_password = password
         user.flags.no_welcome_mail = True
+        mark_aos_managed_website_user_creation(user)
         user.insert(ignore_permissions=True)
 
         _pref, pref_err = create_auth_bootstrap(user.name, **bootstrap)

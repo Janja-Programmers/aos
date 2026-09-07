@@ -23,6 +23,21 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
         frappe.set_user("Administrator")
         self.actor = self.make_user("actor")
         self.target = self.make_user("target")
+        self.target_search_name = f"Feature Target {self.prefix[-10:]}"
+        frappe.db.set_value(
+            "User",
+            self.target,
+            "full_name",
+            self.target_search_name,
+            update_modified=False,
+        )
+        frappe.db.set_value(
+            "AOS Profile",
+            self.target,
+            "display_name",
+            self.target_search_name,
+            update_modified=False,
+        )
         frappe.set_user(self.actor)
 
     def tearDown(self):
@@ -126,7 +141,7 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
             listing = get_following_impl(limit=10)
         self.assertEqual(listing["data"]["items"], [])
         with patch("aos.api.social.search_users.rate_limit", return_value=None):
-            search = search_users_impl(query="Feature Target")
+            search = search_users_impl(query=self.target_search_name)
         self.assertEqual(search["data"]["items"], [])
 
     def test_unblock_and_blocked_list_cursor_validation(self):
@@ -145,7 +160,7 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
     def test_search_bounds_and_private_serializer(self):
         with patch("aos.api.social.search_users.rate_limit", return_value=None):
             too_short = search_users_impl(query="x")
-            valid = search_users_impl(query="Feature Target", limit=10)
+            valid = search_users_impl(query=self.target_search_name, limit=10)
         self.assertEqual(too_short["error"], "SOCIAL_INVALID_SEARCH")
         self.assertTrue(valid["ok"], valid)
         self.assertTrue(all("@example.com" not in str(item) for item in valid["data"]["items"]))
@@ -155,7 +170,7 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
         response = self._toggle(account_id=public_account_id_for_user(self.target), action="follow")
         self.assertEqual(response["error"], "SOCIAL_PROFILE_UNAVAILABLE")
         with patch("aos.api.social.search_users.rate_limit", return_value=None):
-            search = search_users_impl(query="Feature Target")
+            search = search_users_impl(query=self.target_search_name)
         self.assertEqual(search["data"]["items"], [])
 
     def test_notification_failure_does_not_roll_back_follow(self):

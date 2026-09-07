@@ -12,20 +12,32 @@ from aos.api.auth.social_identity import get_bound_user
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
+_MISSING_LOGIN_MANAGER = object()
+
+
 class TestAuthSocialLoginAPI(AOSFeatureTestMixin, FrappeTestCase):
     def setUp(self):
         self.prefix = self.make_prefix("auth-social")
         self.created_users: list[str] = []
-        self.original_manager = getattr(frappe.local, "login_manager", None)
+        self.original_manager = getattr(frappe.local, "login_manager", _MISSING_LOGIN_MANAGER)
+        self.original_sid = getattr(frappe.session, "sid", None)
         frappe.set_user("Administrator")
         self.configure_test_localization_defaults()
         self._manager()
 
     def tearDown(self):
-        if self.original_manager is not None:
-            frappe.local.login_manager = self.original_manager
-        self.cleanup_feature_rows()
-        frappe.set_user("Administrator")
+        try:
+            self.cleanup_feature_rows()
+        finally:
+            if self.original_manager is _MISSING_LOGIN_MANAGER:
+                try:
+                    delattr(frappe.local, "login_manager")
+                except AttributeError:
+                    pass
+            else:
+                frappe.local.login_manager = self.original_manager
+            frappe.session.sid = self.original_sid
+            frappe.set_user("Administrator")
 
     def _manager(self, sid="social-sid"):
         def login_as(_user):

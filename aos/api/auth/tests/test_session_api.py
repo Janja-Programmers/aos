@@ -13,20 +13,41 @@ from aos.api.auth.verification import ensure_ver_doc, hash_otp
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
+_MISSING_LOGIN_MANAGER = object()
+_MISSING_RESPONSE = object()
+
+
 class TestAuthSessionAPI(AOSFeatureTestMixin, FrappeTestCase):
     def setUp(self):
         self.prefix = self.make_prefix("auth-session")
         self.created_users: list[str] = []
-        self._original_login_manager = getattr(frappe.local, "login_manager", None)
+        self._original_login_manager = getattr(frappe.local, "login_manager", _MISSING_LOGIN_MANAGER)
+        self._original_response = getattr(frappe.local, "response", _MISSING_RESPONSE)
+        self._original_sid = getattr(frappe.session, "sid", None)
         frappe.local.response = {}
         frappe.set_user("Administrator")
         self.configure_test_localization_defaults()
 
     def tearDown(self):
-        if self._original_login_manager is not None:
-            frappe.local.login_manager = self._original_login_manager
-        self.cleanup_feature_rows()
-        frappe.set_user("Administrator")
+        try:
+            self.cleanup_feature_rows()
+        finally:
+            if self._original_login_manager is _MISSING_LOGIN_MANAGER:
+                try:
+                    delattr(frappe.local, "login_manager")
+                except AttributeError:
+                    pass
+            else:
+                frappe.local.login_manager = self._original_login_manager
+            if self._original_response is _MISSING_RESPONSE:
+                try:
+                    delattr(frappe.local, "response")
+                except AttributeError:
+                    pass
+            else:
+                frappe.local.response = self._original_response
+            frappe.session.sid = self._original_sid
+            frappe.set_user("Administrator")
 
     def _manager(self, *, sid="sid-test", auth_error=False):
         def post_login():

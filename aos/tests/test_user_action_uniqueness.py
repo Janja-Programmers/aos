@@ -6,6 +6,8 @@ import frappe
 from frappe.exceptions import TimestampMismatchError
 from frappe.tests.utils import FrappeTestCase
 
+from aos.api.auth.user_controller import mark_aos_managed_website_user_creation
+
 from aos.api.live.tracking import track_join_impl
 from aos.api.notifications.token import register_push_token_impl
 from aos.api.shorts.tracking import _update_short_view_watch_progress, track_view_impl
@@ -292,9 +294,11 @@ class TestUserActionUniqueness(AOSFeatureTestMixin, FrappeTestCase):
                     "first_name": "Unique",
                     "last_name": label.title(),
                     "enabled": 1,
+                    "user_type": "Website User",
                     "send_welcome_email": 0,
                 }
             )
+            mark_aos_managed_website_user_creation(user)
             user.insert(ignore_permissions=True)
 
         if not frappe.db.exists("AOS Profile", email):
@@ -440,4 +444,4 @@ class TestUserActionUniqueness(AOSFeatureTestMixin, FrappeTestCase):
 
         for user in self.created_users:
             if frappe.db.exists("User", user):
-                frappe.delete_doc("User", user, ignore_permissions=True, force=True)
+                self.delete_test_user(user)

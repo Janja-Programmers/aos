@@ -39,14 +39,54 @@ class TestAuthSecurityContracts(AOSFeatureTestMixin, FrappeTestCase):
             response = auth_rate_limit(operation="login", dimension="ip", value="127.0.0.1", limit=2, message="limited")
         self.assertEqual(response.get("error"), "SERVICE_UNAVAILABLE")
 
+    def test_managed_website_user_creation_bypasses_only_framework_global_throttle(self):
+        from aos.api.auth.user_controller import mark_aos_managed_website_user_creation
+
+        def simulated_framework_throttle():
+            if not frappe.flags.in_import:
+                frappe.throw("Throttled")
+
+        spoofed = frappe.new_doc("User")
+        spoofed.user_type = "Website User"
+        spoofed.flags.aos_managed_website_user_creation = True
+        with patch(
+            "frappe.core.doctype.user.user.throttle_user_creation",
+            side_effect=simulated_framework_throttle,
+        ):
+            with self.assertRaises(frappe.ValidationError):
+                spoofed.before_insert()
+
+        managed = frappe.new_doc("User")
+        managed.user_type = "Website User"
+        mark_aos_managed_website_user_creation(managed)
+        previous = frappe.flags.get("in_import", False)
+        with patch(
+            "frappe.core.doctype.user.user.throttle_user_creation",
+            side_effect=simulated_framework_throttle,
+        ):
+            managed.before_insert()
+        self.assertEqual(frappe.flags.get("in_import", False), previous)
+
+        system_user = frappe.new_doc("User")
+        system_user.user_type = "System User"
+        with self.assertRaises(ValueError):
+            mark_aos_managed_website_user_creation(system_user)
+
     def test_framework_generic_login_is_blocked_for_aos_website_users(self):
         user = self.make_user("website")
         manager = SimpleNamespace(user=user)
-        frappe.flags.aos_auth_session_creation = False
-        with self.assertRaises(frappe.AuthenticationError):
+        previous = frappe.flags.get("aos_auth_session_creation", None)
+        try:
+            frappe.flags.aos_auth_session_creation = False
+            with self.assertRaises(frappe.AuthenticationError):
+                enforce_aos_website_login(manager)
+            frappe.flags.aos_auth_session_creation = True
             enforce_aos_website_login(manager)
-        frappe.flags.aos_auth_session_creation = True
-        enforce_aos_website_login(manager)
+        finally:
+            if previous is None:
+                frappe.flags.pop("aos_auth_session_creation", None)
+            else:
+                frappe.flags.aos_auth_session_creation = previous
 
 
     def test_framework_auth_bypass_guards_and_fresh_install_signup_default(self):
@@ -57,10 +97,10 @@ class TestAuthSecurityContracts(AOSFeatureTestMixin, FrappeTestCase):
             "frappe.core.doctype.user.user.sign_up",
             "frappe.core.doctype.user.user.reset_password",
             "frappe.core.doctype.user.user.update_password",
-            "frappe.core.doctype.user.user.change_password",
             "frappe.core.doctype.user.user.verify_password",
         }
         self.assertTrue(expected.issubset(set(hooks.override_whitelisted_methods)))
+        self.assertIn("aos.api.auth.user_controller.AOSAuthUserMixin", hooks.extend_doctype_class.get("User", []))
         with patch("frappe.db.set_single_value") as set_single:
             after_install()
         set_single.assert_called_once_with("Website Settings", "disable_signup", 1)

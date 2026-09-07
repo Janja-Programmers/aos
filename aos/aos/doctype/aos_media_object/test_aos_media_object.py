@@ -5,6 +5,8 @@ import uuid
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from aos.api.auth.user_controller import mark_aos_managed_website_user_creation
+
 
 class TestAOSMediaObject(FrappeTestCase):
     def setUp(self):
@@ -20,7 +22,7 @@ class TestAOSMediaObject(FrappeTestCase):
 
     def _make_user(self) -> str:
         email = f"media-doctype-{uuid.uuid4().hex[:10]}@example.com"
-        frappe.get_doc(
+        user = frappe.get_doc(
             {
                 "doctype": "User",
                 "email": email,
@@ -30,7 +32,9 @@ class TestAOSMediaObject(FrappeTestCase):
                 "user_type": "Website User",
                 "send_welcome_email": 0,
             }
-        ).insert(ignore_permissions=True)
+        )
+        mark_aos_managed_website_user_creation(user)
+        user.insert(ignore_permissions=True)
         frappe.get_doc(
             {
                 "doctype": "AOS Profile",

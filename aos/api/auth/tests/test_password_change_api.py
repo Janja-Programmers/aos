@@ -14,14 +14,18 @@ class TestAuthPasswordChangeAPI(AOSFeatureTestMixin, FrappeTestCase):
     def setUp(self):
         self.prefix = self.make_prefix("auth-password-change")
         self.created_users: list[str] = []
+        self._original_sid = getattr(frappe.session, "sid", None)
         frappe.set_user("Administrator")
         self.user = self.make_user("user")
         update_password(self.user, "CurrentStrong123!")
         frappe.set_user(self.user)
 
     def tearDown(self):
-        self.cleanup_feature_rows()
-        frappe.set_user("Administrator")
+        try:
+            self.cleanup_feature_rows()
+        finally:
+            frappe.session.sid = self._original_sid
+            frappe.set_user("Administrator")
 
     def test_change_password_success_keeps_current_sid_and_revokes_other_sessions(self):
         frappe.session.sid = "current-sid"

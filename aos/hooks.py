@@ -206,9 +206,9 @@ scheduler_events = {
 # ------------------------------
 #
 # Specify custom mixins to extend the standard doctype controller.
-# extend_doctype_class = {
-# 	"Task": "aos.custom.task.CustomTaskMixin"
-# }
+extend_doctype_class = {
+	"User": ["aos.api.auth.user_controller.AOSAuthUserMixin"],
+}
 
 # Overriding Methods
 # ------------------------------
@@ -217,7 +217,6 @@ override_whitelisted_methods = {
 	"frappe.core.doctype.user.user.sign_up": "aos.api.auth.framework_guards.block_frappe_signup",
 	"frappe.core.doctype.user.user.reset_password": "aos.api.auth.framework_guards.guard_frappe_reset_password",
 	"frappe.core.doctype.user.user.update_password": "aos.api.auth.framework_guards.guard_frappe_update_password",
-	"frappe.core.doctype.user.user.change_password": "aos.api.auth.framework_guards.guard_frappe_change_password",
 	"frappe.core.doctype.user.user.verify_password": "aos.api.auth.framework_guards.guard_frappe_verify_password",
 }
 #

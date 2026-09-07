@@ -99,6 +99,8 @@ Password recovery
 
 AOS delegates password hashing/verification and session mechanics to Frappe. AOS adds the public request contract, enumeration protection, account state policy, distributed abuse limits, AOS bootstrap checks, OIDC identity binding, safe responses, and application-level concurrency ordering.
 
+Frappe also applies a coarse site-wide User-creation throttle in its `User.before_insert` path. That global guard is retained for generic Frappe/Desk User creation, but it is too coarse to be the public AOS signup limiter because unrelated users and application nodes share the same site-wide count. The `User` controller is extended with `AOSAuthUserMixin`; only Website User documents carrying a trusted in-process AOS sentinel bypass that one framework guard, and only while the upstream `before_insert` hook runs. Email/password registration and first-time social login set the sentinel only after their shared Redis abuse checks. The sentinel is an object-identity value and cannot be supplied through a request or serialized DocType field.
+
 Frappe's generic login path is intentionally blocked for AOS `Website User` accounts by the `on_login` hook. System Users and Administrator retain normal Frappe/Desk authentication. This prevents AOS Website Users from bypassing the versioned AOS login controls.
 
 ### Relationship with Localization
@@ -168,6 +170,7 @@ serializers.py -> explicit public response
 | `session_control.py` | exact server-session/token revocation without wildcard cache deletion |
 | `session_hooks.py` | prevents generic Frappe Website User login bypass |
 | `framework_guards.py` | closes parallel Frappe Website signup/recovery/password endpoints while preserving System User Desk/admin recovery and password administration |
+| `user_controller.py` | extends the Frappe `User` controller so only internally marked, already-rate-limited AOS Website User creation bypasses Frappe's coarse site-wide creation throttle; generic User creation remains framework-throttled |
 | `rate_limits.py` | atomic Redis INCR+EXPIRE via Lua; fail-closed dependency behavior |
 | `locking.py` | account-scoped `User` row lock used by security mutations/session creation |
 | `serializers.py` | allowlisted user/session/preferences/roles/seller response shape |
@@ -321,7 +324,7 @@ Success: `200`, `If this email can be registered, a verification code has been q
 
 Important errors: `VALIDATION_ERROR`, `AUTH_UNKNOWN_FIELD`, `RATE_LIMIT`, `SERVICE_UNAVAILABLE`, `REGISTER_FAILED`. Account existence/lifecycle is not disclosed by registration.
 
-Side effects: creates disabled User + AOS Profile + AOS User Preference + verification state + Frappe Email Queue row in one request transaction. A queue failure rolls the account creation back. No provider network call is made synchronously.
+Side effects: creates disabled User + AOS Profile + AOS User Preference + verification state + Frappe Email Queue row in one request transaction. The User insert is internally marked as an AOS-managed Website User creation after AOS Redis rate limits pass, so Frappe's unrelated site-wide User counter does not cap public signup throughput. Generic Frappe User creation retains the framework throttle. A queue failure rolls the account creation back. No provider network call is made synchronously.
 
 Idempotency: duplicate/retried requests for an already-existing normalized email are safely acknowledged without creating, mutating or re-sending. Database uniqueness is the final concurrent-race guard.
 
@@ -747,6 +750,7 @@ must derive Authentication DocTypes, permissions, hooks and final schema directl
 - no process-local mutable Authentication state is required for correctness;
 - sessions are Frappe DB/Redis state shared across workers/nodes;
 - abuse counters are atomic shared Redis state;
+- canonical AOS Website User creation is not capped by Frappe's coarse site-wide User-creation counter; a narrow `User` mixin bypasses only that upstream guard after AOS Redis rate limits have passed, while generic Frappe/Desk User creation remains throttled;
 - password/reset/account mutation ordering uses a per-user database row lock, not a global application lock;
 - OTP rows are bounded per user/purpose instead of append-only;
 - `me` is read-oriented and no longer creates/repairs data;
@@ -777,7 +781,7 @@ Authentication correctness does not rely on sticky sessions, Python globals, a p
 | Writes/request | Frappe session + normal login metadata | no AOS repair writes; Frappe may refresh session metadata | User/Profile/Preference/verification + Email Queue |
 | Cache usage | Redis rate limit, Frappe auth/session caches | Frappe session + preference/role caches | Redis rate limit + Localization caches |
 | Index coverage | exact email/User primary lookup; Profile/User Preference deterministic identity | User/Profile/User Preference identities; seller-owned indexes | User uniqueness; Profile/Preference uniqueness; deterministic verification primary key |
-| Lock contention | one User row per account during credential/session transition | none from AOS Auth | uniqueness/insert-level DB contention only |
+| Lock contention | one User row per account during credential/session transition | none from AOS Auth | uniqueness/insert-level DB contention only; no Frappe site-wide signup throttle serialization/cap on managed AOS Website User creation |
 | Payload size | small bootstrap allowlist | small bootstrap allowlist | small acknowledgement |
 | Horizontal scaling | shared DB/Redis | shared DB/Redis | shared DB/Redis + Email Queue |
 | Abuse risk | very high; identifier + NAT-tolerant IP limiting + Frappe tracker | lower; authenticated | high; email + NAT-tolerant IP limiting + DB uniqueness |

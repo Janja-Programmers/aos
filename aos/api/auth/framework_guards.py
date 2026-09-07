@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
-from frappe.core.doctype.user.user import change_password as _frappe_change_password
 from frappe.core.doctype.user.user import reset_password as _frappe_reset_password
 from frappe.core.doctype.user.user import update_password as _frappe_update_password
 from frappe.core.doctype.user.user import verify_password as _frappe_verify_password
@@ -63,7 +62,7 @@ def _system_user_for_reset_key(key: str | None) -> bool:
 
 def _require_system_user_session() -> None:
     if _session_user_type() != "System User":
-        frappe.throw(_("Use the AOS Authentication API."), frappe.PermissionError)
+        raise frappe.PermissionError(_("Use the AOS Authentication API."))
 
 
 def guard_frappe_update_password(*args, **kwargs):
@@ -73,13 +72,7 @@ def guard_frappe_update_password(*args, **kwargs):
         key = args[2]
     if _system_user_for_reset_key(key) or _session_user_type() == "System User":
         return _frappe_update_password(*args, **kwargs)
-    frappe.throw(_("Use the AOS Authentication API."), frappe.PermissionError)
-
-
-def guard_frappe_change_password(*args, **kwargs):
-    """Permit Desk/System User password administration; block Website clients."""
-    _require_system_user_session()
-    return _frappe_change_password(*args, **kwargs)
+    raise frappe.PermissionError(_("Use the AOS Authentication API."))
 
 
 def guard_frappe_verify_password(*args, **kwargs):

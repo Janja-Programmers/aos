@@ -106,8 +106,11 @@ def login_impl(**kwargs):
         if not lock_user(user_name):
             return fail(GENERIC_LOGIN_FAILURE, error="INVALID_CREDENTIALS")
         enabled = int(frappe.db.get_value("User", user_name, "enabled") or 0)
-        lm = frappe.local.login_manager
+        lm = None
         if enabled:
+            lm = getattr(frappe.local, "login_manager", None)
+            if lm is None:
+                return fail("Authentication service temporarily unavailable.", error="SERVICE_UNAVAILABLE")
             try:
                 # Exact email resolution happened above; no username/phone alias is public.
                 lm.authenticate(user=user_name, pwd=password)
@@ -118,9 +121,17 @@ def login_impl(**kwargs):
             if proof_err:
                 return proof_err
 
+        # Disabled/pending/deleted account classification does not require a
+        # Frappe LoginManager because no session will be created for it. This
+        # keeps those security-state responses deterministic even in isolated
+        # service/test execution where request login machinery is absent.
         inactive = _inactive_error_after_password_proof(user_name)
         if inactive:
             return inactive
+        if lm is None:
+            lm = getattr(frappe.local, "login_manager", None)
+            if lm is None:
+                return fail("Authentication service temporarily unavailable.", error="SERVICE_UNAVAILABLE")
         policy_err = session_policy_error(user_name, login_manager=lm)
         if policy_err:
             return policy_err

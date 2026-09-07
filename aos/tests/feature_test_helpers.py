@@ -8,6 +8,11 @@ from typing import Any
 import frappe
 from frappe.utils import now_datetime
 
+from aos.api.auth.user_controller import mark_aos_managed_website_user_creation
+
+
+_MISSING_LOGIN_MANAGER = object()
+
 
 class AOSFeatureTestMixin:
     """Small DB fixture helpers for feature-level API tests.
@@ -37,6 +42,7 @@ class AOSFeatureTestMixin:
                     "send_welcome_email": 0,
                 }
             )
+            mark_aos_managed_website_user_creation(user)
             user.insert(ignore_permissions=True)
 
         if not frappe.db.exists("AOS Profile", email):
@@ -57,6 +63,33 @@ class AOSFeatureTestMixin:
 
         frappe.db.commit()
         return email
+
+    def delete_test_user(self, user: str) -> None:
+        """Delete a synthetic User without depending on an Auth test's fake manager.
+
+        Frappe User.on_trash() calls ``frappe.local.login_manager.logout`` before
+        performing the rest of its framework cleanup. Authentication tests may
+        deliberately replace that request-local object with a narrow mock. Keep
+        the real User lifecycle, but temporarily supply only the missing logout
+        capability and restore the exact prior request-local state afterwards.
+        """
+        original = getattr(frappe.local, "login_manager", _MISSING_LOGIN_MANAGER)
+        # Never invoke an Authentication test's fake/mocked logout during fixture
+        # teardown. Some mocks intentionally model only the endpoint call shape
+        # (logout()) while Frappe User.on_trash() calls logout(user=...). Supply
+        # a teardown-local no-op with the full call shape, run the normal Frappe
+        # User lifecycle, then restore the exact previous request-local object.
+        frappe.local.login_manager = SimpleNamespace(logout=lambda *args, **kwargs: None)
+        try:
+            frappe.delete_doc("User", user, ignore_permissions=True, force=True)
+        finally:
+            if original is _MISSING_LOGIN_MANAGER:
+                try:
+                    delattr(frappe.local, "login_manager")
+                except AttributeError:
+                    pass
+            else:
+                frappe.local.login_manager = original
 
     def ensure_user_preference(self, user: str):
         if frappe.db.exists("AOS User Preference", {"user": user}):
@@ -577,7 +610,7 @@ class AOSFeatureTestMixin:
 
         for user in list(getattr(self, "created_users", [])):
             if frappe.db.exists("User", user):
-                frappe.delete_doc("User", user, ignore_permissions=True, force=True)
+                self.delete_test_user(user)
 
         self.restore_localization_test_state()
         frappe.db.commit()
