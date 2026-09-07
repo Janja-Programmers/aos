@@ -162,6 +162,9 @@ def list_ads_impl(**kwargs):
         conditions = [
             "a.status = 'Active'",
             "s.status = 'Active'",
+            "u.enabled = 1",
+            "COALESCE(p.is_deleted, 0) = 0",
+            "COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'",
             "(a.expires_on IS NULL OR a.expires_on >= %(today)s)",
         ]
         values: Dict[str, Any] = {
@@ -272,6 +275,7 @@ def list_ads_impl(**kwargs):
             FROM `tabAOS Ad` a
             INNER JOIN `tabAOS Seller` s ON s.name = a.seller
             INNER JOIN `tabAOS Profile` p ON p.user = s.user
+            INNER JOIN `tabUser` u ON u.name = s.user
             LEFT JOIN `tabAOS Exchange Rate` er_source ON er_source.currency = a.currency
             LEFT JOIN `tabAOS Exchange Rate` er_target ON er_target.currency = %(display_currency)s
             WHERE {where_clause}

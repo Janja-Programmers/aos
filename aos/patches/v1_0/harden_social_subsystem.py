@@ -66,7 +66,7 @@ def _remove_self_follows() -> None:
 
 
 def _remove_invalid_follows() -> None:
-    """Remove orphaned or already-deleted-account edges in bounded batches."""
+    """Remove only orphaned edges. Deleted-account edges are recoverable state."""
     while True:
         rows = frappe.db.sql(
             """
@@ -78,10 +78,6 @@ def _remove_invalid_follows() -> None:
             LEFT JOIN `tabAOS Profile` target_profile ON target_profile.user = f.following_user
             WHERE follower.name IS NULL OR target.name IS NULL
                OR follower_profile.name IS NULL OR target_profile.name IS NULL
-               OR COALESCE(follower_profile.is_deleted, 0) = 1
-               OR COALESCE(target_profile.is_deleted, 0) = 1
-               OR follower_profile.account_status = 'Deleted'
-               OR target_profile.account_status = 'Deleted'
             ORDER BY f.name
             LIMIT %s
             """,
@@ -169,7 +165,8 @@ def _normalize_blocks() -> None:
             {"now": now_datetime(), "names": tuple(row.name for row in rows)},
         )
 
-    # Missing/deleted endpoints cannot retain an active uniqueness key.
+    # Only missing endpoints invalidate a block. Deleted-account blocks are
+    # preserved through the restore window and remain a safety boundary.
     while True:
         rows = frappe.db.sql(
             """
@@ -185,10 +182,6 @@ def _normalize_blocks() -> None:
                   OR b.blocked_user IS NULL OR b.blocked_user = ''
                   OR blocker.name IS NULL OR blocked.name IS NULL
                   OR blocker_profile.name IS NULL OR blocked_profile.name IS NULL
-                  OR COALESCE(blocker_profile.is_deleted, 0) = 1
-                  OR COALESCE(blocked_profile.is_deleted, 0) = 1
-                  OR blocker_profile.account_status = 'Deleted'
-                  OR blocked_profile.account_status = 'Deleted'
               )
             ORDER BY b.name
             LIMIT %s

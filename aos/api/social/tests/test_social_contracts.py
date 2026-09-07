@@ -66,13 +66,17 @@ class TestSocialStaticContracts(TestCase):
         ):
             self.assertIn("rate_limit(", (ROOT / relative).read_text(), relative)
 
-    def test_account_deletion_keeps_bounded_social_cleanup(self):
-        source = (ROOT / "aos/services/account_deletion_service.py").read_text()
-        self.assertIn("_remove_social_graph", source)
-        self.assertIn("AOS Follow", source)
-        self.assertIn("LIMIT %s", source)
-        self.assertIn("active_social_blocks_closed", source)
-        self.assertIn("WHERE name = %s FOR UPDATE", source)
+    def test_recoverable_deletion_preserves_graph_and_permanent_purge_is_bounded(self):
+        tombstone = (ROOT / "aos/services/account_deletion_service.py").read_text()
+        purge = (ROOT / "aos/services/account_purge_service.py").read_text()
+        self.assertIn("social_graph_preserved", tombstone)
+        block = tombstone.split("def tombstone_deleted_account_features", 1)[1].split("def restore_deleted_account_features", 1)[0]
+        self.assertNotIn("_remove_social_graph", block)
+        self.assertIn("def _purge_social_batch", purge)
+        self.assertIn("AOS Follow", purge)
+        self.assertIn("LIMIT %s FOR UPDATE", purge)
+        self.assertIn("active_social_blocks_closed", purge)
+        self.assertIn("10_000", (ROOT / "aos/services/accounts/constants.py").read_text())
 
     def test_database_constraints_are_the_duplicate_boundary(self):
         follow = (ROOT / "aos/aos/doctype/aos_follow/aos_follow.py").read_text()

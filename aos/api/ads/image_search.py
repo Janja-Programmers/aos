@@ -143,6 +143,9 @@ def _load_active_ad_docs(ad_ids: List[str]) -> Dict[str, Any]:
         "ad.name IN %(ad_ids)s",
         "ad.status = 'Active'",
         "seller.status = 'Active'",
+        "seller_user.enabled = 1",
+        "COALESCE(profile.is_deleted, 0) = 0",
+        "COALESCE(NULLIF(profile.account_status, ''), 'Active') = 'Active'",
         "(ad.expires_on IS NULL OR ad.expires_on >= %(today)s)",
     ]
     values: Dict[str, Any] = {"ad_ids": tuple(safe_ids), "today": getdate(nowdate())}
@@ -162,6 +165,8 @@ def _load_active_ad_docs(ad_ids: List[str]) -> Dict[str, Any]:
         SELECT ad.name
         FROM `tabAOS Ad` ad
         INNER JOIN `tabAOS Seller` seller ON seller.name = ad.seller
+        INNER JOIN `tabAOS Profile` profile ON profile.user = seller.user
+        INNER JOIN `tabUser` seller_user ON seller_user.name = seller.user
         WHERE {' AND '.join(conditions)}
         ORDER BY ad.name
         LIMIT 50

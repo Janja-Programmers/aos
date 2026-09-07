@@ -11,6 +11,6 @@ Accounts owns persisted marketplace identity, profile state, account preferences
 - Avatar changes attach a ready, owner-matching `profile_image` Media object before releasing the old object.
 - Preference updates lock one row and preserve unrelated fields.
 - Deactivation, deletion, suspension, and active state are distinct.
-- Deactivation/deletion revoke all sessions, push tokens, and authentication verification tokens.
+- Deactivation revokes sessions/push access; recoverable deletion revokes all sessions and authentication verification tokens, removes push-device registrations, cancels unconfirmed upload sessions, and preserves durable account data for the 30-day restore window.
 
 See the companion documents for API, lifecycle, migration, security, operations, and testing details.

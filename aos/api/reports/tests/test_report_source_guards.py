@@ -195,7 +195,7 @@ class TestReportProductionSourceGuards(unittest.TestCase):
         self.assertIn("FOR UPDATE", block)
         self.assertLess(block.index("FOR UPDATE"), block.index("review.status != STATUS_APPROVED"))
 
-    def test_reporter_owned_private_rows_are_removed_during_account_deletion(self):
+    def test_reporter_owned_private_rows_are_removed_only_after_restore_window(self):
         source = _source("aos/services/account_deletion_service.py")
         self.assertIn("def _cleanup_report_account_data", source)
         self.assertIn('"user_reports_removed"', source)

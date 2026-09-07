@@ -129,6 +129,9 @@ def get_ad_impl(**kwargs):
             "a.name = %(ad_id)s",
             "a.status = 'Active'",
             "s.status = 'Active'",
+            "u.enabled = 1",
+            "COALESCE(p.is_deleted, 0) = 0",
+            "COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'",
             "(a.expires_on IS NULL OR a.expires_on >= %(today)s)",
         ]
         values: dict[str, Any] = {"ad_id": ad_id, "today": today}
@@ -148,6 +151,8 @@ def get_ad_impl(**kwargs):
             SELECT a.name
             FROM `tabAOS Ad` a
             INNER JOIN `tabAOS Seller` s ON s.name = a.seller
+            INNER JOIN `tabAOS Profile` p ON p.user = s.user
+            INNER JOIN `tabUser` u ON u.name = s.user
             WHERE {' AND '.join(conditions)}
             LIMIT 1
             """,

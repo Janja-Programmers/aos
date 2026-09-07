@@ -66,7 +66,7 @@ Approved Review rows are canonical. Ad and Seller denormalised rating/count fiel
 
 ## Privacy decisions
 
-Historical reviews survive account deletion for marketplace trust, but Accounts renders the author as `Deleted User`. Private reaction and report rows created by the deleted account are removed. Seller deletion removes active Seller/Ad discovery without granting review-history manipulation. Authors receive only stable moderation codes and generic product-safe guidance, never raw moderator/provider notes.
+Historical reviews survive recoverable account deletion for marketplace trust and Accounts renders the author as `Deleted User` while the tombstone is active. Private reaction/report rows are preserved during the 30-day restore window and are removed only by permanent cleanup after expiry. Seller/Ad discovery is suppressed through the deleted owner's account lifecycle rather than rewriting Seller/Ad state. Authors receive only stable moderation codes and generic product-safe guidance, never raw moderator/provider notes.
 
 ## Compatibility decisions
 

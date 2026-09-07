@@ -6,7 +6,12 @@ from __future__ import annotations
 import frappe
 from frappe.model.document import Document
 
-from aos.services.accounts.constants import ACCOUNT_STATUSES, ACCOUNT_STATUS_DELETED
+from aos.services.accounts.constants import (
+    ACCOUNT_STATUSES,
+    ACCOUNT_STATUS_DELETED,
+    PURGE_STATUSES,
+    PURGE_STATUS_PENDING,
+)
 from aos.services.accounts.identity import ensure_public_account_id, normalize_public_account_id
 from aos.services.accounts.validation import (
     validate_bio,
@@ -40,6 +45,7 @@ class AOSProfile(Document):
         self._validate_user()
         self._validate_public_id()
         self._validate_account_state()
+        self._validate_purge_state()
         self._validate_profile_fields()
 
     def after_insert(self):
@@ -69,6 +75,16 @@ class AOSProfile(Document):
             self.is_deleted = 1
         elif int(self.is_deleted or 0):
             frappe.throw("Only deleted accounts may set is_deleted.", frappe.ValidationError)
+
+    def _validate_purge_state(self):
+        if not hasattr(self, "purge_status"):
+            return
+        status = str(self.purge_status or PURGE_STATUS_PENDING).strip()
+        if status not in PURGE_STATUSES:
+            frappe.throw("Invalid permanent deletion status.", frappe.ValidationError)
+        if self.account_status != ACCOUNT_STATUS_DELETED and status != PURGE_STATUS_PENDING:
+            frappe.throw("Only deleted accounts may be permanently purged.", frappe.ValidationError)
+        self.purge_status = status
 
     def _validate_profile_fields(self):
         try:

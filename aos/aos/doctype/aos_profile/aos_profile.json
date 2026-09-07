@@ -24,6 +24,9 @@
   "delete_reason",
   "lifecycle_reason",
   "restored_at",
+  "purge_status",
+  "purge_started_at",
+  "purge_completed_at",
   "total_followers",
   "column_break_vodm",
   "total_following",
@@ -136,7 +139,8 @@
    "fieldname": "restore_deadline",
    "fieldtype": "Datetime",
    "label": "Restore Deadline",
-   "read_only": 1
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "delete_reason",
@@ -154,6 +158,28 @@
    "fieldname": "restored_at",
    "fieldtype": "Datetime",
    "label": "Restored At",
+   "read_only": 1
+  },
+  {
+   "default": "Pending",
+   "fieldname": "purge_status",
+   "fieldtype": "Select",
+   "label": "Permanent Deletion Status",
+   "options": "Pending\nPurging\nCompleted",
+   "read_only": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "purge_started_at",
+   "fieldtype": "Datetime",
+   "label": "Permanent Deletion Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "purge_completed_at",
+   "fieldtype": "Datetime",
+   "label": "Permanent Deletion Completed At",
    "read_only": 1
   },
   {

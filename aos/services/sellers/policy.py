@@ -191,68 +191,6 @@ def set_seller_status(
     return doc, True
 
 
-def restore_seller_after_account_restore(
-    seller_id: Any,
-    *,
-    actor: str | None = None,
-):
-    """Restore only a Seller that Accounts previously marked Deleted.
-
-    The pre-delete status is captured before account deletion. Legacy rows from
-    before that field existed fall back to Active only when their lifecycle
-    markers prove that Accounts performed the deletion. Manual/moderation
-    deletions are never reactivated here.
-    """
-
-    clean_id = _clean(seller_id)
-    if not clean_id:
-        raise SellerNotFoundError("Seller not found.")
-
-    rows = frappe.db.sql(
-        """
-        SELECT name, status, status_reason_code, status_source, account_delete_previous_status
-        FROM `tabAOS Seller`
-        WHERE name = %s
-        LIMIT 1 FOR UPDATE
-        """,
-        (clean_id,),
-        as_dict=True,
-    )
-    if not rows:
-        raise SellerNotFoundError("Seller not found.")
-
-    row = rows[0]
-    if _clean(row.status) != STATUS_DELETED:
-        return frappe.get_doc(SELLER_DOCTYPE, clean_id), False
-    if _clean(row.status_reason_code) != "ACCOUNT_DELETED" or _clean(row.status_source) != "accounts":
-        return frappe.get_doc(SELLER_DOCTYPE, clean_id), False
-
-    previous_status = _clean(row.account_delete_previous_status)
-    if previous_status not in {STATUS_ACTIVE, STATUS_SUSPENDED}:
-        # Compatibility for accounts deleted before the snapshot field was
-        # introduced. Those rows can only be proven to have been deleted by
-        # the Accounts lifecycle, so restore the ordinary seller capability.
-        previous_status = STATUS_ACTIVE
-
-    doc = frappe.get_doc(SELLER_DOCTYPE, clean_id)
-    doc.status = previous_status
-    doc.status_reason_code = "ACCOUNT_RESTORED"
-    doc.status_source = "accounts"
-    doc.status_changed_at = now_datetime()
-    doc.account_delete_previous_status = None
-    doc.flags.aos_seller_lifecycle_action = "accounts"
-    doc.flags.aos_seller_status_actor = _clean(actor)
-    doc.save(ignore_permissions=True)
-    seller_log(
-        "seller.status.changed",
-        seller_id=doc.name,
-        status=previous_status,
-        operation="account_restore",
-        outcome="success",
-    )
-    return doc, True
-
-
 def sync_verified_business_profile(
     *,
     user: str,

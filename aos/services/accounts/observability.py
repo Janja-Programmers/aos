@@ -21,6 +21,8 @@ _ALLOWED_EVENTS = {
     "account.deletion.requested",
     "account.deleted",
     "account.restored",
+    "account.permanent_deletion.progress",
+    "account.permanent_deletion.completed",
 }
 _ALLOWED_OUTCOMES = {"success", "rejected", "failure"}
 _ALLOWED_FIELDS = {

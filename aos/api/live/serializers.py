@@ -426,6 +426,8 @@ def serialize_live_message(
         message,
         "message_type",
     )
+    actor_deleted = bool(actor.get("is_deleted"))
+    redact_authored_content = actor_deleted and message_kind == LIVE_MESSAGE_KIND_COMMENT
 
     return {
         "id": _value(
@@ -478,11 +480,11 @@ def serialize_live_message(
         "target": target,
 
         # Message content.
-        "content": _value(
+        "content": None if redact_authored_content else _value(
             message,
             "content",
         ),
-        "metadata": _parse_json_object(
+        "metadata": {} if redact_authored_content else _parse_json_object(
             _value(
                 message,
                 "metadata_json",

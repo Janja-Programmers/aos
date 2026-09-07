@@ -352,7 +352,7 @@ def serialize_short_row(
         "impression_count_display": humanize_count(row.get("impression_count") or 0),
         "ranking_score": flt(row.get("ranking_score") or 0),
         "posted_on": row.get("posted_on"),
-        "mentions": row.get("mentions") or [],
+        "mentions": [] if author_deleted else (row.get("mentions") or []),
         "sound": row.get("sound"),
         "creator": {
             "user": creator_display.get("user"),
@@ -399,6 +399,7 @@ def serialize_comment_row(
 ) -> dict[str, Any]:
     user = row.get("user")
     author_display = get_user_display(user)
+    author_deleted = bool(author_display.get("is_deleted"))
 
     return {
         "id": row.get("name"),
@@ -407,11 +408,13 @@ def serialize_comment_row(
         "seller": public_seller_id_for_name(row.get("seller")) if row.get("seller") else None,
         "display_name": author_display.get("display_name"),
         "avatar": author_display.get("avatar"),
-        "is_deleted_user": bool(author_display.get("is_deleted")),
-        "is_live": bool(author_display.get("is_live")) if not bool(author_display.get("is_deleted")) else False,
-        "live_id": author_display.get("live_id") if not bool(author_display.get("is_deleted")) else None,
-        "live_status": author_display.get("live_status") if not bool(author_display.get("is_deleted")) else None,
-        "comment": row.get("comment") or "",
+        "is_deleted_user": author_deleted,
+        "is_live": bool(author_display.get("is_live")) if not author_deleted else False,
+        "live_id": author_display.get("live_id") if not author_deleted else None,
+        "live_status": author_display.get("live_status") if not author_deleted else None,
+        # Preserve the row/counters but hide authored content while the account
+        # tombstone is active. Restore makes the original text visible again.
+        "comment": "" if author_deleted else (row.get("comment") or ""),
         "parent_comment": row.get("parent_comment"),
         "root_comment": row.get("root_comment"),
         "reply_count": cint(row.get("reply_count") or 0),
@@ -419,7 +422,7 @@ def serialize_comment_row(
         "like_count": cint(row.get("like_count") or 0),
         "like_count_display": humanize_count(row.get("like_count") or 0),
         "status": row.get("status"),
-        "mentions": row.get("mentions") or [],
+        "mentions": [] if author_deleted else (row.get("mentions") or []),
         "created_at": row.get("creation"),
         "viewer_state": viewer_state or default_comment_viewer_state(),
     }

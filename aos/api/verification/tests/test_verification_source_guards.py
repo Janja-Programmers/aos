@@ -179,7 +179,7 @@ class TestVerificationProductionSourceGuards(unittest.TestCase):
         self.assertIn("decision_token", rejected)
         self.assertNotIn("rejection_reason", rejected)
 
-    def test_account_deletion_releases_raw_evidence_without_storage_io(self):
+    def test_permanent_deletion_releases_raw_evidence_without_storage_io(self):
         source = _source("aos/services/account_deletion_service.py")
         block = source.split("def _cleanup_verification_documents", 1)[1].split(
             "def _revoke_verification_requests", 1

@@ -12,8 +12,10 @@ from the unique-key race and converge on the requested state.
 
 `wishlist_count` is denormalized on `AOS Ad` for ranking/index documents. The
 count is adjusted with an atomic SQL delta only when status crosses the Active
-boundary. Bulk account deletion uses exact recomputation because direct bulk
-SQL intentionally bypasses DocType hooks.
+boundary. Recoverable account deletion preserves Wishlist rows for the 30-day restore
+window. Permanent deletion after restore expiry removes Wishlist rows in bounded
+batches and performs exact Ad-count recomputation because direct bulk SQL
+intentionally bypasses DocType hooks.
 
 Listing is an authoritative SQL intersection between private active Wishlist
 rows and currently public Ads. Explicit sort is primary; geography, seller

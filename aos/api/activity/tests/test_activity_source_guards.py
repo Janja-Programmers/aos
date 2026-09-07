@@ -120,9 +120,9 @@ class TestActivityProductionSourceGuards(unittest.TestCase):
             self.assertFalse(bool(manager.get(key)), key)
         self.assertTrue(bool(manager.get("read")))
 
-    def test_account_deletion_removes_private_activity_and_redacts_deleted_profile_snapshots(self):
+    def test_permanent_deletion_removes_private_activity_and_redacts_deleted_profile_snapshots(self):
         source = _source("aos/services/account_deletion_service.py")
-        block = source.split("def _cleanup_activity_account_data", 1)[1].split("def _remove_social_graph", 1)[0]
+        block = source.split("def _cleanup_activity_account_data", 1)[1].split("def deactivate_account_features", 1)[0]
         self.assertIn('"AOS User Activity"', block)
         self.assertIn("activity_rows_removed", block)
         self.assertIn("activity_profile_rows_redacted", block)

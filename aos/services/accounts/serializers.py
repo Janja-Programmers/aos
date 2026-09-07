@@ -29,7 +29,7 @@ def _profile(user: str):
     fields = [
         "name", "user", "public_id", "display_name", "legal_name", "bio", "phone",
         "date_of_birth", "gender", "location", "profile_image_media", "account_status",
-        "is_deleted", "deactivated_at", "deleted_at", "restore_deadline", "total_followers",
+        "is_deleted", "deactivated_at", "deleted_at", "restore_deadline", "purge_status", "purge_started_at", "purge_completed_at", "total_followers",
         "total_following", "is_verified",
     ]
     try:
@@ -257,6 +257,9 @@ def serialize_private_profile(user: str) -> dict[str, Any]:
             "profile_image_media": _get(profile, "profile_image_media") or None,
             "account_status": _get(profile, "account_status", ACCOUNT_STATUS_ACTIVE),
             "enabled": bool(int(_get(user_row, "enabled", 0) or 0)),
+            "purge_status": _get(profile, "purge_status"),
+            "purge_started_at": _get(profile, "purge_started_at"),
+            "purge_completed_at": _get(profile, "purge_completed_at"),
             "preferences": preferences,
             "roles": sorted(role for role in (frappe.get_roles(user) or []) if role not in {"All", "Guest"}),
             "seller": seller_summary(user),

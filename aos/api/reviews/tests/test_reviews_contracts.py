@@ -56,7 +56,7 @@ class TestReviewsContracts(unittest.TestCase):
         }
         expected = {f"aos.api.v1.reviews.__init__.{name}" for name in functions}
         self.assertTrue(expected <= endpoints)
-    def test_account_deletion_retains_reviews_but_removes_private_actions(self):
+    def test_permanent_deletion_retains_reviews_but_removes_private_actions(self):
         source = (ROOT / "aos/services/account_deletion_service.py").read_text()
         self.assertIn("def _cleanup_review_account_data", source)
         self.assertIn("reviews_retained_anonymized", source)

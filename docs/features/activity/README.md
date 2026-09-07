@@ -36,7 +36,7 @@ There is no public Activity creation/update API. Owning backend features record 
 
 Activity Center is private personalization/history. Public API responses never expose raw Frappe User names, internal DocType names, moderation/report IDs, analytics session/view IDs, or arbitrary stored metadata. Public account/seller identities are canonicalized to opaque `ACC-*` / `SELLER-*` identifiers where identity metadata is intentionally returned.
 
-Account deletion removes the deleted account's own Activity Center history and hides/redacts retained profile and removed-content snapshots owned by other users.
+Recoverable account deletion preserves Activity Center rows for the 30-day restore window. The disabled/deleted account cannot authenticate, and public account/content visibility is suppressed by lifecycle policy. Private Activity cleanup/redaction begins only after the restore deadline as part of permanent deletion.
 
 ## Intentionally unsupported
 

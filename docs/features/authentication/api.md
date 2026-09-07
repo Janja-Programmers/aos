@@ -213,7 +213,20 @@ Lifecycle: created disabled for password signup, enabled after email verificatio
 
 Purpose: AOS account/profile state required by all marketplace identity surfaces.
 
-Authentication relies on the existing profile contract. The `user` identity is unique through the DocType naming/field definition. `account_status`, `is_deleted`, and `restore_deadline` are permanently search-indexed in the final DocType for account-state/recovery lookups.
+Authentication relies on the existing profile contract. The `user` identity is unique through the DocType naming/field definition. `account_status`, `is_deleted`, and `restore_deadline` define the reversible deletion boundary. `restore_deadline` and `purge_status` are indexed for the background permanent-deletion scan.
+
+Deletion lifecycle fields used by Authentication/Accounts:
+
+| Field | Purpose |
+|---|---|
+| `account_status` | `Active`, `Deactivated`, `Deleted`, or `Suspended` product lifecycle state |
+| `is_deleted` | explicit deleted-account tombstone used by public serializers/queries |
+| `deleted_at` | time the reversible deletion started |
+| `restore_deadline` | last time the account can be restored; normally deletion + 30 days |
+| `purge_status` | `Pending`, `Purging`, `Completed` durable permanent-cleanup progress |
+| `purge_started_at` | first bounded cleanup run after restore expiry |
+| `purge_completed_at` | permanent private-data cleanup/anonymization completion |
+| `restored_at` | latest successful restore time |
 
 Authentication does not repair a missing profile during login or `me`; a missing row is an internal account-bootstrap invariant failure (`ACCOUNT_BOOTSTRAP_UNAVAILABLE`).
 
@@ -505,7 +518,24 @@ Purpose: authenticated confirmation boundary for Accounts-owned recoverable dele
 
 Authentication: Authenticated. Inputs: `confirmation` exactly `DELETE`; optional `reason` <=300.
 
-Account lifecycle/cleanup semantics are documented by the Accounts feature. Auth adds strict confirmation, abuse limits, user-row ordering, safe error shaping, and clears the current session cookie after lifecycle access revocation.
+Deletion is a **30-day reversible tombstone**, not immediate destructive cleanup. Auth adds strict confirmation, abuse limits, user-row ordering, safe error shaping, and clears the current session cookie after lifecycle access revocation.
+
+Immediate deletion effects:
+
+- `AOS Profile.account_status = Deleted`, `is_deleted = 1`, and `restore_deadline = now + 30 days`;
+- Frappe `User.enabled = 0`;
+- every Frappe session and exact Redis session-cache entry is revoked;
+- push/device-token rows are removed so restored devices must register again; Authentication OTP/reset state is consumed/cleared;
+- unconfirmed media upload sessions are invalidated without touching uploaded/processing/attached durable media;
+- active Calls/Lives/view/cohost sessions are ended;
+- queued/processing notification delivery jobs are cancelled so stale pushes are not delivered after restore.
+
+Durable state deliberately **remains unchanged** during the restore window: followers, following, blocks, follower counters, seller/storefront status and metrics, Ads and drafts, Shorts and their counters, comments/replies, chat history and private chat personalization, reviews and reactions, reports, verification decision/evidence, wishlist, saved searches, notification history, Localization preferences, profile fields/media, public/internal account IDs and historical call/live records. Public endpoints hide a deleted/disabled owner through account-state policy rather than rewriting those rows. Short and Live authored comment text is redacted in serialization while the account is deleted; the stored text is untouched and reappears on restore.
+
+This makes delete/restore O(1) with respect to a user's social/content graph. An account with 1,000,000 followers keeps all 1,000,000 follow edges and stored counters during the grace period; public counts are masked while deleted and the original count returns immediately on restore.
+Seller status is likewise not rewritten during recoverable deletion; no `account_delete_previous_status` compatibility field is required.
+
+After `restore_deadline`, restore returns `RESTORE_EXPIRED`. The hourly Accounts purge job (`aos.tasks.accounts.purge_expired_deleted_accounts`) advances permanent cleanup in bounded batches. Social edges/blocks use a maximum 10,000-row batch per account/run; chat-private state, reports, review reactions, Activity history/redaction, wishlist, notifications, saved searches, Auth identities and Localization preferences are also processed in bounded batches. Verification evidence uses its existing <=500-row paged cleanup. Profile media is then released, profile presentation PII is anonymized, and `purge_status` becomes `Completed`. Shared marketplace/history rows such as Ads, Shorts, Reviews, chat messages, Calls and moderation history remain linked to the stable account identity but continue to serialize as a deleted account.
 
 ### `aos.api.v1.auth.request_restore_account`
 
@@ -757,7 +787,10 @@ must derive Authentication DocTypes, permissions, hooks and final schema directl
 - password/session cache invalidation targets exact session IDs;
 - email is queued rather than synchronously delivered from the Auth web worker;
 - OIDC JWKS is shared-cached in Redis; unknown-key refresh is globally throttled per site/provider with an atomic Redis NX guard to prevent refresh storms;
-- credential verification is deliberately not cached.
+- credential verification is deliberately not cached;
+- recoverable account deletion never synchronously deletes follower/content graphs; visibility is controlled by the single account tombstone;
+- permanent cleanup starts only after the 30-day deadline and is resumable through `purge_status`; follow/block cleanup is capped at 10,000 rows per account/run;
+- seller, Ads and Shorts public reads independently require an active/non-deleted owner, so preserved content cannot leak while the owner is tombstoned.
 
 ### Horizontal-scaling verdict
 
@@ -822,6 +855,7 @@ The application changes do **not** prove capacity for one million users or one m
 
 Authentication-focused test modules:
 
+- `aos/api/accounts/tests/test_recoverable_deletion.py` — reversible social/verification preservation plus bounded permanent purge;
 - `aos/api/auth/tests/test_session_api.py` — exact login contract, enumeration safety, disabled/deleted behavior, mobile/web session shape, read-only `me`, logout idempotency;
 - `test_register_api.py` — validation, schema creation, Localization bootstrap, enumeration-safe duplicate/race retry handling, rollback on queued-mail failure;
 - `test_otp_api.py` — generic failures, activation, replay, resend enumeration resistance;

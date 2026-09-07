@@ -13,7 +13,7 @@ Both are logical terminal transitions, not physical deletion. If the same real-w
 
 ## Account deletion
 
-A deleted account's own Activity rows are physically removed because Activity is personalization/history rather than retained moderation audit. Other users' profile-history snapshots referencing the deleted account, plus snapshots of Ads/Shorts/Lives made unavailable by the deletion, are hidden and scrubbed of title/image/metadata.
+During the 30-day recoverable deletion window, Activity rows are preserved. After the restore deadline, permanent cleanup removes the deleted account's private Activity history and redacts retained snapshots that reference the permanently deleted profile/content. Cleanup is background-owned rather than part of the synchronous delete request.
 
 ## Monitoring
 

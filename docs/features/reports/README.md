@@ -18,7 +18,7 @@ The authoritative human-review states are:
 - Desk review by users with effective Write permission on the relevant Report DocType, using the exact actions already modeled by that DocType.
 - Server-controlled review metadata, immutable submitted evidence, terminal lifecycle enforcement, and one-shot moderation effects.
 - Duplicate/race protection through target locks plus the existing Ad/Short/Review database uniqueness constraints and the Report hardening constraint for User reports.
-- Account-deletion cleanup of private reports submitted by the deleted account while preserving reports *about* that account/content as moderation history.
+- Recoverable deletion preserves reporter-private rows for 30 days; permanent cleanup after restore expiry removes reports submitted by that account while preserving reports *about* the account/content as moderation history.
 
 ## Exact existing moderation actions
 

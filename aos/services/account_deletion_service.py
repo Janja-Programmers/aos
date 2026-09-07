@@ -1,15 +1,18 @@
-"""Feature cleanup for recoverable account deletion.
+"""Recoverable account-deletion lifecycle helpers.
 
-This service intentionally does not hard-delete the Frappe User or historical
-records. It removes the deleted user from public/active surfaces while keeping
-foreign-key style Link references valid for restore, audit, chats, calls, and
-history.
+The 30-day deletion window is a reversible tombstone. Durable product data
+(follow graph, blocks, seller/storefront, ads, Shorts, authored discussion,
+chat/history, reviews, verification state, wishlist, saved searches,
+notifications, Localization preferences and profile media) is preserved. Public
+surfaces hide deleted/disabled owners through canonical account-status policy.
 
-Phase 2 policy:
-- Hide/disable active public content owned by the user.
-- End active realtime sessions involving the user.
-- Remove private personalization and social graph rows.
-- Do not automatically republish content on account restore.
+Only active realtime work and undelivered delivery work are terminated during
+the grace window. Irreversible private-data cleanup runs later through
+``aos.services.account_purge_service`` after the restore deadline.
+
+The lower-level cleanup functions in this module are retained as permanent
+purge primitives and are never invoked by the recoverable tombstone entry
+point. None of these helpers commit.
 """
 
 from __future__ import annotations
@@ -119,106 +122,66 @@ def _placeholders(values: list[str]) -> str:
 
 
 # Public entry points
-def cleanup_deleted_account_features(user: str) -> dict[str, int]:
-    """Hide/deactivate feature records for a newly deleted account.
+def tombstone_deleted_account_features(user: str) -> dict[str, int]:
+    """Apply the reversible 30-day account tombstone boundary.
 
-    This is called inside the delete-account transaction. It does not commit.
+    Durable user data is intentionally preserved during the restore window.
+    The deleted account is hidden by the canonical User/AOS Profile lifecycle
+    filters instead of rewriting potentially millions of related rows. Only
+    active realtime work and undelivered push work are terminated here. The
+    surrounding Accounts transaction owns commit/rollback.
     """
     user = (user or "").strip()
     if not user:
         return {}
 
-    # Pair mutations lock User rows too. Holding the deleted account row for
-    # this transaction prevents a concurrent follow/block from crossing the
-    # cleanup boundary; mutation services revalidate lifecycle after waiting.
+    # Pair mutations also lock User rows. Holding this row prevents concurrent
+    # follow/block/content mutations from crossing the account-status change.
     frappe.db.sql(
         "SELECT name FROM `tabUser` WHERE name = %s FOR UPDATE",
         (user,),
     )
 
     now = now_datetime()
-    sellers = _seller_names_for_user(user)
-
-    summary: dict[str, int] = {}
-
-    summary["active_calls_ended"] = _end_active_calls(user=user, now=now)
-    summary["active_live_streams_ended"] = _end_active_live_streams(user=user, now=now)
-    summary["live_view_sessions_closed"] = _close_live_view_rows(user=user, now=now)
-    summary["live_cohost_rows_closed"] = _close_live_cohost_rows(user=user, now=now)
-
-    summary["seller_profiles_deleted"] = _mark_sellers_deleted(sellers=sellers)
-    summary["ads_deleted"] = _mark_ads_deleted(sellers=sellers)
-    summary["ad_drafts_abandoned"] = _abandon_ad_drafts(user=user)
-    summary["shorts_deleted"] = _mark_shorts_deleted(user=user, sellers=sellers)
-
-    # Public authored discussion surfaces. These are not auto-restored because
-    # they may have been visible to many people and should stay hidden unless a
-    # future moderation/restore workflow intentionally republishes them.
-    summary.update(_mark_short_comments_deleted(user=user))
-    summary.update(_mark_live_messages_deleted(user=user))
-
-    summary["wishlist_items_removed"] = _remove_wishlist_items(user=user)
-    summary["saved_searches_disabled"] = _disable_saved_searches(user=user)
-    summary.update(_cleanup_verification_documents(user=user))
-    summary["verification_requests_revoked"] = _revoke_verification_requests(user=user, now=now)
-    summary["notifications_marked_read"] = _mark_notifications_read(user=user)
-    summary["notification_delivery_jobs_cancelled"] = _cancel_notification_delivery_jobs(
-        user=user, now=now
-    )
-    summary["push_tokens_removed"] = _remove_push_tokens(user=user)
-
-    # Chat history remains available to the other participant, but the deleted
-    # account must not retain private personalization or remain an active inbox
-    # participant. This is intentionally idempotent and bounded.
-    summary.update(_cleanup_chat_private_state(user=user))
-
-    # Reports are private reporter-owned moderation data. Remove rows submitted
-    # by the deleted account while retaining reports about its public content or
-    # account for staff audit. Ad aggregates are rebuilt from remaining rows.
-    summary.update(_cleanup_report_account_data(user=user))
-
-    # Marketplace trust history is retained and rendered through the Accounts
-    # deleted-user serializer. Private reactions/reports are removed so deleted
-    # accounts no longer keep personalization or reporter identity rows.
-    summary.update(_cleanup_review_account_data(user=user))
-
-    # Activity Center is private personalization/history, not retained audit.
-    # Remove the deleted account's own history and redact/hide profile-history
-    # snapshots owned by other users so deleted-account PII is not retained in
-    # the presentation projection.
-    summary.update(_cleanup_activity_account_data(user=user, sellers=sellers))
-
-    follow_summary = _remove_social_graph(user=user)
-    summary.update(follow_summary)
-
-    return summary
+    return {
+        "active_calls_ended": _end_active_calls(user=user, now=now),
+        "active_live_streams_ended": _end_active_live_streams(user=user, now=now),
+        "live_view_sessions_closed": _close_live_view_rows(user=user, now=now),
+        "live_cohost_rows_closed": _close_live_cohost_rows(user=user, now=now),
+        "notification_delivery_jobs_cancelled": _cancel_notification_delivery_jobs(
+            user=user, now=now
+        ),
+        "push_tokens_removed": _remove_push_tokens(user=user),
+        "pending_media_uploads_cancelled": _cancel_pending_media_uploads(user=user, now=now),
+        # These flags are explicit API/audit evidence that the large durable
+        # domains were preserved rather than synchronously rewritten.
+        "social_graph_preserved": 1,
+        "marketplace_state_preserved": 1,
+        "public_content_state_preserved": 1,
+        "private_personalization_preserved": 1,
+        "verification_state_preserved": 1,
+    }
 
 
 def restore_deleted_account_features(user: str) -> dict[str, int]:
-    """Restore reversible account-owned feature state.
+    """Restore visibility of durable state by removing the account tombstone.
 
-    Account deletion temporarily removes the Seller capability boundary. A
-    seller deleted specifically by the Accounts lifecycle is restored to the
-    status it held immediately before account deletion. Public listings/videos
-    remain unpublished because their market/moderation freshness must still be
-    re-established separately.
+    Followers, following, blocks, seller/storefront state, ads, Shorts,
+    comments, chats, reviews, verification, wishlist, saved searches,
+    notifications, preferences and profile media were never rewritten during
+    the grace window, so restoration is O(1) with respect to those domains.
+    Active calls/Lives and revoked credentials are intentionally not recreated.
     """
     user = (user or "").strip()
     if not user:
         return {}
-
-    seller_restored = 0
-    if _doctype_exists("AOS Seller"):
-        from aos.services.sellers.policy import restore_seller_after_account_restore
-
-        for seller in _seller_names_for_user(user):
-            _doc, changed = restore_seller_after_account_restore(seller, actor=user)
-            seller_restored += int(bool(changed))
-
     return {
-        "public_content_restored": 0,
-        "seller_profiles_restored": seller_restored,
-        "seller_requires_reactivation": 0,
+        "durable_state_restored": 1,
+        "social_graph_restored": 1,
+        "marketplace_state_restored": 1,
+        "verification_state_restored": 1,
+        "active_sessions_restored": 0,
+        "active_realtime_sessions_restored": 0,
     }
 
 
@@ -503,423 +466,51 @@ def _close_live_cohost_rows(*, user: str, now) -> int:
     return total
 
 
-def _mark_sellers_deleted(*, sellers: list[str]) -> int:
-    if not sellers or not _doctype_exists("AOS Seller"):
-        return 0
 
-    where_sql = f"name IN ({_placeholders(sellers)}) AND status != 'Deleted'"
+def _cancel_pending_media_uploads(*, user: str, now) -> int:
+    """Invalidate unconfirmed upload sessions without deleting durable media.
 
-    now = now_datetime()
-    return _update_counted(
-        "AOS Seller",
-        set_sql="""
-            account_delete_previous_status = CASE
-                WHEN status IN ('Active', 'Suspended') THEN status
-                ELSE account_delete_previous_status
-            END,
-            status = 'Deleted',
-            status_reason_code = 'ACCOUNT_DELETED',
-            status_source = 'accounts',
-            status_changed_at = %s,
-            total_ads = 0,
-            modified = %s
-        """,
-        where_sql=where_sql,
-        set_params=(now, now),
-        where_params=tuple(sellers),
-    )
-
-
-def _mark_ads_deleted(*, sellers: list[str]) -> int:
-    if not sellers or not _doctype_exists("AOS Ad"):
-        return 0
-
-    where_sql = f"seller IN ({_placeholders(sellers)}) AND status != 'Deleted'"
-
-    return _update_counted(
-        "AOS Ad",
-        set_sql="status = 'Deleted', modified = %s",
-        where_sql=where_sql,
-        set_params=(now_datetime(),),
-        where_params=tuple(sellers),
-    )
-
-
-def _abandon_ad_drafts(*, user: str) -> int:
-    if not _doctype_exists("AOS Ad Draft"):
-        return 0
-
-    return _update_counted(
-        "AOS Ad Draft",
-        set_sql="status = 'Abandoned', modified = %s",
-        where_sql="user = %s AND status != 'Abandoned'",
-        set_params=(now_datetime(),),
-        where_params=(user,),
-    )
-
-
-def _mark_shorts_deleted(*, user: str, sellers: list[str]) -> int:
-    if not _doctype_exists("AOS Short"):
-        return 0
-
-    now = now_datetime()
-    total = 0
-
-    total += _update_counted(
-        "AOS Short",
-        set_sql="""
-            status = 'deleted',
-            visibility_status = 'deleted',
-            hidden_reason = %s,
-            modified = %s
-        """,
-        where_sql="owner = %s AND status != 'deleted'",
-        set_params=(ACCOUNT_DELETED_REASON, now),
-        where_params=(user,),
-    )
-
-    if sellers:
-        where_sql = f"seller IN ({_placeholders(sellers)}) AND status != 'deleted'"
-        total += _update_counted(
-            "AOS Short",
-            set_sql="""
-                status = 'deleted',
-                visibility_status = 'deleted',
-                hidden_reason = %s,
-                modified = %s
-            """,
-            where_sql=where_sql,
-            set_params=(ACCOUNT_DELETED_REASON, now),
-            where_params=tuple(sellers),
-        )
-
-    return total
-
-
-def _mark_short_comments_deleted(*, user: str) -> dict[str, int]:
-    """Soft-delete the user's short comments and resync counters.
-
-    This intentionally uses direct SQL for account deletion speed, so we must
-    explicitly repair counters that the DocType controller would normally
-    adjust when soft_delete() is called one document at a time.
+    Only ``Initialized`` objects are cancelled. Uploaded/processing/attached
+    media belongs to durable product state and remains available for restore or
+    its owning feature's normal lifecycle. No object-store call occurs while
+    the account row is locked; the existing staging cleanup worker handles any
+    leftover temporary object/multipart state.
     """
-    if not _doctype_exists("AOS Short Comment"):
-        return {
-            "short_comments_deleted": 0,
-            "short_comment_counters_synced": 0,
-            "short_reply_counters_synced": 0,
-        }
-
-    rows = frappe.db.sql(
-        """
-        SELECT name, short, parent_comment, root_comment
-        FROM `tabAOS Short Comment`
-        WHERE user = %s AND status != 'deleted'
-        """,
+    if not _doctype_exists("AOS Media Object"):
+        return 0
+    count = _count_rows(
+        "AOS Media Object",
+        "owner_user = %s AND status = 'Initialized'",
         (user,),
-        as_dict=True,
     )
-
-    short_ids: set[str] = set()
-    root_comment_ids: set[str] = set()
-
-    for row in rows:
-        short_id = row.get("short")
-        if short_id:
-            short_ids.add(short_id)
-
-        # AOS Short Comment.reply_count is maintained on the root comment.
-        # Only replies affect reply_count. Top-level comments have no parent.
-        if row.get("parent_comment"):
-            root_id = row.get("root_comment") or row.get("parent_comment")
-            if root_id:
-                root_comment_ids.add(root_id)
-
-    set_parts = ["status = 'deleted'", "modified = %s"]
-    set_params: list[Any] = [now_datetime()]
-
-    # Preserve schema compatibility if future/current installs have the field.
-    if _has_field("AOS Short Comment", "comment"):
-        set_parts.insert(1, "comment = ''")
-
-    deleted = _update_counted(
-        "AOS Short Comment",
-        set_sql=", ".join(set_parts),
-        where_sql="user = %s AND status != 'deleted'",
-        set_params=tuple(set_params),
-        where_params=(user,),
-    )
-
-    short_counter_syncs = _sync_short_comment_counts(short_ids)
-    reply_counter_syncs = _sync_short_reply_counts(root_comment_ids)
-
-    return {
-        "short_comments_deleted": deleted,
-        "short_comment_counters_synced": short_counter_syncs,
-        "short_reply_counters_synced": reply_counter_syncs,
-    }
-
-
-def _sync_short_comment_counts(short_ids: set[str]) -> int:
-    if not short_ids or not _doctype_exists("AOS Short"):
+    if not count:
         return 0
-
-    synced = 0
-
-    for short_id in short_ids:
-        if not short_id or not frappe.db.exists("AOS Short", short_id):
-            continue
-
-        count = frappe.db.count(
-            "AOS Short Comment",
-            {
-                "short": short_id,
-                "status": "active",
-            },
-        )
-
-        frappe.db.set_value(
-            "AOS Short",
-            short_id,
-            "comment_count",
-            int(count or 0),
-            update_modified=False,
-        )
-
-        synced += 1
-
-    return synced
-
-
-def _sync_short_reply_counts(root_comment_ids: set[str]) -> int:
-    if not root_comment_ids:
-        return 0
-
-    synced = 0
-
-    for root_id in root_comment_ids:
-        if not root_id or not frappe.db.exists("AOS Short Comment", root_id):
-            continue
-
-        result = frappe.db.sql(
-            """
-            SELECT COUNT(*) AS count
-            FROM `tabAOS Short Comment`
-            WHERE root_comment = %s
-              AND parent_comment IS NOT NULL
-              AND parent_comment != ''
-              AND status = 'active'
-            """,
-            (root_id,),
-            as_dict=True,
-        )
-
-        count = int((result[0] or {}).get("count") or 0) if result else 0
-
-        frappe.db.set_value(
-            "AOS Short Comment",
-            root_id,
-            "reply_count",
-            count,
-            update_modified=False,
-        )
-
-        synced += 1
-
-    return synced
-
-
-def _mark_live_messages_deleted(*, user: str) -> dict[str, int]:
-    """Soft-delete the user's live messages and resync counters.
-
-    Direct SQL bypasses AOSLiveMessage.on_update(), so this repairs
-    AOS Live Stream.comment_count and parent live-message reply_count.
-    """
-    if not _doctype_exists("AOS Live Message"):
-        return {
-            "live_messages_deleted": 0,
-            "live_comment_counters_synced": 0,
-            "live_reply_counters_synced": 0,
-        }
-
-    rows = frappe.db.sql(
+    frappe.db.sql(
         """
-        SELECT name, live_stream, parent_message, message_kind, message_type
-        FROM `tabAOS Live Message`
-        WHERE user = %s AND status != 'deleted'
+        UPDATE `tabAOS Media Object`
+        SET status = 'Failed',
+            failure_code = 'ACCOUNT_DELETED',
+            failure_reason = 'Upload session invalidated because the account was deleted',
+            failed_at = %(now)s,
+            upload_expires_at = %(now)s,
+            staging_cleanup_required = 1,
+            multipart_aborted_at = COALESCE(multipart_aborted_at, %(now)s),
+            modified = %(now)s
+        WHERE owner_user = %(user)s AND status = 'Initialized'
         """,
-        (user,),
-        as_dict=True,
+        {"user": user, "now": now},
     )
-
-    live_ids: set[str] = set()
-    parent_message_ids: set[str] = set()
-
-    for row in rows:
-        if (row.get("message_kind") or "").lower() != "comment":
-            continue
-
-        message_type = (row.get("message_type") or "").lower()
-        if message_type not in {"comment", "reply"}:
-            continue
-
-        live_id = row.get("live_stream")
-        if live_id:
-            live_ids.add(live_id)
-
-        if message_type == "reply" and row.get("parent_message"):
-            parent_message_ids.add(row.get("parent_message"))
-
-    set_parts = ["status = 'deleted'", "modified = %s"]
-    set_params: list[Any] = [now_datetime()]
-
-    if _has_field("AOS Live Message", "content"):
-        set_parts.insert(1, "content = ''")
-
-    deleted = _update_counted(
-        "AOS Live Message",
-        set_sql=", ".join(set_parts),
-        where_sql="user = %s AND status != 'deleted'",
-        set_params=tuple(set_params),
-        where_params=(user,),
-    )
-
-    live_counter_syncs = _sync_live_comment_counts(live_ids)
-    reply_counter_syncs = _sync_live_reply_counts(parent_message_ids)
-
-    return {
-        "live_messages_deleted": deleted,
-        "live_comment_counters_synced": live_counter_syncs,
-        "live_reply_counters_synced": reply_counter_syncs,
-    }
-
-
-def _sync_live_comment_counts(live_ids: set[str]) -> int:
-    if not live_ids or not _doctype_exists("AOS Live Stream"):
-        return 0
-
-    synced = 0
-
-    for live_id in live_ids:
-        if not live_id or not frappe.db.exists("AOS Live Stream", live_id):
-            continue
-
-        result = frappe.db.sql(
-            """
-            SELECT COUNT(*) AS count
-            FROM `tabAOS Live Message`
-            WHERE live_stream = %s
-              AND message_kind = 'comment'
-              AND message_type IN ('comment', 'reply')
-              AND status = 'active'
-            """,
-            (live_id,),
-            as_dict=True,
-        )
-
-        count = int((result[0] or {}).get("count") or 0) if result else 0
-
-        frappe.db.set_value(
-            "AOS Live Stream",
-            live_id,
-            "comment_count",
-            count,
-            update_modified=False,
-        )
-
-        synced += 1
-
-    return synced
-
-
-def _sync_live_reply_counts(parent_message_ids: set[str]) -> int:
-    if not parent_message_ids:
-        return 0
-
-    synced = 0
-
-    for parent_id in parent_message_ids:
-        if not parent_id or not frappe.db.exists("AOS Live Message", parent_id):
-            continue
-
-        result = frappe.db.sql(
-            """
-            SELECT COUNT(*) AS count
-            FROM `tabAOS Live Message`
-            WHERE parent_message = %s
-              AND message_kind = 'comment'
-              AND message_type = 'reply'
-              AND status = 'active'
-            """,
-            (parent_id,),
-            as_dict=True,
-        )
-
-        count = int((result[0] or {}).get("count") or 0) if result else 0
-
-        frappe.db.set_value(
-            "AOS Live Message",
-            parent_id,
-            "reply_count",
-            count,
-            update_modified=False,
-        )
-
-        synced += 1
-
-    return synced
-
-
-def _remove_wishlist_items(*, user: str) -> int:
-    if not _doctype_exists("AOS Wishlist"):
-        return 0
-
-    affected_ads = frappe.get_all(
-        "AOS Wishlist",
-        filters={"user": user, "status": "Active"},
-        pluck="ad",
-        limit=0,
-    )
-    now = now_datetime()
-    removed = _update_counted(
-        "AOS Wishlist",
-        set_sql="status = 'Removed', removed_on = %s, modified = %s",
-        where_sql="user = %s AND status != 'Removed'",
-        set_params=(now, now),
-        where_params=(user,),
-    )
-    if affected_ads:
-        from aos.services.wishlist.counters import recompute_wishlist_counts
-
-        recompute_wishlist_counts(
-            affected_ads,
-            source="account_deletion_wishlist_cleanup",
-        )
-    return removed
-
-
-def _disable_saved_searches(*, user: str) -> int:
-    if not _doctype_exists("AOS Saved Search"):
-        return 0
-
-    return _update_counted(
-        "AOS Saved Search",
-        set_sql="is_active = 0, modified = %s",
-        where_sql="user = %s AND is_active = 1",
-        set_params=(now_datetime(),),
-        where_params=(user,),
-    )
-
+    return count
 
 def _cleanup_verification_documents(*, user: str, batch_size: int = 250) -> dict[str, int]:
     """Release raw identity evidence while retaining the decision record.
 
-    Account deletion is recoverable, but a restored account must resubmit fresh
-    evidence from the existing Revoked state. Media is only orphaned here; the
-    normal private-media cleanup job performs object-store deletion after the
-    purpose's short retention window, avoiding storage I/O while account rows
-    are locked. A failed media release retains its child reference so a later
-    idempotent deletion/reconciliation pass can safely retry it.
+    This helper is permanent-purge-only and therefore runs after the restore
+    window is closed. Media is only orphaned here; the normal private-media
+    cleanup job performs object-store deletion after the purpose's retention
+    window, avoiding object-store I/O while account rows are locked. A failed
+    media release retains its child reference so a later idempotent purge pass
+    can safely retry it.
     """
     summary = {
         "verification_documents_released": 0,
@@ -1440,92 +1031,6 @@ def _redact_activity_history_rows(
         (title, subtitle, *params),
     )
     return count
-
-def _remove_social_graph(*, user: str) -> dict[str, int]:
-    repository = SocialRepository()
-    removed = 0
-    recalculated = 0
-    batch_size = 250
-
-    if _doctype_exists("AOS Follow"):
-        while True:
-            rows = frappe.db.sql(
-                """
-                SELECT name, follower_user, following_user
-                FROM `tabAOS Follow`
-                WHERE follower_user = %s OR following_user = %s
-                ORDER BY name ASC
-                LIMIT %s
-                """,
-                (user, user, batch_size),
-                as_dict=True,
-            )
-            if not rows:
-                break
-
-            names = tuple(str(row.name) for row in rows if row.name)
-            if not names:
-                break
-
-            affected_users = {
-                str(value)
-                for row in rows
-                for value in (row.follower_user, row.following_user)
-                if value
-            }
-            frappe.db.sql(
-                "DELETE FROM `tabAOS Follow` WHERE name IN %(names)s",
-                {"names": names},
-            )
-            removed += len(names)
-            repository.sync_counters(affected_users)
-            recalculated += len(affected_users)
-
-        repository.sync_counters([user])
-        recalculated += 1
-
-    blocks_closed = 0
-    if _doctype_exists("AOS User Block"):
-        now = now_datetime()
-        while True:
-            block_names = frappe.db.sql(
-                """
-                SELECT name
-                FROM `tabAOS User Block`
-                WHERE status = 'Active'
-                  AND (blocker_user = %s OR blocked_user = %s)
-                ORDER BY name ASC
-                LIMIT %s
-                """,
-                (user, user, batch_size),
-                pluck=True,
-            )
-            if not block_names:
-                break
-
-            names = tuple(str(name) for name in block_names if name)
-            if not names:
-                break
-
-            frappe.db.sql(
-                """
-                UPDATE `tabAOS User Block`
-                SET status = 'Unblocked',
-                    unblocked_at = COALESCE(unblocked_at, %(now)s),
-                    active_pair_key = NULL,
-                    modified = %(now)s
-                WHERE name IN %(names)s
-                """,
-                {"now": now, "names": names},
-            )
-            blocks_closed += len(names)
-
-    return {
-        "follow_rows_removed": removed,
-        "profile_follow_totals_recalculated": recalculated,
-        "active_social_blocks_closed": blocks_closed,
-    }
-
 
 def deactivate_account_features(user: str) -> dict[str, int]:
     """End ephemeral/realtime activity without hiding retained public content."""

@@ -157,6 +157,9 @@ def list_wishlist_impl(**kwargs):
             "w.status = 'Active'",
             "a.status = 'Active'",
             "seller.status = 'Active'",
+            "seller_user.enabled = 1",
+            "COALESCE(p.is_deleted, 0) = 0",
+            "COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'",
             "(a.expires_on IS NULL OR a.expires_on >= %(today)s)",
             """NOT EXISTS (
                 SELECT 1 FROM `tabAOS User Block` b
@@ -274,6 +277,7 @@ def list_wishlist_impl(**kwargs):
             INNER JOIN `tabAOS Ad` a ON a.name = w.ad
             INNER JOIN `tabAOS Seller` seller ON seller.name = a.seller
             INNER JOIN `tabAOS Profile` p ON p.user = seller.user
+            INNER JOIN `tabUser` seller_user ON seller_user.name = seller.user
             LEFT JOIN `tabAOS Exchange Rate` er_source ON er_source.currency = a.currency
             LEFT JOIN `tabAOS Exchange Rate` er_target ON er_target.currency = %(display_currency)s
             WHERE {' AND '.join(conditions)}

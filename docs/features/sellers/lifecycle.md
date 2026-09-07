@@ -14,4 +14,4 @@ Allowed transitions:
 - Suspended → Active or Deleted
 - Deleted → no normal transition
 
-Deleted-account restoration uses the explicit Accounts-owned trusted path only and must never occur as a side effect of Seller lookup or creation. Before Accounts marks a Seller `Deleted`, it snapshots `Active` or `Suspended` in `account_delete_previous_status` and stamps `status_reason_code=ACCOUNT_DELETED` plus `status_source=accounts`. Restore reactivates only rows carrying those Accounts lifecycle markers, restores the captured status, clears the snapshot, and leaves manual/moderation deletions untouched.
+Recoverable account deletion no longer changes the Seller row. Accounts hides the storefront through the owning User/Profile tombstone, so an `Active` seller remains stored as `Active` and a `Suspended` seller remains stored as `Suspended`. Restoring within 30 days therefore requires no Seller status rewrite. Manual/moderation Seller deletion remains a separate Seller lifecycle and is never reactivated by account restore.

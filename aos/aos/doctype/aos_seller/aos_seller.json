@@ -12,7 +12,6 @@
   "column_break_gwmy",
   "status",
   "status_source",
-  "account_delete_previous_status",
   "status_reason_code",
   "status_changed_at",
   "shop_banner",
@@ -316,14 +315,6 @@
    "label": "Status Source",
    "read_only": 1,
    "length": 64
-  },
-  {
-   "fieldname": "account_delete_previous_status",
-   "fieldtype": "Select",
-   "label": "Account Delete Previous Status",
-   "options": "Active\nSuspended",
-   "hidden": 1,
-   "read_only": 1
   },
   {
    "fieldname": "storefront_version",

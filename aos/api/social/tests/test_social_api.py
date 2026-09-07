@@ -10,7 +10,7 @@ from aos.api.social.lists import get_followers_impl, get_following_impl
 from aos.api.social.relationship import get_relationship_status_impl
 from aos.api.social.search_users import search_users_impl
 from aos.api.social.toggle_follow import toggle_follow_impl
-from aos.services.account_deletion_service import _remove_social_graph
+from aos.services.account_purge_service import _purge_social_batch
 from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.social.service import SocialService
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
@@ -244,14 +244,14 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(result, "deduplicated")
         notify_follow.assert_not_called()
 
-    def test_account_deletion_social_cleanup_is_bounded_and_complete(self):
+    def test_permanent_deletion_social_cleanup_is_bounded_and_complete(self):
         self._toggle(account_id=public_account_id_for_user(self.target), action="follow")
         frappe.set_user(self.target)
         self._toggle(account_id=public_account_id_for_user(self.actor), action="follow")
         frappe.set_user(self.actor)
         self._block(account_id=public_account_id_for_user(self.target))
 
-        summary = _remove_social_graph(user=self.actor)
+        summary = _purge_social_batch(user=self.actor, limit=250)
 
         self.assertGreaterEqual(summary["follow_rows_removed"], 0)
         self.assertEqual(

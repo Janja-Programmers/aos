@@ -225,15 +225,15 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         self.assertIn("CATEGORY_TYPES", constants)
         self.assertIn("NotificationService.notify_short_mention", mention_producer)
 
-    def test_account_deletion_revokes_delivery_and_removes_private_device_tokens(self):
-        source = _source("aos/services/account_deletion_service.py")
-        self.assertIn("notification_delivery_jobs_cancelled", source)
-        self.assertIn("push_tokens_removed", source)
-        self.assertIn("status = 'Cancelled'", source)
-        self.assertIn('def _remove_push_tokens', source)
-        self.assertIn('def _deactivate_push_tokens', source)
-        self.assertIn('"AOS Push Token",', source.split('def _remove_push_tokens', 1)[1].split('_CHAT_PRIVATE_USER_FIELDS', 1)[0])
-        self.assertIn('service_type = \'notification_delivery\'', source)
+    def test_account_deletion_cancels_delivery_revokes_access_and_defers_private_purge(self):
+        tombstone = _source("aos/services/account_deletion_service.py")
+        sessions = _source("aos/api/auth/session_control.py")
+        self.assertIn("notification_delivery_jobs_cancelled", tombstone)
+        self.assertIn("status = 'Cancelled'", tombstone)
+        self.assertIn("push_tokens_removed", tombstone)
+        self.assertIn("def _remove_push_tokens", tombstone)
+        self.assertIn("revoke_push_tokens", sessions)
+        self.assertIn("service_type = 'notification_delivery'", tombstone)
 
     def test_notification_migrations_are_registered_data_before_schema(self):
         patches = _source("aos/patches.txt")

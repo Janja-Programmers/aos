@@ -24,4 +24,4 @@ Structured Report logs intentionally contain report ID, DocType, status, action 
 
 ## Account deletion
 
-Private report rows submitted by a deleted account are removed for User, Ad, Short and the pre-existing Review cleanup path. Reports *about* the deleted account/content remain as moderation history. Ad report counters are rebuilt after reporter-owned Ad reports are removed.
+Private report rows submitted by a recoverably deleted account are preserved during the 30-day restore window. After restore expiry, permanent cleanup removes reporter-owned User/Ad/Short/Review report rows while reports *about* the deleted account/content remain as moderation history. Ad report counters are rebuilt after reporter-owned Ad reports are removed.

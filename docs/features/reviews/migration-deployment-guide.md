@@ -52,7 +52,7 @@ Continue each function with its returned `next_start_after`. Review the drift re
 - Pending/failed moderation, notification delivery and outbox backlogs are within operational thresholds.
 - Eligibility, create, edit, withdraw, detail, public list, author list, received list, reaction and report smoke tests pass.
 - Approved create/edit/withdraw/moderation transitions update Ad and Seller aggregates.
-- Deleted-account reviewer identity serializes as `Deleted User`, and private reactions/reports are removed.
+- Recoverably deleted reviewer identity serializes as `Deleted User`; private reactions/reports remain during the 30-day restore window and are removed only by permanent cleanup after expiry.
 - Public caches/search/profile consumers no longer expose withdrawn/hidden reviews or stale rating totals.
 
 Run the focused and full suite:

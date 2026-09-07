@@ -182,6 +182,7 @@ scheduler_events = {
 		],
 	},
 	"hourly": [
+		"aos.tasks.accounts.purge_expired_deleted_accounts",
 		"aos.tasks.ads.expire_ads",
 		"aos.tasks.shorts.update_short_ranking",
 		"aos.tasks.shorts.aggregate_short_metrics",

@@ -198,7 +198,7 @@ class TestChatSourceGuards(unittest.TestCase):
         self.assertIn("_validate_forwarded_ad_access", forward)
         self.assertIn("ad_error = _validate_forwarded_ad_access", forward)
 
-    def test_account_cleanup_clears_private_chat_state_without_commits(self):
+    def test_permanent_account_cleanup_clears_private_chat_state_without_commits(self):
         source = _source("aos/services/account_deletion_service.py")
         self.assertIn("_cleanup_chat_private_state", source)
         self.assertIn("chat_stars_removed", source)
