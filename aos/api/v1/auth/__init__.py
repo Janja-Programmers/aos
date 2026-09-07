@@ -22,6 +22,7 @@ from aos.api.auth.session import (
     me_impl as _me_impl,
     logout_impl as _logout_impl,
 )
+from aos.api.auth.two_factor import verify_two_factor_impl as _verify_two_factor_impl
 from aos.api.auth.google_login import (
     google_login_impl as _google_login_impl,
 )
@@ -64,6 +65,12 @@ def resend_email_otp(**kwargs):
 def login(**kwargs):
     """Execute the v1 auth.login endpoint."""
     return execute_auth_endpoint(_login_impl, kwargs)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def verify_two_factor(**kwargs):
+    """Finish a password login that requires a second factor."""
+    return execute_auth_endpoint(_verify_two_factor_impl, kwargs)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

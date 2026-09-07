@@ -1,24 +1,20 @@
 {
  "actions": [],
- "autoname": "field:user",
+ "autoname": "prompt",
  "creation": "2026-05-07 12:39:32.680750",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "user",
-  "public_id",
   "display_name",
   "legal_name",
   "bio",
   "phone",
   "date_of_birth",
   "gender",
-  "location",
   "profile_image_media",
   "account_status",
-  "is_deleted",
   "account_status_column_break",
-  "deactivated_at",
   "deleted_at",
   "restore_deadline",
   "delete_reason",
@@ -31,10 +27,7 @@
   "column_break_vodm",
   "total_following",
   "verification_tab",
-  "is_verified",
-  "verified_by",
-  "column_break_stqy",
-  "verified_on"
+  "is_verified"
  ],
  "fields": [
   {
@@ -46,15 +39,6 @@
    "options": "User",
    "reqd": 1,
    "unique": 1
-  },
-  {
-   "fieldname": "public_id",
-   "fieldtype": "Data",
-   "label": "Public Account ID",
-   "read_only": 1,
-   "unique": 1,
-   "search_index": 1,
-   "in_list_view": 1
   },
   {
    "fieldname": "display_name",
@@ -89,11 +73,6 @@
    "options": "\nMale\nFemale\nOther\nPrefer not to say"
   },
   {
-   "fieldname": "location",
-   "fieldtype": "Data",
-   "label": "Location"
-  },
-  {
    "fieldname": "profile_image_media",
    "fieldtype": "Link",
    "label": "Profile Image Media",
@@ -107,26 +86,11 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Account Status",
-   "options": "Active\nDeactivated\nDeleted\nSuspended"
-  },
-  {
-   "default": "0",
-   "fieldname": "is_deleted",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Is Deleted"
+   "options": "Active\nDeleted\nSuspended"
   },
   {
    "fieldname": "account_status_column_break",
    "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "deactivated_at",
-   "fieldtype": "Datetime",
-   "label": "Deactivated At",
-   "read_only": 1,
-   "in_standard_filter": 1
   },
   {
    "fieldname": "deleted_at",
@@ -161,11 +125,11 @@
    "read_only": 1
   },
   {
-   "default": "Pending",
+   "default": "",
    "fieldname": "purge_status",
    "fieldtype": "Select",
    "label": "Permanent Deletion Status",
-   "options": "Pending\nPurging\nCompleted",
+   "options": "\nPending\nPurging\nCompleted",
    "read_only": 1,
    "in_standard_filter": 1,
    "search_index": 1
@@ -217,23 +181,6 @@
    "in_standard_filter": 1,
    "label": "Is Verified",
    "read_only": 1
-  },
-  {
-   "fieldname": "verified_by",
-   "fieldtype": "Link",
-   "label": "Verified By",
-   "options": "User",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_stqy",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "verified_on",
-   "fieldtype": "Datetime",
-   "label": "Verified On",
-   "read_only": 1
   }
  ],
  "grid_page_length": 50,
@@ -242,7 +189,7 @@
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Profile",
- "naming_rule": "By fieldname",
+ "naming_rule": "Set by user",
  "owner": "Administrator",
  "permissions": [
   {

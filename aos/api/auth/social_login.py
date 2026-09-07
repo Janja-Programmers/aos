@@ -13,8 +13,10 @@ from .locking import lock_user
 from .oidc import OIDCDependencyError, OIDCTokenError
 from .rate_limits import auth_ip_limit, auth_rate_limit
 from .serializers import serialize_auth_bootstrap, serialize_session
+from .session_control import aos_session_creation_scope
 from .session_policy import session_policy_error
 from .social_identity import bind_identity, get_bound_user
+from .two_factor import issue_two_factor_challenge, requires_two_factor
 from .user_controller import mark_aos_managed_website_user_creation
 from .validators import optional_bootstrap_inputs, require_email, require_token, validate_client_type
 
@@ -141,7 +143,7 @@ def social_login_impl(
                 if bootstrap_err:
                     frappe.db.rollback()
                     return bootstrap_err
-            bind_err = bind_identity(provider=provider, subject=subject, user=user_name, email=email)
+            bind_err = bind_identity(provider=provider, subject=subject, user=user_name)
             if bind_err:
                 frappe.db.rollback()
                 return bind_err
@@ -149,17 +151,16 @@ def social_login_impl(
         policy_err = session_policy_error(user_name)
         if policy_err:
             return policy_err
+        if requires_two_factor(user_name):
+            return issue_two_factor_challenge(user_name)
 
         # Resolve the entire DB-backed response before session creation. Frappe
         # may commit when starting a session, so no fallible bootstrap query
         # should remain after this point.
         bootstrap_payload = serialize_auth_bootstrap(user_name)
         lm = frappe.local.login_manager
-        frappe.flags.aos_auth_session_creation = True
-        try:
+        with aos_session_creation_scope():
             lm.login_as(user_name)
-        finally:
-            frappe.flags.aos_auth_session_creation = False
         sid = getattr(frappe.session, "sid", None)
         if not sid:
             return fail("Authentication service temporarily unavailable.", error="SERVICE_UNAVAILABLE")

@@ -554,7 +554,7 @@ def reposted_shorts_impl(**kwargs):
             return err
         target_user = user
 
-    target_user = resolve_account_reference(target_user, allow_legacy=True)
+    target_user = resolve_account_reference(target_user)
     if not target_user:
         return fail("User not found.", error="NOT_FOUND")
 

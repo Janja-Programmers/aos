@@ -18,12 +18,6 @@
     "rationale": "Bearer-token or loopback protected private scrape endpoint."
   },
   {
-    "endpoint": "aos.api.v1.accounts.__init__.deactivate_account",
-    "access": "authenticated",
-    "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline and stricter user/IP application limits."
-  },
-  {
     "endpoint": "aos.api.v1.accounts.__init__.get_my_preference",
     "access": "authenticated",
     "policy": "baseline_authenticated",
@@ -250,6 +244,12 @@
     "access": "guest",
     "policy": "baseline_guest",
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.auth.__init__.verify_two_factor",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Guest continuation endpoint protected by dedicated per-IP and per-challenge distributed Redis limits."
   },
   {
     "endpoint": "aos.api.v1.calls.__init__.accept_call",

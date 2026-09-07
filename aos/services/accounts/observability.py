@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from typing import Iterable
 
 import frappe
+
+from aos.utils.privacy import opaque_identifier
 
 _ALLOWED_EVENTS = {
     "account.profile.read",
@@ -16,8 +17,6 @@ _ALLOWED_EVENTS = {
     "account.avatar.removed",
     "account.bootstrap.completed",
     "account.bootstrap.failed",
-    "account.deactivation.requested",
-    "account.deactivated",
     "account.deletion.requested",
     "account.deleted",
     "account.restored",
@@ -32,16 +31,11 @@ _ALLOWED_FIELDS = {
     "date_of_birth",
     "gender",
     "bio",
-    "location",
     "avatar",
     "country",
     "currency",
     "language",
 }
-
-
-def _opaque(user: str) -> str:
-    return hashlib.sha256(str(user or "").encode("utf-8")).hexdigest()[:16]
 
 
 def account_log(
@@ -56,7 +50,7 @@ def account_log(
     safe_outcome = outcome if outcome in _ALLOWED_OUTCOMES else "failure"
     payload = {
         "event": safe_event,
-        "account_ref": _opaque(user),
+        "account_ref": opaque_identifier(user),
         "outcome": safe_outcome,
         "changed_fields": sorted(set(changed_fields or ()) & _ALLOWED_FIELDS),
         "failure_category": str(failure_category or "")[:48] or None,

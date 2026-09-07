@@ -94,10 +94,8 @@ def serialize_reviews(
             "reviewer": {
                 "account_id": identity.get("account_id"),
                 "display_name": identity.get("display_name") or "AOS User",
-                "full_name": identity.get("full_name") or identity.get("display_name") or "AOS User",
                 "avatar": identity.get("avatar"),
                 "is_deleted": bool(identity.get("is_deleted")),
-                "is_deactivated": bool(identity.get("is_deactivated")),
                 "is_live": bool(identity.get("is_live")) if not identity.get("is_deleted") else False,
                 "live_id": identity.get("live_id") if not identity.get("is_deleted") else None,
             },

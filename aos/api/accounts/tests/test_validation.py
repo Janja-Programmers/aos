@@ -61,10 +61,9 @@ class AccountValidationTests(unittest.TestCase):
         with self.assertRaises(AccountValidationError):
             validate_profile_patch({})
 
-    def test_patch_maps_legacy_aliases(self):
-        patch = validate_profile_patch({"full_name": "Dan Kalutu", "mobile_no": "+254712345678"})
-        self.assertEqual(patch["display_name"], "Dan Kalutu")
-        self.assertEqual(patch["phone"], "+254712345678")
+    def test_patch_rejects_legacy_aliases(self):
+        with self.assertRaises(AccountValidationError):
+            validate_profile_patch({"full_name": "Dan Kalutu", "mobile_no": "+254712345678"})
 
 
 if __name__ == "__main__":

@@ -18,7 +18,6 @@ from aos.api.accounts.get_my_preference import (
 from aos.api.accounts.update_my_preference import (
     update_my_preference_impl as _update_my_preference_impl,
 )
-from aos.api.accounts.lifecycle import deactivate_account_impl as _deactivate_account_impl
 
 @frappe.whitelist()
 def get_profile(**kwargs):
@@ -42,9 +41,3 @@ def get_my_preference(**kwargs):
 def update_my_preference(**kwargs):
     """Execute the v1 accounts.update_my_preference endpoint."""
     return _update_my_preference_impl(**kwargs)
-
-
-@frappe.whitelist(methods=["POST"])
-def deactivate_account(**kwargs):
-    """Deactivate the authenticated account without deleting retained content."""
-    return _deactivate_account_impl(**kwargs)

@@ -39,8 +39,8 @@ def persist_otp(ver) -> str:
     ver.is_used = 0
     ver.attempts = 0
     ver.last_sent_at = now_datetime()
-    ver.reset_token_hash = ""
-    ver.reset_token_expires_at = None
+    ver.continuation_token_hash = ""
+    ver.continuation_expires_at = None
     ver.save(ignore_permissions=True)
     return otp
 

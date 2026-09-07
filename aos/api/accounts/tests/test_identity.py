@@ -17,7 +17,7 @@ class AccountsIdentityIntegrationTests(IntegrationTestCase):
             self.assertEqual(resolve_account_reference("ACC-AAAAAAAAAAAAAAAAAAAA"), "user@example.com")
 
     def test_public_id_never_returns_email(self):
-        with patch("frappe.db.exists", return_value=False):
+        with patch("frappe.db.get_value", return_value="ACC-AAAAAAAAAAAAAAAAAAAA"):
             value = public_account_id_for_user("user@example.com")
-        self.assertTrue(value.startswith("ACC-"))
+        self.assertEqual(value, "ACC-AAAAAAAAAAAAAAAAAAAA")
         self.assertNotIn("@", value)

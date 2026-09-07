@@ -279,7 +279,7 @@ def _create_viewer_joined_message(
     viral Lives without adding durable information.
     """
     display = get_user_display(viewer) if viewer else {}
-    account_id = display.get("user") if viewer else None
+    account_id = display.get("account_id") if viewer else None
     now = now_datetime()
     event_id = f"presence:{uuid.uuid4().hex}"
     message = {

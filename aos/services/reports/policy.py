@@ -34,13 +34,12 @@ def require_reportable_user(*, target_user: str, reporter: str) -> None:
         raise ReportPermissionError("You cannot report yourself.", code="VALIDATION_ERROR", http_status=422)
     user = frappe.db.get_value("User", target_user, ["name", "enabled"], as_dict=True)
     profile = frappe.db.get_value(
-        "AOS Profile", {"user": target_user}, ["name", "account_status", "is_deleted"], as_dict=True
+        "AOS Profile", {"user": target_user}, ["name", "account_status"], as_dict=True
     )
     if (
         not user
         or int(user.enabled or 0) != 1
         or not profile
         or str(profile.account_status or ACCOUNT_STATUS_ACTIVE) != ACCOUNT_STATUS_ACTIVE
-        or int(profile.is_deleted or 0)
     ):
         raise ReportNotFoundError("User not found.")

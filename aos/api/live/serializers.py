@@ -1712,7 +1712,7 @@ def preload_users(
         profile = profile_by_user.get(user)
 
         result[user] = {
-            "user": display.get("user"),
+            "user": display.get("account_id"),
             "display_name": display.get("display_name"),
             "avatar": display.get("avatar"),
             "is_deleted": is_deleted,

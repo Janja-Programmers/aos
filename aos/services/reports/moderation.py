@@ -117,7 +117,7 @@ def _suspend_account(user: str) -> None:
     if not user:
         return
     rows = frappe.db.sql(
-        "SELECT name, account_status, is_deleted FROM `tabAOS Profile` WHERE user = %s LIMIT 1 FOR UPDATE",
+        "SELECT name, account_status FROM `tabAOS Profile` WHERE user = %s LIMIT 1 FOR UPDATE",
         (user,),
         as_dict=True,
     )
@@ -125,7 +125,7 @@ def _suspend_account(user: str) -> None:
         return
     profile = rows[0]
     # Never resurrect or downgrade a deleted account while resolving an older report.
-    if str(profile.account_status or "") == ACCOUNT_STATUS_DELETED or int(profile.is_deleted or 0):
+    if str(profile.account_status or "") == ACCOUNT_STATUS_DELETED:
         return
     frappe.db.set_value(
         "AOS Profile",

@@ -12,18 +12,19 @@ import html
 import secrets
 
 import frappe
-from aos.aos.doctype.aos_email_verification.aos_email_verification import verification_name
+from aos.aos.doctype.aos_auth_challenge.aos_auth_challenge import challenge_name
 from frappe.utils import add_to_date, now_datetime
 from frappe.utils.password import passlibctx
 
 OTP_TTL_MINUTES = 10
 MAX_ATTEMPTS = 5
 RESEND_COOLDOWN_SECONDS = 60
-RESET_TOKEN_TTL_MINUTES = 15
+CONTINUATION_TOKEN_TTL_MINUTES = 15
 
 EMAIL_VERIFICATION_PURPOSE = "email_verification"
 PASSWORD_RESET_PURPOSE = "password_reset"
 ACCOUNT_RESTORE_PURPOSE = "account_restore"
+TWO_FACTOR_PURPOSE = "two_factor"
 
 
 def generate_otp() -> str:
@@ -58,44 +59,42 @@ def compute_expiry(minutes: int = OTP_TTL_MINUTES):
     return add_to_date(now_datetime(), minutes=minutes)
 
 
-def compute_reset_token_expiry(minutes: int = RESET_TOKEN_TTL_MINUTES):
+def compute_continuation_expiry(minutes: int = CONTINUATION_TOKEN_TTL_MINUTES):
     return add_to_date(now_datetime(), minutes=minutes)
 
 
-def generate_reset_token() -> str:
+def generate_continuation_token() -> str:
     return secrets.token_urlsafe(32)
 
 
 
 def get_ver_doc(user_name: str, purpose: str = EMAIL_VERIFICATION_PURPOSE, *, for_update: bool = False):
     """Fetch the one deterministic verification row for user + purpose."""
-    name = verification_name(user_name, purpose)
+    name = challenge_name(user_name, purpose)
     if for_update:
         rows = frappe.db.sql(
-            "SELECT name FROM `tabAOS Email Verification` WHERE name = %s LIMIT 1 FOR UPDATE",
+            "SELECT name FROM `tabAOS Auth Challenge` WHERE name = %s LIMIT 1 FOR UPDATE",
             (name,),
         )
         if not rows:
             return None
-        return frappe.get_doc("AOS Email Verification", name)
-    if not frappe.db.exists("AOS Email Verification", name):
+        return frappe.get_doc("AOS Auth Challenge", name)
+    if not frappe.db.exists("AOS Auth Challenge", name):
         return None
-    return frappe.get_doc("AOS Email Verification", name)
+    return frappe.get_doc("AOS Auth Challenge", name)
 
 
 def ensure_ver_doc(
     user_name: str,
     *,
-    email: str,
     purpose: str = EMAIL_VERIFICATION_PURPOSE,
     for_update: bool = False,
 ):
     existing = get_ver_doc(user_name, purpose=purpose, for_update=for_update)
     if existing:
         return existing
-    doc = frappe.new_doc("AOS Email Verification")
+    doc = frappe.new_doc("AOS Auth Challenge")
     doc.user = user_name
-    doc.email = email
     doc.purpose = purpose
     try:
         doc.insert(ignore_permissions=True)
@@ -117,6 +116,9 @@ def queue_otp_email(*, email: str, otp: str, full_name: str = "", purpose: str) 
     elif purpose == PASSWORD_RESET_PURPOSE:
         subject = "Reset your AOS password"
         intro = "Use this code to continue your AOS password reset:"
+    elif purpose == TWO_FACTOR_PURPOSE:
+        subject = "Your AOS login verification code"
+        intro = "Use this code to finish signing in to your AOS account:"
     else:
         subject = "Restore your AOS account"
         intro = "Use this code to restore your AOS account:"

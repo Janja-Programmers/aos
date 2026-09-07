@@ -158,7 +158,6 @@ def list_wishlist_impl(**kwargs):
             "a.status = 'Active'",
             "seller.status = 'Active'",
             "seller_user.enabled = 1",
-            "COALESCE(p.is_deleted, 0) = 0",
             "COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'",
             "(a.expires_on IS NULL OR a.expires_on >= %(today)s)",
             """NOT EXISTS (

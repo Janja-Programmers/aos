@@ -152,7 +152,7 @@ def user_short_analytics_impl(**kwargs):
     )
     if err:
         return err
-    target_user = resolve_account_reference(target_reference, allow_legacy=True)
+    target_user = resolve_account_reference(target_reference)
     if not target_user:
         return fail("User not found.", error="NOT_FOUND")
 
@@ -357,7 +357,7 @@ def _is_staff(user: str) -> bool:
 def _serialize_user(user: str) -> dict[str, Any]:
     display = get_user_display(user)
     return {
-        "user": display.get("user"),
+        "user": display.get("account_id"),
         "display_name": display.get("display_name"),
         "avatar": display.get("avatar"),
         "is_deleted": bool(display.get("is_deleted")),

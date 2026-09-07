@@ -5,9 +5,7 @@
  "engine": "InnoDB",
  "field_order": [
   "provider",
-  "subject",
   "user",
-  "email_at_link",
   "user_provider_key"
  ],
  "fields": [
@@ -20,29 +18,12 @@
    "in_standard_filter": 1
   },
   {
-   "fieldname": "subject",
-   "fieldtype": "Data",
-   "label": "Provider Subject",
-   "reqd": 1,
-   "hidden": 1,
-   "read_only": 1,
-   "length": 255
-  },
-  {
    "fieldname": "user",
    "fieldtype": "Link",
    "label": "User",
    "options": "User",
    "reqd": 1,
    "search_index": 1
-  },
-  {
-   "fieldname": "email_at_link",
-   "fieldtype": "Data",
-   "label": "Email At Link",
-   "options": "Email",
-   "read_only": 1,
-   "length": 254
   },
   {
    "fieldname": "user_provider_key",

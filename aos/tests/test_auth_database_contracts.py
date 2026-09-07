@@ -7,22 +7,22 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from aos.api.auth.locking import lock_user
-from aos.aos.doctype.aos_email_verification.aos_email_verification import verification_name
+from aos.aos.doctype.aos_auth_challenge.aos_auth_challenge import challenge_name
 
 
 class TestAuthDatabaseContracts(FrappeTestCase):
     def test_verification_primary_key_is_deterministic_user_purpose_uniqueness(self):
-        name = verification_name("person@example.com", "password_reset")
-        self.assertTrue(name.startswith("authv-"))
+        name = challenge_name("person@example.com", "password_reset")
+        self.assertTrue(name.startswith("authc-"))
         self.assertEqual(len(name), 70)
-        meta = frappe.get_meta("AOS Email Verification")
+        meta = frappe.get_meta("AOS Auth Challenge")
         self.assertTrue(meta.has_field("otp_password_hash"))
         self.assertFalse(meta.has_field("otp_hash"))
         self.assertGreaterEqual(int(meta.get_field("otp_password_hash").length or 0), 255)
-        self.assertEqual(int(meta.get_field("reset_token_hash").length or 0), 64)
+        self.assertEqual(int(meta.get_field("continuation_token_hash").length or 0), 64)
         self.assertTrue(meta.get_field("user").search_index)
 
-        from aos.aos.doctype.aos_email_verification.aos_email_verification import verification_name as controller_name
+        from aos.aos.doctype.aos_auth_challenge.aos_auth_challenge import challenge_name as controller_name
         self.assertEqual(controller_name("person@example.com", "password_reset"), name)
         self.assertFalse(bool(meta.index_web_pages_for_search))
 
@@ -33,9 +33,11 @@ class TestAuthDatabaseContracts(FrappeTestCase):
         self.assertTrue(meta.get_field("user").search_index)
 
     def test_security_state_doctypes_are_not_desk_mutable_and_indexes_match_hot_paths(self):
-        verification = frappe.get_meta("AOS Email Verification")
+        verification = frappe.get_meta("AOS Auth Challenge")
         identity = frappe.get_meta("AOS Auth Identity")
-        self.assertFalse(bool(verification.get_field("email").search_index))
+        self.assertFalse(verification.has_field("email"))
+        self.assertFalse(identity.has_field("email_at_link"))
+        self.assertFalse(identity.has_field("subject"))
         for meta in (verification, identity):
             permissions = [row for row in meta.permissions if row.role == "System Manager"]
             self.assertEqual(len(permissions), 1)

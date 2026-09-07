@@ -70,10 +70,9 @@ def _normalize_push_tokens() -> int:
     )
 
     profile_exists = frappe.db.table_exists("AOS Profile")
-    profile_join = "LEFT JOIN `tabAOS Profile` p ON p.name = pt.user" if profile_exists else ""
+    profile_join = "LEFT JOIN `tabAOS Profile` p ON p.user = pt.user" if profile_exists else ""
     profile_clause = (
-        "OR COALESCE(p.is_deleted, 0) = 1 "
-        "OR COALESCE(p.account_status, 'Active') IN ('Deleted', 'Deactivated', 'Suspended')"
+        "OR COALESCE(p.account_status, 'Active') IN ('Deleted', 'Suspended')"
         if profile_exists
         else ""
     )
@@ -162,10 +161,9 @@ def _cancel_undeliverable_jobs() -> int:
         return 0
 
     profile_exists = frappe.db.table_exists("AOS Profile")
-    profile_join = "LEFT JOIN `tabAOS Profile` p ON p.name = j.user" if profile_exists else ""
+    profile_join = "LEFT JOIN `tabAOS Profile` p ON p.user = j.user" if profile_exists else ""
     profile_clause = (
-        "OR COALESCE(p.is_deleted, 0) = 1 "
-        "OR COALESCE(p.account_status, 'Active') IN ('Deleted', 'Deactivated', 'Suspended')"
+        "OR COALESCE(p.account_status, 'Active') IN ('Deleted', 'Suspended')"
         if profile_exists
         else ""
     )

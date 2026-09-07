@@ -295,7 +295,6 @@ def _close_missing_viewers(live_id: str, identities: tuple[str, ...]) -> int:
                    WHEN v.`user` IS NULL OR v.`user` = '' THEN 1
                    WHEN COALESCE(u.enabled, 0) = 1
                     AND COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'
-                    AND COALESCE(p.is_deleted, 0) = 0
                     AND NOT EXISTS (
                         SELECT 1
                         FROM `tabAOS User Block` b

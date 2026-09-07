@@ -38,7 +38,7 @@ def serialize_notifications(rows: list[Any]) -> list[dict[str, Any]]:
                 "type": notification_type,
                 "title": _value(notification, "title"),
                 "body": _value(notification, "body"),
-                "actor": actor_display.get("user") if actor_display else None,
+                "actor": actor_display.get("account_id") if actor_display else None,
                 "actor_display_name": actor_display.get("display_name") if actor_display else None,
                 "actor_avatar": actor_display.get("avatar") if actor_display else None,
                 "actor_is_deleted": actor_deleted,

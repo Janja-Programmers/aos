@@ -9,4 +9,4 @@ class AccountsConsumerPrivacyTests(IntegrationTestCase):
     def test_email_shaped_fallback_is_masked(self):
         payload = normalize_user_display(user="user@example.com", full_name="", fallback_to_user=True)
         self.assertEqual(payload["display_name"], "AOS User")
-        self.assertTrue(payload["user"].startswith("ACC-"))
+        self.assertTrue(payload["account_id"].startswith("ACC-"))

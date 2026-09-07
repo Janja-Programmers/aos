@@ -1092,7 +1092,6 @@ def list_live_streams_impl(**kwargs):
             INNER JOIN `tabUser` u ON u.name = l.host_user AND u.enabled = 1
             INNER JOIN `tabAOS Profile` p ON p.user = l.host_user
             WHERE l.status = %(status)s AND l.is_active = 1
-              AND COALESCE(p.is_deleted, 0) = 0
               AND COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'
               {block_sql}
               {cursor_sql}

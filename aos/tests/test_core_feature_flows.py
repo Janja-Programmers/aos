@@ -72,9 +72,9 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(second.get("ok"), second)
         self.assertNotIn("error", second)
         self.assertTrue(frappe.db.exists("User", email))
-        self.assertTrue(frappe.db.exists("AOS Profile", email))
+        self.assertTrue(frappe.db.exists("AOS Profile", {"user": email}))
         self.assertTrue(frappe.db.exists("AOS User Preference", {"user": email}))
-        self.assertTrue(frappe.db.exists("AOS Email Verification", {"user": email, "purpose": "email_verification"}))
+        self.assertTrue(frappe.db.exists("AOS Auth Challenge", {"user": email, "purpose": "email_verification"}))
         send_email.assert_called_once()
 
     def test_auth_me_returns_current_enabled_user_payload(self):

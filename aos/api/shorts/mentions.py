@@ -77,7 +77,7 @@ def resolve_mention_users(text: str | None) -> list[dict[str, Any]]:
         resolved.append(
             {
                 "token": token,
-                "user": display.get("user"),
+                "user": display.get("account_id"),
                 "_internal_user": user.get("name"),
                 "display_name": display.get("display_name"),
                 "avatar": display.get("avatar"),
@@ -343,7 +343,7 @@ def _serialize_mention_row(
 ) -> dict[str, Any]:
     display = user_map.get(user) or get_user_display(user)
     return {
-        "user": display.get("user"),
+        "user": display.get("account_id"),
         "token": token,
         "display_name": display.get("display_name"),
         "avatar": display.get("avatar"),

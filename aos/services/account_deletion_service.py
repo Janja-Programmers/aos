@@ -1031,21 +1031,3 @@ def _redact_activity_history_rows(
         (title, subtitle, *params),
     )
     return count
-
-def deactivate_account_features(user: str) -> dict[str, int]:
-    """End ephemeral/realtime activity without hiding retained public content."""
-    user = str(user or "").strip()
-    if not user:
-        return {}
-    now = now_datetime()
-    return {
-        "active_calls_ended": _end_active_calls(user=user, now=now),
-        "active_live_streams_ended": _end_active_live_streams(user=user, now=now),
-        "live_view_sessions_closed": _close_live_view_rows(user=user, now=now),
-        "live_cohost_rows_closed": _close_live_cohost_rows(user=user, now=now),
-        "notifications_marked_read": _mark_notifications_read(user=user),
-        "notification_delivery_jobs_cancelled": _cancel_notification_delivery_jobs(
-            user=user, now=now, reason="recipient_account_deactivated"
-        ),
-        "push_tokens_deactivated": _deactivate_push_tokens(user=user, now=now),
-    }

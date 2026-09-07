@@ -12,7 +12,7 @@ from aos.services.media.media_service import MediaError, MediaService
 
 from .constants import PROFILE_DOCTYPE, PROFILE_IMAGE_FIELD, PROFILE_IMAGE_PURPOSE
 from .errors import AccountNotFoundError, AccountPermissionError, AccountValidationError
-from .identity import ensure_public_account_id, resolve_account_reference
+from .identity import profile_name_for_user, resolve_account_reference
 from .observability import account_log
 from .serializers import serialize_private_profile, serialize_public_profile
 from .validation import validate_profile_patch
@@ -54,20 +54,21 @@ class AccountProfileService:
                     user=user,
                     purpose=PROFILE_IMAGE_PURPOSE,
                     attached_doctype=PROFILE_DOCTYPE,
-                    attached_name=user,
+                    attached_name=profile.name,
                     attached_field=PROFILE_IMAGE_FIELD,
                     replacing_media_id=previous_media_id or None,
                 )
             except MediaError as exc:
                 raise AccountValidationError(str(exc), code=getattr(exc, "code", "INVALID_AVATAR_MEDIA")) from exc
             profile.set(PROFILE_IMAGE_FIELD, media_doc.name)
+            # Frappe User.user_image is a framework compatibility projection only.
             user_doc.user_image = self.media.get_public_url(media_doc.name)
             if previous_media_id and previous_media_id != media_doc.name:
                 self.media.release_media(
                     media_id=previous_media_id,
                     user=user,
                     attached_doctype=PROFILE_DOCTYPE,
-                    attached_name=user,
+                    attached_name=profile.name,
                     replacement_media_id=media_doc.name,
                 )
             changed_fields.append("avatar")
@@ -80,7 +81,7 @@ class AccountProfileService:
                     media_id=previous_media_id,
                     user=user,
                     attached_doctype=PROFILE_DOCTYPE,
-                    attached_name=user,
+                    attached_name=profile.name,
                 )
             changed_fields.append("avatar")
 
@@ -88,25 +89,14 @@ class AccountProfileService:
             profile.set(field, value)
             changed_fields.append(field)
             if field == "display_name":
+                # Frappe expects a name for framework emails/admin surfaces; AOS
+                # still reads AOS Profile.display_name as the source of truth.
                 user_doc.first_name = value
                 user_doc.full_name = value
-            elif field == "bio" and hasattr(user_doc, "bio"):
-                user_doc.bio = value
-            elif field == "phone":
-                if hasattr(user_doc, "mobile_no"):
-                    user_doc.mobile_no = value
-                if hasattr(user_doc, "phone"):
-                    user_doc.phone = value
-            elif field == "date_of_birth" and hasattr(user_doc, "birth_date"):
-                user_doc.birth_date = value
-            elif field == "gender" and hasattr(user_doc, "gender"):
-                user_doc.gender = value
-            elif field == "location" and hasattr(user_doc, "location"):
-                user_doc.location = value
 
-        ensure_public_account_id(profile)
         profile.save(ignore_permissions=True)
-        user_doc.save(ignore_permissions=True)
+        if changed_fields and ({"display_name", "avatar"} & set(changed_fields)):
+            user_doc.save(ignore_permissions=True)
         account_log("account.profile.updated", user=user, changed_fields=changed_fields)
         return serialize_private_profile(user)
 
@@ -117,20 +107,19 @@ class AccountProfileService:
     def _assert_public_profile_available(user: str) -> None:
         row = frappe.db.get_value(
             "AOS Profile",
-            user,
-            ["account_status", "is_deleted"],
+            {"user": user},
+            ["account_status"],
             as_dict=True,
         ) or {}
         enabled = frappe.db.get_value("User", user, "enabled")
-        status = str(row.get("account_status") or "Active")
-        if int(enabled or 0) != 1 or status != "Active" or int(row.get("is_deleted") or 0):
+        if int(enabled or 0) != 1 or str(row.get("account_status") or "Active") != "Active":
             raise AccountNotFoundError("Account not found.")
 
     @staticmethod
     def _assert_profile_exists(user: str) -> None:
         if not user or not frappe.db.exists("User", user):
             raise AccountNotFoundError("Account not found.")
-        if not frappe.db.exists(PROFILE_DOCTYPE, user):
+        if not profile_name_for_user(user):
             raise AccountNotFoundError("Account profile not found.", code="PROFILE_NOT_FOUND")
 
     @staticmethod

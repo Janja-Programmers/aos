@@ -152,7 +152,7 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self_report = self._report_user(target_user=self.reporter)
         self.assertFalse(self_report.get("ok"), self_report)
         frappe.set_user("Administrator")
-        frappe.db.set_value("AOS Profile", self.target, "account_status", "Suspended")
+        frappe.db.set_value("AOS Profile", {"user": self.target}, "account_status", "Suspended")
         frappe.set_user(self.reporter)
         suspended = self._report_user()
         self.assertFalse(suspended.get("ok"), suspended)
@@ -282,7 +282,7 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         doc.admin_action = "Suspend User"
         with patch("aos.services.reports.moderation.revoke_account_access", return_value={}):
             doc.save(ignore_permissions=True)
-        self.assertEqual(frappe.db.get_value("AOS Profile", self.target, "account_status"), "Suspended")
+        self.assertEqual(frappe.db.get_value("AOS Profile", {"user": self.target}, "account_status"), "Suspended")
         self.assertEqual(int(frappe.db.get_value("User", self.target, "enabled") or 0), 0)
 
     def test_hide_short_action_is_idempotent_and_updates_discovery_state(self):

@@ -20,7 +20,6 @@ def purge_expired_deleted_accounts() -> dict[str, int]:
         SELECT user
         FROM `tabAOS Profile`
         WHERE account_status = %(deleted)s
-          AND COALESCE(is_deleted, 0) = 1
           AND restore_deadline IS NOT NULL
           AND restore_deadline < %(now)s
           AND COALESCE(purge_status, 'Pending') != %(completed)s

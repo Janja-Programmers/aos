@@ -1,4 +1,4 @@
-"""Locked, idempotent Accounts lifecycle orchestration."""
+"""Locked, idempotent Accounts deletion/restore orchestration."""
 
 from __future__ import annotations
 
@@ -8,61 +8,29 @@ import frappe
 from frappe.utils import add_to_date, now_datetime
 
 from aos.api.auth.session_control import revoke_account_access
-from aos.services.account_deletion_service import (
-    tombstone_deleted_account_features,
-    deactivate_account_features,
-    restore_deleted_account_features,
-)
+from aos.services.account_deletion_service import tombstone_deleted_account_features, restore_deleted_account_features
 
 from .constants import (
     ACCOUNT_RESTORE_WINDOW_DAYS,
     ACCOUNT_STATUS_ACTIVE,
-    ACCOUNT_STATUS_DEACTIVATED,
     ACCOUNT_STATUS_DELETED,
     PURGE_STATUS_PENDING,
     PURGE_STATUS_PURGING,
     PURGE_STATUS_COMPLETED,
 )
 from .errors import AccountConflictError, AccountNotFoundError
+from .identity import profile_name_for_user
 from .observability import account_log
 
 
 class AccountLifecycleService:
     def __init__(self, media=None):
-        # Retained constructor argument for existing internal tests/callers;
-        # recoverable deletion no longer releases durable profile media.
+        # Durable profile media survives the recoverable deletion window.
         self.media = media
-
-    def deactivate(self, *, user: str, reason: str = "") -> dict[str, Any]:
-        profile = self._lock_profile(user)
-        if profile.account_status == ACCOUNT_STATUS_DEACTIVATED:
-            access = revoke_account_access(user)
-            return {"status": ACCOUNT_STATUS_DEACTIVATED, "idempotent": True, **access}
-        if profile.account_status == ACCOUNT_STATUS_DELETED or int(profile.is_deleted or 0):
-            raise AccountConflictError("Deleted accounts cannot be deactivated.", code="ACCOUNT_DELETED")
-        if profile.account_status != ACCOUNT_STATUS_ACTIVE:
-            raise AccountConflictError("Account cannot be deactivated in its current state.")
-
-        account_log("account.deactivation.requested", user=user)
-        profile.account_status = ACCOUNT_STATUS_DEACTIVATED
-        profile.deactivated_at = now_datetime()
-        if hasattr(profile, "lifecycle_reason"):
-            profile.lifecycle_reason = str(reason or "")[:300]
-        profile.save(ignore_permissions=True)
-        frappe.db.set_value("User", user, "enabled", 0, update_modified=True)
-        feature_summary = deactivate_account_features(user)
-        access = revoke_account_access(user)
-        account_log("account.deactivated", user=user)
-        return {
-            "status": ACCOUNT_STATUS_DEACTIVATED,
-            "idempotent": False,
-            "features": feature_summary,
-            **access,
-        }
 
     def delete(self, *, user: str, reason: str = "") -> dict[str, Any]:
         profile = self._lock_profile(user)
-        if profile.account_status == ACCOUNT_STATUS_DELETED or int(profile.is_deleted or 0):
+        if profile.account_status == ACCOUNT_STATUS_DELETED:
             access = revoke_account_access(user)
             return {
                 "status": ACCOUNT_STATUS_DELETED,
@@ -73,20 +41,13 @@ class AccountLifecycleService:
         account_log("account.deletion.requested", user=user)
         now = now_datetime()
         profile.account_status = ACCOUNT_STATUS_DELETED
-        profile.is_deleted = 1
         profile.deleted_at = now
         profile.restore_deadline = add_to_date(now, days=ACCOUNT_RESTORE_WINDOW_DAYS)
         profile.delete_reason = str(reason or "")[:300]
-        profile.deactivated_at = profile.deactivated_at or now
         profile.restored_at = None
-        if hasattr(profile, "purge_status"):
-            profile.purge_status = PURGE_STATUS_PENDING
-            profile.purge_started_at = None
-            profile.purge_completed_at = None
-
-        # Verification, profile media and every durable product relationship are
-        # deliberately preserved for the 30-day restore window. Public surfaces
-        # hide them through account lifecycle filters while the User is disabled.
+        profile.purge_status = PURGE_STATUS_PENDING
+        profile.purge_started_at = None
+        profile.purge_completed_at = None
         profile.save(ignore_permissions=True)
         frappe.db.set_value("User", user, "enabled", 0, update_modified=True)
         feature_summary = tombstone_deleted_account_features(user)
@@ -102,26 +63,23 @@ class AccountLifecycleService:
 
     def restore(self, *, user: str) -> dict[str, Any]:
         profile = self._lock_profile(user)
-        if profile.account_status == ACCOUNT_STATUS_ACTIVE and not int(profile.is_deleted or 0):
+        if profile.account_status == ACCOUNT_STATUS_ACTIVE:
             return {"status": ACCOUNT_STATUS_ACTIVE, "idempotent": True}
-        if profile.account_status != ACCOUNT_STATUS_DELETED and not int(profile.is_deleted or 0):
+        if profile.account_status != ACCOUNT_STATUS_DELETED:
             raise AccountConflictError("Account is not deleted.", code="ACCOUNT_NOT_DELETED")
-        purge_status = str(getattr(profile, "purge_status", PURGE_STATUS_PENDING) or PURGE_STATUS_PENDING)
+        purge_status = str(getattr(profile, "purge_status", "") or "")
         if purge_status in {PURGE_STATUS_PURGING, PURGE_STATUS_COMPLETED}:
             raise AccountConflictError("This account can no longer be restored.", code="RESTORE_EXPIRED")
         if profile.restore_deadline and now_datetime() > profile.restore_deadline:
             raise AccountConflictError("This account can no longer be restored.", code="RESTORE_EXPIRED")
         profile.account_status = ACCOUNT_STATUS_ACTIVE
-        profile.is_deleted = 0
         profile.deleted_at = None
         profile.delete_reason = ""
         profile.restore_deadline = None
-        profile.deactivated_at = None
         profile.restored_at = now_datetime()
-        if hasattr(profile, "purge_status"):
-            profile.purge_status = PURGE_STATUS_PENDING
-            profile.purge_started_at = None
-            profile.purge_completed_at = None
+        profile.purge_status = ""
+        profile.purge_started_at = None
+        profile.purge_completed_at = None
         if hasattr(profile, "lifecycle_reason"):
             profile.lifecycle_reason = ""
         profile.save(ignore_permissions=True)
@@ -132,13 +90,14 @@ class AccountLifecycleService:
 
     @staticmethod
     def _lock_profile(user: str):
-        if not user or not frappe.db.exists("AOS Profile", user):
+        name = profile_name_for_user(user)
+        if not name:
             raise AccountNotFoundError("Account profile not found.", code="PROFILE_NOT_FOUND")
         rows = frappe.db.sql(
-            "SELECT name FROM `tabAOS Profile` WHERE user = %s LIMIT 1 FOR UPDATE",
-            (user,),
+            "SELECT name FROM `tabAOS Profile` WHERE name = %s LIMIT 1 FOR UPDATE",
+            (name,),
             as_dict=True,
         )
         if not rows:
             raise AccountNotFoundError("Account profile not found.", code="PROFILE_NOT_FOUND")
-        return frappe.get_doc("AOS Profile", rows[0].name)
+        return frappe.get_doc("AOS Profile", name)

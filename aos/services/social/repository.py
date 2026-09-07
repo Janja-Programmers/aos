@@ -57,8 +57,8 @@ class SocialRepository:
             """
             SELECT u.name AS user, COALESCE(u.enabled, 0) AS enabled,
                    COALESCE(NULLIF(p.account_status, ''), 'Active') AS account_status,
-                   COALESCE(p.is_deleted, 0) AS is_deleted,
-                   p.public_id, p.display_name, p.total_followers, p.total_following,
+                   CASE WHEN COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Deleted' THEN 1 ELSE 0 END AS is_deleted,
+                   p.name AS account_id, p.display_name, p.total_followers, p.total_following,
                    COALESCE(p.is_verified, 0) AS is_verified
             FROM `tabUser` u
             INNER JOIN `tabAOS Profile` p ON p.user = u.name
@@ -193,7 +193,6 @@ class SocialRepository:
             WHERE outgoing.follower_user = %s
               AND u.enabled = 1
               AND COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'
-              AND COALESCE(p.is_deleted, 0) = 0
             """,
             (user,),
             as_dict=True,
@@ -321,7 +320,7 @@ class SocialRepository:
                     OR (b.blocked_user = %(viewer)s AND b.blocker_user = TARGET_EXPR))
             )
         """
-        active_sql = "AND u.enabled = 1 AND COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active' AND COALESCE(p.is_deleted, 0) = 0"
+        active_sql = "AND u.enabled = 1 AND COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'"
         params: dict[str, Any] = {"viewer": viewer, "limit": limit + 1, "start": start, **search_params}
         cursor_sql = ""
         if mode == "following":
@@ -420,11 +419,11 @@ class SocialRepository:
         where = """
             u.enabled = 1
             AND COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'
-            AND COALESCE(p.is_deleted, 0) = 0
+
             AND (COALESCE(p.display_name, '') LIKE %(contains)s ESCAPE '\\\\'
               OR COALESCE(u.full_name, '') LIKE %(contains)s ESCAPE '\\\\'
               OR COALESCE(u.first_name, '') LIKE %(contains)s ESCAPE '\\\\'
-              OR COALESCE(p.public_id, '') LIKE %(contains)s ESCAPE '\\\\')
+              OR COALESCE(p.name, '') LIKE %(contains)s ESCAPE '\\\\')
             AND NOT EXISTS (
                 SELECT 1 FROM `tabAOS User Block` b
                 WHERE b.status = 'Active'
@@ -435,12 +434,12 @@ class SocialRepository:
         rows = frappe.db.sql(
             f"""
             SELECT u.name AS user, u.full_name, u.first_name, u.user_image,
-                   p.display_name, p.public_id, p.total_followers, p.total_following, p.is_verified,
+                   p.display_name, p.name AS account_id, p.total_followers, p.total_following, p.is_verified,
                    CASE
                      WHEN COALESCE(p.display_name, '') LIKE %(prefix)s ESCAPE '\\\\' THEN 0
                      WHEN COALESCE(u.full_name, '') LIKE %(prefix)s ESCAPE '\\\\' THEN 1
                      WHEN COALESCE(u.first_name, '') LIKE %(prefix)s ESCAPE '\\\\' THEN 2
-                     WHEN COALESCE(p.public_id, '') LIKE %(prefix)s ESCAPE '\\\\' THEN 3
+                     WHEN COALESCE(p.name, '') LIKE %(prefix)s ESCAPE '\\\\' THEN 3
                      ELSE 4 END AS search_rank
             FROM `tabUser` u
             INNER JOIN `tabAOS Profile` p ON p.user = u.name
@@ -448,7 +447,7 @@ class SocialRepository:
             ORDER BY search_rank ASC, COALESCE(p.is_verified, 0) DESC,
                      COALESCE(p.total_followers, 0) DESC,
                      COALESCE(NULLIF(p.display_name, ''), NULLIF(u.full_name, ''), u.first_name, '') ASC,
-                     p.public_id ASC, u.name ASC
+                     p.name ASC, u.name ASC
             LIMIT %(limit)s OFFSET %(offset)s
             """,
             params,
@@ -475,7 +474,7 @@ class SocialRepository:
                    p.total_followers, p.total_following, p.is_verified,
                    u.full_name, u.user_image,
                    COALESCE(NULLIF(p.account_status, ''), 'Active') AS account_status,
-                   COALESCE(p.is_deleted, 0) AS is_deleted
+                   CASE WHEN COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Deleted' THEN 1 ELSE 0 END AS is_deleted
             FROM `tabAOS User Block` b
             LEFT JOIN `tabAOS Profile` p ON p.user = b.blocked_user
             LEFT JOIN `tabUser` u ON u.name = b.blocked_user
@@ -516,7 +515,6 @@ class SocialRepository:
             WHERE f.following_user = %(target)s
               AND u.enabled = 1
               AND COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'
-              AND COALESCE(p.is_deleted, 0) = 0
               AND NOT EXISTS (
                   SELECT 1 FROM `tabAOS User Block` b
                   WHERE b.status = 'Active'
@@ -568,7 +566,7 @@ class SocialRepository:
             """AND (COALESCE(p.display_name, '') LIKE %(search)s ESCAPE '\\\\'
                 OR COALESCE(u.full_name, '') LIKE %(search)s ESCAPE '\\\\'
                 OR COALESCE(u.first_name, '') LIKE %(search)s ESCAPE '\\\\'
-                OR COALESCE(p.public_id, '') LIKE %(search)s ESCAPE '\\\\')""",
+                OR COALESCE(p.name, '') LIKE %(search)s ESCAPE '\\\\')""",
             {"search": value},
         )
 

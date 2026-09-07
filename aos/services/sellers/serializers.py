@@ -12,7 +12,6 @@ from frappe.utils import formatdate
 from aos.api.shared.formatters import format_rating, humanize_count, to_float, to_non_negative_int
 from aos.api.shared.live_state import get_users_live_state
 from aos.api.shared.user_display import get_user_display
-from aos.services.accounts.identity import migration_fallback_public_id, normalize_public_account_id
 from aos.services.media.media_service import MediaService
 from aos.services.seller_response_metrics import format_response_rate, format_response_time
 
@@ -213,11 +212,9 @@ def serialize_public_list_item(
         "seller": seller_id,
         "seller_id": seller_id,
         "account_id": identity.get("account_id"),
-        "user": identity.get("user"),
         "display_name": identity.get("display_name") or "AOS User",
         "avatar": identity.get("avatar"),
         "is_deleted": bool(identity.get("is_deleted")),
-        "is_deactivated": bool(identity.get("is_deactivated")),
         "is_live": bool(identity.get("is_live")),
         "live_id": identity.get("live_id"),
         "live_status": identity.get("live_status"),
@@ -308,8 +305,8 @@ def display_map(users: list[str]) -> dict[str, dict[str, Any]]:
     rows = frappe.db.sql(
         """
         SELECT u.name AS internal_user, u.full_name, u.first_name, u.user_image,
-               u.enabled, p.public_id, p.display_name, p.profile_image_media,
-               p.account_status, p.is_deleted
+               u.enabled, p.name AS account_id, p.display_name, p.profile_image_media,
+               p.account_status
         FROM `tabUser` u
         INNER JOIN `tabAOS Profile` p ON p.user = u.name
         WHERE u.name IN %(users)s
@@ -324,15 +321,15 @@ def display_map(users: list[str]) -> dict[str, dict[str, Any]]:
     for row in rows:
         user = str(row.internal_user or "")
         status = str(row.account_status or "Active")
-        deleted = bool(int(row.is_deleted or 0)) or status == "Deleted"
-        deactivated = status == "Deactivated" or not bool(int(row.enabled or 0))
-        hidden = deleted or deactivated
-        public_id = normalize_public_account_id(row.public_id) or migration_fallback_public_id(user)
+        deleted = status == "Deleted"
+        unavailable = deleted or not bool(int(row.enabled or 0)) or status != "Active"
+        hidden = unavailable
+        account_id = str(row.account_id or "").strip() or None
         raw_name = str(row.display_name or row.full_name or row.first_name or "").strip()
         display_name = raw_name if raw_name and not _EMAIL_LIKE_RE.fullmatch(raw_name) else "AOS User"
         if deleted:
             display_name = "Deleted User"
-        elif deactivated:
+        elif unavailable:
             display_name = "Unavailable User"
         avatar = None
         if not hidden:
@@ -353,14 +350,10 @@ def display_map(users: list[str]) -> dict[str, dict[str, Any]]:
             live["is_live"] = bool(live.get("is_live"))
             live["live_viewer_count"] = max(0, int(live.get("live_viewer_count") or 0))
         result[user] = {
-            "account_id": public_id,
-            "user": public_id,
+            "account_id": account_id,
             "display_name": display_name,
-            "full_name": display_name,
             "avatar": avatar,
-            "user_image": avatar,
             "is_deleted": deleted,
-            "is_deactivated": deactivated,
             **live,
         }
     return result

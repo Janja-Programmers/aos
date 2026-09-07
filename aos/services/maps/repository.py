@@ -89,7 +89,6 @@ def get_public_seller_location(
         WHERE s.name = %s
           AND s.status = 'Active'
           AND u.enabled = 1
-          AND COALESCE(p.is_deleted, 0) = 0
           AND COALESCE(p.account_status, 'Active') = 'Active'
         LIMIT 1
         """,
@@ -119,7 +118,6 @@ def list_seller_map_rows(
     conditions = [
         "s.status = 'Active'",
         "u.enabled = 1",
-        "COALESCE(p.is_deleted, 0) = 0",
         "COALESCE(p.account_status, 'Active') = 'Active'",
         "COALESCE(s.has_location, 0) = 1",
         "s.latitude IS NOT NULL",

@@ -118,7 +118,6 @@ def _normalize_streams() -> None:
             LEFT JOIN `tabAOS Profile` p ON p.user=l.host_user
             WHERE l.status='live' AND l.is_active=1
               AND (u.name IS NULL OR COALESCE(u.enabled,0)=0 OR p.name IS NULL
-                   OR COALESCE(p.is_deleted,0)=1
                    OR COALESCE(NULLIF(p.account_status,''),'Active')!='Active')
             ORDER BY l.name LIMIT %s
             """,
@@ -309,7 +308,6 @@ def _normalize_views() -> None:
                 l.name IS NULL OR l.status!='live' OR COALESCE(l.is_active,0)=0
                 OR (v.user IS NOT NULL AND v.user!='' AND (
                     u.name IS NULL OR COALESCE(u.enabled,0)=0 OR p.name IS NULL
-                    OR COALESCE(p.is_deleted,0)=1
                     OR COALESCE(NULLIF(p.account_status,''),'Active')!='Active'
                 ))
             )

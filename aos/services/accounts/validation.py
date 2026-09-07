@@ -15,19 +15,10 @@ LEGAL_NAME_MIN_LEN = 2
 LEGAL_NAME_MAX_LEN = 160
 BIO_MAX_LEN = 500
 PHONE_MAX_LEN = 32
-LOCATION_MAX_LEN = 160
 AVATAR_MEDIA_ID_RE = re.compile(r"^MEDIA-[A-Z0-9-]{6,64}$", re.IGNORECASE)
 PHONE_RE = re.compile(r"^\+[1-9][0-9]{6,14}$")
 ALLOWED_GENDERS = {"", "Male", "Female", "Other", "Prefer not to say"}
 
-PROFILE_ALIASES = {
-    "full_name": "display_name",
-    "mobile_no": "phone",
-    "birth_date": "date_of_birth",
-    "user_image_media": "avatar_media_id",
-    "profile_image_media": "avatar_media_id",
-    "media_id": "avatar_media_id",
-}
 EDITABLE_PROFILE_FIELDS = {
     "display_name",
     "legal_name",
@@ -35,7 +26,6 @@ EDITABLE_PROFILE_FIELDS = {
     "date_of_birth",
     "gender",
     "bio",
-    "location",
     "avatar_media_id",
     "remove_avatar",
 }
@@ -45,14 +35,10 @@ SYSTEM_MANAGED_PROFILE_FIELDS = {
     "roles",
     "enabled",
     "account_status",
-    "is_deleted",
     "is_verified",
-    "verified_by",
-    "verified_on",
     "seller",
     "seller_type",
     "verification_status",
-    "public_id",
 }
 
 
@@ -85,10 +71,6 @@ def validate_legal_name(value: Any) -> str:
 
 def validate_bio(value: Any) -> str:
     return _normalized_text(value, field="bio", max_length=BIO_MAX_LEN)
-
-
-def validate_location(value: Any) -> str:
-    return _normalized_text(value, field="location", max_length=LOCATION_MAX_LEN)
 
 
 def validate_phone(value: Any) -> str:
@@ -150,7 +132,6 @@ _VALIDATORS: dict[str, Callable[[Any], Any]] = {
     "date_of_birth": validate_date_of_birth,
     "gender": validate_gender,
     "bio": validate_bio,
-    "location": validate_location,
     "avatar_media_id": validate_avatar_media_id,
     "remove_avatar": _truthy,
 }
@@ -161,7 +142,7 @@ def validate_profile_patch(payload: dict[str, Any] | None) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
     unknown: list[str] = []
     for key, value in raw.items():
-        canonical = PROFILE_ALIASES.get(str(key), str(key))
+        canonical = str(key)
         if canonical in SYSTEM_MANAGED_PROFILE_FIELDS or canonical not in EDITABLE_PROFILE_FIELDS:
             unknown.append(str(key))
             continue

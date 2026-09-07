@@ -32,13 +32,10 @@ def lock_eligible_profile(user: str):
     profile = frappe.get_doc("AOS Profile", rows[0].name)
     enabled = frappe.db.get_value("User", clean_user, "enabled")
     status = str(getattr(profile, "account_status", "Active") or "Active")
-    deleted = bool(int(getattr(profile, "is_deleted", 0) or 0))
-    if deleted or status == "Deleted":
+    if status == "Deleted":
         raise VerificationPermissionError("Account is unavailable.", code="ACCOUNT_DELETED")
     if status == "Suspended":
         raise VerificationPermissionError("Account is suspended.", code="ACCOUNT_SUSPENDED")
-    if status == "Deactivated":
-        raise VerificationPermissionError("Account is deactivated.", code="ACCOUNT_DEACTIVATED")
     if int(enabled or 0) != 1 or status != "Active":
         raise VerificationPermissionError("Account is unavailable.", code="ACCOUNT_DISABLED")
     return profile

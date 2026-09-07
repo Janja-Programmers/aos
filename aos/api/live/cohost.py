@@ -504,7 +504,6 @@ def _resolve_host_invite_candidate(
         if target_user_reference:
             expected_user = resolve_account_reference(
                 target_user_reference,
-                allow_legacy=True,
             )
             if not expected_user or expected_user != target_user:
                 return None, None, fail(
@@ -540,7 +539,6 @@ def _resolve_host_invite_candidate(
 
     target_user = resolve_account_reference(
         target_user_reference,
-        allow_legacy=True,
     )
     if not target_user:
         return None, None, fail(

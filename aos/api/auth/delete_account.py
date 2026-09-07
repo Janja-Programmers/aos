@@ -16,7 +16,7 @@ from aos.services.accounts.constants import ACCOUNT_RESTORE_WINDOW_DAYS
 from aos.services.accounts.errors import AccountError
 from aos.services.accounts.lifecycle_service import AccountLifecycleService
 
-from .account_helpers import user_for_email
+from .account_helpers import profile_display_name, user_for_email
 from .constants import (
     DELETE_ACCOUNT_LIMIT_PER_HOUR_PER_IP,
     DELETE_ACCOUNT_LIMIT_PER_HOUR_PER_USER,
@@ -114,11 +114,10 @@ def request_restore_account_impl(**kwargs):
         return ok(RESTORE_REQUEST_GENERIC_MESSAGE)
     try:
         lock_user(user_name)
-        user = frappe.get_doc("User", user_name)
-        ver = ensure_ver_doc(user_name, email=email, purpose=RESTORE_PURPOSE, for_update=True)
+        ver = ensure_ver_doc(user_name, purpose=RESTORE_PURPOSE, for_update=True)
         if not resend_allowed(ver):
             return ok(RESTORE_REQUEST_GENERIC_MESSAGE)
-        issue_otp(ver, email=email, full_name=user.first_name or user.full_name or "", purpose=RESTORE_PURPOSE)
+        issue_otp(ver, email=email, full_name=profile_display_name(user_name), purpose=RESTORE_PURPOSE)
         return ok(RESTORE_REQUEST_GENERIC_MESSAGE)
     except Exception as exc:
         frappe.db.rollback()

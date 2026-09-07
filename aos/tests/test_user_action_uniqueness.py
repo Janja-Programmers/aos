@@ -301,13 +301,13 @@ class TestUserActionUniqueness(AOSFeatureTestMixin, FrappeTestCase):
             mark_aos_managed_website_user_creation(user)
             user.insert(ignore_permissions=True)
 
-        if not frappe.db.exists("AOS Profile", email):
+        if not frappe.db.exists("AOS Profile", {"user": email}):
             frappe.get_doc(
                 {
                     "doctype": "AOS Profile",
                     "user": email,
+                    "display_name": f"Unique {label.title()}",
                     "account_status": "Active",
-                    "is_deleted": 0,
                 }
             ).insert(ignore_permissions=True)
 

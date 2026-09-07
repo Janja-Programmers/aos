@@ -22,6 +22,7 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 | `resend_email_otp` | POST | Guest allowed | Client |
 | `restore_account` | POST | Guest allowed | Client |
 | `verify_email_otp` | POST | Guest allowed | Client |
+| `verify_two_factor` | POST | Guest allowed | Client |
 
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
@@ -141,7 +142,7 @@ Auth endpoint implementation (`aos.api.auth.*`)
     |       +--> User
     |       +--> AOS Profile
     |       +--> AOS User Preference
-    |       +--> AOS Email Verification
+    |       +--> AOS Auth Challenge
     |       +--> AOS Auth Identity
     |       +--> Sessions
     |
@@ -186,7 +187,7 @@ serializers.py -> explicit public response
 Frappe User
  |-- 1:1 AOS Profile
  |-- 1:1 AOS User Preference  -> Localization masters/rules
- |-- 0..3 AOS Email Verification (one deterministic row per purpose)
+ |-- 0..3 AOS Auth Challenge (one deterministic row per purpose)
  |-- 0..2 AOS Auth Identity (at most one per supported provider)
  `-- 0..N Frappe Sessions
 ```
@@ -207,26 +208,29 @@ Meaningful fields used by Authentication:
 | `user_type` | Select | yes | framework-managed | AOS users are `Website User`; Desk users remain framework-managed |
 | password hash | framework auth storage | yes for password accounts | framework-managed | secure password verification |
 
-Lifecycle: created disabled for password signup, enabled after email verification; social-created users are enabled after verified provider identity. Account deletion/restoration is owned by Accounts lifecycle and Auth consumes the resulting state.
+Lifecycle: created disabled for password signup, enabled after email verification; social-created users are enabled after verified provider identity. Account deletion/restoration is owned by Accounts lifecycle and Auth consumes the resulting state. AOS account email is immutable in the current contract; there is no partial rename/email-change endpoint.
 
 ### `AOS Profile`
 
 Purpose: AOS account/profile state required by all marketplace identity surfaces.
 
-Authentication relies on the existing profile contract. The `user` identity is unique through the DocType naming/field definition. `account_status`, `is_deleted`, and `restore_deadline` define the reversible deletion boundary. `restore_deadline` and `purge_status` are indexed for the background permanent-deletion scan.
+Authentication relies on the existing profile contract. The profile primary key itself is the immutable opaque `ACC-*` account id and `user` is a unique Link to Frappe User. `account_status` and `restore_deadline` define the reversible deletion boundary; deletion is derived from `account_status == Deleted` rather than stored twice. Composite lifecycle/purge indexes support the background permanent-deletion scan.
 
 Deletion lifecycle fields used by Authentication/Accounts:
 
 | Field | Purpose |
 |---|---|
-| `account_status` | `Active`, `Deactivated`, `Deleted`, or `Suspended` product lifecycle state |
-| `is_deleted` | explicit deleted-account tombstone used by public serializers/queries |
+| `name` | immutable opaque `ACC-*` public account id; there is no separate `public_id` field |
+| `user` | unique Link to Frappe User; internal authentication identity |
+| `account_status` | `Active`, `Deleted`, or `Suspended` product lifecycle state |
 | `deleted_at` | time the reversible deletion started |
 | `restore_deadline` | last time the account can be restored; normally deletion + 30 days |
 | `purge_status` | `Pending`, `Purging`, `Completed` durable permanent-cleanup progress |
 | `purge_started_at` | first bounded cleanup run after restore expiry |
 | `purge_completed_at` | permanent private-data cleanup/anonymization completion |
 | `restored_at` | latest successful restore time |
+
+Profile fields such as bio, phone, date of birth and gender are AOS-owned and are not duplicated into Frappe User. Display name and avatar may be projected into Frappe User solely for framework/admin presentation. Localization is the only owner of account location. Verification Request owns verification audit metadata; `AOS Profile.is_verified` is only a deliberate hot-read projection.
 
 Authentication does not repair a missing profile during login or `me`; a missing row is an internal account-bootstrap invariant failure (`ACCOUNT_BOOTSTRAP_UNAVAILABLE`).
 
@@ -243,48 +247,45 @@ Purpose: user-owned Localization selection.
 
 Creation/default resolution belongs to Localization. Authentication initializes this row only while creating a new user. Missing preference on an existing account returns the single public invariant error `ACCOUNT_BOOTSTRAP_UNAVAILABLE` and is not silently recreated on a high-frequency request.
 
-### `AOS Email Verification`
+### `AOS Auth Challenge`
 
 Purpose: bounded temporary state for email verification, password recovery and account restoration. There is one deterministic document name per `User + purpose`; repeated sends overwrite the same row rather than creating unbounded OTP history.
 
-Valid purposes: `email_verification`, `password_reset`, `account_restore`.
+Valid purposes: `email_verification`, `password_reset`, `account_restore`, `two_factor`.
 
 | Field | Type | Required | Unique/indexed | Purpose |
 |---|---|---:|---:|---|
 | `user` | Link User | yes | search index + input to deterministic primary-name hash | owner of security state and efficient account-wide revocation |
-| `email` | Data / Email | yes | no | delivery address snapshot; not queried as an Authentication hot-path key |
 | `purpose` | Select | yes | input to deterministic primary-name hash | isolates verification flows |
 | `otp_password_hash` | Data, hidden/read-only | no | no | slow Frappe password hash of current OTP; never stores OTP plaintext |
 | `expires_at` | Datetime | no | no | OTP expiry |
 | `last_sent_at` | Datetime | no | no | internal resend cooldown |
 | `attempts` | Int | no | no | bounded OTP guesses for current code |
-| `reset_token_hash` | Data, hidden/read-only | no | no | SHA-256 digest of high-entropy reset token |
-| `reset_token_expires_at` | Datetime | no | no | reset-token expiry |
+| `continuation_token_hash` | Data(64), hidden/read-only | no | search index | SHA-256 digest of a high-entropy continuation token used by password reset and 2FA |
+| `continuation_expires_at` | Datetime | no | no | continuation-token expiry |
 | `is_used` | Check | no | no | one-time OTP consumption marker |
 
 Invariants:
 
-- document name is `authv-<sha256(user + NUL + purpose)>` and renaming is disabled; the fixed-length key avoids Frappe name-length issues for long email addresses;
+- document name is `authc-<sha256(user + NUL + purpose)>` and renaming is disabled; the fixed-length key avoids Frappe name-length issues for long email addresses;
 - OTP code is generated with `secrets` and slow-hashed with Frappe's password hashing context;
-- reset token is high entropy, stored only as a digest and compared in constant time;
+- continuation tokens are high entropy, stored only as digests and compared in constant time;
 - OTP attempts are serialized by row lock;
 - successful consumption clears the OTP verifier;
-- password reset clears reset-token state and revokes sessions;
+- password reset clears continuation-token state and revokes sessions;
 - System Manager has read/report-only Desk access; Authentication service code owns mutation via controlled server-side paths.
 
 ### `AOS Auth Identity`
 
-Purpose: durable social identity mapping using the immutable OIDC provider subject instead of mutable/reassignable email.
+Purpose: durable social identity mapping using the immutable OIDC provider subject instead of mutable/reassignable email, without persisting the raw subject.
 
 | Field | Type | Required | Unique/indexed | Purpose |
 |---|---|---:|---:|---|
 | `provider` | Select (`google`, `apple`) | yes | standard filter | identity provider |
-| `subject` | Data(255), hidden/read-only | yes | deterministic primary name | provider's immutable `sub` claim |
 | `user` | Link User | yes | search index | bound AOS user |
-| `email_at_link` | Email/Data(254), read-only | no | no | audit/debug snapshot; never used as durable identity |
 | `user_provider_key` | Data, hidden/read-only | yes | unique | prevents one AOS user from silently binding multiple subjects for the same provider |
 
-The primary document name is a SHA-256-derived identifier from provider + subject. `user_provider_key` is also derived and unique. A conflicting identity is never silently rebound during login. System Manager has read/report-only Desk access; Authentication service code owns creation/mutation.
+The primary document name is a site-keyed HMAC-derived identifier from provider + subject; the raw provider subject is never persisted. `user_provider_key` is also site-keyed and unique. A conflicting identity is never silently rebound during login. System Manager has read/report-only Desk access; Authentication service code owns creation/mutation.
 
 ### Frappe `Sessions`
 
@@ -401,6 +402,18 @@ Idempotency: non-idempotent session creation; safe client retry can create anoth
 
 Rate limit: shared Redis: 20/hour per normalized identifier and 300/hour per IP; Frappe's own login-attempt tracker also remains in the credential path for enabled users. The higher IP ceiling intentionally avoids making carrier/shared NAT the primary lockout boundary.
 
+### `aos.api.v1.auth.verify_two_factor`
+
+Purpose: finish a password or OIDC login when the applicable Frappe 2FA policy requires a second factor.
+
+Authentication: Guest continuation endpoint. Frontend: login 2FA step.
+
+Inputs: `challenge_token` (required high-entropy token returned only after the first authentication factor succeeds), `otp` (required six-digit email OTP), and `client_type` (`web` or `mobile`).
+
+A password, Google, or Apple login that requires 2FA returns `TWO_FACTOR_REQUIRED` with `data.challenge_token`, `data.method = "email"`, and a bounded expiry. Only a digest of that continuation token is stored. Verification locks the User first and the deterministic `AOS Auth Challenge` second, consumes both OTP and continuation state, then creates the normal Frappe session. Replay or expired/unknown challenges return a stable invalid-challenge response. Shared Redis limits apply by IP and challenge token.
+
+Mobile success includes `data.session.sid`; web success relies on the HttpOnly session cookie, exactly like ordinary login.
+
 ### `aos.api.v1.auth.google_login`
 
 Purpose: login/register with verified Google OIDC identity.
@@ -409,13 +422,13 @@ Authentication: Guest. Inputs: `id_token`, `client_type`; `country`, `currency`,
 
 The verifier requires RS256 signature, current Google JWKS, allowed configured audience, valid issuer/expiry/subject, email, and verified email. Provider `sub` is the durable identity.
 
-Success/session shape matches password login. Invalid tokens return `TOKEN_INVALID`/`TOKEN_EXPIRED`; missing configuration or JWKS/provider dependency failures are `CONFIG_ERROR`/`SERVICE_UNAVAILABLE` and are not misreported as bad credentials.
+Success/session shape matches password login. If the Frappe 2FA policy applies, a verified Google identity receives the same AOS email-OTP continuation challenge before session creation. Invalid tokens return `TOKEN_INVALID`/`TOKEN_EXPIRED`; missing configuration or JWKS/provider dependency failures are `CONFIG_ERROR`/`SERVICE_UNAVAILABLE` and are not misreported as bad credentials.
 
 ### `aos.api.v1.auth.apple_login`
 
 Purpose: login/register with Apple OIDC identity.
 
-Authentication and request shape match Google. First sign-in must provide an email if there is no existing subject binding, and any Apple email present must carry a provider-verified `email_verified` claim. Later Apple tokens may omit email because `AOS Auth Identity` resolves the already-bound immutable `sub`.
+Authentication and request shape match Google. First sign-in must provide an email if there is no existing subject binding, and any Apple email present must carry a provider-verified `email_verified` claim. Later Apple tokens may omit email because `AOS Auth Identity` resolves the already-bound immutable `sub`. The same AOS email-OTP continuation is required before session creation when the Frappe 2FA policy applies.
 
 ### `aos.api.v1.auth.me`
 
@@ -432,16 +445,15 @@ Success:
   "ok": true,
   "message": "Session fetched.",
   "data": {
-    "session": {"authenticated": true, "expires_at": null},
+    "session": {"authenticated": true},
     "user": {
-      "id": "<public-account-id>",
+      "account_id": "ACC-EXAMPLEOPAQUEID",
       "email": "jane@example.com",
-      "full_name": "Jane Doe",
-      "first_name": "Jane",
-      "last_name": "Doe",
-      "user_image": null,
+      "display_name": "Jane Doe",
+      "avatar": null,
       "enabled": true,
-      "account_status": "Active"
+      "account_status": "Active",
+      "is_verified": false
     },
     "preferences": {"country":"Kenya","language":"en","currency":"KES"},
     "roles": ["Website User"],
@@ -522,7 +534,7 @@ Deletion is a **30-day reversible tombstone**, not immediate destructive cleanup
 
 Immediate deletion effects:
 
-- `AOS Profile.account_status = Deleted`, `is_deleted = 1`, and `restore_deadline = now + 30 days`;
+- `AOS Profile.account_status = Deleted` and `restore_deadline = now + 30 days`; deletion is derived from the lifecycle state and is not stored in a second boolean;
 - Frappe `User.enabled = 0`;
 - every Frappe session and exact Redis session-cache entry is revoked;
 - push/device-token rows are removed so restored devices must register again; Authentication OTP/reset state is consumed/cleared;
@@ -573,7 +585,7 @@ AOS uses Frappe database + Redis-backed sessions; Authentication does not implem
 
 ### Expiration
 
-Session lifetime is framework/site configuration, not hard-coded in AOS. `data.session.expires_at` is currently `null`; clients must rely on session validity rather than calculating an independent expiry.
+Session lifetime is framework/site configuration, not hard-coded in AOS. AOS does not emit a placeholder expiry timestamp; clients validate session state through `me` and treat `SESSION_INVALID` as authoritative.
 
 ### Logout and revocation
 
@@ -745,21 +757,21 @@ Deployment target is a new Frappe site. Authentication therefore optimizes the f
 
 `aos.patches.v1_0.add_auth_indexes`
 
-Reason: it deduplicated historical `AOS Email Verification` data and created post-install indexes/uniqueness needed by an earlier schema. A fresh site cannot contain those historical duplicates. The file and `patches.txt` entry are removed.
+Reason: it deduplicated historical `AOS Auth Challenge` data and created post-install indexes/uniqueness needed by an earlier schema. A fresh site cannot contain those historical duplicates. The file and `patches.txt` entry are removed.
 
 Permanent state moved into final definitions:
 
-- `AOS Email Verification` uses deterministic hashed `user + purpose` primary naming and renaming is disabled, so one row per purpose is intrinsic to a fresh schema;
+- `AOS Auth Challenge` uses deterministic hashed `user + purpose` primary naming and renaming is disabled, so one row per purpose is intrinsic to a fresh schema;
 - `otp_password_hash` replaces the historical `otp_hash` field directly in the DocType;
 - `AOS Auth Identity` carries permanent unique social identity constraints in its DocType;
-- `AOS Email Verification.user` is permanently indexed for account-wide token revocation;
+- `AOS Auth Challenge.user` is permanently indexed for account-wide token revocation;
 - `after_install` sets `Website Settings.disable_signup = 1`; hook overrides also guard the generic Frappe signup/recovery/password methods, so the versioned AOS contract is the only public Website User path.
 
 ### Remaining Authentication-specific patches
 
-None.
+`aos.patches.v1_0.finalize_auth_identity_privacy` is an upgrade-safety cleanup for the already-used v10 staging baseline. It is a no-op for a fresh v11 site except for harmless table-existence checks. When upgrading v10, it preserves durable Google/Apple bindings while renaming them to the new site-keyed HMAC identity names, updates the provider/user uniqueness key, erases retired raw provider `subject`/`email_at_link` values if the old physical columns still exist, and clears the retired ephemeral `AOS Email Verification` table rather than carrying old OTP/reset state into the new `AOS Auth Challenge` model. It performs DML only and contains no runtime compatibility path.
 
-Other patches in `patches.txt` belong to other finalized features (Accounts, Localization, etc.) and were not removed merely because Authentication consumes those features. Their necessity must be evaluated by their owning feature's fresh-site review.
+`aos.patches.v1_0.harden_accounts_subsystem` is owned by Accounts and contains the corresponding one-time v10 profile-primary-key/privacy cleanup. Fresh installations derive the final profile schema directly from DocType source. Other patches in `patches.txt` belong to their owning features and are not runtime Authentication compatibility contracts.
 
 Fresh-install expectation:
 

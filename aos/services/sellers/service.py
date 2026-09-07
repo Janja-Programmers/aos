@@ -155,7 +155,6 @@ class SellerService:
             [
                 "user",
                 "account_status",
-                "is_deleted",
                 "total_followers",
                 "total_following",
                 "is_verified",
@@ -166,7 +165,6 @@ class SellerService:
         if (
             not profile
             or not int(user_enabled or 0)
-            or bool(profile.is_deleted)
             or str(profile.account_status or "Active") != "Active"
         ):
             raise SellerNotFoundError("Seller not found.")
@@ -231,7 +229,6 @@ class SellerService:
         conditions = [
             "s.status = 'Active'",
             "u.enabled = 1",
-            "COALESCE(p.is_deleted, 0) = 0",
             "COALESCE(p.account_status, 'Active') = 'Active'",
         ]
         params: list[Any] = []
@@ -550,7 +547,7 @@ class SellerService:
         if not viewer or viewer == "Guest":
             from aos.api.shared.user_display import get_user_display
 
-            return guest_relationship(target_user=get_user_display(target_user).get("user"))
+            return guest_relationship(target_user=get_user_display(target_user).get("account_id"))
         return build_relationship_status(current_user=viewer, target_user=target_user)
 
     @staticmethod

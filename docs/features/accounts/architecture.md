@@ -2,18 +2,22 @@
 
 ## Boundaries
 
-`aos.api.v1.accounts` contains stable Frappe wrappers. `aos.api.accounts` parses requests, authenticates, rate-limits, maps domain errors, and commits or rolls back one operation. Application logic lives under `aos.services.accounts`.
+`aos.api.v1.accounts` contains stable Frappe wrappers. `aos.api.accounts` parses requests, authenticates, rate-limits and maps domain errors. Application logic lives under `aos.services.accounts`.
 
-- **Accounts:** profile, preferences, public identity, serializers, lifecycle state.
-- **Auth:** credentials, password proof, session creation, logout, session/token revocation.
-- **Localization:** active country/currency/language/location validation and serialization.
-- **Media:** upload validation, storage, object identity, ownership, attachment, replacement, URLs, cleanup.
-- **Seller/Verification:** business and verification workflow state; Accounts returns bounded summaries only.
+- **Accounts:** canonical AOS profile, stable account identity, public/private serializers and lifecycle state.
+- **Auth:** credentials, password proof, 2FA continuation, session creation/logout and access revocation.
+- **Localization:** canonical country/currency/language/location selection. Accounts does not duplicate location.
+- **Media:** upload validation, storage identity, ownership, attachment/replacement and cleanup.
+- **Seller/Verification:** workflow state; Accounts returns bounded projections only.
 
 ## Transactions
 
-Profile, preference, deactivation, deletion, and restoration paths lock the account-owned row before mutation. API handlers own transaction completion. Media attachment metadata participates in the same database transaction; no storage deletion occurs during avatar replacement.
+Profile and lifecycle mutations lock the account-owned row before mutation. API handlers own transaction completion. Media attachment metadata participates in the same database transaction; no storage deletion occurs during avatar replacement.
 
 ## Identity
 
-Internal foreign keys continue using `User.name`. Public surfaces use `AOS Profile.public_id`, an immutable random `ACC-*` value. Legacy email/User references remain accepted as input during migration but are resolved internally and are never emitted as public account IDs.
+Frappe `User.name` is the internal authentication identity. `AOS Profile.name` is the immutable opaque `ACC-*` account id and `AOS Profile.user` is the unique link back to `User`. Public account-reference inputs accept `ACC-*` only; email/User.name is never a public account id.
+
+## Data ownership
+
+`AOS Profile` is canonical for display name, bio, phone, date of birth, gender and profile media. Frappe `User` receives only deliberate framework projections for display name and avatar. Localization owns location. Verification Request owns verification audit metadata while `AOS Profile.is_verified` is a deliberate hot-read projection.

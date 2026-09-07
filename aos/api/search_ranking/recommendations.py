@@ -25,7 +25,6 @@ def _eligible_public_ad_ids(ad_ids: list[str]) -> set[str]:
           AND a.status = 'Active'
           AND s.status = 'Active'
           AND u.enabled = 1
-          AND COALESCE(p.is_deleted, 0) = 0
           AND COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'
         """,
         {"ad_ids": safe},

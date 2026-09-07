@@ -1,4 +1,4 @@
-"""Accounts endpoint rate limits and compatibility constants."""
+"""Accounts endpoint rate limits."""
 
 GET_PROFILE_LIMIT_PER_MINUTE_PER_USER = 60
 GET_PUBLIC_PROFILE_LIMIT_PER_MINUTE_PER_USER = 90

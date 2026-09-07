@@ -61,14 +61,15 @@ class TestAuthSessionAPI(AOSFeatureTestMixin, FrappeTestCase):
         return frappe.local.login_manager
 
     def _deleted(self, user):
-        frappe.db.set_value("AOS Profile", user, {
-            "account_status": "Deleted", "is_deleted": 1,
+        frappe.db.set_value("AOS Profile", {"user": user}, {
+            "account_status": "Deleted",
             "deleted_at": now_datetime(), "restore_deadline": add_to_date(now_datetime(), days=7),
+            "purge_status": "Pending",
         })
         frappe.db.commit()
 
     def _pending(self, user):
-        ver = ensure_ver_doc(user, email=user, purpose="email_verification")
+        ver = ensure_ver_doc(user, purpose="email_verification")
         ver.otp_password_hash = hash_otp("123456")
         ver.expires_at = add_to_date(now_datetime(), minutes=10)
         ver.is_used = 0

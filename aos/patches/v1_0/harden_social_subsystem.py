@@ -22,8 +22,7 @@ _BLOCK_INDEXES = {
     "idx_aos_block_status_modified": ["status", "modified", "name"],
 }
 _PROFILE_INDEXES = {
-    "idx_aos_profile_social_discovery": ["account_status", "is_deleted", "is_verified", "total_followers", "name"],
-    "idx_aos_profile_public_id_lookup": ["public_id"],
+    "idx_aos_profile_social_discovery": ["account_status", "is_verified", "total_followers", "name"],
 }
 
 

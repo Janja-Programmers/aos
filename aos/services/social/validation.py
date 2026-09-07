@@ -42,7 +42,7 @@ def _optional_text(value: Any, *, code: str, message: str) -> str:
     return value.strip()
 
 
-def normalize_target(payload: dict[str, Any], *, allow_legacy: bool = True) -> str:
+def normalize_target(payload: dict[str, Any]) -> str:
     raw_target = _optional_text(
         payload.get("target_user"),
         code="SOCIAL_INVALID_ACCOUNT_ID",
@@ -54,8 +54,8 @@ def normalize_target(payload: dict[str, Any], *, allow_legacy: bool = True) -> s
         message="Invalid public account ID.",
     )
     if raw_target and raw_account:
-        resolved_target = resolve_account_reference(raw_target, allow_legacy=allow_legacy)
-        resolved_account = resolve_account_reference(raw_account, allow_legacy=False)
+        resolved_target = resolve_account_reference(raw_target)
+        resolved_account = resolve_account_reference(raw_account)
         if not resolved_target or not resolved_account or resolved_target != resolved_account:
             raise SocialValidationError("Conflicting target account aliases.", code="SOCIAL_ALIAS_CONFLICT")
         return resolved_target
@@ -64,7 +64,7 @@ def normalize_target(payload: dict[str, Any], *, allow_legacy: bool = True) -> s
         raise SocialValidationError("Target account is required.", code="SOCIAL_TARGET_REQUIRED")
     if raw_account and not normalize_public_account_id(raw_account):
         raise SocialValidationError("Invalid public account ID.", code="SOCIAL_INVALID_ACCOUNT_ID")
-    resolved = resolve_account_reference(raw, allow_legacy=allow_legacy and not bool(raw_account))
+    resolved = resolve_account_reference(raw)
     if not resolved:
         raise SocialValidationError("Invalid target account.", code="SOCIAL_INVALID_ACCOUNT_ID")
     return str(resolved)

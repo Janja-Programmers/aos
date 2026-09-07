@@ -6,7 +6,7 @@ import frappe
 
 from aos.api.shared.responses import ok
 
-from .account_helpers import user_for_email
+from .account_helpers import profile_display_name, user_for_email
 from .constants import RESEND_LIMIT_PER_HOUR_PER_EMAIL, VERIFY_LIMIT_PER_HOUR_PER_EMAIL
 from .contracts import reject_unknown_fields
 from .locking import lock_user
@@ -82,10 +82,10 @@ def resend_email_otp_impl(**kwargs):
         lock_user(user_name)
         if int(frappe.db.get_value("User", user_name, "enabled") or 0) == 1:
             return ok(GENERIC_RESEND_MESSAGE)
-        ver = ensure_ver_doc(user_name, email=email, purpose=EMAIL_VERIFICATION_PURPOSE, for_update=True)
+        ver = ensure_ver_doc(user_name, purpose=EMAIL_VERIFICATION_PURPOSE, for_update=True)
         if not resend_allowed(ver):
             return ok(GENERIC_RESEND_MESSAGE)
-        full_name = frappe.db.get_value("User", user_name, "first_name") or ""
+        full_name = profile_display_name(user_name)
         issue_otp(ver, email=email, full_name=full_name, purpose=EMAIL_VERIFICATION_PURPOSE)
     except Exception as exc:
         frappe.db.rollback()

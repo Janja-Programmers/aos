@@ -91,7 +91,8 @@ class TestRecoverableDeletionContracts(unittest.TestCase):
         ):
             source = self._source(relative)
             self.assertIn("enabled = 1", source, relative)
-            self.assertIn("is_deleted", source, relative)
+            self.assertNotIn("p.is_deleted", source, relative)
+            self.assertNotIn("profile.is_deleted", source, relative)
             self.assertIn("account_status", source, relative)
 
     def test_hourly_purge_job_is_registered(self):

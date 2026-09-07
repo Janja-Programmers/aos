@@ -67,7 +67,7 @@ class AOSVerificationRequest(Document):
             frappe.throw(_("User is required."))
         if not frappe.db.exists("User", self.user):
             frappe.throw(_("User does not exist."))
-        if not frappe.db.exists("AOS Profile", self.user):
+        if not frappe.db.exists("AOS Profile", {"user": self.user}):
             frappe.throw(_("AOS Profile does not exist for this user."))
 
         if previous and previous.user != self.user:
@@ -272,10 +272,9 @@ class AOSVerificationRequest(Document):
             )
 
     def _approve_profile(self):
-        profile = frappe.get_doc("AOS Profile", self.user)
+        name = frappe.db.get_value("AOS Profile", {"user": self.user}, "name")
+        profile = frappe.get_doc("AOS Profile", name)
         profile.is_verified = 1
-        profile.verified_by = self.verified_by
-        profile.verified_on = self.verified_on
         profile.save(ignore_permissions=True)
 
     def _revoke_profile(self):
@@ -285,10 +284,9 @@ class AOSVerificationRequest(Document):
         )
         if other_approved:
             return
-        profile = frappe.get_doc("AOS Profile", self.user)
+        name = frappe.db.get_value("AOS Profile", {"user": self.user}, "name")
+        profile = frappe.get_doc("AOS Profile", name)
         profile.is_verified = 0
-        profile.verified_by = None
-        profile.verified_on = None
         profile.save(ignore_permissions=True)
 
     def _sync_business_fields_if_needed(self):

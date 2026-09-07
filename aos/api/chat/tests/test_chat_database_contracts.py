@@ -53,8 +53,8 @@ class TestChatDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
 
         self.assertTrue(response.get("ok"), response)
         data = response.get("data") or {}
-        self.assertTrue(str(data.get("user") or "").startswith("ACC-"))
-        self.assertNotIn("@", str(data.get("user") or ""))
+        self.assertTrue(str(data.get("account_id") or "").startswith("ACC-"))
+        self.assertNotIn("@", str(data.get("account_id") or ""))
         self.assertTrue(data.get("display_name"))
         self.assertTrue(data.get("last_seen"))
         self.assertTrue(data.get("is_online"))

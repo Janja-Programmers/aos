@@ -23,7 +23,7 @@ class TestAuthOtpAPI(AOSFeatureTestMixin, FrappeTestCase):
 
     def _verification_user(self, label, *, otp="123456", expired=False, used=False):
         user = self.make_user(label, enabled=0)
-        ver = ensure_ver_doc(user, email=user, purpose="email_verification")
+        ver = ensure_ver_doc(user, purpose="email_verification")
         ver.otp_password_hash = hash_otp(otp)
         ver.expires_at = add_to_date(now_datetime(), minutes=-1 if expired else 10)
         ver.is_used = int(used)
@@ -61,7 +61,7 @@ class TestAuthOtpAPI(AOSFeatureTestMixin, FrappeTestCase):
     def test_resend_unknown_active_and_cooldown_share_generic_response(self):
         active = self.make_user("active")
         pending = self._verification_user("pending")
-        pending_ver = ensure_ver_doc(pending, email=pending, purpose="email_verification")
+        pending_ver = ensure_ver_doc(pending, purpose="email_verification")
         pending_ver.last_sent_at = now_datetime()
         pending_ver.save(ignore_permissions=True)
         frappe.db.commit()

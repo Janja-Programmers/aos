@@ -2,50 +2,45 @@
 
 from __future__ import annotations
 
-import hashlib
 from typing import Any
 
 import frappe
 
 from aos.api.shared.locale_hints import accept_language_hint, geo_country_hint
 from aos.api.shared.responses import fail
-from aos.services.accounts.identity import ensure_public_account_id
+from aos.services.accounts.identity import get_profile_for_user, profile_name_for_user
 from aos.services.accounts.observability import account_log
 from aos.services.localization import resolve_guest_context
 from aos.services.user_preference_service import clear_user_preference_cache, get_user_preference
+from aos.utils.privacy import opaque_identifier
 
 
 def create_aos_profile(user: str):
     """Create the required AOS Profile for a newly-created User.
 
-    Existing rows are returned unchanged; this helper never repairs an existing
-    account during login or /me.
+    Frappe User owns authentication identity only. AOS Profile owns product
+    profile data and receives its own immutable ACC-* primary key.
     """
     if not user:
         return None
-    if frappe.db.exists("AOS Profile", user):
-        return frappe.get_doc("AOS Profile", user)
-    row = frappe.db.get_value(
-        "User",
-        user,
-        ["full_name", "bio", "mobile_no", "birth_date", "gender", "location"],
-        as_dict=True,
-    ) or {}
+    existing = get_profile_for_user(user)
+    if existing:
+        return existing
+    display_name = frappe.db.get_value("User", user, "full_name") or "AOS User"
     profile = frappe.new_doc("AOS Profile")
     profile.user = user
-    profile.display_name = row.get("full_name") or "AOS User"
-    profile.bio = row.get("bio") or ""
-    profile.phone = row.get("mobile_no") or ""
-    profile.date_of_birth = row.get("birth_date")
-    profile.gender = row.get("gender") or ""
-    profile.location = row.get("location") or ""
+    profile.display_name = display_name
     profile.account_status = "Active"
-    profile.is_deleted = 0
-    ensure_public_account_id(profile)
     profile.insert(ignore_permissions=True)
     account_log("account.bootstrap.completed", user=user)
     return profile
 
+
+
+def profile_display_name(user: str) -> str:
+    """Return the canonical AOS display name for an existing account."""
+    value = frappe.db.get_value("AOS Profile", {"user": str(user or "").strip()}, "display_name")
+    return str(value or "").strip()
 
 def create_user_preference(
     user: str,
@@ -110,7 +105,7 @@ def assert_auth_bootstrap(user: str, *, profile_exists: bool | None = None):
     hashed user identifier for operators.
     """
     if profile_exists is None:
-        profile_exists = bool(frappe.db.exists("AOS Profile", user))
+        profile_exists = bool(profile_name_for_user(user))
     if not profile_exists:
         safe_log_auth_event("AOS Auth Bootstrap Missing", user=user, reason="profile")
         return fail("Account bootstrap temporarily unavailable.", error="ACCOUNT_BOOTSTRAP_UNAVAILABLE")
@@ -137,12 +132,12 @@ def safe_log_auth_event(
     user: str | None = None,
     reason: str | None = None,
 ) -> None:
-    """Log only irreversible identifiers; never credentials/session/token values."""
+    """Log only site-keyed opaque identifiers; never credentials/session/token values."""
     payload: dict[str, Any] = {"reason": reason or "unspecified"}
     if identifier:
-        payload["identifier_hash"] = hashlib.sha256(identifier.encode("utf-8")).hexdigest()[:16]
+        payload["identifier_hash"] = opaque_identifier(identifier)
     if user:
-        payload["user_hash"] = hashlib.sha256(user.encode("utf-8")).hexdigest()[:16]
+        payload["user_hash"] = opaque_identifier(user)
     try:
         frappe.logger("aos.auth").warning("%s %s", title, payload)
     except Exception:

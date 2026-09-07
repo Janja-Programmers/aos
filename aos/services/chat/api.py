@@ -56,7 +56,7 @@ def _normalize_error(code: str | None) -> str:
     value = str(code or "CHAT_INVALID_REQUEST").strip().upper()
     if value.startswith("CHAT_") or value in {
         "AUTH_REQUIRED", "LOGIN_REQUIRED", "RATE_LIMIT", "RATE_LIMITED", "ACCOUNT_DISABLED",
-        "ACCOUNT_SUSPENDED", "ACCOUNT_DEACTIVATED", "ACCOUNT_DELETED", "ACCOUNT_DELETED_RESTORABLE",
+        "ACCOUNT_SUSPENDED", "ACCOUNT_DELETED", "ACCOUNT_DELETED_RESTORABLE",
         "MEDIA_NOT_FOUND", "MEDIA_ACCESS_DENIED", "MEDIA_OWNERSHIP_REQUIRED", "TRANSLATION_UNAVAILABLE",
     }:
         return value

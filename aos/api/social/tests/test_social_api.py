@@ -166,7 +166,7 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(all("@example.com" not in str(item) for item in valid["data"]["items"]))
 
     def test_suspended_target_is_not_discoverable_or_followable(self):
-        frappe.db.set_value("AOS Profile", self.target, "account_status", "Suspended", update_modified=False)
+        frappe.db.set_value("AOS Profile", {"user": self.target}, "account_status", "Suspended", update_modified=False)
         response = self._toggle(account_id=public_account_id_for_user(self.target), action="follow")
         self.assertEqual(response["error"], "SOCIAL_PROFILE_UNAVAILABLE")
         with patch("aos.api.social.search_users.rate_limit", return_value=None):

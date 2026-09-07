@@ -114,7 +114,7 @@ def _load_user_target(target_user: str | None) -> dict[str, Any] | None:
         return None
 
     display = get_user_display(target_user)
-    public_user = display.get("user")
+    public_user = display.get("account_id")
     title = _compact_text(display.get("display_name"), max_len=120) or "User"
 
     return {

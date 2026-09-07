@@ -28,7 +28,7 @@ class TestAuthDeleteRestoreAPI(AOSFeatureTestMixin, FrappeTestCase):
 
     def test_restore_missing_wrong_or_unrequested_otp_is_generic(self):
         user = self.make_user("restore-no-otp")
-        frappe.db.set_value("AOS Profile", user, {"account_status": "Deleted", "is_deleted": 1})
+        frappe.db.set_value("AOS Profile", {"user": user}, {"account_status": "Deleted", "purge_status": "Pending"})
         frappe.db.commit()
         with patch("aos.api.auth.delete_account.auth_rate_limit", return_value=None), patch("aos.api.auth.delete_account.auth_ip_limit", return_value=None):
             missing = restore_account_impl(email=f"{self.prefix}-missing@example.com", otp="000000")

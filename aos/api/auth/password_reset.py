@@ -8,7 +8,7 @@ from frappe.utils import now_datetime
 from aos.api.shared.account_status import is_account_deleted
 from aos.api.shared.responses import fail, ok
 
-from .account_helpers import user_for_email
+from .account_helpers import profile_display_name, user_for_email
 from .constants import (
     FORGOT_REQUEST_LIMIT_PER_HOUR_PER_EMAIL,
     FORGOT_RESET_LIMIT_PER_HOUR_PER_EMAIL,
@@ -23,9 +23,9 @@ from .session_control import revoke_all_sessions
 from .validators import require_email, require_otp, require_password, require_token
 from .verification import (
     PASSWORD_RESET_PURPOSE,
-    compute_reset_token_expiry,
+    compute_continuation_expiry,
     ensure_ver_doc,
-    generate_reset_token,
+    generate_continuation_token,
     get_ver_doc,
     token_digest,
     token_matches,
@@ -59,13 +59,13 @@ def forgot_password_request_impl(**kwargs):
         return ok(GENERIC_REQUEST_MESSAGE)
     try:
         lock_user(user_name)
-        ver = ensure_ver_doc(user_name, email=email, purpose=PASSWORD_RESET_PURPOSE, for_update=True)
+        ver = ensure_ver_doc(user_name, purpose=PASSWORD_RESET_PURPOSE, for_update=True)
         if not resend_allowed(ver):
             return ok(GENERIC_REQUEST_MESSAGE)
-        ver.reset_token_hash = ""
-        ver.reset_token_expires_at = None
+        ver.continuation_token_hash = ""
+        ver.continuation_expires_at = None
         ver.save(ignore_permissions=True)
-        full_name = frappe.db.get_value("User", user_name, "first_name") or ""
+        full_name = profile_display_name(user_name)
         issue_otp(ver, email=email, full_name=full_name, purpose=PASSWORD_RESET_PURPOSE)
     except Exception as exc:
         frappe.db.rollback()
@@ -97,9 +97,9 @@ def forgot_password_verify_otp_impl(**kwargs):
         verified = verify_public_otp(ver, otp, consume=True)
         if verified:
             return verified
-        token = generate_reset_token()
-        ver.reset_token_hash = token_digest(token)
-        ver.reset_token_expires_at = compute_reset_token_expiry()
+        token = generate_continuation_token()
+        ver.continuation_token_hash = token_digest(token)
+        ver.continuation_expires_at = compute_continuation_expiry()
         ver.save(ignore_permissions=True)
         return ok("OTP verified.", data={"reset_token": token})
     except Exception as exc:
@@ -138,19 +138,19 @@ def forgot_password_reset_impl(**kwargs):
         # User first, verification second is the canonical auth lock order.
         lock_user(user_name)
         ver = get_ver_doc(user_name, purpose=PASSWORD_RESET_PURPOSE, for_update=True)
-        if not ver or not getattr(ver, "reset_token_hash", None):
+        if not ver or not getattr(ver, "continuation_token_hash", None):
             return fail("Invalid reset token.", error="TOKEN_INVALID")
-        if not ver.reset_token_expires_at or now_datetime() > ver.reset_token_expires_at:
+        if not ver.continuation_expires_at or now_datetime() > ver.continuation_expires_at:
             return fail("Reset token expired. Please request a new code.", error="TOKEN_EXPIRED")
-        if not token_matches(reset_token, str(ver.reset_token_hash)):
+        if not token_matches(reset_token, str(ver.continuation_token_hash)):
             return fail("Invalid reset token.", error="TOKEN_INVALID")
 
         policy = validate_new_password(user_name, new_password)
         if policy:
             return policy
         set_user_password(user_name, new_password)
-        ver.reset_token_hash = ""
-        ver.reset_token_expires_at = None
+        ver.continuation_token_hash = ""
+        ver.continuation_expires_at = None
         ver.save(ignore_permissions=True)
         revoke_all_sessions(user_name)
         return ok("Password updated successfully. Please login again.")

@@ -58,3 +58,9 @@ class AOSAuthUserMixin(Document):
             return super().before_insert()
         finally:
             frappe.flags.in_import = previous
+
+    def before_rename(self, old_name, new_name, merge=False):
+        """Keep AOS Website User email identity immutable at the framework layer."""
+        if str(getattr(self, "user_type", "") or "") == "Website User":
+            frappe.throw("AOS account email is immutable.", frappe.ValidationError)
+        return super().before_rename(old_name, new_name, merge=merge)

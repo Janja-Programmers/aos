@@ -8,13 +8,12 @@ For request fields, response payloads, state rules, errors, limits and privacy s
 
 `Any*` means the whitelist decorator does not restrict HTTP methods. It does not imply that every method is a supported client contract; use the owning feature documentation for intended transport semantics.
 
-## Accounts (5)
+## Accounts (4)
 
 Owner documentation: [docs/features/accounts/api.md](../features/accounts/api.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
-| `/api/method/aos.api.v1.accounts.deactivate_account` | POST | Session required | Client | `aos/api/v1/accounts/__init__.py` |
 | `/api/method/aos.api.v1.accounts.get_my_preference` | GET | Session required | Client | `aos/api/v1/accounts/__init__.py` |
 | `/api/method/aos.api.v1.accounts.get_profile` | Any* | Session required | Client | `aos/api/v1/accounts/__init__.py` |
 | `/api/method/aos.api.v1.accounts.update_my_preference` | POST | Session required | Client | `aos/api/v1/accounts/__init__.py` |
@@ -60,7 +59,7 @@ Owner documentation: [docs/features/analytics/api.md](../features/analytics/api.
 | `/api/method/aos.api.v1.analytics_pipeline.track_event` | POST | Guest allowed | Client | `aos/api/v1/analytics_pipeline/__init__.py` |
 | `/api/method/aos.api.v1.analytics_pipeline.track_events` | POST | Guest allowed | Client | `aos/api/v1/analytics_pipeline/__init__.py` |
 
-## Auth (15)
+## Auth (16)
 
 Owner documentation: [docs/features/authentication/api.md](../features/authentication/api.md)
 
@@ -81,6 +80,7 @@ Owner documentation: [docs/features/authentication/api.md](../features/authentic
 | `/api/method/aos.api.v1.auth.resend_email_otp` | POST | Guest allowed | Client | `aos/api/v1/auth/__init__.py` |
 | `/api/method/aos.api.v1.auth.restore_account` | POST | Guest allowed | Client | `aos/api/v1/auth/__init__.py` |
 | `/api/method/aos.api.v1.auth.verify_email_otp` | POST | Guest allowed | Client | `aos/api/v1/auth/__init__.py` |
+| `/api/method/aos.api.v1.auth.verify_two_factor` | POST | Guest allowed | Client | `aos/api/v1/auth/__init__.py` |
 
 ## Calls (14)
 

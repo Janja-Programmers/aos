@@ -2,12 +2,38 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 import frappe
 from frappe.utils import now_datetime
 
 
 class SessionRevocationError(RuntimeError):
     pass
+
+
+_MISSING_SESSION_CREATION_FLAG = object()
+
+
+@contextmanager
+def aos_session_creation_scope():
+    """Temporarily authorize Frappe session creation for the AOS auth path.
+
+    The marker is request-local and must restore the exact previous state so
+    nested calls/tests cannot accidentally leave generic Frappe login enabled.
+    """
+    previous = getattr(frappe.flags, "aos_auth_session_creation", _MISSING_SESSION_CREATION_FLAG)
+    frappe.flags.aos_auth_session_creation = True
+    try:
+        yield
+    finally:
+        if previous is _MISSING_SESSION_CREATION_FLAG:
+            try:
+                frappe.flags.pop("aos_auth_session_creation", None)
+            except Exception:
+                frappe.flags.aos_auth_session_creation = False
+        else:
+            frappe.flags.aos_auth_session_creation = previous
 
 
 def _clear_session_cache(sids: tuple[str, ...]) -> None:
@@ -67,19 +93,19 @@ def revoke_push_tokens(user: str) -> int:
 
 
 def revoke_verification_tokens(user: str) -> int:
-    if not frappe.db.exists("DocType", "AOS Email Verification"):
+    if not frappe.db.exists("DocType", "AOS Auth Challenge"):
         return 0
     try:
         rows = frappe.db.sql(
-            "SELECT COUNT(*) AS count FROM `tabAOS Email Verification` WHERE user = %s AND is_used = 0",
+            "SELECT COUNT(*) AS count FROM `tabAOS Auth Challenge` WHERE user = %s AND is_used = 0",
             (user,),
             as_dict=True,
         )
         count = int(rows[0].get("count") or 0) if rows else 0
         frappe.db.sql(
             """
-            UPDATE `tabAOS Email Verification`
-            SET is_used = 1, otp_password_hash = '', reset_token_hash = '', reset_token_expires_at = NULL
+            UPDATE `tabAOS Auth Challenge`
+            SET is_used = 1, otp_password_hash = '', continuation_token_hash = '', continuation_expires_at = NULL
             WHERE user = %s
             """,
             (user,),

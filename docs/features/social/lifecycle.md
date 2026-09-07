@@ -14,7 +14,7 @@ A block is directional. Activation and removal of both follow directions occur i
 
 ## Account lifecycle
 
-Only enabled profiles with `account_status=Active` and `is_deleted=0` appear in discovery or active lists and can receive new follows/blocks. Recoverable account deletion preserves existing follow edges, counters, and active blocks for 30 days; the account tombstone makes the graph unavailable without rewriting those rows. Permanent cleanup after restore expiry removes follow edges and closes active blocks in bounded batches. Suspended/deactivated/deleted targets return the non-enumerating `SOCIAL_PROFILE_UNAVAILABLE` response.
+Only enabled profiles with `account_status=Active` appear in discovery or active lists and can receive new follows/blocks. Recoverable account deletion preserves existing follow edges, counters, and active blocks for 30 days; the account tombstone makes the graph unavailable without rewriting those rows. Permanent cleanup after restore expiry removes follow edges and closes active blocks in bounded batches. Suspended/deleted targets return the non-enumerating `SOCIAL_PROFILE_UNAVAILABLE` response.
 
 ## Unsupported states
 

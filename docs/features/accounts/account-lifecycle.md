@@ -1,10 +1,9 @@
 # Account lifecycle
 
-Supported states are `Active`, `Deactivated`, `Deleted`, and `Suspended`.
+Supported product states are `Active`, `Deleted`, and `Suspended`.
 
 - **Active:** normal authentication and feature access.
-- **Deactivated:** login disabled, sessions/tokens revoked, realtime activity ended, retained content not automatically removed.
-- **Deleted:** recoverable soft deletion; private exposure removed, active/public feature records hidden according to policy, and restoration allowed within the configured 30-day window.
-- **Suspended:** administrative state; self-service profile mutation and authentication are denied.
+- **Deleted:** a reversible 30-day account tombstone. Authentication/session capability is revoked immediately while durable profile, social, marketplace, verification and personalization state is preserved but hidden. Restore returns the same account identity and durable relationships.
+- **Suspended:** administrative state; authentication and self-service mutation are denied until administration changes the state.
 
-Transitions lock `AOS Profile`. Repeated deactivation or deletion reconciles access revocation and returns an idempotent result.
+`User.enabled` remains Frappe's authentication switch and is not a second AOS product lifecycle. Deletion/restoration locks the profile row. Repeated deletion is idempotent and reconciles access revocation.

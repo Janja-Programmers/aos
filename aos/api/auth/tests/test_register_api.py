@@ -40,11 +40,11 @@ class TestAuthRegisterAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.created_users.append(email)
         self.assertTrue(response.get("ok"), response)
         self.assertTrue(frappe.db.exists("User", email))
-        self.assertTrue(frappe.db.exists("AOS Profile", email))
+        self.assertTrue(frappe.db.exists("AOS Profile", {"user": email}))
         self.assertTrue(frappe.db.exists("AOS User Preference", {"user": email}))
-        from aos.api.auth.verification import verification_name
-        name = verification_name(email, "email_verification")
-        stored = frappe.db.get_value("AOS Email Verification", name, "otp_password_hash")
+        from aos.api.auth.verification import challenge_name
+        name = challenge_name(email, "email_verification")
+        stored = frappe.db.get_value("AOS Auth Challenge", name, "otp_password_hash")
         self.assertTrue(stored)
         self.assertNotEqual(stored, "123456")
         queue.assert_called_once()
@@ -73,7 +73,7 @@ class TestAuthRegisterAPI(AOSFeatureTestMixin, FrappeTestCase):
             response = register_impl(email=email, full_name="Rollback", password="StrongPass123!")
         self.assertEqual(response.get("error"), "REGISTER_FAILED")
         self.assertFalse(frappe.db.exists("User", email))
-        self.assertFalse(frappe.db.exists("AOS Profile", email))
+        self.assertFalse(frappe.db.exists("AOS Profile", {"user": email}))
         self.assertFalse(frappe.db.exists("AOS User Preference", {"user": email}))
 
     def test_missing_localization_inputs_use_localization_defaults(self):

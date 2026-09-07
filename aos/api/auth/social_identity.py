@@ -9,11 +9,10 @@ from aos.aos.doctype.aos_auth_identity.aos_auth_identity import identity_name
 
 
 def get_bound_user(provider: str, subject: str) -> str | None:
-    name = identity_name(provider, subject)
-    return frappe.db.get_value("AOS Auth Identity", name, "user")
+    return frappe.db.get_value("AOS Auth Identity", identity_name(provider, subject), "user")
 
 
-def bind_identity(*, provider: str, subject: str, user: str, email: str):
+def bind_identity(*, provider: str, subject: str, user: str):
     name = identity_name(provider, subject)
     existing = frappe.db.get_value("AOS Auth Identity", name, ["user", "name"], as_dict=True)
     if existing:
@@ -22,14 +21,12 @@ def bind_identity(*, provider: str, subject: str, user: str, email: str):
         return None
     doc = frappe.new_doc("AOS Auth Identity")
     doc.provider = provider
-    doc.subject = subject
     doc.user = user
-    doc.email_at_link = email
+    doc.flags.aos_oidc_subject = subject
     try:
         doc.insert(ignore_permissions=True)
         return None
     except frappe.DuplicateEntryError:
-        # Either provider subject or one-provider-per-user uniqueness raced.
         bound = get_bound_user(provider, subject)
         if bound == user:
             return None

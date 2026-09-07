@@ -65,10 +65,10 @@ class TestRecoverableAccountDeletion(AOSFeatureTestMixin, FrappeTestCase):
             }
         )
         block.insert(ignore_permissions=True)
-        frappe.db.set_value("AOS Profile", owner, "is_verified", 1, update_modified=False)
+        frappe.db.set_value("AOS Profile", {"user": owner}, "is_verified", 1, update_modified=False)
 
         before = frappe.db.get_value(
-            "AOS Profile", owner, ["total_followers", "is_verified"], as_dict=True
+            "AOS Profile", {"user": owner}, ["total_followers", "is_verified"], as_dict=True
         )
         self.assertEqual(int(before.total_followers or 0), 1)
         self.assertEqual(int(before.is_verified or 0), 1)
@@ -79,8 +79,8 @@ class TestRecoverableAccountDeletion(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(frappe.db.get_value("AOS User Block", block.name, "status"), "Active")
         during = frappe.db.get_value(
             "AOS Profile",
-            owner,
-            ["account_status", "is_deleted", "total_followers", "is_verified", "purge_status"],
+            {"user": owner},
+            ["account_status", "total_followers", "is_verified", "purge_status"],
             as_dict=True,
         )
         self.assertEqual(during.account_status, "Deleted")
@@ -109,7 +109,7 @@ class TestRecoverableAccountDeletion(AOSFeatureTestMixin, FrappeTestCase):
         AccountLifecycleService().delete(user=owner, reason="test")
         frappe.db.set_value(
             "AOS Profile",
-            owner,
+            {"user": owner},
             {
                 "restore_deadline": add_to_date(now_datetime(), days=-1),
                 "purge_status": "Pending",
@@ -120,7 +120,7 @@ class TestRecoverableAccountDeletion(AOSFeatureTestMixin, FrappeTestCase):
         first = purge_expired_deleted_account(owner, batch_size=1)
         self.assertFalse(first["completed"])
         self.assertEqual(frappe.db.count("AOS Follow", {"following_user": owner}), 1)
-        self.assertEqual(frappe.db.get_value("AOS Profile", owner, "purge_status"), "Purging")
+        self.assertEqual(frappe.db.get_value("AOS Profile", {"user": owner}, "purge_status"), "Purging")
 
         for _ in range(5):
             result = purge_expired_deleted_account(owner, batch_size=1)
@@ -129,7 +129,7 @@ class TestRecoverableAccountDeletion(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(result["completed"])
         self.assertEqual(frappe.db.count("AOS Follow", {"following_user": owner}), 0)
         profile = frappe.db.get_value(
-            "AOS Profile", owner, ["purge_status", "display_name", "is_verified"], as_dict=True
+            "AOS Profile", {"user": owner}, ["purge_status", "display_name", "is_verified"], as_dict=True
         )
         self.assertEqual(profile.purge_status, "Completed")
         self.assertEqual(profile.display_name, "Deleted User")

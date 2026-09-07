@@ -6,15 +6,14 @@
  "engine": "InnoDB",
  "field_order": [
   "user",
-  "email",
   "purpose",
   "otp_password_hash",
   "expires_at",
   "last_sent_at",
   "column_break_bfpd",
   "attempts",
-  "reset_token_hash",
-  "reset_token_expires_at",
+  "continuation_token_hash",
+  "continuation_expires_at",
   "is_used"
  ],
  "fields": [
@@ -29,14 +28,6 @@
   {
    "fieldname": "column_break_bfpd",
    "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "email",
-   "fieldtype": "Data",
-   "in_standard_filter": 1,
-   "label": "Email",
-   "options": "Email",
-   "reqd": 1
   },
   {
    "fieldname": "expires_at",
@@ -76,21 +67,22 @@
    "fieldtype": "Select",
    "in_standard_filter": 1,
    "label": "Purpose",
-   "options": "email_verification\npassword_reset\naccount_restore",
+   "options": "email_verification\npassword_reset\naccount_restore\ntwo_factor",
    "reqd": 1
   },
   {
-   "fieldname": "reset_token_hash",
+   "fieldname": "continuation_token_hash",
    "fieldtype": "Data",
-   "label": "Reset Token Hash",
+   "label": "Continuation Token Hash",
    "hidden": 1,
    "read_only": 1,
-   "length": 64
+   "length": 64,
+   "search_index": 1
   },
   {
-   "fieldname": "reset_token_expires_at",
+   "fieldname": "continuation_expires_at",
    "fieldtype": "Datetime",
-   "label": "Reset Token Expires At"
+   "label": "Continuation Expires At"
   }
  ],
  "grid_page_length": 50,
@@ -99,7 +91,7 @@
  "modified": "2026-06-23 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
- "name": "AOS Email Verification",
+ "name": "AOS Auth Challenge",
  "owner": "Administrator",
  "permissions": [
   {

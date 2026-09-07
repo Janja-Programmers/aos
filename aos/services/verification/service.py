@@ -135,8 +135,8 @@ class VerificationService:
     def get_my(self, *, user: str) -> dict[str, Any]:
         profile = frappe.db.get_value(
             "AOS Profile",
-            user,
-            ["is_verified", "verified_on"],
+            {"user": user},
+            ["is_verified"],
             as_dict=True,
         )
         if not profile:
@@ -146,7 +146,7 @@ class VerificationService:
         verification = get_latest_request_for_user(user)
         return {
             "is_verified": bool(profile.is_verified),
-            "verified_on": profile.verified_on,
+            "verified_on": getattr(verification, "verified_on", None) if verification else None,
             "verification": serialize_request(verification) if verification else None,
         }
 

@@ -168,7 +168,7 @@ class MapsService:
         return {
             "seller": seller_id,
             "seller_id": seller_id,
-            "user": display.get("user"),
+            "user": display.get("account_id"),
             "is_owner": bool(is_owner or seller.get("user") == viewer),
             "location_version": int(seller.get("location_version") or 0),
             "location": serialize_seller_location(seller),
@@ -400,7 +400,7 @@ def _serialize_pin(row: dict[str, Any], displays: dict[str, dict[str, Any]]) -> 
         "type": "seller",
         "seller": seller_id,
         "seller_id": seller_id,
-        "user": display.get("user"),
+        "user": display.get("account_id"),
         "display_name": display.get("display_name") or row.get("full_name"),
         "avatar": display.get("avatar") or row.get("user_image"),
         "business_category": row.get("business_category"),

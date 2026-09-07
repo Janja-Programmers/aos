@@ -27,7 +27,7 @@ class TestAuthPasswordResetAPI(AOSFeatureTestMixin, FrappeTestCase):
 
     def _reset_user(self, label, *, otp="123456", expired=False):
         user = self.make_user(label)
-        ver = ensure_ver_doc(user, email=user, purpose="password_reset")
+        ver = ensure_ver_doc(user, purpose="password_reset")
         ver.otp_password_hash = hash_otp(otp)
         ver.expires_at = add_to_date(now_datetime(), minutes=-1 if expired else 10)
         ver.is_used = 0
@@ -79,10 +79,10 @@ class TestAuthPasswordResetAPI(AOSFeatureTestMixin, FrappeTestCase):
 
     def test_expired_reset_token_is_stable(self):
         user = self._reset_user("token-expired")
-        ver = ensure_ver_doc(user, email=user, purpose="password_reset")
+        ver = ensure_ver_doc(user, purpose="password_reset")
         from aos.api.auth.verification import token_digest
-        ver.reset_token_hash = token_digest("expired-token")
-        ver.reset_token_expires_at = add_to_date(now_datetime(), minutes=-1)
+        ver.continuation_token_hash = token_digest("expired-token")
+        ver.continuation_expires_at = add_to_date(now_datetime(), minutes=-1)
         ver.save(ignore_permissions=True)
         with patch("aos.api.auth.password_reset.auth_rate_limit", return_value=None), patch("aos.api.auth.password_reset.auth_ip_limit", return_value=None):
             response = forgot_password_reset_impl(email=user, reset_token="expired-token", new_password="NewStrongPass123!", confirm_password="NewStrongPass123!")

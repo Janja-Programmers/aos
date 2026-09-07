@@ -61,7 +61,7 @@ class AOSUserBlock(Document):
         if not frappe.db.exists("User", user):
             frappe.throw(f"{label} does not exist.")
 
-        if not frappe.db.exists("AOS Profile", user):
+        if not frappe.db.exists("AOS Profile", {"user": user}):
             frappe.throw(f"{label} profile does not exist.")
 
         enabled = frappe.db.get_value("User", user, "enabled")
@@ -72,7 +72,7 @@ class AOSUserBlock(Document):
             frappe.throw(f"{label} has been deleted.")
 
         if self.status == ACTIVE_STATUS:
-            account_status = frappe.db.get_value("AOS Profile", user, "account_status") or "Active"
+            account_status = frappe.db.get_value("AOS Profile", {"user": user}, "account_status") or "Active"
             if account_status != "Active":
                 frappe.throw(f"{label} is unavailable.")
 

@@ -19,7 +19,6 @@ _ERROR_MAP = {
     "USER_BLOCKED": ("Chat action is not allowed.", "CHAT_ACCESS_DENIED", 403),
     "ACCOUNT_DISABLED": ("Chat action is not allowed.", "CHAT_ACCESS_DENIED", 403),
     "ACCOUNT_SUSPENDED": ("Chat action is not allowed.", "CHAT_ACCESS_DENIED", 403),
-    "ACCOUNT_DEACTIVATED": ("Chat action is not allowed.", "CHAT_ACCESS_DENIED", 403),
     "ACCOUNT_DELETED": ("Chat action is not allowed.", "CHAT_ACCESS_DENIED", 403),
     "ACCOUNT_DELETED_RESTORABLE": ("Chat action is not allowed.", "CHAT_ACCESS_DENIED", 403),
     "VALIDATION_ERROR": ("Invalid Chat request.", "CHAT_INVALID_REQUEST", 422),

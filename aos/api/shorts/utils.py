@@ -355,7 +355,7 @@ def serialize_short_row(
         "mentions": [] if author_deleted else (row.get("mentions") or []),
         "sound": row.get("sound"),
         "creator": {
-            "user": creator_display.get("user"),
+            "user": creator_display.get("account_id"),
             "display_name": creator_display.get("display_name"),
             "avatar": creator_display.get("avatar"),
             "is_deleted": creator_is_deleted,
@@ -404,7 +404,7 @@ def serialize_comment_row(
     return {
         "id": row.get("name"),
         "short": row.get("short"),
-        "user": author_display.get("user"),
+        "user": author_display.get("account_id"),
         "seller": public_seller_id_for_name(row.get("seller")) if row.get("seller") else None,
         "display_name": author_display.get("display_name"),
         "avatar": author_display.get("avatar"),

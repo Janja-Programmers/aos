@@ -39,8 +39,8 @@ class TestAOSMediaObject(FrappeTestCase):
             {
                 "doctype": "AOS Profile",
                 "user": email,
+                "display_name": "Media Object",
                 "account_status": "Active",
-                "is_deleted": 0,
             }
         ).insert(ignore_permissions=True)
         frappe.db.commit()

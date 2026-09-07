@@ -64,7 +64,7 @@ def register_impl(**kwargs):
             frappe.db.rollback()
             return pref_err
 
-        ver = ensure_ver_doc(user.name, email=email, purpose=EMAIL_VERIFICATION_PURPOSE)
+        ver = ensure_ver_doc(user.name, purpose=EMAIL_VERIFICATION_PURPOSE)
         issue_otp(ver, email=email, full_name=full_name, purpose=EMAIL_VERIFICATION_PURPOSE)
         return ok("If this email can be registered, a verification code has been queued.")
     except frappe.DuplicateEntryError:

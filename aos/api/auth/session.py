@@ -15,7 +15,9 @@ from .contracts import reject_unknown_fields
 from .locking import lock_user
 from .rate_limits import auth_ip_limit, auth_rate_limit
 from .serializers import serialize_auth_bootstrap, serialize_auth_payload, serialize_session
+from .session_control import aos_session_creation_scope
 from .session_policy import session_policy_error
+from .two_factor import issue_two_factor_challenge, requires_two_factor
 from .validators import require_identifier, require_password, validate_client_type
 from .verification import has_pending_email_verification
 
@@ -138,15 +140,14 @@ def login_impl(**kwargs):
         invariant = assert_auth_bootstrap(user_name, profile_exists=True)
         if invariant:
             return invariant
+        if requires_two_factor(user_name):
+            return issue_two_factor_challenge(user_name)
 
         # Finish all DB-backed response serialization before Frappe starts the
         # session; session creation may commit internally.
         bootstrap = serialize_auth_bootstrap(user_name)
-        frappe.flags.aos_auth_session_creation = True
-        try:
+        with aos_session_creation_scope():
             lm.post_login()
-        finally:
-            frappe.flags.aos_auth_session_creation = False
 
         sid = getattr(frappe.session, "sid", None)
         if not sid:

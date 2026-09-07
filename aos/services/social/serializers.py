@@ -120,11 +120,8 @@ def serialize_users(*, repository: SocialRepository, viewer: str, rows: Iterable
         followers = to_non_negative_int(row.get("total_followers"))
         following = to_non_negative_int(row.get("total_following"))
         item = {
-            "user": display.get("user") or public_account_id_for_user(target),
-            "account_id": display.get("user") or public_account_id_for_user(target),
-            "full_name": display.get("display_name") or row.get("display_name") or row.get("full_name") or "AOS User",
+            "account_id": display.get("account_id") or public_account_id_for_user(target),
             "display_name": display.get("display_name") or row.get("display_name") or row.get("full_name") or "AOS User",
-            "user_image": display.get("avatar"),
             "avatar": display.get("avatar"),
             "is_deleted": False,
             "is_live": bool(display.get("is_live")),
@@ -161,12 +158,8 @@ def serialize_blocked_users(rows: Iterable[dict[str, Any]]) -> list[dict[str, An
         items.append(
             {
                 "id": opaque_block_ref(row.get("block_name")),
-                "user": display.get("user") or public_account_id_for_user(target),
-                "blocked_user": display.get("user") or public_account_id_for_user(target),
-                "account_id": display.get("user") or public_account_id_for_user(target),
-                "full_name": "Deleted account" if unavailable else (display.get("display_name") or "AOS User"),
+                "account_id": display.get("account_id") or public_account_id_for_user(target),
                 "display_name": "Deleted account" if unavailable else (display.get("display_name") or "AOS User"),
-                "user_image": None if unavailable else display.get("avatar"),
                 "avatar": None if unavailable else display.get("avatar"),
                 "is_deleted": bool(unavailable),
                 "reason": str(row.get("reason") or ""),

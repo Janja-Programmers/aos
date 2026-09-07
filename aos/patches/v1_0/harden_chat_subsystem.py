@@ -230,7 +230,7 @@ def _deactivate_unavailable_participants() -> int:
         profile_rows = frappe.get_all(
             "AOS Profile",
             filters={"user": ["in", participants]},
-            fields=["user", "account_status", "is_deleted"],
+            fields=["user", "account_status"],
         ) if participants and _doctype_exists("AOS Profile") else []
         profile_map = {str(row.user): row for row in profile_rows}
 
@@ -241,8 +241,6 @@ def _deactivate_unavailable_participants() -> int:
             profile = profile_map.get(value)
             if not profile:
                 return True
-            if bool(int(profile.is_deleted or 0)):
-                return False
             status = str(profile.account_status or "Active")
             return status == "Active"
 

@@ -29,7 +29,6 @@ def account_availability_reason(user: str) -> str | None:
         return "unavailable"
     if state.get("exists") and (
         state.get("is_deleted")
-        or state.get("is_deactivated")
         or state.get("is_suspended")
     ):
         return "inactive"

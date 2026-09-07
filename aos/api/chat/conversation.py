@@ -211,7 +211,7 @@ def get_or_create_conversation_impl(**kwargs):
     if not other_reference:
         return fail("User is required.", error="VALIDATION_ERROR")
 
-    other_user = resolve_account_reference(other_reference, allow_legacy=True)
+    other_user = resolve_account_reference(other_reference)
     if not other_user:
         return fail("User not found.", error="NOT_FOUND", http_status=404)
 

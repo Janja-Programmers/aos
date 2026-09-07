@@ -84,11 +84,11 @@ def _presence_payload(user: str) -> dict:
     """
 
     summary = _get_user_summary(user)
-    unavailable = bool(summary.get("is_deleted") or summary.get("is_deactivated"))
+    unavailable = bool(summary.get("is_deleted"))
     last_active = None if unavailable else summary.get("last_active")
 
     return {
-        "user": summary["user"],
+        "account_id": summary["account_id"],
         "display_name": summary["display_name"],
         "avatar": summary["avatar"],
         "is_live": bool(summary.get("is_live")) if not unavailable else False,

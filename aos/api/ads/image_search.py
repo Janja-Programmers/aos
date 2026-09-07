@@ -144,7 +144,6 @@ def _load_active_ad_docs(ad_ids: List[str]) -> Dict[str, Any]:
         "ad.status = 'Active'",
         "seller.status = 'Active'",
         "seller_user.enabled = 1",
-        "COALESCE(profile.is_deleted, 0) = 0",
         "COALESCE(NULLIF(profile.account_status, ''), 'Active') = 'Active'",
         "(ad.expires_on IS NULL OR ad.expires_on >= %(today)s)",
     ]

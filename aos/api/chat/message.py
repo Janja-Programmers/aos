@@ -479,7 +479,7 @@ def _fetch_lives_bulk(
                l.status, l.is_active, l.viewer_count, l.started_at, l.ended_at,
                COALESCE(u.enabled, 0) AS host_enabled,
                COALESCE(NULLIF(p.account_status, ''), %(active)s) AS account_status,
-               COALESCE(p.is_deleted, 0) AS host_deleted
+               CASE WHEN p.account_status = 'Deleted' THEN 1 ELSE 0 END AS host_deleted
         FROM `tabAOS Live Stream` l
         LEFT JOIN `tabUser` u ON u.name = l.host_user
         LEFT JOIN `tabAOS Profile` p ON p.user = l.host_user
@@ -508,7 +508,7 @@ def _fetch_lives_bulk(
         if str(row.account_status or ACCOUNT_STATUS_ACTIVE) != ACCOUNT_STATUS_ACTIVE:
             continue
         display = user_map.get(host) or {}
-        if bool(display.get("is_deleted")) or bool(display.get("is_deactivated")):
+        if bool(display.get("is_deleted")):
             continue
         cover = row.cover_image
         if not cover and row.live_cover_media:
@@ -524,8 +524,8 @@ def _fetch_lives_bulk(
             "started_at": row.started_at,
             "ended_at": row.ended_at,
             "host": {
-                "account_id": display.get("account_id") or display.get("user"),
-                "user": display.get("user"),
+                "account_id": display.get("account_id") or display.get("account_id"),
+                "user": display.get("account_id"),
                 "display_name": display.get("display_name") or "AOS User",
                 "avatar": display.get("avatar"),
             },

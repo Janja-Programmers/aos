@@ -45,13 +45,13 @@ class AOSFeatureTestMixin:
             mark_aos_managed_website_user_creation(user)
             user.insert(ignore_permissions=True)
 
-        if not frappe.db.exists("AOS Profile", email):
+        if not frappe.db.exists("AOS Profile", {"user": email}):
             frappe.get_doc(
                 {
                     "doctype": "AOS Profile",
                     "user": email,
+                    "display_name": f"Feature {label.title()}",
                     "account_status": "Active",
-                    "is_deleted": 0,
                 }
             ).insert(ignore_permissions=True)
 
@@ -603,8 +603,8 @@ class AOSFeatureTestMixin:
         frappe.db.sql("DELETE FROM `tabAOS Location` WHERE location LIKE %s", (like,))
         frappe.db.sql("DELETE FROM `tabAOS Category` WHERE category_name LIKE %s", (like,))
 
-        frappe.db.sql("DELETE FROM `tabAOS Auth Identity` WHERE user LIKE %s OR email_at_link LIKE %s", (email_like, email_like))
-        frappe.db.sql("DELETE FROM `tabAOS Email Verification` WHERE user LIKE %s OR email LIKE %s", (email_like, email_like))
+        frappe.db.sql("DELETE FROM `tabAOS Auth Identity` WHERE user LIKE %s", (email_like,))
+        frappe.db.sql("DELETE FROM `tabAOS Auth Challenge` WHERE user LIKE %s", (email_like,))
         frappe.db.sql("DELETE FROM `tabAOS User Preference` WHERE user LIKE %s", (email_like,))
         frappe.db.sql("DELETE FROM `tabAOS Profile` WHERE user LIKE %s", (email_like,))
 

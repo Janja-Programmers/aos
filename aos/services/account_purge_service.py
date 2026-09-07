@@ -181,7 +181,7 @@ def _purge_auth_identity_rows(*, user: str, limit: int) -> int:
         "AOS Auth Identity", where_sql="user = %s", params=(user,), limit=limit
     )
     total += _delete_name_batch(
-        "AOS Email Verification", where_sql="user = %s", params=(user,), limit=limit
+        "AOS Auth Challenge", where_sql="user = %s", params=(user,), limit=limit
     )
     return total
 
@@ -440,7 +440,7 @@ def _remaining_bounded_private_rows(user: str) -> int:
         ("AOS Notification", "user = %s", (user,)),
         ("AOS Saved Search", "user = %s", (user,)),
         ("AOS Auth Identity", "user = %s", (user,)),
-        ("AOS Email Verification", "user = %s", (user,)),
+        ("AOS Auth Challenge", "user = %s", (user,)),
         ("AOS User Preference", "user = %s", (user,)),
         ("AOS Message Star", "user = %s", (user,)),
         ("AOS Message Reaction", "user = %s", (user,)),
@@ -500,7 +500,7 @@ def _release_profile_media(*, profile, user: str) -> int:
             media_id=media_id,
             user=user,
             attached_doctype=PROFILE_DOCTYPE,
-            attached_name=user,
+            attached_name=profile.name,
             system=True,
         )
     except MediaError as exc:
@@ -518,11 +518,8 @@ def _anonymize_profile(*, profile, user: str) -> dict[str, int]:
     profile.phone = ""
     profile.date_of_birth = None
     profile.gender = ""
-    profile.location = ""
     profile.delete_reason = ""
     profile.is_verified = 0
-    profile.verified_by = None
-    profile.verified_on = None
     if hasattr(profile, "lifecycle_reason"):
         profile.lifecycle_reason = "Permanent deletion completed"
     # Keep User.name/email as the stable internal Link key. Public serializers
@@ -559,7 +556,7 @@ def purge_expired_deleted_account(
     if not rows:
         return {"completed": False, "reason": "profile_missing"}
     profile = frappe.get_doc("AOS Profile", rows[0].name)
-    if str(profile.account_status or "") != ACCOUNT_STATUS_DELETED or not int(profile.is_deleted or 0):
+    if str(profile.account_status or "") != ACCOUNT_STATUS_DELETED:
         return {"completed": False, "reason": "not_deleted"}
     if not profile.restore_deadline or now_datetime() <= profile.restore_deadline:
         return {"completed": False, "reason": "restore_window_open"}

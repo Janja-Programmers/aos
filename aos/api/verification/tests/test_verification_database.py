@@ -150,7 +150,7 @@ class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
             request.save(ignore_permissions=True)
         request.reload()
         self.assertEqual(request.status, "Pending")
-        self.assertFalse(int(frappe.db.get_value("AOS Profile", self.owner, "is_verified") or 0))
+        self.assertFalse(int(frappe.db.get_value("AOS Profile", {"user": self.owner}, "is_verified") or 0))
 
     def test_approval_projects_profile_and_notification_without_private_review_data(self):
         submitted = self._submit_individual()
@@ -159,7 +159,7 @@ class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(approved.status, "Approved")
         self.assertTrue(approved.verified_by)
         self.assertTrue(approved.verified_on)
-        self.assertTrue(int(frappe.db.get_value("AOS Profile", self.owner, "is_verified") or 0))
+        self.assertTrue(int(frappe.db.get_value("AOS Profile", {"user": self.owner}, "is_verified") or 0))
 
         notification = frappe.db.get_value(
             "AOS Notification",
@@ -269,7 +269,7 @@ class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
 
     def test_suspended_account_cannot_submit(self):
         frappe.set_user("Administrator")
-        frappe.db.set_value("AOS Profile", self.owner, "account_status", "Suspended")
+        frappe.db.set_value("AOS Profile", {"user": self.owner}, "account_status", "Suspended")
         frappe.set_user(self.owner)
         response = self._submit_individual()
         self.assertFalse(response.get("ok"), response)

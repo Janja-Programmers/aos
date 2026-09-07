@@ -16,7 +16,7 @@ def ensure_user_available(user: str, *, target: bool = False):
     if not user:
         return fail("Account unavailable.", error="ACCOUNT_DISABLED", http_status=404 if target else 403)
     row = frappe.db.get_value("User", user, ["name", "enabled"], as_dict=True)
-    if not row or int(row.enabled or 0) != 1 or not frappe.db.exists("AOS Profile", user):
+    if not row or int(row.enabled or 0) != 1 or not frappe.db.exists("AOS Profile", {"user": user}):
         return fail(
             "Account unavailable.",
             error="ACCOUNT_DISABLED",

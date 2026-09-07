@@ -115,7 +115,7 @@ def _eligible_ad_rows(ad_ids: list[str]) -> tuple[list[Any], dict[str, Any], dic
         frappe.get_all(
             "AOS Profile",
             filters={"user": ["in", seller_users]},
-            fields=["user", "account_status", "is_deleted"],
+            fields=["user", "account_status"],
         )
         if seller_users
         else []
@@ -142,8 +142,6 @@ def _row_is_publicly_available(row: Any, *, sellers: dict[str, Any], users: dict
         return False
     profile = profiles.get(seller_user)
     if profile:
-        if bool(int(profile.get("is_deleted") or 0)):
-            return False
         account_status = str(profile.get("account_status") or ACCOUNT_STATUS_ACTIVE)
         if account_status != ACCOUNT_STATUS_ACTIVE:
             return False
