@@ -49,12 +49,18 @@ class TestRecoverableAccountDeletion(AOSFeatureTestMixin, FrappeTestCase):
     def test_delete_restore_preserves_social_graph_counts_and_verification(self):
         owner = self.make_user("owner")
         follower = self.make_user("follower")
+        blocked_user = self.make_user("blocked")
         edge = self._follow(follower=follower, following=owner)
+
+        # AOS Social intentionally removes follow edges when either participant
+        # blocks the other. Exercise follower preservation and block preservation
+        # with independent relationships so this fixture does not invalidate its
+        # own follower before the account-deletion assertions begin.
         block = frappe.get_doc(
             {
                 "doctype": "AOS User Block",
-                "blocker_user": follower,
-                "blocked_user": owner,
+                "blocker_user": owner,
+                "blocked_user": blocked_user,
                 "status": "Active",
             }
         )
