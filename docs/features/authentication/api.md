@@ -54,7 +54,6 @@ Authentication does **not** own authorization policy for marketplace features, s
 | Google | Google OIDC ID token | RS256/JWKS + issuer/audience/expiry + verified email | web cookie or mobile `sid` |
 | Apple | Apple OIDC identity token | RS256/JWKS + issuer/audience/expiry | web cookie or mobile `sid` |
 
-Phone login and username login are not supported by the AOS Authentication contract.
 
 ### Major flows
 
@@ -175,9 +174,9 @@ serializers.py -> explicit public response
 | `rate_limits.py` | atomic Redis INCR+EXPIRE via Lua, site-keyed HMAC non-IP key dimensions, fail-closed dependency behavior |
 | `locking.py` | account-scoped `User` row lock used by security mutations/session creation |
 | `serializers.py` | allowlisted user/session/preferences/roles/seller response shape; optional avatar resolution degrades safely |
-| `contracts.py` | rejects deprecated aliases and unknown request keys |
+| `contracts.py` | enforces the exact request-key allowlist and rejects unknown fields |
 | `validators.py` | strict strings, email normalization, client type and password input bounds plus Frappe configured strength-policy delegation |
-| `aos/install.py` | fresh-site default disabling Frappe public signup |
+| `aos/install.py` | disables generic Frappe Website signup so AOS registration remains the public signup path |
 
 ---
 
@@ -249,7 +248,7 @@ Purpose: user-owned Localization selection.
 | `currency` | Link/master value | yes | schema-defined | Localization currency |
 | `location` | Link `AOS Location` | no | linked lookup | optional market location owned/validated by Localization |
 
-Creation/default resolution belongs to Localization. Authentication initializes this row only while creating a new user. The DocType uses `field:user` naming and a unique `user` field; the Localization final-state patch defensively verifies the DB uniqueness constraint. Missing preference on an existing account returns the single public invariant error `ACCOUNT_BOOTSTRAP_UNAVAILABLE` and is not silently recreated on a high-frequency request. Preference cache is shared Redis with DB fallback; Authentication does not own its normalization rules.
+Creation/default resolution belongs to Localization. Authentication initializes this row only while creating a new user. The DocType uses `field:user` naming and a database-enforced unique `user` field. Missing preference on an existing account returns the single public invariant error `ACCOUNT_BOOTSTRAP_UNAVAILABLE` and is not silently recreated on a high-frequency request. Preference cache is shared Redis with DB fallback; Authentication does not own its normalization rules.
 
 ### `AOS Auth Challenge`
 
@@ -843,10 +842,10 @@ Auth security logs hash identifiers/users before logging. Password-policy/reuse 
 
 Authentication reads/uses Localization in two places:
 
-1. **New email/password registration** — optional `country`, `currency`, `language` hints are passed to the finalized Localization `resolve_guest_context` service. HTTP geo/language hints are consumed by that same Localization boundary when explicit values are absent.
+1. **New email/password registration** — optional `country`, `currency`, `language` hints are passed to the current Localization `resolve_guest_context` service. HTTP geo/language hints are consumed by that same Localization boundary when explicit values are absent.
 2. **New social account creation** — the same optional hints and the same Localization resolution are used.
 
-`login` and `me` read the existing `AOS User Preference` through the finalized preference/Localization serializer. They do not independently normalize codes, choose defaults, or create/repair preference rows.
+`login` and `me` read the existing `AOS User Preference` through the current preference/Localization serializer. They do not independently normalize codes, choose defaults, or create/repair preference rows.
 
 A missing profile or preference on an established account is operational data corruption/configuration drift and returns `ACCOUNT_BOOTSTRAP_UNAVAILABLE`. This avoids surprising writes and default changes on every application bootstrap.
 
@@ -860,7 +859,7 @@ Frontend implementation must use only these canonical request keys:
 - register: `email`, `password`, `full_name`, optional `country`, `currency`, `language`;
 - social: `id_token`, `client_type`, optional first-account Localization hints;
 - verification/recovery/restore: exact keys documented above;
-- no compatibility aliases.
+- clients send only the documented request fields.
 
 Frontend rules:
 
@@ -881,96 +880,7 @@ Frontend rules:
 
 ---
 
-## I. Removed legacy contracts
-
-| Removed | Replacement | Frontend action required | Postman action required |
-|---|---|---|---|
-| password login by username/User.name | `identifier` containing email only | send email in `identifier` | update login examples/tests |
-| login request aliases such as `email`, `username`, `usr` | exact `identifier` | remove aliases | remove aliases |
-| arbitrary/ignored Auth kwargs | `AUTH_UNKNOWN_FIELD` | send exact keys only | remove old keys |
-| duplicate registration `ALREADY_EXISTS` existence signal | same accepted registration acknowledgement for new/existing/racing normalized email | do not branch on account existence; direct existing users to login/recovery when needed | update duplicate-registration examples/tests |
-| Localization hints on existing password login | existing authoritative User Preference | stop sending country/currency/language to login | remove from login request |
-| login/`me` bootstrap repair | profile/preference invariant checks | ensure signup/social onboarding succeeds; handle invariant errors operationally | remove repair expectations |
-| fast SHA-256 six-digit OTP storage | Frappe slow password hash in `otp_password_hash` | none | none |
-| synchronous OTP provider send (`now=True`) | Frappe Email Queue in request transaction | UI can say queued/sent generically | update success text |
-| public resend cooldown/account-active distinctions | generic resend success | do not branch on account state | update expected responses |
-| password reset that left existing sessions alive | reset revokes all sessions | force re-login | assert re-login contract |
-| wildcard Redis session deletion | exact `sid` hash invalidation after commit | none | none |
-| social identity by mutable email alone | durable provider `sub` in AOS Auth Identity | no client change beyond valid ID token | no synthetic email identity assumptions |
-| hand-written JWT/RSA parsing | PyJWT + JWKS | none | none |
-| direct Frappe Website User `/api/method/login` | `aos.api.v1.auth.login` | never call generic Frappe login | remove generic Frappe login requests |
-| Frappe public `sign_up` / reset-key recovery / Website User password methods | versioned AOS registration/recovery/change-password endpoints; generic paths guarded | never call those Frappe Website auth methods | remove them from collections |
-| historical `add_auth_indexes` migration/dedupe patch | final DocType schema/invariants | none | none |
-| historical `finalize_auth_identity_privacy` upgrade transformer | final privacy-safe `AOS Auth Identity` / `AOS Auth Challenge` DocTypes directly on clean install | none | remove any assumption that old identity/email-verification data is migrated |
-| password-change `logout_all` option | fixed policy: keep current session, revoke all other sessions | remove toggle/field | remove `logout_all` |
-| OTP aliases such as `code` / `verification_code` | exact `otp` key | send only `otp` | remove aliases |
-| social-login `access_token` alias | provider `id_token` only | send ID token only | remove access-token field |
-| 2FA `remember_me` or other session-option aliases | exact `challenge_token`, `otp`, `client_type` | remove unsupported options | remove unsupported fields |
-
----
-
-## J. Patches / installation
-
-AOS is targeting a **new-site installation**, so Authentication final state comes from authoritative DocType/controller/hook/install definitions rather than historical upgrade transformations.
-
-### Removed Authentication patches
-
-#### `aos.patches.v1_0.add_auth_indexes`
-
-Action: **REMOVE** (already absent from the repository and patch list).
-
-Reason: it belonged to an older Authentication schema, deduplicated historical challenge rows and installed indexes/uniqueness after data already existed. A fresh site cannot contain that historical state.
-
-Permanent replacement:
-
-- `AOS Auth Challenge` uses deterministic `authc-<sha256(user + NUL + purpose)>` primary naming with renaming disabled, so one row per user/purpose is intrinsic to the final model;
-- `AOS Auth Challenge.user` and `continuation_token_hash` carry permanent `search_index` metadata;
-- final OTP/token fields live directly in the DocType.
-
-#### `aos.patches.v1_0.finalize_auth_identity_privacy`
-
-Action: **REMOVE**.
-
-Reason: this patch existed only to transform previously persisted social identity rows from the historical raw-provider-subject/email schema, rename old identity documents, and clear retired `AOS Email Verification` records. None of those historical records/columns can exist on a clean AOS installation using the current DocType source. Keeping the patch would make the new-site path carry upgrade baggage with no final-state responsibility.
-
-Permanent replacement:
-
-- `AOS Auth Identity` directly stores only `provider`, `user`, and the opaque unique `user_provider_key`;
-- its primary name is generated from a site-keyed HMAC of provider + OIDC subject;
-- raw provider subject/email are never part of the final schema;
-- `AOS Auth Challenge` is the only Authentication temporary challenge model.
-
-### Remaining Authentication-specific patches
-
-**None.** Authentication no longer requires a historical data-transformation patch to reach its final schema on a fresh site.
-
-### Cross-feature patch consumed by Authentication
-
-`aos.patches.v1_0.install_localization_schema` is **KEEP**, but it is Localization-owned rather than Authentication-owned. It installs/defensively verifies final database structures that are not fully expressible as DocType field metadata: the composite AOS Location uniqueness/read index and the one-user preference uniqueness contract. Authentication consumes `AOS User Preference` through the finalized Localization service, so this patch remains genuinely required for the clean-site Localization data model; it is not retained for old Authentication compatibility.
-
-`aos.patches.v1_0.harden_accounts_subsystem` remains in the repository because it belongs to the separately owned Accounts feature. Authentication does not rely on that patch as its installation mechanism, and this Authentication review does not broaden scope by deleting Accounts migration history.
-
-### Permanent fresh-site definitions
-
-- Auth DocType schema/field indexes/permissions: `aos/aos/doctype/aos_auth_challenge/*` and `aos/aos/doctype/aos_auth_identity/*`;
-- User/Profile/Preference uniqueness: authoritative owning DocTypes plus the Localization final-state uniqueness verification above;
-- generic Frappe signup disabled: `aos.install.after_install` sets `Website Settings.disable_signup = 1`;
-- generic Website User auth/recovery bypasses guarded: `hooks.py` `on_login`, `extend_doctype_class`, and `override_whitelisted_methods`;
-- no ad-hoc Authentication install SQL is used.
-
-Fresh-install expectation:
-
-```text
-bench new-site ...
-bench --site <site> install-app aos
-bench --site <site> migrate
-```
-
-must derive Authentication DocTypes, permissions, hooks and final schema from the app definitions above. Authentication does not depend on an upgrade-only data transformation.
-
----
-
-## K. Scalability / high availability
+## I. Scalability / high availability
 
 ### Application-level scalability
 
@@ -1049,7 +959,7 @@ The application changes do **not** prove capacity for one million users or one m
 
 ---
 
-## L. Testing
+## J. Testing
 
 Authentication-focused test modules:
 
@@ -1063,7 +973,7 @@ Authentication-focused test modules:
 - `test_two_factor_api.py` — continuation-token/OTP consumption, replay safety, session creation and resend-cooldown mail suppression;
 - `test_delete_restore_api.py` — delete/restore validation and generic restore proof errors;
 - `test_auth_security_contracts.py` — site-namespaced atomic Redis limiter/fail-closed contract, generic Frappe login + parallel auth-path guards, install default, source safety invariants;
-- `aos/tests/test_auth_database_contracts.py` — final fresh-site DocType/security/locking/patch contracts.
+- `aos/tests/test_auth_database_contracts.py` — DocType, security, locking, uniqueness, and database-contract checks.
 
 Recommended focused command from `frappe-bench`:
 
@@ -1086,4 +996,4 @@ Full backend command:
 bench run-tests --app aos
 ```
 
-Fresh-site verification should run install/migrate before the focused/full suite. Source-only checks such as Python compilation, JSON parsing, API-documentation validation, and forbidden-pattern scans are useful but are not substitutes for the Frappe/MariaDB/Redis tests above.
+Run the focused and full suites against a migrated Frappe site with its normal MariaDB and Redis dependencies available. Source-only checks such as Python compilation, JSON parsing, API-documentation validation, and forbidden-pattern scans are useful but are not substitutes for the Frappe/MariaDB/Redis tests above.

@@ -14,7 +14,7 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
-This is the single authoritative backend document for the AOS Localization feature. Other feature documents may mention Localization ownership, but request/response contracts, data invariants, caching, migrations, and operational behavior are defined here.
+This is the single authoritative backend document for the AOS Localization feature. Other feature documents may mention Localization ownership, but request/response contracts, data invariants, caching, and operational behavior are defined here.
 
 ## A. Feature overview
 
@@ -110,7 +110,6 @@ database transaction + post-commit cache invalidation
 | `aos/aos/doctype/aos_location/aos_location.py` | Direct DocType invariant enforcement for locations. |
 | `aos/aos/doctype/aos_user_preference/aos_user_preference.py` | Direct DocType invariant enforcement for preferences, including Link validation and country/location consistency. |
 | `aos/aos/doctype/aos_settings/aos_settings.py` | Validates Localization default settings and invalidates settings/reference cache on change. |
-| `aos/patches/v1_0/install_localization_schema.py` | Clean-site post-model-sync installation of the final composite location uniqueness constraint, hot-read index, and defensive per-user preference uniqueness check. |
 
 ### Stateless / multi-node design
 
@@ -160,7 +159,7 @@ AOS Settings (Single)
 - read index `(country, is_active, sort_order, location)` via `idx_aos_location_country_active_order` or exact equivalent;
 - no extra country-only or preference market/location indexes are installed by Localization; the schema keeps only indexes justified by current query paths.
 
-**Lifecycle/deletion:** direct System Manager CRUD follows Frappe lifecycle. The public list never returns inactive rows. Preference links are validated by controller/service logic and direct DocType validation; a location must exist, be active, and belong to the stored country. This clean-install contract intentionally contains no historical-data repair path.
+**Lifecycle/deletion:** direct System Manager CRUD follows Frappe lifecycle. The public list never returns inactive rows. Preference links are validated by controller/service logic and direct DocType validation; a location must exist, be active, and belong to the stored country.
 
 ### AOS User Preference
 
@@ -418,7 +417,7 @@ Possible source values are `request`, `geoip`, `accept_language`, `default`, and
 | `limit` | integer/string integer | No | 20 | 1–100 | Maximum rows returned. |
 | `offset` | integer/string integer | No | 0 | 0–10,000 | Offset pagination position. |
 
-Removed aliases `search` and `start` are not accepted.
+Accepted query fields are `country`, `q`, `limit`, and `offset`; unknown request fields are rejected.
 
 Example:
 
@@ -461,7 +460,7 @@ Success `data`:
 
 ### Related authenticated preference endpoints
 
-These routes are owned by Accounts but are part of the finalized frontend Localization contract.
+These routes are owned by Accounts but are part of the current frontend Localization contract.
 
 #### `aos.api.v1.accounts.get_my_preference`
 
@@ -527,77 +526,6 @@ POST aos.api.v1.accounts.update_my_preference
 - Do not request `limit > 100` or `offset > 10000`.
 - Branch on stable `error` codes and HTTP status, not English message text.
 - GET calls are retry-safe. Preference update is a deterministic partial update; ordinary transport retry is safe in the sense that setting the same values twice converges to the same state, but clients should still avoid uncontrolled retry storms.
-
-### Removed legacy contracts
-
-#### Removed: `aos.api.v1.localization.resolve_preference_context`
-
-- **Replacement:** `aos.api.v1.localization.resolve_locale_context`.
-- **Frontend action required:** remove every call/reference to `resolve_preference_context`; it no longer exists.
-
-#### Removed: POST access to Localization read endpoints
-
-- **Replacement:** GET only for all three Localization routes.
-- **Frontend action required:** send GET requests for bundle, resolver, and locations.
-
-#### Removed: `get_locations.search`
-
-- **Replacement:** `q`.
-- **Frontend action required:** rename query key to `q`. Supplying `search` returns `LOCALIZATION_UNKNOWN_FIELD`.
-
-#### Removed: `get_locations.start`
-
-- **Replacement:** `offset`.
-- **Frontend action required:** rename query key to `offset`. Supplying `start` returns `LOCALIZATION_UNKNOWN_FIELD`.
-
-#### Removed: authenticated request locale overrides
-
-- **Replacement:** no locale override arguments on authenticated resolver/location calls; update the stored account preference through `update_my_preference`.
-- **Frontend action required:** stop sending authenticated `country`, `currency`, or `language` to `resolve_locale_context`; stop sending authenticated `country` to `get_locations`.
-
-#### Removed: display-name / underscore language compatibility aliases
-
-- **Old:** explicit language validation could fall back to `Language.language_name` and normalized underscore tags to hyphenated tags.
-- **Replacement:** explicit requests use the bundle `id` / `Language.name` or configured `language_code`; `Accept-Language` continues to parse standards-style hyphenated tags separately.
-- **Frontend action required:** send the backend-provided language `id` rather than a display label or an invented underscore-form locale.
-
-#### Removed: rich resolver objects
-
-- **Old:** nested country/currency/language display objects.
-- **Replacement:** canonical ID strings plus `sources`.
-- **Frontend action required:** map IDs to bundle metadata when display labels/symbols/flags are required.
-
-#### Removed: rich country object in location-list response
-
-- **Replacement:** `data.country` is the canonical country ID string.
-- **Frontend action required:** map it through the bundle if a label/flag is required.
-
-#### Removed: public `sort_order` in location items
-
-- **Replacement:** location items contain only `id`, `name`, and canonical `country`; the backend still applies configured sort order internally.
-- **Frontend action required:** do not read or sort by `sort_order`; preserve the deterministic order returned by the backend.
-
-#### Removed: locale bundle schema `1.1` compatibility fields
-
-- **Replacement:** schema `2.0`.
-- **Removed item fields:** currency/language `enabled` and `is_default`.
-- **Frontend action required:** all returned currencies/languages are already selectable/enabled; compare `data.defaults.currency` / `data.defaults.language` to item IDs when default highlighting is needed.
-
-#### Removed: rich stored-preference objects
-
-- **Old:** preference country/currency/language nested metadata and location nested object.
-- **Replacement:** ID-only `country`, `currency`, `language`, nullable location ID, and `is_country_locked`.
-- **Frontend action required:** use bundle/location lookups for display metadata.
-
-#### Removed: read/update compatibility repair for missing preferences
-
-- **Replacement:** Auth bootstrap owns preference creation; account reads/updates return `PREFERENCE_MISSING` when the invariant is absent.
-- **Frontend action required:** do not rely on `get_my_preference` or `update_my_preference` to create state. Treat `PREFERENCE_MISSING` as an account/bootstrap integrity condition.
-
-#### Removed: missing-`location` preference-schema compatibility
-
-- **Replacement:** the current `AOS User Preference` schema always contains the nullable `location` Link field. Runtime reads no longer probe DocType metadata and writes no longer conditionally skip this field.
-- **Frontend action required:** none beyond following the canonical preference response; this removes backend schema compatibility only.
 
 ## F. Important invariants
 
@@ -677,12 +605,12 @@ Capacity must still be validated and sized using production-like load tests and 
 
 ### Main Localization test modules
 
-- `aos/api/localization/tests/test_api.py` — exact v2 response shape, GET-era request contract, removed aliases/endpoint, guest/auth resolution, pagination, rate limiting, error-safety.
+- `aos/api/localization/tests/test_api.py` — exact schema-2.0 response shape, GET request contract, guest/auth resolution, strict request fields, pagination, rate limiting, and error safety.
 - `aos/api/localization/tests/test_service.py` — canonical validation, header bounds, independent resolution, cache fallback/hit, bounded bundle failure, ID-only serialization.
 - `aos/aos/doctype/aos_location/test_aos_location.py` — country canonicalization, label normalization, country-scoped uniqueness.
 - `aos/aos/doctype/aos_user_preference/test_aos_user_preference.py` — Link integrity, canonicalization, unique user, cross-country/inactive location rejection, Auth bootstrap idempotency.
 - `aos/api/accounts/tests/test_preferences.py` — partial-update preservation, current-schema hot path, strict read fields, `FOR UPDATE`, no read/update auto-creation, localization observability fields, rollback on unexpected mid-operation failure.
-- `aos/tests/test_localization_database_contracts.py` — required exact indexes/unique constraints and idempotency of the clean-site Localization schema installation patch.
+- `aos/tests/test_localization_database_contracts.py` — required indexes, uniqueness constraints, and database contract invariants.
 
 ### Commands
 
@@ -701,16 +629,4 @@ Full backend regression suite:
 
 ```bash
 bench run-tests --app aos
-```
-
-For the intended clean/new-site deployment, install the app normally so model sync and the listed post-model-sync patches run. The Localization-specific schema patch is:
-
-```text
-aos.patches.v1_0.install_localization_schema
-```
-
-It installs only the final constraints/indexes required by the current contract and is idempotent. There is intentionally no legacy duplicate cleanup, stale-preference repair, old-index removal, or post-Accounts reconciliation path because this release targets a new site rather than an upgraded historical database. After installation, normal future releases should still run:
-
-```bash
-bench --site <site> migrate
 ```
