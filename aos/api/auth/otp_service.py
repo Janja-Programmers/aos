@@ -32,6 +32,26 @@ def resend_allowed(ver) -> bool:
     return (now_datetime() - last_sent).total_seconds() >= RESEND_COOLDOWN_SECONDS
 
 
+def otp_is_active(ver) -> bool:
+    """Return whether a challenge has a reusable unexpired OTP."""
+    if not ver or int(getattr(ver, "is_used", 0) or 0) == 1:
+        return False
+    if not str(getattr(ver, "otp_password_hash", "") or ""):
+        return False
+    if int(getattr(ver, "attempts", 0) or 0) >= MAX_ATTEMPTS:
+        return False
+    expires_at = getattr(ver, "expires_at", None)
+    return bool(expires_at and now_datetime() <= expires_at)
+
+
+def dummy_otp_issue_work() -> None:
+    """Perform one slow OTP hash for enumeration-sensitive no-account paths."""
+    try:
+        hash_otp("000000")
+    except Exception:
+        pass
+
+
 def persist_otp(ver) -> str:
     otp = generate_otp()
     ver.otp_password_hash = hash_otp(otp)

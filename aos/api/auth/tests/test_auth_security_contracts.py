@@ -39,6 +39,46 @@ class TestAuthSecurityContracts(AOSFeatureTestMixin, FrappeTestCase):
             response = auth_rate_limit(operation="login", dimension="ip", value="127.0.0.1", limit=2, message="limited")
         self.assertEqual(response.get("error"), "SERVICE_UNAVAILABLE")
 
+    def test_non_ip_rate_limit_dimensions_do_not_expose_identifiers_in_redis_keys(self):
+        cache = Mock()
+        cache.make_key.side_effect = lambda key: key
+        cache.eval.return_value = 1
+        subject = "provider-subject-123456"
+        with patch("frappe.cache", return_value=cache):
+            response = auth_rate_limit(
+                operation="google_login",
+                dimension="subject",
+                value=subject,
+                limit=2,
+                message="limited",
+            )
+        self.assertIsNone(response)
+        redis_key = str(cache.make_key.call_args.args[0])
+        self.assertNotIn(subject, redis_key)
+        self.assertIn("hmac256", redis_key)
+
+    def test_oidc_unknown_kid_waiting_on_another_node_refresh_is_dependency_failure(self):
+        from aos.api.auth.oidc import OIDCDependencyError, verify_rs256_token
+
+        cache = Mock()
+        cache.make_key.return_value = b"site-aos:google-jwks:refresh-guard"
+        cache.set.return_value = False
+        stale_jwks = {"keys": [{"kid": "old-provider-key"}]}
+        with patch("aos.api.auth.oidc.jwt.get_unverified_header", return_value={"alg": "RS256", "kid": "rotated-key"}), patch(
+            "aos.api.auth.oidc._load_jwks", return_value=stale_jwks
+        ) as load_jwks, patch("frappe.cache", return_value=cache):
+            with self.assertRaises(OIDCDependencyError):
+                verify_rs256_token(
+                    "opaque-id-token",
+                    audiences=["client-id"],
+                    issuer="https://issuer.example",
+                    jwks_url="https://issuer.example/jwks",
+                    cache_key="google-jwks",
+                )
+
+        self.assertEqual(load_jwks.call_count, 2)
+        self.assertFalse(any(call.kwargs.get("force_refresh") for call in load_jwks.call_args_list))
+
     def test_managed_website_user_creation_bypasses_only_framework_global_throttle(self):
         from aos.api.auth.user_controller import mark_aos_managed_website_user_creation
 

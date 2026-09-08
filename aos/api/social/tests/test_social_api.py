@@ -33,7 +33,7 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
         )
         frappe.db.set_value(
             "AOS Profile",
-            {"user": self.target},
+            self.target,
             "display_name",
             self.target_search_name,
             update_modified=False,

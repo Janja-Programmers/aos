@@ -126,7 +126,7 @@ def _serialize_user(user_id: str, user_map: Dict[str, dict]) -> Dict[str, Any]:
     user = user_map.get(user_id)
 
     return {
-        "sender": user.get("account_id") if user else None,
+        "sender": user.get("user") if user else None,
         "sender_display_name": (
             user.get("display_name")
             if user
@@ -361,8 +361,8 @@ def _fetch_shorts_bulk(
         owner = owner_map.get(owner_id) or {}
         result[row.get("name")] = {
             "id": row.get("name"),
-            "owner": owner.get("account_id"),
-            "owner_account_id": owner.get("account_id"),
+            "owner": owner.get("user"),
+            "owner_account_id": owner.get("account_id") or owner.get("user"),
             "owner_display_name": owner.get("display_name"),
             "owner_avatar": owner.get("avatar"),
             "caption": row.get("caption") or "",

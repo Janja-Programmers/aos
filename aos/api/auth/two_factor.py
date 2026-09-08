@@ -14,11 +14,11 @@ from frappe.utils import now_datetime
 from aos.api.shared.account_status import ensure_account_active, get_account_state
 from aos.api.shared.responses import fail, ok
 
-from .account_helpers import assert_auth_bootstrap
+from .account_helpers import load_auth_bootstrap_preference
 from .constants import TWO_FACTOR_VERIFY_LIMIT_PER_HOUR_PER_CHALLENGE, TWO_FACTOR_VERIFY_LIMIT_PER_HOUR_PER_IP
 from .contracts import reject_unknown_fields
 from .locking import lock_user
-from .otp_service import issue_otp, verify_public_otp
+from .otp_service import issue_otp, otp_is_active, resend_allowed, verify_public_otp
 from .rate_limits import auth_ip_limit, auth_rate_limit
 from .serializers import serialize_auth_bootstrap, serialize_session
 from .session_control import aos_session_creation_scope
@@ -45,7 +45,11 @@ def issue_two_factor_challenge(user: str):
     if not ver:
         return fail("Authentication service temporarily unavailable.", error="SERVICE_UNAVAILABLE")
     profile_name = frappe.db.get_value("AOS Profile", {"user": user}, "display_name") or ""
-    issue_otp(ver, email=user, full_name=profile_name, purpose=TWO_FACTOR_PURPOSE)
+    # Repeated successful first-factor requests within the resend cooldown do
+    # not create an email flood. A fresh continuation token may reuse the still
+    # valid OTP; used/expired/missing OTP state always receives a new code.
+    if not otp_is_active(ver) or resend_allowed(ver):
+        issue_otp(ver, email=user, full_name=profile_name, purpose=TWO_FACTOR_PURPOSE)
     token = generate_continuation_token()
     ver.continuation_token_hash = token_digest(token)
     ver.continuation_expires_at = compute_continuation_expiry()
@@ -139,10 +143,13 @@ def verify_two_factor_impl(**kwargs):
         policy_err = session_policy_error(user, login_manager=lm)
         if policy_err:
             return policy_err
-        invariant = assert_auth_bootstrap(user, profile_exists=bool(state.get("exists")))
+        preference, invariant = load_auth_bootstrap_preference(
+            user,
+            profile_exists=bool(state.get("exists")),
+        )
         if invariant:
             return invariant
-        bootstrap = serialize_auth_bootstrap(user)
+        bootstrap = serialize_auth_bootstrap(user, preference=preference)
 
         # Consume both factors only after all pre-session checks pass. Frappe may
         # commit while making the session, so successful challenge state must be

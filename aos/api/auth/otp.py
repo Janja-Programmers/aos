@@ -10,7 +10,7 @@ from .account_helpers import profile_display_name, user_for_email
 from .constants import RESEND_LIMIT_PER_HOUR_PER_EMAIL, VERIFY_LIMIT_PER_HOUR_PER_EMAIL
 from .contracts import reject_unknown_fields
 from .locking import lock_user
-from .otp_service import issue_otp, public_otp_invalid, resend_allowed, verify_public_otp
+from .otp_service import dummy_otp_issue_work, issue_otp, public_otp_invalid, resend_allowed, verify_public_otp
 from .rate_limits import auth_ip_limit, auth_rate_limit
 from .validators import require_email, require_otp
 from .verification import EMAIL_VERIFICATION_PURPOSE, ensure_ver_doc, get_ver_doc
@@ -77,13 +77,16 @@ def resend_email_otp_impl(**kwargs):
         return limited
     user_name = user_for_email(email)
     if not user_name:
+        dummy_otp_issue_work()
         return ok(GENERIC_RESEND_MESSAGE)
     try:
         lock_user(user_name)
         if int(frappe.db.get_value("User", user_name, "enabled") or 0) == 1:
+            dummy_otp_issue_work()
             return ok(GENERIC_RESEND_MESSAGE)
         ver = ensure_ver_doc(user_name, purpose=EMAIL_VERIFICATION_PURPOSE, for_update=True)
         if not resend_allowed(ver):
+            dummy_otp_issue_work()
             return ok(GENERIC_RESEND_MESSAGE)
         full_name = profile_display_name(user_name)
         issue_otp(ver, email=email, full_name=full_name, purpose=EMAIL_VERIFICATION_PURPOSE)

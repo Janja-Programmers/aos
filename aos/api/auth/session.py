@@ -9,7 +9,7 @@ from frappe.utils.password import check_password, passlibctx
 from aos.api.shared.account_status import deleted_account_response, ensure_account_active, get_account_state
 from aos.api.shared.responses import fail, ok
 
-from .account_helpers import assert_auth_bootstrap, safe_log_auth_event, user_for_email
+from .account_helpers import account_enabled, load_auth_bootstrap_preference, safe_log_auth_event, user_for_email
 from .constants import LOGIN_LIMIT_PER_HOUR_PER_EMAIL, LOGIN_LIMIT_PER_HOUR_PER_IP
 from .contracts import reject_unknown_fields
 from .locking import lock_user
@@ -50,19 +50,18 @@ def _dummy_password_work(password: str) -> None:
         pass
 
 
-def _inactive_error_after_password_proof(user_name: str):
+def _inactive_error_after_password_proof(user_name: str, *, enabled: bool):
     state = get_account_state(user_name)
     if state.get("is_deleted"):
-        return deleted_account_response(restorable=bool(state.get("can_restore")))
+        return deleted_account_response(restorable=bool(state.get("can_restore"))), state
     active_err = ensure_account_active(user_name, state=state)
     if active_err:
-        return active_err
-    enabled = frappe.db.get_value("User", user_name, "enabled")
-    if int(enabled or 0) == 1:
-        return None
+        return active_err, state
+    if account_enabled(user_name, state=state, known_enabled=enabled):
+        return None, state
     if has_pending_email_verification(user_name):
-        return fail("Please verify your email to continue.", error="EMAIL_NOT_VERIFIED")
-    return fail("Account disabled.", error="ACCOUNT_DISABLED")
+        return fail("Please verify your email to continue.", error="EMAIL_NOT_VERIFIED"), state
+    return fail("Account disabled.", error="ACCOUNT_DISABLED"), state
 
 
 def _prove_disabled_password(user_name: str, password: str):
@@ -127,7 +126,7 @@ def login_impl(**kwargs):
         # Frappe LoginManager because no session will be created for it. This
         # keeps those security-state responses deterministic even in isolated
         # service/test execution where request login machinery is absent.
-        inactive = _inactive_error_after_password_proof(user_name)
+        inactive, account_state = _inactive_error_after_password_proof(user_name, enabled=bool(enabled))
         if inactive:
             return inactive
         if lm is None:
@@ -137,7 +136,10 @@ def login_impl(**kwargs):
         policy_err = session_policy_error(user_name, login_manager=lm)
         if policy_err:
             return policy_err
-        invariant = assert_auth_bootstrap(user_name, profile_exists=True)
+        preference, invariant = load_auth_bootstrap_preference(
+            user_name,
+            profile_exists=bool(account_state.get("exists")),
+        )
         if invariant:
             return invariant
         if requires_two_factor(user_name):
@@ -145,7 +147,7 @@ def login_impl(**kwargs):
 
         # Finish all DB-backed response serialization before Frappe starts the
         # session; session creation may commit internally.
-        bootstrap = serialize_auth_bootstrap(user_name)
+        bootstrap = serialize_auth_bootstrap(user_name, preference=preference)
         with aos_session_creation_scope():
             lm.post_login()
 
@@ -183,12 +185,18 @@ def me_impl(**kwargs):
         active_err = ensure_account_active(user_name, state=state)
         if active_err:
             return active_err
-        if int(frappe.db.get_value("User", user_name, "enabled") or 0) != 1:
+        if not account_enabled(user_name, state=state):
             return fail("Account disabled.", error="ACCOUNT_DISABLED")
-        invariant = assert_auth_bootstrap(user_name, profile_exists=bool(state.get("exists")))
+        preference, invariant = load_auth_bootstrap_preference(
+            user_name,
+            profile_exists=bool(state.get("exists")),
+        )
         if invariant:
             return invariant
-        return ok("Session fetched.", data=serialize_auth_payload(user_name, include_sid=False))
+        return ok(
+            "Session fetched.",
+            data=serialize_auth_payload(user_name, include_sid=False, preference=preference),
+        )
     except Exception as exc:
         from .observability import log_auth_exception
 

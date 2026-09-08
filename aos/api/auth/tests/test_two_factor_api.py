@@ -122,6 +122,36 @@ class TestAuthTwoFactorAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(int(challenge.is_used or 0), 0)
         self.assertTrue(challenge.continuation_token_hash)
 
+    def test_repeated_challenge_with_active_otp_respects_resend_cooldown(self):
+        user = self.make_user("cooldown")
+        first_token = "2fa-continuation-token-" + ("a" * 48)
+        second_token = "2fa-continuation-token-" + ("b" * 48)
+        with patch(
+            "aos.api.auth.two_factor.generate_continuation_token",
+            side_effect=[first_token, second_token],
+        ), patch("aos.api.auth.two_factor.issue_otp", side_effect=self._persist_known_otp) as issue:
+            first = issue_two_factor_challenge(user)
+            second = issue_two_factor_challenge(user)
+
+        self.assertEqual(first.get("error"), "TWO_FACTOR_REQUIRED")
+        self.assertEqual(second.get("error"), "TWO_FACTOR_REQUIRED")
+        self.assertEqual(issue.call_count, 1)
+        self.assertNotEqual(first["data"]["challenge_token"], second["data"]["challenge_token"])
+
+    def test_max_attempts_forces_fresh_two_factor_otp_even_during_cooldown(self):
+        user = self.make_user("max-attempts")
+        with patch("aos.api.auth.two_factor.issue_otp", side_effect=self._persist_known_otp):
+            issue_two_factor_challenge(user)
+        challenge = get_ver_doc(user, TWO_FACTOR_PURPOSE)
+        challenge.attempts = 5
+        challenge.save(ignore_permissions=True)
+
+        with patch("aos.api.auth.two_factor.issue_otp", side_effect=self._persist_known_otp) as issue:
+            response = issue_two_factor_challenge(user)
+
+        self.assertEqual(response.get("error"), "TWO_FACTOR_REQUIRED")
+        issue.assert_called_once()
+
     def test_unknown_fields_are_rejected(self):
         response = verify_two_factor_impl(
             challenge_token="2fa-continuation-token-" + ("z" * 48),

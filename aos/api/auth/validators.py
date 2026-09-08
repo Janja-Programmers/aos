@@ -16,13 +16,11 @@ from aos.api.shared.responses import fail
 
 
 EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-IDENTIFIER_MAX_LEN = 140
 EMAIL_MAX_LEN = 140
 NAME_MAX_LEN = 140
 PASSWORD_MAX_LEN = 128
 OTP_MAX_LEN = 12
 TOKEN_MAX_LEN = 4096
-REASON_MAX_LEN = 300
 COUNTRY_MAX_LEN = 140
 LANGUAGE_MAX_LEN = 140
 CURRENCY_MAX_LEN = 32
@@ -146,23 +144,9 @@ def require_token(value: Any, field: str):
     return require_string(value, field, max_length=TOKEN_MAX_LEN)
 
 
-def normalize_email(email: str) -> str:
-    """Normalize a trusted string email value."""
-    return email.strip().lower()[:EMAIL_MAX_LEN]
-
-
-def normalize_identifier(identifier: str) -> str:
-    """Normalize a trusted canonical login email."""
-    return normalize_email(identifier)
-
-
 def normalize_name(full_name: str) -> str:
     value = re.sub(r"\s+", " ", full_name.strip())
     return value[:NAME_MAX_LEN]
-
-
-def normalize_otp(value: str) -> str:
-    return value.strip()[:OTP_MAX_LEN]
 
 
 def validate_registration_inputs(email: Any, password: Any, full_name: Any):
@@ -190,24 +174,6 @@ def validate_registration_inputs(email: Any, password: Any, full_name: Any):
         "password": password_value,
         "full_name": name_value,
     }, None
-
-
-def validate_email(email: str):
-    # Internal helper for trusted normalized strings.
-    if not isinstance(email, str) or not email or not EMAIL_REGEX.match(email):
-        return fail("A valid email is required.", error="VALIDATION_ERROR", data={"field": "email"})
-    return None
-
-
-def validate_login_inputs(identifier: str, password: str):
-    # Internal helper for already type-checked values.
-    if not identifier or not EMAIL_REGEX.match(identifier):
-        return fail("A valid email is required.", error="VALIDATION_ERROR", data={"field": "identifier"})
-    if not isinstance(password, str) or not password:
-        return fail("Password is required.", error="VALIDATION_ERROR", data={"field": "password"})
-    if len(password) > PASSWORD_MAX_LEN:
-        return fail("Password is too long.", error="VALIDATION_ERROR", data={"field": "password"})
-    return None
 
 
 def validate_password_strength(password: str, *, user_data: tuple | None = None):

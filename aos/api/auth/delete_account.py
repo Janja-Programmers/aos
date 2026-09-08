@@ -25,7 +25,7 @@ from .constants import (
     RESTORE_VERIFY_LIMIT_PER_HOUR_PER_EMAIL,
     RESTORE_VERIFY_LIMIT_PER_HOUR_PER_IP,
 )
-from .otp_service import issue_otp, public_otp_invalid, resend_allowed, verify_public_otp
+from .otp_service import dummy_otp_issue_work, issue_otp, public_otp_invalid, resend_allowed, verify_public_otp
 from .contracts import reject_unknown_fields
 from .locking import lock_user
 from .rate_limits import auth_ip_limit, auth_rate_limit
@@ -108,14 +108,17 @@ def request_restore_account_impl(**kwargs):
         return limited
     user_name = user_for_email(email)
     if not user_name:
+        dummy_otp_issue_work()
         return ok(RESTORE_REQUEST_GENERIC_MESSAGE)
     state = get_account_state(user_name)
     if not state.get("is_deleted") or not state.get("can_restore"):
+        dummy_otp_issue_work()
         return ok(RESTORE_REQUEST_GENERIC_MESSAGE)
     try:
         lock_user(user_name)
         ver = ensure_ver_doc(user_name, purpose=RESTORE_PURPOSE, for_update=True)
         if not resend_allowed(ver):
+            dummy_otp_issue_work()
             return ok(RESTORE_REQUEST_GENERIC_MESSAGE)
         issue_otp(ver, email=email, full_name=profile_display_name(user_name), purpose=RESTORE_PURPOSE)
         return ok(RESTORE_REQUEST_GENERIC_MESSAGE)

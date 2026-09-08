@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from aos.services.accounts.identity import ensure_public_account_id
 from aos.api.ads.create import create_ad_impl
 from aos.api.auth.register import register_impl
 from aos.api.auth.session import me_impl
@@ -19,7 +20,6 @@ from aos.api.shorts.comments import add_comment_impl
 from aos.api.shorts.engagement import toggle_like_impl
 from aos.api.social.block import block_user_impl
 
-from aos.services.accounts.identity import public_account_id_for_user
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
@@ -205,7 +205,7 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
             patch("aos.api.social.block.record_block_user_activity"),
         ):
             response = report_user_impl(
-                target_user=public_account_id_for_user(target),
+                target_user=ensure_public_account_id(target),
                 reason=reason,
                 details="Feature report test",
                 block_user=1,
@@ -256,7 +256,7 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
             patch("aos.api.social.block.rate_limit", return_value=None),
             patch("aos.api.social.block.record_block_user_activity"),
         ):
-            block_response = block_user_impl(target_user=public_account_id_for_user(sender), reason="No messages")
+            block_response = block_user_impl(target_user=ensure_public_account_id(sender), reason="No messages")
 
         self.assertTrue(block_response.get("ok"), block_response)
         frappe.set_user(sender)

@@ -13,7 +13,7 @@ from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shorts.activity import record_short_report_activity
 from aos.api.shorts.visibility import can_view_short
 from aos.api.social.activity import record_block_user_activity, record_report_user_activity
-from aos.services.accounts.identity import public_account_id_for_user, resolve_account_reference
+from aos.services.accounts.identity import resolve_account_reference
 from aos.services.social.service import SocialService
 
 from .constants import (
@@ -63,9 +63,10 @@ class ReportService:
 
         # Serialize the pair through the target profile. The unique active_key is
         # the final integrity boundary after migration.
-        frappe.db.sql(
+        locked_profiles = frappe.db.sql(
             "SELECT name FROM `tabAOS Profile` WHERE user = %s LIMIT 1 FOR UPDATE",
             (target_user,),
+            as_dict=True,
         )
         # Revalidate after waiting for the account lock so a concurrent
         # suspension/deletion cannot cross the report-submission boundary.
@@ -104,9 +105,10 @@ class ReportService:
             savepoint = f"report_block_{hashlib.sha1(doc.name.encode()).hexdigest()[:10]}"
             frappe.db.savepoint(savepoint)
             try:
+                target_account_id = str(locked_profiles[0].name) if locked_profiles else ""
                 block_data = SocialService().block(
                     actor=user,
-                    payload={"target_user": public_account_id_for_user(target_user), "reason": f"Reported user: {reason}"},
+                    payload={"account_id": target_account_id, "reason": f"Reported user: {reason}"},
                     activity_callback=block_activity_callback,
                 )
                 response["block_status"] = block_data

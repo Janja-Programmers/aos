@@ -7,7 +7,7 @@ import frappe
 from aos.api.shared.account_status import deleted_account_response, ensure_account_active, get_account_state
 from aos.api.shared.responses import fail, ok
 
-from .account_helpers import assert_auth_bootstrap, create_auth_bootstrap, user_for_email
+from .account_helpers import account_enabled, create_auth_bootstrap, load_auth_bootstrap_preference, user_for_email
 from .constants import SOCIAL_LOGIN_LIMIT_PER_HOUR_PER_SUBJECT
 from .locking import lock_user
 from .oidc import OIDCDependencyError, OIDCTokenError
@@ -24,13 +24,13 @@ from .validators import optional_bootstrap_inputs, require_email, require_token,
 def _account_ready(user: str):
     state = get_account_state(user)
     if state.get("is_deleted"):
-        return deleted_account_response(restorable=bool(state.get("can_restore")))
+        return None, deleted_account_response(restorable=bool(state.get("can_restore")))
     active = ensure_account_active(user, state=state)
     if active:
-        return active
-    if int(frappe.db.get_value("User", user, "enabled") or 0) != 1:
-        return fail("Account disabled.", error="ACCOUNT_DISABLED")
-    return assert_auth_bootstrap(user, profile_exists=bool(state.get("exists")))
+        return None, active
+    if not account_enabled(user, state=state):
+        return None, fail("Account disabled.", error="ACCOUNT_DISABLED")
+    return load_auth_bootstrap_preference(user, profile_exists=bool(state.get("exists")))
 
 
 def _create_social_user(*, email: str, full_name: str, bootstrap: dict):
@@ -43,10 +43,10 @@ def _create_social_user(*, email: str, full_name: str, bootstrap: dict):
     user.flags.no_welcome_mail = True
     mark_aos_managed_website_user_creation(user)
     user.insert(ignore_permissions=True)
-    _pref, err = create_auth_bootstrap(user.name, **bootstrap)
+    pref, err = create_auth_bootstrap(user.name, **bootstrap)
     if err:
-        return None, err
-    return user.name, None
+        return None, None, err
+    return user.name, pref, None
 
 
 def social_login_impl(
@@ -111,9 +111,9 @@ def social_login_impl(
         if bound_user:
             user_name = bound_user
             lock_user(user_name)
-            ready = _account_ready(user_name)
-            if ready:
-                return ready
+            preference, ready_error = _account_ready(user_name)
+            if ready_error:
+                return ready_error
         else:
             if provider == "apple" and not email:
                 # Apple may omit email after first authorization; without an
@@ -125,21 +125,25 @@ def social_login_impl(
             user_name = user_for_email(email)
             if user_name:
                 lock_user(user_name)
-                ready = _account_ready(user_name)
-                if ready:
-                    return ready
+                preference, ready_error = _account_ready(user_name)
+                if ready_error:
+                    return ready_error
             else:
                 try:
-                    user_name, bootstrap_err = _create_social_user(email=email, full_name=full_name, bootstrap=bootstrap)
+                    user_name, preference, bootstrap_err = _create_social_user(
+                        email=email,
+                        full_name=full_name,
+                        bootstrap=bootstrap,
+                    )
                 except frappe.DuplicateEntryError:
                     user_name = user_for_email(email)
                     if not user_name:
                         raise
                     lock_user(user_name)
                     bootstrap_err = None
-                    ready = _account_ready(user_name)
-                    if ready:
-                        return ready
+                    preference, ready_error = _account_ready(user_name)
+                    if ready_error:
+                        return ready_error
                 if bootstrap_err:
                     frappe.db.rollback()
                     return bootstrap_err
@@ -157,7 +161,7 @@ def social_login_impl(
         # Resolve the entire DB-backed response before session creation. Frappe
         # may commit when starting a session, so no fallible bootstrap query
         # should remain after this point.
-        bootstrap_payload = serialize_auth_bootstrap(user_name)
+        bootstrap_payload = serialize_auth_bootstrap(user_name, preference=preference)
         lm = frappe.local.login_manager
         with aos_session_creation_scope():
             lm.login_as(user_name)

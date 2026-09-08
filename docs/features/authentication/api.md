@@ -167,14 +167,14 @@ serializers.py -> explicit public response
 | `social_login.py` | common OIDC account/session orchestration |
 | `oidc.py` | shared PyJWT/JWKS verification and dependency classification |
 | `social_identity.py` | immutable provider-subject binding repository |
-| `account_helpers.py` | new-user AOS Profile + Localization bootstrap and invariant checks |
+| `account_helpers.py` | new-user AOS Profile + Localization bootstrap plus read-only bootstrap invariant/preference loading |
 | `session_control.py` | exact server-session/token revocation without wildcard cache deletion |
 | `session_hooks.py` | prevents generic Frappe Website User login bypass |
 | `framework_guards.py` | closes parallel Frappe Website signup/recovery/password endpoints while preserving System User Desk/admin recovery and password administration |
 | `user_controller.py` | extends the Frappe `User` controller so only internally marked, already-rate-limited AOS Website User creation bypasses Frappe's coarse site-wide creation throttle; generic User creation remains framework-throttled |
-| `rate_limits.py` | atomic Redis INCR+EXPIRE via Lua; fail-closed dependency behavior |
+| `rate_limits.py` | atomic Redis INCR+EXPIRE via Lua, site-keyed HMAC non-IP key dimensions, fail-closed dependency behavior |
 | `locking.py` | account-scoped `User` row lock used by security mutations/session creation |
-| `serializers.py` | allowlisted user/session/preferences/roles/seller response shape |
+| `serializers.py` | allowlisted user/session/preferences/roles/seller response shape; optional avatar resolution degrades safely |
 | `contracts.py` | rejects deprecated aliases and unknown request keys |
 | `validators.py` | strict strings, email normalization, client type and password input bounds plus Frappe configured strength-policy delegation |
 | `aos/install.py` | fresh-site default disabling Frappe public signup |
@@ -187,7 +187,7 @@ serializers.py -> explicit public response
 Frappe User
  |-- 1:1 AOS Profile
  |-- 1:1 AOS User Preference  -> Localization masters/rules
- |-- 0..3 AOS Auth Challenge (one deterministic row per purpose)
+ |-- 0..4 AOS Auth Challenge (one deterministic row per purpose)
  |-- 0..2 AOS Auth Identity (at most one per supported provider)
  `-- 0..N Frappe Sessions
 ```
@@ -216,19 +216,22 @@ Purpose: AOS account/profile state required by all marketplace identity surfaces
 
 Authentication relies on the existing profile contract. The profile primary key itself is the immutable opaque `ACC-*` account id and `user` is a unique Link to Frappe User. `account_status` and `restore_deadline` define the reversible deletion boundary; deletion is derived from `account_status == Deleted` rather than stored twice. Composite lifecycle/purge indexes support the background permanent-deletion scan.
 
-Deletion lifecycle fields used by Authentication/Accounts:
+Authentication-relevant fields:
 
-| Field | Purpose |
-|---|---|
-| `name` | immutable opaque `ACC-*` public account id; there is no separate `public_id` field |
-| `user` | unique Link to Frappe User; internal authentication identity |
-| `account_status` | `Active`, `Deleted`, or `Suspended` product lifecycle state |
-| `deleted_at` | time the reversible deletion started |
-| `restore_deadline` | last time the account can be restored; normally deletion + 30 days |
-| `purge_status` | `Pending`, `Purging`, `Completed` durable permanent-cleanup progress |
-| `purge_started_at` | first bounded cleanup run after restore expiry |
-| `purge_completed_at` | permanent private-data cleanup/anonymization completion |
-| `restored_at` | latest successful restore time |
+| Field | Type / constraint | Purpose |
+|---|---|---|
+| `name` | primary `ACC-*` id | immutable opaque public account id; there is no separate `public_id` field |
+| `user` | Link User, required, unique | 1:1 link to Frappe authentication identity |
+| `display_name` | Data, required | allowlisted login/`me` display name |
+| `profile_image_media` | Link AOS Media Object, indexed | optional avatar reference; resolution failure degrades to `avatar: null` |
+| `account_status` | Select `Active/Deleted/Suspended` | product lifecycle gate consumed before session bootstrap |
+| `is_verified` | read-only Check | hot-read projection returned by Authentication; verification workflow remains Verification-owned |
+| `deleted_at` | Datetime | time reversible deletion started |
+| `restore_deadline` | Datetime, indexed | last time account can be restored; normally deletion + 30 days |
+| `purge_status` | Select, indexed | `Pending/Purging/Completed` durable permanent-cleanup progress |
+| `purge_started_at` | Datetime | first bounded cleanup run after restore expiry |
+| `purge_completed_at` | Datetime | permanent private-data cleanup/anonymization completion |
+| `restored_at` | Datetime | latest successful restore time |
 
 Profile fields such as bio, phone, date of birth and gender are AOS-owned and are not duplicated into Frappe User. Display name and avatar may be projected into Frappe User solely for framework/admin presentation. Localization is the only owner of account location. Verification Request owns verification audit metadata; `AOS Profile.is_verified` is only a deliberate hot-read projection.
 
@@ -244,12 +247,13 @@ Purpose: user-owned Localization selection.
 | `country` | Link/master value | yes | schema-defined | Localization country |
 | `language` | Link/master value | yes | schema-defined | Localization language |
 | `currency` | Link/master value | yes | schema-defined | Localization currency |
+| `location` | Link `AOS Location` | no | linked lookup | optional market location owned/validated by Localization |
 
-Creation/default resolution belongs to Localization. Authentication initializes this row only while creating a new user. Missing preference on an existing account returns the single public invariant error `ACCOUNT_BOOTSTRAP_UNAVAILABLE` and is not silently recreated on a high-frequency request.
+Creation/default resolution belongs to Localization. Authentication initializes this row only while creating a new user. The DocType uses `field:user` naming and a unique `user` field; the Localization final-state patch defensively verifies the DB uniqueness constraint. Missing preference on an existing account returns the single public invariant error `ACCOUNT_BOOTSTRAP_UNAVAILABLE` and is not silently recreated on a high-frequency request. Preference cache is shared Redis with DB fallback; Authentication does not own its normalization rules.
 
 ### `AOS Auth Challenge`
 
-Purpose: bounded temporary state for email verification, password recovery and account restoration. There is one deterministic document name per `User + purpose`; repeated sends overwrite the same row rather than creating unbounded OTP history.
+Purpose: bounded temporary state for email verification, password recovery, account restoration, and two-factor login continuation. There is one deterministic document name per `User + purpose`; repeated sends overwrite the same row rather than creating unbounded OTP history.
 
 Valid purposes: `email_verification`, `password_reset`, `account_restore`, `two_factor`.
 
@@ -273,7 +277,8 @@ Invariants:
 - OTP attempts are serialized by row lock;
 - successful consumption clears the OTP verifier;
 - password reset clears continuation-token state and revokes sessions;
-- System Manager has read/report-only Desk access; Authentication service code owns mutation via controlled server-side paths.
+- System Manager has read/report-only Desk access; Authentication service code owns mutation via controlled server-side paths;
+- rows are bounded to at most one per user/purpose and are reused rather than append-only; account access revocation clears/consumes Authentication challenge state, while permanent account cleanup may delete it under Accounts ownership.
 
 ### `AOS Auth Identity`
 
@@ -285,7 +290,7 @@ Purpose: durable social identity mapping using the immutable OIDC provider subje
 | `user` | Link User | yes | search index | bound AOS user |
 | `user_provider_key` | Data, hidden/read-only | yes | unique | prevents one AOS user from silently binding multiple subjects for the same provider |
 
-The primary document name is a site-keyed HMAC-derived identifier from provider + subject; the raw provider subject is never persisted. `user_provider_key` is also site-keyed and unique. A conflicting identity is never silently rebound during login. System Manager has read/report-only Desk access; Authentication service code owns creation/mutation.
+The primary document name is a site-keyed HMAC-derived identifier from provider + subject; the raw provider subject is never persisted. `user_provider_key` is also site-keyed and unique. A conflicting identity is never silently rebound during login. System Manager has read/report-only Desk access; Authentication service code owns creation/mutation. Bindings persist across the recoverable deletion window so an account can be restored safely; Accounts permanent purge owns eventual binding deletion.
 
 ### Frappe `Sessions`
 
@@ -295,273 +300,419 @@ Framework-owned session persistence. AOS queries `sid` values only for exact use
 
 ## D. Endpoint reference
 
-All public endpoints use `/api/method/aos.api.v1.auth.<method>` and the standard AOS envelope:
+All public Authentication endpoints use `/api/method/aos.api.v1.auth.<method>`. The versioned wrapper is the only client contract; `aos.api.auth.*` modules are internal implementation.
 
-Success:
-
-```json
-{"ok": true, "message": "...", "data": {}}
-```
-
-Failure:
+Standard AOS success envelope:
 
 ```json
-{"ok": false, "message": "...", "error": "STABLE_CODE", "data": {}}
+{"ok":true,"message":"...","data":{}}
 ```
 
-`error` is the only machine-readable error key. Raw Frappe/provider/SQL/Redis exception text is never a public contract. Frappe's RPC dispatcher injects its internal `cmd` selector into `form_dict`; the v1 Authentication boundary strips that transport-only key before request-contract validation. All other unknown client fields remain rejected with `AUTH_UNKNOWN_FIELD`.
+Standard AOS failure envelope:
+
+```json
+{"ok":false,"message":"...","error":"STABLE_CODE","data":{}}
+```
+
+`error` is the only machine-readable failure key. Expected errors receive the HTTP status mapped by `aos.api.shared.responses`; unexpected failures are secret-safely logged and return `SERVICE_UNAVAILABLE` rather than raw Frappe, SQL, Redis, OIDC or Python exception text. Frappe RPC transport injects `cmd`; the v1 wrapper strips only that transport key. Every other unknown client field is rejected with `AUTH_UNKNOWN_FIELD`.
+
+### Canonical authenticated bootstrap payload
+
+Successful password/social/2FA login uses this shape. `sid` appears only when `client_type = "mobile"`.
+
+```json
+{
+  "session": {"authenticated": true, "sid": "<mobile-only>"},
+  "user": {
+    "account_id": "ACC-EXAMPLEOPAQUEID",
+    "email": "jane@example.com",
+    "display_name": "Jane Doe",
+    "avatar": null,
+    "enabled": true,
+    "account_status": "Active",
+    "is_verified": false
+  },
+  "preferences": {
+    "country": "Kenya",
+    "currency": "KES",
+    "language": "en",
+    "location": null,
+    "is_country_locked": false
+  },
+  "roles": ["Website User"],
+  "seller": {"is_seller": false, "seller_id": null, "status": null}
+}
+```
+
+For a seller, `seller` additionally contains server-derived `seller_type`, `business_category`, `rating`, and `total_reviews`; `is_seller` reflects active seller state. `roles`, account status, verification state and seller state are never client-supplied. Optional avatar/media URL resolution is degradable: if that presentation dependency fails, `avatar` is `null` and Authentication can still succeed.
 
 ### `aos.api.v1.auth.register`
 
-Purpose: create a password account and queue email verification.
+**Purpose:** create an email/password AOS account and queue signup verification.  
+**HTTP / authentication:** `POST`, Guest.  
+**Frontend usage:** registration screen before email verification.
 
-Authentication: Guest. Frontend: registration screen.
-
-Inputs:
-
-| Parameter | Type | Required | Default | Description |
+| Parameter | Type | Required | Default | Normalization / validation |
 |---|---|---:|---|---|
-| `email` | string <=140 | yes | — | trimmed/lowercased valid email |
-| `password` | string 8..128 | yes | — | passed to Frappe password policy/hashing |
-| `full_name` | string <=140 | yes | — | whitespace-normalized display seed |
-| `country` | string <=140 | no | Localization resolution | optional new-user hint |
-| `currency` | string <=32 | no | Localization resolution | optional new-user hint |
-| `language` | string <=140 | no | Localization resolution | optional new-user hint |
+| `email` | string, max 140 | yes | — | trim, lowercase, valid email |
+| `password` | string, 8..128 | yes | — | no trim; AOS baseline + configured Frappe strength policy |
+| `full_name` | string, max 140 | yes | — | trim, collapse whitespace, minimum normalized length 2 |
+| `country` | string, max 140 | no | Localization resolver | validated/resolved by Localization |
+| `currency` | string, max 32 | no | Localization resolver | validated/resolved by Localization |
+| `language` | string, max 140 | no | Localization resolver | validated/resolved by Localization |
 
-Example:
+Example request:
 
 ```json
 {"email":"jane@example.com","password":"StrongPass123!","full_name":"Jane Doe","country":"Kenya","currency":"KES","language":"en"}
 ```
 
-Success: `200`, `If this email can be registered, a verification code has been queued.` The same acknowledgement is returned for an already-existing email or a concurrent duplicate insert; no second account or email is created/sent.
+Success: `200` with `data: {}` and message `If this email can be registered, a verification code has been queued.` The same response is used for a normalized email that already exists and for a concurrent duplicate insert.
 
-Important errors: `VALIDATION_ERROR`, `AUTH_UNKNOWN_FIELD`, `RATE_LIMIT`, `SERVICE_UNAVAILABLE`, `REGISTER_FAILED`. Account existence/lifecycle is not disclosed by registration.
+Stable errors: `AUTH_UNKNOWN_FIELD`, `VALIDATION_ERROR`, Localization validation/dependency errors for supplied/default hints, `RATE_LIMIT`, `SERVICE_UNAVAILABLE`, `REGISTER_FAILED`. Existing-account state is not disclosed.
 
-Side effects: creates disabled User + AOS Profile + AOS User Preference + verification state + Frappe Email Queue row in one request transaction. The User insert is internally marked as an AOS-managed Website User creation after AOS Redis rate limits pass, so Frappe's unrelated site-wide User counter does not cap public signup throughput. Generic Frappe User creation retains the framework throttle. A queue failure rolls the account creation back. No provider network call is made synchronously.
+Side effects: after validation/rate limiting, inserts a disabled Frappe Website User, AOS Profile, Localization-owned AOS User Preference, deterministic email-verification AOS Auth Challenge and Frappe Email Queue state. These request-owned writes remain in the surrounding request transaction; queue/bootstrap failure rolls back the new account. The managed User sentinel bypasses only Frappe's coarse site-wide User-creation throttle after AOS distributed limits pass.
 
-Idempotency: duplicate/retried requests for an already-existing normalized email are safely acknowledged without creating, mutating or re-sending. Database uniqueness is the final concurrent-race guard.
+Idempotency/retry: existing-address retries are safely acknowledged without mutation or re-send. DB uniqueness is the final race guard. A valid request for a genuinely new address is intentionally account-creating.
 
-Rate limit: shared Redis: 5/hour per normalized email and 120/hour per IP. The email dimension protects one account while the substantially higher IP dimension reduces shared-NAT/mobile-carrier collateral blocking.
+Rate limiting: 5/hour per normalized email + 120/hour per IP. Non-IP Redis key material is digested.
 
 ### `aos.api.v1.auth.verify_email_otp`
 
-Purpose: consume email verification and enable account.
+**Purpose:** consume signup email proof and activate the account.  
+**HTTP / authentication:** `POST`, Guest.  
+**Frontend usage:** signup verification screen.
 
-Authentication: Guest. Frontend: signup verification screen.
-
-Inputs: `email` (required normalized email), `otp` (required string <=12; issued value is six digits).
+| Parameter | Type | Required | Default | Validation |
+|---|---|---:|---|---|
+| `email` | string, max 140 | yes | — | trim/lowercase valid email |
+| `otp` | string | yes | — | exactly six decimal digits; general input cap 12 |
 
 Example: `{"email":"jane@example.com","otp":"123456"}`
 
-Success: `Email verified. Account activated.`
+Success: `200`, `data: {}`, message `Email verified. Account activated.`
 
-Public verification failures collapse to `OTP_INVALID` / `Invalid or expired OTP.` so missing, wrong, expired, already-used and exhausted records do not reveal state. Shared Redis limits apply by identifier and IP. OTP state and User activation are ordered by account + verification row locks.
+Stable errors: `AUTH_UNKNOWN_FIELD`, `VALIDATION_ERROR`, `OTP_INVALID`, `RATE_LIMIT`, and public-safe availability handling. Missing, wrong, expired, exhausted and replayed challenge states collapse to `OTP_INVALID` at this public boundary.
 
-Idempotency: successful token is single-use; a replay returns the stable generic OTP failure.
+Side effects: locks User then challenge row, consumes OTP and enables the Frappe User in the request transaction.
+
+Idempotency/retry: successful OTP is single-use; replay is stable `OTP_INVALID`, not another activation.
+
+Rate limiting: 30/hour per normalized email + 120/hour per IP.
 
 ### `aos.api.v1.auth.resend_email_otp`
 
-Purpose: queue a replacement signup verification code when appropriate.
+**Purpose:** queue a replacement signup verification code when verification is still needed.  
+**HTTP / authentication:** `POST`, Guest.  
+**Frontend usage:** signup verification “resend code”.
 
-Authentication: Guest. Input: `email` only.
+| Parameter | Type | Required | Default | Validation |
+|---|---|---:|---|---|
+| `email` | string, max 140 | yes | — | trim/lowercase valid email |
 
-Success for unknown, already-active, cooldown-suppressed, and eligible account uses the same public message: `If verification is required for this email, a code has been queued.`
+Example: `{"email":"jane@example.com"}`
 
-This intentionally prevents account/cooldown enumeration. Shared Redis abuse limits still return `RATE_LIMIT` independent of account existence.
+Success: `200`, `data: {}`, message `If verification is required for this email, a code has been queued.` Unknown email, already-active account, 60-second cooldown suppression and actual queued resend intentionally share this response.
+
+Stable errors: `AUTH_UNKNOWN_FIELD`, `VALIDATION_ERROR`, `RATE_LIMIT`; unexpected infrastructure failures are internally logged while the enumeration-safe request acknowledgement is retained when possible.
+
+Side effects: only an eligible account outside cooldown gets new OTP state + Email Queue state. No-op branches perform comparable slow OTP-hash work to reduce simple timing/cooldown enumeration.
+
+Idempotency/retry: safe within limits; cooldown prevents mail flooding without exposing whether it fired.
+
+Rate limiting: 10/hour per normalized email + 60/hour per IP; internal resend cooldown is 60 seconds.
 
 ### `aos.api.v1.auth.login`
 
-Purpose: canonical password login.
+**Purpose:** canonical password login.  
+**HTTP / authentication:** `POST`, Guest.  
+**Frontend usage:** email/password login screen.
 
-Authentication: Guest. Frontend: login screen.
+| Parameter | Type | Required | Default | Validation |
+|---|---|---:|---|---|
+| `identifier` | string, max 140 | yes | — | **email only**, trim/lowercase, valid email |
+| `password` | string, max 128 | yes | — | non-empty, no trim, Frappe credential verifier |
+| `client_type` | string, max 16 | yes | — | `web` or `mobile` |
 
-Inputs:
+Example: `{"identifier":"jane@example.com","password":"StrongPass123!","client_type":"mobile"}`
 
-| Parameter | Type | Required | Accepted |
-|---|---|---:|---|
-| `identifier` | email string <=140 | yes | email only; normalized lowercase |
-| `password` | string <=128 | yes | Frappe password verifier |
-| `client_type` | string | yes | `web` or `mobile` |
+Success: `200`, message `Login successful.`, with the canonical authenticated bootstrap payload above. Mobile includes `data.session.sid`; web omits it and uses the Frappe HttpOnly session cookie.
 
-No `email`, `username`, `usr`, `remember_me`, localization hints or other aliases are accepted.
+Stable errors include `AUTH_UNKNOWN_FIELD`, `VALIDATION_ERROR`, `INVALID_CREDENTIALS`, `EMAIL_NOT_VERIFIED`, `ACCOUNT_DISABLED`, `ACCOUNT_SUSPENDED`, `ACCOUNT_DELETED`, `ACCOUNT_DELETED_RESTORABLE`, `ACCOUNT_BOOTSTRAP_UNAVAILABLE`, `PASSWORD_RESET_REQUIRED`, `TWO_FACTOR_REQUIRED`, `RATE_LIMIT`, `SERVICE_UNAVAILABLE`.
 
-Example:
+Unknown user and wrong password are exactly `INVALID_CREDENTIALS` / `Invalid credentials.`. Unknown-user flow performs slow dummy password verification. Disabled/deleted/pending lifecycle distinctions are returned only after valid password proof.
 
-```json
-{"identifier":"jane@example.com","password":"StrongPass123!","client_type":"mobile"}
-```
+Side effects: Frappe credential checks; if no 2FA continuation is required, Frappe session creation and normal framework login metadata. Existing Profile/Preference state is read-only and is never repaired here. Bootstrap DB reads are completed before session creation; optional avatar resolution can degrade to `null`.
 
-Mobile success contains `data.session.sid`; web success does not. Both contain `session`, `user`, `preferences`, `roles`, and `seller` bootstrap sections.
+Idempotency/retry: session creation is intentionally non-idempotent; a blind retry can produce another valid Frappe session according to site simultaneous-session settings.
 
-Unknown user and wrong password both return exactly `INVALID_CREDENTIALS` / `Invalid credentials.`. Account-deleted/suspended/disabled/pending-verification state is disclosed only after credential proof.
-
-Side effects: Frappe session creation and normal Frappe login metadata updates. Existing AOS profile/preferences are never repaired here.
-
-Idempotency: non-idempotent session creation; safe client retry can create another valid session depending on Frappe simultaneous-session settings. Do not retry blindly after a response is received.
-
-Rate limit: shared Redis: 20/hour per normalized identifier and 300/hour per IP; Frappe's own login-attempt tracker also remains in the credential path for enabled users. The higher IP ceiling intentionally avoids making carrier/shared NAT the primary lockout boundary.
+Rate limiting: 20/hour per normalized identifier + 300/hour per IP; Frappe's enabled-user login-attempt tracker remains in the credential path.
 
 ### `aos.api.v1.auth.verify_two_factor`
 
-Purpose: finish a password or OIDC login when the applicable Frappe 2FA policy requires a second factor.
+**Purpose:** complete password/Google/Apple login when Frappe policy requires AOS email OTP as a second factor.  
+**HTTP / authentication:** `POST`, Guest continuation.  
+**Frontend usage:** login 2FA screen shown after `TWO_FACTOR_REQUIRED`.
 
-Authentication: Guest continuation endpoint. Frontend: login 2FA step.
+| Parameter | Type | Required | Default | Validation |
+|---|---|---:|---|---|
+| `challenge_token` | string, max 4096 | yes | — | high-entropy opaque token issued after first factor |
+| `otp` | string | yes | — | exactly six digits |
+| `client_type` | string, max 16 | yes | — | `web` or `mobile` |
 
-Inputs: `challenge_token` (required high-entropy token returned only after the first authentication factor succeeds), `otp` (required six-digit email OTP), and `client_type` (`web` or `mobile`).
+Example: `{"challenge_token":"<opaque>","otp":"123456","client_type":"mobile"}`
 
-A password, Google, or Apple login that requires 2FA returns `TWO_FACTOR_REQUIRED` with `data.challenge_token`, `data.method = "email"`, and a bounded expiry. Only a digest of that continuation token is stored. Verification locks the User first and the deterministic `AOS Auth Challenge` second, consumes both OTP and continuation state, then creates the normal Frappe session. Replay or expired/unknown challenges return a stable invalid-challenge response. Shared Redis limits apply by IP and challenge token.
+First-factor continuation response: HTTP `403`, error `TWO_FACTOR_REQUIRED`, `data = {"challenge_token":"<opaque>","method":"email","expires_in_seconds":900}`. Only its digest is stored.
 
-Mobile success includes `data.session.sid`; web success relies on the HttpOnly session cookie, exactly like ordinary login.
+Success: `200`, `Login successful.`, canonical authenticated bootstrap payload. Mobile includes `sid`; web does not.
+
+Stable errors: `AUTH_UNKNOWN_FIELD`, `VALIDATION_ERROR`, `TOKEN_INVALID`, `OTP_INVALID`, account-state errors, `ACCOUNT_BOOTSTRAP_UNAVAILABLE`, `PASSWORD_RESET_REQUIRED`, `RATE_LIMIT`, `SERVICE_UNAVAILABLE`.
+
+Side effects: User row then challenge row are locked; OTP + continuation state are consumed before Frappe session creation. Repeated first-factor success inside the 60-second resend cooldown rotates the continuation token but reuses the still-valid OTP instead of queuing another email; used/expired/missing OTP state causes a fresh OTP.
+
+Idempotency/retry: successful challenge is single-use; replay is `TOKEN_INVALID`. Requesting a new continuation does not make email delivery unbounded inside cooldown.
+
+Rate limiting: 10/hour per challenge-token digest + 120/hour per IP.
 
 ### `aos.api.v1.auth.google_login`
 
-Purpose: login/register with verified Google OIDC identity.
+**Purpose:** verify Google OIDC identity, bind/create the AOS account, then create an AOS/Frappe session.  
+**HTTP / authentication:** `POST`, Guest.  
+**Frontend usage:** Google sign-in button/callback.
 
-Authentication: Guest. Inputs: `id_token`, `client_type`; `country`, `currency`, `language` are optional only for first account creation.
+| Parameter | Type | Required | Default | Validation |
+|---|---|---:|---|---|
+| `id_token` | string, max 4096 | yes | — | RS256 Google ID token |
+| `client_type` | string, max 16 | yes | — | `web` or `mobile` |
+| `country` | string, max 140 | no | Localization resolver | used only when a new AOS account must be created |
+| `currency` | string, max 32 | no | Localization resolver | new-account hint only |
+| `language` | string, max 140 | no | Localization resolver | new-account hint only |
 
-The verifier requires RS256 signature, current Google JWKS, allowed configured audience, valid issuer/expiry/subject, email, and verified email. Provider `sub` is the durable identity.
+Example: `{"id_token":"<google-id-token>","client_type":"web","country":"Kenya"}`
 
-Success/session shape matches password login. If the Frappe 2FA policy applies, a verified Google identity receives the same AOS email-OTP continuation challenge before session creation. Invalid tokens return `TOKEN_INVALID`/`TOKEN_EXPIRED`; missing configuration or JWKS/provider dependency failures are `CONFIG_ERROR`/`SERVICE_UNAVAILABLE` and are not misreported as bad credentials.
+Success: `200`, `Login successful.`, canonical authenticated bootstrap payload; may instead return `TWO_FACTOR_REQUIRED` before session creation.
+
+Stable errors include `AUTH_UNKNOWN_FIELD`, `VALIDATION_ERROR`, `CONFIG_ERROR`, `TOKEN_INVALID`, `TOKEN_EXPIRED`, `EMAIL_NOT_VERIFIED`, `SOCIAL_IDENTITY_CONFLICT`, account/bootstrap errors, `TWO_FACTOR_REQUIRED`, `RATE_LIMIT`, `SERVICE_UNAVAILABLE`.
+
+Security/side effects: verifies RS256 signature, Google issuer/audience/expiry/required claims and verified email. Immutable provider `sub` is the durable identity. A first social sign-in may atomically create User/Profile/Preference + opaque AOS Auth Identity; an existing provider binding is authoritative and is never silently rebound by email. Session creation occurs only after account/bootstrap checks.
+
+Idempotency/retry: existing bound identity is reuse-safe; first-account creation relies on DB uniqueness and identity-binding constraints. Session creation itself is non-idempotent.
+
+Rate limiting: 300/hour per IP before token verification + 30/hour per verified provider subject after token proof.
 
 ### `aos.api.v1.auth.apple_login`
 
-Purpose: login/register with Apple OIDC identity.
+**Purpose:** verify Apple OIDC identity, bind/create the AOS account, then create an AOS/Frappe session.  
+**HTTP / authentication:** `POST`, Guest.  
+**Frontend usage:** Sign in with Apple callback.
 
-Authentication and request shape match Google. First sign-in must provide an email if there is no existing subject binding, and any Apple email present must carry a provider-verified `email_verified` claim. Later Apple tokens may omit email because `AOS Auth Identity` resolves the already-bound immutable `sub`. The same AOS email-OTP continuation is required before session creation when the Frappe 2FA policy applies.
+Inputs and size limits are identical to `google_login`: `id_token` and `client_type` required; `country`, `currency`, `language` optional new-account hints.
+
+Example: `{"id_token":"<apple-identity-token>","client_type":"mobile"}`
+
+Success/session/error/idempotency behavior matches Google, with Apple-specific token verification. First sign-in requires provider email when no subject binding exists, and any supplied Apple email must be provider-verified. Later Apple tokens may omit email because the existing opaque `sub` binding resolves the account.
+
+Rate limiting: 300/hour per IP + 30/hour per verified Apple subject.
 
 ### `aos.api.v1.auth.me`
 
-Purpose: high-frequency current-user/session bootstrap at application startup/resume.
+**Purpose:** high-frequency authenticated bootstrap on app startup/resume/session recovery.  
+**HTTP / authentication:** `GET`; decorator permits Guest only so AOS can return stable JSON, but a valid session is logically required.  
+**Frontend usage:** validate persisted auth state and refresh current account/bootstrap state.
 
-Authentication: a valid session is required logically; decorator allows Guest only so the endpoint can return stable `SESSION_INVALID` JSON.
+Inputs: **none**. Any client field is `AUTH_UNKNOWN_FIELD`.
 
-Inputs: none. Unknown query/body fields are rejected.
+Example: request with valid Frappe web cookie or mobile session transport and no Authentication parameters.
 
-Success:
+Success: `200`, message `Session fetched.`, canonical bootstrap payload with `data.session = {"authenticated":true}`. `sid` is **never** returned by `me`.
 
-```json
-{
-  "ok": true,
-  "message": "Session fetched.",
-  "data": {
-    "session": {"authenticated": true},
-    "user": {
-      "account_id": "ACC-EXAMPLEOPAQUEID",
-      "email": "jane@example.com",
-      "display_name": "Jane Doe",
-      "avatar": null,
-      "enabled": true,
-      "account_status": "Active",
-      "is_verified": false
-    },
-    "preferences": {"country":"Kenya","language":"en","currency":"KES"},
-    "roles": ["Website User"],
-    "seller": {}
-  }
-}
-```
+Stable errors: `AUTH_UNKNOWN_FIELD`, `SESSION_INVALID`, account-state errors, `ACCOUNT_BOOTSTRAP_UNAVAILABLE`, `SERVICE_UNAVAILABLE`.
 
-`sid` is never returned by `me`. Missing AOS Profile/User Preference is an invariant failure and is not repaired by this read endpoint.
+Side effects: no AOS repair/create writes. Frappe may perform normal session bookkeeping. Required Preference is loaded once and reused for serialization; optional avatar failure degrades to `null`.
 
-Idempotency: yes; it is read-oriented apart from normal framework session activity/expiry bookkeeping.
+Idempotency/retry: yes, read-oriented and safe to retry.
+
+Rate limiting: no additional Auth Redis quota; normal Frappe/edge/session controls still apply.
 
 ### `aos.api.v1.auth.logout`
 
-Purpose: clear current Frappe session.
+**Purpose:** terminate the current Frappe session.  
+**HTTP / authentication:** `POST`, Guest allowed for idempotency.  
+**Frontend usage:** logout action and best-effort local session cleanup.
 
-Authentication: Guest allowed for an idempotent result. Inputs: none.
+Inputs: **none**.
 
-Success when authenticated: `Logged out successfully.` Success when already Guest/expired: `Already logged out.`
+Success when authenticated: `200`, `Logged out successfully.`; when already Guest/expired: `200`, `Already logged out.` Both use `data: {}`.
 
-Idempotency: yes.
+Stable errors: `AUTH_UNKNOWN_FIELD`, `LOGOUT_FAILED` if framework logout unexpectedly fails.
+
+Side effects: current Frappe session/cookie teardown when authenticated.
+
+Idempotency/retry: yes; repeated logout reaches the same logged-out state.
+
+Rate limiting: no additional Authentication Redis quota.
 
 ### `aos.api.v1.auth.forgot_password_request`
 
-Purpose: request recovery OTP without revealing account existence.
+**Purpose:** request password-recovery OTP without revealing whether an eligible account exists.  
+**HTTP / authentication:** `POST`, Guest.  
+**Frontend usage:** “forgot password” first step.
 
-Authentication: Guest. Input: `email` only.
+| Parameter | Type | Required | Default | Validation |
+|---|---|---:|---|---|
+| `email` | string, max 140 | yes | — | trim/lowercase valid email |
 
-All unknown/deleted/eligible/cooldown-suppressed account states return the same success message: `If an account exists for this email, a recovery code has been queued.` Eligible sends write OTP state + Email Queue state transactionally.
+Example: `{"email":"jane@example.com"}`
 
-Rate limit: shared Redis per identifier and generous IP dimension.
+Success: `200`, `data: {}`, message `If an account exists for this email, a recovery code has been queued.` Unknown/deleted/eligible/cooldown-suppressed states share it.
 
-Idempotency: safe to retry within limits; internal cooldown may suppress duplicate delivery without changing the public success response.
+Stable errors: `AUTH_UNKNOWN_FIELD`, `VALIDATION_ERROR`, `RATE_LIMIT`, `SERVICE_UNAVAILABLE` when the distributed limiter itself is unavailable. Post-limit account/mail failures are logged but do not become an account-enumerating response.
+
+Side effects: eligible account outside cooldown gets password-reset OTP + Email Queue state; challenge continuation is cleared before a fresh OTP. Unknown/deleted/cooldown no-op branches do slow dummy OTP-hash work.
+
+Idempotency/retry: safe within limits; 60-second internal resend cooldown can suppress duplicate delivery.
+
+Rate limiting: 10/hour per normalized email + 60/hour per IP.
 
 ### `aos.api.v1.auth.forgot_password_verify_otp`
 
-Purpose: exchange a valid recovery OTP for a high-entropy reset token.
+**Purpose:** exchange valid recovery OTP for a one-time reset token.  
+**HTTP / authentication:** `POST`, Guest.  
+**Frontend usage:** recovery OTP verification step.
 
-Authentication: Guest. Inputs: `email`, `otp`.
+| Parameter | Type | Required | Default | Validation |
+|---|---|---:|---|---|
+| `email` | string, max 140 | yes | — | trim/lowercase valid email |
+| `otp` | string | yes | — | exactly six digits |
 
-Success: `{"reset_token":"<one-time-token>"}`. The plaintext token is returned once to the requesting client; only a SHA-256 digest is stored server-side. Generic OTP failure is used for unknown/wrong/expired/reused state.
+Example: `{"email":"jane@example.com","otp":"123456"}`
+
+Success: `200`, message `OTP verified.`, `data = {"reset_token":"<one-time-high-entropy-token>"}`. Plaintext reset token is returned only to this successful caller; server stores only its digest.
+
+Stable errors: `AUTH_UNKNOWN_FIELD`, `VALIDATION_ERROR`, `OTP_INVALID`, `RATE_LIMIT`; unexpected failures collapse to the generic public OTP failure.
+
+Side effects: consumes OTP and writes reset-token digest + 15-minute expiry under User/challenge locks.
+
+Idempotency/retry: OTP is single-use; replay is `OTP_INVALID`.
+
+Rate limiting: 30/hour per normalized email + 180/hour per IP.
 
 ### `aos.api.v1.auth.forgot_password_reset`
 
-Purpose: consume reset token and replace password.
+**Purpose:** consume reset token, replace password and revoke all sessions.  
+**HTTP / authentication:** `POST`, Guest.  
+**Frontend usage:** recovery “set new password” screen.
 
-Authentication: Guest.
+| Parameter | Type | Required | Default | Validation |
+|---|---|---:|---|---|
+| `email` | string, max 140 | yes | — | trim/lowercase valid email |
+| `reset_token` | string, max 4096 | yes | — | opaque one-time token |
+| `new_password` | string, max 128 | yes | — | after token proof: min 8 + Frappe policy + no current-password reuse |
+| `confirm_password` | string, max 128 | yes | — | must exactly equal `new_password` |
 
-Inputs: `email`, `reset_token`, `new_password`, `confirm_password`.
+Example: `{"email":"jane@example.com","reset_token":"<opaque>","new_password":"NewStrongPass123!","confirm_password":"NewStrongPass123!"}`
 
-Success: `Password updated successfully. Please login again.`
+Success: `200`, `data: {}`, message `Password updated successfully. Please login again.`
 
-Important errors: `TOKEN_INVALID`, `TOKEN_EXPIRED`, `PASSWORD_MISMATCH`, `PASSWORD_REUSED`, `VALIDATION_ERROR`, `RATE_LIMIT`, `SERVICE_UNAVAILABLE`. Password-policy/reuse details are returned only after a valid reset token has been proven, so they cannot be used to enumerate accounts.
+Stable errors: `AUTH_UNKNOWN_FIELD`, `VALIDATION_ERROR`, `PASSWORD_MISMATCH`, `TOKEN_INVALID`, `TOKEN_EXPIRED`, `PASSWORD_REUSED`, `RATE_LIMIT`, `SERVICE_UNAVAILABLE`, `INTERNAL_ERROR`. Password policy/reuse details are evaluated only after valid reset-token proof.
 
-Side effects: password hash update, reset-token consumption and deletion of all Frappe sessions in the same DB transaction. Exact Redis session entries are invalidated after commit.
+Side effects: under User then challenge lock, writes Frappe password, consumes reset continuation and deletes all Frappe sessions in the same DB transaction; exact Redis session entries are invalidated after commit.
 
-Idempotency: token is single-use; retry after success returns `TOKEN_INVALID`.
+Idempotency/retry: reset token is single-use; post-success replay is `TOKEN_INVALID`.
+
+Rate limiting: 20/hour per normalized email + 120/hour per IP.
 
 ### `aos.api.v1.auth.change_password`
 
-Purpose: authenticated password replacement.
+**Purpose:** authenticated password replacement with current-password proof.  
+**HTTP / authentication:** `POST`, authenticated Frappe session.  
+**Frontend usage:** Account/Security “change password”.
 
-Authentication: Authenticated session.
+| Parameter | Type | Required | Default | Validation |
+|---|---|---:|---|---|
+| `current_password` | string, max 128 | yes | — | verified by Frappe |
+| `new_password` | string, max 128 | yes | — | min 8 + Frappe policy + not current password |
+| `confirm_password` | string, max 128 | yes | — | exact match |
 
-Inputs: `current_password`, `new_password`, `confirm_password`.
+Example: `{"current_password":"OldStrong123!","new_password":"NewStrong456!","confirm_password":"NewStrong456!"}`
 
-Success: `Password changed successfully.`
+Success: `200`, `data: {}`, `Password changed successfully.`
 
-The current password is verified through Frappe. The current session is retained while other server sessions are revoked. Password validation uses the same AOS baseline + configured Frappe strength policy as signup/reset, and the current password cannot be reused (`PASSWORD_REUSED`).
+Stable errors: `AUTH_UNKNOWN_FIELD`, `AUTH_REQUIRED`/session auth error from shared auth boundary, `VALIDATION_ERROR`, `PASSWORD_MISMATCH`, `PASSWORD_REUSED`, `FORBIDDEN` for wrong current password, `RATE_LIMIT`, `SERVICE_UNAVAILABLE`, `INTERNAL_ERROR`.
+
+Side effects: User row lock, password update, retain current SID and revoke all other exact server sessions; exact Redis session invalidation is after commit.
+
+Idempotency/retry: intentionally non-idempotent credential mutation. A repeated request with the old current password fails after the first successful change.
+
+Rate limiting: 20/hour per authenticated user + 30/hour per IP.
 
 ### `aos.api.v1.auth.delete_account`
 
-Purpose: authenticated confirmation boundary for Accounts-owned recoverable deletion.
+**Purpose:** authenticated confirmation boundary for Accounts-owned 30-day recoverable deletion.  
+**HTTP / authentication:** `POST`, authenticated.  
+**Frontend usage:** destructive account deletion confirmation UI.
 
-Authentication: Authenticated. Inputs: `confirmation` exactly `DELETE`; optional `reason` <=300.
+| Parameter | Type | Required | Default | Validation |
+|---|---|---:|---|---|
+| `confirmation` | string, max 16 | yes | — | must equal uppercase `DELETE` exactly |
+| `reason` | string, max 300 | no | empty | trimmed; blank becomes absent |
 
-Deletion is a **30-day reversible tombstone**, not immediate destructive cleanup. Auth adds strict confirmation, abuse limits, user-row ordering, safe error shaping, and clears the current session cookie after lifecycle access revocation.
+Example: `{"confirmation":"DELETE","reason":"No longer using AOS"}`
 
-Immediate deletion effects:
+Success: `200`, message `Account deleted successfully. You can restore it with email verification within the restore window.` Data includes `restore_window_days: 30`, lifecycle `status`, `idempotent`, `restore_deadline` when applicable, access-revocation summary and `cleanup`/feature summary from Accounts.
 
-- `AOS Profile.account_status = Deleted` and `restore_deadline = now + 30 days`; deletion is derived from the lifecycle state and is not stored in a second boolean;
-- Frappe `User.enabled = 0`;
-- every Frappe session and exact Redis session-cache entry is revoked;
-- push/device-token rows are removed so restored devices must register again; Authentication OTP/reset state is consumed/cleared;
-- unconfirmed media upload sessions are invalidated without touching uploaded/processing/attached durable media;
-- active Calls/Lives/view/cohost sessions are ended;
-- queued/processing notification delivery jobs are cancelled so stale pushes are not delivered after restore.
+Stable errors: `AUTH_UNKNOWN_FIELD`, shared auth requirement, `VALIDATION_ERROR`, `RATE_LIMIT`, Accounts lifecycle stable errors, `DELETE_ACCOUNT_FAILED`.
 
-Durable state deliberately **remains unchanged** during the restore window: followers, following, blocks, follower counters, seller/storefront status and metrics, Ads and drafts, Shorts and their counters, comments/replies, chat history and private chat personalization, reviews and reactions, reports, verification decision/evidence, wishlist, saved searches, notification history, Localization preferences, profile fields/media, public/internal account IDs and historical call/live records. Public endpoints hide a deleted/disabled owner through account-state policy rather than rewriting those rows. Short and Live authored comment text is redacted in serialization while the account is deleted; the stored text is untouched and reappears on restore.
+Side effects: Auth locks the User and invokes `AccountLifecycleService.delete`; Accounts writes the profile tombstone/restore deadline, disables User and performs bounded feature access cleanup. Auth/session control revokes sessions and the endpoint clears current session cookies. Durable content is intentionally retained during the restore window.
 
-This makes delete/restore O(1) with respect to a user's social/content graph. An account with 1,000,000 followers keeps all 1,000,000 follow edges and stored counters during the grace period; public counts are masked while deleted and the original count returns immediately on restore.
-Seller status is likewise not rewritten during recoverable deletion; no `account_delete_previous_status` compatibility field is required.
+Idempotency/retry: Accounts lifecycle delete is idempotent at the state transition level; repeated authorized deletion of an already-deleted profile returns deleted state while access revocation remains safe. After current session revocation a new request normally cannot authenticate as that deleted user.
 
-After `restore_deadline`, restore returns `RESTORE_EXPIRED`. The hourly Accounts purge job (`aos.tasks.accounts.purge_expired_deleted_accounts`) advances permanent cleanup in bounded batches. Social edges/blocks use a maximum 10,000-row batch per account/run; chat-private state, reports, review reactions, Activity history/redaction, wishlist, notifications, saved searches, Auth identities and Localization preferences are also processed in bounded batches. Verification evidence uses its existing <=500-row paged cleanup. Profile media is then released, profile presentation PII is anonymized, and `purge_status` becomes `Completed`. Shared marketplace/history rows such as Ads, Shorts, Reviews, chat messages, Calls and moderation history remain linked to the stable account identity but continue to serialize as a deleted account.
+Rate limiting: 3/hour per user + 10/hour per IP.
 
 ### `aos.api.v1.auth.request_restore_account`
 
-Purpose: request a restore OTP without revealing whether a restorable deleted account exists.
+**Purpose:** request account-restore OTP without revealing whether a restorable deleted account exists.  
+**HTTP / authentication:** `POST`, Guest.  
+**Frontend usage:** deleted-account recovery entry screen.
 
-Authentication: Guest. Input: `email`. Generic success is returned for unknown/non-deleted/expired/cooldown-suppressed/eligible states. Abuse limiting is shared Redis by email and IP.
+| Parameter | Type | Required | Default | Validation |
+|---|---|---:|---|---|
+| `email` | string, max 140 | yes | — | trim/lowercase valid email |
+
+Example: `{"email":"jane@example.com"}`
+
+Success: `200`, `data: {}`, `If a restorable account exists for this email, a restore code has been sent.` Unknown, active/non-deleted, expired/non-restorable, cooldown-suppressed and eligible states share it.
+
+Stable errors: `AUTH_UNKNOWN_FIELD`, `VALIDATION_ERROR`, `RATE_LIMIT`; downstream account/mail exceptions are logged while preserving the generic public acknowledgement.
+
+Side effects: eligible restorable account outside cooldown gets account-restore OTP + Email Queue state. No-op states perform slow dummy OTP-hash work.
+
+Idempotency/retry: safe within limits; 60-second resend cooldown suppresses duplicate mail.
+
+Rate limiting: 10/hour per normalized email + 20/hour per IP.
 
 ### `aos.api.v1.auth.restore_account`
 
-Purpose: verify restore OTP and invoke Accounts lifecycle restore.
+**Purpose:** consume restore OTP and invoke Accounts lifecycle restore.  
+**HTTP / authentication:** `POST`, Guest.  
+**Frontend usage:** deleted-account restore verification step.
 
-Authentication: Guest. Inputs: `email`, `otp`.
+| Parameter | Type | Required | Default | Validation |
+|---|---|---:|---|---|
+| `email` | string, max 140 | yes | — | trim/lowercase valid email |
+| `otp` | string | yes | — | exactly six digits |
 
-Unknown/missing/wrong/expired/reused verification state returns generic `OTP_INVALID`. Once valid proof exists, lifecycle-specific state such as `RESTORE_EXPIRED` may be returned.
+Example: `{"email":"jane@example.com","otp":"123456"}`
+
+Success: `200`, `Account restored successfully. Please login.`, data includes `can_login: true`, Accounts lifecycle `status`, `idempotent`, and restore/feature summary.
+
+Stable errors: `AUTH_UNKNOWN_FIELD`, `VALIDATION_ERROR`, `OTP_INVALID`, `ACCOUNT_NOT_DELETED`, `RESTORE_EXPIRED`, `RATE_LIMIT`, Accounts lifecycle errors, `RESTORE_ACCOUNT_FAILED`.
+
+Side effects: User/challenge proof is locked and consumed, then Accounts restores profile state and re-enables User; durable state preserved during the grace window becomes visible according to owning feature rules. No session is created automatically.
+
+Idempotency/retry: OTP proof is single-use. Once restored, login is a separate action; replayed proof is generic `OTP_INVALID`.
+
+Rate limiting: 30/hour per normalized email + 60/hour per IP.
 
 ---
 
@@ -613,6 +764,7 @@ No Authentication correctness rule requires sticky load-balancer sessions.
 
 - login unknown user and wrong password: identical `INVALID_CREDENTIALS` contract;
 - unknown login performs slow password-hash work to reduce the obvious timing gap;
+- duplicate registration performs dummy slow password-hash and OTP-hash work; generic recovery/resend/restore no-op branches perform dummy slow OTP-hash work, reducing simple account/cooldown timing oracles without persisting state;
 - recovery request, verification resend and restore request use generic success messages independent of account/cooldown state;
 - OTP verification collapses missing/wrong/expired/reused/exhausted state to `OTP_INVALID` at public verification boundaries;
 - account state on password login is revealed only after password proof.
@@ -636,7 +788,7 @@ Registration is also enumeration-safe: new, existing and concurrent-duplicate ad
 
 Security-sensitive Authentication endpoints use `aos.api.auth.rate_limits`, not process-local counters. The limiter runs an atomic Redis Lua `INCR` + first-window `EXPIRE` across all nodes and explicitly applies Frappe's site key prefix before executing Lua, so sites sharing Redis cannot consume one another's quotas. Redis failure returns `SERVICE_UNAVAILABLE` for the security-sensitive operation rather than silently disabling abuse protection.
 
-IP limits are paired with identifier/subject/user limits where warranted. Identifier limits prevent a shared carrier/NAT IP from being the only abuse dimension; IP limits provide a broad spray bound.
+IP limits are paired with identifier/subject/user limits where warranted. Identifier limits prevent a shared carrier/NAT IP from being the only abuse dimension; IP limits provide a broad spray bound. Non-IP dimension values are site-keyed HMAC-SHA-256 digested before they become Redis key material, so normalized emails, user IDs and OIDC subjects are not exposed by cache-key inspection. IPs remain readable for infrastructure troubleshooting.
 
 Current fixed-window policy (all windows are one hour; the hidden resend cooldown is separate):
 
@@ -646,6 +798,7 @@ Current fixed-window policy (all windows are one hour; the hidden resend cooldow
 | verify signup email OTP | 30 / normalized email | 120 |
 | resend signup email OTP | 10 / normalized email | 60 |
 | password login | 20 / normalized email | 300 |
+| 2FA continuation verify | 10 / challenge-token digest | 120 |
 | forgot-password request | 10 / normalized email | 60 |
 | forgot-password OTP verify | 30 / normalized email | 180 |
 | forgot-password reset | 20 / normalized email | 120 |
@@ -722,7 +875,9 @@ Frontend rules:
 9. Safe retry targets include `me`, `logout`, and generic request/resend operations within rate limits.
 10. After successful password reset, discard any local session and require login.
 11. After password change, current session remains valid; other devices are signed out.
-12. Display Localization from `data.preferences`; do not separately recreate default selection rules inside Auth UI.
+12. Display Localization from `data.preferences`; canonical keys are `country`, `currency`, `language`, `location`, `is_country_locked`. Do not separately recreate default selection rules inside Auth UI.
+13. On `TWO_FACTOR_REQUIRED`, keep `data.challenge_token` only for the short login continuation, collect the six-digit OTP, and call `verify_two_factor` with the same intended `client_type`; do not log/persist the challenge longer than needed.
+14. Social login sends provider `id_token`, not access-token aliases. Optional Localization hints are meaningful only if the provider identity creates a new AOS account.
 
 ---
 
@@ -746,32 +901,62 @@ Frontend rules:
 | direct Frappe Website User `/api/method/login` | `aos.api.v1.auth.login` | never call generic Frappe login | remove generic Frappe login requests |
 | Frappe public `sign_up` / reset-key recovery / Website User password methods | versioned AOS registration/recovery/change-password endpoints; generic paths guarded | never call those Frappe Website auth methods | remove them from collections |
 | historical `add_auth_indexes` migration/dedupe patch | final DocType schema/invariants | none | none |
+| historical `finalize_auth_identity_privacy` upgrade transformer | final privacy-safe `AOS Auth Identity` / `AOS Auth Challenge` DocTypes directly on clean install | none | remove any assumption that old identity/email-verification data is migrated |
+| password-change `logout_all` option | fixed policy: keep current session, revoke all other sessions | remove toggle/field | remove `logout_all` |
+| OTP aliases such as `code` / `verification_code` | exact `otp` key | send only `otp` | remove aliases |
+| social-login `access_token` alias | provider `id_token` only | send ID token only | remove access-token field |
+| 2FA `remember_me` or other session-option aliases | exact `challenge_token`, `otp`, `client_type` | remove unsupported options | remove unsupported fields |
 
 ---
 
 ## J. Patches / installation
 
-Deployment target is a new Frappe site. Authentication therefore optimizes the final schema rather than preserving migrations for AOS installations that will never exist.
+AOS is targeting a **new-site installation**, so Authentication final state comes from authoritative DocType/controller/hook/install definitions rather than historical upgrade transformations.
 
-### Removed
+### Removed Authentication patches
 
-`aos.patches.v1_0.add_auth_indexes`
+#### `aos.patches.v1_0.add_auth_indexes`
 
-Reason: it deduplicated historical `AOS Auth Challenge` data and created post-install indexes/uniqueness needed by an earlier schema. A fresh site cannot contain those historical duplicates. The file and `patches.txt` entry are removed.
+Action: **REMOVE** (already absent from the repository and patch list).
 
-Permanent state moved into final definitions:
+Reason: it belonged to an older Authentication schema, deduplicated historical challenge rows and installed indexes/uniqueness after data already existed. A fresh site cannot contain that historical state.
 
-- `AOS Auth Challenge` uses deterministic hashed `user + purpose` primary naming and renaming is disabled, so one row per purpose is intrinsic to a fresh schema;
-- `otp_password_hash` replaces the historical `otp_hash` field directly in the DocType;
-- `AOS Auth Identity` carries permanent unique social identity constraints in its DocType;
-- `AOS Auth Challenge.user` is permanently indexed for account-wide token revocation;
-- `after_install` sets `Website Settings.disable_signup = 1`; hook overrides also guard the generic Frappe signup/recovery/password methods, so the versioned AOS contract is the only public Website User path.
+Permanent replacement:
+
+- `AOS Auth Challenge` uses deterministic `authc-<sha256(user + NUL + purpose)>` primary naming with renaming disabled, so one row per user/purpose is intrinsic to the final model;
+- `AOS Auth Challenge.user` and `continuation_token_hash` carry permanent `search_index` metadata;
+- final OTP/token fields live directly in the DocType.
+
+#### `aos.patches.v1_0.finalize_auth_identity_privacy`
+
+Action: **REMOVE**.
+
+Reason: this patch existed only to transform previously persisted social identity rows from the historical raw-provider-subject/email schema, rename old identity documents, and clear retired `AOS Email Verification` records. None of those historical records/columns can exist on a clean AOS installation using the current DocType source. Keeping the patch would make the new-site path carry upgrade baggage with no final-state responsibility.
+
+Permanent replacement:
+
+- `AOS Auth Identity` directly stores only `provider`, `user`, and the opaque unique `user_provider_key`;
+- its primary name is generated from a site-keyed HMAC of provider + OIDC subject;
+- raw provider subject/email are never part of the final schema;
+- `AOS Auth Challenge` is the only Authentication temporary challenge model.
 
 ### Remaining Authentication-specific patches
 
-`aos.patches.v1_0.finalize_auth_identity_privacy` is an upgrade-safety cleanup for the already-used v10 staging baseline. It is a no-op for a fresh v11 site except for harmless table-existence checks. When upgrading v10, it preserves durable Google/Apple bindings while renaming them to the new site-keyed HMAC identity names, updates the provider/user uniqueness key, erases retired raw provider `subject`/`email_at_link` values if the old physical columns still exist, and clears the retired ephemeral `AOS Email Verification` table rather than carrying old OTP/reset state into the new `AOS Auth Challenge` model. It performs DML only and contains no runtime compatibility path.
+**None.** Authentication no longer requires a historical data-transformation patch to reach its final schema on a fresh site.
 
-`aos.patches.v1_0.harden_accounts_subsystem` is owned by Accounts and contains the corresponding one-time v10 profile-primary-key/privacy cleanup. Fresh installations derive the final profile schema directly from DocType source. Other patches in `patches.txt` belong to their owning features and are not runtime Authentication compatibility contracts.
+### Cross-feature patch consumed by Authentication
+
+`aos.patches.v1_0.install_localization_schema` is **KEEP**, but it is Localization-owned rather than Authentication-owned. It installs/defensively verifies final database structures that are not fully expressible as DocType field metadata: the composite AOS Location uniqueness/read index and the one-user preference uniqueness contract. Authentication consumes `AOS User Preference` through the finalized Localization service, so this patch remains genuinely required for the clean-site Localization data model; it is not retained for old Authentication compatibility.
+
+`aos.patches.v1_0.harden_accounts_subsystem` remains in the repository because it belongs to the separately owned Accounts feature. Authentication does not rely on that patch as its installation mechanism, and this Authentication review does not broaden scope by deleting Accounts migration history.
+
+### Permanent fresh-site definitions
+
+- Auth DocType schema/field indexes/permissions: `aos/aos/doctype/aos_auth_challenge/*` and `aos/aos/doctype/aos_auth_identity/*`;
+- User/Profile/Preference uniqueness: authoritative owning DocTypes plus the Localization final-state uniqueness verification above;
+- generic Frappe signup disabled: `aos.install.after_install` sets `Website Settings.disable_signup = 1`;
+- generic Website User auth/recovery bypasses guarded: `hooks.py` `on_login`, `extend_doctype_class`, and `override_whitelisted_methods`;
+- no ad-hoc Authentication install SQL is used.
 
 Fresh-install expectation:
 
@@ -781,7 +966,7 @@ bench --site <site> install-app aos
 bench --site <site> migrate
 ```
 
-must derive Authentication DocTypes, permissions, hooks and final schema directly from the app definitions; Authentication does not depend on an upgrade-only data transformation.
+must derive Authentication DocTypes, permissions, hooks and final schema from the app definitions above. Authentication does not depend on an upgrade-only data transformation.
 
 ---
 
@@ -795,9 +980,9 @@ must derive Authentication DocTypes, permissions, hooks and final schema directl
 - canonical AOS Website User creation is not capped by Frappe's coarse site-wide User-creation counter; a narrow `User` mixin bypasses only that upstream guard after AOS Redis rate limits have passed, while generic Frappe/Desk User creation remains throttled;
 - password/reset/account mutation ordering uses a per-user database row lock, not a global application lock;
 - OTP rows are bounded per user/purpose instead of append-only;
-- `me` is read-oriented and no longer creates/repairs data;
+- `me` is read-oriented and never creates/repairs data; login and `me` load the required Localization preference once and reuse it during serialization instead of performing an existence check followed by an immediate duplicate read;
 - password/session cache invalidation targets exact session IDs;
-- email is queued rather than synchronously delivered from the Auth web worker;
+- email is queued rather than synchronously delivered from the Auth web worker; repeated 2FA first-factor success inside the resend cooldown reuses a still-valid OTP while rotating the continuation token, preventing avoidable mail floods;
 - OIDC JWKS is shared-cached in Redis; unknown-key refresh is globally throttled per site/provider with an atomic Redis NX guard to prevent refresh storms;
 - credential verification is deliberately not cached;
 - recoverable account deletion never synchronously deletes follower/content graphs; visibility is controlled by the single account tombstone;
@@ -858,6 +1043,7 @@ The application changes do **not** prove capacity for one million users or one m
 | Frappe session Redis/cache | required according to framework session config | framework/session failure; no invented local fallback |
 | Localization during new account creation | required | account creation rolls back/fails |
 | Localization read for established bootstrap | required invariant | safe preference/invariant failure |
+| profile avatar/media URL | optional presentation data | degrades to `avatar: null` and logs only secret-safe failure classification |
 | Email provider delivery | asynchronous/degradable after queueing | request depends on durable queue creation, not provider round trip |
 | Google/Apple JWKS/provider network on cache miss | required for social proof | `SERVICE_UNAVAILABLE`; no unverified login |
 
@@ -874,6 +1060,7 @@ Authentication-focused test modules:
 - `test_password_reset_api.py` — recovery enumeration safety, OTP exchange, expiry, token replay and reset behavior;
 - `test_password_change_api.py` — current-password proof, configured policy/reuse behavior and session revocation policy;
 - `test_social_login_api.py` — provider subject binding, Apple later-login behavior, invariant checks, anti-rebinding, canonical fields;
+- `test_two_factor_api.py` — continuation-token/OTP consumption, replay safety, session creation and resend-cooldown mail suppression;
 - `test_delete_restore_api.py` — delete/restore validation and generic restore proof errors;
 - `test_auth_security_contracts.py` — site-namespaced atomic Redis limiter/fail-closed contract, generic Frappe login + parallel auth-path guards, install default, source safety invariants;
 - `aos/tests/test_auth_database_contracts.py` — final fresh-site DocType/security/locking/patch contracts.
@@ -887,6 +1074,7 @@ bench run-tests --app aos --module aos.api.auth.tests.test_otp_api
 bench run-tests --app aos --module aos.api.auth.tests.test_password_reset_api
 bench run-tests --app aos --module aos.api.auth.tests.test_password_change_api
 bench run-tests --app aos --module aos.api.auth.tests.test_social_login_api
+bench run-tests --app aos --module aos.api.auth.tests.test_two_factor_api
 bench run-tests --app aos --module aos.api.auth.tests.test_delete_restore_api
 bench run-tests --app aos --module aos.api.auth.tests.test_auth_security_contracts
 bench run-tests --app aos --module aos.tests.test_auth_database_contracts

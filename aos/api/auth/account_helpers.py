@@ -36,11 +36,11 @@ def create_aos_profile(user: str):
     return profile
 
 
-
 def profile_display_name(user: str) -> str:
     """Return the canonical AOS display name for an existing account."""
     value = frappe.db.get_value("AOS Profile", {"user": str(user or "").strip()}, "display_name")
     return str(value or "").strip()
+
 
 def create_user_preference(
     user: str,
@@ -97,22 +97,40 @@ def create_auth_bootstrap(
     return create_user_preference(user, country=country, currency=currency, language=language)
 
 
-def assert_auth_bootstrap(user: str, *, profile_exists: bool | None = None):
-    """Validate required identity rows without mutating a high-frequency read.
+def account_enabled(user: str, *, state: dict[str, Any] | None = None, known_enabled: bool | None = None) -> bool:
+    """Resolve framework User.enabled without duplicating the normal account-state query.
+
+    ``get_account_state`` already includes User.enabled whenever an AOS Profile
+    exists. A missing profile is an invariant failure, but its base state cannot
+    distinguish an enabled User from a disabled one. Only that exceptional path
+    performs a direct User lookup. Login may pass the already-read value.
+    """
+    if known_enabled is not None:
+        return bool(known_enabled)
+    if state is not None and state.get("exists"):
+        return bool(state.get("enabled"))
+    return bool(int(frappe.db.get_value("User", user, "enabled") or 0))
+
+
+def load_auth_bootstrap_preference(user: str, *, profile_exists: bool | None = None):
+    """Load required bootstrap state without mutating a high-frequency read.
 
     Missing bootstrap state is an internal account invariant, not a client
     authorization distinction. Keep the public error stable and log only a
-    hashed user identifier for operators.
+    hashed user identifier for operators. Returning the already-loaded
+    preference lets login/``me`` serialize it without immediately repeating the
+    same lookup.
     """
     if profile_exists is None:
         profile_exists = bool(profile_name_for_user(user))
     if not profile_exists:
         safe_log_auth_event("AOS Auth Bootstrap Missing", user=user, reason="profile")
-        return fail("Account bootstrap temporarily unavailable.", error="ACCOUNT_BOOTSTRAP_UNAVAILABLE")
-    if not frappe.db.exists("AOS User Preference", {"user": user}):
+        return None, fail("Account bootstrap temporarily unavailable.", error="ACCOUNT_BOOTSTRAP_UNAVAILABLE")
+    preference = get_user_preference(user)
+    if not preference:
         safe_log_auth_event("AOS Auth Bootstrap Missing", user=user, reason="preference")
-        return fail("Account bootstrap temporarily unavailable.", error="ACCOUNT_BOOTSTRAP_UNAVAILABLE")
-    return None
+        return None, fail("Account bootstrap temporarily unavailable.", error="ACCOUNT_BOOTSTRAP_UNAVAILABLE")
+    return preference, None
 
 
 def user_for_email(email: str) -> str | None:

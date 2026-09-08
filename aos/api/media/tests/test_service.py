@@ -8,9 +8,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import frappe
+from aos.services.accounts.identity import profile_name_for_user
 from frappe.tests.utils import FrappeTestCase
 
-from aos.services.accounts.identity import profile_name_for_user
 from aos.services.media.media_service import (
     MediaConflictError,
     MediaNotFoundError,
@@ -741,12 +741,14 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
         doc = self._init_png()
         self._upload_staging(doc)
         confirmed = self.service.confirm_upload(user=self.user, media_id=doc.name)
+        profile_name = profile_name_for_user(self.user)
+        self.assertTrue(profile_name)
         self.service.attach_media(
             media_id=confirmed.name,
             user=self.user,
             purpose="profile_image",
             attached_doctype="AOS Profile",
-            attached_name=profile_name_for_user(self.user),
+            attached_name=profile_name,
             attached_field="profile_image_media",
         )
         with self.assertRaises(MediaConflictError):

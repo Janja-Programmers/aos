@@ -81,9 +81,16 @@ def verify_rs256_token(
             raise OIDCDependencyError("OIDC cache unavailable") from exc
         if may_refresh:
             jwks = _load_jwks(cache_key=cache_key, url=jwks_url, force_refresh=True)
+            jwk = find_key(jwks)
         else:
             jwks = _load_jwks(cache_key=cache_key, url=jwks_url)
-        jwk = find_key(jwks)
+            jwk = find_key(jwks)
+            if not jwk:
+                # Another application node owns the short refresh lease. The
+                # shared cache may not contain the rotated provider key yet, so
+                # this is a temporary dependency state rather than proof that
+                # the token is invalid. Fail closed and let the client retry.
+                raise OIDCDependencyError("OIDC key refresh in progress")
     if not jwk:
         raise OIDCTokenError("KID_NOT_FOUND")
     try:

@@ -16,7 +16,7 @@ from .constants import (
 )
 from .contracts import reject_unknown_fields
 from .locking import lock_user
-from .otp_service import issue_otp, public_otp_invalid, resend_allowed, verify_public_otp
+from .otp_service import dummy_otp_issue_work, issue_otp, public_otp_invalid, resend_allowed, verify_public_otp
 from .passwords import set_user_password, validate_new_password
 from .rate_limits import auth_ip_limit, auth_rate_limit
 from .session_control import revoke_all_sessions
@@ -56,11 +56,13 @@ def forgot_password_request_impl(**kwargs):
         return limited
     user_name = user_for_email(email)
     if not user_name or is_account_deleted(user_name):
+        dummy_otp_issue_work()
         return ok(GENERIC_REQUEST_MESSAGE)
     try:
         lock_user(user_name)
         ver = ensure_ver_doc(user_name, purpose=PASSWORD_RESET_PURPOSE, for_update=True)
         if not resend_allowed(ver):
+            dummy_otp_issue_work()
             return ok(GENERIC_REQUEST_MESSAGE)
         ver.continuation_token_hash = ""
         ver.continuation_expires_at = None

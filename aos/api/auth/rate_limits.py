@@ -10,6 +10,7 @@ import frappe
 
 from aos.api.shared.rate_limit import rate_limit_key, request_ip
 from aos.api.shared.responses import fail
+from aos.utils.privacy import opaque_digest
 
 _WINDOW_SCRIPT = """
 local current = redis.call('INCR', KEYS[1])
@@ -20,9 +21,24 @@ return current
 """
 
 
+def _rate_limit_value(dimension: str, value: str) -> str:
+    """Hide account/provider identifiers from Redis key names.
+
+    IP keys remain readable for infrastructure troubleshooting. Every other
+    Authentication dimension is a deterministic site-keyed digest so normalized
+    emails, provider subjects, user ids, or future auth identifiers are not
+    exposed in Redis key listings and cannot be dictionary-recovered from a
+    bare public hash, while still coordinating consistently across nodes.
+    """
+    raw = str(value or "").strip()
+    if str(dimension or "").strip().lower() == "ip":
+        return raw
+    return "hmac256_" + opaque_digest(raw)[:48]
+
+
 def auth_rate_limit(*, operation: str, dimension: str, value: str, limit: int, ttl_seconds: int = 3600, message: str):
-    key = rate_limit_key("auth", operation, dimension, value)
     try:
+        key = rate_limit_key("auth", operation, dimension, _rate_limit_value(dimension, value))
         cache = frappe.cache()
         # RedisWrapper.eval is inherited from redis-py, so it does not apply
         # Frappe's site prefix automatically. Explicit namespacing prevents two

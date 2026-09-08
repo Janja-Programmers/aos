@@ -51,10 +51,16 @@ class TestAuthRegisterAPI(AOSFeatureTestMixin, FrappeTestCase):
 
     def test_duplicate_registration_is_enumeration_safe_idempotent_acceptance(self):
         email = self.make_user("duplicate")
-        with patch("aos.api.auth.register.auth_rate_limit", return_value=None), patch("aos.api.auth.register.auth_ip_limit", return_value=None):
+        with patch("aos.api.auth.register.auth_rate_limit", return_value=None), patch(
+            "aos.api.auth.register.auth_ip_limit", return_value=None
+        ), patch("aos.api.auth.register.dummy_password_write_work") as dummy_password, patch(
+            "aos.api.auth.register.dummy_otp_issue_work"
+        ) as dummy_otp:
             response = register_impl(email=email, full_name="Duplicate", password="StrongPass123!")
         self.assertTrue(response.get("ok"), response)
         self.assertNotIn("error", response)
+        dummy_password.assert_called_once_with("StrongPass123!")
+        dummy_otp.assert_called_once_with()
 
     def test_concurrent_duplicate_insert_race_maps_to_safe_retry_acceptance(self):
         email = f"{self.prefix}-race@example.com"

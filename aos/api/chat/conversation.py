@@ -100,7 +100,7 @@ def _build_conversation_response(
 
     return {
         "id": conversation_id,
-        "user": other["account_id"],
+        "user": other["user"],
         "display_name": other["display_name"],
         "avatar": other["avatar"],
         "is_deleted": bool(other.get("is_deleted")),
@@ -442,7 +442,7 @@ def list_conversations_impl(**kwargs):
             results.append(
                 {
                     "id": conv["name"],
-                    "user": user.get("account_id"),
+                    "user": user.get("user"),
                     "display_name": display_name,
                     "avatar": avatar,
                     "is_deleted": bool(user.get("is_deleted")),
@@ -463,7 +463,7 @@ def list_conversations_impl(**kwargs):
                     ),
                     "last_message": last_message,
                     "last_message_at": last_message_at,
-                    "last_sender": (last_sender_user.get("account_id") if last_sender_user else None),
+                    "last_sender": (last_sender_user.get("user") if last_sender_user else None),
                     "last_sender_display_name": (
                         last_sender_user.get("display_name")
                         if last_sender_user

@@ -4,11 +4,19 @@ from __future__ import annotations
 
 import frappe
 from frappe.utils import today
-from frappe.utils.password import is_password_reused, update_password
+from frappe.utils.password import is_password_reused, passlibctx, update_password
 
 from aos.api.shared.responses import fail
 
 from .validators import validate_password_strength
+
+
+def dummy_password_write_work(password: str) -> None:
+    """Perform one slow password hash for enumeration-sensitive no-op paths."""
+    try:
+        passlibctx.hash(password or "")
+    except Exception:
+        pass
 
 
 def validate_new_password(user: str, password: str, *, field: str = "new_password"):

@@ -45,11 +45,16 @@ class TestAuthPasswordResetAPI(AOSFeatureTestMixin, FrappeTestCase):
 
     def test_request_unknown_and_existing_share_enumeration_safe_response(self):
         user = self.make_user("existing")
-        with patch("aos.api.auth.password_reset.auth_rate_limit", return_value=None), patch("aos.api.auth.password_reset.auth_ip_limit", return_value=None), patch("aos.api.auth.password_reset.issue_otp"):
+        with patch("aos.api.auth.password_reset.auth_rate_limit", return_value=None), patch(
+            "aos.api.auth.password_reset.auth_ip_limit", return_value=None
+        ), patch("aos.api.auth.password_reset.issue_otp"), patch(
+            "aos.api.auth.password_reset.dummy_otp_issue_work"
+        ) as dummy:
             missing = forgot_password_request_impl(email=f"{self.prefix}-missing@example.com")
             existing = forgot_password_request_impl(email=user)
         self.assertTrue(missing.get("ok")); self.assertTrue(existing.get("ok"))
         self.assertEqual(missing.get("message"), existing.get("message"))
+        dummy.assert_called_once_with()
 
     def test_verify_failures_are_generic_and_valid_returns_high_entropy_token(self):
         wrong = self._reset_user("wrong")

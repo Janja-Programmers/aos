@@ -181,7 +181,7 @@ def _build_live_payload(
     return {
         "live_id": live.name,
         "id": live.name,
-        "host_user": host["account_id"],
+        "host_user": host["user"],
         "host_display_name": host[
             "display_name"
         ],

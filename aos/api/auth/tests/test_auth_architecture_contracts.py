@@ -139,6 +139,11 @@ class TestAuthArchitectureContracts(unittest.TestCase):
         fn_source = ast.get_source_segment(serializer, fn) or ""
         self.assertNotIn("expires_at", fn_source)
 
+    def test_fresh_site_auth_does_not_run_upgrade_only_identity_patch(self):
+        patches = source("aos/patches.txt")
+        self.assertNotIn("finalize_auth_identity_privacy", patches)
+        self.assertFalse((ROOT / "aos/patches/v1_0/finalize_auth_identity_privacy.py").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

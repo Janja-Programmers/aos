@@ -9,7 +9,8 @@ from aos.api.shared.responses import fail, ok
 from .account_helpers import create_auth_bootstrap, safe_log_auth_event, user_for_email
 from .constants import REGISTER_LIMIT_PER_HOUR_PER_EMAIL, REGISTER_LIMIT_PER_HOUR_PER_IP
 from .contracts import reject_unknown_fields
-from .otp_service import issue_otp
+from .otp_service import dummy_otp_issue_work, issue_otp
+from .passwords import dummy_password_write_work
 from .rate_limits import auth_ip_limit, auth_rate_limit
 from .user_controller import mark_aos_managed_website_user_creation
 from .validators import optional_bootstrap_inputs, validate_registration_inputs
@@ -45,6 +46,10 @@ def register_impl(**kwargs):
         # Do not disclose account existence from the public registration boundary.
         # A retry against an address that already exists is intentionally accepted
         # without creating, mutating, or re-sending anything.
+        # Match the dominant slow credential work of a real registration closely
+        # enough to reduce a trivial timing oracle without persisting anything.
+        dummy_password_write_work(password)
+        dummy_otp_issue_work()
         return ok("If this email can be registered, a verification code has been queued.")
 
     try:

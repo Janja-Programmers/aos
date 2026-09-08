@@ -367,7 +367,7 @@ def send_typing_event_impl(**kwargs):
             event="aos_typing",
             message={
                 "conversation_id": conv_id,
-                "from": sender["account_id"],
+                "from": sender["user"],
                 "from_display_name": sender["display_name"],
                 "from_avatar": sender["avatar"],
                 "is_typing": is_typing,

@@ -8,6 +8,7 @@ from frappe.exceptions import AuthenticationError
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_to_date, now_datetime
 
+from aos.api.auth.serializers import serialize_auth_user
 from aos.api.auth.session import login_impl, logout_impl, me_impl
 from aos.api.auth.verification import ensure_ver_doc, hash_otp
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
@@ -120,6 +121,23 @@ class TestAuthSessionAPI(AOSFeatureTestMixin, FrappeTestCase):
             mobile_response = login_impl(identifier=mobile, password="StrongPass123!", client_type="mobile")
         self.assertTrue(mobile_response.get("ok"), mobile_response)
         self.assertEqual(mobile_response["data"]["session"]["sid"], "sid-mobile")
+        self.assertEqual(
+            set(mobile_response["data"]["preferences"]),
+            {"country", "currency", "language", "location", "is_country_locked"},
+        )
+        self.assertEqual(
+            set(mobile_response["data"]["user"]),
+            {
+                "account_id",
+                "email",
+                "display_name",
+                "avatar",
+                "enabled",
+                "account_status",
+                "is_verified",
+            },
+        )
+        self.assertIn("is_seller", mobile_response["data"]["seller"])
         manager.authenticate.assert_called_once_with(user=mobile, pwd="StrongPass123!")
 
         web = self.make_user("web")
@@ -129,6 +147,16 @@ class TestAuthSessionAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(web_response.get("ok"), web_response)
         self.assertNotIn("sid", web_response["data"]["session"])
 
+    def test_enabled_user_missing_profile_is_bootstrap_failure_not_disabled(self):
+        user = self.make_user("missing-profile")
+        frappe.db.delete("AOS User Preference", {"user": user})
+        frappe.db.delete("AOS Profile", {"user": user})
+        frappe.db.commit()
+        self._manager()
+        with patch("aos.api.auth.session._rate_limit_login", return_value=None):
+            response = login_impl(identifier=user, password="StrongPass123!", client_type="mobile")
+        self.assertEqual(response.get("error"), "ACCOUNT_BOOTSTRAP_UNAVAILABLE")
+
     def test_me_is_read_only_and_missing_preference_is_invariant_failure(self):
         user = self.make_user("missing-pref", with_preference=False)
         frappe.set_user(user)
@@ -137,6 +165,26 @@ class TestAuthSessionAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(response.get("error"), "ACCOUNT_BOOTSTRAP_UNAVAILABLE")
         self.assertFalse(frappe.db.exists("AOS User Preference", {"user": user}))
         commit.assert_not_called()
+
+    def test_optional_avatar_resolution_failure_does_not_break_auth_bootstrap(self):
+        row = SimpleNamespace(
+            account_id="ACC-TEST",
+            email="avatar@example.com",
+            display_name="Avatar User",
+            profile_image_media="MEDIA-1",
+            enabled=1,
+            account_status="Active",
+            is_verified=0,
+        )
+        with (
+            patch("aos.api.auth.serializers.frappe.db.sql", return_value=[row]),
+            patch("aos.api.auth.serializers.MediaService.get_public_url", side_effect=RuntimeError("storage down")),
+            patch("aos.api.auth.serializers.log_auth_exception") as logged,
+        ):
+            payload = serialize_auth_user("avatar@example.com")
+        self.assertIsNone(payload["avatar"])
+        self.assertEqual(payload["account_id"], "ACC-TEST")
+        logged.assert_called_once()
 
     def test_me_guest_and_logout_idempotency(self):
         frappe.set_user("Guest")
