@@ -168,7 +168,7 @@ class TestAdsDomainValidation(FrappeTestCase):
 
         get_value.assert_not_called()
 
-    def test_direct_market_change_still_validates_current_preference(self):
+    def test_direct_market_change_validates_ad_values_not_current_preference(self):
         class ChangedAd:
             country = "Kenya"
             currency = "USD"
@@ -181,23 +181,20 @@ class TestAdsDomainValidation(FrappeTestCase):
             def has_value_changed(field):
                 return field == "currency"
 
-            @staticmethod
-            def _seller_user():
-                return "seller@example.com"
-
             _market_requires_validation = AOSAd._market_requires_validation
 
-        preference = type("Preference", (), {"country": "Kenya", "currency": "KES"})()
+        changed = ChangedAd()
         with (
-            patch(
-                "aos.aos.doctype.aos_ad.aos_ad.frappe.db.get_value",
-                return_value=preference,
-            ) as get_value,
-            self.assertRaises(frappe.ValidationError),
+            patch("aos.aos.doctype.aos_ad.aos_ad.validate_country", return_value=("Kenya", None)) as country,
+            patch("aos.aos.doctype.aos_ad.aos_ad.validate_currency", return_value=("USD", None)) as currency,
+            patch("aos.aos.doctype.aos_ad.aos_ad.frappe.db.get_value") as get_value,
         ):
-            AOSAd._validate_market(ChangedAd())
+            AOSAd._validate_market(changed)
 
-        get_value.assert_called_once()
+        country.assert_called_once_with("Kenya")
+        currency.assert_called_once_with("USD")
+        get_value.assert_not_called()
+        self.assertEqual((changed.country, changed.currency), ("Kenya", "USD"))
 
     def test_lifecycle_is_explicit_and_idempotent(self):
         transition = transition_for_action("mark_sold", "Active")

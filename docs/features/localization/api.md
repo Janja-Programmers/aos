@@ -82,7 +82,7 @@ aos.api.v1.accounts.update_my_preference
   ↓
 Accounts auth + request boundary
   ↓
-aos.services.user_preference_service
+aos.services.localization.preferences
   ↓
 row lock + Localization validators
   ↓
@@ -106,7 +106,7 @@ database transaction + post-commit cache invalidation
 | `aos/services/localization/repository.py` | Localization-owned database reads. No public handler performs ad-hoc Localization SQL. |
 | `aos/services/localization/serializers.py` | Minimal stable public payloads. Stored preference/context payloads use canonical IDs rather than re-querying master labels. |
 | `aos/services/localization/cache.py` | Shared Redis reference-data cache and transaction-safe invalidation. Database remains authoritative. |
-| `aos/services/user_preference_service.py` | Persisted per-user preference cache, row locking, partial update semantics, and location/country validation. |
+| `aos/services/localization/preferences.py` | Persisted per-user preference cache, row locking, partial update semantics, and location/country validation. |
 | `aos/aos/doctype/aos_location/aos_location.py` | Direct DocType invariant enforcement for locations. |
 | `aos/aos/doctype/aos_user_preference/aos_user_preference.py` | Direct DocType invariant enforcement for preferences, including Link validation and country/location consistency. |
 | `aos/aos/doctype/aos_settings/aos_settings.py` | Validates Localization default settings and invalidates settings/reference cache on change. |
@@ -165,13 +165,13 @@ AOS Settings (Single)
 
 **Purpose:** exactly one persisted localization preference per authenticated Frappe User.
 
-**Ownership:** Accounts/Auth own row lifecycle; Localization owns value validation. Public clients cannot select another user identifier. Account endpoints derive ownership from the authenticated session.
+**Ownership:** Localization owns preference persistence semantics, validation, mutation locking, and cache invalidation. Authentication creates the required row during account bootstrap; Accounts exposes authenticated self-service read/update APIs. Public clients cannot select another user identifier.
 
 | Field | Type | Required | Unique/indexed | Purpose |
 |---|---|---:|---|---|
 | `name` | `field:user` autoname | System | Primary key | Stable document identity derived from user. |
 | `user` | Link → `User` | Yes | Unique | Owner of the preference. Database uniqueness enforces one row per user. |
-| `country` | Link → `Country` | Yes | No standalone index | Canonical market. Country changes are denied once the account is country-locked. |
+| `country` | Link → `Country` | Yes | No standalone index | Mutable current browsing/buyer market. It does not control the market persisted on existing Ads. |
 | `currency` | Link → `Currency` | Yes | No standalone index | Canonical enabled display/posting currency. |
 | `language` | Link → `Language` | Yes | No standalone index | Canonical enabled language preference. |
 | `location` | Link → `AOS Location` | No | No standalone index | Optional selected location; must exist, be active, and belong to `country`. Public/runtime preference access is by unique `user`, so a market/location preference index is not justified by the actual query paths. |
@@ -181,7 +181,7 @@ AOS Settings (Single)
 - one row per `user`, enforced by a unique database constraint;
 - all required Link fields pass normal Frappe Link validation; the controller calls `super()._validate_links()` after canonicalization;
 - currency/language must be enabled if the current Frappe master exposes an `enabled` field;
-- location is optional; when present it must be active and belong to the selected country;
+- location is optional; when present it must be active and belong to the selected country; changing country clears an incompatible existing location;
 - direct DocType writes and service/API writes apply the same Localization validators;
 - preference updates are partial and serialized with a row-level `SELECT ... FOR UPDATE` lock to prevent lost updates;
 - normal GET/update endpoints do not auto-create missing rows. Auth bootstrap is the single creation/repair authority.
@@ -476,8 +476,7 @@ These routes are owned by Accounts but are part of the current frontend Localiza
   "country": "Kenya",
   "currency": "KES",
   "language": "en",
-  "location": "4f8e...",
-  "is_country_locked": false
+  "location": "4f8e..."
 }
 ```
 
@@ -492,7 +491,7 @@ These routes are owned by Accounts but are part of the current frontend Localiza
 - **Rate limit:** 20/minute/user.
 - **Ownership:** user comes only from the session; there is no client `user` argument.
 - **Concurrency:** row is selected `FOR UPDATE`; omitted values are preserved under the same transaction.
-- **Country lock:** a country change for a seller-owned account returns `COUNTRY_LOCKED`; other fields can still be changed when otherwise valid.
+- **Country mutability:** country is the current browsing/buyer market and may be changed by any authenticated account, including sellers. If the existing location is outside the newly selected country, location is cleared; Ads keep their own persisted market independently.
 - **Location:** empty string clears it; otherwise it must be active and belong to the resulting country. A country change automatically clears an existing location if it is not valid in the new country.
 - **Transaction:** endpoint does not commit manually. Expected validation/business failures return without partial writes. If an unexpected exception is caught after a partial DB mutation, the endpoint explicitly rolls back before returning `INTERNAL_ERROR` because returning normally would otherwise let Frappe treat the request as successful.
 - **Missing row:** returns `PREFERENCE_MISSING`; update does not create it.

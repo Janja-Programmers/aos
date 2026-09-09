@@ -6,7 +6,6 @@ import frappe
 from frappe.utils import add_days, today
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.validators import resolve_location
@@ -19,6 +18,7 @@ from aos.services.ads.mutations import apply_ad_values
 from aos.services.ads.observability import ads_log
 from aos.services.ads.validation import normalize_full_ad_payload
 from aos.services.moderation_service import enqueue_ad_moderation
+from aos.services.localization.preferences import get_user_preference
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
 from .activity import record_ad_posted_activity
@@ -48,26 +48,19 @@ def create_ad_impl(**kwargs):
     def _create():
         values = normalize_full_ad_payload(kwargs)
 
-        market_country, market_error = resolve_market_country(None)
-        if market_error:
-            return market_error
+        # Creation snapshots the user's current browsing market into the Ad.
+        # From this point onward the Ad owns country/location/currency and later
+        # preference changes do not rewrite or constrain the persisted market.
+        preference = get_user_preference(current_user, use_cache=False)
+        if not preference or not preference.get("country") or not preference.get("currency"):
+            return fail("User market preference is not configured.", error="CONFIG_ERROR")
+        market_country = str(preference.country)
         location_name, location_error = resolve_location(values["location"], country=market_country)
         if location_error:
             return location_error
         location_country = frappe.db.get_value("AOS Location", location_name, "country")
         if not location_country or location_country != market_country:
             return fail("Invalid location for your market.", error="INVALID_LOCATION")
-
-        preference = frappe.db.get_value(
-            "AOS User Preference",
-            {"user": current_user},
-            ["country", "currency"],
-            as_dict=True,
-        )
-        if not preference or not preference.get("currency"):
-            return fail("User currency preference is not configured.", error="CONFIG_ERROR")
-        if preference.get("country") and preference.get("country") != market_country:
-            return fail("Ad market does not match account preferences.", error="MARKET_LOCKED")
 
         seller = get_or_create_seller(current_user)
         if not seller or seller.status != "Active":

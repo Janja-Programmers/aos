@@ -11,7 +11,7 @@ from aos.api.shared.responses import fail
 from aos.services.accounts.identity import get_profile_for_user, profile_name_for_user
 from aos.services.accounts.observability import account_log
 from aos.services.localization import resolve_guest_context
-from aos.services.user_preference_service import clear_user_preference_cache, get_user_preference
+from aos.services.localization.preferences import clear_user_preference_cache, get_user_preference
 from aos.utils.privacy import opaque_identifier
 
 
@@ -31,7 +31,13 @@ def create_aos_profile(user: str):
     profile.user = user
     profile.display_name = display_name
     profile.account_status = "Active"
-    profile.insert(ignore_permissions=True)
+    try:
+        profile.insert(ignore_permissions=True)
+    except frappe.DuplicateEntryError:
+        winner = profile_name_for_user(user)
+        if not winner:
+            raise
+        return frappe.get_doc("AOS Profile", winner)
     account_log("account.bootstrap.completed", user=user)
     return profile
 

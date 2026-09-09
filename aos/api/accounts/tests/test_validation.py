@@ -28,6 +28,16 @@ class AccountValidationTests(unittest.TestCase):
         with self.assertRaises(AccountValidationError):
             validate_display_name("Dan\x00Kalutu")
 
+    def test_string_fields_reject_structured_values(self):
+        for field, value in (
+            ("display_name", {"value": "Dan"}),
+            ("legal_name", ["Dan"]),
+            ("bio", {"html": "<b>bio</b>"}),
+            ("phone", ["+254712345678"]),
+        ):
+            with self.subTest(field=field), self.assertRaises(AccountValidationError):
+                validate_profile_patch({field: value})
+
     def test_legal_name_can_be_empty(self):
         self.assertEqual(validate_legal_name(""), "")
 

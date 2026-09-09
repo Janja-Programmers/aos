@@ -18,13 +18,8 @@ def country_code_to_flag(code: str | None) -> str | None:
 	return "".join(chr(0x1F1E6 + ord(char) - ord("A")) for char in code)
 
 
-def serialize_preference(preference: Any, *, is_country_locked: bool = False) -> dict[str, Any]:
-	"""Serialize stored preferences as canonical IDs without master-data lookups.
-
-	Clients obtain display labels/symbols/flags from the locale bundle and the
-	selected location label from the locations endpoint. Keeping this serializer
-	ID-only avoids several master-data queries on login, /me, and account reads.
-	"""
+def serialize_preference(preference: Any) -> dict[str, Any]:
+	"""Serialize stored preference IDs without master-data lookups."""
 
 	location = str(_value(preference, "location") or "").strip() or None
 	return {
@@ -32,7 +27,6 @@ def serialize_preference(preference: Any, *, is_country_locked: bool = False) ->
 		"currency": str(_value(preference, "currency") or "") or None,
 		"language": str(_value(preference, "language") or "") or None,
 		"location": location,
-		"is_country_locked": bool(is_country_locked),
 	}
 
 

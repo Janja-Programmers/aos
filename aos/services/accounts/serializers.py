@@ -6,15 +6,16 @@ from typing import Any, Iterable
 
 import frappe
 
+from aos.api.shared.formatters import humanize_count, to_non_negative_int
 from aos.services.localization import serialize_preference as serialize_localization_preference
+from aos.services.localization.preferences import get_user_preference
 from aos.services.media.media_service import MediaService
 from aos.services.sellers.identity import public_seller_id_for_name
 from aos.services.social.repository import SocialRepository
-from aos.services.user_preference_service import get_user_preference, is_country_locked
-from aos.api.shared.formatters import humanize_count, to_non_negative_int
 
 from .constants import ACCOUNT_STATUS_ACTIVE, ACCOUNT_STATUS_DELETED
 from .identity import public_account_id_for_user
+from .repository import AccountRepository
 
 
 def _get(row: Any, key: str, default: Any = None) -> Any:
@@ -25,40 +26,20 @@ def _get(row: Any, key: str, default: Any = None) -> Any:
     return getattr(row, key, default)
 
 
-def _profile(user: str):
-    return frappe.db.get_value(
-        "AOS Profile",
-        {"user": user},
-        [
-            "name", "user", "display_name", "legal_name", "bio", "phone",
-            "date_of_birth", "gender", "profile_image_media", "account_status",
-            "deleted_at", "restore_deadline", "purge_status", "purge_started_at",
-            "purge_completed_at", "total_followers", "total_following", "is_verified",
-        ],
-        as_dict=True,
-    ) or {}
+def _avatar_url(row: Any) -> str | None:
+    media_id = _get(row, "profile_image_media")
+    if not media_id:
+        return None
+    try:
+        return MediaService().get_public_url(media_id) or None
+    except Exception:
+        return None
 
 
-def _user(user: str):
-    return frappe.db.get_value(
-        "User", user, ["name", "email", "enabled"], as_dict=True
-    ) or {}
-
-
-def _avatar_url(profile: Any) -> str | None:
-    media_id = _get(profile, "profile_image_media")
-    if media_id:
-        try:
-            return MediaService().get_public_url(media_id) or None
-        except Exception:
-            pass
-    return None
-
-
-def _display_name(profile: Any, *, masked: bool = False) -> str:
+def _display_name(row: Any, *, masked: bool = False) -> str:
     if masked:
         return "Deleted User"
-    value = str(_get(profile, "display_name") or "").strip()
+    value = str(_get(row, "display_name") or "").strip()
     return value or "AOS User"
 
 
@@ -66,9 +47,9 @@ def _friends_count(user: str) -> int:
     return SocialRepository().friends_count(user=user)
 
 
-def _counts(user: str, profile: Any, *, hidden: bool) -> dict[str, Any]:
-    followers = 0 if hidden else to_non_negative_int(_get(profile, "total_followers"))
-    following = 0 if hidden else to_non_negative_int(_get(profile, "total_following"))
+def _counts(user: str, row: Any, *, hidden: bool) -> dict[str, Any]:
+    followers = 0 if hidden else to_non_negative_int(_get(row, "total_followers"))
+    following = 0 if hidden else to_non_negative_int(_get(row, "total_following"))
     friends = 0 if hidden else _friends_count(user)
     return {
         "followers_count": followers,
@@ -103,7 +84,7 @@ def verification_summary(user: str) -> dict[str, Any]:
     row = frappe.db.get_value(
         "AOS Verification Request",
         {"user": user},
-        ["name", "status", "verification_type", "verified_on"],
+        ["status", "verification_type", "verified_on"],
         order_by="creation desc",
         as_dict=True,
     )
@@ -125,6 +106,8 @@ def serialize_internal_identity(user: str) -> dict[str, Any]:
 
 
 def serialize_internal_identity_map(users: Iterable[str]) -> dict[str, dict[str, Any]]:
+    """Internal-only batch identity projection used by shared backend serializers."""
+
     unique = sorted({str(user).strip() for user in users if user})
     if not unique:
         return {}
@@ -177,51 +160,57 @@ def serialize_internal_identity_map(users: Iterable[str]) -> dict[str, dict[str,
     return result
 
 
-def serialize_public_profile(user: str, *, relationship: dict[str, Any] | None = None) -> dict[str, Any]:
-    profile = _profile(user)
-    user_row = _user(user)
-    status = _get(profile, "account_status", ACCOUNT_STATUS_ACTIVE) or ACCOUNT_STATUS_ACTIVE
+def serialize_public_profile_row(
+    row: Any,
+    *,
+    relationship: dict[str, Any] | None = None,
+    include_seller: bool = True,
+) -> dict[str, Any]:
+    user = str(_get(row, "user") or "")
+    status = str(_get(row, "account_status", ACCOUNT_STATUS_ACTIVE) or ACCOUNT_STATUS_ACTIVE)
     deleted = status == ACCOUNT_STATUS_DELETED
-    account_id = public_account_id_for_user(user)
+    account_id = str(_get(row, "account_id") or "") or public_account_id_for_user(user)
     relation = dict(relationship or {})
-    if relation:
-        relation["target_user"] = account_id
+    # Accounts has one canonical public identity field: top-level account_id.
+    # Social may internally project target_user; do not leak that alias here.
+    relation.pop("target_user", None)
     return {
         "account_id": account_id,
-        "display_name": _display_name(profile, masked=deleted),
-        "bio": "" if deleted else str(_get(profile, "bio") or ""),
-        "avatar": None if deleted else _avatar_url(profile),
+        "display_name": _display_name(row, masked=deleted),
+        "bio": "" if deleted else str(_get(row, "bio") or ""),
+        "avatar": None if deleted else _avatar_url(row),
         "is_deleted": deleted,
-        "is_verified": bool(_get(profile, "is_verified")) if not deleted else False,
-        **_counts(user, profile, hidden=deleted),
-        "seller": seller_summary(user, public=True) if not deleted else {"is_seller": False, "seller_id": None, "status": None},
+        "is_verified": bool(_get(row, "is_verified")) if not deleted else False,
+        **_counts(user, row, hidden=deleted),
+        "seller": (
+            seller_summary(user, public=True)
+            if include_seller and not deleted
+            else {"is_seller": False, "seller_id": None, "status": None}
+        ),
         **relation,
     }
 
 
-def serialize_private_profile(user: str) -> dict[str, Any]:
-    profile = _profile(user)
-    user_row = _user(user)
-    public = serialize_public_profile(user)
+def serialize_private_profile_row(row: Any) -> dict[str, Any]:
+    """Owner-only profile projection; never expose Frappe User.name."""
+
+    user = str(_get(row, "user") or "")
+    public = serialize_public_profile_row(row, include_seller=False)
     preference = get_user_preference(user)
-    preferences = (
-        serialize_localization_preference(preference, is_country_locked=is_country_locked(user)) if preference else {}
-    )
     public.update(
         {
-            "internal_user": user,
-            "email": _get(user_row, "email") or user,
-            "legal_name": str(_get(profile, "legal_name") or ""),
-            "phone": str(_get(profile, "phone") or ""),
-            "date_of_birth": _get(profile, "date_of_birth"),
-            "gender": str(_get(profile, "gender") or ""),
-            "profile_image_media": _get(profile, "profile_image_media") or None,
-            "account_status": _get(profile, "account_status", ACCOUNT_STATUS_ACTIVE),
-            "enabled": bool(int(_get(user_row, "enabled", 0) or 0)),
-            "purge_status": _get(profile, "purge_status") or None,
-            "purge_started_at": _get(profile, "purge_started_at"),
-            "purge_completed_at": _get(profile, "purge_completed_at"),
-            "preferences": preferences,
+            "email": _get(row, "email") or user,
+            "legal_name": str(_get(row, "legal_name") or ""),
+            "phone": str(_get(row, "phone") or ""),
+            "date_of_birth": _get(row, "date_of_birth"),
+            "gender": str(_get(row, "gender") or ""),
+            "profile_image_media": _get(row, "profile_image_media") or None,
+            "account_status": _get(row, "account_status", ACCOUNT_STATUS_ACTIVE),
+            "enabled": bool(int(_get(row, "enabled", 0) or 0)),
+            "purge_status": _get(row, "purge_status") or None,
+            "purge_started_at": _get(row, "purge_started_at"),
+            "purge_completed_at": _get(row, "purge_completed_at"),
+            "preferences": serialize_localization_preference(preference) if preference else {},
             "roles": sorted(role for role in (frappe.get_roles(user) or []) if role not in {"All", "Guest"}),
             "seller": seller_summary(user),
             "verification": verification_summary(user),
@@ -229,3 +218,13 @@ def serialize_private_profile(user: str) -> dict[str, Any]:
         }
     )
     return public
+
+
+def serialize_public_profile(user: str, *, relationship: dict[str, Any] | None = None) -> dict[str, Any]:
+    row = AccountRepository.account_by_user(user) or frappe._dict({"user": user})
+    return serialize_public_profile_row(row, relationship=relationship)
+
+
+def serialize_private_profile(user: str) -> dict[str, Any]:
+    row = AccountRepository.account_by_user(user) or frappe._dict({"user": user})
+    return serialize_private_profile_row(row)

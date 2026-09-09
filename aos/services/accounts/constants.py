@@ -27,6 +27,4 @@ PROFILE_IMAGE_PURPOSE = "profile_image"
 PROFILE_DOCTYPE = "AOS Profile"
 PROFILE_IMAGE_FIELD = "profile_image_media"
 
-PUBLIC_PROFILE_CACHE_SECONDS = 60
 PRIVATE_CACHE_CONTROL = "private, no-store, max-age=0"
-PUBLIC_CACHE_CONTROL = f"public, max-age={PUBLIC_PROFILE_CACHE_SECONDS}"

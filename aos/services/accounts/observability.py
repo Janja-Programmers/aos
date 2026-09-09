@@ -35,6 +35,7 @@ _ALLOWED_FIELDS = {
     "country",
     "currency",
     "language",
+    "location",
 }
 
 

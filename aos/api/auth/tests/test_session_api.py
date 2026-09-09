@@ -123,7 +123,7 @@ class TestAuthSessionAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(mobile_response["data"]["session"]["sid"], "sid-mobile")
         self.assertEqual(
             set(mobile_response["data"]["preferences"]),
-            {"country", "currency", "language", "location", "is_country_locked"},
+            {"country", "currency", "language", "location"},
         )
         self.assertEqual(
             set(mobile_response["data"]["user"]),

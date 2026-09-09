@@ -3,7 +3,7 @@ from __future__ import annotations
 from aos.api.shared.auth import current_user
 from aos.api.shared.responses import fail
 from aos.services.localization import get_default_preferences, validate_country, validate_currency
-from aos.services.user_preference_service import get_user_preference
+from aos.services.localization.preferences import get_user_preference
 
 
 # INTERNAL HELPERS

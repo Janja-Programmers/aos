@@ -5,7 +5,6 @@ from __future__ import annotations
 import frappe
 
 from aos.api.shared.auth import require_login
-from aos.api.shared.market_context import resolve_market_country
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.validators import resolve_location
@@ -95,17 +94,16 @@ def update_ad_impl(**kwargs):
             payload = {key: value for key, value in kwargs.items() if key in CREATE_FIELDS}
             values = normalize_full_ad_payload(payload)
 
-            market_country, market_error = resolve_market_country(None)
-            if market_error:
-                return market_error
-            location_name, location_error = resolve_location(values["location"], country=market_country)
+            # Existing Ads retain their own persisted market regardless of the
+            # seller's current browsing preference. Resubmission may change the
+            # location only within the Ad's country.
+            ad_country = str(doc.country or "").strip()
+            location_name, location_error = resolve_location(values["location"], country=ad_country)
             if location_error:
                 return location_error
             location_country = frappe.db.get_value("AOS Location", location_name, "country")
-            if not location_country or location_country != market_country:
-                return fail("Invalid location for your market.", error="INVALID_LOCATION")
-            if str(doc.country or "") != str(location_country):
-                return fail("Ad market cannot be changed.", error="MARKET_LOCKED")
+            if not location_country or str(location_country) != ad_country:
+                return fail("Location does not belong to the ad market.", error="INVALID_LOCATION")
 
             image_rows = prepare_image_rows(values["images"], user=user, ad_name=doc.name)
             video_id, video_url = prepare_video(values.get("video_media"), user=user, ad_name=doc.name)

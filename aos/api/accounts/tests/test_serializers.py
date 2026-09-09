@@ -2,28 +2,76 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import frappe
 from frappe.tests import IntegrationTestCase
 
-from aos.services.accounts.serializers import serialize_public_profile
+from aos.services.accounts.serializers import serialize_private_profile_row, serialize_public_profile_row
 
 
 class AccountsSerializerIntegrationTests(IntegrationTestCase):
-    @patch("aos.services.accounts.serializers._friends_count", return_value=0)
-    @patch("aos.services.accounts.serializers.seller_summary", return_value={"is_seller": False, "seller_id": None, "status": None})
-    @patch("aos.services.accounts.serializers.public_account_id_for_user", return_value="ACC-AAAAAAAAAAAAAAAAAAAA")
-    @patch("aos.services.accounts.serializers._user")
-    @patch("aos.services.accounts.serializers._profile")
-    def test_public_profile_uses_canonical_keys_and_hides_private_fields(self, profile, user, *_):
-        profile.return_value = {"display_name": "Dan", "bio": "Bio", "account_status": "Active"}
-        user.return_value = {"email": "dan@example.com", "full_name": "Dan", "enabled": 1}
-        payload = serialize_public_profile("dan@example.com")
-        self.assertNotIn("email", payload)
-        self.assertNotIn("phone", payload)
-        self.assertNotIn("roles", payload)
-        self.assertNotIn("verified_by", payload)
-        self.assertNotIn("user", payload)
-        self.assertNotIn("full_name", payload)
-        self.assertNotIn("user_image", payload)
-        self.assertNotIn("total_followers", payload)
+    def _row(self):
+        return frappe._dict(
+            account_id="ACC-AAAAAAAAAAAAAAAAAAAA",
+            user="dan@example.com",
+            email="dan@example.com",
+            display_name="Dan",
+            legal_name="Daniel Private",
+            bio="Bio",
+            phone="+254700000000",
+            date_of_birth=None,
+            gender="",
+            profile_image_media="",
+            account_status="Active",
+            total_followers=0,
+            total_following=0,
+            is_verified=1,
+            enabled=1,
+        )
+
+    def test_public_profile_uses_canonical_keys_and_hides_private_fields(self):
+        with (
+            patch("aos.services.accounts.serializers._friends_count", return_value=0),
+            patch(
+                "aos.services.accounts.serializers.seller_summary",
+                return_value={"is_seller": False, "seller_id": None, "status": None},
+            ),
+        ):
+            payload = serialize_public_profile_row(
+                self._row(),
+                relationship={"target_user": "internal@example.com", "can_message": True},
+            )
+        for field in (
+            "email",
+            "phone",
+            "legal_name",
+            "roles",
+            "internal_user",
+            "user",
+            "enabled",
+            "profile_image_media",
+        ):
+            self.assertNotIn(field, payload)
         self.assertEqual(payload["account_id"], "ACC-AAAAAAAAAAAAAAAAAAAA")
         self.assertEqual(payload["display_name"], "Dan")
+        self.assertNotIn("target_user", payload)
+        self.assertTrue(payload["can_message"])
+
+    def test_private_profile_never_exposes_frappe_user_name(self):
+        with (
+            patch("aos.services.accounts.serializers._friends_count", return_value=0),
+            patch(
+                "aos.services.accounts.serializers.seller_summary",
+                return_value={"is_seller": False, "seller_id": None, "status": None},
+            ),
+            patch("aos.services.accounts.serializers.verification_summary", return_value={"status": None}),
+            patch(
+                "aos.services.accounts.serializers.get_user_preference",
+                return_value=frappe._dict(country="Kenya", currency="KES", language="en", location=""),
+            ),
+            patch("aos.services.accounts.serializers.frappe.get_roles", return_value=["All"]),
+        ):
+            payload = serialize_private_profile_row(self._row())
+        self.assertNotIn("internal_user", payload)
+        self.assertNotIn("user", payload)
+        self.assertEqual(payload["email"], "dan@example.com")
+        self.assertEqual(set(payload["preferences"]), {"country", "currency", "language", "location"})

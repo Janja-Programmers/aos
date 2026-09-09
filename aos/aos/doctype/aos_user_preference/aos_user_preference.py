@@ -7,7 +7,7 @@ import frappe
 from frappe.model.document import Document
 
 from aos.services.localization import validate_country, validate_currency, validate_language
-from aos.services.user_preference_service import clear_user_preference_cache, validate_location_preference
+from aos.services.localization.preferences import clear_user_preference_cache, validate_location_preference
 
 
 class AOSUserPreference(Document):

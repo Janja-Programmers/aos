@@ -8,9 +8,11 @@ from aos.api.shared.responses import fail, ok
 from aos.services.accounts.http import set_private_no_store
 from aos.services.accounts.observability import account_log
 from aos.services.localization import serialize_preference
-from aos.services.user_preference_service import is_country_locked, update_user_preference
+from aos.services.localization.preferences import update_user_preference
 
 from .constants import UPDATE_PREF_LIMIT_PER_MINUTE_PER_USER
+
+_ALLOWED_FIELDS = frozenset({"country", "currency", "language", "location"})
 
 
 def update_my_preference_impl(**kwargs):
@@ -26,24 +28,22 @@ def update_my_preference_impl(**kwargs):
 	)
 	if rl:
 		return rl
-	allowed_names = {"country", "currency", "language", "location"}
-	unknown = sorted(set(kwargs) - allowed_names)
+
+	unknown = sorted(set(kwargs) - _ALLOWED_FIELDS)
 	if unknown:
-		return fail("Unsupported preference fields.", error="INVALID_PROFILE_FIELD", data={"fields": unknown})
-	allowed = {key: kwargs[key] for key in allowed_names if key in kwargs}
+		return fail(
+			"Unsupported preference fields.",
+			error="PREFERENCE_UNKNOWN_FIELD",
+			data={"fields": unknown},
+		)
+	allowed = {key: kwargs[key] for key in _ALLOWED_FIELDS if key in kwargs}
 	try:
 		doc, update_err = update_user_preference(current_user, **allowed)
 		if update_err:
 			return update_err
 		account_log("account.preference.updated", user=current_user, changed_fields=sorted(allowed))
-		return ok(
-			"Preference updated successfully.",
-			data=serialize_preference(doc, is_country_locked=is_country_locked(current_user)),
-		)
+		return ok("Preference updated successfully.", data=serialize_preference(doc))
 	except Exception:
-		# This endpoint converts unexpected exceptions into a response, so it must
-		# explicitly roll back any partial write before Frappe sees a successful
-		# Python return value.
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "AOS Update Preference Failed")
 		return fail("Failed to update preference.", error="INTERNAL_ERROR")

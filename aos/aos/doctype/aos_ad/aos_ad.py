@@ -24,6 +24,7 @@ from aos.services.ads.validation import (
 )
 from aos.services.catalog.errors import CatalogError
 from aos.services.media.media_service import MediaError, MediaService
+from aos.services.localization import validate_country, validate_currency
 from aos.utils.aos_settings import get_aos_settings_snapshot
 from aos.utils.doctype_permissions import has_doctype_permission
 
@@ -179,34 +180,23 @@ class AOSAd(Document):
             frappe.throw("Seller account is not active.", exc=frappe.PermissionError)
 
     def _market_requires_validation(self) -> bool:
-        """Validate the seller market only when the persisted market is being set or changed.
-
-        An Ad's stored country/currency is historical business data and remains
-        authoritative after creation. A later account-preference change must not
-        make unrelated edits or lifecycle actions (for example mark_sold, delete,
-        renew, or mark_available) impossible. Direct attempts to change seller,
-        country, or currency still fail closed against the current preference.
-        """
+        """Validate persisted Ad market fields when they are set or changed."""
         if self.is_new():
             return True
-        return any(self.has_value_changed(field) for field in ("seller", "country", "currency"))
+        return any(self.has_value_changed(field) for field in ("country", "currency"))
 
     def _validate_market(self) -> None:
+        """Keep Ad market integrity independent from current user preferences."""
         if not self._market_requires_validation():
             return
-        seller_user = self._seller_user()
-        preference = frappe.db.get_value(
-            "AOS User Preference",
-            {"user": seller_user},
-            ["country", "currency"],
-            as_dict=True,
-        )
-        if not preference:
-            frappe.throw("User preference is not configured.", exc=frappe.ValidationError)
-        if _clean(preference.country) and _clean(preference.country) != self.country:
-            frappe.throw("Ad country must match the seller market.", exc=frappe.ValidationError)
-        if _clean(preference.currency) and _clean(preference.currency) != self.currency:
-            frappe.throw("Ad currency must match the seller preference.", exc=frappe.ValidationError)
+        country, country_error = validate_country(self.country)
+        if country_error:
+            frappe.throw("Invalid ad country.", exc=frappe.ValidationError)
+        currency, currency_error = validate_currency(self.currency)
+        if currency_error:
+            frappe.throw("Invalid ad currency.", exc=frappe.ValidationError)
+        self.country = country
+        self.currency = currency
 
     def _validate_location(self) -> None:
         location = frappe.db.get_value(

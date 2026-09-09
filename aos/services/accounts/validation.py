@@ -43,7 +43,11 @@ SYSTEM_MANAGED_PROFILE_FIELDS = {
 
 
 def _normalized_text(value: Any, *, field: str, max_length: int, required: bool = False) -> str:
-    text = unicodedata.normalize("NFC", str(value or ""))
+    if value is None and not required:
+        return ""
+    if not isinstance(value, str):
+        raise AccountValidationError(f"Invalid {field}.", code=f"INVALID_{field.upper()}")
+    text = unicodedata.normalize("NFC", value)
     if "\x00" in text or any(unicodedata.category(ch) == "Cc" and ch not in "\n\t" for ch in text):
         raise AccountValidationError(f"Invalid {field}.", code=f"INVALID_{field.upper()}")
     text = re.sub(r"[ \t]+", " ", text.strip())
@@ -74,7 +78,11 @@ def validate_bio(value: Any) -> str:
 
 
 def validate_phone(value: Any) -> str:
-    raw = unicodedata.normalize("NFKC", str(value or "")).strip()
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise AccountValidationError("Invalid phone number.", code="INVALID_PHONE_NUMBER")
+    raw = unicodedata.normalize("NFKC", value).strip()
     if not raw:
         return ""
     if "\x00" in raw:
@@ -113,7 +121,9 @@ def validate_gender(value: Any) -> str:
 
 
 def validate_avatar_media_id(value: Any) -> str:
-    raw = str(value or "").strip().upper()
+    if not isinstance(value, str):
+        raise AccountValidationError("Invalid avatar media.", code="INVALID_AVATAR_MEDIA")
+    raw = value.strip().upper()
     if not raw or not AVATAR_MEDIA_ID_RE.fullmatch(raw):
         raise AccountValidationError("Invalid avatar media.", code="INVALID_AVATAR_MEDIA")
     return raw

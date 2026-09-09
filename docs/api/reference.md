@@ -15,7 +15,7 @@ Owner documentation: [docs/features/accounts/api.md](../features/accounts/api.md
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
 | `/api/method/aos.api.v1.accounts.get_my_preference` | GET | Session required | Client | `aos/api/v1/accounts/__init__.py` |
-| `/api/method/aos.api.v1.accounts.get_profile` | Any* | Session required | Client | `aos/api/v1/accounts/__init__.py` |
+| `/api/method/aos.api.v1.accounts.get_profile` | GET | Session required | Client | `aos/api/v1/accounts/__init__.py` |
 | `/api/method/aos.api.v1.accounts.update_my_preference` | POST | Session required | Client | `aos/api/v1/accounts/__init__.py` |
 | `/api/method/aos.api.v1.accounts.update_profile` | POST | Session required | Client | `aos/api/v1/accounts/__init__.py` |
 

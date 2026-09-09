@@ -44,29 +44,36 @@ def get_relationship_status_impl(**kwargs):
     )
 
 
-def build_relationship_status(*, current_user: str, target_user: str) -> dict:
-    """Compatibility helper used by profile, seller, live, and shorts serializers."""
+def build_relationship_status(
+    *,
+    current_user: str,
+    target_user: str,
+    target_account_id: str | None = None,
+) -> dict:
+    """Return one viewer-relative relationship without repeating identity lookup."""
     if current_user == target_user:
         return relationship_payload(
             target=target_user,
+            target_account_id=target_account_id,
             is_self=True,
             outgoing=False,
             incoming=False,
             blocked_by_me=False,
             blocked_me=False,
         )
-    mapping = relationship_map(
-        repository=SocialRepository(),
+    outgoing, incoming, blocks = SocialRepository().relationship_sets(
         viewer=current_user,
         targets=[target_user],
     )
-    return mapping.get(target_user) or relationship_payload(
+    blocked_by_me, blocked_me = blocks.get(target_user, (False, False))
+    return relationship_payload(
         target=target_user,
+        target_account_id=target_account_id,
         is_self=False,
-        outgoing=False,
-        incoming=False,
-        blocked_by_me=False,
-        blocked_me=False,
+        outgoing=target_user in outgoing,
+        incoming=target_user in incoming,
+        blocked_by_me=blocked_by_me,
+        blocked_me=blocked_me,
     )
 
 

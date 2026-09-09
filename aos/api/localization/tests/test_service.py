@@ -101,7 +101,7 @@ class TestLocalizationService(AOSFeatureTestMixin, IntegrationTestCase):
 	def test_preference_serializer_is_id_only_and_performs_no_master_lookups(self):
 		preference = frappe._dict({"country": "Kenya", "currency": "KES", "language": "en", "location": "LOC-1"})
 		with patch("aos.services.localization.repository.frappe.db.get_value") as lookup:
-			payload = serialize_preference(preference, is_country_locked=True)
+			payload = serialize_preference(preference)
 		self.assertEqual(
 			payload,
 			{
@@ -109,7 +109,6 @@ class TestLocalizationService(AOSFeatureTestMixin, IntegrationTestCase):
 				"currency": "KES",
 				"language": "en",
 				"location": "LOC-1",
-				"is_country_locked": True,
 			},
 		)
 		lookup.assert_not_called()

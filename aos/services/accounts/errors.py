@@ -18,11 +18,6 @@ class AccountValidationError(AccountError, ValueError):
     http_status = 422
 
 
-class AccountPermissionError(AccountError, PermissionError):
-    code = "PROFILE_UPDATE_NOT_ALLOWED"
-    http_status = 403
-
-
 class AccountNotFoundError(AccountError, FileNotFoundError):
     code = "ACCOUNT_NOT_FOUND"
     http_status = 404

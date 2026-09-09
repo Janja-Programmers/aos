@@ -335,8 +335,7 @@ Successful password/social/2FA login uses this shape. `sid` appears only when `c
     "country": "Kenya",
     "currency": "KES",
     "language": "en",
-    "location": null,
-    "is_country_locked": false
+    "location": null
   },
   "roles": ["Website User"],
   "seller": {"is_seller": false, "seller_id": null, "status": null}
@@ -874,7 +873,7 @@ Frontend rules:
 9. Safe retry targets include `me`, `logout`, and generic request/resend operations within rate limits.
 10. After successful password reset, discard any local session and require login.
 11. After password change, current session remains valid; other devices are signed out.
-12. Display Localization from `data.preferences`; canonical keys are `country`, `currency`, `language`, `location`, `is_country_locked`. Do not separately recreate default selection rules inside Auth UI.
+12. Display Localization from `data.preferences`; canonical keys are `country`, `currency`, `language`, `location`. Do not separately recreate default selection rules inside Auth UI.
 13. On `TWO_FACTOR_REQUIRED`, keep `data.challenge_token` only for the short login continuation, collect the six-digit OTP, and call `verify_two_factor` with the same intended `client_type`; do not log/persist the challenge longer than needed.
 14. Social login sends provider `id_token`, not access-token aliases. Optional Localization hints are meaningful only if the provider identity creates a new AOS account.
 

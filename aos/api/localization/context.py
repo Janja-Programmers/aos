@@ -8,7 +8,7 @@ from aos.api.shared.auth import current_user
 from aos.api.shared.locale_hints import accept_language_hint, geo_country_hint
 from aos.api.shared.responses import fail, ok
 from aos.services.localization import resolve_guest_context, serialize_context
-from aos.services.user_preference_service import get_user_preference
+from aos.services.localization.preferences import get_user_preference
 
 from .constants import RESOLVE_LOCALE_CONTEXT_LIMIT_PER_MINUTE
 from .throttle import localization_rate_limit

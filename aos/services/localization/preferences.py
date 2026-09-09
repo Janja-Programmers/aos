@@ -1,4 +1,9 @@
-"""Canonical persistence, locking, validation, and cache for account preferences."""
+"""Canonical persisted localization preferences for authenticated accounts.
+
+Localization owns validation, storage semantics, cache invalidation, and the
+country/location consistency invariant. Accounts exposes this service through
+its authenticated preference endpoints but does not duplicate these rules.
+"""
 
 from __future__ import annotations
 
@@ -8,17 +13,19 @@ from typing import Any
 import frappe
 
 from aos.api.shared.responses import fail
-from aos.services.localization import validate_country, validate_currency, validate_language
 
-USER_PREFERENCE_CACHE_SCHEMA = "v2"
+from .validators import validate_country, validate_currency, validate_language
+
+USER_PREFERENCE_CACHE_SCHEMA = "v3"
 USER_PREFERENCE_CACHE_TTL_SECONDS = 300
 PREFERENCE_FIELDS = ("country", "currency", "language", "location")
 PREFERENCE_DB_FIELDS = ("name", "user", *PREFERENCE_FIELDS)
+_UNSET = object()
 
 
 def _cache_key(user: str) -> str:
     digest = hashlib.sha256(str(user or "").encode("utf-8")).hexdigest()
-    return f"aos:user_pref:v3:{digest}"
+    return f"aos:user_pref:v4:{digest}"
 
 
 def _delete_user_preference_cache(user: str) -> None:
@@ -30,6 +37,7 @@ def _delete_user_preference_cache(user: str) -> None:
 
 def clear_user_preference_cache(user: str | None) -> None:
     """Invalidate now and again after commit to prevent stale cross-node refill."""
+
     user = str(user or "").strip()
     if not user:
         return
@@ -40,19 +48,19 @@ def clear_user_preference_cache(user: str | None) -> None:
     manager.add(lambda: _delete_user_preference_cache(user))
 
 
-def clear_user_preference_cache_for_doc(doc: Any, _method: str | None = None) -> None:
-    clear_user_preference_cache(getattr(doc, "user", None))
-
-
 def get_user_preference(user: str, *, use_cache: bool = True):
+    """Return persisted preference without creating or repairing state."""
+
     user = str(user or "").strip()
     if not user or user == "Guest":
         return None
+
     cache = None
     try:
         cache = frappe.cache()
     except Exception:
         pass
+
     key = _cache_key(user)
     if use_cache and cache is not None:
         try:
@@ -63,6 +71,7 @@ def get_user_preference(user: str, *, use_cache: bool = True):
                 return frappe._dict(payload)
         except Exception:
             pass
+
     preference = frappe.db.get_value(
         "AOS User Preference",
         {"user": user},
@@ -71,6 +80,7 @@ def get_user_preference(user: str, *, use_cache: bool = True):
     )
     if not preference:
         return None
+
     payload = {field: preference.get(field) for field in PREFERENCE_DB_FIELDS}
     if cache is not None:
         try:
@@ -85,6 +95,8 @@ def get_user_preference(user: str, *, use_cache: bool = True):
 
 
 def get_user_preference_for_update(user: str):
+    """Lock and project exactly one preference row for mutation."""
+
     user = str(user or "").strip()
     if not user or user == "Guest":
         return None
@@ -104,6 +116,8 @@ def get_user_preference_for_update(user: str):
 
 
 def validate_location_preference(value: Any, *, country: str | None = None):
+    """Validate an optional active location and its owning country."""
+
     location = str(value or "").strip()
     if not location:
         return "", None
@@ -120,28 +134,21 @@ def validate_location_preference(value: Any, *, country: str | None = None):
     return row.name, None
 
 
-def is_country_locked(user: str) -> bool:
-    user = str(user or "").strip()
-    if not user or user == "Guest":
-        return False
-    seller = frappe.db.get_value("AOS Seller", {"user": user}, "name")
-    if not seller:
-        return False
-    # Seller ownership itself locks the market because seller tax, catalog, and
-    # operational policies are market-bound. Existing ad activity remains an
-    # additional defensive signal for partially migrated sellers.
-    return True
-
-
 def update_user_preference(
     user: str,
     *,
-    country: Any = None,
-    currency: Any = None,
-    language: Any = None,
-    location: Any = None,
+    country: Any = _UNSET,
+    currency: Any = _UNSET,
+    language: Any = _UNSET,
+    location: Any = _UNSET,
 ):
-    """Apply a strict partial update under one row lock without committing."""
+    """Apply a strict partial update under one row lock without committing.
+
+    Country is a mutable browsing/buyer market. When it changes, a previously
+    selected location that belongs to another country is cleared. Currency and
+    language remain independent unless explicitly supplied by the client.
+    """
+
     supplied = {
         key: value
         for key, value in {
@@ -150,7 +157,7 @@ def update_user_preference(
             "language": language,
             "location": location,
         }.items()
-        if value is not None
+        if value is not _UNSET
     }
     if not supplied:
         return None, fail("At least one preference field is required.", error="VALIDATION_ERROR")
@@ -168,8 +175,6 @@ def update_user_preference(
         next_country, error = validate_country(supplied["country"])
         if error:
             return None, error
-        if next_country != pref.country and is_country_locked(user):
-            return None, fail("Country cannot be changed for this account.", error="COUNTRY_LOCKED")
     if "currency" in supplied:
         next_currency, error = validate_currency(supplied["currency"])
         if error:
@@ -182,11 +187,21 @@ def update_user_preference(
         next_location, error = validate_location_preference(supplied["location"], country=next_country)
         if error:
             return None, error
-    elif next_location:
-        # A country change must not retain a location from another market.
-        _location, error = validate_location_preference(next_location, country=next_country)
+    elif next_location and next_country != pref.country:
+        _validated_location, error = validate_location_preference(next_location, country=next_country)
         if error:
             next_location = ""
+
+    changed = any(
+        (
+            str(next_country or "") != str(pref.country or ""),
+            str(next_currency or "") != str(pref.currency or ""),
+            str(next_language or "") != str(pref.language or ""),
+            str(next_location or "") != str(pref.get("location") or ""),
+        )
+    )
+    if not changed:
+        return frappe._dict({field: pref.get(field) for field in PREFERENCE_DB_FIELDS}), None
 
     doc = frappe.get_doc("AOS User Preference", pref.name)
     doc.country = next_country

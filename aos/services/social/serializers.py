@@ -35,7 +35,16 @@ def opaque_block_ref(name: Any) -> str:
     return f"BLK-{digest}"
 
 
-def relationship_payload(*, target: str, is_self: bool, outgoing: bool, incoming: bool, blocked_by_me: bool, blocked_me: bool) -> dict[str, Any]:
+def relationship_payload(
+    *,
+    target: str,
+    is_self: bool,
+    outgoing: bool,
+    incoming: bool,
+    blocked_by_me: bool,
+    blocked_me: bool,
+    target_account_id: str | None = None,
+) -> dict[str, Any]:
     blocked = bool(blocked_by_me or blocked_me)
     # Never leak graph state through a blocked relationship. Blocking removes
     # edges atomically, while this neutral projection protects legacy drift.
@@ -71,7 +80,7 @@ def relationship_payload(*, target: str, is_self: bool, outgoing: bool, incoming
         "blocked_me" if blocked_me else "none"
     )
     return {
-        "target_user": public_account_id_for_user(target),
+        "target_user": target_account_id or public_account_id_for_user(target),
         "is_self": bool(is_self),
         "is_following": bool(outgoing),
         "is_followed_by": bool(incoming),
