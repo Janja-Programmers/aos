@@ -3,7 +3,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from aos.api.auth.email_delivery import schedule_auth_email_delivery, send_auth_email_queue
@@ -30,7 +29,13 @@ class TestAuthEmailDelivery(FrappeTestCase):
         schedule.assert_called_once_with("EMAIL-QUEUE-TEST")
 
     def test_low_latency_kick_is_registered_after_commit(self):
-        with patch.object(frappe.db.after_commit, "add") as add, patch(
+        # Frappe 17's CallbackManager is slotted, so its bound ``add`` method
+        # is read-only on the manager instance (notably under Python 3.14).
+        # Replace the database's callback-manager dependency instead of
+        # monkey-patching the real manager method.
+        add = Mock()
+        fake_db = SimpleNamespace(after_commit=SimpleNamespace(add=add))
+        with patch("aos.api.auth.email_delivery.frappe.db", fake_db), patch(
             "aos.api.auth.email_delivery._enqueue_after_commit"
         ) as enqueue:
             schedule_auth_email_delivery("EMAIL-QUEUE-TEST")
