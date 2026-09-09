@@ -55,6 +55,18 @@ class TestAuthArchitectureContracts(unittest.TestCase):
         self.assertNotIn('row.user_image', serializer)
         self.assertNotIn('_get(user_row, "full_name")', serializer)
 
+    def test_auth_email_delivery_is_durable_low_latency_and_scheduler_safe(self):
+        verification = source("aos/api/auth/verification.py")
+        delivery = source("aos/api/auth/email_delivery.py")
+        self.assertIn("redact_message_after_send=True", verification)
+        self.assertIn("schedule_auth_email_delivery", verification)
+        self.assertIn('AUTH_EMAIL_QUEUE = "short"', delivery)
+        self.assertIn("after_commit", delivery)
+        self.assertIn("FOR UPDATE", delivery)
+        self.assertIn("queue_doc.is_to_be_sent()", delivery)
+        self.assertIn("scheduler", delivery.lower())
+        self.assertNotIn("now=True", verification)
+
     def test_auth_email_greetings_read_canonical_profile_name(self):
         for relative in (
             "aos/api/auth/otp.py",

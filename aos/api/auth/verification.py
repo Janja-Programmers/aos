@@ -128,4 +128,14 @@ def queue_otp_email(*, email: str, otp: str, full_name: str = "", purpose: str) 
         f"<strong style='font-size: 24px; letter-spacing: 4px'>{html.escape(otp)}</strong>"
         f"<br><br>This code expires in {OTP_TTL_MINUTES} minutes. If you did not request it, ignore this email."
     )
-    frappe.sendmail(recipients=[email], subject=subject, message=message, now=False)
+    queued = frappe.sendmail(
+        recipients=[email],
+        subject=subject,
+        message=message,
+        now=False,
+        redact_message_after_send=True,
+    )
+    if queued and getattr(queued, "name", None):
+        from .email_delivery import schedule_auth_email_delivery
+
+        schedule_auth_email_delivery(queued.name)

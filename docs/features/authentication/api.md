@@ -369,7 +369,7 @@ Success: `200` with `data: {}` and message `If this email can be registered, a v
 
 Stable errors: `AUTH_UNKNOWN_FIELD`, `VALIDATION_ERROR`, Localization validation/dependency errors for supplied/default hints, `RATE_LIMIT`, `SERVICE_UNAVAILABLE`, `REGISTER_FAILED`. Existing-account state is not disclosed.
 
-Side effects: after validation/rate limiting, inserts a disabled Frappe Website User, AOS Profile, Localization-owned AOS User Preference, deterministic email-verification AOS Auth Challenge and Frappe Email Queue state. These request-owned writes remain in the surrounding request transaction; queue/bootstrap failure rolls back the new account. The managed User sentinel bypasses only Frappe's coarse site-wide User-creation throttle after AOS distributed limits pass.
+Side effects: after validation/rate limiting, inserts a disabled Frappe Website User, AOS Profile, Localization-owned AOS User Preference, deterministic email-verification AOS Auth Challenge and Frappe Email Queue state. These request-owned writes remain in the surrounding request transaction; queue/bootstrap failure rolls back the new account. After commit, AOS best-effort enqueues the specific Email Queue row on the `short` worker for low-latency delivery; Frappe's periodic Email Queue flush remains the durable fallback if that immediate dispatch cannot be queued. The managed User sentinel bypasses only Frappe's coarse site-wide User-creation throttle after AOS distributed limits pass.
 
 Idempotency/retry: existing-address retries are safely acknowledged without mutation or re-send. DB uniqueness is the final race guard. A valid request for a genuinely new address is intentionally account-creating.
 
@@ -891,7 +891,7 @@ Frontend rules:
 - OTP rows are bounded per user/purpose instead of append-only;
 - `me` is read-oriented and never creates/repairs data; login and `me` load the required Localization preference once and reuse it during serialization instead of performing an existence check followed by an immediate duplicate read;
 - password/session cache invalidation targets exact session IDs;
-- email is queued rather than synchronously delivered from the Auth web worker; repeated 2FA first-factor success inside the resend cooldown reuses a still-valid OTP while rotating the continuation token, preventing avoidable mail floods;
+- auth email is durably inserted into Frappe Email Queue inside the request transaction, then the committed queue row is best-effort dispatched through the `short` worker instead of waiting for the periodic bulk flush; the scheduler remains fallback and SMTP is not performed by the Auth web worker; repeated 2FA first-factor success inside the resend cooldown reuses a still-valid OTP while rotating the continuation token, preventing avoidable mail floods;
 - OIDC JWKS is shared-cached in Redis; unknown-key refresh is globally throttled per site/provider with an atomic Redis NX guard to prevent refresh storms;
 - credential verification is deliberately not cached;
 - recoverable account deletion never synchronously deletes follower/content graphs; visibility is controlled by the single account tombstone;
@@ -953,7 +953,7 @@ The application changes do **not** prove capacity for one million users or one m
 | Localization during new account creation | required | account creation rolls back/fails |
 | Localization read for established bootstrap | required invariant | safe preference/invariant failure |
 | profile avatar/media URL | optional presentation data | degrades to `avatar: null` and logs only secret-safe failure classification |
-| Email provider delivery | asynchronous/degradable after queueing | request depends on durable queue creation, not provider round trip |
+| Email provider delivery | asynchronous/degradable after queueing | durable Email Queue row + post-commit short-worker dispatch; periodic Frappe flush is fallback; request does not depend on provider round trip |
 | Google/Apple JWKS/provider network on cache miss | required for social proof | `SERVICE_UNAVAILABLE`; no unverified login |
 
 ---
@@ -966,6 +966,7 @@ Authentication-focused test modules:
 - `aos/api/auth/tests/test_session_api.py` — exact login contract, enumeration safety, disabled/deleted behavior, mobile/web session shape, read-only `me`, logout idempotency;
 - `test_register_api.py` — validation, schema creation, Localization bootstrap, enumeration-safe duplicate/race retry handling, rollback on queued-mail failure;
 - `test_otp_api.py` — generic failures, activation, replay, resend enumeration resistance;
+- `test_email_delivery.py` — durable queue insertion, post-commit low-latency dispatch, redaction and scheduler-race serialization;
 - `test_password_reset_api.py` — recovery enumeration safety, OTP exchange, expiry, token replay and reset behavior;
 - `test_password_change_api.py` — current-password proof, configured policy/reuse behavior and session revocation policy;
 - `test_social_login_api.py` — provider subject binding, Apple later-login behavior, invariant checks, anti-rebinding, canonical fields;
@@ -980,6 +981,7 @@ Recommended focused command from `frappe-bench`:
 bench run-tests --app aos --module aos.api.auth.tests.test_session_api
 bench run-tests --app aos --module aos.api.auth.tests.test_register_api
 bench run-tests --app aos --module aos.api.auth.tests.test_otp_api
+bench run-tests --app aos --module aos.api.auth.tests.test_email_delivery
 bench run-tests --app aos --module aos.api.auth.tests.test_password_reset_api
 bench run-tests --app aos --module aos.api.auth.tests.test_password_change_api
 bench run-tests --app aos --module aos.api.auth.tests.test_social_login_api
