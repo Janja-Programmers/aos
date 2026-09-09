@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any, Iterable
 
 import frappe
+from frappe.query_builder.functions import Count
 from frappe.utils import add_to_date, get_datetime, now_datetime
 
 from aos.services.media.content_validation import (
@@ -1829,14 +1830,17 @@ class MediaService:
             min_value=1,
             max_value=50,
         )
-        active = frappe.db.count(
-            "AOS Media Object",
-            {
-                "owner_user": user,
-                "status": "Initialized",
-                "upload_mode": "multipart",
-                "upload_expires_at": [">", now_datetime()],
-            },
+        media = frappe.qb.DocType("AOS Media Object")
+        active = (
+            frappe.qb.from_(media)
+            .select(Count("*"))
+            .where(
+                (media.owner_user == user)
+                & (media.status == "Initialized")
+                & (media.upload_mode == "multipart")
+                & (media.upload_expires_at > now_datetime())
+            )
+            .run()[0][0]
         )
         if int(active or 0) >= limit:
             raise MediaConflictError(
@@ -2521,15 +2525,21 @@ class MediaService:
     ) -> None:
         if policy.max_items_per_resource <= 0:
             return
-        count = frappe.db.count(
-            "AOS Media Object",
-            filters={
-                "purpose": policy.key,
-                "status": "Attached",
-                "attached_doctype": attached_doctype,
-                "attached_name": attached_name,
-                "name": ["not in", [item for item in excluding_media_ids if item]],
-            },
+        media = frappe.qb.DocType("AOS Media Object")
+        condition = (
+            (media.purpose == policy.key)
+            & (media.status == "Attached")
+            & (media.attached_doctype == attached_doctype)
+            & (media.attached_name == attached_name)
+        )
+        excluded = sorted({item for item in excluding_media_ids if item})
+        if excluded:
+            condition &= media.name.notin(excluded)
+        count = (
+            frappe.qb.from_(media)
+            .select(Count("*"))
+            .where(condition)
+            .run()[0][0]
         )
         if int(count or 0) >= policy.max_items_per_resource:
             raise MediaConflictError(

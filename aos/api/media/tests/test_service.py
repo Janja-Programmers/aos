@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import frappe
+from frappe.query_builder.functions import Count
 from aos.services.accounts.identity import profile_name_for_user
 from frappe.tests.utils import FrappeTestCase
 
@@ -267,6 +268,14 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
             content_type=doc.content_type,
         )
 
+    @staticmethod
+    def _count_media_rows(*conditions) -> int:
+        media = frappe.qb.DocType("AOS Media Object")
+        query = frappe.qb.from_(media).select(Count("*"))
+        for condition in conditions:
+            query = query.where(condition)
+        return int(query.run()[0][0] or 0)
+
     def test_service_construction_does_not_require_storage_configuration(self):
         with patch(
             "aos.services.media.media_service.MinioStorage",
@@ -303,14 +312,11 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
 
         self.assertEqual(first.name, second.name)
         self.assertEqual(
-            frappe.db.count(
-                "AOS Media Object",
-                {
-                    "owner_user": self.user,
-                    "purpose": "profile_image",
-                    "status": "Initialized",
-                    "idempotency_key_hash": first.idempotency_key_hash,
-                },
+            self._count_media_rows(
+                frappe.qb.DocType("AOS Media Object").owner_user == self.user,
+                frappe.qb.DocType("AOS Media Object").purpose == "profile_image",
+                frappe.qb.DocType("AOS Media Object").status == "Initialized",
+                frappe.qb.DocType("AOS Media Object").idempotency_key_hash == first.idempotency_key_hash,
             ),
             1,
         )
@@ -330,13 +336,10 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
 
         self.assertEqual(exc.exception.code, "IDEMPOTENCY_CONFLICT")
         self.assertEqual(
-            frappe.db.count(
-                "AOS Media Object",
-                {
-                    "owner_user": self.user,
-                    "purpose": "profile_image",
-                    "idempotency_key_hash": first.idempotency_key_hash,
-                },
+            self._count_media_rows(
+                frappe.qb.DocType("AOS Media Object").owner_user == self.user,
+                frappe.qb.DocType("AOS Media Object").purpose == "profile_image",
+                frappe.qb.DocType("AOS Media Object").idempotency_key_hash == first.idempotency_key_hash,
             ),
             1,
         )
