@@ -8,9 +8,10 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 | Endpoint | HTTP | Decorator access | Audience |
 |---|---|---|---|
 | `get_my_preference` | GET | Session required | Client |
+| `get_my_profile` | GET | Session required | Client |
 | `get_profile` | GET | Session required | Client |
 | `update_my_preference` | POST | Session required | Client |
-| `update_profile` | POST | Session required | Client |
+| `update_my_profile` | POST | Session required | Client |
 
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
@@ -82,33 +83,49 @@ Localization owns validation against Country/Currency/Language/AOS Location mast
 
 ## Endpoint contracts
 
-### GET `/api/method/aos.api.v1.accounts.get_profile`
+### GET `/api/method/aos.api.v1.accounts.get_my_profile`
 
 **Authentication:** required active/enabled account with required authenticated bootstrap state.
 
-**Purpose / frontend usage:** with no request fields, load the current account/profile screen. With `account_id`, load another account's public profile surface.
+**Purpose / frontend usage:** load the authenticated account's private profile/settings projection. This endpoint always means “my profile” and never accepts a target account.
 
-**Request fields:** `account_id` is optional. If present it must be a canonical `ACC-*` ID. No aliases or additional client fields are accepted.
+**Request fields:** none. Any client field, including `account_id`, is rejected with `INVALID_PROFILE_FIELD`.
 
-**Owner response:** contains `account_id`, `display_name`, `bio`, public avatar URL, social counts, `is_verified`, seller summary, owner email, `legal_name`, `phone`, `date_of_birth`, `gender`, `profile_image_media`, `account_status`, enabled/lifecycle purge state, four-field `preferences`, roles, verification summary, and `can_edit`. It does not expose Frappe `User.name`/`internal_user`.
+**Response:** contains `account_id`, `display_name`, `bio`, public avatar URL, social counts, `is_verified`, seller summary, owner email, `legal_name`, `phone`, `date_of_birth`, `gender`, `profile_image_media`, `account_status`, enabled/lifecycle purge state, four-field `preferences`, roles, verification summary, and `can_edit`. It does not expose Frappe `User.name`/`internal_user`.
 
-**Public response:** explicit allowlist containing public account ID, display name, bio, public avatar URL, verification display flag, bounded social counts, public seller summary, and viewer-relative Social relationship state. It does not expose email, phone, legal name, date of birth, roles, enabled state, internal User identity, private media IDs, purge state, or private verification request details.
+**Rate limit:** 60/minute/user. The limiter uses the shared Frappe Redis cache and site-safe AOS keys.
 
-**Availability:** suspended, deleted, disabled, or missing target accounts are not returned as public profiles. A profile hidden by a block relationship returns `PROFILE_UNAVAILABLE` without exposing private account state.
-
-**Rate limit:** self reads: 60/minute/user; target public-profile reads: 90/minute/user. The limiter uses the shared Frappe Redis cache and site-safe AOS keys.
-
-**Caching:** self and target-profile responses are private/no-store. Target profiles include viewer-relative Social capabilities, so they are never placed in a shared HTTP cache. Cache is never an authorization source of truth.
+**Caching:** private/no-store. Cache is never an authorization source of truth.
 
 **Side effects / transaction / retry:** read-only. It does not create profiles/preferences, repair rows, update localization, or commit. Retries are safe.
 
-**Important errors:** `UNAUTHORIZED`, canonical account-state Auth errors, `PREFERENCE_MISSING`, `INVALID_PROFILE_FIELD`, `INVALID_ACCOUNT_ID`, `ACCOUNT_NOT_FOUND`, `PROFILE_UNAVAILABLE`, rate-limit errors, and `INTERNAL_ERROR`.
+**Important errors:** `UNAUTHORIZED`, canonical account-state Auth errors, `PREFERENCE_MISSING`, `INVALID_PROFILE_FIELD`, `PROFILE_NOT_FOUND`, rate-limit errors, and `INTERNAL_ERROR`.
 
-### POST `/api/method/aos.api.v1.accounts.update_profile`
+### GET `/api/method/aos.api.v1.accounts.get_profile`
+
+**Authentication:** required active/enabled account.
+
+**Purpose / frontend usage:** load another account's public, viewer-relative profile surface. The contract is intentionally separate from `get_my_profile` so private-owner and public-target response schemas cannot be confused.
+
+**Request fields:** `account_id` is required and must be a canonical `ACC-*` ID. No aliases or additional client fields are accepted. Missing `account_id` returns `ACCOUNT_ID_REQUIRED`; an email/internal User identity returns `INVALID_ACCOUNT_ID`.
+
+**Response:** explicit allowlist containing public account ID, display name, bio, public avatar URL, verification display flag, bounded social counts, public seller summary, and viewer-relative Social relationship state. It does not expose email, phone, legal name, date of birth, roles, enabled state, internal User identity, private media IDs, purge state, or private verification request details.
+
+**Availability:** suspended, deleted, disabled, or missing target accounts are not returned as public profiles. A profile hidden by a block relationship returns `PROFILE_UNAVAILABLE` without exposing private account state.
+
+**Rate limit:** 90/minute/user. The limiter is per authenticated viewer through shared Frappe Redis.
+
+**Caching:** private/no-store because Social capability fields are viewer-relative. The response must not be put in a shared HTTP cache.
+
+**Side effects / transaction / retry:** read-only. It does not create/repair account state or commit. Retries are safe.
+
+**Important errors:** `UNAUTHORIZED`, canonical account-state Auth errors, `ACCOUNT_ID_REQUIRED`, `INVALID_PROFILE_FIELD`, `INVALID_ACCOUNT_ID`, `ACCOUNT_NOT_FOUND`, `PROFILE_UNAVAILABLE`, rate-limit errors, and `INTERNAL_ERROR`.
+
+### POST `/api/method/aos.api.v1.accounts.update_my_profile`
 
 **Authentication:** required active/enabled account with required preference state. Ownership is always derived from the authenticated session; no target account field exists.
 
-**Purpose / frontend usage:** edit the current user's profile details or assign/remove the profile image.
+**Purpose / frontend usage:** edit the authenticated user's profile details or assign/remove the profile image.
 
 | Field | Required | Validation |
 |---|---|---|
@@ -249,8 +266,8 @@ Web/mobile clients should rely on these current contracts:
 - use `account_id` (`ACC-*`) for public account references;
 - never route by Frappe User email as an account identifier;
 - treat owner `email` only as owner-visible Auth/account data;
-- treat public profile and self profile as different privacy projections;
-- send only supported fields to `update_profile`;
+- use `get_my_profile` for the authenticated owner projection and `get_profile(account_id)` for another account's public projection;
+- send only supported fields to `update_my_profile`;
 - upload profile media through Media first, then send its Media ID as `avatar_media_id`;
 - treat preferences as exactly `country`, `currency`, `language`, `location`;
 - allow country changes for buyers and sellers alike;

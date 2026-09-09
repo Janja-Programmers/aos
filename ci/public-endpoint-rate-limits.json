@@ -24,6 +24,12 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
+    "endpoint": "aos.api.v1.accounts.__init__.get_my_profile",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
     "endpoint": "aos.api.v1.accounts.__init__.get_profile",
     "access": "authenticated",
     "policy": "baseline_authenticated",
@@ -36,7 +42,7 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
-    "endpoint": "aos.api.v1.accounts.__init__.update_profile",
+    "endpoint": "aos.api.v1.accounts.__init__.update_my_profile",
     "access": "authenticated",
     "policy": "baseline_authenticated",
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."

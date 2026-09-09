@@ -69,6 +69,19 @@ class AccountProfileService:
         if "avatar_media_id" in changes:
             media_id = changes.pop("avatar_media_id")
             try:
+                # Accounts requires strict ownership for profile media. Do not
+                # fall through to Media's broader administrative permission
+                # checks when the referenced object belongs to another user.
+                # Besides making the Accounts contract explicit, this keeps the
+                # normal cross-user rejection path independent of Frappe's
+                # generic permission engine.
+                candidate_media = self.media.get_media_doc(media_id)
+                if str(getattr(candidate_media, "owner_user", "") or "").strip() != str(user or "").strip():
+                    raise MediaPermissionError(
+                        "Media is not owned by the authenticated account",
+                        code="MEDIA_ACCESS_DENIED",
+                    )
+
                 media_doc = self.media.attach_media(
                     media_id=media_id,
                     user=user,

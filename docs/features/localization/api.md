@@ -27,7 +27,7 @@ AOS intentionally treats country, currency, and language as independent dimensio
 - **language** selects the user's language preference;
 - **location** is an optional active AOS location that must belong to the selected country.
 
-Changing one dimension does not silently rewrite another. A country change may clear an existing location if that location does not belong to the new country. Seller ownership locks country changes because seller operations are market-bound; currency and language remain independently editable.
+Changing one dimension does not silently rewrite another. Country is the authenticated user's mutable browsing/buyer market. A country change may clear an existing location if that location does not belong to the new country; currency and language remain independently editable. Existing Ads keep their own persisted market independently.
 
 ### Responsibilities owned by Localization
 
@@ -554,7 +554,7 @@ POST aos.api.v1.accounts.update_my_preference
 | Guest `resolve_locale_context` | Depends on supplied/hints; defaults can be 0 DB when cached; `Accept-Language` is one bounded query | Defaults shared-cacheable; request result not globally cacheable | Master identity lookups | None | 3 IDs + sources; header 512 chars/20 entries | Stateless | None | Repeated master validation for highly varied explicit guest traffic. |
 | Auth `resolve_locale_context` | Preference warm cache: 0 preference DB reads after shared auth checks; miss: 1 preference read | Per-user preference shared cache 300s | unique `AOS User Preference.user` | None | Tiny ID-only response | Stateless | None | Shared auth/account-state checks and Redis/database latency. |
 | `get_locations` | 1 bounded location query after context resolution | Query results not cached | `(country,is_active,sort_order,location)` | None | max 100 rows; offset max 10k; q max 80 | Stateless | None | Literal substring scan inside one country's active rows if that reference set becomes extremely large. |
-| `get_my_preference` | Preference cache hit + seller-lock lookup; preference miss adds 1 DB read | Per-user shared cache 300s | unique user; Seller user lookup uses Seller schema/indexes | None | Tiny ID-only response | Stateless | None | Seller lock lookup. |
+| `get_my_preference` | Preference cache hit; preference miss adds 1 DB read | Per-user shared cache 300s | unique user | None | Tiny ID-only response | Stateless | None | Shared cache/database latency only. |
 | `update_my_preference` | Write-path dependent; bounded validators + one row lock + document save | Preference cache invalidated | unique user; location PK/constraints | Serialized per preference row only | Four allowed fields | Multi-node safe via DB row lock/unique constraints | Lost update prevented; duplicate row prevented | Normal database write/validation latency; intentionally not a read hot path. |
 
 ### Shared cache strategy

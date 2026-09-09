@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from aos.api.accounts.profile import get_profile_impl, update_profile_impl
+from aos.api.accounts.profile import get_my_profile_impl, get_profile_impl, update_my_profile_impl
 from aos.services.accounts.errors import AccountError, AccountNotFoundError, AccountValidationError
 from aos.services.accounts.identity import ensure_public_account_id
 from aos.services.accounts.profile_service import AccountProfileService
@@ -23,17 +23,33 @@ class AccountsProfileIntegrationTests(AOSFeatureTestMixin, IntegrationTestCase):
         self.cleanup_feature_rows()
         frappe.set_user("Administrator")
 
-    def test_authenticated_self_profile_uses_public_account_id_and_hides_internal_user(self):
+    def test_get_my_profile_uses_public_account_id_and_hides_internal_user(self):
         user = self.make_user("self")
         frappe.set_user(user)
         with patch("aos.api.accounts.profile.rate_limit", return_value=None):
-            response = get_profile_impl()
+            response = get_my_profile_impl()
         self.assertTrue(response.get("ok"), response)
         data = response["data"]
         self.assertEqual(data["account_id"], ensure_public_account_id(user))
         self.assertEqual(data["email"], user)
         self.assertNotIn("internal_user", data)
         self.assertNotIn("user", data)
+
+    def test_get_my_profile_rejects_target_or_other_request_fields(self):
+        user = self.make_user("self-contract")
+        frappe.set_user(user)
+        with patch("aos.api.accounts.profile.rate_limit", return_value=None):
+            target_response = get_my_profile_impl(account_id=ensure_public_account_id(user))
+            unknown_response = get_my_profile_impl(target_user=ensure_public_account_id(user))
+        self.assertEqual(target_response.get("error"), "INVALID_PROFILE_FIELD")
+        self.assertEqual(unknown_response.get("error"), "INVALID_PROFILE_FIELD")
+
+    def test_public_profile_requires_account_id(self):
+        viewer = self.make_user("viewer-required")
+        frappe.set_user(viewer)
+        with patch("aos.api.accounts.profile.rate_limit", return_value=None):
+            response = get_profile_impl()
+        self.assertEqual(response.get("error"), "ACCOUNT_ID_REQUIRED")
 
     def test_public_profile_requires_canonical_account_id_and_is_privacy_bounded(self):
         viewer = self.make_user("viewer")
@@ -66,7 +82,7 @@ class AccountsProfileIntegrationTests(AOSFeatureTestMixin, IntegrationTestCase):
         self.assertEqual(email_response.get("error"), "INVALID_ACCOUNT_ID")
         self.assertEqual(alias_response.get("error"), "INVALID_PROFILE_FIELD")
 
-    def test_profile_update_rejects_mass_assignment_and_immutable_fields(self):
+    def test_my_profile_update_rejects_mass_assignment_and_immutable_fields(self):
         user = self.make_user("mass-assignment")
         frappe.set_user(user)
         for field, value in (
@@ -78,14 +94,14 @@ class AccountsProfileIntegrationTests(AOSFeatureTestMixin, IntegrationTestCase):
             ("seller", {"status": "Active"}),
         ):
             with self.subTest(field=field), patch("aos.api.accounts.profile.rate_limit", return_value=None):
-                response = update_profile_impl(**{field: value})
+                response = update_my_profile_impl(**{field: value})
             self.assertEqual(response.get("error"), "INVALID_PROFILE_FIELD")
 
-    def test_profile_update_normalizes_allowed_fields(self):
+    def test_my_profile_update_normalizes_allowed_fields(self):
         user = self.make_user("update")
         frappe.set_user(user)
         with patch("aos.api.accounts.profile.rate_limit", return_value=None):
-            response = update_profile_impl(display_name="  New   Name  ", bio="  hello   world  ")
+            response = update_my_profile_impl(display_name="  New   Name  ", bio="  hello   world  ")
         self.assertTrue(response.get("ok"), response)
         self.assertEqual(response["data"]["display_name"], "New Name")
         self.assertEqual(response["data"]["bio"], "hello world")
@@ -95,8 +111,14 @@ class AccountsProfileIntegrationTests(AOSFeatureTestMixin, IntegrationTestCase):
         other = self.make_user("media-other")
         media = self.make_media(owner=other, purpose="profile_image")
         frappe.set_user(owner)
-        with patch("aos.api.accounts.profile.rate_limit", return_value=None):
-            response = update_profile_impl(avatar_media_id=media.name)
+        with (
+            patch("aos.api.accounts.profile.rate_limit", return_value=None),
+            patch(
+                "aos.services.media.media_service.has_doctype_permission",
+                side_effect=AssertionError("cross-user avatar ownership must fail before generic permission checks"),
+            ),
+        ):
+            response = update_my_profile_impl(avatar_media_id=media.name)
         self.assertEqual(response.get("error"), "MEDIA_ACCESS_DENIED")
         self.assertFalse(frappe.db.get_value("AOS Profile", {"user": owner}, "profile_image_media"))
 
@@ -105,7 +127,7 @@ class AccountsProfileIntegrationTests(AOSFeatureTestMixin, IntegrationTestCase):
         media = self.make_media(owner=owner, purpose="ad_image")
         frappe.set_user(owner)
         with patch("aos.api.accounts.profile.rate_limit", return_value=None):
-            response = update_profile_impl(avatar_media_id=media.name)
+            response = update_my_profile_impl(avatar_media_id=media.name)
         self.assertEqual(response.get("error"), "INVALID_MEDIA_PURPOSE")
         self.assertFalse(frappe.db.get_value("AOS Profile", {"user": owner}, "profile_image_media"))
 
