@@ -1,4 +1,4 @@
-"""Bounded Catalog persistence queries."""
+"""Bounded persistence queries for the Catalog domain."""
 
 from __future__ import annotations
 
@@ -12,8 +12,7 @@ from .errors import CatalogDataError
 _CATEGORY_FIELDS = [
     "name",
     "category_name",
-    "icon",
-    "icon_media",
+    "image_media",
     "parent_aos_category",
     "sort_order",
     "is_group",
@@ -28,6 +27,17 @@ _CATEGORY_FIELDS = [
 class CatalogRepository:
     """All Catalog reads are bounded and select only reviewed fields."""
 
+    def load_category(self, category_id: str) -> dict[str, Any] | None:
+        rows = frappe.get_all(
+            "AOS Category",
+            filters={"name": str(category_id or "").strip()},
+            fields=_CATEGORY_FIELDS,
+            limit=1,
+        )
+        if not rows:
+            return None
+        return dict(rows[0])
+
     def load_categories(self) -> list[dict[str, Any]]:
         rows = frappe.get_all(
             "AOS Category",
@@ -40,15 +50,19 @@ class CatalogRepository:
         return [dict(row) for row in (rows or [])]
 
     def load_category_attribute_rows(self, category_names: list[str]) -> list[dict[str, Any]]:
-        if not category_names:
+        names = sorted({str(name).strip() for name in category_names if str(name).strip()})
+        if not names:
             return []
-        limit = min(MAX_CATEGORIES * MAX_CATEGORY_ATTRIBUTES, 100_000)
+        if len(names) > MAX_CATEGORY_DEPTH_QUERY_COUNT:
+            raise CatalogDataError("Catalog category chain is invalid.")
+
+        limit = len(names) * MAX_CATEGORY_ATTRIBUTES
         rows = frappe.get_all(
             "AOS Category Attribute Row",
             filters={
                 "parenttype": "AOS Category",
                 "parentfield": "attributes",
-                "parent": ["in", category_names],
+                "parent": ["in", names],
             },
             fields=[
                 "name",
@@ -60,7 +74,7 @@ class CatalogRepository:
                 "is_required",
                 "is_active",
             ],
-            order_by="parent asc, idx asc, name asc",
+            order_by="parent asc, sort_order asc, idx asc, name asc",
             limit=limit + 1,
         )
         if len(rows or []) > limit:
@@ -68,15 +82,31 @@ class CatalogRepository:
         return [dict(row) for row in (rows or [])]
 
     def load_attributes(self, attribute_names: list[str]) -> dict[str, dict[str, Any]]:
-        names = sorted({str(name) for name in attribute_names if name})
+        names = sorted({str(name).strip() for name in attribute_names if str(name).strip()})
         if not names:
             return {}
-        if len(names) > MAX_CATEGORIES * MAX_CATEGORY_ATTRIBUTES:
+        if len(names) > MAX_ATTRIBUTE_DEFINITIONS_PER_SCHEMA:
             raise CatalogDataError("Catalog attribute limit exceeded.")
         rows = frappe.get_all(
             "AOS Ad Attribute",
             filters={"name": ["in", names]},
-            fields=["name", "label", "field_type", "unit", "help_text", "options", "is_active"],
-            limit=len(names),
+            fields=[
+                "name",
+                "attribute_key",
+                "label",
+                "field_type",
+                "unit",
+                "help_text",
+                "options",
+                "is_active",
+            ],
+            limit=len(names) + 1,
         )
+        if len(rows or []) > len(names):
+            raise CatalogDataError("Catalog attribute query returned duplicate definitions.")
         return {str(row["name"]): dict(row) for row in (rows or [])}
+
+
+# A resolved public schema can only contain the configured two-level chain.
+MAX_CATEGORY_DEPTH_QUERY_COUNT = 2
+MAX_ATTRIBUTE_DEFINITIONS_PER_SCHEMA = MAX_CATEGORY_DEPTH_QUERY_COUNT * MAX_CATEGORY_ATTRIBUTES

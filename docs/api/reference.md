@@ -110,8 +110,8 @@ Owner documentation: [docs/features/catalog/api.md](../features/catalog/api.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
-| `/api/method/aos.api.v1.catalog.get_categories` | Any* | Guest allowed | Client | `aos/api/v1/catalog/__init__.py` |
-| `/api/method/aos.api.v1.catalog.get_category_schema` | Any* | Guest allowed | Client | `aos/api/v1/catalog/__init__.py` |
+| `/api/method/aos.api.v1.catalog.get_categories` | GET | Guest allowed | Client | `aos/api/v1/catalog/__init__.py` |
+| `/api/method/aos.api.v1.catalog.get_category_schema` | GET | Guest allowed | Client | `aos/api/v1/catalog/__init__.py` |
 
 ## Chat (17)
 

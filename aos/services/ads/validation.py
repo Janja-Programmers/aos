@@ -251,7 +251,7 @@ def normalize_json_list(value: Any, *, field: str, max_items: int) -> list[dict[
 
 def _catalog_schema(category: Any) -> tuple[str, list[dict[str, Any]], dict[str, Any], bool]:
     try:
-        chain = CatalogService().get_sellable_category_chain(category)
+        chain = CatalogService().get_sellable_category_chain(category, for_update=True)
         leaf = chain[0]
         return (
             str(leaf["name"]),
@@ -523,7 +523,7 @@ def normalize_full_ad_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         multiline=True,
     )
     category = normalize_identifier(payload.get("category"), field="category", required=True)
-    category_id = CatalogService().assert_sellable_category(category)
+    category_id = CatalogService().assert_sellable_category(category, for_update=True)
     location = normalize_identifier(payload.get("location"), field="location", required=True)
     details = normalize_details(payload.get("details"), category=category_id)
     images = normalize_images(payload.get("images"), require_images=True)

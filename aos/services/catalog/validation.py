@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 import unicodedata
 from collections.abc import Iterable
@@ -137,23 +138,30 @@ def split_choices(
     return result
 
 
-def effective_attribute_field_type(field_type: Any, *, has_options_override: bool = False) -> str:
-    """Return the category-effective type for an attribute definition.
 
-    Legacy Catalog data uses category-level option overrides on reusable Text
-    attributes. Treating those rows as Text would expose an incoherent public
-    schema (free text plus a choice list), while rejecting them makes valid
-    existing category configuration impossible to maintain. A category-level
-    choice list therefore narrows a Text attribute to a single-choice Select
-    for that category only. Other non-select types remain invalid with option
-    overrides.
-    """
+def canonical_attribute_key(label: Any) -> str:
+    """Build a stable client key from the immutable attribute identity label."""
 
-    normalized = str(field_type or "Text").strip() or "Text"
-    if has_options_override and normalized == "Text":
-        return "Select"
-    return normalized
+    normalized = normalize_text(
+        label,
+        field="attribute_label",
+        max_length=ATTRIBUTE_LABEL_MAX_LENGTH,
+        required=True,
+    )
+    decomposed = unicodedata.normalize("NFKD", normalized)
+    ascii_text = decomposed.encode("ascii", "ignore").decode("ascii").lower()
+    key = re.sub(r"[^a-z0-9]+", "_", ascii_text).strip("_")
+    if not key:
+        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+        key = f"attribute_{digest}"
+    return key[:80].rstrip("_")
 
+
+
+def reject_unknown_fields(payload: dict[str, Any], *, allowed: set[str]) -> None:
+    unknown = sorted(str(key) for key in payload if key not in allowed)
+    if unknown:
+        raise CatalogValidationError("Unknown Catalog request field.", code="INVALID_CATALOG_INPUT")
 
 def validate_category_document(doc: Any) -> None:
     """Normalize and enforce the repository's two-level category tree contract."""
@@ -270,12 +278,11 @@ def _validate_category_attribute_rows(doc: Any) -> None:
             field="attribute_option",
             max_items=MAX_ATTRIBUTE_OPTIONS,
         )
-        effective_type = effective_attribute_field_type(
-            field_type,
-            has_options_override=bool(override),
-        )
-        if override and effective_type not in SELECT_ATTRIBUTE_TYPES:
-            raise CatalogValidationError("Only select attributes support option overrides.", code="INVALID_CATEGORY_SCHEMA")
+        if override and field_type not in SELECT_ATTRIBUTE_TYPES:
+            raise CatalogValidationError(
+                "Only select attributes support option overrides.",
+                code="INVALID_CATEGORY_SCHEMA",
+            )
         split_choices(
             definition.get("options"),
             field="attribute_option",
@@ -291,6 +298,16 @@ def validate_attribute_document(doc: Any) -> None:
         max_length=ATTRIBUTE_LABEL_MAX_LENGTH,
         required=True,
     )
+    if bool(doc.is_new()):
+        doc.attribute_key = canonical_attribute_key(doc.label)
+    else:
+        existing_key = normalize_text(
+            getattr(doc, "attribute_key", None),
+            field="attribute_key",
+            max_length=80,
+            required=True,
+        )
+        doc.attribute_key = existing_key
     field_type = normalize_text(
         getattr(doc, "field_type", None),
         field="attribute_type",

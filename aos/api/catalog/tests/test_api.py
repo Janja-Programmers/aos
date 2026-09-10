@@ -1,78 +1,69 @@
 from __future__ import annotations
 
+from unittest import TestCase
 from unittest.mock import patch
-
-import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from aos.api.catalog.categories import get_categories_impl
 from aos.api.catalog.schema import get_category_schema_impl
 from aos.services.catalog.errors import CatalogDataError, CatalogNotFoundError
 
 
-class TestCatalogAPI(FrappeTestCase):
-    def setUp(self):
-        frappe.local.response = {}
-
+class TestCatalogAPI(TestCase):
     @patch("aos.api.catalog.categories.rate_limit", return_value=None)
     @patch("aos.api.catalog.categories.CatalogService")
-    def test_categories_returns_stable_envelope(self, service_factory, _rate_limit):
-        service_factory.return_value.list_public_categories.return_value = [{"id": "Root", "children": []}]
+    def test_categories_returns_standard_envelope(self, service_factory, _rate_limit):
+        service_factory.return_value.list_public_categories.return_value = [{"id": "Root"}]
         response = get_categories_impl()
         self.assertTrue(response["ok"])
-        self.assertEqual(response["data"][0]["id"], "Root")
-        self.assertEqual(frappe.local.response["http_status_code"], 200)
+        self.assertEqual(response["data"], [{"id": "Root"}])
 
-    @patch("aos.api.catalog.categories.frappe.log_error")
     @patch("aos.api.catalog.categories.rate_limit", return_value=None)
     @patch("aos.api.catalog.categories.CatalogService")
-    def test_categories_hides_internal_error_details(
-        self, service_factory, _rate_limit, _log_error
-    ):
-        service_factory.return_value.list_public_categories.side_effect = CatalogDataError("cycle at private-id")
-        response = get_categories_impl()
+    def test_categories_rejects_unknown_fields_before_service(self, service_factory, _rate_limit):
+        response = get_categories_impl(offset=0)
         self.assertFalse(response["ok"])
-        self.assertEqual(response["error"], "CATALOG_DATA_ERROR")
-        self.assertNotIn("private-id", response["message"])
-        self.assertEqual(frappe.local.response["http_status_code"], 500)
+        self.assertEqual(response["error"], "INVALID_CATALOG_INPUT")
+        service_factory.assert_not_called()
 
     @patch("aos.api.catalog.schema.rate_limit", return_value=None)
     @patch("aos.api.catalog.schema.CatalogService")
-    def test_schema_returns_safe_shape(self, service_factory, _rate_limit):
+    def test_schema_requires_exact_category_field(self, service_factory, _rate_limit):
+        missing = get_category_schema_impl()
+        unknown = get_category_schema_impl(category="Phones", category_id="Phones")
+        self.assertEqual(missing["error"], "INVALID_CATALOG_INPUT")
+        self.assertEqual(unknown["error"], "INVALID_CATALOG_INPUT")
+        service_factory.assert_not_called()
+
+    @patch("aos.api.catalog.schema.rate_limit", return_value=None)
+    @patch("aos.api.catalog.schema.CatalogService")
+    def test_schema_returns_canonical_projection(self, service_factory, _rate_limit):
         service_factory.return_value.get_public_schema.return_value = {
-            "category": {"id": "Leaf", "name": "Leaf", "parent_id": "Root", "is_group": 0, "is_service": 0},
+            "category": {"id": "Phones", "is_group": 0, "image_url": None},
             "attributes": [],
-            "pricing": {"pricing_requirement": "Optional"},
+            "pricing": {"requirement": "Optional", "allowed_price_types": [], "allowed_units": []},
         }
-        response = get_category_schema_impl(category="Leaf")
+        response = get_category_schema_impl(category="Phones")
         self.assertTrue(response["ok"])
-        self.assertNotIn("owner", response["data"]["category"])
+        self.assertEqual(response["data"]["pricing"]["requirement"], "Optional")
 
     @patch("aos.api.catalog.schema.rate_limit", return_value=None)
     @patch("aos.api.catalog.schema.CatalogService")
-    def test_schema_not_found_is_generic(self, service_factory, _rate_limit):
-        service_factory.return_value.get_public_schema.side_effect = CatalogNotFoundError("Category not found.")
+    def test_not_found_is_public_safe(self, service_factory, _rate_limit):
+        service_factory.return_value.get_public_schema.side_effect = CatalogNotFoundError("private detail")
         response = get_category_schema_impl(category="Missing")
+        self.assertFalse(response["ok"])
         self.assertEqual(response["error"], "CATEGORY_NOT_FOUND")
         self.assertEqual(response["message"], "Category not found.")
-        self.assertEqual(frappe.local.response["http_status_code"], 404)
 
-    @patch("aos.api.catalog.schema.rate_limit", return_value=None)
-    def test_schema_requires_category(self, _rate_limit):
-        response = get_category_schema_impl()
-        self.assertEqual(response["error"], "VALIDATION_ERROR")
-        self.assertEqual(frappe.local.response["http_status_code"], 422)
-
-    @patch("aos.api.catalog.schema.rate_limit", return_value=None)
-    def test_schema_rejects_structured_category_input(self, _rate_limit):
-        response = get_category_schema_impl(category={"name": "Leaf"})
-        self.assertEqual(response["error"], "INVALID_CATALOG_INPUT")
-        self.assertEqual(frappe.local.response["http_status_code"], 422)
-
-    @patch("aos.api.catalog.schema.rate_limit")
-    def test_schema_rate_limit_short_circuits_before_database_work(self, rate_limit):
-        rate_limit.return_value = {"ok": False, "error": "RATE_LIMIT", "message": "Limited", "data": {}}
-        with patch("aos.api.catalog.schema.CatalogService") as service_factory:
-            response = get_category_schema_impl(category="Leaf")
-        self.assertEqual(response["error"], "RATE_LIMIT")
-        service_factory.assert_not_called()
+    @patch("aos.api.catalog.categories.frappe.log_error")
+    @patch("aos.api.catalog.categories.frappe.get_traceback", return_value="trace")
+    @patch("aos.api.catalog.categories.rate_limit", return_value=None)
+    @patch("aos.api.catalog.categories.CatalogService")
+    def test_corrupt_catalog_does_not_leak_internal_message(
+        self, service_factory, _rate_limit, _traceback, log_error
+    ):
+        service_factory.return_value.list_public_categories.side_effect = CatalogDataError("SQL secret")
+        response = get_categories_impl()
+        self.assertEqual(response["error"], "CATALOG_DATA_ERROR")
+        self.assertEqual(response["message"], "Failed to fetch categories.")
+        log_error.assert_called_once()

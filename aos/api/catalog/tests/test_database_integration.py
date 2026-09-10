@@ -8,6 +8,8 @@ from frappe.tests.utils import FrappeTestCase
 
 from aos.api.catalog.categories import get_categories_impl
 from aos.api.catalog.schema import get_category_schema_impl
+from aos.patches.v1_0 import install_catalog_indexes
+from aos.services.catalog.cache import clear_catalog_cache
 from aos.services.catalog.errors import CatalogValidationError
 from aos.services.catalog.service import CatalogService
 
@@ -20,15 +22,18 @@ class TestCatalogDatabaseIntegration(FrappeTestCase):
         self.created_categories: list[str] = []
         self.created_attributes: list[str] = []
         frappe.local.response = {}
+        clear_catalog_cache()
 
     def tearDown(self):
         frappe.set_user("Administrator")
+        clear_catalog_cache()
         for name in reversed(self.created_categories):
             if frappe.db.exists("AOS Category", name):
                 frappe.delete_doc("AOS Category", name, ignore_permissions=True, force=True)
         for name in reversed(self.created_attributes):
             if frappe.db.exists("AOS Ad Attribute", name):
                 frappe.delete_doc("AOS Ad Attribute", name, ignore_permissions=True, force=True)
+        clear_catalog_cache()
         frappe.set_user(self.original_user)
 
     def _group(self, suffix="Root", *, active=1):
@@ -97,16 +102,22 @@ class TestCatalogDatabaseIntegration(FrappeTestCase):
         tree = CatalogService().list_public_categories()
         root = next(item for item in tree if item["id"] == group.name)
         self.assertEqual(root["children"][0]["id"], leaf.name)
+        self.assertNotIn("image_media", root)
 
         schema = CatalogService().get_public_schema(leaf.name)
         self.assertEqual(schema["category"]["id"], leaf.name)
         self.assertEqual(schema["attributes"][0]["id"], attribute.name)
+        self.assertEqual(schema["attributes"][0]["key"], attribute.attribute_key)
         self.assertEqual(schema["attributes"][0]["options"], ["New", "Used"])
+        self.assertEqual(schema["pricing"]["requirement"], "Required")
 
     def test_inactive_ancestor_removes_leaf_from_public_discovery(self):
         group = self._group()
         leaf = self._leaf(group.name)
+        # Deliberately bypass hooks to prove ancestry is enforced at read time;
+        # clear cache because direct db.set_value is not a supported admin path.
         frappe.db.set_value("AOS Category", group.name, "is_active", 0, update_modified=False)
+        clear_catalog_cache()
         tree = CatalogService().list_public_categories()
         ids = {item["id"] for root in tree for item in [root, *root.get("children", [])]}
         self.assertNotIn(leaf.name, ids)
@@ -124,6 +135,7 @@ class TestCatalogDatabaseIntegration(FrappeTestCase):
         self.assertTrue(schema["ok"])
         self.assertNotIn("owner", schema["data"]["category"])
         self.assertNotIn("modified_by", schema["data"]["category"])
+        self.assertNotIn("image_media", schema["data"]["category"])
 
     def test_group_cannot_be_used_as_sellable_ad_category(self):
         group = self._group()
@@ -143,6 +155,14 @@ class TestCatalogDatabaseIntegration(FrappeTestCase):
             )
         self.assertFalse(frappe.db.exists("AOS Category", f"{self.prefix} Leaf"))
 
+    def test_stable_identity_metadata_is_enforced(self):
+        group = self._group()
+        attribute = self._attribute(field_type="Text")
+        self.assertEqual(group.name, group.category_name)
+        self.assertTrue(attribute.attribute_key)
+        self.assertEqual(frappe.get_meta("AOS Category").allow_rename, 0)
+        self.assertEqual(frappe.get_meta("AOS Ad Attribute").allow_rename, 0)
+
     def test_category_name_unique_constraint_is_enforced(self):
         group = self._group()
         duplicate = frappe.get_doc(
@@ -157,3 +177,20 @@ class TestCatalogDatabaseIntegration(FrappeTestCase):
         )
         with self.assertRaises(Exception):
             duplicate.insert(ignore_permissions=True)
+
+    def test_manual_catalog_indexes_exist_with_expected_order_and_uniqueness(self):
+        install_catalog_indexes.execute()
+        for doctype, index_name, columns, unique in install_catalog_indexes.INDEXES:
+            rows = frappe.db.sql(
+                """
+                SELECT COLUMN_NAME, NON_UNIQUE
+                FROM information_schema.STATISTICS
+                WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=%s AND INDEX_NAME=%s
+                ORDER BY SEQ_IN_INDEX
+                """,
+                (f"tab{doctype}", index_name),
+                as_dict=True,
+            )
+            self.assertEqual(tuple(row.COLUMN_NAME for row in rows), columns)
+            self.assertTrue(rows)
+            self.assertEqual(not bool(int(rows[0].NON_UNIQUE)), unique)

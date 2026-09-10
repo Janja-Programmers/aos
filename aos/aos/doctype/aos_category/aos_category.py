@@ -3,59 +3,41 @@
 
 from __future__ import annotations
 
-from typing import Any
+from frappe.model.document import Document
 
-import frappe
-from frappe import _
-from frappe.utils.nestedset import NestedSet
-
-from aos.services.media.media_service import (
-    MediaError,
-    MediaService,
+from aos.services.catalog.cache import clear_catalog_cache
+from aos.services.catalog.category_media import (
+    finalize_category_image,
+    prepare_category_image,
+    release_category_image_on_delete,
+)
+from aos.services.catalog.integrity import (
+    assert_category_delete_safe,
+    assert_category_schema_change_safe,
+    assert_category_transition_safe,
+    lock_category_mutation,
 )
 from aos.services.catalog.observability import catalog_log
-from aos.services.catalog.service import CatalogService
 from aos.services.catalog.validation import validate_category_document
 
-CATEGORY_ICON_PURPOSE = "category_icon"
-CATEGORY_ICON_MEDIA_FIELD = "icon_media"
-CATEGORY_ICON_URL_FIELD = "icon"
 
-
-def _clean(value: Any) -> str:
-    return str(value or "").strip()
-
-
-def _normalize_media_id(value: Any) -> str:
-    if isinstance(value, dict):
-        value = value.get("media_id") or value.get("id") or value.get("name")
-    return _clean(value)
-
-
-def _looks_like_media_id(value: Any) -> bool:
-    return _normalize_media_id(value).startswith("MEDIA-")
-
-
-def _public_media_url(doc) -> str:
-    return MediaService().get_public_url(doc.name)
-
-
-class AOSCategory(NestedSet):
-    """Category tree with centrally owned, admin-managed icon media."""
+class AOSCategory(Document):
+    """Canonical two-level marketplace category and its Media relationship."""
 
     def validate(self):
         try:
+            lock_category_mutation(self)
             validate_category_document(self)
-            self._sync_icon_media()
+            assert_category_transition_safe(self)
+            assert_category_schema_change_safe(self)
+            prepare_category_image(self)
         except Exception:
             catalog_log("configuration_rejected", outcome="rejected")
             raise
 
     def on_update(self):
-        # Preserve NestedSet tree maintenance before finalizing media ownership.
-        super().on_update()
-        self._finalize_icon_media_relationship()
-        CatalogService.invalidate_cache()
+        finalize_category_image(self)
+        clear_catalog_cache()
         catalog_log(
             "configuration_changed",
             outcome="success",
@@ -63,85 +45,7 @@ class AOSCategory(NestedSet):
         )
 
     def on_trash(self):
-        media_id = _normalize_media_id(getattr(self, CATEGORY_ICON_MEDIA_FIELD, None))
-        if media_id:
-            MediaService().release_media(
-                media_id=media_id,
-                user=frappe.session.user,
-                attached_doctype=self.doctype,
-                attached_name=self.name,
-                replacement_media_id=None,
-            )
-        CatalogService.invalidate_cache()
-
-    def _sync_icon_media(self) -> None:
-        if not hasattr(self, CATEGORY_ICON_MEDIA_FIELD):
-            return
-
-        previous = self.get_doc_before_save()
-        self._previous_icon_media_id = _clean(
-            getattr(previous, CATEGORY_ICON_MEDIA_FIELD, "") if previous else ""
-        )
-        previous_url = _clean(
-            getattr(previous, CATEGORY_ICON_URL_FIELD, "") if previous else ""
-        )
-
-        media_id = _normalize_media_id(getattr(self, CATEGORY_ICON_MEDIA_FIELD, None))
-        icon_value = _clean(getattr(self, CATEGORY_ICON_URL_FIELD, None))
-        if not media_id and _looks_like_media_id(icon_value):
-            media_id = _normalize_media_id(icon_value)
-            setattr(self, CATEGORY_ICON_MEDIA_FIELD, media_id)
-
-        if media_id:
-            doc = self._validate_icon_media(media_id)
-            setattr(self, CATEGORY_ICON_URL_FIELD, _public_media_url(doc))
-            return
-
-        if icon_value and icon_value != previous_url:
-            frappe.throw(
-                _("Category icons must be uploaded through Media and selected by media id.")
-            )
-
-    def _validate_icon_media(self, media_id: str):
-        try:
-            return MediaService().validate_media_for_use(
-                media_id=media_id,
-                user=frappe.session.user,
-                purpose=CATEGORY_ICON_PURPOSE,
-                attached_doctype=self.doctype if not self.is_new() else None,
-                attached_name=self.name if not self.is_new() else None,
-            )
-        except MediaError as exc:
-            frappe.throw(_(str(exc) or "Invalid category icon media."))
-
-    def _finalize_icon_media_relationship(self) -> None:
-        media_id = _normalize_media_id(getattr(self, CATEGORY_ICON_MEDIA_FIELD, None))
-        previous_media_id = _clean(getattr(self, "_previous_icon_media_id", ""))
-
-        # Fixture import, install, and migration invoke on_update for every
-        # category. Most existing categories have no centrally managed icon,
-        # so avoid constructing or calling the media subsystem for a no-op.
-        if not media_id and not previous_media_id:
-            return
-
-        service = MediaService()
-
-        if media_id:
-            service.attach_media(
-                media_id=media_id,
-                user=frappe.session.user,
-                purpose=CATEGORY_ICON_PURPOSE,
-                attached_doctype=self.doctype,
-                attached_name=self.name,
-                attached_field=CATEGORY_ICON_MEDIA_FIELD,
-                replacing_media_id=previous_media_id,
-            )
-
-        if previous_media_id and previous_media_id != media_id:
-            service.release_media(
-                media_id=previous_media_id,
-                user=frappe.session.user,
-                attached_doctype=self.doctype,
-                attached_name=self.name,
-                replacement_media_id=media_id or None,
-            )
+        lock_category_mutation(self)
+        assert_category_delete_safe(self.name)
+        release_category_image_on_delete(self)
+        clear_catalog_cache()

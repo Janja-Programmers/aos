@@ -1191,6 +1191,55 @@ class MediaService:
                 result[str(row.name)] = url
         return result
 
+    def get_public_attachment_url_map(
+        self,
+        attachments: Iterable[tuple[str, str]],
+        *,
+        purpose: str,
+        attached_doctype: str,
+        attached_field: str,
+    ) -> dict[tuple[str, str], str]:
+        """Resolve public URLs only when Media matches the expected resource attachment.
+
+        The tuple key is ``(media_id, attached_name)`` so a stale feature-table
+        reference cannot borrow the URL of the same Media object attached to a
+        different resource. The lookup remains one bounded database query.
+        """
+
+        expected = {
+            (str(media_id or "").strip(), str(attached_name or "").strip())
+            for media_id, attached_name in attachments
+            if str(media_id or "").strip() and str(attached_name or "").strip()
+        }
+        if not expected:
+            return {}
+        media_ids = sorted({media_id for media_id, _attached_name in expected})
+        rows = frappe.get_all(
+            "AOS Media Object",
+            filters={
+                "name": ["in", media_ids],
+                "purpose": purpose,
+                "visibility": "Public",
+                "status": "Attached",
+                "attached_doctype": attached_doctype,
+                "attached_field": attached_field,
+            },
+            fields=["name", "bucket", "object_key", "attached_name"],
+            limit=max(1, len(media_ids)),
+        )
+        result: dict[tuple[str, str], str] = {}
+        for row in rows:
+            key = (str(row.name), str(row.attached_name or ""))
+            if key not in expected:
+                continue
+            try:
+                url = self._public_url_for_doc(row)
+            except MediaError:
+                continue
+            if url:
+                result[key] = url
+        return result
+
     # VALIDATE / ATTACH / REPLACE
     def validate_media_for_use(
         self,
@@ -1640,7 +1689,7 @@ class MediaService:
             ("AOS Seller", "shop_banner_media"),
             ("AOS Ad", "video_media"),
             ("AOS Ad Image", "media"),
-            ("AOS Category", "icon_media"),
+            ("AOS Category", "image_media"),
             ("AOS Live Stream", "live_cover_media"),
             ("AOS Message Attachment", "media"),
             ("AOS Review Image", "media"),

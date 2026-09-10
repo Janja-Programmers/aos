@@ -3,47 +3,51 @@ from __future__ import annotations
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.patches.v1_0 import enforce_catalog_desk_permissions, harden_catalog_subsystem
+from aos.patches.v1_0 import install_catalog_indexes
 
 
 class TestCatalogDatabaseContracts(FrappeTestCase):
-    def test_catalog_indexes_are_idempotently_present(self):
-        harden_catalog_subsystem.execute()
-        harden_catalog_subsystem.execute()
-        for index_name, (doctype, _fields) in harden_catalog_subsystem.INDEXES.items():
+    def test_catalog_indexes_are_idempotently_present_with_exact_shape(self):
+        install_catalog_indexes.execute()
+        install_catalog_indexes.execute()
+
+        for doctype, index_name, columns, unique in install_catalog_indexes.INDEXES:
             rows = frappe.db.sql(
                 """
-                SELECT INDEX_NAME
+                SELECT COLUMN_NAME, NON_UNIQUE
                 FROM information_schema.STATISTICS
                 WHERE TABLE_SCHEMA = DATABASE()
                   AND TABLE_NAME = %s
                   AND INDEX_NAME = %s
+                ORDER BY SEQ_IN_INDEX
                 """,
                 (f"tab{doctype}", index_name),
+                as_dict=True,
+            )
+            self.assertEqual(
+                tuple(row["COLUMN_NAME"] for row in rows),
+                columns,
+                f"Catalog index {index_name} has the wrong columns",
             )
             self.assertTrue(rows, f"missing Catalog index {index_name}")
+            self.assertEqual(
+                not bool(int(rows[0]["NON_UNIQUE"])),
+                unique,
+                f"Catalog index {index_name} has the wrong uniqueness",
+            )
 
-    def test_catalog_name_fields_remain_unique(self):
+    def test_catalog_identity_fields_are_database_backed(self):
         category_meta = frappe.get_meta("AOS Category")
         attribute_meta = frappe.get_meta("AOS Ad Attribute")
+
+        self.assertEqual(category_meta.allow_rename, 0)
         self.assertTrue(category_meta.get_field("category_name").unique)
+        self.assertEqual(attribute_meta.allow_rename, 0)
         self.assertTrue(attribute_meta.get_field("label").unique)
+        self.assertTrue(attribute_meta.get_field("attribute_key").unique)
 
-    def test_catalog_desk_permissions_are_role_managed(self):
-        before = {
-            doctype: frappe.db.count("Custom DocPerm", {"parent": doctype})
-            for doctype in enforce_catalog_desk_permissions.CATALOG_ROLE_MANAGED_DOCTYPES
-        }
-
-        enforce_catalog_desk_permissions.execute()
-        enforce_catalog_desk_permissions.execute()
-
-        for doctype in enforce_catalog_desk_permissions.CATALOG_ROLE_MANAGED_DOCTYPES:
-            self.assertEqual(
-                frappe.db.count("Custom DocPerm", {"parent": doctype}),
-                before[doctype],
-                f"catalog permission patch must preserve Role Permissions Manager overrides for {doctype}",
-            )
-            # Loading metadata after the patch also verifies that the cache clear
-            # leaves Frappe's effective permission model usable.
-            self.assertTrue(frappe.get_meta(doctype).permissions)
+    def test_catalog_desk_permissions_are_source_controlled_and_role_managed(self):
+        for doctype in ("AOS Category", "AOS Ad Attribute"):
+            meta = frappe.get_meta(doctype)
+            standard_roles = {row.role for row in meta.permissions}
+            self.assertEqual(standard_roles, {"System Manager"})

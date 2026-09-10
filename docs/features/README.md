@@ -12,7 +12,7 @@ Feature documentation is the canonical human-readable description of AOS busines
 | [Ads](ads/README.md) | Marketplace Ad/draft lifecycle, discovery, Media references and moderation triggers | [API](ads/api.md) |
 | [Analytics ingestion](analytics/README.md) | Bounded client telemetry and durable analytics handoff | [API](analytics/api.md) |
 | [Calls](calls/README.md) | Call lifecycle, LiveKit grants, history and reconciliation | [API](calls/api.md) |
-| [Catalog](catalog/README.md) | Category/schema master data and Ad attribute rules | [API](catalog/api.md) |
+| [Catalog](catalog/api.md) | Category/schema master data and Ad attribute rules | [API](catalog/api.md) |
 | [Chat](chat/README.md) | Conversations, messages, attachments, reactions, receipts, presence and translation | [API](chat/api.md) |
 | [Diagnostics](diagnostics/README.md) | System-Manager production/health/readiness reports | [API](diagnostics/api.md) |
 | [Live](live/README.md) | Live lifecycle, LiveKit, participants/co-hosts, comments, reactions and tracking | [API](live/api.md) |

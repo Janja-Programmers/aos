@@ -9,11 +9,12 @@ from aos.api.shared.responses import fail, ok
 from aos.services.catalog.errors import CatalogError, public_catalog_message
 from aos.services.catalog.observability import catalog_log
 from aos.services.catalog.service import CatalogService
+from aos.services.catalog.validation import reject_unknown_fields
 
 from .constants import GET_CATEGORIES_LIMIT_PER_HOUR_PER_IP
 
 
-def get_categories_impl(**_kwargs):
+def get_categories_impl(**kwargs):
     """Return the active public category tree with deterministic ordering."""
 
     limited = rate_limit(
@@ -26,18 +27,15 @@ def get_categories_impl(**_kwargs):
         return limited
 
     try:
+        reject_unknown_fields(kwargs, allowed=set())
         tree = CatalogService().list_public_categories()
         catalog_log("categories_read", outcome="success")
         return ok("Categories fetched.", data=tree)
     except CatalogError as exc:
-        catalog_log("categories_read", outcome="failure")
+        catalog_log("categories_read", outcome="rejected" if exc.http_status < 500 else "failure")
         if exc.http_status >= 500:
             frappe.log_error(frappe.get_traceback(), "AOS Catalog Categories Data Failure")
-        message = (
-            "Failed to fetch categories."
-            if exc.http_status >= 500
-            else public_catalog_message(exc)
-        )
+        message = "Failed to fetch categories." if exc.http_status >= 500 else public_catalog_message(exc)
         return fail(message, error=exc.code, http_status=exc.http_status)
     except Exception:
         catalog_log("categories_read", outcome="failure")

@@ -11,7 +11,14 @@ class FakeCatalogRepository:
         self.categories = categories
         self.rows = rows or []
         self.attributes = attributes or {}
-        self.calls = {"categories": 0, "rows": 0, "attributes": 0}
+        self.calls = {"category": 0, "categories": 0, "rows": 0, "attributes": 0}
+
+    def load_category(self, category_id):
+        self.calls["category"] += 1
+        for row in self.categories:
+            if row.get("name") == category_id:
+                return dict(row)
+        return None
 
     def load_categories(self):
         self.calls["categories"] += 1
@@ -26,7 +33,20 @@ class FakeCatalogRepository:
         return {name: dict(self.attributes[name]) for name in attribute_names if name in self.attributes}
 
 
-def category(name, *, parent=None, group=0, active=1, order=0, service=0):
+class FakeMediaService:
+    def __init__(self, urls=None):
+        self.urls = urls or {}
+        self.calls = []
+
+    def get_public_attachment_url_map(
+        self, attachments, *, purpose, attached_doctype, attached_field
+    ):
+        expected = list(attachments)
+        self.calls.append((expected, purpose, attached_doctype, attached_field))
+        return {key: self.urls[key] for key in expected if key in self.urls}
+
+
+def category(name, *, parent=None, group=0, active=1, order=0, service=0, image_media=None):
     return {
         "name": name,
         "category_name": name,
@@ -38,24 +58,42 @@ def category(name, *, parent=None, group=0, active=1, order=0, service=0):
         "pricing_requirement": "Optional",
         "allowed_price_types": "Fixed\nNegotiable",
         "allowed_price_units": "hour" if service else "",
-        "icon": "",
-        "icon_media": None,
+        "image_media": image_media,
+    }
+
+
+def attribute_definition(name="Condition", *, key="condition", field_type="Select", options=""):
+    return {
+        "name": name,
+        "attribute_key": key,
+        "label": name,
+        "field_type": field_type,
+        "unit": "",
+        "help_text": "",
+        "options": options,
+        "is_active": 1,
     }
 
 
 class TestCatalogService(TestCase):
-    def test_public_tree_is_deterministic(self):
+    def test_public_tree_is_deterministic_and_projects_only_media_url(self):
         repo = FakeCatalogRepository(
             [
                 category("B Root", group=1, order=2),
-                category("A Root", group=1, order=1),
+                category("A Root", group=1, order=1, image_media="MEDIA-A"),
                 category("Leaf Z", parent="A Root", order=2),
                 category("Leaf A", parent="A Root", order=1),
             ]
         )
-        tree = CatalogService(repo).list_public_categories()
+        media = FakeMediaService({("MEDIA-A", "A Root"): "https://cdn.example.test/a.webp"})
+        tree = CatalogService(repo, media_service=media).list_public_categories()
+
         self.assertEqual([item["id"] for item in tree], ["A Root", "B Root"])
         self.assertEqual([item["id"] for item in tree[0]["children"]], ["Leaf A", "Leaf Z"])
+        self.assertEqual(tree[0]["image_url"], "https://cdn.example.test/a.webp")
+        self.assertNotIn("image_media", tree[0])
+        self.assertNotIn("icon", tree[0])
+        self.assertEqual(media.calls, [([("MEDIA-A", "A Root")], "category_icon", "AOS Category", "image_media")])
 
     def test_inactive_parent_hides_active_child(self):
         repo = FakeCatalogRepository(
@@ -63,25 +101,27 @@ class TestCatalogService(TestCase):
         )
         self.assertEqual(CatalogService(repo).list_public_categories(), [])
 
-    def test_cycle_fails_closed(self):
-        repo = FakeCatalogRepository(
-            [category("A", parent="B"), category("B", parent="A")]
+    def test_missing_parent_is_hidden_from_public_tree(self):
+        self.assertEqual(
+            CatalogService(FakeCatalogRepository([category("Orphan", parent="Missing")])).list_public_categories(),
+            [],
         )
+
+    def test_cycle_fails_closed(self):
+        repo = FakeCatalogRepository([category("A", parent="B"), category("B", parent="A")])
         with self.assertRaises(CatalogDataError):
             CatalogService(repo).list_public_categories()
 
-    def test_missing_schema_category_is_not_found(self):
+    def test_group_with_parent_fails_closed_even_if_parent_missing(self):
+        repo = FakeCatalogRepository([category("Broken Group", parent="Missing", group=1)])
+        with self.assertRaises(CatalogDataError):
+            CatalogService(repo).list_public_categories()
+
+    def test_missing_or_inactive_schema_category_is_not_found(self):
         with self.assertRaises(CatalogNotFoundError):
             CatalogService(FakeCatalogRepository([])).get_public_schema("Missing")
-
-    def test_inactive_schema_category_is_not_found(self):
-        repo = FakeCatalogRepository([category("Hidden", active=0)])
         with self.assertRaises(CatalogNotFoundError):
-            CatalogService(repo).get_public_schema("Hidden")
-
-    def test_missing_parent_is_hidden_from_tree(self):
-        repo = FakeCatalogRepository([category("Orphan", parent="Missing")])
-        self.assertEqual(CatalogService(repo).list_public_categories(), [])
+            CatalogService(FakeCatalogRepository([category("Hidden", active=0)])).get_public_schema("Hidden")
 
     def test_group_is_not_sellable(self):
         service = CatalogService(FakeCatalogRepository([category("Root", group=1)]))
@@ -89,15 +129,9 @@ class TestCatalogService(TestCase):
             service.assert_sellable_category("Root")
         self.assertEqual(exc.exception.code, "CATEGORY_NOT_SELLABLE")
 
-    def test_leaf_is_sellable_only_with_active_ancestry(self):
-        service = CatalogService(
-            FakeCatalogRepository([category("Root", group=1), category("Leaf", parent="Root")])
-        )
-        self.assertEqual(service.assert_sellable_category("Leaf"), "Leaf")
-
-    def test_schema_uses_bounded_bulk_queries(self):
+    def test_schema_uses_bounded_bulk_queries_and_stored_attribute_key(self):
         repo = FakeCatalogRepository(
-            [category("Root", group=1), category("Leaf", parent="Root")],
+            [category("Root", group=1), category("Leaf", parent="Root", image_media="MEDIA-LEAF")],
             rows=[
                 {
                     "name": "ROW-1",
@@ -110,107 +144,33 @@ class TestCatalogService(TestCase):
                     "is_active": 1,
                 }
             ],
-            attributes={
-                "Condition": {
-                    "name": "Condition",
-                    "label": "Condition",
-                    "field_type": "Select",
-                    "unit": "",
-                    "help_text": "",
-                    "options": "",
-                    "is_active": 1,
-                }
-            },
+            attributes={"Condition": attribute_definition(key="listing_condition")},
         )
-        schema = CatalogService(repo).get_public_schema("Leaf")
+        media = FakeMediaService({("MEDIA-LEAF", "Leaf"): "https://cdn.example.test/leaf.webp"})
+        schema = CatalogService(repo, media_service=media).get_public_schema("Leaf")
+
+        self.assertEqual(schema["attributes"][0]["key"], "listing_condition")
         self.assertEqual(schema["attributes"][0]["options"], ["New", "Used"])
-        self.assertEqual(repo.calls, {"categories": 1, "rows": 1, "attributes": 1})
+        self.assertEqual(schema["category"]["image_url"], "https://cdn.example.test/leaf.webp")
+        self.assertEqual(schema["pricing"]["requirement"], "Optional")
+        self.assertEqual(schema["pricing"]["allowed_price_types"], ["Fixed", "Negotiable"])
+        self.assertEqual(repo.calls, {"category": 2, "categories": 0, "rows": 1, "attributes": 1})
 
-    def test_text_attribute_with_category_choices_resolves_as_select(self):
-        definitions = {
-            "Type of Service": {
-                "name": "Type of Service",
-                "label": "Type of Service",
-                "field_type": "Text",
-                "unit": "",
-                "help_text": "",
-                "options": "",
-                "is_active": 1,
-            }
-        }
-        chain = [
-            {
-                "name": "Travel Agents & Tours",
-                "attributes": [
-                    {
-                        "name": "ROW-1",
-                        "idx": 1,
-                        "attribute": "Type of Service",
-                        "sort_order": 1,
-                        "is_required": 1,
-                        "is_active": 1,
-                        "options_override": "Visa Service\nTour Services\nPassport Services",
-                    }
-                ],
-                "attribute_definitions": definitions,
-            }
-        ]
-
-        attribute = resolve_attributes(chain)[0]
-
-        self.assertEqual(attribute["type"], "Select")
-        self.assertEqual(
-            attribute["options"],
-            ["Visa Service", "Tour Services", "Passport Services"],
-        )
-
-
-    def test_missing_attribute_definition_fails_closed(self):
-        repo = FakeCatalogRepository(
-            [category("Leaf")],
-            rows=[
-                {
-                    "name": "ROW-1",
-                    "parent": "Leaf",
-                    "idx": 1,
-                    "attribute": "Missing",
-                    "sort_order": 1,
-                    "options_override": "",
-                    "is_required": 0,
-                    "is_active": 1,
-                }
-            ],
-        )
-        with self.assertRaises(CatalogDataError):
-            CatalogService(repo).get_public_schema("Leaf")
-
-    def test_ambiguous_public_attribute_keys_fail_closed(self):
-        definitions = {
-            "Fuel Type": {
-                "name": "Fuel Type",
-                "label": "Fuel Type",
-                "field_type": "Text",
-                "unit": "",
-                "help_text": "",
-                "options": "",
-                "is_active": 1,
-            },
-            "Fuel-Type": {
-                "name": "Fuel-Type",
-                "label": "Fuel-Type",
-                "field_type": "Text",
-                "unit": "",
-                "help_text": "",
-                "options": "",
-                "is_active": 1,
-            },
-        }
+    def test_non_select_category_options_fail_closed(self):
+        definitions = {"Weight": attribute_definition("Weight", key="weight", field_type="Number")}
         chain = [
             {
                 "name": "Leaf",
                 "attributes": [
-                    {"name": "1", "idx": 1, "attribute": "Fuel Type", "sort_order": 1, "is_required": 0, "is_active": 1, "options_override": ""},
-                    {"name": "2", "idx": 2, "attribute": "Fuel-Type", "sort_order": 2, "is_required": 0, "is_active": 1, "options_override": ""},
+                    {
+                        "name": "ROW-1",
+                        "idx": 1,
+                        "attribute": "Weight",
+                        "sort_order": 1,
+                        "is_required": 0,
+                        "is_active": 1,
+                        "options_override": "1\n2",
+                    }
                 ],
                 "attribute_definitions": definitions,
             }
@@ -218,90 +178,60 @@ class TestCatalogService(TestCase):
         with self.assertRaises(CatalogDataError):
             resolve_attributes(chain)
 
-    def test_leaf_can_reenable_parent_disabled_attribute(self):
-        definitions = {
-            "Brand": {
-                "name": "Brand",
-                "label": "Brand",
-                "field_type": "Text",
-                "unit": "",
-                "help_text": "",
-                "options": "",
-                "is_active": 1,
-            }
-        }
-        chain = [
-            {
-                "name": "Leaf",
-                "attributes": [
-                    {
-                        "name": "L",
-                        "idx": 1,
-                        "attribute": "Brand",
-                        "sort_order": 1,
-                        "is_required": 1,
-                        "is_active": 1,
-                        "options_override": "",
-                    }
-                ],
-                "attribute_definitions": definitions,
-            },
-            {
-                "name": "Root",
-                "attributes": [
-                    {
-                        "name": "R",
-                        "idx": 1,
-                        "attribute": "Brand",
-                        "sort_order": 1,
-                        "is_required": 0,
-                        "is_active": 0,
-                        "options_override": "",
-                    }
-                ],
-                "attribute_definitions": definitions,
-            },
-        ]
-        attributes = resolve_attributes(chain)
-        self.assertEqual(len(attributes), 1)
-        self.assertEqual(attributes[0]["required"], 1)
-
-    def test_legacy_duplicate_rows_resolve_last_row_deterministically(self):
-        definitions = {
-            "Brand": {
-                "name": "Brand",
-                "label": "Brand",
-                "field_type": "Text",
-                "unit": "",
-                "help_text": "",
-                "options": "",
-                "is_active": 1,
-            }
-        }
+    def test_duplicate_relation_rows_fail_closed_instead_of_last_row_wins(self):
+        definitions = {"Brand": attribute_definition("Brand", key="brand", field_type="Text")}
         chain = [
             {
                 "name": "Leaf",
                 "attributes": [
                     {"name": "1", "idx": 1, "attribute": "Brand", "sort_order": 1, "is_required": 0, "is_active": 1, "options_override": ""},
-                    {"name": "2", "idx": 2, "attribute": "Brand", "sort_order": 1, "is_required": 1, "is_active": 1, "options_override": ""},
+                    {"name": "2", "idx": 2, "attribute": "Brand", "sort_order": 2, "is_required": 1, "is_active": 1, "options_override": ""},
                 ],
                 "attribute_definitions": definitions,
             }
         ]
-        self.assertEqual(resolve_attributes(chain)[0]["required"], 1)
+        with self.assertRaises(CatalogDataError):
+            resolve_attributes(chain)
 
-    def test_service_pricing_includes_units_only_for_services(self):
-        goods = [category("Goods")]
-        service = [category("Service", service=1)]
-        self.assertNotIn("allowed_price_units", resolve_pricing(goods))
-        self.assertEqual(resolve_pricing(service)["allowed_price_units"], ["hour"])
+    def test_missing_attribute_key_or_definition_fails_closed(self):
+        repo = FakeCatalogRepository(
+            [category("Leaf")],
+            rows=[{"name": "ROW", "parent": "Leaf", "idx": 1, "attribute": "Missing", "sort_order": 0, "options_override": "", "is_required": 0, "is_active": 1}],
+        )
+        with self.assertRaises(CatalogDataError):
+            CatalogService(repo).get_public_schema("Leaf")
 
-    def test_group_filter_expands_only_active_leaf_children(self):
+        definition = attribute_definition("Brand", key="", field_type="Text")
+        chain = [{"name": "Leaf", "attributes": [{"name": "R", "idx": 1, "attribute": "Brand", "sort_order": 0, "is_required": 0, "is_active": 1, "options_override": ""}], "attribute_definitions": {"Brand": definition}}]
+        with self.assertRaises(CatalogDataError):
+            resolve_attributes(chain)
+
+    def test_leaf_override_wins_and_order_is_deterministic(self):
+        definitions = {"Brand": attribute_definition("Brand", key="brand", field_type="Select", options="A\nB")}
+        chain = [
+            {"name": "Leaf", "attributes": [{"name": "L", "idx": 1, "attribute": "Brand", "sort_order": 20, "is_required": 1, "is_active": 1, "options_override": "B\nC"}], "attribute_definitions": definitions},
+            {"name": "Root", "attributes": [{"name": "R", "idx": 1, "attribute": "Brand", "sort_order": 1, "is_required": 0, "is_active": 1, "options_override": "A\nB"}], "attribute_definitions": definitions},
+        ]
+        item = resolve_attributes(chain)[0]
+        self.assertEqual(item["options"], ["B", "C"])
+        self.assertEqual(item["required"], 1)
+        self.assertEqual(item["sort_order"], 20)
+
+    def test_pricing_resolution_is_leaf_only_and_validated(self):
+        leaf = category("Service", service=1)
+        leaf["pricing_requirement"] = "Required"
+        leaf["allowed_price_types"] = "Fixed\nNegotiable"
+        leaf["allowed_price_units"] = "Per hour\nPer job"
+        result = resolve_pricing([leaf])
+        self.assertEqual(result["pricing_requirement"], "Required")
+        self.assertEqual(result["allowed_price_units"], ["Per hour", "Per job"])
+
+    def test_filter_values_are_bounded_to_active_sellable_children(self):
         repo = FakeCatalogRepository(
             [
                 category("Root", group=1),
-                category("Leaf A", parent="Root", active=1, order=2),
-                category("Leaf B", parent="Root", active=1, order=1),
+                category("Leaf B", parent="Root", order=1),
+                category("Leaf A", parent="Root", order=2),
                 category("Hidden", parent="Root", active=0),
             ]
         )

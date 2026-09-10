@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_import": 1,
- "allow_rename": 1,
+ "allow_rename": 0,
  "autoname": "field:category_name",
  "creation": "2026-01-26 15:55:18.067212",
  "doctype": "DocType",
@@ -10,7 +10,6 @@
   "category_name",
   "pricing_requirement",
   "parent_aos_category",
-  "old_parent",
   "sort_order",
   "allowed_price_units",
   "column_break_ucuk",
@@ -22,28 +21,9 @@
   "attributes",
   "category_image_section",
   "icon_preview",
-  "icon_media",
-  "icon",
-  "lft",
-  "rgt"
+  "image_media"
  ],
  "fields": [
-  {
-   "fieldname": "lft",
-   "fieldtype": "Int",
-   "hidden": 1,
-   "label": "Left",
-   "no_copy": 1,
-   "read_only": 1
-  },
-  {
-   "fieldname": "rgt",
-   "fieldtype": "Int",
-   "hidden": 1,
-   "label": "Right",
-   "no_copy": 1,
-   "read_only": 1
-  },
   {
    "default": "0",
    "fieldname": "is_group",
@@ -52,15 +32,8 @@
    "label": "Is Group"
   },
   {
-   "fieldname": "old_parent",
-   "fieldtype": "Link",
-   "label": "Old Parent",
-   "options": "AOS Category"
-  },
-  {
    "fieldname": "parent_aos_category",
    "fieldtype": "Link",
-   "ignore_user_permissions": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Parent AOS Category",
@@ -74,23 +47,17 @@
    "unique": 1
   },
   {
-   "fieldname": "icon",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Icon URL",
-   "description": "Cached public icon URL managed by the AOS Media pipeline.",
-   "read_only": 1
-  },
-  {
-   "fieldname": "icon_media",
+   "fieldname": "image_media",
    "fieldtype": "Link",
-   "label": "Icon Media",
+   "label": "Image Media",
    "options": "AOS Media Object",
-   "description": "Confirmed category_icon media managed through the Desk uploader.",
-   "read_only": 1
+   "description": "Canonical confirmed category image managed by the AOS Media subsystem.",
+   "read_only": 1,
+   "hidden": 1,
+   "no_copy": 1
   },
   {
-   "default": "1",
+   "default": "0",
    "fieldname": "sort_order",
    "fieldtype": "Int",
    "in_list_view": 1,
@@ -123,7 +90,8 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Pricing Requirement",
-   "options": "\nRequired\nOptional\nHidden"
+   "options": "\nRequired\nOptional\nHidden",
+   "default": "Optional"
   },
   {
    "depends_on": "eval:doc.pricing_requirement != \"Hidden\"",
@@ -158,16 +126,13 @@
   }
  ],
  "grid_page_length": 50,
- "image_field": "icon",
- "index_web_pages_for_search": 1,
- "is_tree": 1,
+ "index_web_pages_for_search": 0,
  "links": [],
  "modified": "2026-07-31 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Category",
  "naming_rule": "By fieldname",
- "nsm_parent_field": "parent_aos_category",
  "owner": "Administrator",
  "permissions": [
   {
@@ -185,7 +150,7 @@
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
- "sort_field": "creation",
- "sort_order": "DESC",
+ "sort_field": "sort_order",
+ "sort_order": "ASC",
  "states": []
 }

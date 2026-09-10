@@ -18,6 +18,11 @@ class CatalogValidationError(CatalogError, ValueError):
     http_status = 422
 
 
+class CatalogConflictError(CatalogError):
+    code = "CATALOG_CONFLICT"
+    http_status = 409
+
+
 class CatalogNotFoundError(CatalogError, FileNotFoundError):
     code = "CATEGORY_NOT_FOUND"
     http_status = 404
@@ -27,13 +32,19 @@ class CatalogDataError(CatalogError):
     code = "CATALOG_DATA_ERROR"
     http_status = 500
 
+
 _PUBLIC_MESSAGES = {
     "CATEGORY_NOT_FOUND": "Category not found.",
     "CATEGORY_NOT_SELLABLE": "Select a sellable leaf category.",
+    "CATEGORY_IN_USE": "Category is still in use.",
+    "ATTRIBUTE_IN_USE": "Attribute is still in use.",
+    "ATTRIBUTE_IDENTITY_IMMUTABLE": "Attribute identity cannot be changed.",
     "INVALID_CATALOG_INPUT": "Invalid Catalog input.",
     "INVALID_CATEGORY": "Invalid category.",
+    "INVALID_CATEGORY_IMAGE": "Invalid category image.",
     "INVALID_CATEGORY_SCHEMA": "Invalid category schema.",
     "INVALID_CATEGORY_TREE": "Invalid category hierarchy.",
+    "CATALOG_CONFLICT": "Catalog was changed by another request.",
     "CATALOG_DATA_ERROR": "Catalog data is unavailable.",
 }
 

@@ -4,73 +4,51 @@ import json
 from pathlib import Path
 from unittest import TestCase
 
-from aos.services.media.media_purposes import MEDIA_PURPOSES
+ROOT = Path(__file__).resolve().parents[4]
+CATEGORY_JSON = ROOT / "aos" / "aos" / "doctype" / "aos_category" / "aos_category.json"
+CATEGORY_JS = ROOT / "aos" / "aos" / "doctype" / "aos_category" / "aos_category.js"
+TREE_JS = ROOT / "aos" / "aos" / "doctype" / "aos_category" / "aos_category_tree.js"
 
 
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
-_CATEGORY_DIRECTORY = _REPOSITORY_ROOT / "aos" / "aos" / "doctype" / "aos_category"
-_CATEGORY_JSON = _CATEGORY_DIRECTORY / "aos_category.json"
-_CATEGORY_JS = _CATEGORY_DIRECTORY / "aos_category.js"
-
-
-class TestCatalogDeskUploader(TestCase):
-    def test_category_form_exposes_uploader_and_protects_raw_media_fields(self):
-        definition = json.loads(_CATEGORY_JSON.read_text(encoding="utf-8"))
+class TestCategoryDeskMediaContract(TestCase):
+    def test_doc_type_has_one_canonical_media_relationship(self):
+        definition = json.loads(CATEGORY_JSON.read_text())
         fields = {field["fieldname"]: field for field in definition["fields"]}
 
-        self.assertEqual(fields["icon_preview"]["fieldtype"], "HTML")
-        self.assertEqual(fields["category_image_section"]["fieldtype"], "Section Break")
-        self.assertEqual(fields["icon_media"]["fieldtype"], "Link")
-        self.assertEqual(fields["icon_media"].get("read_only"), 1)
-        self.assertEqual(fields["icon"].get("read_only"), 1)
-        self.assertEqual(fields["icon"].get("hidden"), 1)
-        self.assertLess(
-            definition["field_order"].index("icon_preview"),
-            definition["field_order"].index("icon_media"),
-        )
+        self.assertIn("image_media", fields)
+        self.assertEqual(fields["image_media"]["fieldtype"], "Link")
+        self.assertEqual(fields["image_media"]["options"], "AOS Media Object")
+        self.assertEqual(fields["image_media"].get("read_only"), 1)
+        self.assertEqual(fields["image_media"].get("hidden"), 1)
+        self.assertEqual(fields["image_media"].get("no_copy"), 1)
+        self.assertNotIn("icon", fields)
+        self.assertNotIn("icon_media", fields)
+        self.assertNotIn("lft", fields)
+        self.assertNotIn("rgt", fields)
+        self.assertFalse(definition.get("is_tree"))
+        self.assertEqual(definition.get("allow_rename"), 0)
+        self.assertFalse(TREE_JS.exists())
 
-    def test_desk_uploader_uses_only_the_hardened_media_pipeline(self):
-        script = _CATEGORY_JS.read_text(encoding="utf-8")
-
-        self.assertIn('"aos.api.v1.media.init_upload"', script)
-        self.assertIn('"aos.api.v1.media.confirm_upload"', script)
-        self.assertIn('"aos.api.v1.media.delete_media"', script)
-        self.assertIn('xhr.open("PUT", uploadUrl, true)', script)
-        self.assertIn('cryptoApi.subtle.digest("SHA-256"', script)
-        self.assertIn("idempotency_key: idempotencyKey", script)
-        self.assertIn("function uploadIdempotencyKey", script)
-        self.assertNotIn(').join(":")', script)
-        self.assertIn('frm.perm && frm.perm[0]', script)
-        self.assertIn('levelZero.write', script)
-        self.assertNotIn('frappe.user_roles.includes("System Manager")', script)
-        self.assertNotIn("upload_file", script)
+    def test_desk_uploader_uses_only_media_api_and_resolves_preview(self):
+        script = CATEGORY_JS.read_text()
+        self.assertIn('purpose: "category_icon"', script)
+        self.assertIn('getMediaUrl: "aos.api.v1.media.get_media_url"', script)
+        self.assertIn('await frm.set_value("image_media", mediaId)', script)
+        self.assertIn('await frm.set_value("image_media", "")', script)
+        self.assertIn('API.getMediaUrl,', script)
+        self.assertIn('"GET"\n      );', script)
+        self.assertNotIn('set_value("icon"', script)
+        self.assertNotIn("icon_media", script)
         self.assertNotIn("frappe.ui.FileUploader", script)
+        self.assertNotIn("/api/method/upload_file", script)
+        self.assertNotIn("MinIO", script)
+        self.assertNotIn("S3", script)
+        self.assertNotIn("bucket", script.lower())
+        self.assertNotIn("object_key", script)
 
-    def test_client_hints_are_locked_to_the_central_category_icon_policy(self):
-        policy = MEDIA_PURPOSES["category_icon"]
-        script = _CATEGORY_JS.read_text(encoding="utf-8")
-
-        self.assertEqual(policy.max_size_bytes, 5 * 1024 * 1024)
-        self.assertEqual(policy.min_width, 16)
-        self.assertEqual(policy.min_height, 16)
-        self.assertEqual(policy.max_width, 4096)
-        self.assertEqual(policy.max_height, 4096)
-        self.assertIn("maxSizeBytes: 5 * 1024 * 1024", script)
-        self.assertIn("minWidth: 16", script)
-        self.assertIn("minHeight: 16", script)
-        self.assertIn("maxWidth: 4096", script)
-        self.assertIn("maxHeight: 4096", script)
-        for content_type in sorted(policy.allowed_content_types):
-            self.assertIn(f'"{content_type}"', script)
-        for extension in sorted(policy.allowed_extensions):
-            self.assertIn(f'"{extension}"', script)
-
-    def test_desk_uploader_has_replacement_removal_and_failure_cleanup(self):
-        script = _CATEGORY_JS.read_text(encoding="utf-8")
-
-        self.assertIn('__("Replace image")', script)
-        self.assertIn('__("Remove image")', script)
-        self.assertIn("deleteUnattachedMedia(mediaId)", script)
-        self.assertIn('await frm.set_value("icon_media", "")', script)
-        self.assertIn("await frm.save()", script)
-        self.assertIn("frappe.confirm(", script)
+    def test_client_policy_matches_media_category_purpose_contract(self):
+        script = CATEGORY_JS.read_text()
+        self.assertIn("5 * 1024 * 1024", script)
+        self.assertIn('"image/jpeg"', script)
+        self.assertIn('"image/png"', script)
+        self.assertIn('"image/webp"', script)

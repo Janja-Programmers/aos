@@ -1,13 +1,14 @@
 {
  "actions": [],
  "allow_import": 1,
- "allow_rename": 1,
+ "allow_rename": 0,
  "autoname": "field:label",
  "creation": "2026-01-30 10:19:40.532080",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "label",
+  "attribute_key",
   "field_type",
   "unit",
   "help_text",
@@ -22,6 +23,15 @@
    "label": "Label",
    "reqd": 1,
    "unique": 1
+  },
+  {
+   "fieldname": "attribute_key",
+   "fieldtype": "Data",
+   "label": "Attribute Key",
+   "description": "Immutable canonical client key generated from the initial label.",
+   "read_only": 1,
+   "unique": 1,
+   "in_list_view": 1
   },
   {
    "fieldname": "field_type",
@@ -62,7 +72,7 @@
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
+ "index_web_pages_for_search": 0,
  "links": [],
  "modified": "2026-05-18 14:34:09.720205",
  "modified_by": "Administrator",
@@ -86,7 +96,7 @@
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
- "sort_field": "creation",
- "sort_order": "DESC",
+ "sort_field": "label",
+ "sort_order": "ASC",
  "states": []
 }

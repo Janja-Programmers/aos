@@ -1,6 +1,6 @@
 {
  "actions": [],
- "allow_rename": 1,
+ "allow_rename": 0,
  "creation": "2026-01-30 10:56:08.001619",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -19,7 +19,8 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Attribute",
-   "options": "AOS Ad Attribute"
+   "options": "AOS Ad Attribute",
+   "reqd": 1
   },
   {
    "fieldname": "options_override",
@@ -49,11 +50,12 @@
    "fieldname": "sort_order",
    "fieldtype": "Int",
    "in_list_view": 1,
-   "label": "Sort Order"
+   "label": "Sort Order",
+   "default": "0"
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
+ "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
  "modified": "2026-03-04 23:52:12.263003",

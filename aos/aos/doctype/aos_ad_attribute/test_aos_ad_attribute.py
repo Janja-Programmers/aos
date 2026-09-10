@@ -1,22 +1,17 @@
 # Copyright (c) 2026, Africa Online Stores and Contributors
 # See license.txt
 
-# import frappe
+import frappe
 from frappe.tests import IntegrationTestCase
 
 
-# On IntegrationTestCase, the doctype test records and all
-# link-field test record dependencies are recursively loaded
-# Use these module variables to add/remove to/from that list
-EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
-IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
-
-
-
 class IntegrationTestAOSAdAttribute(IntegrationTestCase):
-	"""
-	Integration tests for AOSAdAttribute.
-	Use this class for testing interactions between multiple components.
-	"""
-
-	pass
+    def test_identity_and_permission_metadata(self):
+        meta = frappe.get_meta("AOS Ad Attribute")
+        self.assertEqual(meta.allow_rename, 0)
+        key = meta.get_field("attribute_key")
+        self.assertEqual(key.fieldtype, "Data")
+        self.assertEqual(key.read_only, 1)
+        self.assertEqual(key.unique, 1)
+        roles = {permission.role for permission in meta.permissions}
+        self.assertEqual(roles, {"System Manager"})
