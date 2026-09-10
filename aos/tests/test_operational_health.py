@@ -91,6 +91,7 @@ class TestOperationalHealth(FrappeTestCase):
             "AOS_MINIO_DOMAIN": "files.africaonlinestores.example-prod.com",
             "AOS_OBJECT_STORAGE_ENDPOINT": "objects.africaonlinestores.co.ke",
             "AOS_OBJECT_STORAGE_SECURE": "true",
+            "AOS_OBJECT_STORAGE_PATH_STYLE": "false",
             "AOS_OBJECT_STORAGE_PRESIGN_ENDPOINT": "https://objects.africaonlinestores.co.ke",
             "AOS_MEDIA_PUBLIC_BASE_URL": "https://media.africaonlinestores.co.ke",
             "AOS_OBJECT_STORAGE_PUBLIC_BUCKET": "aos-media-public",

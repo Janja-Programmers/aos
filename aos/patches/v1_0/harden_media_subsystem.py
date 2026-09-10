@@ -26,12 +26,32 @@ PROCESSING_INDEXES: dict[str, list[str]] = {
 }
 
 
+def _index_exists(doctype: str, index_name: str) -> bool:
+    return bool(
+        frappe.db.sql(
+            """
+            SELECT 1
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = %s
+              AND INDEX_NAME = %s
+            LIMIT 1
+            """,
+            (f"tab{doctype}", index_name),
+        )
+    )
+
+
 def _install_indexes(doctype: str, indexes: dict[str, list[str]]) -> int:
     if not frappe.db.table_exists(doctype):
         return 0
+    installed = 0
     for name, fields in indexes.items():
+        if _index_exists(doctype, name):
+            continue
         frappe.db.add_index(doctype, fields, index_name=name)
-    return len(indexes)
+        installed += 1
+    return installed
 
 
 def execute() -> None:

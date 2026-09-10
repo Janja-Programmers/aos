@@ -87,6 +87,7 @@ app_license = "mit"
 
 # before_install = "aos.install.before_install"
 after_install = "aos.install.after_install"
+after_migrate = "aos.migrate.after_migrate"
 
 # Uninstallation
 # ------------
