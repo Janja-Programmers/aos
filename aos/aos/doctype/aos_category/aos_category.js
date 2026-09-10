@@ -26,7 +26,8 @@
   }
 
   function canWrite(frm) {
-    return Boolean(frm && frm.perm && frm.perm[0] && frm.perm[0].write);
+    const levelZero = frm && frm.perm && frm.perm[0];
+    return Boolean(levelZero && levelZero.write);
   }
 
   function escapeHtml(value) {

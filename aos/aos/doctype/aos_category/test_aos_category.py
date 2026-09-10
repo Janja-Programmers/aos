@@ -1,6 +1,9 @@
 # Copyright (c) 2026, Africa Online Stores and Contributors
 # See license.txt
 
+import json
+from pathlib import Path
+
 import frappe
 from frappe.model.document import Document
 from frappe.tests import IntegrationTestCase
@@ -28,6 +31,18 @@ class IntegrationTestAOSCategory(IntegrationTestCase):
         self.assertIsNone(meta.get_field("lft"))
         self.assertIsNone(meta.get_field("rgt"))
 
-    def test_system_manager_is_only_source_controlled_mutation_role(self):
-        roles = {permission.role for permission in frappe.get_meta("AOS Category").permissions}
-        self.assertEqual(roles, {"System Manager"})
+    def test_source_controlled_permission_defaults_remain_effective(self):
+        schema_path = Path(
+            frappe.get_app_path("aos", "aos", "doctype", "aos_category", "aos_category.json")
+        )
+        source_permissions = json.loads(schema_path.read_text(encoding="utf-8"))["permissions"]
+        source_roles = {row["role"] for row in source_permissions}
+        effective_roles = {permission.role for permission in frappe.get_meta("AOS Category").permissions}
+
+        self.assertTrue(source_roles)
+        self.assertTrue(source_roles.issubset(effective_roles))
+        for row in source_permissions:
+            self.assertTrue(row.get("read"))
+            self.assertTrue(row.get("write"))
+            self.assertTrue(row.get("create"))
+            self.assertTrue(row.get("delete"))

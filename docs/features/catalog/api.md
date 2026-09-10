@@ -139,7 +139,7 @@ Public category data exposes `image_url` only. Desk preview resolves `image_medi
 
 ## Frappe Desk behavior and authorization
 
-Source-controlled DocPerm grants `AOS Category` and `AOS Ad Attribute` mutation to `System Manager`. Frappe enforces that permission server-side on normal Desk document writes; the HTML uploader's permission-aware buttons are only UX, not the security boundary. The `category_icon` Media purpose independently requires `AOS Category` write permission for upload/attachment.
+Source-controlled DocPerm provides the default administrative mutation grant for `AOS Category` and `AOS Ad Attribute`. Effective authorization is intentionally evaluated through Frappe's permission engine, so Role Permissions Manager / Custom DocPerm may grant the same capabilities to additional operational roles without application-code role checks. Normal Desk writes are enforced server-side; the HTML uploader reads the form's effective level-zero Write permission only for UX. The `category_icon` Media purpose independently requires effective `AOS Category` write permission for upload/attachment.
 
 There are no public Catalog mutation endpoints. Internal code using `ignore_permissions=True` is trusted server code and remains responsible for respecting the domain service/controller invariants; direct SQL/`frappe.db.set_value` mutations that bypass document hooks are not a supported Catalog administration path.
 

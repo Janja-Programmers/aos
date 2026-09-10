@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -47,7 +50,19 @@ class TestCatalogDatabaseContracts(FrappeTestCase):
         self.assertTrue(attribute_meta.get_field("attribute_key").unique)
 
     def test_catalog_desk_permissions_are_source_controlled_and_role_managed(self):
-        for doctype in ("AOS Category", "AOS Ad Attribute"):
-            meta = frappe.get_meta(doctype)
-            standard_roles = {row.role for row in meta.permissions}
-            self.assertEqual(standard_roles, {"System Manager"})
+        schema_locations = {
+            "AOS Category": ("aos_category", "aos_category.json"),
+            "AOS Ad Attribute": ("aos_ad_attribute", "aos_ad_attribute.json"),
+        }
+        app_path = Path(frappe.get_app_path("aos"))
+
+        for doctype, (directory, filename) in schema_locations.items():
+            with self.subTest(doctype=doctype):
+                schema = json.loads(
+                    (app_path / "aos" / "doctype" / directory / filename).read_text(encoding="utf-8")
+                )
+                source_roles = {row["role"] for row in schema["permissions"]}
+                effective_roles = {row.role for row in frappe.get_meta(doctype).permissions}
+
+                self.assertTrue(source_roles)
+                self.assertTrue(source_roles.issubset(effective_roles))
