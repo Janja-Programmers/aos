@@ -8,6 +8,16 @@ from aos.utils import aos_config
 
 
 class TestMediaRuntimeConfig(TestCase):
+    def setUp(self):
+        # Runtime configuration deliberately falls back to deployment .env files
+        # for host-based Bench processes. Unit tests must isolate that fallback so
+        # each test exercises only the configuration supplied in its own fixture.
+        self._dotenv_patcher = patch.object(aos_config, "_dotenv_values", return_value={})
+        self._dotenv_patcher.start()
+
+    def tearDown(self):
+        self._dotenv_patcher.stop()
+
     def test_download_expiry_does_not_load_minio_credentials(self):
         with (
             patch.dict(
@@ -21,11 +31,7 @@ class TestMediaRuntimeConfig(TestCase):
                 side_effect=AssertionError("credentials must not be read"),
             ) as required_env,
         ):
-            aos_config._dotenv_values.cache_clear()
-            try:
-                self.assertEqual(aos_config.get_media_download_expiry_minutes(), 17)
-            finally:
-                aos_config._dotenv_values.cache_clear()
+            self.assertEqual(aos_config.get_media_download_expiry_minutes(), 17)
 
         required_env.assert_not_called()
 
@@ -44,11 +50,7 @@ class TestMediaRuntimeConfig(TestCase):
             "AOS_OBJECT_STORAGE_MANAGE_BUCKETS": "false",
         }
         with patch.dict(os.environ, env, clear=True):
-            aos_config._dotenv_values.cache_clear()
-            try:
-                config = aos_config.get_object_storage_config()
-            finally:
-                aos_config._dotenv_values.cache_clear()
+            config = aos_config.get_object_storage_config()
 
         self.assertEqual(config.endpoint, "objects.example.test:443")
         self.assertEqual(config.presign_endpoint, "https://uploads.example.test")
@@ -70,12 +72,8 @@ class TestMediaRuntimeConfig(TestCase):
             "AOS_OBJECT_STORAGE_PRIVATE_BUCKET": "same-bucket",
         }
         with patch.dict(os.environ, env, clear=True):
-            aos_config._dotenv_values.cache_clear()
-            try:
-                with self.assertRaisesRegex(RuntimeError, "must be different"):
-                    aos_config.get_object_storage_config()
-            finally:
-                aos_config._dotenv_values.cache_clear()
+            with self.assertRaisesRegex(RuntimeError, "must be different"):
+                aos_config.get_object_storage_config()
 
     def test_secure_storage_defaults_presign_origin_to_storage_endpoint(self):
         env = {
@@ -85,9 +83,6 @@ class TestMediaRuntimeConfig(TestCase):
             "AOS_OBJECT_STORAGE_SECURE": "true",
         }
         with patch.dict(os.environ, env, clear=True):
-            aos_config._dotenv_values.cache_clear()
-            try:
-                config = aos_config.get_object_storage_config()
-            finally:
-                aos_config._dotenv_values.cache_clear()
+            config = aos_config.get_object_storage_config()
+
         self.assertEqual(config.presign_endpoint, "https://objects.example.test")

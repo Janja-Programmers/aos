@@ -16,6 +16,7 @@ class TestMediaSchemaIndexPatch(TestCase):
 
         with (
             patch.object(harden_media_subsystem.frappe.db, "table_exists", side_effect=table_exists),
+            patch.object(harden_media_subsystem, "_index_exists", return_value=False),
             patch.object(harden_media_subsystem.frappe.db, "add_index") as add_index,
             patch.object(harden_media_subsystem.frappe, "logger") as logger,
         ):
@@ -27,6 +28,16 @@ class TestMediaSchemaIndexPatch(TestCase):
             self.assertIsInstance(call.args[1], list)
             self.assertTrue(str(call.kwargs["index_name"]).startswith("idx_aos_media_"))
         logger.assert_called_once_with("aos.media", allow_site=True)
+
+    def test_existing_media_indexes_are_not_recreated(self):
+        with (
+            patch.object(harden_media_subsystem.frappe.db, "table_exists", return_value=True),
+            patch.object(harden_media_subsystem, "_index_exists", return_value=True),
+            patch.object(harden_media_subsystem.frappe.db, "add_index") as add_index,
+        ):
+            harden_media_subsystem.execute()
+
+        add_index.assert_not_called()
 
     def test_missing_media_tables_are_a_noop(self):
         with (
