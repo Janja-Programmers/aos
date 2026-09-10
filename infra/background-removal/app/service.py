@@ -46,7 +46,7 @@ class BackgroundRemovalService:
             settings=self.settings,
             source_label=source_label,
         )
-        validate_image_bytes(raw, source_label=source_label)
+        validate_image_bytes(raw, source_label=source_label, settings=self.settings)
         return self.processor.remove_background(raw)
 
 

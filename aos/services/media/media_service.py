@@ -16,9 +16,11 @@ from frappe.utils import add_to_date, get_datetime, now_datetime
 from aos.services.media.content_validation import (
     CHUNK_SIZE,
     MediaContentValidationError,
+    extract_iso_bmff_duration_seconds,
     normalize_checksum,
     normalize_content_type,
     normalize_filename,
+    sanitize_public_image_bytes,
     sha256_chunks,
     validate_filename_extension,
     validate_image_bytes,
@@ -41,8 +43,8 @@ from aos.services.storage.base import (
     StorageUnavailableError,
     StorageValidationError,
 )
-from aos.services.storage.minio_storage import MinioStorage
-from aos.utils.aos_config import get_env_int, get_media_download_expiry_minutes
+from aos.services.storage.s3_compatible import S3CompatibleStorage
+from aos.utils.aos_config import get_env, get_env_int, get_media_download_expiry_minutes
 from aos.utils.aos_settings import get_aos_settings_snapshot
 from aos.utils.doctype_permissions import has_doctype_permission
 
@@ -91,7 +93,7 @@ class MediaService:
         # instantiated from DocType hooks that also run during app installation,
         # fixture import, schema synchronization, and migrations. Those code paths
         # may only need database-level relationship validation (or may be no-ops)
-        # and must not require production MinIO credentials merely to construct the
+        # and must not require object-storage credentials merely to construct the
         # domain service.
         self._storage = storage
 
@@ -104,7 +106,7 @@ class MediaService:
         perform storage I/O remain deterministic and side-effect free.
         """
         if self._storage is None:
-            self._storage = MinioStorage()
+            self._storage = S3CompatibleStorage()
         return self._storage
 
     # INIT / CONFIRM
@@ -277,7 +279,6 @@ class MediaService:
                 "visibility": policy.visibility,
                 "purpose": policy.key,
                 "status": "Initialized",
-                "public_url": "",
                 "upload_expires_at": expires_at,
                 "idempotency_key_hash": idempotency_hash,
                 "duration_seconds": clean_duration,
@@ -836,6 +837,8 @@ class MediaService:
             source_bucket=upload_bucket,
             source_object_key=upload_key,
             expected_size=validated.size_bytes,
+            finalized_bytes=validated.finalized_bytes,
+            content_type=validated.content_type,
         )
 
         previous_values = {
@@ -852,12 +855,13 @@ class MediaService:
             doc.etag = final_stat.etag or stat.etag or ""
             doc.width = validated.width
             doc.height = validated.height
+            if validated.duration_seconds is not None:
+                doc.duration_seconds = validated.duration_seconds
             doc.uploaded_at = now_datetime()
             doc.completed_at = now_datetime()
             doc.failure_code = ""
             doc.failure_reason = ""
             doc.last_storage_error = ""
-            doc.public_url = self._public_url_for_doc(doc) if doc.visibility == "Public" else ""
             doc.save(ignore_permissions=True)
         except Exception:
             try:
@@ -891,6 +895,7 @@ class MediaService:
         height: int | None = None,
         duration_seconds: float | None = None,
         derived_from_media: str | None = None,
+        processing_job: str | None = None,
     ) -> object:
         policy = self._get_purpose_or_raise(purpose)
         clean_duration = self._validate_duration(policy, duration_seconds)
@@ -922,6 +927,19 @@ class MediaService:
                 max_width=policy.max_width,
                 max_height=policy.max_height,
             )
+            if policy.is_public:
+                try:
+                    payload, actual_width, actual_height = sanitize_public_image_bytes(
+                        payload,
+                        expected_content_type=detected,
+                        min_width=policy.min_width,
+                        min_height=policy.min_height,
+                        max_width=policy.max_width,
+                        max_height=policy.max_height,
+                    )
+                except MediaContentValidationError as exc:
+                    raise MediaValidationError(str(exc), code=exc.code) from exc
+                checksum = hashlib.sha256(payload).hexdigest()
 
         try:
             bucket = self.storage.bucket_for_type(policy.bucket_type)
@@ -967,13 +985,13 @@ class MediaService:
                     "visibility": policy.visibility,
                     "purpose": policy.key,
                     "status": "Uploaded",
-                    "public_url": self.storage.build_public_url(bucket, object_key) if policy.is_public else "",
                     "uploaded_at": now_datetime(),
                     "completed_at": now_datetime(),
                     "width": int(actual_width or 0) or None,
                     "height": int(actual_height or 0) or None,
                     "duration_seconds": clean_duration,
                     "derived_from_media": str(derived_from_media or "").strip(),
+                    "processing_job": str(processing_job or "").strip(),
                 }
             )
             doc.insert(ignore_permissions=True)
@@ -1058,6 +1076,17 @@ class MediaService:
             bucket=clean_bucket,
             object_key=clean_key,
         )
+        object_was_rewritten = validated.finalized_bytes is not None
+        if object_was_rewritten:
+            try:
+                stat = self.storage.put_bytes(
+                    bucket=clean_bucket,
+                    object_key=clean_key,
+                    data=validated.finalized_bytes,
+                    content_type=validated.content_type,
+                )
+            except (StorageConfigurationError, StorageUnavailableError, StorageValidationError) as exc:
+                raise MediaStorageError("Storage is temporarily unavailable") from exc
         if width and validated.width and int(width) != validated.width:
             raise MediaValidationError("Image width does not match object metadata", code="INVALID_FILE")
         if height and validated.height and int(height) != validated.height:
@@ -1073,12 +1102,11 @@ class MediaService:
                 "content_type": validated.content_type,
                 "expected_size_bytes": validated.size_bytes,
                 "size_bytes": validated.size_bytes,
-                "etag": etag or stat.etag or "",
+                "etag": (stat.etag or "") if object_was_rewritten else (etag or stat.etag or ""),
                 "checksum": validated.checksum_sha256,
                 "visibility": policy.visibility,
                 "purpose": policy.key,
                 "status": "Uploaded",
-                "public_url": self.storage.build_public_url(clean_bucket, clean_key) if policy.is_public else "",
                 "uploaded_at": now_datetime(),
                 "completed_at": now_datetime(),
                 "width": validated.width or int(width or 0) or None,
@@ -1211,14 +1239,6 @@ class MediaService:
         replacing_media_id: str | None = None,
         system: bool = False,
     ) -> object:
-        self._lock_media_row(media_id)
-        doc = self.validate_media_for_use(
-            media_id=media_id,
-            user=user,
-            purpose=purpose,
-            attached_doctype=attached_doctype,
-            attached_name=attached_name,
-        )
         policy = self._get_purpose_or_raise(purpose)
         try:
             assert_attachment_target_allowed(
@@ -1232,6 +1252,23 @@ class MediaService:
             raise MediaNotFoundError("Attachment resource was not found", code="RESOURCE_NOT_FOUND") from exc
         except ResourceAuthorizationError as exc:
             raise MediaPermissionError(str(exc), code="MEDIA_ACCESS_DENIED") from exc
+
+        # Lock the shared attachment target before the media row. Every contender
+        # for a resource-level media limit therefore serializes on the same DB
+        # row across Frappe workers/nodes; process-local locks are never used.
+        self._lock_attachment_target(
+            policy=policy,
+            attached_doctype=attached_doctype,
+            attached_name=attached_name,
+        )
+        self._lock_media_row(media_id)
+        doc = self.validate_media_for_use(
+            media_id=media_id,
+            user=user,
+            purpose=purpose,
+            attached_doctype=attached_doctype,
+            attached_name=attached_name,
+        )
 
         if doc.status == "Attached":
             return doc
@@ -1270,6 +1307,7 @@ class MediaService:
         replacement_media_id: str | None = None,
         system: bool = False,
     ) -> object:
+        self._lock_media_row(media_id)
         doc = self.get_media_doc(media_id)
         if not system:
             self.assert_user_can_manage(doc, user)
@@ -1308,28 +1346,22 @@ class MediaService:
                 "Forced deletion is reserved for system cleanup",
                 code="MEDIA_ACCESS_DENIED",
             )
-        return self._delete_media(media_id=media_id, user=user, system=False)
-
-    def delete_media_as_system(self, *, media_id: str) -> object:
-        return self._delete_media(media_id=media_id, user="Administrator", system=True)
-
-    def _delete_media(self, *, media_id: str, user: str, system: bool) -> object:
         self._lock_media_row(media_id)
         doc = self.get_media_doc(media_id)
-        if not system:
-            self.assert_user_can_manage(doc, user)
+        self.assert_user_can_manage(doc, user)
         if doc.status == "Deleted":
+            return doc
+        if doc.status == "Delete Pending":
+            self._enqueue_delete_after_commit(doc.name)
             return doc
         if doc.status == "Attached" or self._has_external_reference(doc.name):
             raise MediaConflictError(
                 "Referenced media must be detached or replaced before deletion",
                 code="MEDIA_ALREADY_ATTACHED",
             )
-
-        if not system:
-            policy = self._get_purpose_or_raise(doc.purpose)
-            if not policy.deletion_permitted:
-                raise MediaPermissionError("Media deletion is not permitted", code="MEDIA_ACCESS_DENIED")
+        policy = self._get_purpose_or_raise(doc.purpose)
+        if not policy.deletion_permitted:
+            raise MediaPermissionError("Media deletion is not permitted", code="MEDIA_ACCESS_DENIED")
 
         self._persist_delete_lifecycle(
             doc,
@@ -1337,10 +1369,51 @@ class MediaService:
                 "status": "Delete Pending",
                 "delete_requested_at": now_datetime(),
             },
-            bypass_validation=system,
+            bypass_validation=False,
         )
         media_log("delete_requested", media_id=doc.name, purpose=doc.purpose, operation="delete")
+        # Database state is authoritative. Object-store deletion is registered
+        # for after commit so a rolled-back request cannot leave a live DB row
+        # pointing at bytes that were already removed. The scheduled reconciler
+        # also scans Delete Pending rows if queue registration/delivery is lost.
+        self._enqueue_delete_after_commit(doc.name)
+        return doc
 
+    def delete_media_as_system(self, *, media_id: str) -> object:
+        """Finalize deletion from a trusted worker/reconciliation context."""
+        self._lock_media_row(media_id)
+        doc = self.get_media_doc(media_id)
+        if doc.status == "Deleted":
+            return doc
+        if doc.status == "Attached" or self._has_external_reference(doc.name):
+            raise MediaConflictError(
+                "Referenced media must be detached or replaced before deletion",
+                code="MEDIA_ALREADY_ATTACHED",
+            )
+        if doc.status != "Delete Pending":
+            self._persist_delete_lifecycle(
+                doc,
+                {"status": "Delete Pending", "delete_requested_at": now_datetime()},
+                bypass_validation=True,
+            )
+        return self._finalize_delete(doc, system=True)
+
+    def finalize_delete_as_system(self, *, media_id: str) -> object:
+        """Delete object bytes for a committed Delete Pending media record."""
+        self._lock_media_row(media_id)
+        doc = self.get_media_doc(media_id)
+        if doc.status == "Deleted":
+            return doc
+        if doc.status != "Delete Pending":
+            return doc
+        if doc.status == "Attached" or self._has_external_reference(doc.name):
+            raise MediaConflictError(
+                "Referenced media must be detached or replaced before deletion",
+                code="MEDIA_ALREADY_ATTACHED",
+            )
+        return self._finalize_delete(doc, system=True)
+
+    def _finalize_delete(self, doc, *, system: bool) -> object:
         try:
             self._delete_all_storage_identities(doc)
         except (StorageUnavailableError, StorageConfigurationError) as exc:
@@ -1363,25 +1436,50 @@ class MediaService:
         }
         if getattr(doc, "upload_object_key", None):
             deleted_values["staging_cleanup_required"] = 1
-        self._persist_delete_lifecycle(
-            doc,
-            deleted_values,
-            bypass_validation=system,
-        )
+        self._persist_delete_lifecycle(doc, deleted_values, bypass_validation=system)
         media_log("delete_completed", media_id=doc.name, purpose=doc.purpose, operation="delete")
         return doc
 
+    def _enqueue_delete_after_commit(self, media_id: str) -> None:
+        queue_name = str(get_env("AOS_MEDIA_DELETE_QUEUE_NAME", "short") or "short").strip() or "short"
+        timeout = get_env_int(
+            "AOS_MEDIA_DELETE_JOB_TIMEOUT_SECONDS", 120, min_value=30, max_value=1800
+        )
+        try:
+            frappe.enqueue(
+                "aos.tasks.media.finalize_media_deletion",
+                queue=queue_name,
+                media_id=str(media_id),
+                job_id=f"aos-media-delete:{media_id}",
+                enqueue_after_commit=True,
+                timeout=timeout,
+            )
+        except Exception:
+            # The committed Delete Pending row is itself a durable outbox. The
+            # scheduled cleanup task will retry it without losing correctness.
+            media_log(
+                "delete_enqueue_failed",
+                media_id=media_id,
+                operation="delete",
+                outcome="retryable_failure",
+                failure_category="queue_unavailable",
+            )
+
     def mark_delete_pending(self, *, media_id: str, user: str) -> object:
+        self._lock_media_row(media_id)
         doc = self.get_media_doc(media_id)
         self.assert_user_can_manage(doc, user)
         if doc.status not in {"Deleted", "Delete Pending"}:
             doc.status = "Delete Pending"
             doc.delete_requested_at = now_datetime()
             doc.save(ignore_permissions=True)
+        if doc.status == "Delete Pending":
+            self._enqueue_delete_after_commit(doc.name)
         return doc
 
     # PROCESSING
     def mark_processing(self, *, media_id: str, user: str | None = None, system: bool = False) -> object:
+        self._lock_media_row(media_id)
         doc = self.get_media_doc(media_id)
         if not system:
             self.assert_user_can_manage(doc, str(user or ""))
@@ -1397,6 +1495,7 @@ class MediaService:
         return doc
 
     def mark_processing_completed(self, *, media_id: str) -> object:
+        self._lock_media_row(media_id)
         doc = self.get_media_doc(media_id)
         if doc.status not in {"Processing", "Attached", "Ready"}:
             raise MediaConflictError("Media is not being processed", code="INVALID_STATE")
@@ -1416,6 +1515,7 @@ class MediaService:
         return doc
 
     def mark_processing_failed(self, *, media_id: str, reason: str) -> object:
+        self._lock_media_row(media_id)
         doc = self.get_media_doc(media_id)
         doc.processing_error = self._safe_failure_reason(reason)
         doc.processing_completed_at = now_datetime()
@@ -1471,7 +1571,7 @@ class MediaService:
     def cleanup_delete_pending(self, *, older_than_hours: int = 1, limit: int = 100) -> int:
         cutoff = add_to_date(now_datetime(), hours=-max(1, int(older_than_hours)))
         return self._cleanup_by_filters(
-            filters={"status": "Delete Pending", "modified": ["<", cutoff]},
+            filters={"status": "Delete Pending", "delete_requested_at": ["<", cutoff]},
             limit=limit,
         )
 
@@ -1575,6 +1675,21 @@ class MediaService:
             except Exception:
                 # Fail safe: an unknown reference state must not authorize deletion.
                 return True
+
+        # A processing job is also an active reference. Deleting its source while
+        # a worker is queued/running/retrying can otherwise produce intermittent
+        # failures across nodes or, worse, race with a derivative commit.
+        try:
+            if frappe.db.table_exists("AOS Media Processing Job") and frappe.db.exists(
+                "AOS Media Processing Job",
+                {
+                    "source_media": media_id,
+                    "status": ["in", ["Queued", "Processing", "Retry Waiting"]],
+                },
+            ):
+                return True
+        except Exception:
+            return True
         return False
 
     # PERMISSIONS
@@ -2048,9 +2163,19 @@ class MediaService:
         if expected_size and stat.size != expected_size:
             raise MediaValidationError("Uploaded file size does not match initiation", code="SIZE_MISMATCH")
 
-        claimed = normalize_content_type(getattr(doc, "content_type", "") or stat.content_type)
+        claimed = normalize_content_type(getattr(doc, "content_type", ""))
+        stored_type = normalize_content_type(getattr(stat, "content_type", ""))
         if claimed not in purpose_rule.allowed_content_types:
             raise MediaValidationError("Uploaded file type is not allowed", code="UNSUPPORTED_MEDIA_TYPE")
+        if stored_type and stored_type != claimed:
+            compatible = {stored_type, claimed} <= {"video/mp4", "video/quicktime"}
+            if not compatible:
+                raise MediaValidationError(
+                    "Uploaded object content type does not match initiation",
+                    code="CONTENT_TYPE_MISMATCH",
+                )
+        payload: bytes | None = None
+        finalized_bytes: bytes | None = None
         try:
             head = self.storage.get_range(bucket, object_key, length=64 * 1024)
             detected = validate_magic_type(
@@ -2058,14 +2183,20 @@ class MediaService:
                 claimed_content_type=claimed,
                 allowed_content_types=purpose_rule.allowed_content_types,
             )
-
             width = None
             height = None
+            duration_seconds = None
+            if detected.startswith("video/"):
+                duration_seconds = extract_iso_bmff_duration_seconds(
+                    read_range=lambda offset, length: self.storage.get_range(
+                        bucket, object_key, offset=offset, length=length
+                    ),
+                    size_bytes=int(stat.size),
+                    max_duration_seconds=purpose_rule.max_duration_seconds,
+                )
             if detected.startswith("image/"):
                 payload = self.storage.get_bytes(
-                    bucket,
-                    object_key,
-                    max_bytes=purpose_rule.max_size_bytes,
+                    bucket, object_key, max_bytes=purpose_rule.max_size_bytes
                 )
                 checksum = hashlib.sha256(payload).hexdigest()
                 width, height = validate_image_bytes(
@@ -2078,17 +2209,8 @@ class MediaService:
                 )
                 actual_size = len(payload)
             else:
-                expected_checksum = str(
-                    getattr(doc, "expected_checksum", "") or ""
-                ).strip().lower()
+                expected_checksum = str(getattr(doc, "expected_checksum", "") or "").strip().lower()
                 if expected_checksum or not purpose_rule.processing_required:
-                    # A caller-provided SHA-256 is an explicit integrity contract,
-                    # so verify it end-to-end. Existing non-processing media keeps
-                    # the historical server-side checksum behavior as well.
-                    # Processing-oriented large video uploads otherwise stay on
-                    # the direct-to-object-storage fast path instead of being
-                    # synchronously downloaded through every Frappe web worker
-                    # merely to calculate a hash that no caller requested.
                     checksum, actual_size = sha256_chunks(
                         self.storage.iter_chunks(bucket, object_key, chunk_size=CHUNK_SIZE),
                         content_type=detected,
@@ -2097,27 +2219,42 @@ class MediaService:
                     checksum = ""
                     actual_size = int(stat.size)
         except StorageNotFoundError as exc:
-            raise MediaValidationError(
-                "Uploaded object is incomplete", code="UPLOAD_INCOMPLETE"
-            ) from exc
-        except (
-            StorageConfigurationError,
-            StorageUnavailableError,
-            StorageValidationError,
-        ) as exc:
+            raise MediaValidationError("Uploaded object is incomplete", code="UPLOAD_INCOMPLETE") from exc
+        except (StorageConfigurationError, StorageUnavailableError, StorageValidationError) as exc:
             raise MediaStorageError("Storage is temporarily unavailable") from exc
+
         if actual_size != stat.size:
             raise MediaValidationError("Uploaded file changed during verification", code="UPLOAD_INCOMPLETE")
         expected_checksum = str(getattr(doc, "expected_checksum", "") or "").strip().lower()
         if expected_checksum and checksum != expected_checksum:
             raise MediaValidationError("Uploaded file checksum does not match", code="CHECKSUM_MISMATCH")
 
+        if detected.startswith("image/") and purpose_rule.is_public and payload is not None:
+            try:
+                finalized_bytes, width, height = sanitize_public_image_bytes(
+                    payload,
+                    expected_content_type=detected,
+                    min_width=purpose_rule.min_width,
+                    min_height=purpose_rule.min_height,
+                    max_width=purpose_rule.max_width,
+                    max_height=purpose_rule.max_height,
+                )
+            except MediaContentValidationError as exc:
+                raise MediaValidationError(str(exc), code=exc.code) from exc
+            checksum = hashlib.sha256(finalized_bytes).hexdigest()
+            final_size = len(finalized_bytes)
+        else:
+            final_size = actual_size
+
         return _ValidatedObject(
             content_type=detected,
-            size_bytes=actual_size,
+            size_bytes=final_size,
+            source_size_bytes=actual_size,
             checksum_sha256=checksum,
             width=width,
             height=height,
+            duration_seconds=duration_seconds,
+            finalized_bytes=finalized_bytes,
         )
 
     def _finalize_staged_object(
@@ -2127,23 +2264,29 @@ class MediaService:
         source_bucket: str,
         source_object_key: str,
         expected_size: int,
+        finalized_bytes: bytes | None = None,
+        content_type: str | None = None,
     ) -> ObjectStat:
-        if source_bucket == doc.bucket and source_object_key == doc.object_key:
-            return self.storage.stat_object(doc.bucket, doc.object_key)
         try:
-            final_stat = self.storage.copy_object(
-                source_bucket=source_bucket,
-                source_object_key=source_object_key,
-                destination_bucket=doc.bucket,
-                destination_object_key=doc.object_key,
-            )
+            if finalized_bytes is not None:
+                final_stat = self.storage.put_bytes(
+                    bucket=doc.bucket,
+                    object_key=doc.object_key,
+                    data=finalized_bytes,
+                    content_type=str(content_type or "application/octet-stream"),
+                )
+            elif source_bucket == doc.bucket and source_object_key == doc.object_key:
+                final_stat = self.storage.stat_object(doc.bucket, doc.object_key)
+            else:
+                final_stat = self.storage.copy_object(
+                    source_bucket=source_bucket,
+                    source_object_key=source_object_key,
+                    destination_bucket=doc.bucket,
+                    destination_object_key=doc.object_key,
+                )
         except StorageNotFoundError as exc:
             raise MediaValidationError("Staged upload is incomplete", code="UPLOAD_INCOMPLETE") from exc
-        except (
-            StorageConfigurationError,
-            StorageUnavailableError,
-            StorageValidationError,
-        ) as exc:
+        except (StorageConfigurationError, StorageUnavailableError, StorageValidationError) as exc:
             self._record_storage_failure(doc, exc)
             raise MediaStorageError("Storage is temporarily unavailable") from exc
         if int(final_stat.size or 0) != int(expected_size):
@@ -2548,19 +2691,33 @@ class MediaService:
             )
 
     @staticmethod
+    def _lock_attachment_target(
+        *,
+        policy: MediaPurpose,
+        attached_doctype: str,
+        attached_name: str,
+    ) -> None:
+        doctype = str(attached_doctype or "").strip()
+        docname = str(attached_name or "").strip()
+        if not doctype or not docname or doctype not in policy.allowed_attachment_doctypes:
+            raise MediaValidationError("Invalid media attachment target", code="INVALID_STATE")
+        # `doctype` comes exclusively from the immutable purpose allow-list, not
+        # from arbitrary client input. Locking the target row makes resource-level
+        # cardinality checks atomic across horizontally scaled workers.
+        frappe.db.sql(
+            f"SELECT name FROM `tab{doctype}` WHERE name = %s FOR UPDATE",
+            docname,
+        )
+
+    @staticmethod
     def _lock_media_row(media_id: str) -> None:
         clean_id = str(media_id or "").strip()
         if not clean_id:
             return
-        try:
-            frappe.db.sql(
-                "SELECT name FROM `tabAOS Media Object` WHERE name = %s FOR UPDATE",
-                clean_id,
-            )
-        except Exception:
-            # Unit mocks and database engines without row-lock syntax still rely
-            # on lifecycle/idempotency checks below.
-            pass
+        frappe.db.sql(
+            "SELECT name FROM `tabAOS Media Object` WHERE name = %s FOR UPDATE",
+            clean_id,
+        )
 
     def generate_object_key(self, *, owner_user: str, purpose_rule: MediaPurpose, filename: str) -> str:
         extension = os.path.splitext(filename)[1].lower()
@@ -2601,15 +2758,21 @@ class _ValidatedObject:
         *,
         content_type: str,
         size_bytes: int,
+        source_size_bytes: int,
         checksum_sha256: str,
         width: int | None,
         height: int | None,
+        duration_seconds: float | None = None,
+        finalized_bytes: bytes | None = None,
     ):
         self.content_type = content_type
         self.size_bytes = size_bytes
+        self.source_size_bytes = source_size_bytes
         self.checksum_sha256 = checksum_sha256
         self.width = width
         self.height = height
+        self.duration_seconds = duration_seconds
+        self.finalized_bytes = finalized_bytes
 
 
 def serialize_media_doc(doc, *, url: str | None = None, include_private_fields: bool = False) -> dict:

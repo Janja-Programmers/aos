@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from unittest import TestCase
 
+from PIL import Image
+
 from aos.services.media.content_validation import (
 	MediaContentValidationError,
+	extract_iso_bmff_duration_seconds,
 	normalize_checksum,
 	normalize_filename,
 	sha256_chunks,
@@ -12,9 +16,36 @@ from aos.services.media.content_validation import (
 	validate_filename_extension,
 	validate_image_bytes,
 	validate_magic_type,
+	sanitize_public_image_bytes,
 )
 
 PNG_64 = (Path(__file__).parent / "fixtures" / "valid_64x64.png").read_bytes()
+
+
+
+def _box(box_type: bytes, payload: bytes) -> bytes:
+	return (8 + len(payload)).to_bytes(4, "big") + box_type + payload
+
+
+def _movie_bytes(*, duration_units: int = 12500, timescale: int = 1000, version: int = 0) -> bytes:
+	ftyp = _box(b"ftyp", b"isom" + b"\x00" * 12)
+	if version == 0:
+		mvhd_payload = (
+			b"\x00\x00\x00\x00"
+			+ b"\x00" * 8
+			+ int(timescale).to_bytes(4, "big")
+			+ int(duration_units).to_bytes(4, "big")
+			+ b"\x00" * 12
+		)
+	else:
+		mvhd_payload = (
+			b"\x01\x00\x00\x00"
+			+ b"\x00" * 16
+			+ int(timescale).to_bytes(4, "big")
+			+ int(duration_units).to_bytes(8, "big")
+			+ b"\x00" * 12
+		)
+	return ftyp + _box(b"moov", _box(b"mvhd", mvhd_payload))
 
 
 class TestMediaContentValidation(TestCase):
@@ -120,3 +151,72 @@ class TestMediaContentValidation(TestCase):
 		with self.assertRaises(MediaContentValidationError) as context:
 			normalize_checksum("deadbeef")
 		self.assertEqual(context.exception.code, "INVALID_CHECKSUM")
+
+	def test_public_image_sanitization_strips_exif_metadata(self):
+		image = Image.new("RGB", (32, 24), (120, 80, 40))
+		exif = Image.Exif()
+		exif[274] = 1
+		exif[315] = "sensitive-camera-owner"
+		output = io.BytesIO()
+		image.save(output, format="JPEG", quality=95, exif=exif)
+		source = output.getvalue()
+
+		with Image.open(io.BytesIO(source)) as original:
+			self.assertEqual(original.getexif().get(315), "sensitive-camera-owner")
+
+		sanitized, width, height = sanitize_public_image_bytes(
+			source, expected_content_type="image/jpeg"
+		)
+		self.assertEqual((width, height), (32, 24))
+		self.assertNotEqual(sanitized, source)
+		with Image.open(io.BytesIO(sanitized)) as result:
+			self.assertFalse(result.getexif())
+			self.assertEqual(result.size, (32, 24))
+
+	def test_image_pixel_limit_is_enforced_as_a_hard_failure(self):
+		import aos.services.media.content_validation as validation
+
+		output = io.BytesIO()
+		Image.new("RGB", (20, 20), (0, 0, 0)).save(output, format="PNG")
+		previous = validation.MAX_IMAGE_PIXELS
+		validation.MAX_IMAGE_PIXELS = 100
+		try:
+			with self.assertRaises(MediaContentValidationError):
+				validate_image_bytes(output.getvalue(), expected_content_type="image/png")
+		finally:
+			validation.MAX_IMAGE_PIXELS = previous
+
+	def test_iso_bmff_duration_is_read_from_authoritative_container_metadata(self):
+		payload = _movie_bytes(duration_units=12500, timescale=1000)
+		duration = extract_iso_bmff_duration_seconds(
+			read_range=lambda offset, length: payload[offset : offset + length],
+			size_bytes=len(payload),
+			max_duration_seconds=20,
+		)
+		self.assertAlmostEqual(duration, 12.5)
+
+	def test_iso_bmff_duration_supports_version_one_movie_header(self):
+		payload = _movie_bytes(duration_units=90_000, timescale=30_000, version=1)
+		duration = extract_iso_bmff_duration_seconds(
+			read_range=lambda offset, length: payload[offset : offset + length],
+			size_bytes=len(payload),
+			max_duration_seconds=10,
+		)
+		self.assertAlmostEqual(duration, 3.0)
+
+	def test_iso_bmff_duration_rejects_oversized_or_missing_metadata(self):
+		payload = _movie_bytes(duration_units=601_000, timescale=1000)
+		with self.assertRaises(MediaContentValidationError) as context:
+			extract_iso_bmff_duration_seconds(
+				read_range=lambda offset, length: payload[offset : offset + length],
+				size_bytes=len(payload),
+				max_duration_seconds=600,
+			)
+		self.assertEqual(context.exception.code, "DURATION_EXCEEDED")
+
+		invalid = _box(b"ftyp", b"isom" + b"\x00" * 12)
+		with self.assertRaises(MediaContentValidationError):
+			extract_iso_bmff_duration_seconds(
+				read_range=lambda offset, length: invalid[offset : offset + length],
+				size_bytes=len(invalid),
+			)

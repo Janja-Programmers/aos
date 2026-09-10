@@ -556,6 +556,137 @@ def _check_worker_services(issues: list[dict[str, Any]], env: Mapping[str, Any] 
 
 
 def _check_storage(issues: list[dict[str, Any]], env: Mapping[str, Any] | None) -> None:
+	# Media owns a provider-neutral S3-compatible boundary. These values are
+	# deployment identity/secrets and intentionally never come from AOS Settings.
+	media_endpoint = _check_required_value(
+		issues,
+		env=env,
+		category="storage",
+		keys=("AOS_OBJECT_STORAGE_ENDPOINT",),
+		label="Media object-storage endpoint",
+	)
+	if media_endpoint:
+		try:
+			aos_config.clean_endpoint(
+				media_endpoint, setting_name="AOS_OBJECT_STORAGE_ENDPOINT"
+			)
+		except Exception:
+			_redacted_issue(
+				issues,
+				severity="error",
+				category="storage",
+				key="AOS_OBJECT_STORAGE_ENDPOINT",
+				message="Media object-storage endpoint must be host[:port] without scheme, bucket, query, or path.",
+				remediation="Set AOS_OBJECT_STORAGE_ENDPOINT to the deployment's S3-compatible API endpoint.",
+			)
+
+	_check_required_value(
+		issues,
+		env=env,
+		category="storage",
+		keys=("AOS_OBJECT_STORAGE_ACCESS_KEY",),
+		label="Media object-storage access key",
+		secret=True,
+		min_length=8,
+	)
+	_check_required_value(
+		issues,
+		env=env,
+		category="storage",
+		keys=("AOS_OBJECT_STORAGE_SECRET_KEY",),
+		label="Media object-storage secret key",
+		secret=True,
+	)
+	secure_value = _check_required_value(
+		issues,
+		env=env,
+		category="storage",
+		keys=("AOS_OBJECT_STORAGE_SECURE",),
+		label="Media object-storage TLS setting",
+	)
+	if secure_value and not _bool_env(env, ("AOS_OBJECT_STORAGE_SECURE",), False):
+		_redacted_issue(
+			issues,
+			severity="error",
+			category="storage",
+			key="AOS_OBJECT_STORAGE_SECURE",
+			message="Production Media object-storage API connections must use TLS.",
+			remediation="Set AOS_OBJECT_STORAGE_SECURE=true for the production S3-compatible endpoint.",
+		)
+	path_style_value = _check_required_value(
+		issues,
+		env=env,
+		category="storage",
+		keys=("AOS_OBJECT_STORAGE_PATH_STYLE",),
+		label="Media object-storage addressing style",
+	)
+	if path_style_value and path_style_value.strip().lower() not in {
+		"1", "0", "true", "false", "yes", "no", "on", "off",
+	}:
+		_redacted_issue(
+			issues,
+			severity="error",
+			category="storage",
+			key="AOS_OBJECT_STORAGE_PATH_STYLE",
+			message="Media object-storage addressing style must be an explicit boolean.",
+			remediation="Use false for virtual-host-style providers such as Hetzner/AWS, or true where path-style is required.",
+		)
+	_check_required_public_url(
+		issues,
+		env=env,
+		category="storage",
+		keys=("AOS_OBJECT_STORAGE_PRESIGN_ENDPOINT",),
+		label="Media presigned-upload origin",
+		require_https=True,
+	)
+	_check_required_public_url(
+		issues,
+		env=env,
+		category="storage",
+		keys=("AOS_MEDIA_PUBLIC_BASE_URL",),
+		label="Media public delivery base URL",
+		require_https=True,
+	)
+	media_buckets: list[str] = []
+	for key, label in (
+		("AOS_OBJECT_STORAGE_PUBLIC_BUCKET", "Media public bucket"),
+		("AOS_OBJECT_STORAGE_PRIVATE_BUCKET", "Media private bucket"),
+	):
+		value = _check_required_value(
+			issues, env=env, category="storage", keys=(key,), label=label
+		)
+		if value:
+			media_buckets.append(value)
+		if value and any(char in value for char in ("/", "\\")):
+			_redacted_issue(
+				issues,
+				severity="error",
+				category="storage",
+				key=key,
+				message=f"{label} must be a bucket name, not a path.",
+				remediation=f"Set {key} to one deployment-controlled bucket name.",
+			)
+	if len(media_buckets) == 2 and media_buckets[0] == media_buckets[1]:
+		_redacted_issue(
+			issues,
+			severity="error",
+			category="storage",
+			key="AOS_OBJECT_STORAGE_PUBLIC_BUCKET/AOS_OBJECT_STORAGE_PRIVATE_BUCKET",
+			message="Media public and private buckets must be different.",
+			remediation="Use separate buckets so public delivery policy cannot expose private media.",
+		)
+	if _bool_env(env, ("AOS_OBJECT_STORAGE_MANAGE_BUCKETS",), False):
+		_redacted_issue(
+			issues,
+			severity="error",
+			category="storage",
+			key="AOS_OBJECT_STORAGE_MANAGE_BUCKETS",
+			message="Production Media must not mutate bucket creation/public-read policy at runtime.",
+			remediation="Provision buckets and bucket/CDN policy through infrastructure, then set AOS_OBJECT_STORAGE_MANAGE_BUCKETS=false.",
+		)
+
+	# Legacy MinIO validation remains because non-Media Shorts/video components
+	# still depend on it and are explicitly outside this hardening pass.
 	endpoint = _check_required_value(
 		issues,
 		env=env,
@@ -837,6 +968,15 @@ def _check_ai_services(issues: list[dict[str, Any]], env: Mapping[str, Any] | No
 			keys=tuple(service["keys"]),
 			label=f"{service['name']} service URL",
 		)
+
+	_check_required_value(
+		issues,
+		env=env,
+		category="ai_ml",
+		keys=("BACKGROUND_REMOVAL_SERVICE_SECRET",),
+		label="background-removal internal service secret",
+		secret=True,
+	)
 
 	qdrant_url = _check_required_private_url(
 		issues,

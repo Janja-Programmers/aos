@@ -1,0 +1,168 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-09-10 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "owner_user",
+  "source_media",
+  "operation",
+  "result_purpose",
+  "status",
+  "result_media",
+  "request_key",
+  "retry_section",
+  "attempt_count",
+  "max_attempts",
+  "next_attempt_at",
+  "last_error_code",
+  "last_error_message",
+  "timing_section",
+  "started_at",
+  "completed_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "owner_user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Owner User",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "source_media",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Source Media",
+   "options": "AOS Media Object",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "operation",
+   "fieldtype": "Select",
+   "label": "Operation",
+   "options": "Background Removal",
+   "reqd": 1
+  },
+  {
+   "fieldname": "result_purpose",
+   "fieldtype": "Data",
+   "label": "Result Purpose",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "Queued",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Queued\nProcessing\nRetry Waiting\nSucceeded\nFailed",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "result_media",
+   "fieldtype": "Link",
+   "label": "Result Media",
+   "options": "AOS Media Object",
+   "read_only": 1
+  },
+  {
+   "fieldname": "request_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Request Key",
+   "length": 64,
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "retry_section",
+   "fieldtype": "Section Break",
+   "label": "Retry"
+  },
+  {
+   "default": "0",
+   "fieldname": "attempt_count",
+   "fieldtype": "Int",
+   "label": "Attempt Count",
+   "read_only": 1
+  },
+  {
+   "default": "3",
+   "fieldname": "max_attempts",
+   "fieldtype": "Int",
+   "label": "Max Attempts",
+   "read_only": 1
+  },
+  {
+   "fieldname": "next_attempt_at",
+   "fieldtype": "Datetime",
+   "label": "Next Attempt At",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "last_error_code",
+   "fieldtype": "Data",
+   "label": "Last Error Code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_error_message",
+   "fieldtype": "Small Text",
+   "label": "Last Error Message",
+   "read_only": 1
+  },
+  {
+   "fieldname": "timing_section",
+   "fieldtype": "Section Break",
+   "label": "Timing"
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-09-10 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Media Processing Job",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

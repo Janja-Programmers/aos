@@ -309,11 +309,6 @@ class AOSFeatureTestMixin:
                 "visibility": resolved_visibility,
                 "purpose": purpose,
                 "status": status,
-                "public_url": (
-                    f"https://cdn.example.test/{self.prefix}/{filename}"
-                    if resolved_visibility == "Public"
-                    else ""
-                ),
             }
         )
         media.insert(ignore_permissions=True)
@@ -359,7 +354,7 @@ class AOSFeatureTestMixin:
                 "images": [
                     {
                         "media": image_media.name,
-                        "image": image_media.public_url,
+                        "image": f"https://cdn.example.test/{image_media.name}.jpg",
                         "is_primary": 1,
                         "sort_order": 0,
                     }
@@ -597,6 +592,8 @@ class AOSFeatureTestMixin:
             (email_like,),
         )
         frappe.db.sql("DELETE FROM `tabAOS Verification Request` WHERE user LIKE %s", (email_like,))
+        if frappe.db.exists("DocType", "AOS Media Processing Job"):
+            frappe.db.sql("DELETE FROM `tabAOS Media Processing Job` WHERE owner_user LIKE %s", (email_like,))
         frappe.db.sql("DELETE FROM `tabAOS Media Object` WHERE owner_user LIKE %s OR object_key LIKE %s", (email_like, path_like))
 
         frappe.db.sql("DELETE FROM `tabAOS Report Reason` WHERE title LIKE %s", (like,))

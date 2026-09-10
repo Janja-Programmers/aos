@@ -14,12 +14,15 @@ They run in the external background-removal service container.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, BinaryIO, Dict
 
 import requests
 
-from aos.utils.aos_config import get_background_removal_service_url
+from aos.utils.aos_config import (
+    get_background_removal_service_secret,
+    get_background_removal_service_url,
+)
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
 
@@ -47,8 +50,9 @@ DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
 @dataclass(frozen=True)
 class BackgroundRemovalClientSettings:
     service_url: str
-    timeout_seconds: int
-    max_image_bytes: int
+    service_secret: str = field(repr=False)
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
+    max_image_bytes: int = DEFAULT_MAX_IMAGE_BYTES
 
 
 @dataclass(frozen=True)
@@ -92,6 +96,7 @@ def get_background_removal_client_settings() -> BackgroundRemovalClientSettings:
         # singleton may not be available yet.
         return BackgroundRemovalClientSettings(
             service_url=DEFAULT_SERVICE_URL,
+            service_secret=get_background_removal_service_secret(),
             timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
             max_image_bytes=DEFAULT_MAX_IMAGE_BYTES,
         )
@@ -101,6 +106,7 @@ def get_background_removal_client_settings() -> BackgroundRemovalClientSettings:
             get_background_removal_service_url(),
             default=DEFAULT_SERVICE_URL,
         ),
+        service_secret=get_background_removal_service_secret(),
         timeout_seconds=_clamp_int(
             getattr(
                 settings,
@@ -292,6 +298,7 @@ class BackgroundRemovalClient:
             response = self.session.post(
                 self._url("/remove-background"),
                 files=files,
+                headers={"Authorization": f"Bearer {self.settings.service_secret}"},
                 timeout=self.settings.timeout_seconds,
             )
         except requests.RequestException as exc:
@@ -300,18 +307,16 @@ class BackgroundRemovalClient:
             ) from exc
 
         if response.status_code >= 400:
-            payload = _parse_json_response(response)
-            message = _extract_error_message(payload)
+            _parse_json_response(response)
 
             if response.status_code in {400, 413, 415, 422}:
-                raise BackgroundRemovalProcessingError(message)
-
-            if response.status_code == 503:
-                raise BackgroundRemovalUnavailableError(
-                    "Background removal service is temporarily unavailable."
+                raise BackgroundRemovalProcessingError(
+                    "Background removal could not process this image."
                 )
 
-            raise BackgroundRemovalUnavailableError(message)
+            raise BackgroundRemovalUnavailableError(
+                "Background removal service is temporarily unavailable."
+            )
 
         content = response.content or b""
         if not content:
@@ -320,12 +325,8 @@ class BackgroundRemovalClient:
             )
 
         if not _is_png_response(response, content):
-            content_type = str(response.headers.get("content-type") or "").strip()
-            preview = _response_preview(response)
             raise BackgroundRemovalUnavailableError(
-                "Background removal service returned an invalid image response "
-                f"(status={response.status_code}, content_type={content_type or 'unknown'}, "
-                f"preview={preview or 'empty'})."
+                "Background removal service returned an invalid image response."
             )
 
         return BackgroundRemovalResult(

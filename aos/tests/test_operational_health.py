@@ -89,6 +89,15 @@ class TestOperationalHealth(FrappeTestCase):
             "AOS_API_DOMAIN": "api.africaonlinestores.example-prod.com",
             "AOS_MAPS_DOMAIN": "maps.africaonlinestores.example-prod.com",
             "AOS_MINIO_DOMAIN": "files.africaonlinestores.example-prod.com",
+            "AOS_OBJECT_STORAGE_ENDPOINT": "objects.africaonlinestores.co.ke",
+            "AOS_OBJECT_STORAGE_SECURE": "true",
+            "AOS_OBJECT_STORAGE_PRESIGN_ENDPOINT": "https://objects.africaonlinestores.co.ke",
+            "AOS_MEDIA_PUBLIC_BASE_URL": "https://media.africaonlinestores.co.ke",
+            "AOS_OBJECT_STORAGE_PUBLIC_BUCKET": "aos-media-public",
+            "AOS_OBJECT_STORAGE_PRIVATE_BUCKET": "aos-media-private",
+            "AOS_OBJECT_STORAGE_ACCESS_KEY": "aos_media_prod_access_0123456789",
+            "AOS_OBJECT_STORAGE_SECRET_KEY": "media-storage-secret-value-0123456789abcdef",
+            "AOS_OBJECT_STORAGE_MANAGE_BUCKETS": "false",
             "MINIO_ENDPOINT": "127.0.0.1:9100",
             "MINIO_ROOT_USER": "aos_minio_prod_user",
             "MINIO_ROOT_PASSWORD": "minio-prod-secret-value-0123456789abcdef",
@@ -129,6 +138,7 @@ class TestOperationalHealth(FrappeTestCase):
             "TRANSLATION_SERVICE_URL": "http://127.0.0.1:8100",
             "IMAGE_SEARCH_SERVICE_URL": "http://127.0.0.1:8110",
             "BACKGROUND_REMOVAL_SERVICE_URL": "http://127.0.0.1:8120",
+            "BACKGROUND_REMOVAL_SERVICE_SECRET": "background-removal-secret-value-0123456789abcdef",
             "IMAGE_SEARCH_QDRANT_URL": "http://qdrant:6333",
             "SHORT_CLASSIFICATION_SECRET": "short-classification-secret-value-0123456789abcdef",
             "IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS": "files.africaonlinestores.example-prod.com",
@@ -165,7 +175,7 @@ class TestOperationalHealth(FrappeTestCase):
         self.assertTrue(report.get("ready"), report)
         names = {check.get("name") for check in report.get("checks", [])}
         self.assertIn("production_config", names)
-        self.assertIn("minio_storage", names)
+        self.assertIn("object_storage", names)
         self.assertIn("frappe_redis_cache", names)
         self.assertIn("firebase_credentials", names)
         self.assertIn("livekit_root", names)
@@ -176,6 +186,8 @@ class TestOperationalHealth(FrappeTestCase):
         serialized = self._report_text(report)
         for secret in [
             env["MINIO_ROOT_PASSWORD"],
+            env["AOS_OBJECT_STORAGE_SECRET_KEY"],
+            env["BACKGROUND_REMOVAL_SERVICE_SECRET"],
             env["LIVEKIT_API_SECRET"],
             env["VIDEO_SERVICE_SECRET"],
             env["NOTIFICATION_SERVICE_CALLBACK_SECRET"],

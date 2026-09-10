@@ -23,6 +23,7 @@ from aos.api.media.delete import (
     delete_media_impl as _delete_media_impl,
 )
 from aos.api.media.background import (
+    processing_status_impl as _processing_status_impl,
     remove_background_impl as _remove_background_impl,
 )
 
@@ -62,7 +63,7 @@ def abort_multipart_upload(**kwargs):
     return _abort_multipart_upload_impl(**kwargs)
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=True, methods=["GET"])
 def get_media_url(**kwargs):
     """Execute the v1 media.get_media_url endpoint."""
     return _get_media_url_impl(**kwargs)
@@ -78,3 +79,9 @@ def delete_media(**kwargs):
 def remove_background(**kwargs):
     """Execute the v1 media.remove_background endpoint."""
     return _remove_background_impl(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def processing_status(**kwargs):
+    """Return status/result for asynchronous Media processing."""
+    return _processing_status_impl(**kwargs)

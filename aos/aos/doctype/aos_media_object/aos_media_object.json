@@ -13,7 +13,6 @@
   "storage_section",
   "bucket",
   "object_key",
-  "public_url",
   "column_break_storage_upload",
   "upload_bucket",
   "upload_object_key",
@@ -64,6 +63,7 @@
   "processing_error",
   "relationship_section",
   "derived_from_media",
+  "processing_job",
   "replaced_by_media"
  ],
  "fields": [
@@ -135,12 +135,6 @@
    "reqd": 1,
    "search_index": 1,
    "unique": 1
-  },
-  {
-   "fieldname": "public_url",
-   "fieldtype": "Small Text",
-   "label": "Public URL",
-   "read_only": 1
   },
   {
    "fieldname": "column_break_storage_upload",
@@ -440,6 +434,15 @@
    "search_index": 1
   },
   {
+   "fieldname": "processing_job",
+   "fieldtype": "Link",
+   "label": "Processing Job",
+   "options": "AOS Media Processing Job",
+   "read_only": 1,
+   "search_index": 1,
+   "unique": 1
+  },
+  {
    "fieldname": "replaced_by_media",
    "fieldtype": "Link",
    "label": "Replaced By Media",
@@ -449,7 +452,7 @@
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
+ "index_web_pages_for_search": 0,
  "links": [],
  "modified": "2026-08-28 12:45:00.000000",
  "modified_by": "Administrator",

@@ -4,7 +4,7 @@ import frappe
 
 from aos.api.media.errors import media_error_response
 from aos.api.shared.auth import require_authenticated_user
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok
 from aos.services.media.media_service import MediaService, serialize_media_doc
 from aos.services.media.media_purposes import get_media_purpose
@@ -26,7 +26,7 @@ def init_upload_impl(**kwargs):
     if err:
         return err
     rl = rate_limit(
-        key=f"aos:media:init:user:{user}", ttl_seconds=60,
+        key=rate_limit_key("media", "init", "user", user), ttl_seconds=60,
         limit=INIT_UPLOAD_LIMIT_PER_MINUTE_PER_USER,
         message="Too many upload requests. Please try again shortly.",
     )
@@ -91,7 +91,7 @@ def confirm_upload_impl(**kwargs):
     if err:
         return err
     rl = rate_limit(
-        key=f"aos:media:confirm:user:{user}", ttl_seconds=60,
+        key=rate_limit_key("media", "confirm", "user", user), ttl_seconds=60,
         limit=CONFIRM_UPLOAD_LIMIT_PER_MINUTE_PER_USER,
         message="Too many upload confirmations. Please try again shortly.",
     )
@@ -116,7 +116,7 @@ def multipart_part_urls_impl(**kwargs):
     if err:
         return err
     rl = rate_limit(
-        key=f"aos:media:multipart:urls:user:{user}", ttl_seconds=60,
+        key=rate_limit_key("media", "multipart", "urls", "user", user), ttl_seconds=60,
         limit=MULTIPART_PART_URLS_LIMIT_PER_MINUTE_PER_USER,
         message="Too many multipart URL requests. Please try again shortly.",
     )
@@ -143,7 +143,7 @@ def multipart_status_impl(**kwargs):
     if err:
         return err
     rl = rate_limit(
-        key=f"aos:media:multipart:status:user:{user}", ttl_seconds=60,
+        key=rate_limit_key("media", "multipart", "status", "user", user), ttl_seconds=60,
         limit=MULTIPART_STATUS_LIMIT_PER_MINUTE_PER_USER,
         message="Too many multipart status requests. Please try again shortly.",
     )
@@ -168,7 +168,7 @@ def complete_multipart_upload_impl(**kwargs):
     if err:
         return err
     rl = rate_limit(
-        key=f"aos:media:multipart:complete:user:{user}", ttl_seconds=60,
+        key=rate_limit_key("media", "multipart", "complete", "user", user), ttl_seconds=60,
         limit=MULTIPART_COMPLETE_LIMIT_PER_MINUTE_PER_USER,
         message="Too many multipart completion requests. Please try again shortly.",
     )
@@ -195,7 +195,7 @@ def abort_multipart_upload_impl(**kwargs):
     if err:
         return err
     rl = rate_limit(
-        key=f"aos:media:multipart:abort:user:{user}", ttl_seconds=60,
+        key=rate_limit_key("media", "multipart", "abort", "user", user), ttl_seconds=60,
         limit=MULTIPART_ABORT_LIMIT_PER_MINUTE_PER_USER,
         message="Too many multipart abort requests. Please try again shortly.",
     )

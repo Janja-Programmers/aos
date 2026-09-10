@@ -20,9 +20,15 @@ _ALLOWED_EVENTS = {
     "delete_completed",
     "delete_failed",
     "cleanup_completed",
+    "processing_queued",
     "processing_started",
     "processing_completed",
     "processing_failed",
+    "processing_enqueue_failed",
+    "processing_retry_scheduled",
+    "multipart_upload_completed",
+    "multipart_upload_aborted",
+    "delete_enqueue_failed",
     "storage_operation",
 }
 _ALLOWED_OUTCOMES = {"success", "rejected", "retryable_failure", "failure"}

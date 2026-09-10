@@ -38,6 +38,16 @@ class TestProductionConfigValidation(FrappeTestCase):
 			"AOS_API_DOMAIN": "api.africaonlinestores.example-prod.com",
 			"AOS_MAPS_DOMAIN": "maps.africaonlinestores.example-prod.com",
 			"AOS_MINIO_DOMAIN": "files.africaonlinestores.example-prod.com",
+			"AOS_OBJECT_STORAGE_ENDPOINT": "objects.africaonlinestores.co.ke",
+			"AOS_OBJECT_STORAGE_SECURE": "true",
+			"AOS_OBJECT_STORAGE_PATH_STYLE": "false",
+			"AOS_OBJECT_STORAGE_PRESIGN_ENDPOINT": "https://objects.africaonlinestores.co.ke",
+			"AOS_MEDIA_PUBLIC_BASE_URL": "https://media.africaonlinestores.co.ke",
+			"AOS_OBJECT_STORAGE_PUBLIC_BUCKET": "aos-media-public",
+			"AOS_OBJECT_STORAGE_PRIVATE_BUCKET": "aos-media-private",
+			"AOS_OBJECT_STORAGE_ACCESS_KEY": "aos_media_prod_access_0123456789",
+			"AOS_OBJECT_STORAGE_SECRET_KEY": "media-storage-secret-value-0123456789abcdef",
+			"AOS_OBJECT_STORAGE_MANAGE_BUCKETS": "false",
 			"MINIO_ENDPOINT": "127.0.0.1:9100",
 			"MINIO_ROOT_USER": "aos_minio_prod_user",
 			"MINIO_ROOT_PASSWORD": "minio-prod-secret-value-0123456789abcdef",
@@ -77,6 +87,7 @@ class TestProductionConfigValidation(FrappeTestCase):
 			"TRANSLATION_SERVICE_URL": "http://127.0.0.1:8100",
 			"IMAGE_SEARCH_SERVICE_URL": "http://127.0.0.1:8110",
 			"BACKGROUND_REMOVAL_SERVICE_URL": "http://127.0.0.1:8120",
+			"BACKGROUND_REMOVAL_SERVICE_SECRET": "background-removal-secret-value-0123456789abcdef",
 			"IMAGE_SEARCH_QDRANT_URL": "http://qdrant:6333",
 			"SHORT_CLASSIFICATION_SECRET": "short-classification-secret-value-0123456789abcdef",
 			"IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS": "files.africaonlinestores.example-prod.com",
@@ -138,6 +149,10 @@ class TestProductionConfigValidation(FrappeTestCase):
 			report_contains_secret_value(report, env["MINIO_ROOT_PASSWORD"]),
 			"Storage secret values must never appear in the diagnostic report.",
 		)
+		self.assertFalse(
+			report_contains_secret_value(report, env["AOS_OBJECT_STORAGE_SECRET_KEY"]),
+			"Media object-storage secrets must never appear in diagnostics.",
+		)
 
 	def test_missing_and_placeholder_values_are_reported_without_leaking_values(self):
 		env = self._valid_env()
@@ -156,6 +171,24 @@ class TestProductionConfigValidation(FrappeTestCase):
 		self.assertIn("MINIO_PUBLIC_BASE_URL", keys)
 		self.assertIn("LIVEKIT_API_SECRET/LIVEKIT_KEYS", keys)
 		self.assertFalse(report_contains_secret_value(report, "change-this-video-callback-secret"))
+
+	def test_media_object_storage_requires_provider_neutral_production_configuration(self):
+		env = self._valid_env()
+		env["AOS_OBJECT_STORAGE_MANAGE_BUCKETS"] = "true"
+		env["AOS_OBJECT_STORAGE_SECURE"] = "false"
+		env["AOS_OBJECT_STORAGE_PATH_STYLE"] = "not-a-boolean"
+		env["AOS_MEDIA_PUBLIC_BASE_URL"] = "http://localhost:9100/aos-public"
+		env.pop("BACKGROUND_REMOVAL_SERVICE_SECRET")
+
+		report = validate_production_config(env=env, site_config=self._valid_site_config())
+
+		self.assertFalse(report["ready"])
+		keys = {issue["key"] for issue in report["errors"]}
+		self.assertIn("AOS_OBJECT_STORAGE_MANAGE_BUCKETS", keys)
+		self.assertIn("AOS_OBJECT_STORAGE_SECURE", keys)
+		self.assertIn("AOS_OBJECT_STORAGE_PATH_STYLE", keys)
+		self.assertIn("AOS_MEDIA_PUBLIC_BASE_URL", keys)
+		self.assertIn("BACKGROUND_REMOVAL_SERVICE_SECRET", keys)
 
 	def test_image_search_internal_boundary_fails_closed_without_secret_or_trusted_hosts(self):
 		env = self._valid_env()

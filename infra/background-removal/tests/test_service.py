@@ -8,6 +8,8 @@ from app.config import Settings
 from app.image_loader import ImageLoadError, load_image_bytes
 from fastapi.testclient import TestClient
 
+AUTH = {"Authorization": "Bearer test-background-removal-secret-0123456789"}
+
 
 class FakeService:
 	def health(self):
@@ -50,11 +52,43 @@ def test_health_does_not_load_a_model(monkeypatch):
 	assert response.json()["processor_loaded"] is False
 
 
+def test_remove_background_requires_internal_bearer_secret(monkeypatch):
+	monkeypatch.setattr(main, "get_service", FakeService)
+	client = TestClient(main.app)
+	missing = client.post(
+		"/remove-background",
+		files={"image": ("test.png", b"synthetic-image", "image/png")},
+	)
+	assert missing.status_code == 401
+	wrong = client.post(
+		"/remove-background",
+		files={"image": ("test.png", b"synthetic-image", "image/png")},
+		headers={"Authorization": "Bearer wrong-secret"},
+	)
+	assert wrong.status_code == 401
+
+
+def test_oversized_request_is_rejected_before_upload_parsing(monkeypatch):
+	monkeypatch.setenv("BACKGROUND_REMOVAL_MAX_IMAGE_BYTES", "1024")
+	main.get_settings.cache_clear()
+	try:
+		response = TestClient(main.app).post(
+			"/remove-background",
+			content=b"not-even-multipart",
+			headers={**AUTH, "Content-Length": str(2 * 1024 * 1024)},
+		)
+		assert response.status_code == 413
+		assert response.json()["code"] == "FILE_TOO_LARGE"
+	finally:
+		main.get_settings.cache_clear()
+
+
 def test_valid_upload_uses_processor_boundary(monkeypatch):
 	monkeypatch.setattr(main, "get_service", FakeService)
 	response = TestClient(main.app).post(
 		"/remove-background",
 		files={"image": ("test.png", b"synthetic-image", "image/png")},
+		headers=AUTH,
 	)
 	assert response.status_code == 200
 	assert response.content == b"synthetic-png"
@@ -70,6 +104,7 @@ def test_processor_failure_is_returned_as_a_safe_service_error(monkeypatch):
 	response = TestClient(main.app).post(
 		"/remove-background",
 		files={"image": ("test.png", b"synthetic-image", "image/png")},
+		headers=AUTH,
 	)
 	assert response.status_code == 503
 	assert response.json()["code"] == "BACKGROUND_REMOVAL_UNAVAILABLE"
@@ -78,7 +113,7 @@ def test_processor_failure_is_returned_as_a_safe_service_error(monkeypatch):
 def test_missing_and_invalid_uploads_are_rejected(monkeypatch):
 	monkeypatch.setattr(main, "get_service", FakeService)
 	client = TestClient(main.app)
-	missing = client.post("/remove-background")
+	missing = client.post("/remove-background", headers=AUTH)
 	assert missing.status_code == 422
 	assert missing.json()["error"] == "VALIDATION_ERROR"
 	assert isinstance(missing.json()["data"]["fields"], list)
@@ -86,6 +121,7 @@ def test_missing_and_invalid_uploads_are_rejected(monkeypatch):
 	wrong_type = client.post(
 		"/remove-background",
 		files={"image": ("test.txt", b"text", "text/plain")},
+		headers=AUTH,
 	)
 	assert wrong_type.status_code == 400
 

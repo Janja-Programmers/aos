@@ -16,7 +16,7 @@ from urllib.parse import urljoin, urlparse
 import frappe
 import requests
 
-from aos.services.storage.minio_storage import MinioStorage
+from aos.services.storage.s3_compatible import S3CompatibleStorage
 from aos.utils import aos_config
 from aos.utils.production_config import validate_production_config
 
@@ -359,7 +359,7 @@ def _check_storage(
 			raise RuntimeError("Storage readiness failed")
 		_check(
 			checks,
-			name="minio_storage",
+			name="object_storage",
 			category="storage",
 			status="healthy",
 			message="Storage service, configured buckets, and public URL are ready.",
@@ -372,7 +372,7 @@ def _check_storage(
 	except Exception:
 		_check(
 			checks,
-			name="minio_storage",
+			name="object_storage",
 			category="storage",
 			status="unhealthy",
 			message="Storage service or configured media buckets are not ready.",
@@ -477,7 +477,7 @@ def validate_operational_health(
 	checks: list[dict[str, Any]] = []
 	timeout = max(1, min(int(timeout_seconds or 3), 15))
 	http_get = http_get or requests.get
-	storage_factory = storage_factory or MinioStorage
+	storage_factory = storage_factory or S3CompatibleStorage
 
 	_check_production_config(checks, env=env, site_config=site_config)
 	_check_storage(checks, storage_factory=storage_factory)

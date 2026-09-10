@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from aos.api.media.errors import media_error_response
 from aos.api.shared.auth import require_authenticated_user
-from aos.api.shared.rate_limit import rate_limit
+from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import fail, ok
 from aos.services.media.media_service import MediaService, serialize_media_doc
 
@@ -15,7 +15,7 @@ def delete_media_impl(**kwargs):
     if err:
         return err
     rl = rate_limit(
-        key=f"aos:media:delete:user:{user}", ttl_seconds=60,
+        key=rate_limit_key("media", "delete", "user", user), ttl_seconds=60,
         limit=DELETE_MEDIA_LIMIT_PER_MINUTE_PER_USER,
         message="Too many delete requests. Please try again shortly.",
     )
@@ -28,6 +28,6 @@ def delete_media_impl(**kwargs):
         return fail("Forced deletion is not available to clients.", error="MEDIA_ACCESS_DENIED")
     try:
         doc = MediaService().delete_media(media_id=media_id, user=user)
-        return ok("Media deleted.", data={"media": serialize_media_doc(doc)})
+        return ok("Media deletion scheduled.", data={"media": serialize_media_doc(doc)})
     except Exception as exc:
         return media_error_response(exc, log_title="AOS Media Delete Failed")

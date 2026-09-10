@@ -44,9 +44,9 @@ class AOSMediaObject(Document):
         self.content_type = str(self.content_type or "").split(";", 1)[0].strip().lower()
         for field in (
             "etag", "expected_checksum", "checksum", "purpose", "visibility", "status",
-            "attached_doctype", "attached_name", "attached_field", "public_url",
+            "attached_doctype", "attached_name", "attached_field",
             "idempotency_key_hash", "failure_code", "failure_reason", "last_storage_error",
-            "processing_error", "derived_from_media", "replaced_by_media",
+            "processing_error", "derived_from_media", "processing_job", "replaced_by_media",
             "upload_mode", "multipart_upload_id",
         ):
             setattr(self, field, str(getattr(self, field, "") or "").strip())
@@ -76,9 +76,6 @@ class AOSMediaObject(Document):
             frappe.throw("Invalid media purpose")
         if self.visibility != policy.visibility:
             frappe.throw("Media visibility does not match purpose policy")
-        if self.visibility == "Private" and self.public_url:
-            frappe.throw("Private media cannot persist a public URL")
-
         content_type = normalize_content_type(self.content_type)
         if content_type and content_type not in policy.allowed_content_types:
             frappe.throw("Media content type does not match purpose policy")
@@ -168,3 +165,29 @@ class AOSMediaObject(Document):
             frappe.throw("Media cannot derive from itself")
         if self.replaced_by_media and self.replaced_by_media == self.name:
             frappe.throw("Media cannot replace itself")
+
+        if self.derived_from_media:
+            source_owner = frappe.db.get_value(
+                "AOS Media Object", self.derived_from_media, "owner_user"
+            )
+            if not source_owner or source_owner != self.owner_user:
+                frappe.throw("Derived media must have the same owner as its source")
+
+        if self.processing_job:
+            job = frappe.db.get_value(
+                "AOS Media Processing Job",
+                self.processing_job,
+                ["owner_user", "source_media"],
+                as_dict=True,
+            )
+            if not job or job.owner_user != self.owner_user:
+                frappe.throw("Media processing job owner does not match media owner")
+            if self.derived_from_media and job.source_media != self.derived_from_media:
+                frappe.throw("Media processing job source does not match derivative source")
+
+        if self.replaced_by_media:
+            replacement_owner = frappe.db.get_value(
+                "AOS Media Object", self.replaced_by_media, "owner_user"
+            )
+            if not replacement_owner or replacement_owner != self.owner_user:
+                frappe.throw("Replacement media must have the same owner")

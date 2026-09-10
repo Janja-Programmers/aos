@@ -5,7 +5,37 @@ from __future__ import annotations
 import frappe
 
 from aos.services.media.media_service import MediaService
+from aos.services.media.background_processing import MediaProcessingService
 from aos.utils.aos_config import get_env_int
+
+
+def finalize_media_deletion(media_id: str) -> str:
+    """Finalize one committed Delete Pending row from the Media worker queue."""
+    try:
+        if not frappe.db.exists("DocType", "AOS Media Object"):
+            return "missing_doctype"
+        doc = MediaService().finalize_delete_as_system(media_id=media_id)
+        return str(getattr(doc, "status", ""))
+    except Exception:
+        # Raising lets the queue record the failure; the durable Delete Pending
+        # state remains eligible for the scheduled reconciliation pass.
+        frappe.log_error(frappe.get_traceback(), "AOS Media Deletion Job Failed")
+        raise
+
+
+def process_media_processing_job(media_processing_job_id: str) -> str:
+    """Execute one durable Media processing job on the long Frappe queue."""
+    return MediaProcessingService().process(job_id=media_processing_job_id)
+
+
+def recover_media_processing_jobs() -> int:
+    """Re-enqueue due/retryable/stale Media processing jobs in bounded batches."""
+    limit = get_env_int("AOS_MEDIA_PROCESSING_RECOVERY_LIMIT", 100, min_value=10, max_value=500)
+    try:
+        return MediaProcessingService().recover_due_jobs(limit=limit)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "AOS Media Processing Recovery Failed")
+        return 0
 
 
 def cleanup_media_objects() -> int:

@@ -726,6 +726,12 @@
     "rationale": "Authoritative resumable-upload status polling; protected by a per-user application rate limit."
   },
   {
+    "endpoint": "aos.api.v1.media.__init__.processing_status",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Owner-scoped asynchronous Media processing status polling; additionally protected by a per-user application rate limit."
+  },
+  {
     "endpoint": "aos.api.v1.media.__init__.remove_background",
     "access": "authenticated",
     "policy": "baseline_authenticated",

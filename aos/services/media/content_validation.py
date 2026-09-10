@@ -7,14 +7,16 @@ import io
 import os
 import re
 import unicodedata
-from collections.abc import Iterable
+import warnings
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import PurePath
 
 try:
-    from PIL import Image, UnidentifiedImageError
+    from PIL import Image, ImageOps, UnidentifiedImageError
 except Exception:  # pragma: no cover - Frappe runtime installs Pillow through dependencies
     Image = None
+    ImageOps = None
 
     class UnidentifiedImageError(Exception):
         pass
@@ -187,6 +189,105 @@ def validate_magic_type(
     return detected
 
 
+
+def extract_iso_bmff_duration_seconds(
+    *,
+    read_range: Callable[[int, int], bytes],
+    size_bytes: int,
+    max_duration_seconds: float | None = None,
+) -> float:
+    """Read authoritative MP4/MOV container duration with bounded range I/O.
+
+    The parser intentionally understands only the ISO-BMFF box structure needed
+    for ``moov/mvhd``. It does not invoke a shell, trust client metadata, or load
+    a large video into worker memory. Malformed/fragment-only containers without
+    an authoritative movie-header duration are rejected at the Media boundary.
+    """
+
+    total = int(size_bytes or 0)
+    if total < 16:
+        raise MediaContentValidationError("Video container is malformed.", code="INVALID_FILE")
+
+    def read_exact(offset: int, length: int) -> bytes:
+        if offset < 0 or length <= 0 or offset + length > total:
+            raise MediaContentValidationError("Video container is malformed.", code="INVALID_FILE")
+        data = bytes(read_range(offset, length) or b"")
+        if len(data) != length:
+            raise MediaContentValidationError("Video container is incomplete.", code="UPLOAD_INCOMPLETE")
+        return data
+
+    def box_header(offset: int, parent_end: int) -> tuple[bytes, int, int]:
+        if parent_end - offset < 8:
+            raise MediaContentValidationError("Video container is malformed.", code="INVALID_FILE")
+        header = read_exact(offset, 8)
+        box_size = int.from_bytes(header[:4], "big")
+        box_type = header[4:8]
+        header_size = 8
+        if box_size == 1:
+            if parent_end - offset < 16:
+                raise MediaContentValidationError("Video container is malformed.", code="INVALID_FILE")
+            box_size = int.from_bytes(read_exact(offset + 8, 8), "big")
+            header_size = 16
+        elif box_size == 0:
+            box_size = parent_end - offset
+        if box_size < header_size or offset + box_size > parent_end:
+            raise MediaContentValidationError("Video container is malformed.", code="INVALID_FILE")
+        return box_type, int(box_size), header_size
+
+    moov_start = None
+    moov_end = None
+    offset = 0
+    for _ in range(128):
+        if offset >= total:
+            break
+        box_type, box_size, header_size = box_header(offset, total)
+        if box_type == b"moov":
+            moov_start = offset + header_size
+            moov_end = offset + box_size
+            break
+        offset += box_size
+    if moov_start is None or moov_end is None:
+        raise MediaContentValidationError("Video metadata could not be verified.", code="INVALID_FILE")
+
+    offset = moov_start
+    for _ in range(256):
+        if offset >= moov_end:
+            break
+        box_type, box_size, header_size = box_header(offset, moov_end)
+        if box_type != b"mvhd":
+            offset += box_size
+            continue
+        payload_offset = offset + header_size
+        payload_size = box_size - header_size
+        if payload_size < 20:
+            raise MediaContentValidationError("Video metadata is malformed.", code="INVALID_FILE")
+        version_and_flags = read_exact(payload_offset, 4)
+        version = version_and_flags[0]
+        if version == 0:
+            if payload_size < 20:
+                raise MediaContentValidationError("Video metadata is malformed.", code="INVALID_FILE")
+            values = read_exact(payload_offset + 12, 8)
+            timescale = int.from_bytes(values[:4], "big")
+            duration_units = int.from_bytes(values[4:8], "big")
+        elif version == 1:
+            if payload_size < 32:
+                raise MediaContentValidationError("Video metadata is malformed.", code="INVALID_FILE")
+            values = read_exact(payload_offset + 20, 12)
+            timescale = int.from_bytes(values[:4], "big")
+            duration_units = int.from_bytes(values[4:12], "big")
+        else:
+            raise MediaContentValidationError("Video metadata version is unsupported.", code="INVALID_FILE")
+        if timescale <= 0 or duration_units <= 0:
+            raise MediaContentValidationError("Video duration is invalid.", code="INVALID_FILE")
+        duration = float(duration_units) / float(timescale)
+        if duration <= 0 or duration > 24 * 60 * 60:
+            raise MediaContentValidationError("Video duration is invalid.", code="INVALID_FILE")
+        if max_duration_seconds and duration > float(max_duration_seconds) + 0.05:
+            raise MediaContentValidationError("Video duration exceeds the allowed limit.", code="DURATION_EXCEEDED")
+        return duration
+
+    raise MediaContentValidationError("Video duration metadata is missing.", code="INVALID_FILE")
+
 def validate_image_bytes(
     payload: bytes,
     *,
@@ -204,18 +305,38 @@ def validate_image_bytes(
     if not payload:
         raise MediaContentValidationError("Image is empty.", code="INVALID_FILE")
 
-    previous_limit = Image.MAX_IMAGE_PIXELS
-    Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
     try:
-        image = Image.open(io.BytesIO(payload))
-        image.verify()
-        image = Image.open(io.BytesIO(payload))
-        width, height = image.size
-        format_name = str(image.format or "").upper()
-    except (UnidentifiedImageError, OSError, SyntaxError, ValueError, Image.DecompressionBombError) as exc:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            image = Image.open(io.BytesIO(payload))
+            width, height = image.size
+            # Check our hard decoded-pixel budget before verification or any full
+            # pixel decode. Avoid mutating Pillow's process-global MAX_IMAGE_PIXELS
+            # so concurrent Frappe requests cannot race on a security setting.
+            if width <= 0 or height <= 0 or width * height > MAX_IMAGE_PIXELS:
+                raise MediaContentValidationError("Image dimensions are too large.", code="INVALID_FILE")
+            if bool(getattr(image, "is_animated", False)):
+                raise MediaContentValidationError(
+                    "Animated images are not supported.",
+                    code="INVALID_FILE",
+                )
+            format_name = str(image.format or "").upper()
+            image.verify()
+            image = Image.open(io.BytesIO(payload))
+            if ImageOps is not None:
+                image = ImageOps.exif_transpose(image)
+            width, height = image.size
+    except MediaContentValidationError:
+        raise
+    except (
+        UnidentifiedImageError,
+        OSError,
+        SyntaxError,
+        ValueError,
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+    ) as exc:
         raise MediaContentValidationError("Image content is malformed.", code="INVALID_FILE") from exc
-    finally:
-        Image.MAX_IMAGE_PIXELS = previous_limit
 
     format_types = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
     detected = format_types.get(format_name)
@@ -223,11 +344,90 @@ def validate_image_bytes(
         raise MediaContentValidationError("Image format does not match its declared type.", code="INVALID_FILE")
     if width <= 0 or height <= 0:
         raise MediaContentValidationError("Image dimensions are invalid.", code="INVALID_FILE")
+    if width * height > MAX_IMAGE_PIXELS:
+        raise MediaContentValidationError("Image dimensions are too large.", code="INVALID_FILE")
     if (min_width and width < min_width) or (min_height and height < min_height):
         raise MediaContentValidationError("Image dimensions are too small.", code="INVALID_FILE")
     if (max_width and width > max_width) or (max_height and height > max_height):
         raise MediaContentValidationError("Image dimensions are too large.", code="INVALID_FILE")
     return int(width), int(height)
+
+
+def sanitize_public_image_bytes(
+    payload: bytes,
+    *,
+    expected_content_type: str,
+    min_width: int | None = None,
+    min_height: int | None = None,
+    max_width: int | None = None,
+    max_height: int | None = None,
+) -> tuple[bytes, int, int]:
+    """Re-encode a public marketplace image without EXIF/GPS/user metadata.
+
+    Public uploads are intentionally canonicalized before entering the public
+    bucket. Re-encoding also applies EXIF orientation to pixels, so callers can
+    safely expose immutable CDN URLs without retaining GPS/camera metadata or
+    browser-interpretable ancillary payloads.
+    """
+    width, height = validate_image_bytes(
+        payload,
+        expected_content_type=expected_content_type,
+        min_width=min_width,
+        min_height=min_height,
+        max_width=max_width,
+        max_height=max_height,
+    )
+    if Image is None:
+        raise MediaContentValidationError("Image processing is unavailable.", code="INVALID_FILE")
+
+    content_type = normalize_content_type(expected_content_type)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            image = Image.open(io.BytesIO(payload))
+            if bool(getattr(image, "is_animated", False)):
+                raise MediaContentValidationError("Animated images are not supported.", code="INVALID_FILE")
+            if ImageOps is not None:
+                image = ImageOps.exif_transpose(image)
+            image.load()
+            output = io.BytesIO()
+            if content_type == "image/jpeg":
+                if image.mode not in {"RGB", "L"}:
+                    image = image.convert("RGB")
+                image.save(
+                    output,
+                    format="JPEG",
+                    quality=90,
+                    optimize=True,
+                    progressive=True,
+                )
+            elif content_type == "image/png":
+                if image.mode not in {"1", "L", "LA", "P", "RGB", "RGBA"}:
+                    image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
+                image.save(output, format="PNG", optimize=True)
+            elif content_type == "image/webp":
+                if image.mode not in {"RGB", "RGBA"}:
+                    image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
+                image.save(output, format="WEBP", quality=88, method=4)
+            else:
+                raise MediaContentValidationError("Unsupported public image type.", code="UNSUPPORTED_MEDIA_TYPE")
+            sanitized = output.getvalue()
+    except MediaContentValidationError:
+        raise
+    except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+        raise MediaContentValidationError("Image could not be safely normalized.", code="INVALID_FILE") from exc
+
+    clean_width, clean_height = validate_image_bytes(
+        sanitized,
+        expected_content_type=content_type,
+        min_width=min_width,
+        min_height=min_height,
+        max_width=max_width,
+        max_height=max_height,
+    )
+    if (clean_width, clean_height) != (width, height):
+        raise MediaContentValidationError("Image dimensions changed unexpectedly.", code="INVALID_FILE")
+    return sanitized, clean_width, clean_height
 
 
 def sha256_chunks(

@@ -12,6 +12,7 @@ from frappe.query_builder.functions import Count
 from aos.services.accounts.identity import profile_name_for_user
 from frappe.tests.utils import FrappeTestCase
 
+from aos.services.media.content_validation import sanitize_public_image_bytes
 from aos.services.media.media_service import (
     MediaConflictError,
     MediaNotFoundError,
@@ -29,6 +30,26 @@ from aos.services.storage.base import (
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 PNG_64 = (Path(__file__).parent / "fixtures" / "valid_64x64.png").read_bytes()
+
+
+def _mp4_box(box_type: bytes, payload: bytes) -> bytes:
+    return (8 + len(payload)).to_bytes(4, "big") + box_type + payload
+
+
+def make_mp4_payload(*, duration_seconds: int, minimum_size: int = 4096) -> bytes:
+    ftyp = _mp4_box(b"ftyp", b"isom" + b"\x00" * 12)
+    mvhd = _mp4_box(
+        b"mvhd",
+        b"\x00\x00\x00\x00"
+        + b"\x00" * 8
+        + (1000).to_bytes(4, "big")
+        + int(duration_seconds * 1000).to_bytes(4, "big")
+        + b"\x00" * 12,
+    )
+    moov = _mp4_box(b"moov", mvhd)
+    filler_size = max(0, int(minimum_size) - len(ftyp) - len(moov) - 8)
+    mdat = _mp4_box(b"mdat", b"v" * filler_size)
+    return ftyp + mdat + moov
 
 
 @dataclass
@@ -278,7 +299,7 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
 
     def test_service_construction_does_not_require_storage_configuration(self):
         with patch(
-            "aos.services.media.media_service.MinioStorage",
+            "aos.services.media.media_service.S3CompatibleStorage",
             side_effect=RuntimeError("storage configuration should be lazy"),
         ) as storage_factory:
             service = MediaService()
@@ -299,11 +320,22 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
         confirmed = self.service.confirm_upload(user=self.user, media_id=doc.name)
         duplicate = self.service.confirm_upload(user=self.user, media_id=doc.name)
 
+        canonical, _, _ = sanitize_public_image_bytes(
+            PNG_64, expected_content_type="image/png"
+        )
         self.assertEqual(confirmed.status, "Uploaded")
         self.assertEqual(duplicate.name, confirmed.name)
-        self.assertEqual(self.storage.copy_calls, 1)
+        # Public images are re-encoded into their immutable canonical key rather
+        # than byte-copied from staging so EXIF/GPS/ancillary metadata cannot be
+        # exposed through the CDN.
+        self.assertEqual(self.storage.copy_calls, 0)
         self.assertTrue(self.storage.object_exists(confirmed.bucket, confirmed.object_key))
-        self.assertEqual(confirmed.checksum, hashlib.sha256(PNG_64).hexdigest())
+        self.assertEqual(
+            self.storage.get_bytes(confirmed.bucket, confirmed.object_key), canonical
+        )
+        self.assertEqual(confirmed.expected_size_bytes, len(PNG_64))
+        self.assertEqual(confirmed.size_bytes, len(canonical))
+        self.assertEqual(confirmed.checksum, hashlib.sha256(canonical).hexdigest())
         self.assertEqual((confirmed.width, confirmed.height), (64, 64))
 
     def test_init_idempotency_reuses_one_initialized_media_record(self):
@@ -497,7 +529,7 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
         self.assertFalse(status["complete_ready"])
 
     def test_multipart_completion_validates_parts_assembles_and_confirms(self):
-        payload = b"\x00\x00\x00\x18ftypmp42" + (b"v" * ((16 * 1024 * 1024) + 100))
+        payload = make_mp4_payload(duration_seconds=540, minimum_size=(16 * 1024 * 1024) + 100)
         doc = self.service.init_upload(
             user=self.user,
             purpose="short_video_raw",
@@ -593,7 +625,7 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
         self.assertNotIn(upload_id, self.storage.multipart_uploads)
 
     def test_multipart_complete_heals_when_storage_completed_before_frappe_commit(self):
-        payload = b"\x00\x00\x00\x18ftypmp42" + (b"r" * ((16 * 1024 * 1024) + 100))
+        payload = make_mp4_payload(duration_seconds=540, minimum_size=(16 * 1024 * 1024) + 100)
         doc = self.service.init_upload(
             user=self.user,
             purpose="short_video_raw",
@@ -629,7 +661,7 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(recovered.status, "Uploaded")
 
     def test_multipart_completion_heals_ambiguous_storage_completion_response(self):
-        payload = b"\x00\x00\x00\x18ftypmp42" + (b"a" * ((16 * 1024 * 1024) + 100))
+        payload = make_mp4_payload(duration_seconds=540, minimum_size=(16 * 1024 * 1024) + 100)
         doc = self.service.init_upload(
             user=self.user,
             purpose="short_video_raw",
@@ -653,7 +685,7 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(self.storage.multipart_complete_calls, 1)
 
     def test_short_video_without_client_checksum_does_not_restream_whole_object_on_confirm(self):
-        payload = b"\x00\x00\x00\x18ftypmp42" + (b"x" * 4096)
+        payload = make_mp4_payload(duration_seconds=600, minimum_size=4096)
         doc = self.service.init_upload(
             user=self.user,
             purpose="short_video_raw",
@@ -691,6 +723,41 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
         doc.reload()
         self.assertEqual(doc.status, "Failed")
 
+    def test_confirm_rejects_object_store_content_type_mismatch(self):
+        doc = self._init_png()
+        self.storage.put_bytes(
+            bucket=doc.upload_bucket,
+            object_key=doc.upload_object_key,
+            data=PNG_64,
+            content_type="image/jpeg",
+        )
+        with self.assertRaises(MediaValidationError) as exc:
+            self.service.confirm_upload(user=self.user, media_id=doc.name)
+        self.assertEqual(exc.exception.code, "CONTENT_TYPE_MISMATCH")
+        doc.reload()
+        self.assertEqual(doc.status, "Failed")
+
+    def test_confirm_uses_authoritative_video_duration_not_client_value(self):
+        payload = make_mp4_payload(duration_seconds=12, minimum_size=4096)
+        doc = self.service.init_upload(
+            user=self.user,
+            purpose="short_video_raw",
+            filename="short.mp4",
+            content_type="video/mp4",
+            size_bytes=len(payload),
+            duration_seconds=599,
+        )[0]
+        self.storage.put_bytes(
+            bucket=doc.upload_bucket,
+            object_key=doc.upload_object_key,
+            data=payload,
+            content_type="video/mp4",
+        )
+
+        confirmed = self.service.confirm_upload(user=self.user, media_id=doc.name)
+
+        self.assertEqual(float(confirmed.duration_seconds), 12.0)
+
     def test_confirm_rejects_checksum_mismatch(self):
         doc = self._init_png(checksum="0" * 64)
         self._upload_staging(doc)
@@ -718,7 +785,7 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
         self._upload_staging(doc, pdf)
         confirmed = self.service.confirm_upload(user=self.user, media_id=doc.name)
         self.assertEqual(confirmed.visibility, "Private")
-        self.assertFalse(confirmed.public_url)
+        self.assertFalse(hasattr(confirmed, "public_url"))
         self.assertIn(
             "download.example.test",
             self.service.get_url(media_id=confirmed.name, user=self.user),
@@ -784,20 +851,27 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(stored.status, "Deleted")
         self.assertTrue(stored.deleted_at)
 
-    def test_storage_delete_failure_remains_retriable_and_second_delete_succeeds(self):
+    def test_storage_delete_failure_remains_retriable_and_second_worker_attempt_succeeds(self):
         doc = self._init_png()
         self._upload_staging(doc)
         confirmed = self.service.confirm_upload(user=self.user, media_id=doc.name)
+        delete_calls_before_request = self.storage.delete_calls
+
+        with patch.object(self.service, "_enqueue_delete_after_commit") as enqueue:
+            pending = self.service.delete_media(media_id=confirmed.name, user=self.user)
+        self.assertEqual(pending.status, "Delete Pending")
+        self.assertEqual(self.storage.delete_calls, delete_calls_before_request)
+        enqueue.assert_called_once_with(confirmed.name)
 
         self.storage.fail_delete = True
         with self.assertRaises(MediaStorageError):
-            self.service.delete_media(media_id=confirmed.name, user=self.user)
+            self.service.finalize_delete_as_system(media_id=confirmed.name)
         confirmed.reload()
         self.assertEqual(confirmed.status, "Delete Pending")
         self.assertGreaterEqual(int(confirmed.retry_count or 0), 1)
 
         self.storage.fail_delete = False
-        deleted = self.service.delete_media(media_id=confirmed.name, user=self.user)
+        deleted = self.service.finalize_delete_as_system(media_id=confirmed.name)
         self.assertEqual(deleted.status, "Deleted")
         duplicate = self.service.delete_media(media_id=confirmed.name, user=self.user)
         self.assertEqual(duplicate.status, "Deleted")

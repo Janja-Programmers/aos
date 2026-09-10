@@ -75,10 +75,15 @@ class Settings:
 		self.device = _get_str("BACKGROUND_REMOVAL_DEVICE", "cpu")
 		self.model_path = _get_optional_str("BACKGROUND_REMOVAL_MODEL_PATH")
 
+		self.service_secret = _get_optional_str("BACKGROUND_REMOVAL_SERVICE_SECRET")
 		self.max_image_bytes = _get_int(
 			"BACKGROUND_REMOVAL_MAX_IMAGE_BYTES",
 			10 * 1024 * 1024,
 			minimum=1,
+		)
+		self.max_image_pixels = min(
+			_get_int("BACKGROUND_REMOVAL_MAX_IMAGE_PIXELS", 16_000_000, minimum=1),
+			40_000_000,
 		)
 		self.request_timeout_seconds = _get_float(
 			"BACKGROUND_REMOVAL_REQUEST_TIMEOUT_SECONDS",
@@ -98,7 +103,9 @@ class Settings:
 			"model_name": self.model_name,
 			"device": self.device,
 			"model_path_configured": bool(self.model_path),
+			"service_auth_configured": bool(self.service_secret),
 			"max_image_bytes": self.max_image_bytes,
+			"max_image_pixels": self.max_image_pixels,
 			"request_timeout_seconds": self.request_timeout_seconds,
 			"output_format": self.output_format,
 		}

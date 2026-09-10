@@ -152,8 +152,8 @@ def clean_url(value: str | None, *, default: str | None = None) -> str:
     return url.rstrip("/")
 
 
-def clean_endpoint(value: str | None) -> str:
-    """Normalize a MinIO SDK endpoint into host[:port]."""
+def clean_endpoint(value: str | None, *, setting_name: str = "MINIO_ENDPOINT") -> str:
+    """Normalize an S3-compatible SDK endpoint into host[:port]."""
     raw = _clean(value) or ""
     raw = raw.rstrip("/")
 
@@ -166,17 +166,101 @@ def clean_endpoint(value: str | None) -> str:
         path = (parsed.path or "").strip("/")
         if path or parsed.params or parsed.query or parsed.fragment:
             raise RuntimeError(
-                "Invalid MINIO_ENDPOINT. Use host[:port] only; put public paths "
-                "in MINIO_PUBLIC_BASE_URL if needed."
+                f"Invalid {setting_name}. Use host[:port] only; configure public "
+                "delivery and presign origins separately."
             )
         return endpoint
 
     if "/" in raw:
         raise RuntimeError(
-            "Invalid MINIO_ENDPOINT. Use host[:port] only, without bucket or path."
+            f"Invalid {setting_name}. Use host[:port] only, without bucket or path."
         )
 
     return raw
+
+
+@dataclass(frozen=True)
+class ObjectStorageConfig:
+    """Provider-neutral S3-compatible storage configuration for Media."""
+
+    endpoint: str
+    access_key: str = field(repr=False)
+    secret_key: str = field(repr=False)
+    secure: bool
+    presign_endpoint: str
+    public_base_url: str
+    public_bucket: str
+    private_bucket: str
+    region: str | None
+    path_style: bool
+    manage_buckets: bool
+    connect_timeout_seconds: int
+    read_timeout_seconds: int
+    max_retries: int
+    retry_backoff_ms: int
+    download_expiry_minutes: int
+
+
+def get_object_storage_config() -> ObjectStorageConfig:
+    """Resolve canonical Media object-storage configuration.
+
+    Media intentionally uses only provider-neutral AOS_OBJECT_STORAGE_* values.
+    MinIO container credentials remain separate deployment concerns and legacy
+    non-Media consumers may continue to use get_minio_config until hardened.
+    """
+
+    endpoint = clean_endpoint(
+        get_first_env(
+            "AOS_OBJECT_STORAGE_ENDPOINT",
+            default="minio:9000",
+        ),
+        setting_name="AOS_OBJECT_STORAGE_ENDPOINT",
+    )
+    access_key = get_required_env("AOS_OBJECT_STORAGE_ACCESS_KEY")
+    secret_key = get_required_env("AOS_OBJECT_STORAGE_SECRET_KEY")
+    secure = get_env_bool("AOS_OBJECT_STORAGE_SECURE", False)
+    presign_endpoint = clean_url(
+        get_first_env(
+            "AOS_OBJECT_STORAGE_PRESIGN_ENDPOINT",
+            default=(f"https://{endpoint}" if secure else f"http://{endpoint}"),
+        )
+    )
+    public_base_url = clean_url(get_first_env("AOS_MEDIA_PUBLIC_BASE_URL"))
+    public_bucket = (
+        get_first_env("AOS_OBJECT_STORAGE_PUBLIC_BUCKET", default="aos-public")
+        or "aos-public"
+    ).strip().strip("/")
+    private_bucket = (
+        get_first_env("AOS_OBJECT_STORAGE_PRIVATE_BUCKET", default="aos-private")
+        or "aos-private"
+    ).strip().strip("/")
+    if public_bucket == private_bucket:
+        raise RuntimeError("Public and private object-storage buckets must be different")
+
+    return ObjectStorageConfig(
+        endpoint=endpoint,
+        access_key=access_key,
+        secret_key=secret_key,
+        secure=secure,
+        presign_endpoint=presign_endpoint,
+        public_base_url=public_base_url,
+        public_bucket=public_bucket,
+        private_bucket=private_bucket,
+        region=get_first_env("AOS_OBJECT_STORAGE_REGION"),
+        path_style=get_env_bool("AOS_OBJECT_STORAGE_PATH_STYLE", True),
+        manage_buckets=get_env_bool("AOS_OBJECT_STORAGE_MANAGE_BUCKETS", False),
+        connect_timeout_seconds=get_env_int(
+            "AOS_STORAGE_CONNECT_TIMEOUT_SECONDS", 3, min_value=1, max_value=30
+        ),
+        read_timeout_seconds=get_env_int(
+            "AOS_STORAGE_READ_TIMEOUT_SECONDS", 15, min_value=1, max_value=300
+        ),
+        max_retries=get_env_int("AOS_STORAGE_MAX_RETRIES", 2, min_value=0, max_value=5),
+        retry_backoff_ms=get_env_int(
+            "AOS_STORAGE_RETRY_BACKOFF_MS", 200, min_value=0, max_value=5000
+        ),
+        download_expiry_minutes=get_media_download_expiry_minutes(),
+    )
 
 
 @dataclass(frozen=True)
@@ -338,6 +422,11 @@ def get_background_removal_service_url() -> str:
         ),
         default="http://127.0.0.1:8120",
     )
+
+def get_background_removal_service_secret() -> str:
+    """Return the internal processor bearer secret from deployment config."""
+    return get_required_env("BACKGROUND_REMOVAL_SERVICE_SECRET")
+
 
 
 def get_translation_service_url() -> str:

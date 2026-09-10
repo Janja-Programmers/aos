@@ -135,7 +135,7 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
             patch("aos.api.ads.create.rate_limit", return_value=None),
             patch("aos.api.ads.create.validate_ad_media_for_use", return_value=(image_media, None)),
             patch("aos.api.ads.create.attach_ad_media", return_value=(image_media, None)),
-            patch("aos.api.ads.create.get_media_public_url", return_value=image_media.public_url),
+            patch("aos.api.ads.create.get_media_public_url", return_value=f"https://cdn.example.test/{image_media.name}.jpg"),
             patch("aos.api.ads.create.enqueue_ad_moderation", return_value=SimpleNamespace(name="MOD-TEST", status="Queued")),
             patch("aos.api.ads.create.record_ad_posted_activity"),
         ):

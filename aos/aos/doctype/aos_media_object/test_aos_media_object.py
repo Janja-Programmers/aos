@@ -71,18 +71,11 @@ class TestAOSMediaObject(FrappeTestCase):
         self.assertEqual(doc.visibility, "Public")
         self.assertEqual(doc.status, "Uploaded")
 
-    def test_private_media_rejects_persisted_public_url(self):
-        doc = self._new_media(
-            purpose="verification_document",
-            visibility="Private",
-            bucket="aos-private",
-            object_key=f"verification/documents/test/{uuid.uuid4().hex}.pdf",
-            original_filename="identity.pdf",
-            content_type="application/pdf",
-            public_url="https://files.example.test/aos-private/identity.pdf",
-        )
-        with self.assertRaises(frappe.ValidationError):
-            doc.insert(ignore_permissions=True)
+    def test_media_schema_has_no_persisted_public_url(self):
+        self.assertFalse(frappe.get_meta("AOS Media Object").has_field("public_url"))
+
+    def test_media_is_not_indexed_for_web_search(self):
+        self.assertFalse(bool(frappe.get_meta("AOS Media Object").index_web_pages_for_search))
 
     def test_storage_identity_rejects_traversal(self):
         doc = self._new_media(object_key="profiles/images/../secret.png")
