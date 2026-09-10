@@ -11,6 +11,8 @@ from aos.services.media.background_processing import (
     serialize_processing_job,
 )
 
+from .validators import reject_unknown_fields
+
 from .constants import (
     BACKGROUND_PROCESSING_STATUS_LIMIT_PER_MINUTE_PER_USER,
     REMOVE_BACKGROUND_LIMIT_PER_MINUTE_PER_USER,
@@ -30,16 +32,14 @@ def remove_background_impl(**kwargs):
     )
     if rl:
         return rl
+    invalid = reject_unknown_fields(kwargs, allowed={"media_id", "result_purpose"})
+    if invalid:
+        return invalid
 
-    media_id = str(kwargs.get("media_id") or kwargs.get("id") or "").strip()
+    media_id = str(kwargs.get("media_id") or "").strip()
     if not media_id:
         return fail("Media id is required.", error="VALIDATION_ERROR")
-    result_purpose = str(
-        kwargs.get("result_purpose")
-        or kwargs.get("output_purpose")
-        or kwargs.get("purpose")
-        or ""
-    ).strip() or None
+    result_purpose = str(kwargs.get("result_purpose") or "").strip() or None
 
     try:
         service = MediaProcessingService()
@@ -69,7 +69,10 @@ def processing_status_impl(**kwargs):
     )
     if rl:
         return rl
-    job_id = str(kwargs.get("job_id") or kwargs.get("id") or "").strip()
+    invalid = reject_unknown_fields(kwargs, allowed={"job_id"})
+    if invalid:
+        return invalid
+    job_id = str(kwargs.get("job_id") or "").strip()
     if not job_id:
         return fail("Processing job id is required.", error="VALIDATION_ERROR")
     try:

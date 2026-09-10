@@ -18,7 +18,7 @@ import frappe
 from aos.services.catalog.errors import CatalogError
 from aos.services.catalog.service import CatalogService, attribute_key, resolve_pricing
 from aos.services.sellers.identity import public_seller_id_for_name
-from aos.api.ads.media import get_ad_image_url, get_ad_video_url, serialize_ad_media
+from aos.api.ads.media import get_ad_image_url, get_ad_video_url
 
 
 @lru_cache(maxsize=128)

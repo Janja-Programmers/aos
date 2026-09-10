@@ -97,7 +97,6 @@ def remove_background(image: UploadFile = File(...)):
         output_png = get_service().remove_background(
             image_file=image.file,
             filename=image.filename,
-            content_type=image.content_type,
         )
     except Exception as exc:
         return _handle_known_error(exc)

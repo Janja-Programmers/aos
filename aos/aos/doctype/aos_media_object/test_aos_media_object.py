@@ -71,8 +71,11 @@ class TestAOSMediaObject(FrappeTestCase):
         self.assertEqual(doc.visibility, "Public")
         self.assertEqual(doc.status, "Uploaded")
 
-    def test_media_schema_has_no_persisted_public_url(self):
-        self.assertFalse(frappe.get_meta("AOS Media Object").has_field("public_url"))
+    def test_media_schema_persists_object_identity_without_delivery_urls(self):
+        meta = frappe.get_meta("AOS Media Object")
+        fieldnames = {field.fieldname for field in meta.fields}
+        self.assertIn("object_key", fieldnames)
+        self.assertFalse(any(fieldname.endswith("_url") for fieldname in fieldnames))
 
     def test_media_is_not_indexed_for_web_search(self):
         self.assertFalse(bool(frappe.get_meta("AOS Media Object").index_web_pages_for_search))

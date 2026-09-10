@@ -18,9 +18,3 @@ class ReadyResponse(BaseModel):
     ready: bool
     processor_loaded: bool
     config: dict
-
-
-class ErrorResponse(BaseModel):
-    ok: bool = False
-    message: str
-    code: str

@@ -37,12 +37,10 @@ class FakeService:
 
 def test_configuration_defaults_and_bounds(monkeypatch):
 	monkeypatch.setenv("BACKGROUND_REMOVAL_MAX_IMAGE_BYTES", "0")
-	monkeypatch.setenv("BACKGROUND_REMOVAL_REQUEST_TIMEOUT_SECONDS", "0")
-	monkeypatch.setenv("BACKGROUND_REMOVAL_OUTPUT_FORMAT", "jpeg")
+	monkeypatch.setenv("BACKGROUND_REMOVAL_MAX_IMAGE_PIXELS", "999999999")
 	settings = Settings()
 	assert settings.max_image_bytes == 1
-	assert settings.request_timeout_seconds == 1.0
-	assert settings.output_format == "png"
+	assert settings.max_image_pixels == 40_000_000
 
 
 def test_health_does_not_load_a_model(monkeypatch):

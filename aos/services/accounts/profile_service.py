@@ -120,11 +120,10 @@ class AccountProfileService:
                 user_doc = user_doc or frappe.get_doc("User", user)
                 user_doc.user_image = self.media.get_public_url(media_doc.name)
                 if previous_media_id:
-                    self.media.release_media(
+                    self._release_previous_avatar(
                         media_id=previous_media_id,
                         user=user,
-                        attached_doctype=PROFILE_DOCTYPE,
-                        attached_name=profile.name,
+                        profile_name=profile.name,
                         replacement_media_id=media_doc.name,
                     )
                 changed_fields.append("avatar")
@@ -133,11 +132,10 @@ class AccountProfileService:
             profile.set(PROFILE_IMAGE_FIELD, "")
             user_doc = user_doc or frappe.get_doc("User", user)
             user_doc.user_image = ""
-            self.media.release_media(
+            self._release_previous_avatar(
                 media_id=previous_media_id,
                 user=user,
-                attached_doctype=PROFILE_DOCTYPE,
-                attached_name=profile.name,
+                profile_name=profile.name,
             )
             changed_fields.append("avatar")
 
@@ -161,6 +159,38 @@ class AccountProfileService:
         if not row:
             raise AccountNotFoundError("Account profile not found.", code="PROFILE_NOT_FOUND")
         return serialize_private_profile_row(row)
+
+
+    def _release_previous_avatar(
+        self,
+        *,
+        media_id: str,
+        user: str,
+        profile_name: str,
+        replacement_media_id: str | None = None,
+    ) -> None:
+        """Release the previous avatar, tolerating only an already-missing row.
+
+        The locked Profile row is authoritative for the replacement mutation. If
+        its old Media link is already missing, there is nothing left to release;
+        allowing the mutation repairs that stale reference. Every other Media
+        authorization/lifecycle error remains transactional and must propagate.
+        """
+        try:
+            self.media.release_media(
+                media_id=media_id,
+                user=user,
+                attached_doctype=PROFILE_DOCTYPE,
+                attached_name=profile_name,
+                replacement_media_id=replacement_media_id,
+            )
+        except MediaNotFoundError:
+            account_log(
+                "account.avatar.previous_media_missing",
+                user=user,
+                changed_fields={"avatar"},
+                failure_category="stale_media_reference",
+            )
 
     def remove_avatar(self, *, user: str) -> dict[str, Any]:
         return self.update_profile(user=user, payload={"remove_avatar": True})

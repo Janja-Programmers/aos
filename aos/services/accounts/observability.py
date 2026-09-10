@@ -15,6 +15,8 @@ _ALLOWED_EVENTS = {
     "account.preference.updated",
     "account.avatar.replaced",
     "account.avatar.removed",
+    "account.avatar.previous_media_missing",
+    "account.permanent_deletion.media_missing",
     "account.bootstrap.completed",
     "account.bootstrap.failed",
     "account.deletion.requested",

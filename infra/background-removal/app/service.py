@@ -16,7 +16,7 @@ class BackgroundRemovalService:
     def health(self) -> dict:
         return {
             "ok": True,
-            "service": self.settings.service_name,
+            "service": "aos-background-removal",
             "mode": "ai",
             "processor_loaded": self.processor.loaded,
             "config": self.settings.public_dict(),
@@ -26,7 +26,7 @@ class BackgroundRemovalService:
         ready = self.processor.ready()
         return {
             "ok": True,
-            "service": self.settings.service_name,
+            "service": "aos-background-removal",
             "mode": "ai",
             "ready": ready,
             "processor_loaded": self.processor.loaded,
@@ -38,7 +38,6 @@ class BackgroundRemovalService:
         *,
         image_file: BinaryIO,
         filename: str,
-        content_type: str | None = None,
     ) -> bytes:
         source_label = filename or "uploaded image"
         raw = load_image_bytes(

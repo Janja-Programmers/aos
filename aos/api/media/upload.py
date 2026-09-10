@@ -18,7 +18,7 @@ from .constants import (
     MULTIPART_PART_URLS_LIMIT_PER_MINUTE_PER_USER,
     MULTIPART_STATUS_LIMIT_PER_MINUTE_PER_USER,
 )
-from .validators import require_media_id, require_upload_init_payload
+from .validators import reject_unknown_fields, require_media_id, require_upload_init_payload
 
 
 def init_upload_impl(**kwargs):
@@ -32,6 +32,9 @@ def init_upload_impl(**kwargs):
     )
     if rl:
         return rl
+    invalid = reject_unknown_fields(kwargs, allowed={"purpose", "filename", "content_type", "size_bytes", "duration_seconds", "checksum_sha256", "idempotency_key", "upload_mode"})
+    if invalid:
+        return invalid
     payload, err = require_upload_init_payload(kwargs)
     if err:
         return err
@@ -97,7 +100,10 @@ def confirm_upload_impl(**kwargs):
     )
     if rl:
         return rl
-    media_id, err = require_media_id(kwargs.get("media_id") or kwargs.get("id"))
+    invalid = reject_unknown_fields(kwargs, allowed={"media_id"})
+    if invalid:
+        return invalid
+    media_id, err = require_media_id(kwargs.get("media_id"))
     if err:
         return err
     try:
@@ -122,7 +128,10 @@ def multipart_part_urls_impl(**kwargs):
     )
     if rl:
         return rl
-    media_id, err = require_media_id(kwargs.get("media_id") or kwargs.get("id"))
+    invalid = reject_unknown_fields(kwargs, allowed={"media_id", "start_part", "count"})
+    if invalid:
+        return invalid
+    media_id, err = require_media_id(kwargs.get("media_id"))
     if err:
         return err
     try:
@@ -149,7 +158,10 @@ def multipart_status_impl(**kwargs):
     )
     if rl:
         return rl
-    media_id, err = require_media_id(kwargs.get("media_id") or kwargs.get("id"))
+    invalid = reject_unknown_fields(kwargs, allowed={"media_id"})
+    if invalid:
+        return invalid
+    media_id, err = require_media_id(kwargs.get("media_id"))
     if err:
         return err
     try:
@@ -174,7 +186,10 @@ def complete_multipart_upload_impl(**kwargs):
     )
     if rl:
         return rl
-    media_id, err = require_media_id(kwargs.get("media_id") or kwargs.get("id"))
+    invalid = reject_unknown_fields(kwargs, allowed={"media_id"})
+    if invalid:
+        return invalid
+    media_id, err = require_media_id(kwargs.get("media_id"))
     if err:
         return err
     try:
@@ -201,7 +216,10 @@ def abort_multipart_upload_impl(**kwargs):
     )
     if rl:
         return rl
-    media_id, err = require_media_id(kwargs.get("media_id") or kwargs.get("id"))
+    invalid = reject_unknown_fields(kwargs, allowed={"media_id"})
+    if invalid:
+        return invalid
+    media_id, err = require_media_id(kwargs.get("media_id"))
     if err:
         return err
     try:

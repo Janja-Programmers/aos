@@ -146,56 +146,6 @@ def _parse_json_response(response: requests.Response) -> Dict[str, Any]:
     return payload
 
 
-def _extract_error_message(payload: Dict[str, Any]) -> str:
-    detail = payload.get("detail")
-
-    if isinstance(detail, str) and detail.strip():
-        return detail.strip()
-
-    if isinstance(detail, dict):
-        message = detail.get("message") or detail.get("error")
-        if isinstance(message, str) and message.strip():
-            return message.strip()
-
-    message = payload.get("message") or payload.get("error")
-    if isinstance(message, str) and message.strip():
-        return message.strip()
-
-    return "Background removal service failed."
-
-
-
-def _response_preview(response: requests.Response, *, limit: int = 500) -> str:
-    """Return a short safe preview of a non-image upstream response."""
-
-    try:
-        text = response.text or ""
-    except Exception:
-        text = ""
-
-    text = text.replace("\n", " ").replace("\r", " ").strip()
-    if len(text) > limit:
-        return text[:limit] + "..."
-    return text
-
-
-def _is_png_response(response: requests.Response, content: bytes) -> bool:
-    """Accept valid PNG responses even when proxies mangle Content-Type."""
-
-    content_type = str(response.headers.get("content-type") or "").lower()
-    output_format = str(response.headers.get("x-aos-output-format") or "").lower()
-
-    if content.startswith(b"\x89PNG\r\n\x1a\n"):
-        return True
-
-    if "image/png" in content_type:
-        return True
-
-    if output_format == "png" and content:
-        return True
-
-    return False
-
 def _file_tuple(
     image_file: Any,
     *,
@@ -247,31 +197,6 @@ class BackgroundRemovalClient:
 
     def _url(self, path: str) -> str:
         return f"{self.settings.service_url}/{path.lstrip('/')}"
-
-    def _request_json(self, method: str, path: str) -> Dict[str, Any]:
-        try:
-            response = self.session.request(
-                method=method.upper(),
-                url=self._url(path),
-                timeout=self.settings.timeout_seconds,
-            )
-        except requests.RequestException as exc:
-            raise BackgroundRemovalUnavailableError(
-                "Background removal service is temporarily unavailable."
-            ) from exc
-
-        payload = _parse_json_response(response)
-
-        if response.status_code >= 400:
-            raise BackgroundRemovalUnavailableError(_extract_error_message(payload))
-
-        return payload
-
-    def health_check(self) -> Dict[str, Any]:
-        return self._request_json("GET", "/health")
-
-    def ready_check(self) -> Dict[str, Any]:
-        return self._request_json("GET", "/ready")
 
     def remove_background(
         self,
@@ -334,14 +259,6 @@ class BackgroundRemovalClient:
             content_type="image/png",
             filename="background-removed.png",
         )
-
-
-def health_check() -> Dict[str, Any]:
-    return BackgroundRemovalClient().health_check()
-
-
-def ready_check() -> Dict[str, Any]:
-    return BackgroundRemovalClient().ready_check()
 
 
 def remove_background_from_file(

@@ -32,7 +32,7 @@ from aos.services.account_deletion_service import (
     _revoke_verification_requests,
 )
 from aos.services.accounts.observability import account_log
-from aos.services.media.media_service import MediaError, MediaService
+from aos.services.media.media_service import MediaError, MediaNotFoundError, MediaService
 from aos.services.social.repository import SocialRepository
 
 
@@ -503,11 +503,23 @@ def _release_profile_media(*, profile, user: str) -> int:
             attached_name=profile.name,
             system=True,
         )
+    except MediaNotFoundError:
+        # The profile link is stale and there is no Media row left to release.
+        # Repair the reference so permanent deletion remains resumable.
+        account_log(
+            "account.permanent_deletion.media_missing",
+            user=user,
+            changed_fields={"avatar"},
+            failure_category="stale_media_reference",
+        )
+        released = 0
     except MediaError as exc:
         raise AccountPurgeError("Profile media could not be released") from exc
+    else:
+        released = 1
     profile.set(PROFILE_IMAGE_FIELD, "")
     frappe.db.set_value("User", user, "user_image", "", update_modified=False)
-    return 1
+    return released
 
 
 def _anonymize_profile(*, profile, user: str) -> dict[str, int]:

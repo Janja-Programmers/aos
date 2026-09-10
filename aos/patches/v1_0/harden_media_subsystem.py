@@ -16,6 +16,7 @@ MEDIA_INDEXES: dict[str, list[str]] = {
     "idx_aos_media_idempotency": ["owner_user", "purpose", "idempotency_key_hash"],
     "idx_aos_media_derived": ["derived_from_media", "status"],
     "idx_aos_media_staging_cleanup": ["staging_cleanup_required", "upload_expires_at", "modified"],
+    "idx_aos_media_multipart_active": ["owner_user", "upload_mode", "status", "upload_expires_at"],
 }
 
 PROCESSING_INDEXES: dict[str, list[str]] = {

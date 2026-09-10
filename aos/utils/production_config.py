@@ -761,7 +761,6 @@ def _check_storage(issues: list[dict[str, Any]], env: Mapping[str, Any] | None) 
 		("AOS_STORAGE_MAX_RETRIES", 2, 0, 5, "storage retry count"),
 		("AOS_STORAGE_RETRY_BACKOFF_MS", 200, 0, 5000, "storage retry backoff"),
 		("AOS_MEDIA_DOWNLOAD_EXPIRY_MINUTES", 10, 1, 60, "private download expiry"),
-		("AOS_MEDIA_INITIALIZED_RETENTION_HOURS", 24, 1, 168, "upload-init retention"),
 		("AOS_MEDIA_UNATTACHED_RETENTION_DAYS", 7, 1, 90, "unattached retention"),
 		("AOS_MEDIA_DELETE_RETRY_HOURS", 1, 1, 24, "delete retry interval"),
 		("AOS_MEDIA_CLEANUP_BATCH_LIMIT", 100, 10, 1000, "cleanup batch limit"),

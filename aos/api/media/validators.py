@@ -3,9 +3,19 @@ from __future__ import annotations
 import re
 
 from aos.api.shared.responses import fail
-from aos.services.media.media_purposes import list_media_purposes
 
 _MEDIA_ID_RE = re.compile(r"^MEDIA-[A-Za-z0-9._-]{1,96}$")
+
+
+def reject_unknown_fields(kwargs: dict, *, allowed: set[str]):
+    unknown = sorted(set(kwargs) - allowed)
+    if unknown:
+        return fail(
+            "Unsupported media request fields.",
+            error="VALIDATION_ERROR",
+            data={"fields": unknown},
+        )
+    return None
 
 
 def require_media_id(value):
@@ -35,26 +45,12 @@ def require_upload_init_payload(kwargs: dict):
         "content_type": content_type,
         "size_bytes": size_bytes,
         "duration_seconds": kwargs.get("duration_seconds"),
-        "checksum_sha256": kwargs.get("checksum_sha256") or kwargs.get("checksum"),
+        "checksum_sha256": kwargs.get("checksum_sha256"),
         "idempotency_key": kwargs.get("idempotency_key"),
     }
 
-    # Preserve the pre-multipart service-call contract for existing/direct
-    # upload clients. ``MediaService.init_upload`` already defaults
-    # ``upload_mode`` to None, so forwarding an explicit ``None`` adds no
-    # behavior but does break strict mocks/adapters built against the stable
-    # call shape. Only forward the new option when the caller actually asks
-    # for a mode (for example ``auto`` or ``multipart``).
-    upload_mode = kwargs.get("upload_mode") or kwargs.get("mode")
+    upload_mode = kwargs.get("upload_mode")
     if upload_mode is not None and str(upload_mode).strip():
         payload["upload_mode"] = upload_mode
 
     return payload, None
-
-
-def invalid_purpose_response():
-    return fail(
-        "Invalid media purpose.",
-        error="INVALID_MEDIA_PURPOSE",
-        data={"allowed_purposes": list_media_purposes(client_upload_only=True)},
-    )

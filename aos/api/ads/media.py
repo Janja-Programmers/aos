@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from aos.api.media.consumer_helpers import (
-    compatibility_media_error,
+    media_error_response,
     normalize_media_id,
     public_media_url,
 )
@@ -16,7 +16,7 @@ AD_DOCTYPE = "AOS Ad"
 
 
 def response_from_media_exception(exc: Exception, *, kind: str):
-    return compatibility_media_error(
+    return media_error_response(
         exc,
         label=kind,
         log_title=f"AOS Ads {kind} Media Failed",
@@ -93,14 +93,3 @@ def attach_ad_media(
         return doc, None
     except Exception as exc:
         return None, response_from_media_exception(exc, kind="Ad")
-
-
-def serialize_ad_media(media_id: Any, fallback_url: Any = "") -> dict[str, Any] | None:
-    """Serialize the canonical media relation while retaining the old signature."""
-    normalized_id = normalize_media_id(media_id)
-    if not normalized_id:
-        return None
-    return {
-        "media_id": normalized_id,
-        "url": public_media_url(normalized_id),
-    }

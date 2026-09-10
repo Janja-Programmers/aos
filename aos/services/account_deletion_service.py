@@ -519,7 +519,7 @@ def _cleanup_verification_documents(*, user: str, batch_size: int = 250) -> dict
     if not (_doctype_exists("AOS Verification Request") and _doctype_exists("AOS Verification Document")):
         return summary
 
-    from aos.services.media.media_service import MediaService
+    from aos.services.media.media_service import MediaNotFoundError, MediaService
 
     request_names = frappe.get_all(
         "AOS Verification Request",
@@ -580,6 +580,11 @@ def _cleanup_verification_documents(*, user: str, batch_size: int = 250) -> dict
                         "Account deletion Verification cleanup",
                     )
                     continue
+                removable_names.append(cursor)
+            except MediaNotFoundError:
+                # The Media row is already absent, so this child relation is stale
+                # and can be removed. Other Media/storage failures retain the
+                # relation so cleanup can be retried safely.
                 removable_names.append(cursor)
             except Exception:
                 # Keep the sensitive relation if release cannot be confirmed;

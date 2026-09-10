@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
-from collections.abc import Iterator
-from contextlib import contextmanager
 
 import frappe
 
@@ -77,27 +74,3 @@ def media_log(
         )
     except Exception:
         pass
-
-
-@contextmanager
-def media_operation_timer(
-    operation: str,
-    *,
-    media_id: str | None = None,
-    purpose: str | None = None,
-) -> Iterator[dict[str, object]]:
-    started = time.perf_counter()
-    context: dict[str, object] = {"outcome": "success", "failure_category": None}
-    try:
-        yield context
-    finally:
-        duration_ms = int(max(0.0, time.perf_counter() - started) * 1000)
-        media_log(
-            "storage_operation",
-            media_id=media_id,
-            purpose=purpose,
-            operation=operation,
-            outcome=str(context.get("outcome") or "failure"),
-            failure_category=str(context.get("failure_category") or "") or None,
-            duration_ms=duration_ms,
-        )

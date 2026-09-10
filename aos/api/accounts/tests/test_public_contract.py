@@ -11,6 +11,22 @@ class AccountsPublicContractTests(unittest.TestCase):
     def _source(self, relative: str) -> str:
         return (ROOT / relative).read_text()
 
+    def test_avatar_integration_repairs_only_missing_previous_media(self):
+        source = self._source("aos/services/accounts/profile_service.py")
+        self.assertIn("def _release_previous_avatar", source)
+        self.assertIn("except MediaNotFoundError", source)
+        self.assertIn("self.media.release_media", source)
+        self.assertIn("account.avatar.previous_media_missing", source)
+
+    def test_account_deletion_repairs_only_missing_media_relations(self):
+        deletion = self._source("aos/services/account_deletion_service.py")
+        purge = self._source("aos/services/account_purge_service.py")
+        self.assertIn("except MediaNotFoundError", deletion)
+        self.assertIn("removable_names.append(cursor)", deletion)
+        self.assertIn("except MediaNotFoundError", purge)
+        self.assertIn("account.permanent_deletion.media_missing", purge)
+        self.assertIn("except MediaError as exc", purge)
+
     def test_versioned_accounts_surface_is_explicit_and_self_profile_is_separate(self):
         source = self._source("aos/api/v1/accounts/__init__.py")
         tree = ast.parse(source)

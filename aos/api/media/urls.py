@@ -7,7 +7,7 @@ from aos.api.shared.responses import ok
 from aos.services.media.media_service import MediaService, serialize_media_doc
 
 from .constants import GET_MEDIA_URL_LIMIT_PER_MINUTE_PER_USER
-from .validators import require_media_id
+from .validators import reject_unknown_fields, require_media_id
 
 
 def get_media_url_impl(**kwargs):
@@ -24,7 +24,10 @@ def get_media_url_impl(**kwargs):
     )
     if rl:
         return rl
-    media_id, err = require_media_id(kwargs.get("media_id") or kwargs.get("id"))
+    invalid = reject_unknown_fields(kwargs, allowed={"media_id", "expiry_minutes"})
+    if invalid:
+        return invalid
+    media_id, err = require_media_id(kwargs.get("media_id"))
     if err:
         return err
     try:
@@ -32,7 +35,7 @@ def get_media_url_impl(**kwargs):
         doc = service.get_media_doc(media_id)
         url = service.get_url(
             media_id=media_id, user=user,
-            expiry_minutes=kwargs.get("expiry_minutes") or kwargs.get("expires_minutes"),
+            expiry_minutes=kwargs.get("expiry_minutes"),
         )
         return ok("Media URL fetched.", data={"media": serialize_media_doc(doc, url=url), "url": url})
     except Exception as exc:

@@ -82,12 +82,13 @@ Directly test the private service with a known image:
 
 ```bash
 curl -X POST http://127.0.0.1:8120/remove-background \
+  -H "Authorization: Bearer ${BACKGROUND_REMOVAL_SERVICE_SECRET}" \
   -F "image=@/path/to/test-image.jpg" \
   --output /tmp/aos-removed-bg.png
 file /tmp/aos-removed-bg.png
 ```
 
-Use this when the Flutter image editor reports background-removal failures. If direct service testing works but the app fails, inspect media object ownership, rate limits, and `aos.api.v1.media.remove_background` logs.
+Use this when background removal fails. The client-facing Media endpoint queues a durable processing job rather than calling this service directly; if the private service test works but AOS processing fails, inspect Media ownership, the `long` worker queue, processing-job state, rate limits, and `aos.api.v1.media.remove_background` logs.
 
 ## Translation service check
 

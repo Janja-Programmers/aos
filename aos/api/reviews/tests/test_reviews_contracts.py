@@ -129,9 +129,3 @@ class TestReviewsContracts(unittest.TestCase):
         source = (ROOT / "aos/services/reviews/service.py").read_text()
         self.assertIn("SELECT name, reviewer FROM `tabAOS Review`", source)
         self.assertIn('raise ReviewNotFoundError("Review not found.")', source)
-
-    def test_legacy_review_media_helpers_delegate_to_central_policy(self):
-        source = (ROOT / "aos/api/reviews/media.py").read_text()
-        self.assertIn("from aos.services.reviews.validation import normalize_images", source)
-        self.assertNotIn("Maximum 5 images allowed", source)
-

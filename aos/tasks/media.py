@@ -44,9 +44,6 @@ def cleanup_media_objects() -> int:
         if not frappe.db.exists("DocType", "AOS Media Object"):
             return 0
 
-        initialized_hours = get_env_int(
-            "AOS_MEDIA_INITIALIZED_RETENTION_HOURS", 24, min_value=1, max_value=168
-        )
         unattached_days = get_env_int(
             "AOS_MEDIA_UNATTACHED_RETENTION_DAYS", 7, min_value=1, max_value=90
         )
@@ -60,10 +57,6 @@ def cleanup_media_objects() -> int:
         service = MediaService()
         counters = {
             "expired": service.cleanup_expired_upload_sessions(limit=batch_limit),
-            "initialized": service.cleanup_initialized(
-                older_than_hours=initialized_hours,
-                limit=batch_limit,
-            ),
             "unattached": service.cleanup_unattached_uploaded(
                 older_than_days=unattached_days,
                 limit=batch_limit,
@@ -76,9 +69,8 @@ def cleanup_media_objects() -> int:
         }
         total = sum(counters.values())
         frappe.logger("aos.media", allow_site=True).info(
-            "media_cleanup_complete expired=%s initialized=%s unattached=%s delete_pending=%s staging=%s total=%s",
+            "media_cleanup_complete expired=%s unattached=%s delete_pending=%s staging=%s total=%s",
             counters["expired"],
-            counters["initialized"],
             counters["unattached"],
             counters["delete_pending"],
             counters["staging"],

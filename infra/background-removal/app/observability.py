@@ -90,11 +90,6 @@ def readiness_error(dependency: str, exc: Exception) -> JSONResponse:
 	return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content=body)
 
 
-def dependency_ready(dependency: str) -> None:
-	with _LOCK:
-		_DEPENDENCY_READY[str(dependency)] = 1
-
-
 def _authorized_metrics(request: Request) -> bool:
 	configured = os.getenv("AOS_METRICS_TOKEN", "").strip()
 	authorization = request.headers.get("authorization", "")

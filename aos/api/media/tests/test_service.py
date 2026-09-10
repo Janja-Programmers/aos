@@ -443,19 +443,19 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(exc.exception.code, "MULTIPART_REQUIRED")
         self.assertEqual(self.storage.multipart_create_calls, 0)
 
-    def test_large_short_legacy_client_without_upload_mode_is_rejected_before_bytes(self):
-        with self.assertRaises(MediaValidationError) as exc:
-            self.service.init_upload(
-                user=self.user,
-                purpose="short_video_raw",
-                filename="legacy-long-short.mp4",
-                content_type="video/mp4",
-                size_bytes=(16 * 1024 * 1024) + 1,
-                duration_seconds=540,
-            )
+    def test_large_short_without_upload_mode_selects_multipart_automatically(self):
+        doc, upload_url, _headers, _expires_in = self.service.init_upload(
+            user=self.user,
+            purpose="short_video_raw",
+            filename="long-short.mp4",
+            content_type="video/mp4",
+            size_bytes=(16 * 1024 * 1024) + 1,
+            duration_seconds=540,
+        )
 
-        self.assertEqual(exc.exception.code, "MULTIPART_REQUIRED")
-        self.assertEqual(self.storage.multipart_create_calls, 0)
+        self.assertEqual(doc.upload_mode, "multipart")
+        self.assertIsNone(upload_url)
+        self.assertEqual(self.storage.multipart_create_calls, 1)
 
     def test_multipart_part_url_batch_is_bounded_and_upload_id_is_not_api_field(self):
         doc = self.service.init_upload(
@@ -785,7 +785,8 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
         self._upload_staging(doc, pdf)
         confirmed = self.service.confirm_upload(user=self.user, media_id=doc.name)
         self.assertEqual(confirmed.visibility, "Private")
-        self.assertFalse(hasattr(confirmed, "public_url"))
+        self.assertTrue(str(confirmed.object_key or ""))
+        self.assertTrue(str(confirmed.bucket or ""))
         self.assertIn(
             "download.example.test",
             self.service.get_url(media_id=confirmed.name, user=self.user),
@@ -823,33 +824,6 @@ class TestMediaService(AOSFeatureTestMixin, FrappeTestCase):
         )
         with self.assertRaises(MediaConflictError):
             self.service.delete_media(media_id=confirmed.name, user=self.user)
-
-    def test_system_cleanup_can_delete_legacy_media_with_policy_drift(self):
-        doc = self._init_png()
-        self._upload_staging(doc)
-        confirmed = self.service.confirm_upload(user=self.user, media_id=doc.name)
-
-        # Model a historical row created before the current purpose/MIME policy.
-        frappe.db.set_value(
-            "AOS Media Object",
-            confirmed.name,
-            "content_type",
-            "video/mp4",
-            update_modified=False,
-        )
-
-        deleted = self.service.delete_media_as_system(media_id=confirmed.name)
-
-        self.assertEqual(deleted.status, "Deleted")
-        self.assertFalse(self.storage.object_exists(confirmed.bucket, confirmed.object_key))
-        stored = frappe.db.get_value(
-            "AOS Media Object",
-            confirmed.name,
-            ["status", "deleted_at"],
-            as_dict=True,
-        )
-        self.assertEqual(stored.status, "Deleted")
-        self.assertTrue(stored.deleted_at)
 
     def test_storage_delete_failure_remains_retriable_and_second_worker_attempt_succeeds(self):
         doc = self._init_png()

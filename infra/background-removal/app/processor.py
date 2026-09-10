@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from io import BytesIO
 from typing import Any
 
@@ -41,24 +40,13 @@ class BackgroundRemovalProcessor:
         if self._loaded and self._session is not None:
             return
 
-        if self.settings.model_path:
-            # rembg/onnxruntime uses U2NET_HOME for model cache/discovery.
-            # This lets ops mount a persistent model directory later without
-            # changing application code.
-            os.environ["U2NET_HOME"] = self.settings.model_path
-
         try:
             from rembg import new_session
 
-            providers = ["CPUExecutionProvider"]
-            try:
-                self._session = new_session(
-                    self.settings.model_name,
-                    providers=providers,
-                )
-            except TypeError:
-                # Older/newer rembg versions may not expose the providers kwarg.
-                self._session = new_session(self.settings.model_name)
+            self._session = new_session(
+                self.settings.model_name,
+                providers=["CPUExecutionProvider"],
+            )
 
             self._loaded = True
         except Exception as exc:  # pragma: no cover - runtime dependency path
@@ -75,14 +63,11 @@ class BackgroundRemovalProcessor:
         try:
             from rembg import remove
 
-            try:
-                output = remove(
-                    image_bytes,
-                    session=self._session,
-                    force_return_bytes=True,
-                )
-            except TypeError:
-                output = remove(image_bytes, session=self._session)
+            output = remove(
+                image_bytes,
+                session=self._session,
+                force_return_bytes=True,
+            )
 
             return _normalize_png_bytes(output)
         except BackgroundRemovalProcessorError:

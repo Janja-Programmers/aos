@@ -9,7 +9,6 @@ import re
 import unicodedata
 import warnings
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
 from pathlib import PurePath
 
 try:
@@ -68,15 +67,6 @@ class MediaContentValidationError(ValueError):
     def __init__(self, message: str, *, code: str = "INVALID_FILE"):
         super().__init__(message)
         self.code = code
-
-
-@dataclass(frozen=True)
-class ValidatedContent:
-    content_type: str
-    size_bytes: int
-    checksum_sha256: str
-    width: int | None = None
-    height: int | None = None
 
 
 def normalize_filename(filename: object) -> str:

@@ -8,7 +8,7 @@ import frappe
 
 from aos.api.media.consumer_helpers import (
     clean_str,
-    compatibility_media_error,
+    media_error_response,
     normalize_media_id,
     public_media_url,
 )
@@ -25,7 +25,7 @@ def looks_like_media_id(value: Any) -> bool:
 
 
 def response_from_media_exception(exc: Exception):
-    return compatibility_media_error(
+    return media_error_response(
         exc,
         label="Live cover",
         log_title="AOS Live Cover Media Failed",
@@ -104,21 +104,6 @@ def attach_live_cover_media(*, media_id: Any, user: str, live_id: str):
         return None, "", response_from_media_exception(exc)
 
 
-def clear_live_cover_media(*, live_id: str, user: str) -> None:
-    previous_media_id = get_live_cover_media_id(live_id)
-    if previous_media_id:
-        MediaService().release_media(
-            media_id=previous_media_id,
-            user=user,
-            attached_doctype=LIVE_STREAM_DOCTYPE,
-            attached_name=live_id,
-        )
-
-
-def _live_cover_media_url(doc) -> str:
-    return public_media_url(doc.name)
-
-
 def _live_has_cover_media_field() -> bool:
     try:
         return bool(
@@ -126,7 +111,3 @@ def _live_has_cover_media_field() -> bool:
         )
     except Exception:
         return False
-
-
-def _mark_media_orphaned(media_id: str, *, owner_user: str) -> None:
-    MediaService().release_media(media_id=media_id, user=owner_user)

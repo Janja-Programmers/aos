@@ -169,7 +169,7 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
 			_get_field(settings, "background_removal_max_image_bytes", 10 * 1024 * 1024),
 			default=10 * 1024 * 1024,
 			min_value=1,
-			max_value=50 * 1024 * 1024,
+			max_value=10 * 1024 * 1024,
 		),
 		# Ads
 		ad_expiry_days=_clamp_int(

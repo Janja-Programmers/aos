@@ -1,4 +1,4 @@
-"""Shared compatibility helpers for feature-level media consumers."""
+"""Shared helpers for feature-level consumers of the canonical Media service."""
 
 from __future__ import annotations
 
@@ -21,8 +21,6 @@ def clean_str(value: Any) -> str:
 
 
 def normalize_media_id(value: Any) -> str:
-    if isinstance(value, dict):
-        value = value.get("media_id") or value.get("media") or value.get("id") or value.get("name")
     return clean_str(value)
 
 
@@ -36,7 +34,7 @@ def public_media_url(media_id: Any) -> str:
         return ""
 
 
-def compatibility_media_error(exc: Exception, *, label: str, log_title: str):
+def media_error_response(exc: Exception, *, label: str, log_title: str):
     if isinstance(exc, MediaNotFoundError):
         return fail(f"{label} media not found.", error="NOT_FOUND")
     if isinstance(exc, MediaPermissionError):

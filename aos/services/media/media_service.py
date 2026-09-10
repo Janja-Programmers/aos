@@ -1369,7 +1369,6 @@ class MediaService:
                 "status": "Delete Pending",
                 "delete_requested_at": now_datetime(),
             },
-            bypass_validation=False,
         )
         media_log("delete_requested", media_id=doc.name, purpose=doc.purpose, operation="delete")
         # Database state is authoritative. Object-store deletion is registered
@@ -1394,9 +1393,8 @@ class MediaService:
             self._persist_delete_lifecycle(
                 doc,
                 {"status": "Delete Pending", "delete_requested_at": now_datetime()},
-                bypass_validation=True,
             )
-        return self._finalize_delete(doc, system=True)
+        return self._finalize_delete(doc)
 
     def finalize_delete_as_system(self, *, media_id: str) -> object:
         """Delete object bytes for a committed Delete Pending media record."""
@@ -1411,13 +1409,13 @@ class MediaService:
                 "Referenced media must be detached or replaced before deletion",
                 code="MEDIA_ALREADY_ATTACHED",
             )
-        return self._finalize_delete(doc, system=True)
+        return self._finalize_delete(doc)
 
-    def _finalize_delete(self, doc, *, system: bool) -> object:
+    def _finalize_delete(self, doc) -> object:
         try:
             self._delete_all_storage_identities(doc)
         except (StorageUnavailableError, StorageConfigurationError) as exc:
-            self._record_storage_failure(doc, exc, bypass_validation=system)
+            self._record_storage_failure(doc, exc)
             media_log(
                 "delete_failed",
                 media_id=doc.name,
@@ -1436,7 +1434,7 @@ class MediaService:
         }
         if getattr(doc, "upload_object_key", None):
             deleted_values["staging_cleanup_required"] = 1
-        self._persist_delete_lifecycle(doc, deleted_values, bypass_validation=system)
+        self._persist_delete_lifecycle(doc, deleted_values)
         media_log("delete_completed", media_id=doc.name, purpose=doc.purpose, operation="delete")
         return doc
 
@@ -1536,25 +1534,12 @@ class MediaService:
 
     # CLEANUP
     def cleanup_expired_upload_sessions(self, *, limit: int = 100) -> int:
-        """Close initialized uploads as soon as their server session expires.
-
-        Multipart cleanup must be driven by ``upload_expires_at`` rather than
-        record age so abandoned UploadPart data is aborted on the first hourly
-        cleanup pass after expiry. The older age-based cleanup remains as a
-        compatibility fallback for legacy rows without expiry metadata.
-        """
+        """Close initialized uploads as soon as their authoritative session expires."""
         return self._cleanup_by_filters(
             filters={
                 "status": "Initialized",
                 "upload_expires_at": ["<", now_datetime()],
             },
-            limit=limit,
-        )
-
-    def cleanup_initialized(self, *, older_than_hours: int = 24, limit: int = 100) -> int:
-        cutoff = add_to_date(now_datetime(), hours=-max(1, int(older_than_hours)))
-        return self._cleanup_by_filters(
-            filters={"status": "Initialized", "creation": ["<", cutoff]},
             limit=limit,
         )
 
@@ -1879,10 +1864,7 @@ class MediaService:
         size_bytes: int,
         requested_mode: str | None,
     ) -> str:
-        explicit_mode = requested_mode not in (None, "")
-        requested = str(requested_mode or "direct").strip().lower().replace("-", "_")
-        if requested == "single":
-            requested = "direct"
+        requested = str(requested_mode or "auto").strip().lower()
         if requested not in {"auto", "direct", "multipart"}:
             raise MediaValidationError("Invalid upload mode", code="VALIDATION_ERROR")
 
@@ -1892,17 +1874,6 @@ class MediaService:
         )
         threshold = int(getattr(policy, "multipart_threshold_bytes", 0) or 0)
         multipart_required = supports_multipart and threshold > 0 and int(size_bytes) >= threshold
-
-        # Do not silently change the transport contract under older clients.
-        # Large-file clients must explicitly opt into the resumable contract by
-        # sending upload_mode=auto/multipart. A legacy client that only knows
-        # about one upload_url fails before any bytes are sent instead of being
-        # handed a null direct URL or a fragile oversized single PUT.
-        if multipart_required and not explicit_mode:
-            raise MediaValidationError(
-                "Large upload requires a multipart-capable client",
-                code="MULTIPART_REQUIRED",
-            )
 
         if requested == "multipart" and not supports_multipart:
             raise MediaValidationError(
@@ -2411,16 +2382,8 @@ class MediaService:
         self,
         doc,
         values: dict[str, object],
-        *,
-        bypass_validation: bool,
     ) -> None:
-        """Persist deletion-only state without revalidating immutable legacy metadata.
-
-        System cleanup must be able to remove old orphan rows whose stored MIME or
-        filename predates the canonical purpose policy. Only the tightly bounded
-        lifecycle fields supplied by the deletion path use this bypass; normal
-        user-managed saves continue through full DocType validation.
-        """
+        """Persist the bounded current-schema deletion lifecycle fields."""
 
         allowed_fields = {
             "status",
@@ -2435,17 +2398,6 @@ class MediaService:
                 code="INVALID_STATE",
             )
 
-        if bypass_validation:
-            frappe.db.set_value(
-                "AOS Media Object",
-                doc.name,
-                values,
-                update_modified=True,
-            )
-            for fieldname, value in values.items():
-                setattr(doc, fieldname, value)
-            return
-
         for fieldname, value in values.items():
             setattr(doc, fieldname, value)
         doc.save(ignore_permissions=True)
@@ -2454,8 +2406,6 @@ class MediaService:
         self,
         doc,
         exc: Exception,
-        *,
-        bypass_validation: bool = False,
     ) -> None:
         try:
             values = {
@@ -2463,16 +2413,6 @@ class MediaService:
                 "last_storage_error": str(getattr(exc, "category", "unavailable"))[:64],
                 "last_storage_attempt_at": now_datetime(),
             }
-            if bypass_validation:
-                frappe.db.set_value(
-                    "AOS Media Object",
-                    doc.name,
-                    values,
-                    update_modified=True,
-                )
-                for fieldname, value in values.items():
-                    setattr(doc, fieldname, value)
-                return
             for fieldname, value in values.items():
                 setattr(doc, fieldname, value)
             doc.save(ignore_permissions=True)
@@ -2618,7 +2558,7 @@ class MediaService:
 
         A mobile retry may legitimately repeat ``init_upload`` after a timeout,
         but the same operation key must never become an alias for another local
-        file. Returning the old presigned/multipart contract in that situation
+        file. Returning the existing presigned/multipart contract in that situation
         could upload bytes into the wrong Media record and corrupt resume state.
         """
 

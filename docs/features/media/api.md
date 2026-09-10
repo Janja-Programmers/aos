@@ -23,6 +23,8 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 
 This file is the authoritative documentation for the current AOS Media subsystem and its directly related infrastructure.
 
+Media endpoints accept only the canonical field names documented below and reject unsupported request fields with `VALIDATION_ERROR`.
+
 ## Overview
 
 Media owns the durable identity, authorization, upload lifecycle, storage identity, verification, attachment lifecycle, URL serialization, asynchronous background-removal processing, deletion and cleanup of AOS-managed binary objects. Feature domains store canonical Media IDs such as `MEDIA-2026-00001` and ask Media to validate or serialize them.
@@ -111,8 +113,11 @@ Infrastructure identity and secrets must not be stored in Desk. Media uses the p
 | `AOS_MEDIA_PROCESSING_RECOVERY_LIMIT` | Bounded reconciliation batch size. |
 | `BACKGROUND_REMOVAL_SERVICE_URL` | Private deployment URL of the background-removal service. |
 | `BACKGROUND_REMOVAL_SERVICE_SECRET` | Internal bearer credential shared only by Media workers and the processor. |
+| `BACKGROUND_REMOVAL_MODEL_NAME` | rembg model selected by the processor; default `u2net`. |
+| `BACKGROUND_REMOVAL_MAX_IMAGE_BYTES` | Processor-side hard request ceiling, independent of the runtime product policy in AOS Settings. |
+| `BACKGROUND_REMOVAL_MAX_IMAGE_PIXELS` | Processor-side decoded-pixel ceiling. |
 
-The MinIO container still uses `MINIO_*` deployment variables because MinIO itself is infrastructure. Older non-Media Shorts/video components may also still use their existing MinIO configuration until their own hardening pass; new Media code does not.
+The MinIO container uses `MINIO_*` deployment variables because MinIO itself is infrastructure. Media application code uses only the provider-neutral `AOS_OBJECT_STORAGE_*` contract.
 
 ## Storage contract
 
@@ -154,7 +159,7 @@ User filenames are display metadata only. They never become trusted bucket/key p
 
 ## CDN and public delivery
 
-Media records do not persist permanent MinIO, Hetzner, AWS or CDN URLs. Public identity is `(Media ID -> configured object key)`. `S3CompatibleStorage.build_public_url` appends the immutable object key to `AOS_MEDIA_PUBLIC_BASE_URL`.
+Media records persist stable object keys rather than provider or delivery URLs. Public identity is `(Media ID -> configured object key)`. `S3CompatibleStorage.build_public_url` appends the immutable object key to `AOS_MEDIA_PUBLIC_BASE_URL`.
 
 Examples:
 
@@ -229,7 +234,7 @@ Canonical public name uses the naming series `MEDIA-.YYYY.-.#####`. Consumers mu
 | `multipart_completed_at` | Storage multipart completion timestamp. |
 | `multipart_aborted_at` | Abort timestamp. |
 
-There is intentionally no persisted `public_url` field.
+Delivery URLs are generated from the canonical object key and deployment configuration; URL fields are not part of Media persistence.
 
 #### File metadata
 
@@ -335,7 +340,7 @@ Required fields:
 Conditional/optional fields:
 
 - `duration_seconds` — required up front for processing-oriented video purposes such as `short_video_raw` as an upload policy hint; finalize parses authoritative MP4/QuickTime `moov/mvhd` metadata with bounded range reads, enforces the purpose duration ceiling, and stores the verified duration instead of trusting the client value;
-- `upload_mode` — `direct`, `auto` or `multipart`; large Shorts must use a multipart-capable contract;
+- `upload_mode` — `direct`, `auto` or `multipart`; optional and defaults to `auto`, which selects multipart automatically when the purpose/size requires it;
 - `checksum_sha256` — optional 64-character SHA-256 for authoritative source verification;
 - `idempotency_key` — optional client retry identity. Reusing the same key for a different upload contract returns `IDEMPOTENCY_CONFLICT`.
 
@@ -400,7 +405,7 @@ Active multipart sessions per user, part counts, part URL batches and client con
 
 ### `GET /api/method/aos.api.v1.media.get_media_url`
 
-The endpoint is guest-decorated only so public Media can be resolved without a session. Input: `media_id`; private callers may optionally request `expiry_minutes`/`expires_minutes`, which remains server-bounded.
+The endpoint is guest-decorated only so public Media can be resolved without a session. Input: `media_id`; private callers may optionally request `expiry_minutes`, which remains server-bounded.
 
 Public Media: returns the configured CDN/public delivery URL only when the Media row is in a readable state and its purpose is public.
 
@@ -503,8 +508,7 @@ Storage retry logic is bounded and only enabled for operations safe to retry. Mu
 The scheduled Media task performs bounded batches for:
 
 - expired upload/multipart sessions;
-- old initialized uploads;
-- old unattached/orphan candidates;
+- aged unattached/orphan candidates;
 - `Delete Pending` storage deletion retries;
 - staging-object cleanup.
 
@@ -546,21 +550,20 @@ Raw S3/MinIO/Hetzner/AWS exceptions, bucket credentials, internal hosts, object 
 
 The repository Compose keeps MinIO for development/staging. MinIO stores `/data` in the named `minio_data` volume so container recreation does not discard objects. Its API and console bind to `127.0.0.1` by default, both have explicit ports, health checks, restart policy and resource/pid limits. Browser upload CORS is explicit and must not be broad anonymous bucket write access; clients upload with presigned operations.
 
-The background-removal container has a health check, restart/resource/pid limits, localhost-bound host port by default, internal bearer authentication and a non-root runtime user. Its model and temporary in-memory processing are independent of object storage; Media workers remain responsible for fetching/storing Media objects.
+The background-removal container has a health check, restart/resource/pid limits, localhost-bound host port by default, internal bearer authentication and a non-root runtime user. The processor is intentionally CPU-only today, always returns PNG, and uses the image-defined `/models/rembg` cache path backed by the `background_removal_models` named volume; there are no redundant device/output/model-path environment switches. Media workers remain responsible for fetching/storing Media objects.
 
 Production should not expose the MinIO admin console, should set `AOS_OBJECT_STORAGE_MANAGE_BUCKETS=false`, should pre-provision object buckets/CORS/policy and should point `AOS_OBJECT_STORAGE_*` at Hetzner. `AOS_MEDIA_PUBLIC_BASE_URL` should point at the production CDN/media domain. The same application contract supports AWS S3 later.
 
-## Accounts regression contract
+## Accounts integration contract
 
-Accounts remains frozen. The Media integration boundary must preserve:
+Accounts remains production-ready alongside Media. The Media integration boundary preserves:
 
 - canonical profile Media ID ownership;
 - exact `profile_image` purpose;
 - another account's Media cannot be attached;
 - concurrent replacement is serialized by Accounts/profile locking plus Media attachment locking;
-- missing/deleted/non-ready Media is rejected through existing Accounts error mapping;
+- missing/deleted/non-ready new Media is rejected through existing Accounts error mapping; a missing previous avatar reference can be repaired by replacement/removal under the locked Profile transaction;
 - public avatar serialization derives a URL from the Media ID/configuration;
-- no deprecated `limit_page_length` path is reintroduced.
 
 ## Ads and Shorts boundary
 

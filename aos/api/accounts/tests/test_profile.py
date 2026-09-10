@@ -131,6 +131,50 @@ class AccountsProfileIntegrationTests(AOSFeatureTestMixin, IntegrationTestCase):
         self.assertEqual(response.get("error"), "INVALID_MEDIA_PURPOSE")
         self.assertFalse(frappe.db.get_value("AOS Profile", {"user": owner}, "profile_image_media"))
 
+    def test_avatar_replacement_repairs_missing_previous_media_reference(self):
+        user = self.make_user("stale-avatar-replace")
+        replacement = self.make_media(owner=user, purpose="profile_image")
+        account_id = ensure_public_account_id(user)
+        frappe.db.set_value(
+            "AOS Profile",
+            account_id,
+            "profile_image_media",
+            "MEDIA-MISSING-PREVIOUS",
+            update_modified=False,
+        )
+        frappe.set_user(user)
+
+        with patch("aos.api.accounts.profile.rate_limit", return_value=None):
+            response = update_my_profile_impl(avatar_media_id=replacement.name)
+
+        self.assertTrue(response.get("ok"), response)
+        self.assertEqual(response["data"]["profile_image_media"], replacement.name)
+        self.assertEqual(
+            frappe.db.get_value("AOS Profile", account_id, "profile_image_media"),
+            replacement.name,
+        )
+
+    def test_avatar_removal_repairs_missing_previous_media_reference(self):
+        user = self.make_user("stale-avatar-remove")
+        account_id = ensure_public_account_id(user)
+        frappe.db.set_value(
+            "AOS Profile",
+            account_id,
+            "profile_image_media",
+            "MEDIA-MISSING-PREVIOUS",
+            update_modified=False,
+        )
+        frappe.db.set_value("User", user, "user_image", "https://stale.invalid/avatar.png", update_modified=False)
+        frappe.set_user(user)
+
+        with patch("aos.api.accounts.profile.rate_limit", return_value=None):
+            response = update_my_profile_impl(remove_avatar=True)
+
+        self.assertTrue(response.get("ok"), response)
+        self.assertIsNone(response["data"]["profile_image_media"])
+        self.assertFalse(frappe.db.get_value("AOS Profile", account_id, "profile_image_media"))
+        self.assertFalse(frappe.db.get_value("User", user, "user_image"))
+
     def test_public_profile_hides_suspended_and_deleted_accounts(self):
         viewer = self.make_user("state-viewer")
         target = self.make_user("state-target")

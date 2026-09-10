@@ -151,7 +151,7 @@
    "fieldtype": "Int",
    "label": "Max Image Size Bytes",
    "default": "10485760",
-   "description": "Maximum source image size in bytes accepted before calling the background-removal service."
+   "description": "Maximum source image size in bytes accepted before calling the background-removal service. Values are bounded by the 10 MiB Media source policy."
   },
   {
    "fieldname": "column_break_background_removal",

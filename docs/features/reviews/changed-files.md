@@ -26,7 +26,6 @@ The complete cumulative baseline was retained, including Production Foundation, 
 - `aos/api/reviews/toggle.py`
 - `aos/api/reviews/report.py`
 - `aos/api/reviews/eligibility.py`
-- `aos/api/reviews/media.py` — compatibility delegates to central Reviews/Media policy.
 - `aos/api/reviews/constants.py` — compatibility aliases to central rate policy.
 - `aos/api/v1/reviews/__init__.py`
 - `aos/aos/doctype/aos_review/aos_review.json`
