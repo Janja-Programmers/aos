@@ -262,6 +262,8 @@ Regression testing for these domains remains authoritative; Notifications integr
 
 Account deletion disables/removes device registrations and cancels pending Notification delivery/outbox work. New delivery is suppressed for unavailable/deleted recipients. Inbox/private-data lifecycle follows the Accounts deletion service and documented retention/purge behavior. Restore does not silently reactivate stale push registrations.
 
+Delivery jobs are retained for a bounded operational window and may therefore outlive the User or inbox Notification they originally referenced. Existing jobs that reach `Delivered`, `Skipped`, or `Cancelled` may retain those historical Link values after deletion; terminal-state persistence deliberately ignores only those now-stale links. New and nonterminal jobs still require live User/Notification references. If a queued job discovers that its recipient or inbox row disappeared, it is completed locally as `Skipped` (for example `recipient_missing` or `notification_missing`) rather than retried/dead-lettered.
+
 ## Unsupported capabilities
 
 The current product does not include notification preferences/quiet hours, email/SMS notification delivery, public arbitrary notification creation, a materialized unread-counter DocType, scheduled notification campaigns, a direct APNs/PushKit adapter, or an independent browser Web Push provider. These should be added only under an explicit product contract, not inferred during infrastructure hardening.

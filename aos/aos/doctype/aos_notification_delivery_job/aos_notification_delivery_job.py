@@ -9,6 +9,7 @@ from frappe.model.document import Document
 VALID_STATUSES = frozenset(
     {"Queued", "Dispatching", "Processing", "Delivered", "Skipped", "Failed", "Cancelled"}
 )
+REFERENCE_TOLERANT_TERMINAL_STATUSES = frozenset({"Delivered", "Skipped", "Cancelled"})
 VALID_DELIVERY_KINDS = frozenset({"persistent", "transient"})
 VALID_CHANNELS = frozenset({"push"})
 VALID_PRIORITIES = frozenset({"", "high", "normal"})
@@ -39,7 +40,24 @@ class AOSNotificationDeliveryJob(Document):
             frappe.throw("Invalid notification delivery kind.")
         if self.channel not in VALID_CHANNELS:
             frappe.throw("Unsupported notification delivery channel.")
-        if not self.user or not frappe.db.exists("User", self.user):
+
+        user_exists = bool(self.user and frappe.db.exists("User", self.user))
+        notification_exists = bool(
+            self.notification and frappe.db.exists("AOS Notification", self.notification)
+        )
+        terminal_reference_tolerant = (
+            not self.is_new() and self.status in REFERENCE_TOLERANT_TERMINAL_STATUSES
+        )
+        if terminal_reference_tolerant and (
+            not user_exists or (self.notification and not notification_exists)
+        ):
+            # Delivery records intentionally outlive their recipient/inbox row for
+            # bounded operational retention. A delete/account-cleanup race must be
+            # able to persist a terminal state without Frappe rejecting historical
+            # Link values that were valid when the job was created. No Link value
+            # is changed on this path; only lifecycle/diagnostic state is saved.
+            self.flags.ignore_links = True
+        if not user_exists and not terminal_reference_tolerant:
             frappe.throw("Notification delivery user is required.")
         if not self.event or len(self.event) > 80:
             frappe.throw("Invalid notification delivery event.")
@@ -82,5 +100,7 @@ class AOSNotificationDeliveryJob(Document):
         if self.delivery_kind == "persistent":
             if not self.notification:
                 frappe.throw("Persistent notification delivery requires a notification.")
+            if not notification_exists and not terminal_reference_tolerant:
+                frappe.throw("Persistent notification delivery notification is unavailable.")
         elif self.notification:
             frappe.throw("Transient notification delivery cannot reference an inbox notification.")

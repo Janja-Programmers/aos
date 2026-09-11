@@ -22,7 +22,10 @@ from aos.services.account_deletion_service import (
     _remove_push_tokens,
 )
 from aos.services.accounts.identity import ensure_public_account_id
-from aos.services.notifications.delivery import create_notification_delivery_job
+from aos.services.notifications.delivery import (
+    create_notification_delivery_job,
+    dispatch_notification_delivery_job,
+)
 from aos.services.notifications.service import NotificationService
 from aos.services.notifications.devices import get_token_hash
 from aos.services.notifications.web_push import WebPushConfig
@@ -247,6 +250,76 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         serialized = repr(data).lower()
         for forbidden in ("private_key", "service_account", "callback_secret", "service_secret"):
             self.assertNotIn(forbidden, serialized)
+
+
+    def test_delivery_suppression_survives_recipient_deleted_after_job_creation(self):
+        notification = self._notify_follow(dedupe_key=f"{self.prefix}:deleted-recipient-race")
+        job = create_notification_delivery_job(
+            user=self.owner,
+            event="aos_follow",
+            title="New Follower",
+            body="AOS User started following you",
+            payload={"follower": ensure_public_account_id(self.actor)},
+            notification_id=notification.name,
+            delivery_kind="persistent",
+            enqueue=False,
+        )
+        missing_user = f"{self.prefix}-deleted@example.com"
+        frappe.db.set_value(
+            "AOS Notification Delivery Job",
+            job.name,
+            "user",
+            missing_user,
+            update_modified=False,
+        )
+
+        with patch(
+            "aos.services.notifications.delivery.complete_outbox_without_callback"
+        ) as complete_outbox:
+            result = dispatch_notification_delivery_job(job.name)
+
+        self.assertEqual(result.status, "Skipped")
+        self.assertEqual(result.last_error, "recipient_missing")
+        self.assertTrue(result.completed_at)
+        complete_outbox.assert_called_once_with(
+            job_doctype="AOS Notification Delivery Job",
+            job_name=job.name,
+            status="skipped",
+        )
+        persisted = frappe.get_doc("AOS Notification Delivery Job", job.name)
+        self.assertEqual(persisted.status, "Skipped")
+        self.assertEqual(persisted.user, missing_user)
+
+    def test_delivery_suppression_survives_notification_deleted_after_job_creation(self):
+        notification = self._notify_follow(dedupe_key=f"{self.prefix}:deleted-notification-race")
+        job = create_notification_delivery_job(
+            user=self.owner,
+            event="aos_follow",
+            title="New Follower",
+            body="AOS User started following you",
+            payload={"follower": ensure_public_account_id(self.actor)},
+            notification_id=notification.name,
+            delivery_kind="persistent",
+            enqueue=False,
+        )
+        frappe.db.delete("AOS Notification", {"name": notification.name})
+
+        with patch(
+            "aos.services.notifications.delivery.complete_outbox_without_callback"
+        ) as complete_outbox:
+            result = dispatch_notification_delivery_job(job.name)
+
+        self.assertEqual(result.status, "Skipped")
+        self.assertEqual(result.last_error, "notification_missing")
+        self.assertTrue(result.completed_at)
+        complete_outbox.assert_called_once_with(
+            job_doctype="AOS Notification Delivery Job",
+            job_name=job.name,
+            status="skipped",
+        )
+        persisted = frappe.get_doc("AOS Notification Delivery Job", job.name)
+        self.assertEqual(persisted.status, "Skipped")
+        self.assertEqual(persisted.notification, notification.name)
 
     def test_persistent_delivery_data_includes_canonical_inbox_identity(self):
         notification = self._notify_follow(dedupe_key=f"{self.prefix}:fcm-identity")
