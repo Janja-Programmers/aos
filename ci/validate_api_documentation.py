@@ -12,20 +12,20 @@ BEGIN = "<!-- BEGIN CODE-DERIVED ENDPOINTS -->"
 END = "<!-- END CODE-DERIVED ENDPOINTS -->"
 
 FEATURE_DOCS = {
-	"accounts": "docs/features/accounts/api.md",
+	"accounts": "docs/features/accounts/README.md",
 	"activity": "docs/features/activity/api.md",
 	"ads": "docs/features/ads/api.md",
 	"analytics_pipeline": "docs/features/analytics/api.md",
-	"auth": "docs/features/authentication/api.md",
+	"auth": "docs/features/authentication/README.md",
 	"calls": "docs/features/calls/api.md",
-	"catalog": "docs/features/catalog/api.md",
+	"catalog": "docs/features/catalog/README.md",
 	"chat": "docs/features/chat/api.md",
 	"diagnostics": "docs/features/diagnostics/api.md",
 	"live": "docs/features/live/api.md",
-	"localization": "docs/features/localization/api.md",
+	"localization": "docs/features/localization/README.md",
 	"maps": "docs/features/maps/api.md",
-	"media": "docs/features/media/api.md",
-	"notifications": "docs/features/notifications/api.md",
+	"media": "docs/features/media/README.md",
+	"notifications": "docs/features/notifications/README.md",
 	"reports": "docs/features/reports/api.md",
 	"reviews": "docs/features/reviews/api.md",
 	"saved_search": "docs/features/saved-search/api.md",
@@ -33,8 +33,18 @@ FEATURE_DOCS = {
 	"sellers": "docs/features/sellers/api.md",
 	"shorts": "docs/features/shorts/api.md",
 	"social": "docs/features/social/api.md",
-	"verification": "docs/features/verification/api.md",
+	"verification": "docs/features/verification/README.md",
 	"wishlist": "docs/features/wishlist/api.md",
+}
+
+SINGLE_FILE_FEATURE_DOCS = {
+	"accounts": "docs/features/accounts/README.md",
+	"auth": "docs/features/authentication/README.md",
+	"catalog": "docs/features/catalog/README.md",
+	"localization": "docs/features/localization/README.md",
+	"media": "docs/features/media/README.md",
+	"notifications": "docs/features/notifications/README.md",
+	"verification": "docs/features/verification/README.md",
 }
 
 PLATFORM_DOCS = {
@@ -296,6 +306,14 @@ def validate_docs(endpoints: list[Endpoint]) -> list[str]:
 		expected = render_inventory(domain, endpoints, relative)
 		if expected not in text:
 			errors.append(f"code-derived endpoint inventory is stale or missing: {relative}")
+
+	for domain, relative in SINGLE_FILE_FEATURE_DOCS.items():
+		doc_dir = (ROOT / relative).parent
+		markdown_files = sorted(path.name for path in doc_dir.glob("*.md"))
+		if markdown_files != ["README.md"]:
+			errors.append(
+				f"single-file feature {domain} must have exactly one documentation file named README.md; found {markdown_files}"
+			)
 
 	feature_index = ROOT / "docs/features/README.md"
 	if not feature_index.exists():

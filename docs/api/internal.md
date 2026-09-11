@@ -16,7 +16,7 @@ Operational behavior belongs to the matching production service documentation:
 
 - [Analytics pipeline](../production/analytics-pipeline-service.md)
 - [Content moderation](../production/content-moderation-service.md)
-- [Notifications signed delivery callback](../features/notifications/api.md)
+- [Notifications signed delivery callback](../features/notifications/README.md)
 - [Search/ranking](../production/search-ranking-service.md)
 - [Video processing](../production/video-processing-service.md)
 

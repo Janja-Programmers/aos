@@ -4,13 +4,13 @@ from pathlib import Path
 from unittest import TestCase
 
 ROOT = Path(__file__).resolve().parents[4]
-CATALOG_DOC = ROOT / "docs" / "features" / "catalog" / "api.md"
+CATALOG_DOC = ROOT / "docs" / "features" / "catalog" / "README.md"
 
 
 class TestCatalogDocumentationContract(TestCase):
     def test_catalog_has_one_authoritative_feature_document(self):
         catalog_dir = CATALOG_DOC.parent
-        self.assertEqual(sorted(path.name for path in catalog_dir.glob("*.md")), ["api.md"])
+        self.assertEqual(sorted(path.name for path in catalog_dir.glob("*.md")), ["README.md"])
 
     def test_document_covers_media_concurrency_indexes_and_frontend_contract(self):
         text = CATALOG_DOC.read_text()

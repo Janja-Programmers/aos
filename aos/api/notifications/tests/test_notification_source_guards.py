@@ -13,6 +13,10 @@ def _source(relative: str) -> str:
 
 
 class TestNotificationProductionSourceGuards(unittest.TestCase):
+    def test_feature_documentation_is_single_canonical_file(self):
+        docs = sorted(path.name for path in (ROOT / "docs/features/notifications").glob("*.md"))
+        self.assertEqual(docs, ["README.md"])
+
     def test_public_surface_is_canonical_and_uses_shared_transport(self):
         source = _source("aos/api/v1/notifications/__init__.py")
         tree = ast.parse(source)

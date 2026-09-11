@@ -1,6 +1,6 @@
 # AOS Verification
 
-This directory is the canonical documentation location for the Verification backend. `README.md` owns the domain contract and `api.md` exists only because the repository-wide API inventory generator owns that code-derived endpoint table.
+This file is the single canonical documentation source for the Verification backend, including ownership, data model, lifecycle, public API, security, operations, retention, integrations, and validation.
 
 ## Feature overview
 
@@ -178,9 +178,22 @@ Approval/revocation locks the Accounts profile before the Verification row and u
 
 There is deliberately no public reviewer/admin Verification API in v1. Review is a staff Desk operation protected by Frappe permissions and server lifecycle checks, so there is no separate Verification reviewer endpoint to expose in Postman or rate-limit as a client API.
 
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `get_my_verification` | GET | Session required | Client |
+| `submit_verification` | POST | Session required | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
 ## Public API
 
-The public v1 surface contains exactly two authenticated endpoints. `docs/features/verification/api.md` contains the code-derived inventory; this README is authoritative for semantics.
+The public v1 surface contains exactly two authenticated endpoints. This `README.md` contains both the code-derived inventory and the authoritative Verification semantics.
 
 ### `POST aos.api.v1.verification.submit_verification`
 

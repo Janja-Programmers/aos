@@ -10,7 +10,7 @@ For request fields, response payloads, state rules, errors, limits and privacy s
 
 ## Accounts (5)
 
-Owner documentation: [docs/features/accounts/api.md](../features/accounts/api.md)
+Owner documentation: [docs/features/accounts/README.md](../features/accounts/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
@@ -62,7 +62,7 @@ Owner documentation: [docs/features/analytics/api.md](../features/analytics/api.
 
 ## Auth (16)
 
-Owner documentation: [docs/features/authentication/api.md](../features/authentication/api.md)
+Owner documentation: [docs/features/authentication/README.md](../features/authentication/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
@@ -106,7 +106,7 @@ Owner documentation: [docs/features/calls/api.md](../features/calls/api.md)
 
 ## Catalog (3)
 
-Owner documentation: [docs/features/catalog/api.md](../features/catalog/api.md)
+Owner documentation: [docs/features/catalog/README.md](../features/catalog/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
@@ -190,7 +190,7 @@ Owner documentation: [docs/features/live/livekit.md](../features/live/livekit.md
 
 ## Localization (3)
 
-Owner documentation: [docs/features/localization/api.md](../features/localization/api.md)
+Owner documentation: [docs/features/localization/README.md](../features/localization/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
@@ -212,7 +212,7 @@ Owner documentation: [docs/features/maps/api.md](../features/maps/api.md)
 
 ## Media (10)
 
-Owner documentation: [docs/features/media/api.md](../features/media/api.md)
+Owner documentation: [docs/features/media/README.md](../features/media/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
@@ -237,7 +237,7 @@ Owner documentation: [docs/production/content-moderation-service.md](../producti
 
 ## Notifications (9)
 
-Owner documentation: [docs/features/notifications/api.md](../features/notifications/api.md)
+Owner documentation: [docs/features/notifications/README.md](../features/notifications/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
@@ -391,7 +391,7 @@ Owner documentation: [docs/features/social/api.md](../features/social/api.md)
 
 ## Verification (2)
 
-Owner documentation: [docs/features/verification/api.md](../features/verification/api.md)
+Owner documentation: [docs/features/verification/README.md](../features/verification/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|

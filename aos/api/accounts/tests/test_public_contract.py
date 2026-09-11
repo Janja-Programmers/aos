@@ -84,8 +84,7 @@ class AccountsPublicContractTests(unittest.TestCase):
 
     def test_accounts_documentation_is_single_authoritative_file(self):
         accounts_dir = ROOT / "docs/features/accounts"
-        self.assertTrue((accounts_dir / "api.md").is_file())
-        self.assertFalse((accounts_dir / "README.md").exists())
+        self.assertEqual(sorted(path.name for path in accounts_dir.glob("*.md")), ["README.md"])
         feature_index = self._source("docs/features/README.md")
-        self.assertIn("[Accounts](accounts/api.md)", feature_index)
-        self.assertNotIn("accounts/README.md", feature_index)
+        self.assertIn("[Accounts](accounts/README.md)", feature_index)
+        self.assertNotIn("accounts/api.md", feature_index)

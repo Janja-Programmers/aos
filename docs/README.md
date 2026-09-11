@@ -17,7 +17,7 @@ This directory is the documentation entry point for the AOS backend. The reposit
 AOS deliberately avoids maintaining the same contract in multiple places:
 
 1. **Code is the ultimate source of truth.** Public wrappers live under `aos/api/v1/`; private implementation modules live under `aos/api/`.
-2. **`docs/features/` is the canonical human documentation for domain behavior.** A feature's `README.md` explains ownership and navigation; `api.md` explains the client-facing contract; specialized pages explain lifecycle, privacy, security, operations, and integrations where needed.
+2. **`docs/features/` is the canonical human documentation for domain behavior.** A production-hardened feature owns exactly one comprehensive Markdown document at `docs/features/<feature>/README.md`, covering ownership, dependencies, data model, lifecycle, public API, security/privacy, operations, integrations, retention, schema/migration notes, and validation. Older unhardened feature folders may still be split and must be consolidated when that feature is hardened.
 3. **`docs/api/reference.md` is the complete route inventory.** It is generated from `@frappe.whitelist` declarations and contains every v1 route plus the private metrics routes. Do not hand-maintain a competing endpoint list.
 4. **`docs/api/` is navigation and cross-cutting API policy, not a second set of feature contracts.** Historical domain pages remain only as compatibility pointers to their feature documentation.
 5. **`docs/production/` owns deployment, companion services, monitoring, backup, security configuration, and runbooks.** Signed internal callbacks are listed in the API reference but their operational semantics live with the owning production service.

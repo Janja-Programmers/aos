@@ -269,8 +269,7 @@ class TestVerificationProductionSourceGuards(unittest.TestCase):
         self.assertIn("SUBMIT_VERIFICATION_WINDOW_SECONDS = 3600", constants)
 
     def test_verification_documentation_is_canonical_and_complete(self):
-        readme = _source("docs/features/verification/README.md")
-        api = _source("docs/features/verification/api.md")
+        api = _source("docs/features/verification/README.md")
         for heading in (
             "## Feature overview",
             "## Production-ready dependencies",
@@ -282,12 +281,12 @@ class TestVerificationProductionSourceGuards(unittest.TestCase):
             "## Retention",
             "## Tests and validation",
         ):
-            self.assertIn(heading, readme)
-        self.assertIn("does not depend on Sellers", readme)
-        self.assertIn("one `AOS Verification Request` per account", readme)
-        self.assertIn("repository-generated endpoint inventory only", api)
-        for obsolete in ("lifecycle.md", "migration.md", "operations.md", "security.md", "testing.md"):
-            self.assertFalse((ROOT / "docs/features/verification" / obsolete).exists())
+            self.assertIn(heading, api)
+        self.assertIn("does not depend on Sellers", api)
+        self.assertIn("one `AOS Verification Request` per account", api)
+        self.assertIn("## Endpoint inventory (code-derived)", api)
+        docs = sorted(path.name for path in (ROOT / "docs/features/verification").glob("*.md"))
+        self.assertEqual(docs, ["README.md"])
 
     def test_verification_observability_has_no_payload_pii_fields(self):
         source = _source("aos/services/verification/observability.py")
