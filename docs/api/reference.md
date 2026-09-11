@@ -395,7 +395,7 @@ Owner documentation: [docs/features/verification/api.md](../features/verificatio
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
-| `/api/method/aos.api.v1.verification.get_my_verification` | Any* | Session required | Client | `aos/api/v1/verification/__init__.py` |
+| `/api/method/aos.api.v1.verification.get_my_verification` | GET | Session required | Client | `aos/api/v1/verification/__init__.py` |
 | `/api/method/aos.api.v1.verification.submit_verification` | POST | Session required | Client | `aos/api/v1/verification/__init__.py` |
 
 ## Video Processing (1)

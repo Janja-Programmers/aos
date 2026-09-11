@@ -475,8 +475,8 @@ def _anonymize_verification_requests(*, user: str) -> int:
         return 0
     fields = (
         "legal_name", "phone_number", "business_name", "business_phone_number",
-        "business_email", "business_website", "business_address",
-        "submission_idempotency_hash",
+        "business_email", "business_website", "business_address", "business_category",
+        "submission_idempotency_key_hash", "submission_payload_hash",
     )
     available = [field for field in fields if frappe.get_meta("AOS Verification Request").has_field(field)]
     if not available:

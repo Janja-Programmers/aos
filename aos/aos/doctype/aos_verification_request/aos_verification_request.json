@@ -13,6 +13,9 @@
   "column_break_kpfg",
   "status",
   "verified_on",
+  "revoked_by",
+  "revoked_on",
+  "submitted_on",
   "section_break_epny",
   "rejection_reason",
   "individual_details_tab",
@@ -29,7 +32,8 @@
   "business_address",
   "documents_tab",
   "verification_documents",
-  "submission_idempotency_hash"
+  "submission_idempotency_key_hash",
+  "submission_payload_hash"
  ],
  "fields": [
   {
@@ -65,28 +69,31 @@
    "fieldname": "business_name",
    "fieldtype": "Data",
    "label": "Business Name",
-   "length": 180
+   "length": 180,
+   "read_only": 1
   },
   {
    "fieldname": "business_type",
    "fieldtype": "Select",
    "label": "Business Type",
    "options": "\nSole Proprietorship\nPartnership\nLimited Company\nCorporation",
-   "length": 64
+   "length": 64,
+   "read_only": 1
   },
   {
    "fieldname": "business_category",
    "fieldtype": "Data",
    "label": "Business Category",
-   "link_filters": "[]",
-   "length": 140
+   "length": 140,
+   "read_only": 1
   },
   {
    "fieldname": "business_phone_number",
    "fieldtype": "Data",
    "label": "Business Phone Number",
    "options": "Phone",
-   "length": 32
+   "length": 32,
+   "read_only": 1
   },
   {
    "fieldname": "column_break_wwvt",
@@ -96,7 +103,8 @@
    "fieldname": "business_email",
    "fieldtype": "Data",
    "label": "Business Email",
-   "length": 254
+   "length": 254,
+   "read_only": 1
   },
   {
    "depends_on": "eval: doc.status == \"Rejected\"",
@@ -110,18 +118,21 @@
    "fieldtype": "Table",
    "label": "Verification Documents",
    "options": "AOS Verification Document",
-   "reqd": 1
+   "reqd": 1,
+   "read_only": 1
   },
   {
    "fieldname": "business_website",
    "fieldtype": "Data",
    "label": "Business Website",
-   "length": 300
+   "length": 300,
+   "read_only": 1
   },
   {
    "fieldname": "business_address",
    "fieldtype": "Small Text",
-   "label": "Business Address"
+   "label": "Business Address",
+   "read_only": 1
   },
   {
    "fieldname": "documents_tab",
@@ -135,7 +146,8 @@
    "in_standard_filter": 1,
    "label": "User",
    "options": "User",
-   "reqd": 1
+   "reqd": 1,
+   "read_only": 1
   },
   {
    "fieldname": "column_break_kpfg",
@@ -152,7 +164,8 @@
    "in_standard_filter": 1,
    "label": "Verification Type",
    "options": "Business\nIndividual",
-   "reqd": 1
+   "reqd": 1,
+   "read_only": 1
   },
   {
    "depends_on": "eval: doc.verification_type == 'Individual'",
@@ -164,29 +177,64 @@
    "fieldname": "legal_name",
    "fieldtype": "Data",
    "label": "Legal Name",
-   "length": 160
+   "length": 160,
+   "read_only": 1
   },
   {
    "fieldname": "phone_number",
    "fieldtype": "Data",
    "label": "Phone Number",
-   "length": 32
+   "length": 32,
+   "read_only": 1
   },
   {
    "default": "VER-.YYYY.-.#####",
    "fieldname": "naming_series",
    "fieldtype": "Select",
    "label": "Series",
-   "options": "VER-.YYYY.-.#####"
+   "options": "VER-.YYYY.-.#####",
+   "read_only": 1,
+   "hidden": 1
   },
   {
-   "fieldname": "submission_idempotency_hash",
+   "fieldname": "submitted_on",
+   "fieldtype": "Datetime",
+   "label": "Submitted On",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "submission_idempotency_key_hash",
    "fieldtype": "Data",
-   "label": "Submission Idempotency Hash",
+   "label": "Submission Idempotency Key Hash",
    "hidden": 1,
    "read_only": 1,
    "no_copy": 1,
    "length": 64
+  },
+  {
+   "fieldname": "submission_payload_hash",
+   "fieldtype": "Data",
+   "label": "Submission Payload Hash",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "length": 64
+  },
+  {
+   "fieldname": "revoked_on",
+   "fieldtype": "Datetime",
+   "label": "Revoked On",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "revoked_by",
+   "fieldtype": "Link",
+   "label": "Revoked By",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1
   }
  ],
  "grid_page_length": 50,
@@ -200,7 +248,7 @@
  "owner": "Administrator",
  "permissions": [
   {
-   "create": 1,
+   "create": 0,
    "delete": 0,
    "email": 1,
    "export": 1,

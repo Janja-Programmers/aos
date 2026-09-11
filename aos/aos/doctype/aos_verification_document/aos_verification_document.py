@@ -10,15 +10,17 @@ from aos.services.verification.constants import MAX_DOCUMENT_NUMBER_LENGTH, MAX_
 
 
 class AOSVerificationDocument(Document):
+    """Sensitive child row; parent Verification owns authorization and Media policy."""
+
     def validate(self):
-        self.attachment = ""
         self.document_type = self._clean(self.document_type, MAX_DOCUMENT_TYPE_LENGTH)
         self.document_number = self._clean(self.document_number, MAX_DOCUMENT_NUMBER_LENGTH)
         if not self.document_type:
             frappe.throw("Verification document type is required")
+        if not str(self.media or "").strip():
+            frappe.throw("Verification document media is required")
         if self.issue_date and self.expiry_date and self.issue_date > self.expiry_date:
             frappe.throw("Document issue date cannot be after expiry date")
-        self._validate_media_reference()
 
     @staticmethod
     def _clean(value, limit: int) -> str:
@@ -26,21 +28,3 @@ class AOSVerificationDocument(Document):
         if len(text) > limit:
             frappe.throw("Verification document field is too long")
         return text
-
-    def _validate_media_reference(self):
-        if not self.media:
-            frappe.throw("Verification document media is required")
-        media = frappe.db.get_value(
-            "AOS Media Object",
-            self.media,
-            ["purpose", "visibility", "status"],
-            as_dict=True,
-        )
-        if not media:
-            frappe.throw("Invalid verification document media")
-        if media.purpose != "verification_document":
-            frappe.throw("Verification document media has the wrong purpose")
-        if media.visibility != "Private":
-            frappe.throw("Verification document media must be private")
-        if media.status not in {"Uploaded", "Attached"}:
-            frappe.throw("Verification document media must be uploaded")

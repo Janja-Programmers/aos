@@ -13,7 +13,7 @@ from aos.services.verification.errors import VerificationError, VerificationVali
 from aos.services.verification.service import VerificationService
 from aos.services.verification.validation import strip_transport_fields
 
-from .constants import GET_MY_VERIFICATION_LIMIT_PER_MINUTE_PER_USER
+from .constants import GET_MY_VERIFICATION_LIMIT, GET_MY_VERIFICATION_WINDOW_SECONDS
 
 
 def get_my_verification_impl(**kwargs):
@@ -26,8 +26,8 @@ def get_my_verification_impl(**kwargs):
 
     rl = rate_limit(
         key=rate_limit_key("verification", "get_my", "user", current_user),
-        ttl_seconds=60,
-        limit=GET_MY_VERIFICATION_LIMIT_PER_MINUTE_PER_USER,
+        ttl_seconds=GET_MY_VERIFICATION_WINDOW_SECONDS,
+        limit=GET_MY_VERIFICATION_LIMIT,
         message="Too many verification status requests. Please try again shortly.",
     )
     if rl:

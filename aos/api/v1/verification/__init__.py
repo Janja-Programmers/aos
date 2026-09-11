@@ -21,7 +21,7 @@ def submit_verification(**kwargs):
     return _submit_verification_impl(**kwargs)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET"])
 def get_my_verification(**kwargs):
     """Get logged-in user's verification status."""
     return _get_my_verification_impl(**kwargs)

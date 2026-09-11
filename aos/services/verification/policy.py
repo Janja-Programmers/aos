@@ -4,60 +4,48 @@ from __future__ import annotations
 
 import frappe
 
-from aos.services.sellers.policy import get_or_create_seller, seller_capabilities
+from aos.services.accounts.constants import (
+    ACCOUNT_STATUS_ACTIVE,
+    ACCOUNT_STATUS_DELETED,
+    ACCOUNT_STATUS_SUSPENDED,
+)
+from aos.services.accounts.repository import AccountRepository
 from aos.utils.doctype_permissions import has_doctype_permission
 
-from .constants import TYPE_BUSINESS
+from .constants import VERIFICATION_DOCTYPE
 from .errors import VerificationNotFoundError, VerificationPermissionError
 
 
-def lock_eligible_profile(user: str):
+def lock_profile(user: str):
+    """Lock and return the canonical Accounts profile without changing its lifecycle."""
     clean_user = str(user or "").strip()
     if not clean_user or clean_user == "Guest":
         raise VerificationPermissionError("Authentication is required.", code="AUTH_REQUIRED", http_status=401)
-    rows = frappe.db.sql(
-        """
-        SELECT p.name
-        FROM `tabAOS Profile` p
-        INNER JOIN `tabUser` u ON u.name = p.user
-        WHERE p.user = %s
-        LIMIT 1
-        FOR UPDATE
-        """,
-        (clean_user,),
-        as_dict=True,
-    )
-    if not rows:
+
+    profile = AccountRepository.lock_profile(clean_user)
+    if not profile:
         raise VerificationNotFoundError("Profile not found.", code="PROFILE_NOT_FOUND")
-    profile = frappe.get_doc("AOS Profile", rows[0].name)
-    enabled = frappe.db.get_value("User", clean_user, "enabled")
-    status = str(getattr(profile, "account_status", "Active") or "Active")
-    if status == "Deleted":
+    return profile
+
+
+def lock_eligible_profile(user: str):
+    """Lock the canonical Accounts profile and verify it can submit/be approved."""
+    clean_user = str(user or "").strip()
+    profile = lock_profile(clean_user)
+    status = str(getattr(profile, "account_status", ACCOUNT_STATUS_ACTIVE) or ACCOUNT_STATUS_ACTIVE)
+    if status == ACCOUNT_STATUS_DELETED:
         raise VerificationPermissionError("Account is unavailable.", code="ACCOUNT_DELETED")
-    if status == "Suspended":
+    if status == ACCOUNT_STATUS_SUSPENDED:
         raise VerificationPermissionError("Account is suspended.", code="ACCOUNT_SUSPENDED")
-    if int(enabled or 0) != 1 or status != "Active":
+    enabled = int(frappe.db.get_value("User", clean_user, "enabled") or 0)
+    if enabled != 1 or status != ACCOUNT_STATUS_ACTIVE:
         raise VerificationPermissionError("Account is unavailable.", code="ACCOUNT_DISABLED")
     return profile
 
 
-def ensure_business_seller(user: str):
-    seller = get_or_create_seller(user)
-    if not seller:
-        raise VerificationPermissionError("Seller profile is required.", code="SELLER_REQUIRED")
-    if not seller_capabilities(seller).get("can_submit_verification"):
-        raise VerificationPermissionError("Seller profile is unavailable.", code="SELLER_INACTIVE")
-    return seller
-
-
-def assert_submission_eligible(*, user: str, verification_type: str):
-    profile = lock_eligible_profile(user)
-    if bool(int(getattr(profile, "is_verified", 0) or 0)):
-        raise VerificationPermissionError(
-            "Account is already verified.", code="VERIFICATION_ALREADY_APPROVED", http_status=409
-        )
-    seller = ensure_business_seller(user) if verification_type == TYPE_BUSINESS else None
-    return profile, seller
+def assert_submission_eligible(*, user: str):
+    """Serialize submission against the authoritative Accounts lifecycle row."""
+    return lock_eligible_profile(user)
 
 
 def is_reviewer(user: str | None) -> bool:
@@ -66,7 +54,7 @@ def is_reviewer(user: str | None) -> bool:
         return False
     return has_doctype_permission(
         user=clean_user,
-        doctype="AOS Verification Request",
+        doctype=VERIFICATION_DOCTYPE,
         ptype="write",
     )
 

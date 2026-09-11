@@ -1,10 +1,8 @@
-"""Privacy-safe serializers for Verification APIs."""
+"""Privacy-safe serializers for Verification owner APIs."""
 
 from __future__ import annotations
 
 from typing import Any
-
-from aos.services.accounts.identity import public_account_id_for_user
 
 
 def mask_document_number(value: Any) -> str | None:
@@ -22,20 +20,21 @@ def serialize_document(row) -> dict[str, Any]:
         "document_number": mask_document_number(getattr(row, "document_number", None)),
         "issue_date": getattr(row, "issue_date", None),
         "expiry_date": getattr(row, "expiry_date", None),
-        "media": getattr(row, "media", None) or None,
         "media_id": getattr(row, "media", None) or None,
     }
 
 
 def serialize_request(doc, *, include_rejection_reason: bool = True) -> dict[str, Any]:
+    from aos.services.accounts.identity import public_account_id_for_user
+
     payload = {
-        "name": doc.name,
-        "id": doc.name,
         "verification_id": doc.name,
         "account_id": public_account_id_for_user(doc.user),
         "verification_type": doc.verification_type,
         "status": doc.status,
+        "submitted_on": getattr(doc, "submitted_on", None),
         "verified_on": doc.verified_on,
+        "revoked_on": getattr(doc, "revoked_on", None),
         "documents": [serialize_document(row) for row in (doc.verification_documents or [])],
     }
     if include_rejection_reason and doc.status == "Rejected":

@@ -1,5 +1,5 @@
-"""Production Verification domain services."""
+"""Production Verification domain package.
 
-from .service import VerificationService
-
-__all__ = ["VerificationService"]
+Import concrete services from their owning modules. Keeping package import light
+allows pure validation/lifecycle tests to run without bootstrapping Frappe.
+"""

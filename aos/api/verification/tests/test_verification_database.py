@@ -81,16 +81,20 @@ class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
 
         self.assertTrue(first.get("ok"), first)
         self.assertTrue(repeated.get("ok"), repeated)
-        self.assertEqual(first["data"]["id"], repeated["data"]["id"])
+        self.assertEqual(first["data"]["verification_id"], repeated["data"]["verification_id"])
         self.assertEqual(first["data"]["status"], "Pending")
         self.assertNotIn("document_number", str(first["data"]))
 
-        request = frappe.get_doc("AOS Verification Request", first["data"]["id"])
+        request = frappe.get_doc("AOS Verification Request", first["data"]["verification_id"])
         self.assertEqual(request.user, self.owner)
         self.assertEqual(request.legal_name, "Jane Doe")
         self.assertEqual(request.status, "Pending")
         self.assertFalse(request.verified_by)
         self.assertFalse(request.verified_on)
+        self.assertTrue(request.submitted_on)
+        self.assertRegex(request.submission_idempotency_key_hash or "", r"^[0-9a-f]{64}$")
+        self.assertRegex(request.submission_payload_hash or "", r"^[0-9a-f]{64}$")
+        self.assertNotIn("verification-test-key", str(request.as_dict()))
         self.assertEqual(len(request.verification_documents), 1)
 
         media = frappe.get_doc("AOS Media Object", self.media.name)
@@ -105,6 +109,17 @@ class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         duplicate = self._submit_individual(idempotency_key="different-key")
         self.assertFalse(duplicate.get("ok"), duplicate)
         self.assertEqual(duplicate.get("error"), "VERIFICATION_IN_PROGRESS")
+        self.assertEqual(
+            frappe.db.count("AOS Verification Request", {"user": self.owner}),
+            1,
+        )
+
+    def test_same_idempotency_key_with_different_payload_is_conflict(self):
+        first = self._submit_individual()
+        self.assertTrue(first.get("ok"), first)
+        replay = self._submit_individual(legal_name="Jane Different")
+        self.assertFalse(replay.get("ok"), replay)
+        self.assertEqual(replay.get("error"), "VERIFICATION_IDEMPOTENCY_CONFLICT")
         self.assertEqual(
             frappe.db.count("AOS Verification Request", {"user": self.owner}),
             1,
@@ -144,7 +159,7 @@ class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
     def test_normal_account_cannot_self_approve_even_with_ignore_permissions(self):
         submitted = self._submit_individual()
         self.assertTrue(submitted.get("ok"), submitted)
-        request = frappe.get_doc("AOS Verification Request", submitted["data"]["id"])
+        request = frappe.get_doc("AOS Verification Request", submitted["data"]["verification_id"])
         request.status = "Approved"
         with self.assertRaises(frappe.ValidationError):
             request.save(ignore_permissions=True)
@@ -207,7 +222,7 @@ class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
             ],
         )
         self.assertTrue(resubmitted.get("ok"), resubmitted)
-        self.assertEqual(resubmitted["data"]["id"], rejected.name)
+        self.assertEqual(resubmitted["data"]["verification_id"], rejected.name)
         self.assertEqual(resubmitted["data"]["status"], "Pending")
 
         old_media = frappe.get_doc("AOS Media Object", self.media.name)
@@ -235,7 +250,7 @@ class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         submitted = self._submit_individual()
         self.assertTrue(submitted.get("ok"), submitted)
         frappe.set_user("Administrator")
-        request = frappe.get_doc("AOS Verification Request", submitted["data"]["id"])
+        request = frappe.get_doc("AOS Verification Request", submitted["data"]["verification_id"])
         request.legal_name = "Different Person"
         with self.assertRaises(frappe.ValidationError):
             request.save(ignore_permissions=True)
@@ -251,7 +266,7 @@ class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
 
         submitted = self._submit_individual()
         self.assertTrue(submitted.get("ok"), submitted)
-        request_id = submitted["data"]["id"]
+        request_id = submitted["data"]["verification_id"]
         frappe.set_user("Administrator")
         summary = _cleanup_verification_documents(user=self.owner)
         revoked = _revoke_verification_requests(user=self.owner, now=now_datetime())
@@ -262,6 +277,8 @@ class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(frappe.db.exists("AOS Verification Request", request_id))
         request = frappe.get_doc("AOS Verification Request", request_id)
         self.assertEqual(request.status, "Revoked")
+        self.assertTrue(request.revoked_on)
+        self.assertFalse(request.rejection_reason)
         self.assertEqual(len(request.verification_documents), 0)
         media = frappe.get_doc("AOS Media Object", self.media.name)
         self.assertEqual(media.status, "Orphaned")
@@ -276,9 +293,7 @@ class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(response.get("error"), "ACCOUNT_SUSPENDED")
         self.assertFalse(frappe.db.exists("AOS Verification Request", {"user": self.owner}))
 
-    def test_business_approval_reuses_seller_projection_without_activating_seller(self):
-        frappe.set_user("Administrator")
-        seller = self.make_seller(self.owner)
+    def test_business_approval_does_not_require_or_mutate_seller_domain(self):
         frappe.set_user(self.owner)
         with self._without_submit_limit():
             submitted = submit_verification_impl(
@@ -296,11 +311,66 @@ class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
                 ],
             )
         self.assertTrue(submitted.get("ok"), submitted)
-        self._review("Approved")
-        seller.reload()
-        self.assertEqual(seller.status, "Active")
-        self.assertEqual(seller.seller_type, "Business")
-        self.assertEqual(seller.business_category, "Retail")
+        approved = self._review("Approved")
+        self.assertEqual(approved.status, "Approved")
+        self.assertTrue(int(frappe.db.get_value("AOS Profile", {"user": self.owner}, "is_verified") or 0))
+        self.assertFalse(frappe.db.exists("AOS Seller", {"user": self.owner}))
+
+    def test_notification_failure_does_not_corrupt_approved_state(self):
+        submitted = self._submit_individual()
+        self.assertTrue(submitted.get("ok"), submitted)
+        frappe.set_user("Administrator")
+        request = frappe.get_doc(
+            "AOS Verification Request", submitted["data"]["verification_id"]
+        )
+        request.status = "Approved"
+        with patch(
+            "aos.services.verification.decision.NotificationService.notify_verification_approved",
+            side_effect=RuntimeError("notification unavailable"),
+        ):
+            request.save(ignore_permissions=True)
+        request.reload()
+        self.assertEqual(request.status, "Approved")
+        self.assertTrue(request.verified_on)
+        self.assertTrue(int(frappe.db.get_value("AOS Profile", {"user": self.owner}, "is_verified") or 0))
+
+    def test_revocation_preserves_approval_audit_and_clears_account_projection(self):
+        submitted = self._submit_individual()
+        self.assertTrue(submitted.get("ok"), submitted)
+        approved = self._review("Approved")
+        original_verified_by = approved.verified_by
+        original_verified_on = approved.verified_on
+
+        revoked = self._review("Revoked")
+        self.assertEqual(revoked.status, "Revoked")
+        self.assertEqual(revoked.verified_by, original_verified_by)
+        self.assertEqual(str(revoked.verified_on), str(original_verified_on))
+        self.assertTrue(revoked.revoked_by)
+        self.assertTrue(revoked.revoked_on)
+        self.assertFalse(int(frappe.db.get_value("AOS Profile", {"user": self.owner}, "is_verified") or 0))
+
+    def test_get_my_derives_truth_from_verification_not_profile_projection(self):
+        submitted = self._submit_individual()
+        self.assertTrue(submitted.get("ok"), submitted)
+        frappe.set_user("Administrator")
+        frappe.db.set_value("AOS Profile", {"user": self.owner}, "is_verified", 1)
+        frappe.set_user(self.owner)
+        with self._without_get_limit():
+            response = get_my_verification_impl()
+        self.assertTrue(response.get("ok"), response)
+        self.assertFalse(response["data"]["is_verified"])
+
+    def test_verification_indexes_are_present(self):
+        rows = frappe.db.sql("SHOW INDEX FROM `tabAOS Verification Request`", as_dict=True)
+        request_indexes = {row.Key_name for row in rows}
+        self.assertIn("uq_aos_verification_user", request_indexes)
+        self.assertIn("idx_aos_verification_review_queue", request_indexes)
+        self.assertIn("idx_aos_verification_decisions", request_indexes)
+
+        child_rows = frappe.db.sql("SHOW INDEX FROM `tabAOS Verification Document`", as_dict=True)
+        child_indexes = {row.Key_name for row in child_rows}
+        self.assertIn("uq_aos_verification_document_media", child_indexes)
+
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ from aos.services.accounts.http import set_private_no_store
 from aos.services.verification.errors import VerificationError
 from aos.services.verification.service import VerificationService
 
-from .constants import SUBMIT_VERIFICATION_LIMIT_PER_MINUTE_PER_USER
+from .constants import SUBMIT_VERIFICATION_LIMIT, SUBMIT_VERIFICATION_WINDOW_SECONDS
 
 
 def submit_verification_impl(**kwargs):
@@ -27,8 +27,8 @@ def submit_verification_impl(**kwargs):
 
     rl = rate_limit(
         key=rate_limit_key("verification", "submit", "user", current_user),
-        ttl_seconds=60,
-        limit=SUBMIT_VERIFICATION_LIMIT_PER_MINUTE_PER_USER,
+        ttl_seconds=SUBMIT_VERIFICATION_WINDOW_SECONDS,
+        limit=SUBMIT_VERIFICATION_LIMIT,
         message="Too many verification submissions. Please try again shortly.",
     )
     if rl:

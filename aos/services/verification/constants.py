@@ -1,10 +1,11 @@
-"""Authoritative constants for the existing AOS Verification model."""
+"""Authoritative constants for the AOS Verification domain."""
 
 from __future__ import annotations
 
 VERIFICATION_DOCTYPE = "AOS Verification Request"
 VERIFICATION_DOCUMENT_DOCTYPE = "AOS Verification Document"
 VERIFICATION_DOCUMENT_PURPOSE = "verification_document"
+VERIFICATION_DOCUMENT_FIELD = "verification_documents"
 
 TYPE_BUSINESS = "Business"
 TYPE_INDIVIDUAL = "Individual"
@@ -19,14 +20,14 @@ VERIFICATION_STATUSES = frozenset(
     {STATUS_PENDING, STATUS_REVIEWING, STATUS_APPROVED, STATUS_REJECTED, STATUS_REVOKED}
 )
 
-REVIEW_STATUSES = frozenset({STATUS_REVIEWING, STATUS_APPROVED, STATUS_REJECTED, STATUS_REVOKED})
 RESUBMIT_FROM_STATUSES = frozenset({STATUS_REJECTED, STATUS_REVOKED})
+REVIEW_STATUSES = frozenset({STATUS_REVIEWING, STATUS_APPROVED, STATUS_REJECTED, STATUS_REVOKED})
 
-# Existing Desk lifecycle, made explicit. Rejected/Revoked are reopened only by
-# the canonical resubmission service, not by arbitrary Desk field editing.
+# Revoked means an approval was withdrawn. Pending/Reviewing requests are
+# rejected, not revoked. Account deletion uses the explicit system action.
 REVIEWER_TRANSITIONS = {
-    STATUS_PENDING: frozenset({STATUS_REVIEWING, STATUS_APPROVED, STATUS_REJECTED, STATUS_REVOKED}),
-    STATUS_REVIEWING: frozenset({STATUS_APPROVED, STATUS_REJECTED, STATUS_REVOKED}),
+    STATUS_PENDING: frozenset({STATUS_REVIEWING, STATUS_APPROVED, STATUS_REJECTED}),
+    STATUS_REVIEWING: frozenset({STATUS_APPROVED, STATUS_REJECTED}),
     STATUS_APPROVED: frozenset({STATUS_REVOKED}),
     STATUS_REJECTED: frozenset(),
     STATUS_REVOKED: frozenset(),
@@ -71,10 +72,7 @@ DOCUMENT_FIELDS = frozenset(
         "document_number",
         "issue_date",
         "expiry_date",
-        "media",
         "media_id",
-        "attachment_media",
-        "attachment_media_id",
     }
 )
 
@@ -89,5 +87,5 @@ MAX_BUSINESS_EMAIL_LENGTH = 254
 MAX_BUSINESS_WEBSITE_LENGTH = 300
 MAX_BUSINESS_ADDRESS_LENGTH = 500
 MAX_REJECTION_REASON_LENGTH = 1000
+MIN_IDEMPOTENCY_KEY_LENGTH = 8
 MAX_IDEMPOTENCY_KEY_LENGTH = 120
-

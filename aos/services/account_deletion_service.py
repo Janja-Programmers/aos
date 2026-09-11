@@ -613,12 +613,12 @@ def _revoke_verification_requests(*, user: str, now) -> int:
         "AOS Verification Request",
         set_sql="""
             status = 'Revoked',
-            verified_on = COALESCE(verified_on, %s),
-            rejection_reason = COALESCE(rejection_reason, %s),
+            revoked_on = COALESCE(revoked_on, %s),
+            rejection_reason = NULL,
             modified = %s
         """,
         where_sql="user = %s AND status IN ('Pending', 'Reviewing', 'Approved')",
-        set_params=(now, ACCOUNT_DELETED_REASON, now),
+        set_params=(now, now),
         where_params=(user,),
     )
 

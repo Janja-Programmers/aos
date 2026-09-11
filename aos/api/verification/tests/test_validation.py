@@ -12,6 +12,7 @@ class TestVerificationValidation(unittest.TestCase):
             "verification_type": "Individual",
             "legal_name": "Jane Doe",
             "phone_number": "+254700000001",
+            "idempotency_key": "verification-test-key",
             "verification_documents": [
                 {"document_type": "Identity Document", "media_id": "MEDIA-ABC123"}
             ],
@@ -29,6 +30,7 @@ class TestVerificationValidation(unittest.TestCase):
             "business_email": "SHOP@example.com",
             "business_website": "https://example.com",
             "business_address": "Nairobi",
+            "idempotency_key": "business-verification-key",
             "verification_documents": [
                 {"document_type": "Registration Document", "media_id": "MEDIA-ABC124"}
             ],
@@ -37,7 +39,9 @@ class TestVerificationValidation(unittest.TestCase):
         return payload
 
     def test_transport_fields_are_stripped(self):
-        result = normalize_submit_payload(self._individual(cmd="aos.api.v1.verification.submit_verification"))
+        result = normalize_submit_payload(
+            self._individual(cmd="aos.api.v1.verification.submit_verification")
+        )
         self.assertEqual(result["verification_type"], "Individual")
 
     def test_unknown_business_field_is_rejected(self):
@@ -45,12 +49,27 @@ class TestVerificationValidation(unittest.TestCase):
             normalize_submit_payload(self._individual(status="Approved"))
         self.assertEqual(ctx.exception.code, "VERIFICATION_UNKNOWN_FIELD")
 
+    def test_legacy_document_media_alias_is_rejected(self):
+        with self.assertRaises(VerificationValidationError) as ctx:
+            normalize_submit_payload(
+                self._individual(
+                    verification_documents=[
+                        {"document_type": "ID", "media": "MEDIA-ABC123"}
+                    ]
+                )
+            )
+        self.assertEqual(ctx.exception.code, "VERIFICATION_UNKNOWN_FIELD")
+
     def test_unknown_document_field_is_rejected(self):
         with self.assertRaises(VerificationValidationError) as ctx:
             normalize_submit_payload(
                 self._individual(
                     verification_documents=[
-                        {"document_type": "ID", "media_id": "MEDIA-ABC123", "url": "https://evil.test/x"}
+                        {
+                            "document_type": "ID",
+                            "media_id": "MEDIA-ABC123",
+                            "url": "https://evil.test/x",
+                        }
                     ]
                 )
             )
@@ -68,6 +87,16 @@ class TestVerificationValidation(unittest.TestCase):
             )
         self.assertEqual(ctx.exception.code, "VERIFICATION_DUPLICATE_DOCUMENT")
 
+    def test_missing_idempotency_key_is_rejected(self):
+        with self.assertRaises(VerificationValidationError) as ctx:
+            normalize_submit_payload(self._individual(idempotency_key=""))
+        self.assertEqual(ctx.exception.code, "VERIFICATION_INVALID_IDEMPOTENCY_KEY")
+
+    def test_short_idempotency_key_is_rejected(self):
+        with self.assertRaises(VerificationValidationError) as ctx:
+            normalize_submit_payload(self._individual(idempotency_key="short"))
+        self.assertEqual(ctx.exception.code, "VERIFICATION_INVALID_IDEMPOTENCY_KEY")
+
     def test_invalid_date_order_is_rejected(self):
         with self.assertRaises(VerificationValidationError):
             normalize_submit_payload(
@@ -83,10 +112,11 @@ class TestVerificationValidation(unittest.TestCase):
                 )
             )
 
-    def test_business_fields_are_normalized(self):
+    def test_business_fields_are_normalized_without_seller_dependency(self):
         result = normalize_submit_payload(self._business())
         self.assertEqual(result["business_email"], "shop@example.com")
         self.assertEqual(result["business_type"], "Limited Company")
+        self.assertEqual(result["business_category"], "Retail")
         self.assertEqual(result["business_website"], "https://example.com")
 
     def test_invalid_business_type_is_rejected(self):

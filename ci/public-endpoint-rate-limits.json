@@ -1281,13 +1281,13 @@
     "endpoint": "aos.api.v1.verification.__init__.get_my_verification",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Nginx authenticated baseline plus Verification application limit: 60 owner status reads per account per minute."
   },
   {
     "endpoint": "aos.api.v1.verification.__init__.submit_verification",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Nginx authenticated baseline plus Verification application limit: 5 submissions per account per hour."
   },
   {
     "endpoint": "aos.api.v1.video_processing.__init__.handle_callback",
