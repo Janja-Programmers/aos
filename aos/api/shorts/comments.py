@@ -24,7 +24,7 @@ from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.formatters import humanize_count
 from aos.api.shared.validators import require_id
 
-from aos.services.notification_service import NotificationService
+from aos.services.notifications.service import NotificationService
 from aos.services.shorts.recommendation import RecommendationService
 
 from aos.api.shorts.validators import (

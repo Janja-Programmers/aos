@@ -24,7 +24,7 @@ from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.user_display import get_user_display
 
 from aos.services.livekit_service import LiveKitService
-from aos.services.notification_service import NotificationService
+from aos.services.notifications.service import NotificationService
 from aos.services.calls.errors import CallError
 from aos.services.calls.livekit import (
     enqueue_room_cleanup,

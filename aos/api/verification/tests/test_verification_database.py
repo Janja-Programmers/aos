@@ -71,7 +71,7 @@ class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         doc.status = status
         if reason is not None:
             doc.rejection_reason = reason
-        with patch("aos.services.notification_service.NotificationService._deliver"):
+        with patch("aos.services.notifications.service.NotificationService._deliver"):
             doc.save(ignore_permissions=True)
         return doc
 

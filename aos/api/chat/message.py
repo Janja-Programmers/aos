@@ -26,7 +26,7 @@ from aos.services.accounts.constants import ACCOUNT_STATUS_ACTIVE
 from aos.services.live.errors import LiveError
 from aos.services.live.policy import LivePolicy
 
-from aos.services.notification_service import NotificationService
+from aos.services.notifications.service import NotificationService
 from aos.services.media.media_service import (
     MediaNotFoundError,
     MediaPermissionError,

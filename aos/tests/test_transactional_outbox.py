@@ -137,7 +137,7 @@ class TestTransactionalOutbox(FrappeTestCase):
 			"video_processing_service.py": "enqueue_dispatch",
 			"moderation_service.py": "enqueue_moderation_dispatch",
 			"search_ranking_service.py": "enqueue_search_index_dispatch",
-			"notification_delivery_service.py": "enqueue_notification_delivery_dispatch",
+			"notifications/delivery.py": "enqueue_notification_delivery_dispatch",
 			"analytics_pipeline_service.py": "enqueue_analytics_ingest_dispatch",
 		}
 		root = Path(frappe.get_app_path("aos", "services"))

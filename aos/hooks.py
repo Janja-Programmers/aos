@@ -176,6 +176,7 @@ scheduler_events = {
 			"aos.tasks.outbox.publish_transactional_outbox",
 		],
 		"*/5 * * * *": [
+			"aos.tasks.notifications.cleanup_notification_retention",
 			"aos.tasks.media.recover_media_processing_jobs",
 			"aos.tasks.shorts.recover_pending_audio_mixes",
 			"aos.tasks.live.reconcile_live_state",

@@ -14,7 +14,6 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
-
 ## Public transport boundary
 
 Every Catalog v1 wrapper delegates through the platform canonical `aos.api.shared.transport.execute_endpoint` boundary before Catalog request validation. Frappe's framework-owned `cmd` routing field is removed there; all genuine client fields remain visible so unknown fields continue to fail with the stable Catalog validation contract. Catalog does not use the transitional `aos.api.v1._transport` alias.

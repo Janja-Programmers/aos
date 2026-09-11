@@ -40,7 +40,6 @@ FEATURE_DOCS = {
 PLATFORM_DOCS = {
 	"livekit": "docs/features/live/livekit.md",
 	"moderation": "docs/production/content-moderation-service.md",
-	"notification_delivery": "docs/production/notification-delivery-service.md",
 	"video_processing": "docs/production/video-processing-service.md",
 	"metrics": "docs/api/internal.md",
 }
@@ -62,7 +61,6 @@ DOMAIN_LABELS = {
 	"media": "Media",
 	"metrics": "Private Metrics",
 	"moderation": "Moderation",
-	"notification_delivery": "Notification Delivery",
 	"notifications": "Notifications",
 	"reports": "Reports",
 	"reviews": "Reviews",
@@ -103,10 +101,11 @@ class Endpoint:
 			return "Private monitoring"
 		if self.domain == "livekit" and self.function == "handle_webhook":
 			return "Provider webhook"
+		if self.domain == "notifications" and self.function == "handle_delivery_callback":
+			return "Signed callback"
 		if self.function == "handle_callback" and self.domain in {
 			"analytics_pipeline",
 			"moderation",
-			"notification_delivery",
 			"search_ranking",
 			"video_processing",
 		}:

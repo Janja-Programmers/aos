@@ -89,9 +89,9 @@ def get_notification_delivery_config() -> NotificationDeliveryConfig:
 	if not callback_url:
 		domain = get_env("AOS_API_DOMAIN")
 		if domain:
-			callback_url = f"https://{domain}/api/method/aos.api.v1.notification_delivery.handle_callback"
+			callback_url = f"https://{domain}/api/method/aos.api.v1.notifications.handle_delivery_callback"
 		else:
-			callback_url = "http://127.0.0.1:8000/api/method/aos.api.v1.notification_delivery.handle_callback"
+			callback_url = "http://127.0.0.1:8000/api/method/aos.api.v1.notifications.handle_delivery_callback"
 
 	return NotificationDeliveryConfig(
 		service_url=service_url,
@@ -345,12 +345,7 @@ def _delivery_suppression_reason(job) -> str | None:
 		)
 
 	if _clean(job.event) != TRANSIENT_INCOMING_CALL_EVENT:
-		# Existing/internal transient jobs are an established durable-delivery
-		# compatibility surface (including transactional-outbox recovery). Public
-		# creation remains restricted to aos_incoming_call by
-		# create_notification_delivery_job(); only Calls receives the additional
-		# domain-specific stale-call/block checks below.
-		return None
+		return "unsupported_transient_event"
 	data = _json_loads(job.payload_json, {})
 	call_id = _clean(data.get("call_id") or data.get("id")) if isinstance(data, dict) else ""
 	if not call_id or not frappe.db.exists("AOS Call", call_id):
@@ -418,7 +413,7 @@ def _sanitize_callback_payload(payload: dict[str, Any]) -> dict[str, Any]:
 			device_type = _clean(error.get("device_type")).lower()
 			if device_type not in {"android", "ios", "web"}:
 				device_type = ""
-			registration_kind = _clean(error.get("registration_kind") or "token").lower()
+			registration_kind = _clean(error.get("registration_kind")).lower()
 			if registration_kind not in {"token", "fid"}:
 				registration_kind = ""
 			clean_errors.append(

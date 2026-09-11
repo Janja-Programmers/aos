@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import importlib
 from pathlib import Path
 
@@ -8,7 +7,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import getdate, now_datetime
 
-from aos.patches.v1_0 import add_seller_location_indexes, backfill_push_registration_kind
+from aos.patches.v1_0 import add_seller_location_indexes
 from aos.patches.v1_0.add_unique_constraints import (
     UNIQUE_CONSTRAINTS,
     execute as apply_unique_constraints,
@@ -203,60 +202,6 @@ class TestMigrationUpgradeSafety(FrappeTestCase, AOSFeatureTestMixin):
             1,
         )
 
-    def test_push_token_legacy_duplicate_cleanup_is_idempotent(self):
-        user = self.make_user("push")
-        device_id = f"{self.prefix}-device"
-
-        self._insert_legacy_push_token("first", user, device_id, token="token-one")
-        self._insert_legacy_push_token("second", user, device_id, token="token-two")
-
-        apply_unique_constraints()
-        apply_unique_constraints()
-
-        rows = frappe.get_all(
-            "AOS Push Token",
-            filters={"user": user, "device_id": device_id},
-            fields=["name", "is_active", "token_hash", "active_device_key"],
-            order_by="is_active desc, name asc",
-        )
-
-        self.assertEqual(len(rows), 2)
-        active_rows = [row for row in rows if int(row.is_active or 0) == 1]
-        inactive_rows = [row for row in rows if int(row.is_active or 0) == 0]
-        self.assertEqual(len(active_rows), 1)
-        self.assertEqual(len(inactive_rows), 1)
-        self.assertTrue(active_rows[0].token_hash)
-        self.assertEqual(active_rows[0].active_device_key, f"{user}|{device_id}")
-        self.assertFalse(inactive_rows[0].active_device_key)
-
-    def test_push_registration_kind_backfill_is_idempotent_and_fail_closed(self):
-        user = self.make_user("push-kind")
-        device_id = f"{self.prefix}-kind-device"
-        self._insert_legacy_push_token("kind", user, device_id, token="legacy")
-        name = f"{self.prefix}-kind-push-token"
-
-        frappe.db.set_value(
-            "AOS Push Token", name, "registration_kind", "", update_modified=False
-        )
-        backfill_push_registration_kind.execute()
-        backfill_push_registration_kind.execute()
-        self.assertEqual(frappe.db.get_value("AOS Push Token", name, "registration_kind"), "token")
-        self.assertEqual(int(frappe.db.get_value("AOS Push Token", name, "is_active") or 0), 1)
-
-        frappe.db.set_value(
-            "AOS Push Token",
-            name,
-            {
-                "registration_kind": "corrupt",
-                "is_active": 1,
-                "active_device_key": f"{user}|{device_id}",
-            },
-            update_modified=False,
-        )
-        backfill_push_registration_kind.execute()
-        self.assertEqual(int(frappe.db.get_value("AOS Push Token", name, "is_active") or 0), 0)
-        self.assertFalse(frappe.db.get_value("AOS Push Token", name, "active_device_key"))
-
     # RAW LEGACY FIXTURES
 
     def _insert_legacy_user_block(self, label: str, blocker: str, blocked: str):
@@ -319,32 +264,6 @@ class TestMigrationUpgradeSafety(FrappeTestCase, AOSFeatureTestMixin):
                 qualified,
                 watch_ms,
                 now,
-            ),
-        )
-
-    def _insert_legacy_push_token(self, label: str, user: str, device_id: str, *, token: str):
-        now = now_datetime()
-        token_value = f"{self.prefix}-{label}-{token}"
-        frappe.db.sql(
-            """
-            INSERT INTO `tabAOS Push Token`
-                (name, creation, modified, modified_by, owner, docstatus, idx,
-                 user, token, token_hash, device_type, last_used_at, device_id,
-                 is_active, active_device_key)
-            VALUES
-                (%s, %s, %s, 'Administrator', 'Administrator', 0, 0,
-                 %s, %s, %s, 'android', %s, %s,
-                 1, NULL)
-            """,
-            (
-                f"{self.prefix}-{label}-push-token",
-                now,
-                now,
-                user,
-                token_value,
-                hashlib.sha256(token_value.encode()).hexdigest(),
-                now,
-                device_id,
             ),
         )
 

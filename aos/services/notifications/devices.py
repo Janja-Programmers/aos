@@ -32,13 +32,10 @@ def normalize_push_token(value: Any) -> str:
 
 
 def normalize_registration_kind(value: Any) -> str:
-    """Normalize the Firebase target identity kind.
-
-    Legacy AOS clients upload FCM registration tokens and do not send this
-    field, so an omitted value intentionally defaults to ``token``. Newer
-    clients may explicitly register a Firebase Installation ID (FID).
-    """
-    registration_kind = str(value or "token").strip().lower()
+    """Normalize the explicitly supplied Firebase target identity kind."""
+    registration_kind = str(value or "").strip().lower()
+    if not registration_kind:
+        raise PushDeviceValidationError("registration_kind is required.")
     if registration_kind not in VALID_REGISTRATION_KINDS:
         raise PushDeviceValidationError("Invalid registration_kind.")
     return registration_kind
@@ -56,7 +53,7 @@ def normalize_device_type(value: Any) -> str:
 def normalize_device_id(value: Any) -> str:
     device_id = str(value or "").strip()
     if not device_id:
-        return ""
+        raise PushDeviceValidationError("device_id is required.")
     if len(device_id) > MAX_DEVICE_ID_LENGTH or not _DEVICE_ID_PATTERN.fullmatch(device_id):
         raise PushDeviceValidationError("Invalid device_id.")
     return device_id

@@ -52,7 +52,8 @@
    "fieldname": "device_id",
    "fieldtype": "Data",
    "label": "Device Id",
-   "search_index": 1
+   "search_index": 1,
+   "reqd": 1
   },
   {
    "default": "1",
@@ -70,7 +71,6 @@
    "unique": 1
   },
   {
-   "default": "token",
    "fieldname": "registration_kind",
    "fieldtype": "Select",
    "in_list_view": 1,

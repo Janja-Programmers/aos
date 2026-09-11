@@ -188,7 +188,7 @@ DISPATCH_SPECS: dict[str, OutboxDispatchSpec] = {
 	"notification_delivery": OutboxDispatchSpec(
 		"notification_delivery",
 		"AOS Notification Delivery Job",
-		"aos.tasks.notification_delivery.dispatch_notification_delivery_job",
+		"aos.tasks.notifications.dispatch_notification_delivery_job",
 		"delivery_job_id",
 	),
 	"analytics_ingestion": OutboxDispatchSpec(
@@ -510,7 +510,7 @@ def _companion_status_config(service_type: str) -> tuple[str, str, str]:
 		config = get_search_ranking_config()
 		return config.service_url, config.service_secret, "X-AOS-Search-Signature"
 	if service_type == "notification_delivery":
-		from aos.services.notification_delivery_service import get_notification_delivery_config
+		from aos.services.notifications.delivery import get_notification_delivery_config
 
 		config = get_notification_delivery_config()
 		return config.service_url, config.service_secret, "X-AOS-Notification-Signature"

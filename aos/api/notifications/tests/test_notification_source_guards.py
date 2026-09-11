@@ -13,7 +13,7 @@ def _source(relative: str) -> str:
 
 
 class TestNotificationProductionSourceGuards(unittest.TestCase):
-    def test_public_surface_preserves_existing_endpoints_and_strips_transport_fields(self):
+    def test_public_surface_is_canonical_and_uses_shared_transport(self):
         source = _source("aos/api/v1/notifications/__init__.py")
         tree = ast.parse(source)
         functions = {
@@ -38,9 +38,13 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
                 "mark_all_notifications_read",
                 "delete_notification",
                 "clear_notifications",
+                "handle_delivery_callback",
             },
         )
-        self.assertEqual(source.count("_client_kwargs(kwargs)"), 8)
+        self.assertEqual(source.count("_execute_endpoint("), 9)
+        self.assertNotIn("_client_kwargs", source)
+        self.assertIn('@frappe.whitelist(methods=["GET"])\ndef list_notifications', source)
+        self.assertIn('@frappe.whitelist(allow_guest=True, methods=["POST"])\ndef handle_delivery_callback', source)
 
     def test_private_endpoints_are_rate_limited_no_store_and_do_not_own_full_transaction(self):
         inbox = _source("aos/api/notifications/notification.py")
@@ -72,7 +76,7 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
             self.assertNotIn(f'\"{forbidden}\":', source)
 
     def test_notification_service_is_savepoint_isolated_deduplicated_and_not_a_business_state_owner(self):
-        source = _source("aos/services/notification_service.py")
+        source = _source("aos/services/notifications/service.py")
         self.assertIn("frappe.db.savepoint(savepoint)", source)
         self.assertIn("is_duplicate_entry_error", source)
         self.assertIn("dedupe_key", source)
@@ -88,7 +92,7 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         self.assertNotIn('type="call"', source)
 
     def test_delivery_jobs_use_transactional_outbox_and_safe_request_diagnostics(self):
-        source = _source("aos/services/notification_delivery_service.py")
+        source = _source("aos/services/notifications/delivery.py")
         self.assertIn("ensure_outbox_for_job", source)
         self.assertIn("stable_idempotency_key", source)
         self.assertIn("current_outbox_dispatch_context", source)
@@ -156,7 +160,7 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         self.assertEqual(len(lock_literals), 1)
         self.assertIn("WHERE name = %s", lock_literals[0])
         self.assertIn("FOR UPDATE", lock_literals[0].upper())
-        self.assertIn("COALESCE(token_hash, '') = ''", source)
+        self.assertNotIn("COALESCE(token_hash, '') = ''", source)
         self.assertIn("_REGISTER_DEADLOCK_ATTEMPTS = 3", source)
         self.assertIn("rollback_deadlocked_transaction()", source)
 
@@ -188,10 +192,33 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         self.assertNotIn('logger.exception("Notification delivery job failed")', worker)
         self.assertIn('error_class=%s', worker)
 
+    def test_delivery_callback_is_inside_notifications_and_strict(self):
+        callback = _source("aos/api/notifications/callback.py")
+        wrapper = _source("aos/api/v1/notifications/__init__.py")
+        self.assertIn("_CALLBACK_FIELDS", callback)
+        self.assertIn("Unsupported notification delivery callback field", callback)
+        self.assertIn('error="DELIVERY_CALLBACK_INVALID"', callback)
+        self.assertIn("handle_delivery_callback", wrapper)
+        self.assertFalse((ROOT / "aos/api/v1/notification_delivery").exists())
+        self.assertFalse((ROOT / "aos/api/notification_delivery").exists())
+
+    def test_retention_is_bounded_and_index_backed(self):
+        retention = _source("aos/services/notifications/retention.py")
+        indexes = _source("aos/patches/v1_0/install_notification_indexes.py")
+        hooks = _source("aos/hooks.py")
+        self.assertIn("AOS_NOTIFICATION_INBOX_RETENTION_DAYS", retention)
+        self.assertIn("AOS_NOTIFICATION_RETENTION_MAX_BATCHES", retention)
+        self.assertIn("idx_aos_notification_retention", indexes)
+        self.assertIn("idx_aos_notification_job_retention", indexes)
+        self.assertIn("idx_aos_notification_job_notification_status", indexes)
+        self.assertIn("j.notification = n.name", retention)
+        self.assertIn("uq_aos_push_token_active_device", indexes)
+        self.assertIn("aos.tasks.notifications.cleanup_notification_retention", hooks)
+
     def test_notification_center_realtime_is_recipient_scoped_post_commit_and_public_safe(self):
         realtime = _source("aos/services/notifications/realtime.py")
         serializer = _source("aos/services/notifications/serializers.py")
-        service = _source("aos/services/notification_service.py")
+        service = _source("aos/services/notifications/service.py")
         inbox = _source("aos/api/notifications/notification.py")
         self.assertIn('EVENT_NOTIFICATION_CENTER = "aos_notification_center"', realtime)
         self.assertIn('manager.add(_safe_callback)', realtime)
@@ -218,11 +245,12 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
 
     def test_category_registry_matches_real_producers_including_short_mentions(self):
         contracts = _source("aos/services/notifications/contracts.py")
-        constants = _source("aos/api/notifications/constants.py")
+        notification_api = _source("aos/api/notifications/notification.py")
         mention_producer = _source("aos/api/shorts/mentions.py")
         self.assertIn('"short_mention": NotificationTypeContract', contracts)
         self.assertIn('event="aos_short_mention"', contracts)
-        self.assertIn("CATEGORY_TYPES", constants)
+        self.assertIn("from aos.services.notifications.contracts import", notification_api)
+        self.assertIn("CATEGORY_TYPES", notification_api)
         self.assertIn("NotificationService.notify_short_mention", mention_producer)
 
     def test_account_deletion_cancels_delivery_revokes_access_and_defers_private_purge(self):
@@ -235,31 +263,24 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         self.assertIn("revoke_push_tokens", sessions)
         self.assertIn("service_type = 'notification_delivery'", tombstone)
 
-    def test_notification_migrations_are_registered_data_before_schema(self):
+    def test_notification_new_site_migration_is_schema_only_and_reasserted_after_migrate(self):
         patches = _source("aos/patches.txt")
-        data_name = "aos.patches.v1_0.harden_notification_subsystem"
-        registration_name = "aos.patches.v1_0.backfill_push_registration_kind"
         index_name = "aos.patches.v1_0.install_notification_indexes"
-        self.assertIn(data_name, patches)
-        self.assertIn(registration_name, patches)
         self.assertIn(index_name, patches)
-        self.assertLess(patches.index(data_name), patches.index(registration_name))
-        self.assertLess(patches.index(registration_name), patches.index(index_name))
-        data_patch = _source("aos/patches/v1_0/harden_notification_subsystem.py")
-        registration_patch = _source("aos/patches/v1_0/backfill_push_registration_kind.py")
+        self.assertNotIn("harden_notification_subsystem", patches)
+        self.assertNotIn("backfill_push_registration_kind", patches)
+        self.assertFalse((ROOT / "aos/patches/v1_0/harden_notification_subsystem.py").exists())
+        self.assertFalse((ROOT / "aos/patches/v1_0/backfill_push_registration_kind.py").exists())
+
         index_patch = _source("aos/patches/v1_0/install_notification_indexes.py")
-        self.assertNotIn("frappe.reload_doc", data_patch)
-        self.assertNotIn("frappe.db.commit", data_patch)
-        self.assertNotIn("frappe.db.commit", registration_patch)
-        self.assertIn("registration_kind = 'token'", registration_patch)
-        self.assertIn("registration_kind NOT IN ('token', 'fid')", registration_patch)
+        migrate = _source("aos/migrate.py")
         self.assertNotIn("frappe.db.commit", index_patch)
-        token_normalizer = data_patch.split("def _normalize_push_tokens", 1)[1].split("def _cancel_undeliverable_jobs", 1)[0]
-        self.assertIn("if not names:\n            break", token_normalizer)
-        self.assertIn("token_hash == hashlib.sha256", token_normalizer)
         self.assertIn("idx_aos_notification_user_timeline", index_patch)
         self.assertIn("idx_aos_notification_unread", index_patch)
         self.assertIn("idx_aos_notification_job_retry", index_patch)
+        self.assertIn("idx_aos_notification_job_retention", index_patch)
+        self.assertIn("uq_aos_push_token_active_device", index_patch)
+        self.assertIn("install_notification_indexes.execute", migrate)
 
     def test_rate_limit_registry_covers_all_public_notification_endpoints(self):
         registry = json.loads(_source("ci/public-endpoint-rate-limits.json"))
@@ -273,6 +294,7 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
             "aos.api.v1.notifications.__init__.mark_all_notifications_read",
             "aos.api.v1.notifications.__init__.delete_notification",
             "aos.api.v1.notifications.__init__.clear_notifications",
+            "aos.api.v1.notifications.__init__.handle_delivery_callback",
         }
         self.assertTrue(expected <= endpoints)
 

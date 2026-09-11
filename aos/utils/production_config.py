@@ -98,7 +98,7 @@ _EXTERNAL_WORKER_SERVICES: tuple[dict[str, Any], ...] = (
 		"service_secret_keys": ("NOTIFICATION_SERVICE_SECRET",),
 		"callback_secret_keys": ("NOTIFICATION_SERVICE_CALLBACK_SECRET",),
 		"callback_url_keys": ("NOTIFICATION_CALLBACK_URL",),
-		"callback_method": "aos.api.v1.notification_delivery.handle_callback",
+		"callback_method": "aos.api.v1.notifications.handle_delivery_callback",
 		"enabled_keys": ("NOTIFICATION_DELIVERY_ENABLED",),
 		"enabled_default": True,
 	},

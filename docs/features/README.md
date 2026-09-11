@@ -36,7 +36,7 @@ Some HTTP methods exist for infrastructure rather than product clients. They are
 
 - LiveKit webhook → [LiveKit integration](live/livekit.md)
 - Moderation callback → [Content moderation service](../production/content-moderation-service.md)
-- Notification-delivery callback → [Notification delivery service](../production/notification-delivery-service.md)
+- Notifications signed delivery callback → [Notifications](notifications/api.md)
 - Video-processing callback → [Video processing service](../production/video-processing-service.md)
 - Private Prometheus/background/backup metrics → [Production operations](../production/operations.md)
 

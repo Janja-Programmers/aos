@@ -11,7 +11,7 @@ from typing import Any, Callable
 import frappe
 
 from aos.api.shared.formatters import humanize_count
-from aos.services.notification_service import NotificationService
+from aos.services.notifications.service import NotificationService
 
 from .constants import FOLLOW_NOTIFICATION_DEDUPE_SECONDS
 from .errors import SocialPermissionError, SocialValidationError

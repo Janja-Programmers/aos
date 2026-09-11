@@ -177,7 +177,7 @@ def _is_transient_incoming_call(payload: dict[str, Any]) -> bool:
 
 
 def _registration_kind(registration: dict[str, Any]) -> str:
-	kind = str(registration.get("registration_kind") or "token").strip().lower()
+	kind = str(registration.get("registration_kind") or "").strip().lower()
 	if kind not in {"token", "fid"}:
 		raise ValueError("Invalid Firebase registration kind")
 	return kind
@@ -355,7 +355,7 @@ def _send_push(payload: dict[str, Any]) -> dict[str, Any]:
 	# presenting native CallKit/ConnectionService UI. iOS/web retain the existing
 	# alert+data contract because this service does not model APNs PushKit tokens.
 	#
-	# Firebase Admin 7.5+ supports both legacy registration tokens and Firebase
+	# Firebase Admin supports both registration tokens and Firebase
 	# Installation IDs (FIDs). Keep each provider request target-homogeneous so
 	# response ordering maps exactly back to the registration metadata.
 	groups: list[tuple[str, str, list[dict[str, Any]], bool]] = []
@@ -578,10 +578,4 @@ def deliver_callback_job(stable_id: str) -> dict[str, Any]:
 		result_ttl_seconds=int(getattr(settings, "durable_result_ttl_seconds", 604800)),
 		callback_max_attempts=int(getattr(settings, "callback_max_attempts", 8)),
 	)
-
-
-def replay_callback(_callback_url: str, payload: dict[str, Any]) -> dict[str, Any]:
-	"""Compatibility entry point: replay from the durable result, never from RQ result data."""
-	stable_id = str(payload.get("idempotency_key") or payload.get("job_id") or "").strip()
-	return deliver_callback_job(stable_id)
 

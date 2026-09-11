@@ -8,7 +8,7 @@ The following v1 callbacks are guest-decorated because private companion service
 
 - `aos.api.v1.analytics_pipeline.handle_callback`
 - `aos.api.v1.moderation.handle_callback`
-- `aos.api.v1.notification_delivery.handle_callback`
+- `aos.api.v1.notifications.handle_delivery_callback`
 - `aos.api.v1.search_ranking.handle_callback`
 - `aos.api.v1.video_processing.handle_callback`
 
@@ -16,7 +16,7 @@ Operational behavior belongs to the matching production service documentation:
 
 - [Analytics pipeline](../production/analytics-pipeline-service.md)
 - [Content moderation](../production/content-moderation-service.md)
-- [Notification delivery](../production/notification-delivery-service.md)
+- [Notifications signed delivery callback](../features/notifications/api.md)
 - [Search/ranking](../production/search-ranking-service.md)
 - [Video processing](../production/video-processing-service.md)
 

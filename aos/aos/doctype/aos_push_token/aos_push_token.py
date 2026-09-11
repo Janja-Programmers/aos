@@ -84,8 +84,3 @@ class AOSPushToken(Document):
                 },
                 update_modified=False,
             )
-
-
-# Compatibility export retained for existing imports.
-def get_token_hash_compat(token: str) -> str:
-    return get_token_hash(token)

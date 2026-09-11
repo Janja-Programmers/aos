@@ -12,6 +12,7 @@ from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 from aos.services.accounts.http import set_private_no_store
 from aos.services.notifications.realtime import publish_state_after_commit
+from aos.services.notifications.contracts import CATEGORY_ALL, CATEGORY_TYPES, VALID_CATEGORIES
 from aos.services.notifications.repository import get_unread_count
 from aos.services.notifications.serializers import serialize_notifications
 from aos.services.notifications.validation import (
@@ -26,16 +27,13 @@ from .constants import (
     LIST_NOTIFICATIONS_LIMIT_PER_MINUTE_PER_USER,
     MARK_ALL_NOTIFICATIONS_READ_LIMIT_PER_MINUTE_PER_USER,
     MARK_NOTIFICATION_READ_LIMIT_PER_MINUTE_PER_USER,
-    NOTIFICATION_CATEGORY_ALL,
-    NOTIFICATION_CATEGORY_TYPES,
     NOTIFICATION_DEFAULT_LIMIT,
     NOTIFICATION_MAX_LIMIT,
-    VALID_NOTIFICATION_CATEGORIES,
 )
 
 
 def _input_error(message: str):
-    return fail(message, error="VALIDATION_ERROR")
+    return fail(message, error="INVALID_NOTIFICATION_INPUT", http_status=400)
 
 
 def _rollback_savepoint(savepoint: str) -> None:
@@ -46,13 +44,13 @@ def _rollback_savepoint(savepoint: str) -> None:
 
 
 def _resolve_category(value):
-    category = str(value or NOTIFICATION_CATEGORY_ALL).strip().lower()
-    if category not in VALID_NOTIFICATION_CATEGORIES:
+    category = str(value or CATEGORY_ALL).strip().lower()
+    if category not in VALID_CATEGORIES:
         return None, None, _input_error(
             "Invalid notification category. Allowed values are: "
-            f"{', '.join(VALID_NOTIFICATION_CATEGORIES)}."
+            f"{', '.join(VALID_CATEGORIES)}."
         )
-    return category, NOTIFICATION_CATEGORY_TYPES.get(category), None
+    return category, CATEGORY_TYPES.get(category), None
 
 
 def _resolve_limit(value):
@@ -203,7 +201,7 @@ def mark_notification_read_impl(**kwargs):
         )
         row = rows[0] if rows else None
         if not row:
-            return fail("Notification not found.", error="NOT_FOUND")
+            return fail("Notification not found.", error="NOTIFICATION_NOT_FOUND", http_status=404)
         was_unread = not bool(int(row.get("is_read") or 0))
         if was_unread:
             frappe.db.set_value(
@@ -296,7 +294,7 @@ def delete_notification_impl(**kwargs):
             as_dict=True,
         )
         if not locked:
-            return fail("Notification not found.", error="NOT_FOUND")
+            return fail("Notification not found.", error="NOTIFICATION_NOT_FOUND", http_status=404)
         frappe.db.savepoint(savepoint)
         frappe.db.delete("AOS Notification", {"name": notification_id, "user": current_user})
         publish_state_after_commit(

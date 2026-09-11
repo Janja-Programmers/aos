@@ -66,7 +66,6 @@ SERVICE_API_MODULES: tuple[str, ...] = (
     "video_processing",
     "moderation",
     "search_ranking",
-    "notification_delivery",
     "analytics_pipeline",
 )
 

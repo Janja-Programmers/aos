@@ -32,7 +32,7 @@ from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.public_errors import safe_fail_from_exception
 
-from aos.services.notification_service import NotificationService
+from aos.services.notifications.service import NotificationService
 from aos.services.chat.events import publish_after_commit
 from aos.services.chat.repository import lock_conversations, lock_messages
 

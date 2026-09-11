@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Iterable
 
 import frappe
@@ -75,11 +74,6 @@ USER_ACTION_UNIQUE_CONSTRAINTS = [
         "fields": ["short", "view_date", "identity_key"],
         "constraint_name": "unique_aos_short_view_identity_day",
     },
-    {
-        "doctype": "AOS Push Token",
-        "fields": ["active_device_key"],
-        "constraint_name": "unique_aos_push_token_active_device",
-    },
 ]
 
 
@@ -96,7 +90,6 @@ def execute():
     _normalize_user_block_active_keys()
     _normalize_live_view_active_keys()
     _normalize_short_view_identity_keys()
-    _normalize_push_token_active_device_keys()
 
     for constraint in UNIQUE_CONSTRAINTS:
         _add_unique_index(
@@ -456,116 +449,6 @@ def _dedupe_short_views_by_computed_identity() -> set[str]:
 
     return affected_shorts
 
-
-def _normalize_push_token_active_device_keys():
-    doctype = "AOS Push Token"
-    if not _doctype_exists(doctype):
-        return
-
-    rows = frappe.db.sql(
-        """
-        SELECT name, token
-        FROM `tabAOS Push Token`
-        WHERE (token_hash IS NULL OR token_hash = '')
-          AND token IS NOT NULL
-          AND token != ''
-        """,
-        as_dict=True,
-    )
-
-    for row in rows:
-        frappe.db.set_value(
-            "AOS Push Token",
-            row.name,
-            "token_hash",
-            hashlib.sha256(str(row.token).encode()).hexdigest(),
-            update_modified=False,
-        )
-
-    _dedupe_push_token_hashes()
-
-    if not _column_exists(doctype, "active_device_key"):
-        return
-
-    rows = frappe.db.sql(
-        """
-        SELECT user, device_id, GROUP_CONCAT(name ORDER BY last_used_at DESC, modified DESC, creation DESC, name DESC) AS names
-        FROM `tabAOS Push Token`
-        WHERE is_active = 1
-          AND user IS NOT NULL
-          AND user != ''
-          AND device_id IS NOT NULL
-          AND device_id != ''
-        GROUP BY user, device_id
-        HAVING COUNT(*) > 1
-        """,
-        as_dict=True,
-    )
-
-    for row in rows:
-        names = _split_names(row.names)
-        stale_names = names[1:]
-        if not stale_names:
-            continue
-
-        frappe.db.sql(
-            """
-            UPDATE `tabAOS Push Token`
-            SET is_active = 0, active_device_key = NULL, last_used_at = %(last_used_at)s
-            WHERE name IN %(names)s
-            """,
-            {"names": tuple(stale_names), "last_used_at": now_datetime()},
-        )
-
-    frappe.db.sql(
-        """
-        UPDATE `tabAOS Push Token`
-        SET active_device_key = CASE
-            WHEN is_active = 1
-                 AND user IS NOT NULL
-                 AND user != ''
-                 AND device_id IS NOT NULL
-                 AND device_id != ''
-            THEN CONCAT(user, '|', device_id)
-            ELSE NULL
-        END
-        """
-    )
-
-
-def _dedupe_push_token_hashes():
-    if not _doctype_exists("AOS Push Token"):
-        return
-
-    rows = frappe.db.sql(
-        """
-        SELECT token_hash, GROUP_CONCAT(name ORDER BY is_active DESC, last_used_at DESC, modified DESC, creation DESC, name DESC) AS names
-        FROM `tabAOS Push Token`
-        WHERE token_hash IS NOT NULL
-          AND token_hash != ''
-        GROUP BY token_hash
-        HAVING COUNT(*) > 1
-        """,
-        as_dict=True,
-    )
-
-    for row in rows:
-        names = _split_names(row.names)
-        stale_names = names[1:]
-        if not stale_names:
-            continue
-
-        frappe.db.sql(
-            """
-            UPDATE `tabAOS Push Token`
-            SET is_active = 0, active_device_key = NULL, last_used_at = %(last_used_at)s
-            WHERE name IN %(names)s
-            """,
-            {"names": tuple(stale_names), "last_used_at": now_datetime()},
-        )
-
-
-# SHARED HELPERS
 
 def _delete_duplicate_docs(*, doctype: str, fields: list[str], order_by: str) -> set[str]:
     if not _doctype_exists(doctype):

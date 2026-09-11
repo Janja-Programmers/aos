@@ -7,7 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from aos.services.notification_service import NotificationService
+from aos.services.notifications.service import NotificationService
 from aos.services.sellers.policy import sync_verified_business_profile
 from aos.services.verification.constants import (
     MAX_REJECTION_REASON_LENGTH,

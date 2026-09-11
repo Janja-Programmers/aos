@@ -90,11 +90,9 @@ def _lock_push_token_row(name: str):
     return rows[0] if rows else None
 
 
-def _find_existing_token(*, token: str, token_hash: str):
-    # Candidate discovery must stay non-locking. Locking an absent secondary
-    # key with SELECT ... FOR UPDATE creates InnoDB gap locks; two simultaneous
-    # first-time registrations can then deadlock when they both proceed toward
-    # an insert. Discover first, then lock only the candidate primary-key row.
+def _find_existing_token(*, token_hash: str):
+    # Discover without a gap lock, then lock only the matching primary-key row.
+    # The unique token_hash constraint remains the concurrency arbiter.
     rows = frappe.db.sql(
         """
         SELECT name
@@ -106,40 +104,12 @@ def _find_existing_token(*, token: str, token_hash: str):
         (token_hash,),
         as_dict=True,
     )
-    if rows:
-        locked = _lock_push_token_row(rows[0].name)
-        if locked and str(locked.token_hash or "").strip().lower() == token_hash:
-            return locked.name
-
-    # Compatibility only for genuinely pre-hash legacy rows. ``token`` is a
-    # Long Text field and therefore has no useful equality index. A locking
-    # scan here used to make every first-time token registration take broad
-    # InnoDB row/gap locks, creating avoidable 1213 deadlocks under concurrent
-    # app startup. Discover a possible legacy row without locks, then acquire a
-    # single primary-key lock and revalidate it before ownership transfer.
-    legacy_rows = frappe.db.sql(
-        """
-        SELECT name
-        FROM `tabAOS Push Token`
-        WHERE token = %s
-          AND COALESCE(token_hash, '') = ''
-        ORDER BY is_active DESC, modified DESC, name DESC
-        LIMIT 1
-        """,
-        (token,),
-        as_dict=True,
-    )
-    if not legacy_rows:
+    if not rows:
         return None
-
-    locked = _lock_push_token_row(legacy_rows[0].name)
-    if not locked:
-        return None
-    locked_token = str(locked.token or "").strip()
-    locked_hash = str(locked.token_hash or "").strip().lower()
-    if locked_token != token or (locked_hash and locked_hash != token_hash):
-        return None
-    return locked.name
+    locked = _lock_push_token_row(rows[0].name)
+    if locked and str(locked.token_hash or "").strip().lower() == token_hash:
+        return locked.name
+    return None
 
 
 def _find_existing_device(*, user: str, device_id: str) -> str | None:
@@ -196,7 +166,7 @@ def _register_once(
     *, user: str, token: str, device_type: str, device_id: str, registration_kind: str
 ):
     token_hash = get_token_hash(token)
-    existing_token = _find_existing_token(token=token, token_hash=token_hash)
+    existing_token = _find_existing_token(token_hash=token_hash)
     if existing_token:
         # Clear any competing active modeled-device row first. The existing
         # token row may be moving across accounts, and updating its
@@ -339,7 +309,7 @@ def register_push_token_impl(**kwargs):
         device_id = normalize_device_id(kwargs.get("device_id"))
         registration_kind = normalize_registration_kind(kwargs.get("registration_kind"))
     except (NotificationInputError, PushDeviceValidationError):
-        return fail("Invalid push token registration request.", error="VALIDATION_ERROR")
+        return fail("Invalid push token registration request.", error="DEVICE_TOKEN_INVALID", http_status=400)
 
     try:
         name, action = _register_with_deadlock_retry(
@@ -394,13 +364,13 @@ def deactivate_push_token_impl(**kwargs):
         token = normalize_push_token(kwargs.get("token"))
         registration_kind = normalize_registration_kind(kwargs.get("registration_kind"))
     except (NotificationInputError, PushDeviceValidationError):
-        return fail("Invalid push token deactivation request.", error="VALIDATION_ERROR")
+        return fail("Invalid push token deactivation request.", error="DEVICE_TOKEN_INVALID", http_status=400)
 
     token_hash = get_token_hash(token)
     savepoint = f"aos_push_deactivate_{uuid.uuid4().hex[:10]}"
     frappe.db.savepoint(savepoint)
     try:
-        existing = _find_existing_token(token=token, token_hash=token_hash)
+        existing = _find_existing_token(token_hash=token_hash)
         if not existing:
             return ok("Token not found or already inactive.")
         row = frappe.db.get_value(
@@ -442,7 +412,3 @@ def deactivate_push_token_impl(**kwargs):
         registration_kind=registration_kind,
     )
     return ok("Push token deactivated.")
-
-
-# Compatibility export retained for internal imports/tests.
-VALID_DEVICE_TYPES = frozenset({"android", "ios", "web"})

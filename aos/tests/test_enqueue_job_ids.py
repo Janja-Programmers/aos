@@ -63,7 +63,7 @@ class TestEnqueueJobIds(FrappeTestCase):
 			"video_processing_service.py": "video_processing",
 			"analytics_pipeline_service.py": "analytics_ingestion",
 			"moderation_service.py": "moderation",
-			"notification_delivery_service.py": "notification_delivery",
+			"notifications/delivery.py": "notification_delivery",
 			"search_ranking_service.py": "search_indexing",
 		}
 		for filename, service_type in service_expectations.items():

@@ -22,7 +22,7 @@ from aos.services.calls.reconciliation import (
     reconcile_active_policy,
     reconcile_active_room,
 )
-from aos.services.notification_service import NotificationService
+from aos.services.notifications.service import NotificationService
 
 
 # CONSTANTS

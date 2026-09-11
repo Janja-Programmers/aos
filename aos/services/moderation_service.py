@@ -549,7 +549,7 @@ def _notify_review_moderation_result(*, review, previous_status: str, decision: 
 	"""Create canonical persistent notifications through the delivery outbox."""
 
 	try:
-		from aos.services.notification_service import NotificationService
+		from aos.services.notifications.service import NotificationService
 
 		if decision == "allow" and previous_status != "Approved":
 			NotificationService.notify_review_approved(
@@ -592,7 +592,7 @@ def _apply_short_decision(job, decision: str, reasons: list[Any]) -> None:
 		_enqueue_short_search_index(short.name, source="short_moderation_allow")
 		if not was_visible:
 			try:
-				from aos.services.notification_service import NotificationService
+				from aos.services.notifications.service import NotificationService
 
 				NotificationService.notify_new_short(actor=short.owner, short_id=short.name)
 			except Exception:
@@ -669,7 +669,7 @@ def _enqueue_short_search_index(short_id: str, *, source: str) -> None:
 
 def _notify_ad_approved(*, user: str, ad) -> None:
 	try:
-		from aos.services.notification_service import NotificationService
+		from aos.services.notifications.service import NotificationService
 
 		NotificationService.notify_ad_approved(user=user, ad_id=ad.name, title=ad.title)
 	except Exception:
@@ -678,7 +678,7 @@ def _notify_ad_approved(*, user: str, ad) -> None:
 
 def _notify_ad_rejected(*, user: str, ad) -> None:
 	try:
-		from aos.services.notification_service import NotificationService
+		from aos.services.notifications.service import NotificationService
 
 		NotificationService.notify_ad_rejected(user=user, ad_id=ad.name, title=ad.title)
 	except Exception:

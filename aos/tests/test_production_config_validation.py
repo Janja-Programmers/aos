@@ -82,7 +82,7 @@ class TestProductionConfigValidation(FrappeTestCase):
 			"NOTIFICATION_SERVICE_URL": "http://127.0.0.1:8160",
 			"NOTIFICATION_SERVICE_SECRET": "notification-dispatch-secret-value-0123456789abcdef",
 			"NOTIFICATION_SERVICE_CALLBACK_SECRET": "notification-callback-secret-value-0123456789abcdef",
-			"NOTIFICATION_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.v1.notification_delivery.handle_callback",
+			"NOTIFICATION_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.v1.notifications.handle_delivery_callback",
 			"NOTIFICATION_FIREBASE_SERVICE_ACCOUNT_PATH": "/run/secrets/firebase-service-account.json",
 			"TRANSLATION_SERVICE_URL": "http://127.0.0.1:8100",
 			"IMAGE_SEARCH_SERVICE_URL": "http://127.0.0.1:8110",

@@ -22,8 +22,8 @@ from aos.services.account_deletion_service import (
     _remove_push_tokens,
 )
 from aos.services.accounts.identity import ensure_public_account_id
-from aos.services.notification_delivery_service import create_notification_delivery_job
-from aos.services.notification_service import NotificationService
+from aos.services.notifications.delivery import create_notification_delivery_job
+from aos.services.notifications.service import NotificationService
 from aos.services.notifications.devices import get_token_hash
 from aos.services.notifications.web_push import WebPushConfig
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
@@ -78,7 +78,7 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         return patch("aos.api.notifications.push_config.rate_limit", return_value=None)
 
     def _notify_follow(self, *, user: str | None = None, actor: str | None = None, dedupe_key: str | None = None):
-        with patch("aos.services.notification_service.NotificationService._deliver"):
+        with patch("aos.services.notifications.service.NotificationService._deliver"):
             return NotificationService.notify_follow(
                 user=user or self.owner,
                 follower=actor or self.actor,
@@ -111,7 +111,7 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(listed.get("ok"), listed)
         self.assertIn(notification.name, {item["id"] for item in listed["data"]["items"]})
         self.assertGreaterEqual(listed["data"]["unread_count"], 1)
-        self.assertEqual(unknown.get("error"), "VALIDATION_ERROR")
+        self.assertEqual(unknown.get("error"), "INVALID_NOTIFICATION_INPUT")
         self.assertNotIn(self.owner, repr(listed["data"]["items"]))
 
         frappe.set_user(self.other)
@@ -119,8 +119,8 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
             cross_read = mark_notification_read_impl(notification_id=notification.name)
             cross_delete = delete_notification_impl(notification_id=notification.name)
             cross_list = list_notifications_impl(category="activity")
-        self.assertEqual(cross_read.get("error"), "NOT_FOUND")
-        self.assertEqual(cross_delete.get("error"), "NOT_FOUND")
+        self.assertEqual(cross_read.get("error"), "NOTIFICATION_NOT_FOUND")
+        self.assertEqual(cross_delete.get("error"), "NOTIFICATION_NOT_FOUND")
         self.assertNotIn(notification.name, {item["id"] for item in cross_list["data"]["items"]})
         self.assertTrue(frappe.db.exists("AOS Notification", notification.name))
 
@@ -139,7 +139,7 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
 
     def test_notification_center_realtime_creation_is_post_commit_recipient_scoped_and_public_safe(self):
         with patch("aos.services.notifications.realtime._after_commit") as after_commit:
-            with patch("aos.services.notification_service.NotificationService._deliver"):
+            with patch("aos.services.notifications.service.NotificationService._deliver"):
                 notification = NotificationService.notify_follow(
                     user=self.owner,
                     follower=self.actor,
@@ -165,7 +165,7 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
 
     def test_realtime_creation_rechecks_social_block_before_foreground_delivery(self):
         with patch("aos.services.notifications.realtime._after_commit") as after_commit:
-            with patch("aos.services.notification_service.NotificationService._deliver"):
+            with patch("aos.services.notifications.service.NotificationService._deliver"):
                 notification = NotificationService.notify_follow(
                     user=self.owner,
                     follower=self.actor,
@@ -202,9 +202,9 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
 
     def test_duplicate_notification_retry_does_not_emit_duplicate_realtime_creation(self):
         dedupe_key = f"{self.prefix}:realtime-dedupe"
-        with patch("aos.services.notification_service.NotificationService._deliver"):
+        with patch("aos.services.notifications.service.NotificationService._deliver"):
             with patch(
-                "aos.services.notification_service.publish_created_after_commit"
+                "aos.services.notifications.service.publish_created_after_commit"
             ) as publish_created:
                 first = NotificationService.notify_follow(
                     user=self.owner, follower=self.actor, dedupe_key=dedupe_key
@@ -239,7 +239,7 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
                 response = get_push_config_impl()
                 unknown = get_push_config_impl(unexpected="x")
         self.assertTrue(response.get("ok"), response)
-        self.assertEqual(unknown.get("error"), "VALIDATION_ERROR")
+        self.assertEqual(unknown.get("error"), "INVALID_NOTIFICATION_INPUT")
         data = response["data"]
         self.assertTrue(data["enabled"])
         self.assertEqual(data["firebase"]["projectId"], "aos-production-2026")
@@ -321,10 +321,10 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
     def test_notification_infrastructure_failure_rolls_back_only_notification_savepoint(self):
         with (
             patch(
-                "aos.services.notification_service.NotificationService._deliver",
+                "aos.services.notifications.service.NotificationService._deliver",
                 side_effect=RuntimeError("outbox unavailable"),
             ),
-            patch("aos.services.notification_service.frappe.log_error") as log_error,
+            patch("aos.services.notifications.service.frappe.log_error") as log_error,
         ):
             doc = NotificationService.notify_follow(
                 user=self.owner,
@@ -415,10 +415,10 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         device_id = f"{self.prefix}-device-01"
         with self._without_device_limits():
             first = register_push_token_impl(
-                token=token_one, device_type="android", device_id=device_id
+                token=token_one, device_type="android", device_id=device_id, registration_kind="token"
             )
             rotated = register_push_token_impl(
-                token=token_two, device_type="android", device_id=device_id
+                token=token_two, device_type="android", device_id=device_id, registration_kind="token"
             )
         self.assertTrue(first.get("ok"), first)
         self.assertTrue(rotated.get("ok"), rotated)
@@ -434,24 +434,24 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         frappe.set_user(self.other)
         with self._without_device_limits():
             takeover = register_push_token_impl(
-                token=token_two, device_type="android", device_id=device_id
+                token=token_two, device_type="android", device_id=device_id, registration_kind="token"
             )
         self.assertTrue(takeover.get("ok"), takeover)
         self.assertEqual(frappe.db.get_value("AOS Push Token", row_name, "user"), self.other)
 
         frappe.set_user(self.owner)
         with self._without_device_limits():
-            hidden = deactivate_push_token_impl(token=token_two)
+            hidden = deactivate_push_token_impl(token=token_two, registration_kind="token")
         self.assertTrue(hidden.get("ok"), hidden)
         self.assertEqual(int(frappe.db.get_value("AOS Push Token", row_name, "is_active") or 0), 1)
 
         frappe.set_user(self.other)
         with self._without_device_limits():
-            deactivated = deactivate_push_token_impl(token=token_two)
+            deactivated = deactivate_push_token_impl(token=token_two, registration_kind="token")
         self.assertTrue(deactivated.get("ok"), deactivated)
         self.assertEqual(int(frappe.db.get_value("AOS Push Token", row_name, "is_active") or 0), 0)
 
-    def test_fid_registration_coexists_with_legacy_token_contract(self):
+    def test_registration_kind_is_explicit_for_token_and_fid(self):
         fid = "c1234567890abcdefghijkl"
         device_id = f"{self.prefix}-web-fid"
         with self._without_device_limits():
@@ -475,16 +475,22 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(int(row.is_active or 0), 1)
         self.assertNotIn(fid, repr(registered))
 
-        # Omitting registration_kind preserves the legacy registration-token API.
-        legacy = "fcm_legacy_token_abcdefghijklmnopqrstuvwxyz_0123456789"
+        token = "fcm_canonical_token_abcdefghijklmnopqrstuvwxyz_0123456789"
         with self._without_device_limits():
-            legacy_result = register_push_token_impl(
-                token=legacy, device_type="android", device_id=f"{self.prefix}-legacy"
+            missing_kind = register_push_token_impl(
+                token=token, device_type="android", device_id=f"{self.prefix}-token"
             )
-        self.assertTrue(legacy_result.get("ok"), legacy_result)
+            token_result = register_push_token_impl(
+                token=token,
+                registration_kind="token",
+                device_type="android",
+                device_id=f"{self.prefix}-token",
+            )
+        self.assertEqual(missing_kind.get("error"), "DEVICE_TOKEN_INVALID")
+        self.assertTrue(token_result.get("ok"), token_result)
         self.assertEqual(
             frappe.db.get_value(
-                "AOS Push Token", legacy_result["data"]["id"], "registration_kind"
+                "AOS Push Token", token_result["data"]["id"], "registration_kind"
             ),
             "token",
         )
@@ -501,6 +507,7 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
                 token=token,
                 device_type="android",
                 device_id=f"{self.prefix}-deactivate-device",
+                registration_kind="token",
             )
         self.assertTrue(registered.get("ok"), registered)
         from frappe.utils import now_datetime
@@ -524,6 +531,7 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
                 token=token,
                 device_type="android",
                 device_id=f"{self.prefix}-delete-device",
+                registration_kind="token",
             )
         self.assertTrue(registered.get("ok"), registered)
 

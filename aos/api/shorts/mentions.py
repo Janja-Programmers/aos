@@ -15,7 +15,7 @@ from typing import Any
 import frappe
 
 from aos.api.shared.user_display import get_user_display, get_user_display_map
-from aos.services.notification_service import NotificationService
+from aos.services.notifications.service import NotificationService
 from aos.services.shorts.notifications import should_notify
 from aos.services.shorts.policy import creator_is_available
 

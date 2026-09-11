@@ -36,6 +36,8 @@ class TestNotificationContracts(unittest.TestCase):
                 "short_mention",
                 "comment_reply",
                 "live_started",
+                "media_processing_completed",
+                "media_processing_failed",
             },
         )
         self.assertEqual(
@@ -108,7 +110,8 @@ class TestNotificationContracts(unittest.TestCase):
         self.assertEqual(token_fingerprint(token=normalized), digest[:12])
         self.assertEqual(normalize_device_type("ANDROID"), "android")
         self.assertEqual(normalize_device_id("device-01"), "device-01")
-        self.assertEqual(normalize_registration_kind(None), "token")
+        with self.assertRaises(PushDeviceValidationError):
+            normalize_registration_kind(None)
         self.assertEqual(normalize_registration_kind("FID"), "fid")
 
         for invalid in ("short", "token with spaces and enough length"):
@@ -120,6 +123,8 @@ class TestNotificationContracts(unittest.TestCase):
             normalize_registration_kind("topic")
         with self.assertRaises(PushDeviceValidationError):
             normalize_device_id("unsafe/device")
+        with self.assertRaises(PushDeviceValidationError):
+            normalize_device_id(None)
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ class PushToken(_StrictModel):
 	token: str = Field(min_length=20, max_length=4096, repr=False)
 	token_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 	device_type: Literal["android", "ios", "web"]
-	registration_kind: Literal["token", "fid"] = "token"
+	registration_kind: Literal["token", "fid"]
 
 	@field_validator("token")
 	@classmethod
@@ -107,7 +107,7 @@ class UncertaintyResolutionRequest(InternalJobLookupRequest):
 	operator_reference: str | None = Field(default=None, max_length=200)
 
 
-app = FastAPI(title="AOS Notification Delivery Service", version="1.0.0")
+app = FastAPI(title="AOS Notifications Delivery Companion", version="1.0.0")
 instrument_app(app, "aos-notification-delivery")
 
 

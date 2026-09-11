@@ -101,6 +101,22 @@ _CONTRACTS = {
         required_payload_fields=frozenset({"live_id", "host_user"}),
         actor_scoped=True,
     ),
+    "media_processing_completed": NotificationTypeContract(
+        category=CATEGORY_ACTIVITY,
+        event="aos_media_processing_completed",
+        allowed_payload_fields=frozenset(
+            {"processing_job_id", "source_media_id", "result_media_id", "operation"}
+        ),
+        required_payload_fields=frozenset(
+            {"processing_job_id", "source_media_id", "result_media_id", "operation"}
+        ),
+    ),
+    "media_processing_failed": NotificationTypeContract(
+        category=CATEGORY_ACTIVITY,
+        event="aos_media_processing_failed",
+        allowed_payload_fields=frozenset({"processing_job_id", "source_media_id", "operation"}),
+        required_payload_fields=frozenset({"processing_job_id", "source_media_id", "operation"}),
+    ),
     "ad_approved": NotificationTypeContract(
         category=CATEGORY_MARKETPLACE,
         event="aos_ad_approved",

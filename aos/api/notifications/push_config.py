@@ -31,7 +31,11 @@ def get_push_config_impl(**kwargs):
     try:
         reject_unknown_fields(kwargs, allowed=set())
     except NotificationInputError:
-        return fail("Invalid web push configuration request.", error="VALIDATION_ERROR")
+        return fail(
+            "Invalid web push configuration request.",
+            error="INVALID_NOTIFICATION_INPUT",
+            http_status=400,
+        )
 
     try:
         config = get_web_push_config()

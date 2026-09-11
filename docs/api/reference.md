@@ -235,15 +235,7 @@ Owner documentation: [docs/production/content-moderation-service.md](../producti
 |---|---|---|---|---|
 | `/api/method/aos.api.v1.moderation.handle_callback` | POST | Guest allowed | Signed callback | `aos/api/v1/moderation/__init__.py` |
 
-## Notification Delivery (1)
-
-Owner documentation: [docs/production/notification-delivery-service.md](../production/notification-delivery-service.md)
-
-| Route | HTTP | Decorator access | Audience | Source |
-|---|---|---|---|---|
-| `/api/method/aos.api.v1.notification_delivery.handle_callback` | POST | Guest allowed | Signed callback | `aos/api/v1/notification_delivery/__init__.py` |
-
-## Notifications (8)
+## Notifications (9)
 
 Owner documentation: [docs/features/notifications/api.md](../features/notifications/api.md)
 
@@ -253,7 +245,8 @@ Owner documentation: [docs/features/notifications/api.md](../features/notificati
 | `/api/method/aos.api.v1.notifications.deactivate_push_token` | POST | Session required | Client | `aos/api/v1/notifications/__init__.py` |
 | `/api/method/aos.api.v1.notifications.delete_notification` | POST | Session required | Client | `aos/api/v1/notifications/__init__.py` |
 | `/api/method/aos.api.v1.notifications.get_push_config` | GET | Session required | Client | `aos/api/v1/notifications/__init__.py` |
-| `/api/method/aos.api.v1.notifications.list_notifications` | Any* | Session required | Client | `aos/api/v1/notifications/__init__.py` |
+| `/api/method/aos.api.v1.notifications.handle_delivery_callback` | POST | Guest allowed | Signed callback | `aos/api/v1/notifications/__init__.py` |
+| `/api/method/aos.api.v1.notifications.list_notifications` | GET | Session required | Client | `aos/api/v1/notifications/__init__.py` |
 | `/api/method/aos.api.v1.notifications.mark_all_notifications_read` | POST | Session required | Client | `aos/api/v1/notifications/__init__.py` |
 | `/api/method/aos.api.v1.notifications.mark_notification_read` | POST | Session required | Client | `aos/api/v1/notifications/__init__.py` |
 | `/api/method/aos.api.v1.notifications.register_push_token` | POST | Session required | Client | `aos/api/v1/notifications/__init__.py` |

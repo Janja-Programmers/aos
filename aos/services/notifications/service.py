@@ -7,7 +7,7 @@ import frappe
 from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.user_display import get_user_display
 from aos.services.accounts.identity import public_account_id_for_user
-from aos.services.notification_delivery_service import create_notification_delivery_job
+from aos.services.notifications.delivery import create_notification_delivery_job
 from aos.services.notifications.contracts import (
     MAX_NOTIFICATION_BODY_LENGTH,
     MAX_NOTIFICATION_DEDUPE_KEY_LENGTH,
@@ -258,7 +258,7 @@ class NotificationService:
 
             # Always ensure the durable delivery job/outbox exists. The job has a
             # deterministic idempotency key derived from the persistent
-            # notification, so a duplicate producer retry repairs legacy/partial
+            # notification, so a duplicate producer retry repairs partial
             # divergence without creating a second push job.
             cls._deliver(
                 user=user,
@@ -645,7 +645,7 @@ class NotificationService:
             payload=payload,
             event="aos_verification_approved",
             dedupe_key=(
-                f"verification_approved:{verification_id}:{decision_token or 'legacy'}"
+                f"verification:approved:{verification_id}:{decision_token}"
                 if verification_id
                 else None
             ),
@@ -671,10 +671,46 @@ class NotificationService:
             payload=payload,
             event="aos_verification_rejected",
             dedupe_key=(
-                f"verification_rejected:{verification_id}:{decision_token or 'legacy'}"
+                f"verification:rejected:{verification_id}:{decision_token}"
                 if verification_id
                 else None
             ),
+        )
+
+    # MEDIA
+    @classmethod
+    def notify_media_processing_completed(
+        cls, *, user: str, job_id: str, source_media_id: str, result_media_id: str
+    ):
+        return cls.notify(
+            user=user,
+            type="media_processing_completed",
+            title="Media Ready",
+            body="Your background removal is complete.",
+            payload={
+                "processing_job_id": job_id,
+                "source_media_id": source_media_id,
+                "result_media_id": result_media_id,
+                "operation": "background_removal",
+            },
+            event="aos_media_processing_completed",
+            dedupe_key=f"media:processing:{job_id}:succeeded",
+        )
+
+    @classmethod
+    def notify_media_processing_failed(cls, *, user: str, job_id: str, source_media_id: str):
+        return cls.notify(
+            user=user,
+            type="media_processing_failed",
+            title="Media Processing Failed",
+            body="Background removal could not be completed.",
+            payload={
+                "processing_job_id": job_id,
+                "source_media_id": source_media_id,
+                "operation": "background_removal",
+            },
+            event="aos_media_processing_failed",
+            dedupe_key=f"media:processing:{job_id}:failed",
         )
 
     # SHORTS

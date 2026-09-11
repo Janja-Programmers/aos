@@ -9,7 +9,7 @@ from aos.services.ads.indexing import enqueue_discovery_refresh
 from aos.services.ads.lifecycle import validate_status_transition
 from aos.services.ads.mutations import expire_ad_locked, lock_ad
 from aos.services.ads.observability import ads_log
-from aos.services.notification_service import NotificationService
+from aos.services.notifications.service import NotificationService
 
 _EXPIRY_BATCH_SIZE = 200
 

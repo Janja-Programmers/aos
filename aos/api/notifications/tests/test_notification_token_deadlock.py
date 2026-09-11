@@ -10,22 +10,16 @@ from aos.api.notifications import token as token_api
 
 
 class TestNotificationTokenDeadlockHardening(unittest.TestCase):
-    def test_first_time_token_lookup_does_not_take_gap_or_table_scan_locks(self):
-        with patch.object(frappe.db, "sql", side_effect=[[], []]) as sql:
-            result = token_api._find_existing_token(
-                token="fcm_test_token_abcdefghijklmnopqrstuvwxyz_0123456789",
-                token_hash="a" * 64,
-            )
+    def test_first_time_token_lookup_is_single_indexed_nonlocking_discovery(self):
+        with patch.object(frappe.db, "sql", return_value=[]) as sql:
+            result = token_api._find_existing_token(token_hash="a" * 64)
 
         self.assertIsNone(result)
-        self.assertEqual(sql.call_count, 2)
-        hash_query = str(sql.call_args_list[0].args[0])
-        legacy_query = str(sql.call_args_list[1].args[0])
-        self.assertIn("WHERE token_hash = %s", hash_query)
-        self.assertNotIn("FOR UPDATE", hash_query.upper())
-        self.assertIn("WHERE token = %s", legacy_query)
-        self.assertIn("COALESCE(token_hash, '') = ''", legacy_query)
-        self.assertNotIn("FOR UPDATE", legacy_query.upper())
+        self.assertEqual(sql.call_count, 1)
+        query = str(sql.call_args.args[0])
+        self.assertIn("WHERE token_hash = %s", query)
+        self.assertNotIn("FOR UPDATE", query.upper())
+        self.assertNotIn("WHERE token = %s", query)
 
     def test_existing_token_is_locked_only_by_primary_key_and_revalidated(self):
         row_name = "PUSH-TOKEN-1"
@@ -38,10 +32,7 @@ class TestNotificationTokenDeadlockHardening(unittest.TestCase):
             device_id="device-1",
         )
         with patch.object(frappe.db, "sql", side_effect=[[candidate], [locked]]) as sql:
-            result = token_api._find_existing_token(
-                token=locked.token,
-                token_hash=locked.token_hash,
-            )
+            result = token_api._find_existing_token(token_hash=locked.token_hash)
 
         self.assertEqual(result, row_name)
         self.assertEqual(sql.call_count, 2)
@@ -51,32 +42,6 @@ class TestNotificationTokenDeadlockHardening(unittest.TestCase):
         self.assertIn("WHERE name = %s", lock_query)
         self.assertIn("FOR UPDATE", lock_query.upper())
         self.assertEqual(sql.call_args_list[1].args[1], (row_name,))
-
-    def test_legacy_raw_token_scan_is_nonlocking_then_primary_key_locked(self):
-        row_name = "PUSH-TOKEN-LEGACY"
-        token = "fcm_legacy_token_abcdefghijklmnopqrstuvwxyz_0123456789"
-        candidate = SimpleNamespace(name=row_name)
-        locked = SimpleNamespace(
-            name=row_name,
-            user="owner@example.com",
-            token=token,
-            token_hash="",
-            device_id="device-legacy",
-        )
-        with patch.object(
-            frappe.db,
-            "sql",
-            side_effect=[[], [candidate], [locked]],
-        ) as sql:
-            result = token_api._find_existing_token(token=token, token_hash="c" * 64)
-
-        self.assertEqual(result, row_name)
-        legacy_query = str(sql.call_args_list[1].args[0])
-        lock_query = str(sql.call_args_list[2].args[0])
-        self.assertNotIn("FOR UPDATE", legacy_query.upper())
-        self.assertIn("COALESCE(token_hash, '') = ''", legacy_query)
-        self.assertIn("WHERE name = %s", lock_query)
-        self.assertIn("FOR UPDATE", lock_query.upper())
 
     def test_device_discovery_is_nonlocking_then_primary_key_locked(self):
         row_name = "PUSH-TOKEN-DEVICE"
@@ -89,10 +54,7 @@ class TestNotificationTokenDeadlockHardening(unittest.TestCase):
             device_id="device-1",
         )
         with patch.object(frappe.db, "sql", side_effect=[[candidate], [locked]]) as sql:
-            result = token_api._find_existing_device(
-                user=locked.user,
-                device_id=locked.device_id,
-            )
+            result = token_api._find_existing_device(user=locked.user, device_id=locked.device_id)
 
         self.assertEqual(result, row_name)
         discovery_query = str(sql.call_args_list[0].args[0])
@@ -112,9 +74,7 @@ class TestNotificationTokenDeadlockHardening(unittest.TestCase):
             "registration_kind": "token",
         }
         with (
-            patch.object(
-                token_api, "_register_attempt", side_effect=[deadlock, expected]
-            ) as attempt,
+            patch.object(token_api, "_register_attempt", side_effect=[deadlock, expected]) as attempt,
             patch.object(token_api, "rollback_deadlocked_transaction") as rollback,
             patch.object(token_api.time, "sleep") as sleep,
         ):
@@ -135,11 +95,7 @@ class TestNotificationTokenDeadlockHardening(unittest.TestCase):
             "registration_kind": "token",
         }
         with (
-            patch.object(
-                token_api,
-                "_register_attempt",
-                side_effect=[deadlock, deadlock, deadlock],
-            ) as attempt,
+            patch.object(token_api, "_register_attempt", side_effect=[deadlock, deadlock, deadlock]) as attempt,
             patch.object(token_api, "rollback_deadlocked_transaction") as rollback,
             patch.object(token_api.time, "sleep") as sleep,
         ):

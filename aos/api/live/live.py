@@ -33,7 +33,7 @@ from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.validators import require_id
 from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.livekit_service import LiveKitService
-from aos.services.notification_service import NotificationService  # noqa: F401
+from aos.services.notifications.service import NotificationService  # noqa: F401
 from aos.services.live.livekit import participant_identity, participant_metadata
 from aos.services.live.cursor import decode_cursor, encode_cursor
 from aos.services.live.errors import LiveError

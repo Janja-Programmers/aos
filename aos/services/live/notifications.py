@@ -6,7 +6,7 @@ import hashlib
 
 import frappe
 
-from aos.services.notification_service import NotificationService
+from aos.services.notifications.service import NotificationService
 from aos.services.social.constants import MAX_SOCIAL_EVENT_FANOUT
 from aos.services.social.repository import SocialRepository
 

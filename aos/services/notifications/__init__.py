@@ -1,6 +1,5 @@
-"""Internal Notification-domain helpers.
+"""Canonical Notifications domain services.
 
-The public compatibility facade remains :mod:`aos.services.notification_service`.
-This package contains contracts/policy used by that facade and the delivery
-worker without creating a second public notification API.
+Business domains request Notifications through :class:`NotificationService`;
+provider delivery remains behind the internal delivery companion boundary.
 """

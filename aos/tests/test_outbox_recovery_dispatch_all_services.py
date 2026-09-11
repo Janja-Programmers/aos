@@ -15,10 +15,10 @@ from aos.api.shared.callback_transaction import execute_callback_atomically
 from aos.services import (
 	analytics_pipeline_service,
 	moderation_service,
-	notification_delivery_service,
 	search_ranking_service,
 	video_processing_service,
 )
+from aos.services.notifications import delivery as notification_delivery_service
 from aos.services.transactional_outbox import (
 	OUTBOX_DOCTYPE,
 	OutboxError,

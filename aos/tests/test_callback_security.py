@@ -13,10 +13,10 @@ from aos.api.video_processing import callback as video_callback
 from aos.services import (
     analytics_pipeline_service,
     moderation_service,
-    notification_delivery_service,
     search_ranking_service,
     video_processing_service,
 )
+from aos.services.notifications import delivery as notification_delivery_service
 
 
 class _FakeRequest:
@@ -174,8 +174,7 @@ class TestCallbackSecurity(FrappeTestCase):
             moderation_service,
             search_ranking_service,
             analytics_pipeline_service,
-            notification_delivery_service,
-        ):
+                ):
             with self.subTest(service=service.__name__):
                 self.assertFalse(service.verify_signature("", b"{}", "sha256=anything"))
                 self.assertFalse(service.verify_signature(None, b"{}", "sha256=anything"))

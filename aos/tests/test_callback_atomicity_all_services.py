@@ -13,16 +13,16 @@ from frappe.utils import add_to_date, now_datetime
 
 from aos.api.analytics_pipeline import callback as analytics_api
 from aos.api.moderation import callback as moderation_api
-from aos.api.notification_delivery import callback as notification_api
+from aos.api.notifications import callback as notification_api
 from aos.api.search_ranking import callback as search_api
 from aos.api.video_processing import callback as video_api
 from aos.services import (
 	analytics_pipeline_service,
 	moderation_service,
-	notification_delivery_service,
 	search_ranking_service,
 	video_processing_service,
 )
+from aos.services.notifications import delivery as notification_delivery_service
 from aos.services.transactional_outbox import (
 	OUTBOX_DOCTYPE,
 	_claim_one,
@@ -70,8 +70,7 @@ _ADAPTERS = (
 	CallbackAdapter(
 		"notification_delivery",
 		notification_api,
-		notification_delivery_service,
-		"handle_notification_delivery_callback",
+			"handle_notification_delivery_callback",
 		"Delivered",
 		"Failed",
 	),

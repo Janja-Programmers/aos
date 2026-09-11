@@ -7,7 +7,6 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "target_section",
   "user",
   "notification",
@@ -46,14 +45,6 @@
  ],
  "fields": [
   {
-   "fieldname": "naming_series",
-   "label": "Naming Series",
-   "fieldtype": "Select",
-   "options": "NTF-JOB-.YYYY.-.#####",
-   "default": "NTF-JOB-.YYYY.-.#####",
-   "reqd": 1
-  },
-  {
    "fieldname": "target_section",
    "label": "Target",
    "fieldtype": "Section Break"
@@ -89,7 +80,7 @@
    "fieldname": "channel",
    "label": "Channel",
    "fieldtype": "Select",
-   "options": "push\nemail\nsms",
+   "options": "push",
    "default": "push",
    "reqd": 1,
    "in_standard_filter": 1
@@ -163,7 +154,9 @@
    "fieldname": "idempotency_key",
    "label": "Idempotency Key",
    "fieldtype": "Data",
-   "unique": 1
+   "unique": 1,
+   "reqd": 1,
+   "length": 200
   },
   {
    "fieldname": "attempt_count",
@@ -269,7 +262,6 @@
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Notification Delivery Job",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {

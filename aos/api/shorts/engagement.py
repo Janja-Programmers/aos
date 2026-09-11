@@ -16,7 +16,7 @@ from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.formatters import humanize_count
 from aos.api.shared.validators import require_id
 
-from aos.services.notification_service import NotificationService
+from aos.services.notifications.service import NotificationService
 from aos.services.shorts.recommendation import RecommendationService
 
 from aos.api.shorts.constants import (

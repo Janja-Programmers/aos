@@ -10,7 +10,7 @@ DURABLE_SERVICES = {
 	"moderation": ("aos/services/moderation_service.py", "dispatch_moderation_job"),
 	"search-ranking": ("aos/services/search_ranking_service.py", "dispatch_search_index_job"),
 	"notification-delivery": (
-		"aos/services/notification_delivery_service.py",
+		"aos/services/notifications/delivery.py",
 		"dispatch_notification_delivery_job",
 	),
 	"analytics-pipeline": (

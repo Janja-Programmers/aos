@@ -348,15 +348,8 @@ def _callback_job_id(service_type: str, stable_id: str, generation: int) -> str:
 
 
 def _fetch_work_job(queue: Any, service_type: str, stable_id: str) -> Any | None:
-    """Fetch current deterministic IDs and legacy raw IDs without enqueueing unsafe IDs."""
-    normalized_id = _work_job_id(service_type, stable_id)
-    job = queue.fetch_job(normalized_id)
-    if job is not None or normalized_id == stable_id:
-        return job
-    try:
-        return queue.fetch_job(stable_id)
-    except Exception:
-        return None
+    """Fetch the one canonical deterministic RQ job identity."""
+    return queue.fetch_job(_work_job_id(service_type, stable_id))
 
 
 def _job_status_text(job: Any) -> str:

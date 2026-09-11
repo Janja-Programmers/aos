@@ -109,6 +109,57 @@ class TestMediaBackgroundProcessing(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(result.purpose, "profile_image")
         self.assertTrue(self.storage.object_exists(result.bucket, result.object_key))
 
+    def test_success_state_survives_notification_failure_and_emits_once(self):
+        job = self._request()
+        with (
+            patch(
+                "aos.services.media.background_processing.get_background_removal_client_settings",
+                return_value=self._client_settings(),
+            ),
+            patch(
+                "aos.services.media.background_processing.remove_background_from_file",
+                return_value=SimpleNamespace(content=PNG_64),
+            ),
+            patch(
+                "aos.services.notifications.service.NotificationService.notify_media_processing_completed",
+                side_effect=RuntimeError("notification unavailable"),
+            ) as notify,
+        ):
+            self.assertEqual(self.processing.process(job_id=job.name), "Succeeded")
+            self.assertEqual(self.processing.process(job_id=job.name), "Succeeded")
+
+        notify.assert_called_once()
+        final_job = frappe.get_doc("AOS Media Processing Job", job.name)
+        self.assertEqual(final_job.status, "Succeeded")
+        self.assertTrue(final_job.result_media)
+        self.assertEqual(
+            frappe.db.count("AOS Media Object", {"processing_job": job.name}),
+            1,
+        )
+
+    def test_failure_state_survives_notification_failure(self):
+        job = self._request()
+        with (
+            patch(
+                "aos.services.media.background_processing.get_background_removal_client_settings",
+                return_value=self._client_settings(),
+            ),
+            patch(
+                "aos.services.media.background_processing.remove_background_from_file",
+                side_effect=BackgroundRemovalProcessingError("rejected"),
+            ),
+            patch(
+                "aos.services.notifications.service.NotificationService.notify_media_processing_failed",
+                side_effect=RuntimeError("notification unavailable"),
+            ) as notify,
+        ):
+            self.assertEqual(self.processing.process(job_id=job.name), "Failed")
+
+        notify.assert_called_once()
+        final_job = frappe.get_doc("AOS Media Processing Job", job.name)
+        self.assertEqual(final_job.status, "Failed")
+        self.assertEqual(final_job.last_error_code, "BACKGROUND_REMOVAL_FAILED")
+
     def test_processor_rejection_fails_job_without_corrupting_original(self):
         job = self._request()
         source_identity = (self.source.bucket, self.source.object_key)

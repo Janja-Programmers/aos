@@ -53,9 +53,7 @@ aos.patches.v1_0.install_report_indexes
 # Activity Center data reconciliation must run before its schema-only indexes.
 aos.patches.v1_0.harden_activity_subsystem
 aos.patches.v1_0.install_activity_indexes
-# Notification data/privacy reconciliation must run before its schema-only indexes.
-aos.patches.v1_0.harden_notification_subsystem
-aos.patches.v1_0.backfill_push_registration_kind
+# Canonical Notifications schema-only indexes.
 aos.patches.v1_0.install_notification_indexes
 
 
