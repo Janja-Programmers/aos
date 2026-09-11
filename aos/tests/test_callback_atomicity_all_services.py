@@ -16,13 +16,6 @@ from aos.api.moderation import callback as moderation_api
 from aos.api.notifications import callback as notification_api
 from aos.api.search_ranking import callback as search_api
 from aos.api.video_processing import callback as video_api
-from aos.services import (
-	analytics_pipeline_service,
-	moderation_service,
-	search_ranking_service,
-	video_processing_service,
-)
-from aos.services.notifications import delivery as notification_delivery_service
 from aos.services.transactional_outbox import (
 	OUTBOX_DOCTYPE,
 	_claim_one,
@@ -36,17 +29,16 @@ from aos.tests.outbox_fixtures import cleanup_committed_records, create_durable_
 class CallbackAdapter:
 	service_type: str
 	api_module: Any
-	service_module: Any
 	handler_name: str
 	success_status: str
 	failed_status: str
+	endpoint_impl_name: str = "handle_callback_impl"
 
 
 _ADAPTERS = (
 	CallbackAdapter(
 		"video_processing",
 		video_api,
-		video_processing_service,
 		"handle_video_processing_callback",
 		"Ready",
 		"Failed",
@@ -54,7 +46,6 @@ _ADAPTERS = (
 	CallbackAdapter(
 		"moderation",
 		moderation_api,
-		moderation_service,
 		"handle_moderation_callback",
 		"Review Required",
 		"Failed",
@@ -62,7 +53,6 @@ _ADAPTERS = (
 	CallbackAdapter(
 		"search_indexing",
 		search_api,
-		search_ranking_service,
 		"handle_search_index_callback",
 		"Indexed",
 		"Failed",
@@ -70,14 +60,14 @@ _ADAPTERS = (
 	CallbackAdapter(
 		"notification_delivery",
 		notification_api,
-			"handle_notification_delivery_callback",
+		"handle_notification_delivery_callback",
 		"Delivered",
 		"Failed",
+		"handle_delivery_callback_impl",
 	),
 	CallbackAdapter(
 		"analytics_ingestion",
 		analytics_api,
-		analytics_pipeline_service,
 		"handle_analytics_ingest_callback",
 		"Ingested",
 		"Failed",
@@ -207,7 +197,8 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 
 	def _invoke(self, adapter: CallbackAdapter, payload: dict[str, Any]) -> dict[str, Any]:
 		with patch.object(adapter.api_module, "read_signed_json_callback_payload", return_value=payload):
-			return adapter.api_module.handle_callback_impl()
+			endpoint_impl = getattr(adapter.api_module, adapter.endpoint_impl_name)
+			return endpoint_impl()
 
 	def _snapshot(self, fixture, outbox) -> dict[str, Any]:
 		job = frappe.db.get_value(

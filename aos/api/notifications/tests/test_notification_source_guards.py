@@ -192,6 +192,46 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         self.assertNotIn('logger.exception("Notification delivery job failed")', worker)
         self.assertIn('error_class=%s', worker)
 
+    def test_cross_service_callback_registry_tracks_notifications_canonical_callback_impl(self):
+        source = _source("aos/tests/test_callback_atomicity_all_services.py")
+        tree = ast.parse(source)
+        adapter_class = next(
+            node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "CallbackAdapter"
+        )
+        fields = [
+            node.target.id
+            for node in adapter_class.body
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+        ]
+        self.assertEqual(
+            fields,
+            [
+                "service_type",
+                "api_module",
+                "handler_name",
+                "success_status",
+                "failed_status",
+                "endpoint_impl_name",
+            ],
+        )
+        adapters_assignment = next(
+            node for node in tree.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "_ADAPTERS" for target in node.targets)
+        )
+        notification_adapter = next(
+            element
+            for element in adapters_assignment.value.elts
+            if isinstance(element, ast.Call)
+            and element.args
+            and isinstance(element.args[0], ast.Constant)
+            and element.args[0].value == "notification_delivery"
+        )
+        self.assertEqual(len(notification_adapter.args), 6)
+        self.assertEqual(notification_adapter.args[2].value, "handle_notification_delivery_callback")
+        self.assertEqual(notification_adapter.args[5].value, "handle_delivery_callback_impl")
+        self.assertIn("getattr(adapter.api_module, adapter.endpoint_impl_name)", source)
+
     def test_delivery_callback_is_inside_notifications_and_strict(self):
         callback = _source("aos/api/notifications/callback.py")
         wrapper = _source("aos/api/v1/notifications/__init__.py")
