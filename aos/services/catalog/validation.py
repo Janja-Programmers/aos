@@ -471,10 +471,28 @@ def _assert_dependency_graph_acyclic(graph: dict[str, str]) -> None:
 
 
 def _dependency_mapping_key(
-    *, category_id: str, child_attribute: str, child_option: str, parent_option: str
+    *, category_id: str, child_attribute: str, parent_option: str
 ) -> str:
-    identity = "\x1f".join((category_id, child_attribute, child_option, parent_option))
+    """Return the stable identity for one grouped dependency row."""
+
+    identity = "\x1f".join((category_id, child_attribute, parent_option))
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+
+def _dependency_child_options(value: Any) -> list[str]:
+    """Normalize one grouped parent -> child-options mapping."""
+
+    options = split_choices(
+        value,
+        field="child_option",
+        max_items=MAX_ATTRIBUTE_OPTIONS,
+    )
+    if not options:
+        raise CatalogValidationError(
+            "At least one dependent option is required for each parent option.",
+            code="INVALID_CATEGORY_SCHEMA",
+        )
+    return options
 
 
 def _validate_attribute_dependency_mappings(
@@ -487,7 +505,7 @@ def _validate_attribute_dependency_mappings(
     mappings = list(getattr(doc, "attribute_dependencies", None) or [])
     if len(mappings) > MAX_CATEGORY_ATTRIBUTE_DEPENDENCIES:
         raise CatalogValidationError(
-            "Too many attribute dependency mappings.", code="INVALID_CATEGORY_SCHEMA"
+            "Too many attribute dependency rows.", code="INVALID_CATEGORY_SCHEMA"
         )
 
     category_id = normalize_text(
@@ -496,21 +514,17 @@ def _validate_attribute_dependency_mappings(
         max_length=CATEGORY_ID_MAX_LENGTH,
         required=True,
     )
-    seen_pairs: set[tuple[str, str, str]] = set()
+    seen_groups: set[tuple[str, str]] = set()
     seen_mapping_keys: set[str] = set()
     covered_children: dict[str, set[str]] = {attribute: set() for attribute in graph}
     covered_parents: dict[str, set[str]] = {attribute: set() for attribute in graph}
+    expanded_mapping_count = 0
+
     for mapping in mappings:
         child_attribute = normalize_text(
             getattr(mapping, "child_attribute", None),
             field="child_attribute",
             max_length=140,
-            required=True,
-        )
-        child_option = normalize_text(
-            getattr(mapping, "child_option", None),
-            field="child_option",
-            max_length=OPTION_MAX_LENGTH,
             required=True,
         )
         parent_option = normalize_text(
@@ -519,13 +533,17 @@ def _validate_attribute_dependency_mappings(
             max_length=OPTION_MAX_LENGTH,
             required=True,
         )
+        child_options = _dependency_child_options(getattr(mapping, "child_options", None))
         parent_attribute = graph.get(child_attribute)
         if not parent_attribute:
             raise CatalogValidationError(
                 "Dependency mapping references an attribute without Depends On Attribute.",
                 code="INVALID_CATEGORY_SCHEMA",
             )
-        if child_option not in set(effective_options.get(child_attribute) or []):
+
+        allowed_children = set(effective_options.get(child_attribute) or [])
+        invalid_children = [option for option in child_options if option not in allowed_children]
+        if invalid_children:
             raise CatalogValidationError(
                 "Dependency mapping contains an invalid dependent option.",
                 code="INVALID_CATEGORY_SCHEMA",
@@ -535,28 +553,39 @@ def _validate_attribute_dependency_mappings(
                 "Dependency mapping contains an invalid parent option.",
                 code="INVALID_CATEGORY_SCHEMA",
             )
-        pair = (child_attribute, child_option, parent_option)
-        if pair in seen_pairs:
+
+        group = (child_attribute, parent_option)
+        if group in seen_groups:
             raise CatalogValidationError(
-                "Duplicate attribute dependency mapping.", code="INVALID_CATEGORY_SCHEMA"
+                "Duplicate attribute dependency parent mapping.",
+                code="INVALID_CATEGORY_SCHEMA",
             )
-        seen_pairs.add(pair)
+        seen_groups.add(group)
+
         mapping_key = _dependency_mapping_key(
             category_id=category_id,
             child_attribute=child_attribute,
-            child_option=child_option,
             parent_option=parent_option,
         )
         if mapping_key in seen_mapping_keys:
             raise CatalogValidationError(
-                "Duplicate attribute dependency mapping.", code="INVALID_CATEGORY_SCHEMA"
+                "Duplicate attribute dependency parent mapping.",
+                code="INVALID_CATEGORY_SCHEMA",
             )
         seen_mapping_keys.add(mapping_key)
-        covered_children[child_attribute].add(child_option)
+
+        expanded_mapping_count += len(child_options)
+        if expanded_mapping_count > MAX_CATEGORY_ATTRIBUTE_DEPENDENCIES:
+            raise CatalogValidationError(
+                "Too many attribute dependency mappings.",
+                code="INVALID_CATEGORY_SCHEMA",
+            )
+
+        covered_children[child_attribute].update(child_options)
         covered_parents[child_attribute].add(parent_option)
         mapping.child_attribute = child_attribute
-        mapping.child_option = child_option
         mapping.parent_option = parent_option
+        mapping.child_options = "\n".join(child_options)
         mapping.mapping_key = mapping_key
 
     for child_attribute in graph:

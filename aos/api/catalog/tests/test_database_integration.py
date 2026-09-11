@@ -221,14 +221,23 @@ class TestCatalogDatabaseIntegration(FrappeTestCase):
                 },
             ],
             dependencies=[
-                {"child_attribute": model.name, "child_option": "EliteBook", "parent_option": "HP"},
-                {"child_attribute": model.name, "child_option": "ProBook", "parent_option": "HP"},
-                {"child_attribute": model.name, "child_option": "MacBook Air", "parent_option": "Apple"},
+                {
+                    "child_attribute": model.name,
+                    "parent_option": "HP",
+                    "child_options": "EliteBook\nProBook",
+                },
+                {
+                    "child_attribute": model.name,
+                    "parent_option": "Apple",
+                    "child_options": "MacBook Air",
+                },
             ],
         )
 
         refreshed = frappe.get_doc("AOS Category", leaf.name)
-        self.assertEqual(len(refreshed.attribute_dependencies), 3)
+        self.assertEqual(len(refreshed.attribute_dependencies), 2)
+        hp_mapping = next(row for row in refreshed.attribute_dependencies if row.parent_option == "HP")
+        self.assertEqual(hp_mapping.child_options, "EliteBook\nProBook")
         self.assertTrue(all(len(row.mapping_key or "") == 64 for row in refreshed.attribute_dependencies))
 
         schema = CatalogService().get_public_schema(leaf.name)

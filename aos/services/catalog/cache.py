@@ -13,7 +13,7 @@ from typing import Any
 
 import frappe
 
-CATALOG_CACHE_SCHEMA = "v4"
+CATALOG_CACHE_SCHEMA = "v5"
 CATALOG_CACHE_TTL_SECONDS = 300
 _CATEGORY_TREE_KEY = f"aos:catalog:{CATALOG_CACHE_SCHEMA}:categories"
 _SCHEMA_PREFIX = f"aos:catalog:{CATALOG_CACHE_SCHEMA}:schema:"

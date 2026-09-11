@@ -15,6 +15,7 @@ from .constants import (
     ALLOWED_PRICE_TYPES,
     ALLOWED_PRICING_REQUIREMENTS,
     MAX_ATTRIBUTE_OPTIONS,
+    MAX_CATEGORY_ATTRIBUTE_DEPENDENCIES,
     SELECT_ATTRIBUTE_TYPES,
 )
 from .errors import CatalogDataError, CatalogValidationError
@@ -217,6 +218,7 @@ def _apply_attribute_dependencies(
             dependencies_by_category[category_id][child_attribute].append(row)
 
     graph: dict[str, str] = {}
+    expanded_mapping_count = 0
     for attribute_id, item in by_attribute.items():
         parent_id = str(item.get("_depends_on_attribute") or "").strip()
         source_category = str(item.get("_source_category") or "").strip()
@@ -243,20 +245,31 @@ def _apply_attribute_dependencies(
 
         allowed_children = set(child_options)
         allowed_parents = set(parent_options)
-        seen_pairs: set[tuple[str, str]] = set()
+        seen_parent_groups: set[str] = set()
         covered_children: set[str] = set()
         by_parent: dict[str, set[str]] = defaultdict(set)
         for row in mapping_rows:
-            child_option = str(row.get("child_option") or "").strip()
             parent_option = str(row.get("parent_option") or "").strip()
-            if child_option not in allowed_children or parent_option not in allowed_parents:
+            try:
+                row_child_options = split_choices(
+                    row.get("child_options"),
+                    field="child_option",
+                    max_items=MAX_ATTRIBUTE_OPTIONS,
+                )
+            except CatalogValidationError as exc:
+                raise CatalogDataError("Catalog dependency option mapping is invalid.") from exc
+            if not row_child_options or parent_option not in allowed_parents:
                 raise CatalogDataError("Catalog dependency option mapping is invalid.")
-            pair = (child_option, parent_option)
-            if pair in seen_pairs:
-                raise CatalogDataError("Catalog contains duplicate dependency mappings.")
-            seen_pairs.add(pair)
-            covered_children.add(child_option)
-            by_parent[parent_option].add(child_option)
+            if parent_option in seen_parent_groups:
+                raise CatalogDataError("Catalog contains duplicate dependency parent mappings.")
+            if any(option not in allowed_children for option in row_child_options):
+                raise CatalogDataError("Catalog dependency option mapping is invalid.")
+            seen_parent_groups.add(parent_option)
+            expanded_mapping_count += len(row_child_options)
+            if expanded_mapping_count > MAX_CATEGORY_ATTRIBUTE_DEPENDENCIES:
+                raise CatalogDataError("Catalog attribute dependency mapping limit exceeded.")
+            covered_children.update(row_child_options)
+            by_parent[parent_option].update(row_child_options)
         if covered_children != allowed_children:
             raise CatalogDataError("Every dependent option must map to a parent option.")
         if int(item.get("required") or 0) and set(by_parent) != allowed_parents:

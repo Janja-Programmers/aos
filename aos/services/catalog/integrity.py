@@ -173,12 +173,20 @@ def _attribute_rows(doc: Any) -> dict[str, Any]:
 
 
 def _dependency_rows_by_child(doc: Any) -> dict[str, set[tuple[str, str]]]:
+    """Expand grouped persistence rows into stable logical dependency edges."""
+
     result: dict[str, set[tuple[str, str]]] = {}
     for row in list(getattr(doc, "attribute_dependencies", None) or []):
         child = _clean(getattr(row, "child_attribute", ""))
-        child_option = _clean(getattr(row, "child_option", ""))
         parent_option = _clean(getattr(row, "parent_option", ""))
-        if child and child_option and parent_option:
+        if not child or not parent_option:
+            continue
+        child_options = split_choices(
+            getattr(row, "child_options", None),
+            field="child_option",
+            max_items=MAX_ATTRIBUTE_OPTIONS,
+        )
+        for child_option in child_options:
             result.setdefault(child, set()).add((child_option, parent_option))
     return result
 

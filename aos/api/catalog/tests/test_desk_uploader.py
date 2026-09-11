@@ -6,6 +6,14 @@ from unittest import TestCase
 
 ROOT = Path(__file__).resolve().parents[4]
 CATEGORY_JSON = ROOT / "aos" / "aos" / "doctype" / "aos_category" / "aos_category.json"
+DEPENDENCY_JSON = (
+    ROOT
+    / "aos"
+    / "aos"
+    / "doctype"
+    / "aos_category_attribute_dependency_row"
+    / "aos_category_attribute_dependency_row.json"
+)
 CATEGORY_JS = ROOT / "aos" / "aos" / "doctype" / "aos_category" / "aos_category.js"
 TREE_JS = ROOT / "aos" / "aos" / "doctype" / "aos_category" / "aos_category_tree.js"
 
@@ -45,6 +53,16 @@ class TestCategoryDeskMediaContract(TestCase):
         self.assertNotIn("S3", script)
         self.assertNotIn("bucket", script.lower())
         self.assertNotIn("object_key", script)
+
+    def test_dependency_rows_group_children_by_parent_option(self):
+        definition = json.loads(DEPENDENCY_JSON.read_text())
+        fields = {field["fieldname"]: field for field in definition["fields"]}
+
+        self.assertNotIn("child_option", fields)
+        self.assertEqual(fields["child_options"]["fieldtype"], "Small Text")
+        self.assertEqual(fields["child_options"]["reqd"], 1)
+        self.assertEqual(fields["parent_option"]["fieldtype"], "Data")
+        self.assertEqual(fields["mapping_key"]["length"], 64)
 
     def test_dependency_link_queries_are_scoped_to_category_select_attributes(self):
         script = CATEGORY_JS.read_text()

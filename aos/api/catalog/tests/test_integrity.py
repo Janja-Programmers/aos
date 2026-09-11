@@ -224,7 +224,7 @@ class TestCatalogIntegrity(TestCase):
                 relation("Model", required=1, options="EliteBook", depends_on="Brand"),
             ],
             attribute_dependencies=[
-                SimpleNamespace(child_attribute="Model", child_option="EliteBook", parent_option="HP")
+                SimpleNamespace(child_attribute="Model", parent_option="HP", child_options="EliteBook")
             ],
         )
         doc = FakeDoc(
@@ -246,8 +246,8 @@ class TestCatalogIntegrity(TestCase):
                 ),
             ],
             attribute_dependencies=[
-                SimpleNamespace(child_attribute="Model", child_option="EliteBook", parent_option="HP"),
-                SimpleNamespace(child_attribute="Model", child_option="MacBook Air", parent_option="Apple"),
+                SimpleNamespace(child_attribute="Model", parent_option="HP", child_options="EliteBook"),
+                SimpleNamespace(child_attribute="Model", parent_option="Apple", child_options="MacBook Air"),
             ],
             _before=before,
         )
@@ -295,7 +295,7 @@ class TestCatalogIntegrity(TestCase):
             allowed_price_units="",
             attributes=[relation("Brand", required=1), relation("Model", required=1, depends_on="Brand")],
             attribute_dependencies=[
-                SimpleNamespace(child_attribute="Model", child_option="EliteBook", parent_option="HP")
+                SimpleNamespace(child_attribute="Model", parent_option="HP", child_options="EliteBook")
             ],
         )
         doc = FakeDoc(
@@ -309,7 +309,7 @@ class TestCatalogIntegrity(TestCase):
             allowed_price_units="",
             attributes=[relation("Brand", required=1), relation("Model", required=1, depends_on="Brand")],
             attribute_dependencies=[
-                SimpleNamespace(child_attribute="Model", child_option="EliteBook", parent_option="Apple")
+                SimpleNamespace(child_attribute="Model", parent_option="Apple", child_options="EliteBook")
             ],
             _before=before,
         )

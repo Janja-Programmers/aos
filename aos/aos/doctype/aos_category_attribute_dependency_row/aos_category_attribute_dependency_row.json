@@ -7,8 +7,8 @@
  "engine": "InnoDB",
  "field_order": [
   "child_attribute",
-  "child_option",
   "parent_option",
+  "child_options",
   "mapping_key"
  ],
  "fields": [
@@ -22,12 +22,12 @@
    "description": "Dependent Select attribute configured on this category."
   },
   {
-   "fieldname": "child_option",
-   "fieldtype": "Data",
+   "fieldname": "child_options",
+   "fieldtype": "Small Text",
    "in_list_view": 1,
-   "label": "Dependent Option",
+   "label": "Dependent Options",
    "reqd": 1,
-   "description": "Exact canonical option from the dependent attribute effective options."
+   "description": "Canonical dependent options allowed for this parent option, one option per line."
   },
   {
    "fieldname": "parent_option",
@@ -45,14 +45,14 @@
    "hidden": 1,
    "no_copy": 1,
    "length": 64,
-   "description": "Deterministic SHA-256 identity used for database-level duplicate prevention."
+   "description": "Deterministic SHA-256 row identity derived from category + dependent attribute + parent option."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
- "modified": "2026-09-11 00:00:00.000000",
+ "modified": "2026-09-11 15:15:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Category Attribute Dependency Row",

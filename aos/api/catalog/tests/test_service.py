@@ -255,9 +255,8 @@ class TestCatalogService(TestCase):
                 "Model": attribute_definition("Model", key="model", options="EliteBook\nProBook\nMacBook Air"),
             },
             dependencies=[
-                {"name": "D1", "parent": "Laptops", "idx": 1, "child_attribute": "Model", "child_option": "EliteBook", "parent_option": "HP"},
-                {"name": "D2", "parent": "Laptops", "idx": 2, "child_attribute": "Model", "child_option": "ProBook", "parent_option": "HP"},
-                {"name": "D3", "parent": "Laptops", "idx": 3, "child_attribute": "Model", "child_option": "MacBook Air", "parent_option": "Apple"},
+                {"name": "D1", "parent": "Laptops", "idx": 1, "child_attribute": "Model", "parent_option": "HP", "child_options": "EliteBook\nProBook"},
+                {"name": "D2", "parent": "Laptops", "idx": 2, "child_attribute": "Model", "parent_option": "Apple", "child_options": "MacBook Air"},
             ],
         )
         service = CatalogService(repo)
@@ -304,7 +303,7 @@ class TestCatalogService(TestCase):
                     {"name": "M", "idx": 2, "attribute": "Model", "sort_order": 2, "is_required": 1, "is_active": 1, "options_override": "", "depends_on_attribute": "Brand"},
                 ],
                 "attribute_dependencies": [
-                    {"name": "D1", "child_attribute": "Model", "child_option": "EliteBook", "parent_option": "HP"}
+                    {"name": "D1", "child_attribute": "Model", "parent_option": "HP", "child_options": "EliteBook"}
                 ],
                 "attribute_definitions": definitions,
             }
@@ -320,11 +319,28 @@ class TestCatalogService(TestCase):
                     {"name": "M", "idx": 2, "attribute": "Model", "sort_order": 2, "is_required": 1, "is_active": 1, "options_override": "", "depends_on_attribute": "Brand"},
                 ],
                 "attribute_dependencies": [
-                    {"name": "D1", "child_attribute": "Model", "child_option": "EliteBook", "parent_option": "HP"},
-                    {"name": "D2", "child_attribute": "Model", "child_option": "MacBook Air", "parent_option": "HP"},
+                    {"name": "D1", "child_attribute": "Model", "parent_option": "HP", "child_options": "EliteBook\nMacBook Air"},
                 ],
                 "attribute_definitions": definitions,
             }
         ]
         with self.assertRaises(CatalogDataError):
             resolve_attributes(no_required_parent_coverage)
+
+        duplicate_parent_group = [
+            {
+                "name": "Laptops",
+                "attributes": [
+                    {"name": "B", "idx": 1, "attribute": "Brand", "sort_order": 1, "is_required": 1, "is_active": 1, "options_override": "", "depends_on_attribute": ""},
+                    {"name": "M", "idx": 2, "attribute": "Model", "sort_order": 2, "is_required": 1, "is_active": 1, "options_override": "", "depends_on_attribute": "Brand"},
+                ],
+                "attribute_dependencies": [
+                    {"name": "D1", "child_attribute": "Model", "parent_option": "HP", "child_options": "EliteBook"},
+                    {"name": "D2", "child_attribute": "Model", "parent_option": "HP", "child_options": "MacBook Air"},
+                    {"name": "D3", "child_attribute": "Model", "parent_option": "Apple", "child_options": "MacBook Air"},
+                ],
+                "attribute_definitions": definitions,
+            }
+        ]
+        with self.assertRaises(CatalogDataError):
+            resolve_attributes(duplicate_parent_group)

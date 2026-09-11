@@ -136,13 +136,13 @@
    "fieldtype": "Table",
    "label": "Attribute Option Dependencies",
    "options": "AOS Category Attribute Dependency Row",
-   "description": "Maps each dependent option to one or more allowed parent options. Configure Depends On Attribute in the Attributes table first."
+   "description": "Groups each dependent Select attribute by parent option; enter the allowed dependent options one per line. Configure Depends On Attribute in the Attributes table first."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-07-31 00:00:00.000000",
+ "modified": "2026-09-11 15:15:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Category",

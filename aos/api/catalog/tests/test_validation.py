@@ -178,8 +178,8 @@ class TestCatalogValidation(TestCase):
             depends_on_attribute="Brand",
         )
         mappings = [
-            SimpleNamespace(child_attribute="Model", child_option="EliteBook", parent_option="HP"),
-            SimpleNamespace(child_attribute="Model", child_option="MacBook Air", parent_option="Apple"),
+            SimpleNamespace(child_attribute="Model", parent_option="HP", child_options="EliteBook"),
+            SimpleNamespace(child_attribute="Model", parent_option="Apple", child_options="MacBook Air"),
         ]
         doc = SimpleNamespace(
             name="Laptops",
@@ -196,14 +196,27 @@ class TestCatalogValidation(TestCase):
             attribute_dependencies=mappings,
         )
         validate_category_document(doc)
+        self.assertEqual(mappings[0].child_options, "EliteBook")
+        self.assertEqual(len(mappings[0].mapping_key), 64)
 
         doc.attribute_dependencies = mappings[:1]
         with self.assertRaises(CatalogValidationError):
             validate_category_document(doc)
 
         doc.attribute_dependencies = [
-            SimpleNamespace(child_attribute="Model", child_option="EliteBook", parent_option="HP"),
-            SimpleNamespace(child_attribute="Model", child_option="MacBook Air", parent_option="HP"),
+            SimpleNamespace(
+                child_attribute="Model",
+                parent_option="HP",
+                child_options="EliteBook\nMacBook Air",
+            ),
+        ]
+        with self.assertRaises(CatalogValidationError):
+            validate_category_document(doc)
+
+        doc.attribute_dependencies = [
+            SimpleNamespace(child_attribute="Model", parent_option="HP", child_options="EliteBook"),
+            SimpleNamespace(child_attribute="Model", parent_option="HP", child_options="MacBook Air"),
+            SimpleNamespace(child_attribute="Model", parent_option="Apple", child_options="MacBook Air"),
         ]
         with self.assertRaises(CatalogValidationError):
             validate_category_document(doc)

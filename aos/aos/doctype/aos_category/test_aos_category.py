@@ -37,6 +37,11 @@ class IntegrationTestAOSCategory(IntegrationTestCase):
         depends_on = relation_meta.get_field("depends_on_attribute")
         self.assertEqual(depends_on.fieldtype, "Link")
         self.assertEqual(depends_on.options, "AOS Ad Attribute")
+        dependency_meta = frappe.get_meta("AOS Category Attribute Dependency Row")
+        child_options = dependency_meta.get_field("child_options")
+        self.assertEqual(child_options.fieldtype, "Small Text")
+        self.assertEqual(child_options.reqd, 1)
+        self.assertIsNone(dependency_meta.get_field("child_option"))
 
     def test_source_controlled_permission_defaults_remain_effective(self):
         schema_path = Path(

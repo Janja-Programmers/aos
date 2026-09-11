@@ -32,9 +32,9 @@ class TestCatalogCache(TestCase):
 
             backend.delete_value.assert_called_once()
             self.assertEqual(backend.delete_keys.call_count, 3)
-            backend.delete_keys.assert_any_call("aos:catalog:v4:schema:*")
-            backend.delete_keys.assert_any_call("aos:catalog:v4:options:*")
-            backend.delete_keys.assert_any_call("aos:catalog:v4:resolved-attributes:*")
+            backend.delete_keys.assert_any_call("aos:catalog:v5:schema:*")
+            backend.delete_keys.assert_any_call("aos:catalog:v5:options:*")
+            backend.delete_keys.assert_any_call("aos:catalog:v5:resolved-attributes:*")
             after_commit.add.assert_called_once()
             callback = after_commit.add.call_args.args[0]
             callback()
