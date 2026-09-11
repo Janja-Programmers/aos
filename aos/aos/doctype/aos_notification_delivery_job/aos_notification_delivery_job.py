@@ -48,15 +48,11 @@ class AOSNotificationDeliveryJob(Document):
         terminal_reference_tolerant = (
             not self.is_new() and self.status in REFERENCE_TOLERANT_TERMINAL_STATUSES
         )
-        if terminal_reference_tolerant and (
-            not user_exists or (self.notification and not notification_exists)
-        ):
-            # Delivery records intentionally outlive their recipient/inbox row for
-            # bounded operational retention. A delete/account-cleanup race must be
-            # able to persist a terminal state without Frappe rejecting historical
-            # Link values that were valid when the job was created. No Link value
-            # is changed on this path; only lifecycle/diagnostic state is saved.
-            self.flags.ignore_links = True
+        # ``user`` and ``notification`` are identifier snapshots (Data fields),
+        # not live Links. Delivery records intentionally outlive recipient/inbox
+        # rows for bounded operational retention. New and nonterminal jobs still
+        # enforce live references below; only an existing terminal job may retain
+        # identifiers whose source rows were deleted after job creation.
         if not user_exists and not terminal_reference_tolerant:
             frappe.throw("Notification delivery user is required.")
         if not self.event or len(self.event) > 80:

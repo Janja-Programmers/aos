@@ -62,7 +62,7 @@ Multiple devices per account are supported. Re-registering the same token or dev
 
 Internal durable delivery state. It is not a public product API.
 
-Important fields include recipient, optional inbox notification, `persistent`/`transient` kind, channel, event, bounded copy/options, unique `idempotency_key`, attempt counters, status, dispatch timestamps, safe request/response diagnostics and aggregate success/failure counts. Raw credentials and unrestricted provider error payloads are not persisted.
+Important fields include recipient, optional inbox notification, `persistent`/`transient` kind, channel, event, bounded copy/options, unique `idempotency_key`, attempt counters, status, dispatch timestamps, safe request/response diagnostics and aggregate success/failure counts. The recipient and inbox-notification values are stored as identifier snapshots rather than live Frappe Links: new and nonterminal jobs validate that the referenced rows still exist, while existing terminal delivery records may retain those historical identifiers after account/inbox cleanup. This prevents deletion races from dead-lettering already-suppressible work while preserving creation-time integrity. Raw credentials and unrestricted provider error payloads are not persisted.
 
 Canonical states are:
 

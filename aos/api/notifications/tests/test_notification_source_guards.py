@@ -232,18 +232,26 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         self.assertEqual(notification_adapter.args[5].value, "handle_delivery_callback_impl")
         self.assertIn("getattr(adapter.api_module, adapter.endpoint_impl_name)", source)
 
-    def test_terminal_delivery_jobs_tolerate_deleted_historical_links_only_after_creation(self):
+    def test_terminal_delivery_jobs_use_historical_identifier_snapshots_with_strict_live_validation(self):
         source = _source(
             "aos/aos/doctype/aos_notification_delivery_job/aos_notification_delivery_job.py"
         )
+        doctype = json.loads(
+            _source("aos/aos/doctype/aos_notification_delivery_job/aos_notification_delivery_job.json")
+        )
+        fields = {field["fieldname"]: field for field in doctype["fields"]}
+        self.assertEqual(fields["user"]["fieldtype"], "Data")
+        self.assertNotIn("options", fields["user"])
+        self.assertEqual(fields["notification"]["fieldtype"], "Data")
+        self.assertNotIn("options", fields["notification"])
         self.assertIn(
             'REFERENCE_TOLERANT_TERMINAL_STATUSES = frozenset({"Delivered", "Skipped", "Cancelled"})',
             source,
         )
         self.assertIn("not self.is_new()", source)
-        self.assertIn("self.flags.ignore_links = True", source)
         self.assertIn("not user_exists and not terminal_reference_tolerant", source)
         self.assertIn("not notification_exists and not terminal_reference_tolerant", source)
+        self.assertNotIn("self.flags.ignore_links = True", source)
 
     def test_delivery_callback_is_inside_notifications_and_strict(self):
         callback = _source("aos/api/notifications/callback.py")

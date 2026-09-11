@@ -52,8 +52,7 @@
   {
    "fieldname": "user",
    "label": "User",
-   "fieldtype": "Link",
-   "options": "User",
+   "fieldtype": "Data",
    "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
@@ -62,8 +61,7 @@
   {
    "fieldname": "notification",
    "label": "Notification",
-   "fieldtype": "Link",
-   "options": "AOS Notification",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "in_standard_filter": 1
   },
