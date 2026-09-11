@@ -228,8 +228,15 @@ class TestOutboxBackfillAllServiceTypesDatabase(FrappeTestCase):
 					spec = legacy_spec(service_type)
 
 					queued = create_durable_job(service_type, status="Queued", malformed_payload=True)
-					queued.job.idempotency_key = None
-					queued.job.save(ignore_permissions=True)
+					# Simulate a pre-hardening row without routing through current
+					# DocType validation, which correctly rejects a missing key.
+					frappe.db.set_value(
+						queued.doctype,
+						queued.job.name,
+						"idempotency_key",
+						None,
+						update_modified=False,
+					)
 					queued_counters = self._counters()
 					with patch("aos.services.transactional_outbox.register_after_commit_publish"):
 						_backfill_job(spec, self._row(queued), queued_counters)

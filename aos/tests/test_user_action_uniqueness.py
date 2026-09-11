@@ -227,11 +227,13 @@ class TestUserActionUniqueness(AOSFeatureTestMixin, FrappeTestCase):
             token=f"{self.prefix}-token-1",
             device_type="android",
             device_id=device_id,
+            registration_kind="token",
         )
         second = register_push_token_impl(
             token=f"{self.prefix}-token-2",
             device_type="android",
             device_id=device_id,
+            registration_kind="token",
         )
 
         self.assertTrue(first.get("ok"), first)

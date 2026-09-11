@@ -93,7 +93,7 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
             self.assertIn("ensure_call_interaction_allowed", _source(relative), relative)
 
     def test_incoming_delivery_stays_transient_and_only_missed_is_persistent(self):
-        source = _source("aos/services/notification_service.py")
+        source = _source("aos/services/notifications/service.py")
         incoming = source.split("def notify_incoming_call", 1)[1].split("def notify_missed_call", 1)[0]
         missed = source.split("def notify_missed_call", 1)[1].split("# FOLLOW", 1)[0]
         self.assertIn("deliver_transient", incoming)

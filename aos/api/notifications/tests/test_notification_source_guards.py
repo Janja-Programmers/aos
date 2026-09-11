@@ -239,8 +239,9 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         self.assertIn("Unsupported notification delivery callback field", callback)
         self.assertIn('error="DELIVERY_CALLBACK_INVALID"', callback)
         self.assertIn("handle_delivery_callback", wrapper)
-        self.assertFalse((ROOT / "aos/api/v1/notification_delivery").exists())
-        self.assertFalse((ROOT / "aos/api/notification_delivery").exists())
+        self.assertFalse((ROOT / "aos/api/v1/notification_delivery/__init__.py").exists())
+        self.assertFalse((ROOT / "aos/api/notification_delivery/__init__.py").exists())
+        self.assertFalse((ROOT / "aos/api/notification_delivery/callback.py").exists())
 
     def test_retention_is_bounded_and_index_backed(self):
         retention = _source("aos/services/notifications/retention.py")

@@ -164,7 +164,7 @@ class TestVerificationProductionSourceGuards(unittest.TestCase):
         self.assertNotIn('data["media_object"]', source)
 
     def test_notifications_keep_canonical_categories_and_are_deduped(self):
-        source = _source("aos/services/notification_service.py")
+        source = _source("aos/services/notifications/service.py")
         approved = source.split("def notify_verification_approved", 1)[1].split(
             "def notify_verification_rejected", 1
         )[0]

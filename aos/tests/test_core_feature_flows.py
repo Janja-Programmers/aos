@@ -316,8 +316,9 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
                 token=token,
                 device_type="android",
                 device_id=device_id,
+                registration_kind="token",
             )
-            deactivated = deactivate_push_token_impl(token=token)
+            deactivated = deactivate_push_token_impl(token=token, registration_kind="token")
 
         self.assertTrue(registered.get("ok"), registered)
         token_id = registered.get("data", {}).get("id")

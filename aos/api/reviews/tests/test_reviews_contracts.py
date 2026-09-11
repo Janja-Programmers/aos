@@ -110,12 +110,12 @@ class TestReviewsContracts(unittest.TestCase):
         service = (ROOT / "aos/services/reviews/service.py").read_text()
         self.assertIn('frappe.db.exists("AOS Report Reason"', service)
     def test_review_notifications_use_canonical_delivery_service(self):
-        notification_source = (ROOT / "aos/services/notification_service.py").read_text()
+        notification_source = (ROOT / "aos/services/notifications/service.py").read_text()
         moderation_source = (ROOT / "aos/services/moderation_service.py").read_text()
-        categories = (ROOT / "aos/api/notifications/constants.py").read_text()
+        contracts = (ROOT / "aos/services/notifications/contracts.py").read_text()
         for notification_type in ("review_received", "review_approved", "review_rejected"):
             self.assertIn(notification_type, notification_source)
-            self.assertIn(notification_type, categories)
+            self.assertIn(notification_type, contracts)
         self.assertIn("_notify_review_moderation_result", moderation_source)
         self.assertIn("NotificationService.notify_review_received", moderation_source)
     def test_review_aggregates_are_locked_and_reconcilable_for_ads_and_sellers(self):

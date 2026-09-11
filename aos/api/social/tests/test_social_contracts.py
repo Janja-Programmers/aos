@@ -98,7 +98,7 @@ class TestSocialStaticContracts(TestCase):
         self.assertIn('"length": 300', model)
 
     def test_cross_feature_social_payloads_use_public_ids(self):
-        notification = (ROOT / "aos/services/notification_service.py").read_text()
+        notification = (ROOT / "aos/services/notifications/service.py").read_text()
         live = (ROOT / "aos/api/live/live.py").read_text()
         self.assertIn("public_account_id_for_user(actor)", notification)
         self.assertIn("public_account_id_for_user(host_user)", notification)
@@ -139,14 +139,17 @@ def test_pair_mutations_share_a_deterministic_lock_boundary() -> None:
 
 def test_cross_feature_follower_event_fanout_is_bounded_and_block_aware() -> None:
     repository = (ROOT / "aos/services/social/repository.py").read_text()
-    notifications = (ROOT / "aos/services/notification_service.py").read_text()
-    live = (ROOT / "aos/api/live/live.py").read_text()
+    notifications = (ROOT / "aos/services/notifications/service.py").read_text()
+    live_notifications = (ROOT / "aos/services/live/notifications.py").read_text()
     realtime = (ROOT / "aos/api/live/realtime.py").read_text()
     assert "def list_active_followers_for_event" in repository
+    assert "def list_active_followers_for_event_page" in repository
     assert "NOT EXISTS" in repository and "LIMIT %(limit)s" in repository
     assert "MAX_SOCIAL_EVENT_FANOUT = 500" in (ROOT / "aos/services/social/constants.py").read_text()
-    for source in (notifications, live, realtime):
+    for source in (notifications, realtime):
         assert "list_active_followers_for_event" in source
+    assert "list_active_followers_for_event_page" in live_notifications
+    assert "MAX_SOCIAL_EVENT_FANOUT" in live_notifications
 
 
 def test_social_failure_logs_do_not_include_tracebacks_or_private_values() -> None:

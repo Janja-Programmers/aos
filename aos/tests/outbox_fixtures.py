@@ -195,14 +195,28 @@ def create_durable_job(
 		)
 
 	if service_type == "notification_delivery":
+		# Use a real persistent notification contract so durable-outbox recovery
+		# exercises companion HTTP dispatch. Unknown transient events are
+		# intentionally suppressed by production policy and are not a valid fixture.
+		notification = _insert(
+			{
+				"doctype": "AOS Notification",
+				"user": "Administrator",
+				"type": "ad_approved",
+				"title": "Test",
+				"body": "Test body",
+				"payload": {"ad_id": f"test-ad-{suffix}"},
+				"dedupe_key": f"test:notification-delivery:{suffix}",
+			}
+		)
 		token = _insert(
 			{
 				"doctype": "AOS Push Token",
 				"user": "Administrator",
 				"token": f"test-token-{suffix}",
-				"token_hash": hashlib.sha256(suffix.encode()).hexdigest(),
 				"device_type": "web",
 				"device_id": f"test-{suffix}",
+				"registration_kind": "token",
 				"is_active": 1,
 			}
 		)
@@ -211,12 +225,13 @@ def create_durable_job(
 				"doctype": "AOS Notification Delivery Job",
 				"naming_series": "NTF-JOB-.YYYY.-.#####",
 				"user": "Administrator",
-				"delivery_kind": "transient",
+				"notification": notification.name,
+				"delivery_kind": "persistent",
 				"channel": "push",
-				"event": "test_event",
+				"event": "aos_ad_approved",
 				"title": "Test",
 				"body": "Test body",
-				"payload_json": "{}",
+				"payload_json": json.dumps({"ad_id": f"test-ad-{suffix}"}),
 				"status": status,
 				"attempt_count": 0,
 				"max_attempts": 3,
@@ -228,7 +243,11 @@ def create_durable_job(
 			service_type,
 			job.doctype,
 			job,
-			cleanup_records=((job.doctype, job.name), (token.doctype, token.name)),
+			cleanup_records=(
+				(job.doctype, job.name),
+				(token.doctype, token.name),
+				(notification.doctype, notification.name),
+			),
 		)
 
 	if service_type == "analytics_ingestion":

@@ -172,7 +172,7 @@ class TestChatSourceGuards(unittest.TestCase):
         self.assertIn("aos.api.v1.live.__init__.share_live_to_chat", registry)
 
     def test_notification_payload_uses_public_sender_and_dedupe(self):
-        source = _source("aos/services/notification_service.py")
+        source = _source("aos/services/notifications/service.py")
         block = source.split("def notify_new_message", 1)[1].split("def ", 1)[0]
         self.assertIn("public_account_id_for_user", block)
         self.assertIn("dedupe_key", block)
