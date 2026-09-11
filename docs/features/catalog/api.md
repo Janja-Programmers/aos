@@ -14,6 +14,12 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
+
+## Public transport boundary
+
+Every Catalog v1 wrapper delegates through the platform canonical `aos.api.shared.transport.execute_endpoint` boundary before Catalog request validation. Frappe's framework-owned `cmd` routing field is removed there; all genuine client fields remain visible so unknown fields continue to fail with the stable Catalog validation contract. Catalog does not use the transitional `aos.api.v1._transport` alias.
+
+
 Catalog is the canonical marketplace taxonomy and listing-schema domain. It owns category identity and hierarchy, reusable attribute definitions, category-specific attribute configuration, and the pricing/schema metadata that Ads consumes. Catalog does not own listing attribute values, user-generated media, object-storage configuration, or provider credentials.
 
 The production design is intentionally small: categories form a maximum two-level root-group → leaf hierarchy (with a root leaf also allowed), attributes are reusable definitions, and `AOS Category Attribute Row` applies an attribute to a category. This bounded model replaces the need for nested-set bookkeeping and makes hierarchy validation, locking, traversal, and indexing deterministic.

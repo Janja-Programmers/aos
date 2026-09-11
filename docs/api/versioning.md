@@ -41,6 +41,8 @@ aos/api/v1/<feature>/...     public v1 whitelisted wrappers only
 
 This keeps internal business logic independent from the public API contract. Future versions such as `aos.api.v2.*` can reuse stable implementation helpers or introduce new implementation code only where behavior changes.
 
+Every production-hardened versioned wrapper also uses the [canonical public transport boundary](transport-boundary.md). Wrapper code must not invent feature-specific handling for Frappe-owned RPC metadata.
+
 ## Client migration rule
 
 Clients should centralize the method prefix:

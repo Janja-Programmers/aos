@@ -174,7 +174,7 @@ serializers.py -> explicit public response
 | `rate_limits.py` | atomic Redis INCR+EXPIRE via Lua, site-keyed HMAC non-IP key dimensions, fail-closed dependency behavior |
 | `locking.py` | account-scoped `User` row lock used by security mutations/session creation |
 | `serializers.py` | allowlisted user/session/preferences/roles/seller response shape; optional avatar resolution degrades safely |
-| `contracts.py` | enforces the exact request-key allowlist and rejects unknown fields |
+| `contracts.py` | enforces the exact request-key allowlist and owns Authentication-specific unexpected-exception policy; transport normalization stays in the shared API boundary |
 | `validators.py` | strict strings, email normalization, client type and password input bounds plus Frappe configured strength-policy delegation |
 | `aos/install.py` | disables generic Frappe Website signup so AOS registration remains the public signup path |
 
@@ -313,7 +313,7 @@ Standard AOS failure envelope:
 {"ok":false,"message":"...","error":"STABLE_CODE","data":{}}
 ```
 
-`error` is the only machine-readable failure key. Expected errors receive the HTTP status mapped by `aos.api.shared.responses`; unexpected failures are secret-safely logged and return `SERVICE_UNAVAILABLE` rather than raw Frappe, SQL, Redis, OIDC or Python exception text. Frappe RPC transport injects `cmd`; the v1 wrapper strips only that transport key. Every other unknown client field is rejected with `AUTH_UNKNOWN_FIELD`.
+`error` is the only machine-readable failure key. Expected errors receive the HTTP status mapped by `aos.api.shared.responses`; unexpected failures are secret-safely logged and return `SERVICE_UNAVAILABLE` rather than raw Frappe, SQL, Redis, OIDC or Python exception text. All Authentication v1 wrappers delegate through the platform canonical `aos.api.shared.transport.execute_endpoint` boundary. Frappe RPC injects `cmd`; the shared boundary strips only that transport key. Every other unknown client field is rejected with `AUTH_UNKNOWN_FIELD`. Authentication-specific rollback, secret-safe logging, and `SERVICE_UNAVAILABLE` translation are layered as an exception policy on the shared executor rather than implemented as a second transport boundary.
 
 ### Canonical authenticated bootstrap payload
 

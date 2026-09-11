@@ -1,15 +1,41 @@
 from __future__ import annotations
 
+from pathlib import Path
 from unittest import TestCase
 from unittest.mock import patch
 
 from aos.api.catalog.categories import get_categories_impl
 from aos.api.catalog.options import get_attribute_options_impl
 from aos.api.catalog.schema import get_category_schema_impl
+from aos.api.shared.transport import execute_endpoint
 from aos.services.catalog.errors import CatalogDataError, CatalogNotFoundError
 
 
 class TestCatalogAPI(TestCase):
+    def test_public_v1_uses_canonical_transport_boundary(self):
+        captured = {}
+
+        def handler(**kwargs):
+            captured.update(kwargs)
+            return {"ok": True}
+
+        response = execute_endpoint(
+            handler,
+            {
+                "cmd": "aos.api.v1.catalog.get_category_schema",
+                "category": "Laptops",
+                "legacy": 1,
+            },
+        )
+        self.assertTrue(response["ok"])
+        self.assertEqual(captured, {"category": "Laptops", "legacy": 1})
+
+        wrapper = (
+            Path(__file__).resolve().parents[2] / "v1" / "catalog" / "__init__.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("execute_endpoint as _execute_endpoint", wrapper)
+        self.assertEqual(wrapper.count("_execute_endpoint("), 3)
+
     @patch("aos.api.catalog.categories.rate_limit", return_value=None)
     @patch("aos.api.catalog.categories.CatalogService")
     def test_categories_returns_standard_envelope(self, service_factory, _rate_limit):

@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import frappe
 
-from aos.api.auth.contracts import execute_auth_endpoint
+from aos.api.auth.contracts import handle_unexpected_auth_exception as _auth_exception_policy
+from aos.api.shared.transport import execute_endpoint as _execute_endpoint
 
 from aos.api.auth.register import (
     register_impl as _register_impl,
@@ -46,94 +47,110 @@ from aos.api.auth.delete_account import (
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def register(**kwargs):
     """Execute the v1 auth.register endpoint."""
-    return execute_auth_endpoint(_register_impl, kwargs)
+    return _execute_endpoint(_register_impl, kwargs, on_unexpected_exception=_auth_exception_policy)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def verify_email_otp(**kwargs):
     """Execute the v1 auth.verify_email_otp endpoint."""
-    return execute_auth_endpoint(_verify_email_otp_impl, kwargs)
+    return _execute_endpoint(_verify_email_otp_impl, kwargs, on_unexpected_exception=_auth_exception_policy)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def resend_email_otp(**kwargs):
     """Execute the v1 auth.resend_email_otp endpoint."""
-    return execute_auth_endpoint(_resend_email_otp_impl, kwargs)
+    return _execute_endpoint(_resend_email_otp_impl, kwargs, on_unexpected_exception=_auth_exception_policy)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def login(**kwargs):
     """Execute the v1 auth.login endpoint."""
-    return execute_auth_endpoint(_login_impl, kwargs)
+    return _execute_endpoint(_login_impl, kwargs, on_unexpected_exception=_auth_exception_policy)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def verify_two_factor(**kwargs):
     """Finish a password login that requires a second factor."""
-    return execute_auth_endpoint(_verify_two_factor_impl, kwargs)
+    return _execute_endpoint(_verify_two_factor_impl, kwargs, on_unexpected_exception=_auth_exception_policy)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def google_login(**kwargs):
     """Execute the v1 auth.google_login endpoint."""
-    return execute_auth_endpoint(_google_login_impl, kwargs)
+    return _execute_endpoint(_google_login_impl, kwargs, on_unexpected_exception=_auth_exception_policy)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def apple_login(**kwargs):
     """Execute the v1 auth.apple_login endpoint."""
-    return execute_auth_endpoint(_apple_login_impl, kwargs)
+    return _execute_endpoint(_apple_login_impl, kwargs, on_unexpected_exception=_auth_exception_policy)
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def me(**kwargs):
     """Execute the v1 auth.me endpoint."""
-    return execute_auth_endpoint(_me_impl, kwargs)
+    return _execute_endpoint(_me_impl, kwargs, on_unexpected_exception=_auth_exception_policy)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def logout(**kwargs):
     """Execute the v1 auth.logout endpoint."""
-    return execute_auth_endpoint(_logout_impl, kwargs)
+    return _execute_endpoint(_logout_impl, kwargs, on_unexpected_exception=_auth_exception_policy)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def forgot_password_request(**kwargs):
     """Execute the v1 auth.forgot_password_request endpoint."""
-    return execute_auth_endpoint(_forgot_password_request_impl, kwargs)
+    return _execute_endpoint(
+        _forgot_password_request_impl,
+        kwargs,
+        on_unexpected_exception=_auth_exception_policy,
+    )
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def forgot_password_verify_otp(**kwargs):
     """Execute the v1 auth.forgot_password_verify_otp endpoint."""
-    return execute_auth_endpoint(_forgot_password_verify_otp_impl, kwargs)
+    return _execute_endpoint(
+        _forgot_password_verify_otp_impl,
+        kwargs,
+        on_unexpected_exception=_auth_exception_policy,
+    )
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def forgot_password_reset(**kwargs):
     """Execute the v1 auth.forgot_password_reset endpoint."""
-    return execute_auth_endpoint(_forgot_password_reset_impl, kwargs)
+    return _execute_endpoint(
+        _forgot_password_reset_impl,
+        kwargs,
+        on_unexpected_exception=_auth_exception_policy,
+    )
 
 
 @frappe.whitelist(methods=["POST"])
 def change_password(**kwargs):
     """Execute the v1 auth.change_password endpoint."""
-    return execute_auth_endpoint(_change_password_impl, kwargs)
+    return _execute_endpoint(_change_password_impl, kwargs, on_unexpected_exception=_auth_exception_policy)
 
 
 @frappe.whitelist(methods=["POST"])
 def delete_account(**kwargs):
     """Execute the v1 auth.delete_account endpoint."""
-    return execute_auth_endpoint(_delete_account_impl, kwargs)
+    return _execute_endpoint(_delete_account_impl, kwargs, on_unexpected_exception=_auth_exception_policy)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def request_restore_account(**kwargs):
     """Execute the v1 auth.request_restore_account endpoint."""
-    return execute_auth_endpoint(_request_restore_account_impl, kwargs)
+    return _execute_endpoint(
+        _request_restore_account_impl,
+        kwargs,
+        on_unexpected_exception=_auth_exception_policy,
+    )
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def restore_account(**kwargs):
     """Execute the v1 auth.restore_account endpoint."""
-    return execute_auth_endpoint(_restore_account_impl, kwargs)
+    return _execute_endpoint(_restore_account_impl, kwargs, on_unexpected_exception=_auth_exception_policy)

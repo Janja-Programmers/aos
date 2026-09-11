@@ -167,16 +167,18 @@ class TestAuthSecurityContracts(AOSFeatureTestMixin, FrappeTestCase):
             with self.assertRaises(frappe.PermissionError):
                 guard_frappe_update_password(new_password="StrongPass123!", key="website-reset-key")
 
-    def test_public_v1_wrappers_use_safe_auth_endpoint_boundary(self):
+    def test_public_v1_wrappers_use_canonical_transport_boundary_with_auth_policy(self):
         from aos.api.v1 import auth as public_auth
 
         source = inspect.getsource(public_auth)
-        self.assertEqual(source.count("execute_auth_endpoint("), 16)
+        self.assertEqual(source.count("_execute_endpoint("), 16)
+        self.assertEqual(source.count("on_unexpected_exception=_auth_exception_policy"), 16)
+        self.assertNotIn("execute_auth_endpoint", source)
         self.assertNotIn("return _login_impl(**kwargs)", source)
         self.assertNotIn("return _register_impl(**kwargs)", source)
 
     def test_public_boundary_strips_only_frappe_cmd_transport_field(self):
-        from aos.api.auth.contracts import execute_auth_endpoint
+        from aos.api.shared.transport import execute_endpoint
 
         captured = {}
 
@@ -184,7 +186,10 @@ class TestAuthSecurityContracts(AOSFeatureTestMixin, FrappeTestCase):
             captured.update(kwargs)
             return {"ok": True}
 
-        response = execute_auth_endpoint(handler, {"cmd": "aos.api.v1.auth.login", "identifier": "x@example.com"})
+        response = execute_endpoint(
+            handler,
+            {"cmd": "aos.api.v1.auth.login", "identifier": "x@example.com"},
+        )
         self.assertTrue(response.get("ok"))
         self.assertEqual(captured, {"identifier": "x@example.com"})
 

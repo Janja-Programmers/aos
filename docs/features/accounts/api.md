@@ -42,7 +42,7 @@ Client
   -> AOS response envelope
 ```
 
-The versioned API wrappers strip only Frappe-owned transport metadata such as `cmd`. Domain request fields remain visible to Accounts so unknown client fields can be rejected. Endpoint functions are orchestration-only; profile rules, data access, serialization, identity resolution, and localization semantics live in reusable services.
+Every Accounts v1 wrapper delegates through the platform canonical `aos.api.shared.transport.execute_endpoint` boundary. It strips only Frappe-owned transport metadata such as `cmd`; domain request fields remain visible to Accounts so unknown client fields can be rejected. Endpoint functions are orchestration-only; profile rules, data access, serialization, identity resolution, and localization semantics live in reusable services.
 
 ## Public identity
 

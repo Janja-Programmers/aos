@@ -499,7 +499,7 @@ These routes are owned by Accounts but are part of the current frontend Localiza
 
 ## E. Frontend contract
 
-Frappe transport metadata such as the framework-owned `cmd` routing field is stripped by the public v1 wrapper before strict Localization validation. Clients must not send or depend on `cmd`; every other unknown client field remains rejected.
+Every Localization v1 wrapper delegates through the platform canonical `aos.api.shared.transport.execute_endpoint` boundary. Frappe transport metadata such as the framework-owned `cmd` routing field is stripped there before strict Localization validation. Clients must not send or depend on `cmd`; every other unknown client field remains rejected.
 
 ### Canonical routes
 

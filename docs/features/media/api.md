@@ -21,6 +21,12 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
+
+## Public transport boundary
+
+Every Media v1 wrapper delegates through the platform canonical `aos.api.shared.transport.execute_endpoint` boundary before Media request validation. Frappe's framework-owned `cmd` routing field is removed there; all genuine client fields remain visible to Media so `reject_unknown_fields` can enforce the exact endpoint contract. Media does not implement a parallel transport filter.
+
+
 This file is the authoritative documentation for the current AOS Media subsystem and its directly related infrastructure.
 
 Media endpoints accept only the canonical field names documented below and reject unsupported request fields with `VALIDATION_ERROR`.

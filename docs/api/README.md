@@ -5,9 +5,10 @@ This directory is the API entry point. It intentionally does **not** duplicate f
 ## Read in this order
 
 1. [Versioning](versioning.md) — stable public namespace and compatibility rules.
-2. [Complete API reference](reference.md) — every whitelisted route discovered from the repository, grouped by domain with HTTP-method and guest/session exposure.
-3. [Feature documentation](../features/README.md) — request/response semantics, state machines, limits, errors, privacy and lifecycle rules.
-4. [Internal/platform HTTP surfaces](internal.md) — signed callbacks, LiveKit webhook, private metrics and admin diagnostics.
+2. [Transport boundary](transport-boundary.md) — canonical Frappe RPC normalization required for hardened public wrappers.
+3. [Complete API reference](reference.md) — every whitelisted route discovered from the repository, grouped by domain with HTTP-method and guest/session exposure.
+4. [Feature documentation](../features/README.md) — request/response semantics, state machines, limits, errors, privacy and lifecycle rules.
+5. [Internal/platform HTTP surfaces](internal.md) — signed callbacks, LiveKit webhook, private metrics and admin diagnostics.
 
 ## Public route shape
 
