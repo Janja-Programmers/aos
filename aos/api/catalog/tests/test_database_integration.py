@@ -7,6 +7,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from aos.api.catalog.categories import get_categories_impl
+from aos.api.catalog.options import get_attribute_options_impl
 from aos.api.catalog.schema import get_category_schema_impl
 from aos.patches.v1_0 import install_catalog_indexes
 from aos.services.catalog.cache import clear_catalog_cache
@@ -52,7 +53,7 @@ class TestCatalogDatabaseIntegration(FrappeTestCase):
         self.created_categories.append(doc.name)
         return doc
 
-    def _leaf(self, parent, suffix="Leaf", *, active=1, attributes=None):
+    def _leaf(self, parent, suffix="Leaf", *, active=1, attributes=None, dependencies=None):
         name = f"{self.prefix} {suffix}"
         doc = frappe.get_doc(
             {
@@ -65,18 +66,20 @@ class TestCatalogDatabaseIntegration(FrappeTestCase):
                 "pricing_requirement": "Required",
                 "allowed_price_types": "Fixed\nNegotiable",
                 "attributes": attributes or [],
+                "attribute_dependencies": dependencies or [],
             }
         ).insert(ignore_permissions=True)
         self.created_categories.append(doc.name)
         return doc
 
-    def _attribute(self, suffix="Condition", field_type="Select"):
+    def _attribute(self, suffix="Condition", field_type="Select", options=""):
         label = f"{self.prefix} {suffix}"
         doc = frappe.get_doc(
             {
                 "doctype": "AOS Ad Attribute",
                 "label": label,
                 "field_type": field_type,
+                "options": options,
                 "is_active": 1,
             }
         ).insert(ignore_permissions=True)
@@ -194,3 +197,84 @@ class TestCatalogDatabaseIntegration(FrappeTestCase):
             self.assertEqual(tuple(row.COLUMN_NAME for row in rows), columns)
             self.assertTrue(rows)
             self.assertEqual(not bool(int(rows[0].NON_UNIQUE)), unique)
+
+
+    def test_real_dependent_attribute_flow(self):
+        brand = self._attribute("Brand", options="HP\nApple")
+        model = self._attribute("Model", options="EliteBook\nProBook\nMacBook Air")
+        leaf = self._leaf(
+            "",
+            suffix="Laptops",
+            attributes=[
+                {
+                    "attribute": brand.name,
+                    "sort_order": 10,
+                    "is_required": 1,
+                    "is_active": 1,
+                },
+                {
+                    "attribute": model.name,
+                    "sort_order": 20,
+                    "is_required": 1,
+                    "is_active": 1,
+                    "depends_on_attribute": brand.name,
+                },
+            ],
+            dependencies=[
+                {"child_attribute": model.name, "child_option": "EliteBook", "parent_option": "HP"},
+                {"child_attribute": model.name, "child_option": "ProBook", "parent_option": "HP"},
+                {"child_attribute": model.name, "child_option": "MacBook Air", "parent_option": "Apple"},
+            ],
+        )
+
+        refreshed = frappe.get_doc("AOS Category", leaf.name)
+        self.assertEqual(len(refreshed.attribute_dependencies), 3)
+        self.assertTrue(all(len(row.mapping_key or "") == 64 for row in refreshed.attribute_dependencies))
+
+        schema = CatalogService().get_public_schema(leaf.name)
+        model_schema = next(item for item in schema["attributes"] if item["id"] == model.name)
+        self.assertEqual(
+            model_schema["depends_on"],
+            {"id": brand.name, "key": brand.attribute_key},
+        )
+        self.assertNotIn("_dependency_options", model_schema)
+
+        hp = CatalogService().get_public_attribute_options(
+            category=leaf.name,
+            attribute=model.attribute_key,
+            parent_value="HP",
+        )
+        self.assertEqual(hp["options"], ["EliteBook", "ProBook"])
+        apple = CatalogService().get_public_attribute_options(
+            category=leaf.name,
+            attribute=model.name,
+            parent_value="Apple",
+        )
+        self.assertEqual(apple["options"], ["MacBook Air"])
+
+        with patch("aos.api.catalog.options.rate_limit", return_value=None):
+            response = get_attribute_options_impl(
+                category=leaf.name,
+                attribute=model.attribute_key,
+                parent_value="HP",
+            )
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["data"]["options"], ["EliteBook", "ProBook"])
+
+    def test_dependency_mapping_requires_complete_child_coverage(self):
+        brand = self._attribute("Brand Incomplete", options="HP\nApple")
+        model = self._attribute("Model Incomplete", options="EliteBook\nMacBook Air")
+        with self.assertRaises(Exception):
+            self._leaf(
+                "",
+                suffix="Broken Laptops",
+                attributes=[
+                    {"attribute": brand.name, "is_required": 1, "is_active": 1},
+                    {
+                        "attribute": model.name,
+                        "is_required": 1,
+                        "is_active": 1,
+                        "depends_on_attribute": brand.name,
+                    },
+                ],
+            )

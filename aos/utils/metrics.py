@@ -196,7 +196,11 @@ def _safe_call_metrics(lines: list[str]) -> None:
 
 
 _ALLOWED_CATALOG_EVENTS = {
-    "categories_read", "schema_read", "configuration_changed", "configuration_rejected",
+    "categories_read",
+    "schema_read",
+    "attribute_options_read",
+    "configuration_changed",
+    "configuration_rejected",
 }
 _ALLOWED_CATALOG_OUTCOMES = {"success", "not_found", "rejected", "failure"}
 

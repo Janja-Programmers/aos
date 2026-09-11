@@ -48,6 +48,12 @@ class TestCatalogDatabaseContracts(FrappeTestCase):
         self.assertEqual(attribute_meta.allow_rename, 0)
         self.assertTrue(attribute_meta.get_field("label").unique)
         self.assertTrue(attribute_meta.get_field("attribute_key").unique)
+        dependency_meta = frappe.get_meta("AOS Category Attribute Dependency Row")
+        mapping_key = dependency_meta.get_field("mapping_key")
+        self.assertEqual(mapping_key.fieldtype, "Data")
+        self.assertEqual(mapping_key.read_only, 1)
+        self.assertEqual(mapping_key.hidden, 1)
+        self.assertEqual(mapping_key.length, 64)
 
     def test_catalog_desk_permissions_are_source_controlled_and_role_managed(self):
         schema_locations = {

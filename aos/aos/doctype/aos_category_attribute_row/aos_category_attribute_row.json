@@ -8,6 +8,7 @@
  "field_order": [
   "attribute",
   "sort_order",
+  "depends_on_attribute",
   "options_override",
   "column_break_triq",
   "is_required",
@@ -52,6 +53,14 @@
    "in_list_view": 1,
    "label": "Sort Order",
    "default": "0"
+  },
+  {
+   "fieldname": "depends_on_attribute",
+   "fieldtype": "Link",
+   "label": "Depends On Attribute",
+   "options": "AOS Ad Attribute",
+   "description": "Optional direct parent attribute. Both attributes must resolve as Select fields in this category.",
+   "in_list_view": 1
   }
  ],
  "grid_page_length": 50,

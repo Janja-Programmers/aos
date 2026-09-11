@@ -7,6 +7,7 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 
 | Endpoint | HTTP | Decorator access | Audience |
 |---|---|---|---|
+| `get_attribute_options` | GET | Guest allowed | Client |
 | `get_categories` | GET | Guest allowed | Client |
 | `get_category_schema` | GET | Guest allowed | Client |
 
@@ -26,6 +27,7 @@ Catalog is the single source of truth for:
 - service/pricing rules used by Ads validation;
 - reusable attribute identity, type, label, unit, help text and canonical options;
 - category-specific attribute activation, requirement, order and select-option overrides;
+- dependent-attribute relationships and parent-option → child-option mappings;
 - the authoritative category image relationship through Media.
 
 Ads stores listing values and immutable display/type/unit snapshots for historical listing rendering, but Ads does not define the category or attribute schema. Ads create/update validation calls `CatalogService` and takes Catalog row locks before using a sellable schema. Public clients must use the Catalog endpoints rather than inspect Frappe DocTypes.
@@ -58,6 +60,7 @@ A stable marketplace category. `allow_rename` is disabled; the document `name` i
 | `allowed_price_types` | Canonical newline-delimited allowlist from `Fixed`, `Negotiable`, `Contact for price`, `Free`. |
 | `allowed_price_units` | Canonical newline-delimited service-unit choices. Empty for non-service categories. |
 | `attributes` | Child table of category-specific attribute relationships. |
+| `attribute_dependencies` | Child table of category-scoped dependent-option mappings. |
 | `image_media` | Hidden/read-only canonical `AOS Media Object` link for the category image. |
 | `icon_preview` | Desk-only HTML control. It does not store image authority. |
 
@@ -88,10 +91,25 @@ Child relationship from a category to an attribute definition.
 | `attribute` | Required Link to `AOS Ad Attribute`. One row per attribute per category is enforced by DB uniqueness. |
 | `sort_order` | Category-specific order. Stable ID/label tie-breakers keep output deterministic. |
 | `options_override` | Optional category-specific choices; valid only for `Select`/`MultiSelect`. |
+| `depends_on_attribute` | Optional direct parent attribute for dependent `Select` fields. The parent must be an active `Select` relationship in the same category configuration. |
 | `is_required` | Whether a value is mandatory for Ads using the resolved schema. |
 | `is_active` | Enables the relationship; an inactive child row can suppress an inherited attribute. |
 
 A child leaf overrides the same root attribute definition. Duplicate rows are data corruption and fail closed; there is no “last row wins” compatibility behavior.
+
+
+### `AOS Category Attribute Dependency Row`
+
+Child mapping stored under `AOS Category.attribute_dependencies`. It does not define an attribute or option independently; it only constrains an already-configured dependent `Select` attribute.
+
+| Field | Purpose |
+|---|---|
+| `child_attribute` | The dependent attribute relation, for example `Model`. That relation must declare `depends_on_attribute`. |
+| `child_option` | One effective option of the dependent attribute, for example `EliteBook`. |
+| `parent_option` | One effective option of the direct parent attribute, for example `HP`. |
+| `mapping_key` | Hidden deterministic SHA-256 identity derived from category + child attribute + child option + parent option. Used by the database unique index without exceeding InnoDB utf8mb4 composite-key limits. |
+
+A child option may map to more than one parent option when the domain genuinely requires it. Exact duplicate mappings are rejected. Every effective option of an active dependent attribute must map to at least one parent option, so the UI never contains an unreachable configured child option. If the dependent attribute is required, every effective parent option must also map to at least one child option; this prevents a parent selection that makes the form impossible to complete.
 
 ### Ads references
 
@@ -112,9 +130,13 @@ Frappe NestedSet is deliberately not used. The bounded link model avoids concurr
 
 Public schema resolution walks root → leaf and applies leaf relationships last. Only active definitions/relationships are emitted. Options have one representation: newline-delimited canonical storage and ordered JSON arrays in public schemas. Category option overrides cannot convert a `Text` attribute into a select attribute; the definition type is authoritative.
 
-Once an attribute has Ads values, changing its type or removing existing select choices is rejected with `ATTRIBUTE_IN_USE`. Adding choices is non-destructive and permitted. Deleting an attribute is rejected while any category relationship or Ads value references it; deactivation is the supported retirement path.
+Dependent attributes are intentionally constrained rather than implemented as arbitrary expressions. Both the child and its direct parent must be active `Select` relationships in the same category configuration, each child has at most one direct parent, and dependency graphs must be acyclic. Multi-level chains such as `Brand → Model → Variant` are supported. A required child requires a required parent. The resolved attribute array is topologically ordered, so dependency parents always precede their children even when configured sort orders conflict.
 
-Once Ads depend on a category scope, destructive category-schema changes are restricted. A used leaf cannot move to another parent or change its pricing/service contract. Existing active relationships cannot be removed/deactivated, required flags cannot be changed, and category choice overrides cannot be narrowed. Optional attributes may be added and existing explicit choices may be expanded. Root-group attribute restrictions also account for Ads in child categories. Labels, ordering, images and deliberate category activation/deactivation remain independently mutable.
+For a dependent relationship, every effective child option must have at least one mapping to an effective parent option. The mapping is category-scoped, so different categories can reuse the same attribute definition with different dependency rules. A leaf relationship override is final authority for that attribute, including whether it is dependent and which mapping rows from that category apply.
+
+Once an attribute has Ads values, changing its type or removing existing select choices is rejected with `ATTRIBUTE_IN_USE`. Attributes participating anywhere in dependency rules also cannot be deactivated, retyped, or have their global options changed in place because that could invalidate category mappings outside the attribute transaction. Evolve dependency choices through category-specific `options_override` plus `attribute_dependencies` in one category save. Deleting an attribute is rejected while any category relationship or Ads value references it; deactivation is the supported retirement path when no dependency contract blocks it.
+
+Once Ads depend on a category scope, destructive category-schema changes are restricted. A used leaf cannot move to another parent or change its pricing/service contract. Existing active relationships cannot be removed/deactivated, required flags and dependency parents cannot be changed, category choices cannot be narrowed, and existing dependency mapping pairs cannot be removed or reassigned. Safe additive evolution remains supported: optional attributes, new options and new dependency mapping pairs may be added while preserving every previously valid value/combination. A category that previously inherited global options may move to a category override only when that override is a superset of the current canonical choices. Root-group restrictions also account for Ads in child categories. Labels, ordering, images and deliberate category activation/deactivation remain independently mutable.
 
 These restrictions are conservative by design. A materially different schema should use a new category/attribute identity instead of silently invalidating already-published Ads.
 
@@ -145,7 +167,7 @@ There are no public Catalog mutation endpoints. Internal code using `ignore_perm
 
 ## Public API
 
-Both public methods are GET-only and guest-readable. They use the standard AOS envelope:
+All three public methods are GET-only and guest-readable. They use the standard AOS envelope:
 
 ```json
 {"ok": true, "message": "...", "data": {}}
@@ -157,7 +179,7 @@ Failures use:
 {"ok": false, "message": "...", "error": "STABLE_CODE", "data": null}
 ```
 
-Unknown request fields are rejected rather than silently ignored. Both endpoints are rate-limited before domain reads.
+Unknown request fields are rejected rather than silently ignored. All endpoints are rate-limited before domain reads.
 
 ### `aos.api.v1.catalog.get_categories`
 
@@ -217,15 +239,27 @@ Response:
   },
   "attributes": [
     {
-      "id": "Condition",
-      "key": "condition",
-      "label": "Condition",
+      "id": "Brand",
+      "key": "brand",
+      "label": "Brand",
       "type": "Select",
       "required": 1,
       "unit": "",
       "help_text": "",
-      "options": ["New", "Used"],
+      "options": ["HP", "Apple"],
       "sort_order": 10
+    },
+    {
+      "id": "Model",
+      "key": "model",
+      "label": "Model",
+      "type": "Select",
+      "required": 1,
+      "unit": "",
+      "help_text": "",
+      "options": ["EliteBook", "ProBook", "MacBook Air"],
+      "sort_order": 20,
+      "depends_on": {"id": "Brand", "key": "brand"}
     }
   ],
   "pricing": {
@@ -238,7 +272,41 @@ Response:
 
 The response intentionally omits DocType field names that are not frontend contract, owners/internal users, storage IDs/keys and database metadata. Inactive categories or inactive ancestors are returned as `CATEGORY_NOT_FOUND` so private taxonomy state is not disclosed.
 
-A cold schema read uses indexed identity lookups for only the requested category and at most its parent, followed by one category-attribute child query, one attribute-definition query and at most one bulk Media projection call. It never scans the full taxonomy to validate an Ads write or resolve one schema. The two-level chain and per-category relationship count are bounded.
+A cold schema read uses indexed identity lookups for only the requested category and at most its parent, followed by one category-attribute child query, one bounded dependency-mapping query, one attribute-definition query and at most one bulk Media projection call. It never scans the full taxonomy to validate an Ads write or resolve one schema. The two-level chain and per-category relationship count are bounded.
+
+
+### `aos.api.v1.catalog.get_attribute_options`
+
+Returns the selectable options for one resolved category attribute. For an independent `Select`/`MultiSelect`, omit `parent_value` and the endpoint returns all effective options. For a dependent attribute, `parent_value` is required and only child options mapped to that exact canonical parent option are returned.
+
+| Field | Required | Rules |
+|---|---|---|
+| `category` | yes | Scalar canonical category ID, max 140 characters. |
+| `attribute` | yes | Canonical attribute `id` or immutable `key`, max 140 characters. |
+| `parent_value` | dependent attributes only | Exact canonical parent option, max 120 characters. Must exist in the resolved parent attribute options. |
+
+Example for `Brand = HP`:
+
+```json
+{
+  "category_id": "Laptops",
+  "attribute": {
+    "id": "Model",
+    "key": "model",
+    "label": "Model"
+  },
+  "depends_on": {
+    "attribute_id": "Brand",
+    "attribute_key": "brand",
+    "value": "HP"
+  },
+  "options": ["EliteBook", "ProBook"]
+}
+```
+
+For the same attribute with `parent_value=Apple`, the response may be `options: ["MacBook Air"]`. A valid parent option may return an empty child list only when the dependent attribute is optional; required dependencies are validated so every parent choice has at least one valid child. An invalid/missing parent value for a dependent attribute fails with `INVALID_CATALOG_INPUT`; the endpoint never guesses labels or falls back to all models.
+
+The dependency mapping table itself is not exposed. This keeps persistence details private and avoids sending potentially large brand/model matrices in every category-schema response. Results are cached by category + attribute reference + canonical parent value.
 
 ## Stable error codes
 
@@ -262,9 +330,9 @@ Human error text is public-safe; tracebacks, SQL, object keys, private URLs and 
 
 ## Caching and invalidation
 
-Public category trees and category schemas are Redis-cached for 300 seconds under a schema-versioned `aos:catalog:v3:*` namespace. The cache stores only final public projections, including resolved public image URLs, so a hot read performs no Catalog or Media DB query.
+Public category trees, category schemas and dependent-option responses are Redis-cached for 300 seconds under a schema-versioned `aos:catalog:v4:*` namespace. Catalog also keeps one bounded internal resolved-attribute cache per category containing dependency maps but no private Media/storage data. This prevents a category with many brands/models from reloading the entire mapping table for every distinct parent-option cache miss. Public responses never expose that internal matrix, and hot reads perform no Catalog or Media DB query.
 
-Every supported category/attribute save/delete invalidates the tree and all schema keys immediately and registers the same invalidation with `frappe.db.after_commit`. The second invalidation closes the race where a reader repopulates old committed data while an admin transaction is still open. Redis failures are non-fatal; the database remains authoritative.
+Every supported category/attribute save/delete invalidates the tree, all schema keys, all dependent-option keys and all internal resolved-attribute keys immediately and registers the same invalidation with `frappe.db.after_commit`. The second invalidation closes the race where a reader repopulates old committed data while an admin transaction is still open. Redis failures are non-fatal; the database remains authoritative.
 
 Catalog cache is not a permission store and contains no private Media data.
 
@@ -273,10 +341,10 @@ Catalog cache is not a permission store and contains no private Media data.
 Catalog admin traffic is lower than public reads, so correctness takes precedence over minimizing write locks.
 
 - Existing category mutations acquire `SELECT ... FOR UPDATE` on the category first, then old/new parent rows, then every reusable attribute definition referenced by the previous/current category rows. New children lock the candidate parent before referenced attributes.
-- Ads create/update schema validation locks the sellable leaf first, its parent second, the category relationship rows, and then all reusable attribute definitions in deterministic order. A concurrent category or attribute schema mutation therefore serializes with the listing write.
+- Ads create/update schema validation locks the sellable leaf first, its parent second, the category relationship rows, the dependency-mapping rows, and then all reusable attribute definitions in deterministic order. A concurrent category or attribute schema mutation therefore serializes with the listing write.
 - Group demotion and child assignment serialize on the group row; a parent cannot become a leaf while a concurrent child assignment commits against stale state.
 - Existing attribute mutations lock the attribute definition row before destructive-reference checks. Category saves also lock their referenced definitions, so relation validation cannot race an attribute deactivation/delete/type change.
-- `uq_catalog_category_attribute` provides DB-level duplicate prevention; application validation is only the earlier friendly rejection.
+- `uq_catalog_category_attribute` provides DB-level category↔attribute duplicate prevention. `uq_catalog_dependency_mapping` provides DB-level exact dependency-mapping duplicate prevention through the fixed-width SHA-256 `mapping_key`; application validation remains the earlier friendly rejection.
 - Category/attribute stable-name uniqueness and `attribute_key` uniqueness are DB-backed by DocType unique metadata.
 - Category image replacement also goes through Media's attachment-target/media row locks. The category transaction updates `image_media`, attaches the new Media relationship and releases the old relationship atomically at the DB layer.
 - Equal `sort_order` values are valid; stable name/ID tie-breakers make concurrent reorder results deterministic rather than corrupt.
@@ -294,6 +362,10 @@ Frappe's normal modified-timestamp conflict handling remains an additional lost-
 | `idx_catalog_category_attribute_order` | `AOS Category Attribute Row` | `parenttype, parentfield, parent, sort_order, idx, name` | Ordered category-schema relation fetch. |
 | `uq_catalog_category_attribute` | `AOS Category Attribute Row` | `parent, parenttype, parentfield, attribute` | One relationship per attribute/category at the database layer. |
 | `idx_catalog_attribute_category_reference` | `AOS Category Attribute Row` | `attribute, parent, parenttype, parentfield` | Fast attribute-in-category reference checks for safe delete/retirement. |
+| `idx_catalog_dependency_parent_reference` | `AOS Category Attribute Row` | `depends_on_attribute, parent, parenttype, parentfield` | Fast detection of attributes used as dependency parents. |
+| `idx_catalog_dependency_mapping_order` | `AOS Category Attribute Dependency Row` | `parenttype, parentfield, parent, child_attribute, idx, name` | Bounded deterministic mapping fetch for one category chain. |
+| `uq_catalog_dependency_mapping` | `AOS Category Attribute Dependency Row` | `mapping_key` | Fixed-width exact mapping uniqueness without an oversized utf8mb4 composite key. |
+| `idx_catalog_dependency_child_reference` | `AOS Category Attribute Dependency Row` | `child_attribute, parent, parenttype, parentfield` | Fast detection of attributes used as dependent children. |
 | `idx_catalog_attribute_active_key` | `AOS Ad Attribute` | `is_active, attribute_key, name` | Active/key-oriented reference-data access. |
 | `idx_catalog_ad_attribute_reference` | `AOS Ad Attribute Value` | `attribute, parent` | Fast destructive-attribute reference checks. |
 | `idx_catalog_ad_category_reference` | `AOS Ad` | `category, name` | Fast category-in-use checks. |
@@ -307,10 +379,10 @@ DocType metadata additionally provides uniqueness for category `category_name`, 
 Catalog is reference data optimized for very high read fan-out:
 
 - maximum 1,000 categories and depth two;
-- maximum 500 category relationships per category and 1,500 select choices per definition/override;
+- maximum 500 category relationships per category, 1,500 select choices per definition/override, and 10,000 dependency mappings per category;
 - deterministic bounded queries only;
 - one bulk Media URL projection rather than N+1 lookup;
-- final-response Redis caching with immediate/post-commit invalidation;
+- final-response Redis caching with immediate/post-commit invalidation, including category+attribute+parent-value option lookups;
 - no recursive DB traversal or nested-set rewrite workload;
 - public APIs return small reviewed fields only;
 - server logs use low-cardinality Catalog events and never include storage credentials.
@@ -321,10 +393,19 @@ If the taxonomy grows beyond these product bounds, redesign the public contract/
 
 A client should load `get_categories` for category selection and cache that public reference response locally as appropriate. When the user selects a sellable leaf, call `get_category_schema` and render controls from the ordered `attributes` array and `pricing` object. Submit attribute identity using the canonical `id` or `key` accepted by the hardened Ads validator; do not send labels as identity and do not duplicate type/options logic in the client or Ads.
 
+
+Dependent-attribute frontend flow:
+
+1. Render attributes in the schema order. Catalog guarantees a dependency parent appears before its child.
+2. When an attribute has `depends_on`, keep the child disabled/empty until its parent has a value.
+3. Call `get_attribute_options(category, attribute, parent_value)` when the parent selection changes. For example, `brand=HP` may return `EliteBook`/`ProBook`, while `brand=Apple` returns `MacBook Air`.
+4. Clear any previously selected child value whenever the parent changes, then render only the returned options. Repeat the same process for deeper chains such as Model → Variant.
+5. Do not filter using hardcoded brand/model maps in the client. The Ads mutation validator re-resolves and locks the same Catalog dependency rules and rejects mismatched combinations.
+
 For Ads create/edit specifically:
 
 - choose only `is_group = 0` categories;
-- use `type`, `required`, `options`, `unit` and `help_text` from the schema to render inputs;
+- use `type`, `required`, `options`, `unit`, `help_text` and optional `depends_on` from the schema to render inputs;
 - use `pricing.requirement`, `allowed_price_types` and `allowed_units` to render pricing UI;
 - refresh the schema when the category changes;
 - treat Catalog validation errors as authoritative if a schema was changed/deactivated since the form loaded.

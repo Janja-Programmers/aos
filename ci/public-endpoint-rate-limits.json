@@ -342,6 +342,12 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
+    "endpoint": "aos.api.v1.catalog.__init__.get_attribute_options",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
     "endpoint": "aos.api.v1.catalog.__init__.get_categories",
     "access": "guest",
     "policy": "baseline_guest",

@@ -7,11 +7,12 @@ from aos.services.catalog.service import CatalogService, resolve_attributes, res
 
 
 class FakeCatalogRepository:
-    def __init__(self, categories, rows=None, attributes=None):
+    def __init__(self, categories, rows=None, attributes=None, dependencies=None):
         self.categories = categories
         self.rows = rows or []
         self.attributes = attributes or {}
-        self.calls = {"category": 0, "categories": 0, "rows": 0, "attributes": 0}
+        self.dependencies = dependencies or []
+        self.calls = {"category": 0, "categories": 0, "rows": 0, "dependencies": 0, "attributes": 0}
 
     def load_category(self, category_id):
         self.calls["category"] += 1
@@ -27,6 +28,10 @@ class FakeCatalogRepository:
     def load_category_attribute_rows(self, category_names):
         self.calls["rows"] += 1
         return [dict(row) for row in self.rows if row.get("parent") in category_names]
+
+    def load_category_attribute_dependency_rows(self, category_names):
+        self.calls["dependencies"] += 1
+        return [dict(row) for row in self.dependencies if row.get("parent") in category_names]
 
     def load_attributes(self, attribute_names):
         self.calls["attributes"] += 1
@@ -154,7 +159,7 @@ class TestCatalogService(TestCase):
         self.assertEqual(schema["category"]["image_url"], "https://cdn.example.test/leaf.webp")
         self.assertEqual(schema["pricing"]["requirement"], "Optional")
         self.assertEqual(schema["pricing"]["allowed_price_types"], ["Fixed", "Negotiable"])
-        self.assertEqual(repo.calls, {"category": 2, "categories": 0, "rows": 1, "attributes": 1})
+        self.assertEqual(repo.calls, {"category": 2, "categories": 0, "rows": 1, "dependencies": 1, "attributes": 1})
 
     def test_non_select_category_options_fail_closed(self):
         definitions = {"Weight": attribute_definition("Weight", key="weight", field_type="Number")}
@@ -236,3 +241,90 @@ class TestCatalogService(TestCase):
             ]
         )
         self.assertEqual(CatalogService(repo).resolve_filter_values("Root"), ["Leaf B", "Leaf A"])
+
+
+    def test_dependent_attribute_schema_and_filtered_options(self):
+        repo = FakeCatalogRepository(
+            [category("Laptops")],
+            rows=[
+                {"name": "BRAND", "parent": "Laptops", "idx": 1, "attribute": "Brand", "sort_order": 99, "options_override": "", "depends_on_attribute": "", "is_required": 1, "is_active": 1},
+                {"name": "MODEL", "parent": "Laptops", "idx": 2, "attribute": "Model", "sort_order": 1, "options_override": "", "depends_on_attribute": "Brand", "is_required": 1, "is_active": 1},
+            ],
+            attributes={
+                "Brand": attribute_definition("Brand", key="brand", options="HP\nApple"),
+                "Model": attribute_definition("Model", key="model", options="EliteBook\nProBook\nMacBook Air"),
+            },
+            dependencies=[
+                {"name": "D1", "parent": "Laptops", "idx": 1, "child_attribute": "Model", "child_option": "EliteBook", "parent_option": "HP"},
+                {"name": "D2", "parent": "Laptops", "idx": 2, "child_attribute": "Model", "child_option": "ProBook", "parent_option": "HP"},
+                {"name": "D3", "parent": "Laptops", "idx": 3, "child_attribute": "Model", "child_option": "MacBook Air", "parent_option": "Apple"},
+            ],
+        )
+        service = CatalogService(repo)
+        schema = service.get_public_schema("Laptops")
+        self.assertEqual([item["key"] for item in schema["attributes"]], ["brand", "model"])
+        model = next(item for item in schema["attributes"] if item["key"] == "model")
+        self.assertEqual(model["depends_on"], {"id": "Brand", "key": "brand"})
+        self.assertNotIn("_dependency_options", model)
+
+        hp = service.get_public_attribute_options(
+            category="Laptops", attribute="model", parent_value="HP"
+        )
+        self.assertEqual(hp["options"], ["EliteBook", "ProBook"])
+        self.assertEqual(hp["depends_on"]["attribute_key"], "brand")
+        apple = service.get_public_attribute_options(
+            category="Laptops", attribute="Model", parent_value="Apple"
+        )
+        self.assertEqual(apple["options"], ["MacBook Air"])
+
+    def test_dependency_cycle_and_incomplete_mapping_fail_closed(self):
+        definitions = {
+            "Brand": attribute_definition("Brand", key="brand", options="HP\nApple"),
+            "Model": attribute_definition("Model", key="model", options="EliteBook\nMacBook Air"),
+        }
+        cycle = [
+            {
+                "name": "Laptops",
+                "attributes": [
+                    {"name": "B", "idx": 1, "attribute": "Brand", "sort_order": 1, "is_required": 1, "is_active": 1, "options_override": "", "depends_on_attribute": "Model"},
+                    {"name": "M", "idx": 2, "attribute": "Model", "sort_order": 2, "is_required": 1, "is_active": 1, "options_override": "", "depends_on_attribute": "Brand"},
+                ],
+                "attribute_dependencies": [],
+                "attribute_definitions": definitions,
+            }
+        ]
+        with self.assertRaises(CatalogDataError):
+            resolve_attributes(cycle)
+
+        incomplete = [
+            {
+                "name": "Laptops",
+                "attributes": [
+                    {"name": "B", "idx": 1, "attribute": "Brand", "sort_order": 1, "is_required": 1, "is_active": 1, "options_override": "", "depends_on_attribute": ""},
+                    {"name": "M", "idx": 2, "attribute": "Model", "sort_order": 2, "is_required": 1, "is_active": 1, "options_override": "", "depends_on_attribute": "Brand"},
+                ],
+                "attribute_dependencies": [
+                    {"name": "D1", "child_attribute": "Model", "child_option": "EliteBook", "parent_option": "HP"}
+                ],
+                "attribute_definitions": definitions,
+            }
+        ]
+        with self.assertRaises(CatalogDataError):
+            resolve_attributes(incomplete)
+
+        no_required_parent_coverage = [
+            {
+                "name": "Laptops",
+                "attributes": [
+                    {"name": "B", "idx": 1, "attribute": "Brand", "sort_order": 1, "is_required": 1, "is_active": 1, "options_override": "", "depends_on_attribute": ""},
+                    {"name": "M", "idx": 2, "attribute": "Model", "sort_order": 2, "is_required": 1, "is_active": 1, "options_override": "", "depends_on_attribute": "Brand"},
+                ],
+                "attribute_dependencies": [
+                    {"name": "D1", "child_attribute": "Model", "child_option": "EliteBook", "parent_option": "HP"},
+                    {"name": "D2", "child_attribute": "Model", "child_option": "MacBook Air", "parent_option": "HP"},
+                ],
+                "attribute_definitions": definitions,
+            }
+        ]
+        with self.assertRaises(CatalogDataError):
+            resolve_attributes(no_required_parent_coverage)

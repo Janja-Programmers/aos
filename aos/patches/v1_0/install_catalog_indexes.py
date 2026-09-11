@@ -42,6 +42,30 @@ INDEXES: tuple[tuple[str, str, tuple[str, ...], bool], ...] = (
         False,
     ),
     (
+        "AOS Category Attribute Row",
+        "idx_catalog_dependency_parent_reference",
+        ("depends_on_attribute", "parent", "parenttype", "parentfield"),
+        False,
+    ),
+    (
+        "AOS Category Attribute Dependency Row",
+        "idx_catalog_dependency_mapping_order",
+        ("parenttype", "parentfield", "parent", "child_attribute", "idx", "name"),
+        False,
+    ),
+    (
+        "AOS Category Attribute Dependency Row",
+        "uq_catalog_dependency_mapping",
+        ("mapping_key",),
+        True,
+    ),
+    (
+        "AOS Category Attribute Dependency Row",
+        "idx_catalog_dependency_child_reference",
+        ("child_attribute", "parent", "parenttype", "parentfield"),
+        False,
+    ),
+    (
         "AOS Ad Attribute",
         "idx_catalog_attribute_active_key",
         ("is_active", "attribute_key", "name"),

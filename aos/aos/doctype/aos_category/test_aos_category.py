@@ -30,6 +30,13 @@ class IntegrationTestAOSCategory(IntegrationTestCase):
         self.assertIsNone(meta.get_field("icon_media"))
         self.assertIsNone(meta.get_field("lft"))
         self.assertIsNone(meta.get_field("rgt"))
+        dependencies = meta.get_field("attribute_dependencies")
+        self.assertEqual(dependencies.fieldtype, "Table")
+        self.assertEqual(dependencies.options, "AOS Category Attribute Dependency Row")
+        relation_meta = frappe.get_meta("AOS Category Attribute Row")
+        depends_on = relation_meta.get_field("depends_on_attribute")
+        self.assertEqual(depends_on.fieldtype, "Link")
+        self.assertEqual(depends_on.options, "AOS Ad Attribute")
 
     def test_source_controlled_permission_defaults_remain_effective(self):
         schema_path = Path(

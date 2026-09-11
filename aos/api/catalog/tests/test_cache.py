@@ -31,13 +31,16 @@ class TestCatalogCache(TestCase):
             catalog_cache.clear_catalog_cache()
 
             backend.delete_value.assert_called_once()
-            backend.delete_keys.assert_called_once_with("aos:catalog:v3:schema:*")
+            self.assertEqual(backend.delete_keys.call_count, 3)
+            backend.delete_keys.assert_any_call("aos:catalog:v4:schema:*")
+            backend.delete_keys.assert_any_call("aos:catalog:v4:options:*")
+            backend.delete_keys.assert_any_call("aos:catalog:v4:resolved-attributes:*")
             after_commit.add.assert_called_once()
             callback = after_commit.add.call_args.args[0]
             callback()
 
         self.assertEqual(backend.delete_value.call_count, 2)
-        self.assertEqual(backend.delete_keys.call_count, 2)
+        self.assertEqual(backend.delete_keys.call_count, 6)
 
     def test_cache_failures_are_non_fatal(self):
         backend = Mock()

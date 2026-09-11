@@ -22,13 +22,14 @@ class FakeDoc(SimpleNamespace):
         return getattr(self, "_before", None)
 
 
-def relation(attribute, *, required=0, active=1, options="", order=0):
+def relation(attribute, *, required=0, active=1, options="", order=0, depends_on=""):
     return SimpleNamespace(
         attribute=attribute,
         is_required=required,
         is_active=active,
         options_override=options,
         sort_order=order,
+        depends_on_attribute=depends_on,
     )
 
 
@@ -59,16 +60,37 @@ class TestCatalogIntegrity(TestCase):
             [],
             [{"name": "ROW-1", "attribute": "Condition"}],
             [],
+            [],
         ]
         lock_category_schema_for_ad("Leaf")
-        self.assertEqual(sql.call_count, 4)
+        self.assertEqual(sql.call_count, 5)
         self.assertEqual(sql.call_args_list[0].args[1], ("Leaf",))
         self.assertEqual(sql.call_args_list[1].args[1], ("Root",))
         self.assertEqual(sql.call_args_list[2].args[1], ("Leaf", "Root"))
         self.assertIn("tabAOS Category Attribute Row", sql.call_args_list[2].args[0])
-        self.assertIn("tabAOS Ad Attribute", sql.call_args_list[3].args[0])
-        self.assertEqual(sql.call_args_list[3].args[1], ("Condition",))
+        self.assertIn("tabAOS Category Attribute Dependency Row", sql.call_args_list[3].args[0])
+        self.assertEqual(sql.call_args_list[3].args[1], ("Leaf", "Root"))
+        self.assertIn("tabAOS Ad Attribute", sql.call_args_list[4].args[0])
+        self.assertEqual(sql.call_args_list[4].args[1], ("Condition",))
         self.assertTrue(all("FOR UPDATE" in call.args[0] for call in sql.call_args_list))
+
+    @patch("aos.services.catalog.integrity.frappe.db.exists")
+    def test_dependency_parent_global_option_expansion_is_blocked(self, exists):
+        exists.side_effect = lambda doctype, filters: (
+            doctype == "AOS Category Attribute Row" and "depends_on_attribute" in filters
+        )
+        before = FakeDoc(field_type="Select", options="HP\nApple", is_active=1)
+        expanded = FakeDoc(
+            _new=False,
+            name="Brand",
+            field_type="Select",
+            options="HP\nApple\nDell",
+            is_active=1,
+            _before=before,
+        )
+        with self.assertRaises(CatalogValidationError):
+            assert_attribute_schema_change_safe(expanded)
+
 
     @patch("aos.services.catalog.integrity.frappe.get_all", return_value=[])
     @patch("aos.services.catalog.integrity.frappe.db.exists", return_value=True)
@@ -162,8 +184,9 @@ class TestCatalogIntegrity(TestCase):
         with self.assertRaises(CatalogConflictError):
             assert_attribute_identity_immutable(doc)
 
-    @patch("aos.services.catalog.integrity.frappe.db.exists", return_value=True)
-    def test_used_attribute_type_and_option_removal_are_blocked(self, _exists):
+    @patch("aos.services.catalog.integrity.frappe.db.exists")
+    def test_used_attribute_type_and_option_removal_are_blocked(self, exists):
+        exists.side_effect = lambda doctype, _filters: doctype == "AOS Ad Attribute Value"
         before = FakeDoc(field_type="Select", options="Red\nBlue")
         changed_type = FakeDoc(_new=False, name="Color", field_type="Text", options="", _before=before)
         with self.assertRaises(CatalogValidationError):
@@ -181,3 +204,114 @@ class TestCatalogIntegrity(TestCase):
             _before=before,
         )
         assert_attribute_schema_change_safe(expanded)
+
+
+    @patch("aos.services.catalog.integrity.frappe.db.get_value", return_value="HP\nApple")
+    @patch("aos.services.catalog.integrity.frappe.get_all", return_value=[])
+    @patch("aos.services.catalog.integrity.frappe.db.exists", return_value=True)
+    def test_used_category_dependency_mappings_may_expand_additively(
+        self, _exists, _get_all, _get_value
+    ):
+        before = FakeDoc(
+            parent_aos_category="",
+            is_group=0,
+            is_service=0,
+            pricing_requirement="Optional",
+            allowed_price_types="Fixed",
+            allowed_price_units="",
+            attributes=[
+                relation("Brand", required=1, options="HP\nApple"),
+                relation("Model", required=1, options="EliteBook", depends_on="Brand"),
+            ],
+            attribute_dependencies=[
+                SimpleNamespace(child_attribute="Model", child_option="EliteBook", parent_option="HP")
+            ],
+        )
+        doc = FakeDoc(
+            _new=False,
+            name="Laptops",
+            parent_aos_category="",
+            is_group=0,
+            is_service=0,
+            pricing_requirement="Optional",
+            allowed_price_types="Fixed",
+            allowed_price_units="",
+            attributes=[
+                relation("Brand", required=1, options="HP\nApple"),
+                relation(
+                    "Model",
+                    required=1,
+                    options="EliteBook\nMacBook Air",
+                    depends_on="Brand",
+                ),
+            ],
+            attribute_dependencies=[
+                SimpleNamespace(child_attribute="Model", child_option="EliteBook", parent_option="HP"),
+                SimpleNamespace(child_attribute="Model", child_option="MacBook Air", parent_option="Apple"),
+            ],
+            _before=before,
+        )
+        assert_category_schema_change_safe(doc)
+
+    @patch("aos.services.catalog.integrity.frappe.db.get_value", return_value="HP\nApple")
+    @patch("aos.services.catalog.integrity.frappe.get_all", return_value=[])
+    @patch("aos.services.catalog.integrity.frappe.db.exists", return_value=True)
+    def test_used_category_can_promote_global_options_to_additive_override(
+        self, _exists, _get_all, _get_value
+    ):
+        before = FakeDoc(
+            parent_aos_category="",
+            is_group=0,
+            is_service=0,
+            pricing_requirement="Optional",
+            allowed_price_types="Fixed",
+            allowed_price_units="",
+            attributes=[relation("Brand", options="")],
+        )
+        doc = FakeDoc(
+            _new=False,
+            name="Laptops",
+            parent_aos_category="",
+            is_group=0,
+            is_service=0,
+            pricing_requirement="Optional",
+            allowed_price_types="Fixed",
+            allowed_price_units="",
+            attributes=[relation("Brand", options="HP\nApple\nDell")],
+            _before=before,
+        )
+        assert_category_schema_change_safe(doc)
+
+
+    @patch("aos.services.catalog.integrity.frappe.get_all", return_value=[])
+    @patch("aos.services.catalog.integrity.frappe.db.exists", return_value=True)
+    def test_used_category_dependency_rules_cannot_change_in_place(self, _exists, _get_all):
+        before = FakeDoc(
+            parent_aos_category="",
+            is_group=0,
+            is_service=0,
+            pricing_requirement="Optional",
+            allowed_price_types="Fixed",
+            allowed_price_units="",
+            attributes=[relation("Brand", required=1), relation("Model", required=1, depends_on="Brand")],
+            attribute_dependencies=[
+                SimpleNamespace(child_attribute="Model", child_option="EliteBook", parent_option="HP")
+            ],
+        )
+        doc = FakeDoc(
+            _new=False,
+            name="Laptops",
+            parent_aos_category="",
+            is_group=0,
+            is_service=0,
+            pricing_requirement="Optional",
+            allowed_price_types="Fixed",
+            allowed_price_units="",
+            attributes=[relation("Brand", required=1), relation("Model", required=1, depends_on="Brand")],
+            attribute_dependencies=[
+                SimpleNamespace(child_attribute="Model", child_option="EliteBook", parent_option="Apple")
+            ],
+            _before=before,
+        )
+        with self.assertRaises(CatalogValidationError):
+            assert_category_schema_change_safe(doc)

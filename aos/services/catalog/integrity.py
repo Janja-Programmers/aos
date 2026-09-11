@@ -105,6 +105,18 @@ def lock_category_schema_for_ad(category_id: str) -> None:
         tuple(category_names),
         as_dict=True,
     )
+    frappe.db.sql(
+        f"""
+        SELECT name
+        FROM `tabAOS Category Attribute Dependency Row`
+        WHERE parenttype='AOS Category'
+          AND parentfield='attribute_dependencies'
+          AND parent IN ({placeholders})
+        ORDER BY parent, child_attribute, name
+        FOR UPDATE
+        """,
+        tuple(category_names),
+    )
     _lock_attribute_definitions(
         {_clean(row.get("attribute")) for row in relation_rows if _clean(row.get("attribute"))}
     )
@@ -160,6 +172,17 @@ def _attribute_rows(doc: Any) -> dict[str, Any]:
     return result
 
 
+def _dependency_rows_by_child(doc: Any) -> dict[str, set[tuple[str, str]]]:
+    result: dict[str, set[tuple[str, str]]] = {}
+    for row in list(getattr(doc, "attribute_dependencies", None) or []):
+        child = _clean(getattr(row, "child_attribute", ""))
+        child_option = _clean(getattr(row, "child_option", ""))
+        parent_option = _clean(getattr(row, "parent_option", ""))
+        if child and child_option and parent_option:
+            result.setdefault(child, set()).add((child_option, parent_option))
+    return result
+
+
 def assert_category_schema_change_safe(doc: Any) -> None:
     """Block destructive schema changes once Ads depend on the category scope.
 
@@ -212,6 +235,13 @@ def assert_category_schema_change_safe(doc: Any) -> None:
                 "Required attributes for a category used by ads cannot be changed destructively.",
                 code="CATEGORY_IN_USE",
             )
+        if _clean(getattr(old_row, "depends_on_attribute", "")) != _clean(
+            getattr(new_row, "depends_on_attribute", "")
+        ):
+            raise CatalogValidationError(
+                "Attribute dependencies for a category used by ads cannot be changed in place.",
+                code="CATEGORY_IN_USE",
+            )
         old_override = split_choices(
             getattr(old_row, "options_override", None),
             field="attribute_option",
@@ -222,11 +252,28 @@ def assert_category_schema_change_safe(doc: Any) -> None:
             field="attribute_option",
             max_items=MAX_ATTRIBUTE_OPTIONS,
         )
-        if old_override != new_override and (
-            not old_override or not set(old_override).issubset(set(new_override))
+        if old_override != new_override:
+            definition_options = split_choices(
+                frappe.db.get_value("AOS Ad Attribute", attribute, "options") or "",
+                field="attribute_option",
+                max_items=MAX_ATTRIBUTE_OPTIONS,
+            )
+            old_effective = old_override or definition_options
+            new_effective = new_override or definition_options
+            if not set(old_effective).issubset(set(new_effective)):
+                raise CatalogValidationError(
+                    "Category attribute choices used by ads cannot be narrowed.",
+                    code="CATEGORY_IN_USE",
+                )
+
+    before_dependencies = _dependency_rows_by_child(previous)
+    after_dependencies = _dependency_rows_by_child(doc)
+    for attribute in before:
+        if not before_dependencies.get(attribute, set()).issubset(
+            after_dependencies.get(attribute, set())
         ):
             raise CatalogValidationError(
-                "Category attribute choices used by ads cannot be narrowed.",
+                "Existing attribute option dependency mappings for a category used by ads cannot be removed or changed.",
                 code="CATEGORY_IN_USE",
             )
 
@@ -281,19 +328,38 @@ def assert_attribute_identity_immutable(doc: Any) -> None:
 
 
 def assert_attribute_schema_change_safe(doc: Any) -> None:
-    """Prevent destructive type/choice changes once Ads snapshot the attribute."""
+    """Prevent destructive attribute changes once Ads or dependencies reference it."""
 
     if bool(doc.is_new()):
         return
     previous = doc.get_doc_before_save()
-    if previous is None or not frappe.db.exists("AOS Ad Attribute Value", {"attribute": doc.name}):
+    if previous is None:
         return
+
+    used_by_ads = bool(frappe.db.exists("AOS Ad Attribute Value", {"attribute": doc.name}))
+    dependency_parent = bool(
+        frappe.db.exists("AOS Category Attribute Row", {"depends_on_attribute": doc.name})
+    )
+    dependency_child = bool(
+        frappe.db.exists("AOS Category Attribute Dependency Row", {"child_attribute": doc.name})
+    )
+    dependency_referenced = dependency_parent or dependency_child
+    if not used_by_ads and not dependency_referenced:
+        return
+
+    if dependency_referenced and int(getattr(previous, "is_active", 0) or 0) != int(
+        getattr(doc, "is_active", 0) or 0
+    ):
+        raise CatalogValidationError(
+            "An attribute used by dependency rules cannot be deactivated in place.",
+            code="ATTRIBUTE_IN_USE",
+        )
 
     previous_type = _clean(getattr(previous, "field_type", ""))
     current_type = _clean(getattr(doc, "field_type", ""))
     if previous_type != current_type:
         raise CatalogValidationError(
-            "Create a new attribute instead of changing the type of an attribute used by ads.",
+            "Create a new attribute instead of changing the type of an attribute already in use.",
             code="ATTRIBUTE_IN_USE",
         )
 
@@ -315,7 +381,12 @@ def assert_attribute_schema_change_safe(doc: Any) -> None:
     )
     if not previous_options.issubset(current_options):
         raise CatalogValidationError(
-            "Options used by existing ads cannot be removed from an attribute.",
+            "Options referenced by existing ads or dependency rules cannot be removed.",
+            code="ATTRIBUTE_IN_USE",
+        )
+    if dependency_referenced and previous_options != current_options:
+        raise CatalogValidationError(
+            "Global options for an attribute used by dependency rules cannot change in place; update category-specific options and mappings atomically instead.",
             code="ATTRIBUTE_IN_USE",
         )
 

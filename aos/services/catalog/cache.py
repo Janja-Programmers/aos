@@ -13,15 +13,28 @@ from typing import Any
 
 import frappe
 
-CATALOG_CACHE_SCHEMA = "v3"
+CATALOG_CACHE_SCHEMA = "v4"
 CATALOG_CACHE_TTL_SECONDS = 300
 _CATEGORY_TREE_KEY = f"aos:catalog:{CATALOG_CACHE_SCHEMA}:categories"
 _SCHEMA_PREFIX = f"aos:catalog:{CATALOG_CACHE_SCHEMA}:schema:"
+_OPTIONS_PREFIX = f"aos:catalog:{CATALOG_CACHE_SCHEMA}:options:"
+_RESOLVED_ATTRIBUTES_PREFIX = f"aos:catalog:{CATALOG_CACHE_SCHEMA}:resolved-attributes:"
 
 
 def _schema_key(category_id: str) -> str:
     digest = hashlib.sha256(str(category_id or "").encode("utf-8")).hexdigest()
     return f"{_SCHEMA_PREFIX}{digest}"
+
+
+def _options_key(category_id: str, attribute: str, parent_value: str) -> str:
+    identity = "\x1f".join((str(category_id or ""), str(attribute or ""), str(parent_value or "")))
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    return f"{_OPTIONS_PREFIX}{digest}"
+
+
+def _resolved_attributes_key(category_id: str) -> str:
+    digest = hashlib.sha256(str(category_id or "").encode("utf-8")).hexdigest()
+    return f"{_RESOLVED_ATTRIBUTES_PREFIX}{digest}"
 
 
 def _get(key: str, *, payload_type: type):
@@ -64,6 +77,28 @@ def set_category_schema_cache(category_id: str, schema: dict[str, Any]) -> None:
     _set(_schema_key(category_id), schema)
 
 
+def get_attribute_options_cache(
+    category_id: str, attribute: str, parent_value: str
+) -> dict[str, Any] | None:
+    return _get(_options_key(category_id, attribute, parent_value), payload_type=dict)
+
+
+def set_attribute_options_cache(
+    category_id: str, attribute: str, parent_value: str, payload: dict[str, Any]
+) -> None:
+    _set(_options_key(category_id, attribute, parent_value), payload)
+
+
+def get_resolved_attributes_cache(category_id: str) -> list[dict[str, Any]] | None:
+    """Return the bounded internal resolved schema used for option filtering."""
+
+    return _get(_resolved_attributes_key(category_id), payload_type=list)
+
+
+def set_resolved_attributes_cache(category_id: str, attributes: list[dict[str, Any]]) -> None:
+    _set(_resolved_attributes_key(category_id), attributes)
+
+
 def _delete_catalog_cache() -> None:
     try:
         cache = frappe.cache()
@@ -75,6 +110,14 @@ def _delete_catalog_cache() -> None:
         pass
     try:
         cache.delete_keys(f"{_SCHEMA_PREFIX}*")
+    except Exception:
+        pass
+    try:
+        cache.delete_keys(f"{_OPTIONS_PREFIX}*")
+    except Exception:
+        pass
+    try:
+        cache.delete_keys(f"{_RESOLVED_ATTRIBUTES_PREFIX}*")
     except Exception:
         pass
 

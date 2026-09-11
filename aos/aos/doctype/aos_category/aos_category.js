@@ -30,6 +30,29 @@
     return Boolean(levelZero && levelZero.write);
   }
 
+  function categoryAttributeIds(frm, { dependentOnly = false, exclude = "" } = {}) {
+    return Array.from(frm.doc.attributes || [])
+      .filter((row) => row && row.attribute && Number(row.is_active || 0) === 1)
+      .filter((row) => !dependentOnly || Boolean(String(row.depends_on_attribute || "").trim()))
+      .map((row) => String(row.attribute || "").trim())
+      .filter((attribute) => attribute && attribute !== exclude);
+  }
+
+  function selectAttributeQuery(attributeIds) {
+    const names = attributeIds.length ? attributeIds : ["__aos_no_select_attribute__"];
+    return { filters: { name: ["in", names], field_type: "Select", is_active: 1 } };
+  }
+
+  function configureDependencyQueries(frm) {
+    frm.set_query("depends_on_attribute", "attributes", (_doc, cdt, cdn) => {
+      const row = (globalThis.locals && globalThis.locals[cdt] && globalThis.locals[cdt][cdn]) || {};
+      return selectAttributeQuery(categoryAttributeIds(frm, { exclude: String(row.attribute || "").trim() }));
+    });
+    frm.set_query("child_attribute", "attribute_dependencies", () => (
+      selectAttributeQuery(categoryAttributeIds(frm, { dependentOnly: true }))
+    ));
+  }
+
   function escapeHtml(value) {
     if (frappe.utils && typeof frappe.utils.escape_html === "function") {
       return frappe.utils.escape_html(String(value || ""));
@@ -326,6 +349,9 @@
   }
 
   frappe.ui.form.on("AOS Category", {
+    setup(frm) {
+      configureDependencyQueries(frm);
+    },
     refresh(frm) {
       renderUploader(frm);
       resolvePreview(frm);

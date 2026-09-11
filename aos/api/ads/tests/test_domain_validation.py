@@ -94,6 +94,61 @@ class TestAdsDomainValidation(FrappeTestCase):
                     category="CAT-1",
                 )
 
+
+
+    def test_dependent_attribute_values_must_match_selected_parent(self):
+        schema = [
+            {
+                "id": "Brand",
+                "key": "brand",
+                "label": "Brand",
+                "type": "Select",
+                "required": 1,
+                "options": ["HP", "Apple"],
+                "unit": "",
+            },
+            {
+                "id": "Model",
+                "key": "model",
+                "label": "Model",
+                "type": "Select",
+                "required": 1,
+                "options": ["EliteBook", "MacBook Air"],
+                "unit": "",
+                "depends_on": {"id": "Brand", "key": "brand"},
+                "_dependency_options": {
+                    "HP": ["EliteBook"],
+                    "Apple": ["MacBook Air"],
+                },
+            },
+        ]
+        with patch(
+            "aos.services.ads.validation._catalog_schema",
+            return_value=("Laptops", schema, {}, False),
+        ):
+            valid = normalize_details(
+                [
+                    {"attribute": "brand", "value_text": "HP"},
+                    {"attribute": "model", "value_text": "EliteBook"},
+                ],
+                category="Laptops",
+            )
+            self.assertEqual(len(valid), 2)
+
+            with self.assertRaises(AdsValidationError):
+                normalize_details(
+                    [
+                        {"attribute": "brand", "value_text": "HP"},
+                        {"attribute": "model", "value_text": "MacBook Air"},
+                    ],
+                    category="Laptops",
+                )
+            with self.assertRaises(AdsValidationError):
+                normalize_details(
+                    [{"attribute": "model", "value_text": "EliteBook"}],
+                    category="Laptops",
+                )
+
     def test_pricing_rejects_float_unsafe_and_inconsistent_offers(self):
         pricing = {
             "pricing_requirement": "Required",

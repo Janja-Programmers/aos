@@ -16,30 +16,28 @@ from aos.services.media.media_service import MediaService
 
 from .cache import (
     clear_catalog_cache,
+    get_attribute_options_cache,
     get_category_schema_cache,
+    get_resolved_attributes_cache,
     get_category_tree_cache,
+    set_attribute_options_cache,
     set_category_schema_cache,
+    set_resolved_attributes_cache,
     set_category_tree_cache,
 )
-from .constants import (
-    ALLOWED_ATTRIBUTE_TYPES,
-    ALLOWED_PRICE_TYPES,
-    ALLOWED_PRICING_REQUIREMENTS,
-    MAX_ATTRIBUTE_OPTIONS,
-    MAX_CATEGORY_DEPTH,
-    SELECT_ATTRIBUTE_TYPES,
-)
+from .constants import MAX_CATEGORY_DEPTH, SELECT_ATTRIBUTE_TYPES
 from .errors import CatalogDataError, CatalogNotFoundError, CatalogValidationError
 from .integrity import lock_category_schema_for_ad
 from .repository import CatalogRepository
-from .validation import canonical_attribute_key, normalize_category_id, split_choices
+from .validation import normalize_category_id, normalize_text
 
 
-def attribute_key(attribute_name: Any) -> str:
-    """Return the canonical key derivation used by active Ads snapshot fallbacks."""
-    if attribute_name in (None, ""):
-        return ""
-    return canonical_attribute_key(attribute_name)
+from .schema_resolver import (
+    _database_sort_order,
+    attribute_key,
+    resolve_attributes,
+    resolve_pricing,
+)
 
 
 class CatalogService:
@@ -105,6 +103,12 @@ class CatalogService:
             [(leaf.get("image_media"), str(leaf["name"]))]
         )
         image_media = str(leaf.get("image_media") or "").strip()
+        resolved_attributes = resolve_attributes(chain, include_dependency_map=True)
+        public_attributes = []
+        for attribute in resolved_attributes:
+            public_attribute = dict(attribute)
+            public_attribute.pop("_dependency_options", None)
+            public_attributes.append(public_attribute)
         schema = {
             "category": {
                 "id": leaf["name"],
@@ -114,7 +118,7 @@ class CatalogService:
                 "is_service": int(leaf.get("is_service") or 0),
                 "image_url": media_urls.get((image_media, str(leaf["name"]))) or None,
             },
-            "attributes": resolve_attributes(chain),
+            "attributes": public_attributes,
             "pricing": {
                 "requirement": resolved_pricing["pricing_requirement"],
                 "allowed_price_types": resolved_pricing.get("allowed_price_types", []),
@@ -122,8 +126,87 @@ class CatalogService:
             },
         }
         if self._use_cache:
+            set_resolved_attributes_cache(category_id, resolved_attributes)
             set_category_schema_cache(category_id, schema)
         return schema
+
+    def get_public_attribute_options(
+        self, *, category: Any, attribute: Any, parent_value: Any = None
+    ) -> dict[str, Any]:
+        """Return bounded options for one select attribute under its direct dependency."""
+
+        category_id = normalize_category_id(category)
+        attribute_ref = normalize_text(
+            attribute, field="attribute", max_length=140, required=True
+        )
+        parent = normalize_text(
+            parent_value, field="parent_value", max_length=120
+        )
+        if self._use_cache:
+            cached = get_attribute_options_cache(category_id, attribute_ref, parent)
+            if cached is not None:
+                return cached
+
+        attributes = get_resolved_attributes_cache(category_id) if self._use_cache else None
+        if attributes is None:
+            chain = self.get_category_chain(category_id, require_active=True)
+            attributes = resolve_attributes(chain, include_dependency_map=True)
+            if self._use_cache:
+                set_resolved_attributes_cache(category_id, attributes)
+        by_id = {str(item["id"]): item for item in attributes}
+        by_key = {str(item["key"]): item for item in attributes}
+        item = by_id.get(attribute_ref) or by_key.get(attribute_ref)
+        if not item:
+            raise CatalogValidationError(
+                "Attribute is not part of this category schema.",
+                code="INVALID_CATALOG_INPUT",
+            )
+        if str(item.get("type") or "") not in SELECT_ATTRIBUTE_TYPES:
+            raise CatalogValidationError(
+                "Attribute does not provide selectable options.",
+                code="INVALID_CATALOG_INPUT",
+            )
+
+        dependency = item.get("depends_on")
+        options = list(item.get("options") or [])
+        dependency_projection = None
+        if dependency:
+            if not parent:
+                raise CatalogValidationError(
+                    "Parent option is required for a dependent attribute.",
+                    code="INVALID_CATALOG_INPUT",
+                )
+            parent_item = by_id.get(str(dependency.get("id") or ""))
+            if not parent_item or parent not in set(parent_item.get("options") or []):
+                raise CatalogValidationError(
+                    "Invalid parent option for this category schema.",
+                    code="INVALID_CATALOG_INPUT",
+                )
+            options = list((item.get("_dependency_options") or {}).get(parent, []))
+            dependency_projection = {
+                "attribute_id": dependency["id"],
+                "attribute_key": dependency["key"],
+                "value": parent,
+            }
+        elif parent:
+            raise CatalogValidationError(
+                "Parent option is not valid for an independent attribute.",
+                code="INVALID_CATALOG_INPUT",
+            )
+
+        payload = {
+            "category_id": category_id,
+            "attribute": {
+                "id": item["id"],
+                "key": item["key"],
+                "label": item["label"],
+            },
+            "depends_on": dependency_projection,
+            "options": options,
+        }
+        if self._use_cache:
+            set_attribute_options_cache(category_id, attribute_ref, parent, payload)
+        return payload
 
     def get_category_chain(self, category: Any, *, require_active: bool = False) -> list[dict[str, Any]]:
         """Load one bounded schema chain using indexed category identity lookups."""
@@ -159,9 +242,13 @@ class CatalogService:
 
         category_names = [str(row["name"]) for row in chain]
         attribute_rows = self.repository.load_category_attribute_rows(category_names)
+        dependency_rows = self.repository.load_category_attribute_dependency_rows(category_names)
         rows_by_parent: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        dependencies_by_parent: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for row in attribute_rows:
             rows_by_parent[str(row.get("parent") or "")].append(row)
+        for row in dependency_rows:
+            dependencies_by_parent[str(row.get("parent") or "")].append(row)
         attribute_names = [str(row.get("attribute") or "") for row in attribute_rows if row.get("attribute")]
         definitions = self.repository.load_attributes(attribute_names)
         expected_attributes = {name for name in attribute_names if name}
@@ -169,6 +256,7 @@ class CatalogService:
             raise CatalogDataError("Catalog attribute definition is missing.")
         for row in chain:
             row["attributes"] = rows_by_parent.get(str(row["name"]), [])
+            row["attribute_dependencies"] = dependencies_by_parent.get(str(row["name"]), [])
             row["attribute_definitions"] = definitions
         return chain
 
@@ -312,122 +400,3 @@ class CatalogService:
         )
         for node in nodes:
             self._sort_tree(node["children"])
-
-
-def _database_sort_order(value: Any) -> int:
-    try:
-        result = int(value or 0)
-    except (TypeError, ValueError) as exc:
-        raise CatalogDataError("Catalog sort order is invalid.") from exc
-    if result < 0 or result > 1_000_000:
-        raise CatalogDataError("Catalog sort order is invalid.")
-    return result
-
-
-def resolve_pricing(chain_leaf_to_root: list[dict[str, Any]]) -> dict[str, Any]:
-    if not chain_leaf_to_root:
-        raise CatalogDataError("Catalog category chain is empty.")
-    leaf = chain_leaf_to_root[0]
-    requirement = str(leaf.get("pricing_requirement") or "Optional").strip() or "Optional"
-    if requirement not in ALLOWED_PRICING_REQUIREMENTS:
-        raise CatalogDataError("Catalog pricing requirement is invalid.")
-    try:
-        allowed_types = split_choices(
-            leaf.get("allowed_price_types"),
-            field="price_type",
-            allowed=ALLOWED_PRICE_TYPES,
-        )
-        allowed_units = split_choices(
-            leaf.get("allowed_price_units"),
-            field="price_unit",
-            max_items=50,
-        )
-    except CatalogValidationError as exc:
-        raise CatalogDataError("Catalog pricing configuration is invalid.") from exc
-    pricing: dict[str, Any] = {"pricing_requirement": requirement}
-    if allowed_types:
-        pricing["allowed_price_types"] = allowed_types
-    if int(leaf.get("is_service") or 0) and allowed_units:
-        pricing["allowed_price_units"] = allowed_units
-    return pricing
-
-
-def resolve_attributes(chain_leaf_to_root: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Resolve root-to-leaf category rows with the leaf row as final authority."""
-
-    by_attribute: dict[str, dict[str, Any]] = {}
-    for category in reversed(chain_leaf_to_root):
-        definitions = category.get("attribute_definitions") or {}
-        rows = sorted(
-            list(category.get("attributes") or []),
-            key=lambda row: (
-                _database_sort_order(row.get("sort_order") or 0),
-                int(row.get("idx") or 0),
-                str(row.get("name") or ""),
-            ),
-        )
-        seen_in_category: set[str] = set()
-        for row in rows:
-            attribute_name = str(row.get("attribute") or "").strip()
-            if not attribute_name:
-                raise CatalogDataError("Catalog attribute relation is invalid.")
-            if attribute_name in seen_in_category:
-                raise CatalogDataError("Catalog category contains duplicate attribute relations.")
-            seen_in_category.add(attribute_name)
-            if not int(row.get("is_active") or 0):
-                by_attribute.pop(attribute_name, None)
-                continue
-            definition = definitions.get(attribute_name)
-            if not definition or not int(definition.get("is_active") or 0):
-                continue
-            field_type = str(definition.get("field_type") or "").strip()
-            if field_type not in ALLOWED_ATTRIBUTE_TYPES:
-                raise CatalogDataError("Catalog attribute type is invalid.")
-            attribute_key = str(definition.get("attribute_key") or "").strip()
-            if not attribute_key:
-                raise CatalogDataError("Catalog attribute key is missing.")
-            try:
-                override_options = split_choices(
-                    row.get("options_override"),
-                    field="attribute_option",
-                    max_items=MAX_ATTRIBUTE_OPTIONS,
-                )
-                definition_options = split_choices(
-                    definition.get("options"),
-                    field="attribute_option",
-                    max_items=MAX_ATTRIBUTE_OPTIONS,
-                )
-            except CatalogValidationError as exc:
-                raise CatalogDataError("Catalog attribute options are invalid.") from exc
-            if override_options and field_type not in SELECT_ATTRIBUTE_TYPES:
-                raise CatalogDataError("Catalog attribute options are invalid.")
-            options = override_options or definition_options
-            if options and field_type not in SELECT_ATTRIBUTE_TYPES:
-                raise CatalogDataError("Catalog attribute options are invalid.")
-            by_attribute[attribute_name] = {
-                "id": attribute_name,
-                "key": attribute_key,
-                "label": definition.get("label") or attribute_name,
-                "type": field_type,
-                "required": int(row.get("is_required") or 0),
-                "unit": definition.get("unit") or "",
-                "help_text": definition.get("help_text") or "",
-                "options": options,
-                "sort_order": _database_sort_order(row.get("sort_order") or 0),
-            }
-    resolved = sorted(
-        by_attribute.values(),
-        key=lambda row: (
-            _database_sort_order(row.get("sort_order") or 0),
-            str(row.get("label") or "").casefold(),
-            str(row.get("id") or ""),
-        ),
-    )
-    keys: dict[str, str] = {}
-    for attribute in resolved:
-        key = str(attribute.get("key") or "")
-        previous = keys.get(key)
-        if previous and previous != attribute["id"]:
-            raise CatalogDataError("Catalog attribute keys are ambiguous.")
-        keys[key] = str(attribute["id"])
-    return resolved

@@ -19,6 +19,8 @@
   "is_service",
   "section_break_patt",
   "attributes",
+  "attribute_dependency_section",
+  "attribute_dependencies",
   "category_image_section",
   "icon_preview",
   "image_media"
@@ -123,6 +125,18 @@
    "fieldname": "icon_preview",
    "fieldtype": "HTML",
    "label": "Category Image Uploader"
+  },
+  {
+   "fieldname": "attribute_dependency_section",
+   "fieldtype": "Section Break",
+   "label": "Attribute Dependencies"
+  },
+  {
+   "fieldname": "attribute_dependencies",
+   "fieldtype": "Table",
+   "label": "Attribute Option Dependencies",
+   "options": "AOS Category Attribute Dependency Row",
+   "description": "Maps each dependent option to one or more allowed parent options. Configure Depends On Attribute in the Attributes table first."
   }
  ],
  "grid_page_length": 50,

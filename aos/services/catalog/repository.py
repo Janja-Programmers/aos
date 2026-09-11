@@ -6,7 +6,7 @@ from typing import Any
 
 import frappe
 
-from .constants import MAX_CATEGORIES, MAX_CATEGORY_ATTRIBUTES
+from .constants import MAX_CATEGORIES, MAX_CATEGORY_ATTRIBUTES, MAX_CATEGORY_ATTRIBUTE_DEPENDENCIES
 from .errors import CatalogDataError
 
 _CATEGORY_FIELDS = [
@@ -71,6 +71,7 @@ class CatalogRepository:
                 "attribute",
                 "sort_order",
                 "options_override",
+                "depends_on_attribute",
                 "is_required",
                 "is_active",
             ],
@@ -79,6 +80,39 @@ class CatalogRepository:
         )
         if len(rows or []) > limit:
             raise CatalogDataError("Catalog attribute row limit exceeded.")
+        return [dict(row) for row in (rows or [])]
+
+
+    def load_category_attribute_dependency_rows(
+        self, category_names: list[str]
+    ) -> list[dict[str, Any]]:
+        names = sorted({str(name).strip() for name in category_names if str(name).strip()})
+        if not names:
+            return []
+        if len(names) > MAX_CATEGORY_DEPTH_QUERY_COUNT:
+            raise CatalogDataError("Catalog category chain is invalid.")
+
+        limit = len(names) * MAX_CATEGORY_ATTRIBUTE_DEPENDENCIES
+        rows = frappe.get_all(
+            "AOS Category Attribute Dependency Row",
+            filters={
+                "parenttype": "AOS Category",
+                "parentfield": "attribute_dependencies",
+                "parent": ["in", names],
+            },
+            fields=[
+                "name",
+                "parent",
+                "idx",
+                "child_attribute",
+                "child_option",
+                "parent_option",
+            ],
+            order_by="parent asc, child_attribute asc, idx asc, name asc",
+            limit=limit + 1,
+        )
+        if len(rows or []) > limit:
+            raise CatalogDataError("Catalog attribute dependency row limit exceeded.")
         return [dict(row) for row in (rows or [])]
 
     def load_attributes(self, attribute_names: list[str]) -> dict[str, dict[str, Any]]:

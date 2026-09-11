@@ -46,6 +46,14 @@ class TestCategoryDeskMediaContract(TestCase):
         self.assertNotIn("bucket", script.lower())
         self.assertNotIn("object_key", script)
 
+    def test_dependency_link_queries_are_scoped_to_category_select_attributes(self):
+        script = CATEGORY_JS.read_text()
+        self.assertIn('frm.set_query("depends_on_attribute", "attributes"', script)
+        self.assertIn('frm.set_query("child_attribute", "attribute_dependencies"', script)
+        self.assertIn('field_type: "Select"', script)
+        self.assertIn('dependentOnly: true', script)
+        self.assertIn('attribute !== exclude', script)
+
     def test_client_policy_matches_media_category_purpose_contract(self):
         script = CATEGORY_JS.read_text()
         self.assertIn("5 * 1024 * 1024", script)

@@ -4,6 +4,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from aos.api.catalog.categories import get_categories_impl
+from aos.api.catalog.options import get_attribute_options_impl
 from aos.api.catalog.schema import get_category_schema_impl
 from aos.services.catalog.errors import CatalogDataError, CatalogNotFoundError
 
@@ -67,3 +68,25 @@ class TestCatalogAPI(TestCase):
         self.assertEqual(response["error"], "CATALOG_DATA_ERROR")
         self.assertEqual(response["message"], "Failed to fetch categories.")
         log_error.assert_called_once()
+
+
+    @patch("aos.api.catalog.options.rate_limit", return_value=None)
+    @patch("aos.api.catalog.options.CatalogService")
+    def test_attribute_options_are_strict_and_return_dependency_projection(self, service_factory, _rate_limit):
+        service_factory.return_value.get_public_attribute_options.return_value = {
+            "category_id": "Laptops",
+            "attribute": {"id": "Model", "key": "model", "label": "Model"},
+            "depends_on": {"attribute_id": "Brand", "attribute_key": "brand", "value": "HP"},
+            "options": ["EliteBook", "ProBook"],
+        }
+        unknown = get_attribute_options_impl(
+            category="Laptops", attribute="model", parent_value="HP", legacy=1
+        )
+        self.assertEqual(unknown["error"], "INVALID_CATALOG_INPUT")
+        service_factory.assert_not_called()
+
+        response = get_attribute_options_impl(
+            category="Laptops", attribute="model", parent_value="HP"
+        )
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["data"]["options"], ["EliteBook", "ProBook"])

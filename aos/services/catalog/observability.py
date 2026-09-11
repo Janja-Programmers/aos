@@ -6,7 +6,13 @@ import json
 
 import frappe
 
-_ALLOWED_EVENTS = {"categories_read", "schema_read", "configuration_changed", "configuration_rejected"}
+_ALLOWED_EVENTS = {
+    "categories_read",
+    "schema_read",
+    "attribute_options_read",
+    "configuration_changed",
+    "configuration_rejected",
+}
 _ALLOWED_OUTCOMES = {"success", "not_found", "rejected", "failure"}
 
 

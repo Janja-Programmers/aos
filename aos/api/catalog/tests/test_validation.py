@@ -153,3 +153,113 @@ class TestCatalogValidation(TestCase):
         row.options_override += "\nToo many"
         with self.assertRaises(CatalogValidationError):
             validate_category_document(doc)
+
+
+    @patch("aos.services.catalog.validation.frappe.get_all")
+    def test_dependent_select_attributes_require_complete_acyclic_mappings(self, get_all):
+        get_all.return_value = [
+            {"name": "Brand", "field_type": "Select", "options": "HP\nApple", "is_active": 1},
+            {"name": "Model", "field_type": "Select", "options": "EliteBook\nMacBook Air", "is_active": 1},
+        ]
+        brand = SimpleNamespace(
+            attribute="Brand",
+            sort_order=1,
+            is_active=1,
+            is_required=1,
+            options_override="",
+            depends_on_attribute="",
+        )
+        model = SimpleNamespace(
+            attribute="Model",
+            sort_order=2,
+            is_active=1,
+            is_required=1,
+            options_override="",
+            depends_on_attribute="Brand",
+        )
+        mappings = [
+            SimpleNamespace(child_attribute="Model", child_option="EliteBook", parent_option="HP"),
+            SimpleNamespace(child_attribute="Model", child_option="MacBook Air", parent_option="Apple"),
+        ]
+        doc = SimpleNamespace(
+            name="Laptops",
+            category_name="Laptops",
+            parent_aos_category="",
+            is_group=0,
+            is_active=1,
+            is_service=0,
+            sort_order=0,
+            pricing_requirement="Optional",
+            allowed_price_types="Fixed",
+            allowed_price_units="",
+            attributes=[brand, model],
+            attribute_dependencies=mappings,
+        )
+        validate_category_document(doc)
+
+        doc.attribute_dependencies = mappings[:1]
+        with self.assertRaises(CatalogValidationError):
+            validate_category_document(doc)
+
+        doc.attribute_dependencies = [
+            SimpleNamespace(child_attribute="Model", child_option="EliteBook", parent_option="HP"),
+            SimpleNamespace(child_attribute="Model", child_option="MacBook Air", parent_option="HP"),
+        ]
+        with self.assertRaises(CatalogValidationError):
+            validate_category_document(doc)
+
+        doc.attribute_dependencies = mappings
+        brand.depends_on_attribute = "Model"
+        with self.assertRaises(CatalogValidationError):
+            validate_category_document(doc)
+    @patch("aos.services.catalog.validation.frappe.db.get_value")
+    @patch("aos.services.catalog.validation.frappe.get_all")
+    def test_leaf_parent_override_cannot_break_inherited_dependency(self, get_all, get_value):
+        get_value.return_value = {"name": "Computers", "is_group": 1, "parent_aos_category": None}
+
+        def rows(doctype, **kwargs):
+            if doctype == "AOS Ad Attribute":
+                return [
+                    {"name": "Brand", "field_type": "Select", "options": "HP\nApple", "is_active": 1}
+                ]
+            if doctype == "AOS Category Attribute Row":
+                return [{"attribute": "Model", "depends_on_attribute": "Brand", "is_required": 1}]
+            if doctype == "AOS Category Attribute Dependency Row":
+                return [{"parent_option": "HP"}, {"parent_option": "Apple"}]
+            return []
+
+        get_all.side_effect = rows
+        brand = SimpleNamespace(
+            attribute="Brand",
+            sort_order=1,
+            is_active=1,
+            is_required=1,
+            options_override="HP",
+            depends_on_attribute="",
+        )
+        doc = SimpleNamespace(
+            name="Laptops",
+            category_name="Laptops",
+            parent_aos_category="Computers",
+            is_group=0,
+            is_active=1,
+            is_service=0,
+            sort_order=0,
+            pricing_requirement="Optional",
+            allowed_price_types="Fixed",
+            allowed_price_units="",
+            attributes=[brand],
+            attribute_dependencies=[],
+        )
+        with self.assertRaises(CatalogValidationError) as exc:
+            validate_category_document(doc)
+        self.assertEqual(exc.exception.code, "INVALID_CATEGORY_SCHEMA")
+
+        brand.options_override = "HP\nApple\nDell"
+        brand.is_required = 0
+        with self.assertRaises(CatalogValidationError):
+            validate_category_document(doc)
+
+        brand.is_required = 1
+        brand.options_override = "HP\nApple"
+        validate_category_document(doc)

@@ -255,7 +255,7 @@ def _catalog_schema(category: Any) -> tuple[str, list[dict[str, Any]], dict[str,
         leaf = chain[0]
         return (
             str(leaf["name"]),
-            resolve_attributes(chain),
+            resolve_attributes(chain, include_dependency_map=True),
             resolve_pricing(chain),
             bool(leaf.get("is_service")),
         )
@@ -394,6 +394,33 @@ def normalize_details(details: Any, *, category: Any) -> list[dict[str, Any]]:
     missing = sorted(required.difference(provided))
     if missing:
         raise AdsValidationError("Required category details are missing.", code="INVALID_CATEGORY_SCHEMA")
+
+    selected_values = {
+        str(row["attribute"]): str(row.get("value_text") or "")
+        for row in result
+        if row.get("value_text") not in (None, "")
+    }
+    for schema in attributes:
+        dependency = schema.get("depends_on")
+        if not dependency:
+            continue
+        attribute_id = str(schema["id"])
+        child_value = selected_values.get(attribute_id)
+        if not child_value:
+            continue
+        parent_id = str(dependency.get("id") or "")
+        parent_value = selected_values.get(parent_id)
+        if not parent_value:
+            raise AdsValidationError(
+                "Dependent category attribute requires its parent attribute.",
+                code="INVALID_CATEGORY_SCHEMA",
+            )
+        allowed = set((schema.get("_dependency_options") or {}).get(parent_value, []))
+        if child_value not in allowed:
+            raise AdsValidationError(
+                "Category attribute option is not valid for the selected parent option.",
+                code="INVALID_CATEGORY_SCHEMA",
+            )
     return result
 
 
