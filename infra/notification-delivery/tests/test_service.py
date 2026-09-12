@@ -87,9 +87,10 @@ def test_firebase_configuration_validation_is_local_and_fail_closed(monkeypatch,
 	)
 	try:
 		config.validate_firebase_configuration(missing)
-		assert False, "missing Firebase credentials must fail readiness"
 	except RuntimeError as exc:
 		assert "unavailable" in str(exc)
+	else:
+		raise AssertionError("missing Firebase credentials must fail readiness")
 
 	credential = tmp_path / "firebase.json"
 	credential.write_text(

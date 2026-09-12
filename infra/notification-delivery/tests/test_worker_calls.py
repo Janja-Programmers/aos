@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import ClassVar
 
 from app import worker
 
@@ -169,7 +170,7 @@ def test_firebase_initialization_applies_bounded_http_timeout(monkeypatch, tmp_p
 	initialized = []
 
 	class _FirebaseAdmin:
-		_apps = {}
+		_apps: ClassVar[dict[str, object]] = {}
 
 		@staticmethod
 		def initialize_app(credential, options=None):

@@ -42,7 +42,9 @@ def test_remote_image_redirects_are_rejected(monkeypatch):
 
 	class RedirectResponse:
 		status_code = 302
-		headers = {"location": "http://169.254.169.254/latest/meta-data/"}
+
+		def __init__(self):
+			self.headers = {"location": "http://169.254.169.254/latest/meta-data/"}
 
 		def raise_for_status(self):
 			raise AssertionError("Redirects must be rejected before following or parsing")

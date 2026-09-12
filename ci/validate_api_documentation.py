@@ -24,7 +24,6 @@ FEATURE_DOCS = {
 	"live": "docs/features/live/api.md",
 	"localization": "docs/features/localization/README.md",
 	"maps": "docs/features/maps/README.md",
-	"maps": "docs/features/maps/README.md",
 	"media": "docs/features/media/README.md",
 	"notifications": "docs/features/notifications/README.md",
 	"reports": "docs/features/reports/api.md",
