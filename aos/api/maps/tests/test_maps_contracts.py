@@ -85,6 +85,19 @@ class TestMapsContracts(unittest.TestCase):
         self.assertIn("mem_limit:", compose)
         self.assertIn("stop_grace_period:", compose)
 
+    def test_legacy_tileserver_font_pipeline_is_removed(self):
+        self.assertFalse((ROOT / "aos/tests/test_map_font_assets.py").exists())
+        self.assertFalse((ROOT / "infra/maps/scripts/build-map-fonts.sh").exists())
+
+        gitignore = (ROOT / ".gitignore").read_text()
+        self.assertNotIn("infra/maps/tileserver", gitignore)
+
+        image_evidence = (ROOT / "ci/image-manifest-evidence.txt").read_text()
+        self.assertNotIn("maptiler/tileserver-gl", image_evidence)
+
+        compose = (ROOT / "docker-compose.yml").read_text()
+        self.assertNotIn("tileserver", compose.lower())
+
     def test_photon_metrics_flag_supplies_required_prometheus_type(self):
         entrypoint = (ROOT / "infra/maps/photon/entrypoint.sh").read_text()
         self.assertIn('metrics_arg="-metrics-enable prometheus"', entrypoint)

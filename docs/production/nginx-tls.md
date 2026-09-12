@@ -108,4 +108,4 @@ The TCP fallback port `7881` and configured UDP range bypass Nginx and must rema
 
 ### Browser CORS ownership
 
-TileServer GL may emit `Access-Control-Allow-Origin` itself. The AOS Maps Nginx proxy strips that upstream header and emits one canonical wildcard header. Do not remove `proxy_hide_header Access-Control-Allow-Origin;` from the Maps proxy locations; duplicate wildcard headers are accepted by `curl` but rejected by browsers.
+The AOS Maps origin serves immutable PMTiles and the small basemap publication pointer from private object storage. The Maps Nginx origin strips any upstream `Access-Control-Allow-Origin` header and emits one canonical wildcard header. Do not remove `proxy_hide_header Access-Control-Allow-Origin;` from the `/basemap/` proxy location; duplicate wildcard headers are accepted by `curl` but rejected by browsers.

@@ -19,7 +19,7 @@ Required public ports:
 - `7881/tcp` for LiveKit TCP fallback
 - `7882/udp` for LiveKit media
 
-Do not publicly expose Qdrant, Image Search, Background Removal, MinIO console, Nominatim, Valhalla, Translation, TileServer raw port, or Frappe worker ports.
+Do not publicly expose Qdrant, Image Search, Background Removal, MinIO console/API, Nominatim, Valhalla, Translation, Photon, OpenSearch, or Frappe worker ports. The public Maps origin/CDN should expose only the intended `/basemap/` objects.
 
 ## 2. Install prerequisites
 
