@@ -3,7 +3,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "${SCRIPT_DIR}/common.sh"
-load_manifest
+load_basemap_manifest
 require_command docker
 
 SOURCE="${ROOT_DIR}/maps/downloads/${OSM_PLANET_FILENAME}"

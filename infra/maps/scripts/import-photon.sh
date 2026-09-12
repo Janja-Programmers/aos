@@ -3,7 +3,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "${SCRIPT_DIR}/common.sh"
-load_manifest
+load_photon_manifest
 require_command docker
 
 : "${PHOTON_OPENSEARCH_TRANSPORT_ADDRESSES:?Point this job at the INACTIVE/blue-green OpenSearch target}"

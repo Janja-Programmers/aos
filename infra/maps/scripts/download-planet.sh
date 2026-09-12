@@ -3,7 +3,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "${SCRIPT_DIR}/common.sh"
-load_manifest
+load_planet_manifest
 require_command curl
 require_command sha256sum
 

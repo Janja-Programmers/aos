@@ -194,7 +194,7 @@ Ordinary Maps API traffic is stateless and requires no sticky sessions. Producti
 
 ## Fresh-site schema and migrations
 
-There is no historical Maps cleanup patch in `patches.txt`. Fresh `bench migrate` synchronizes current DocTypes and `aos.migrate.after_migrate` reasserts the current idempotent Maps/Seller location indexes through `aos.services.maps.schema`. Planet/Photon/Valhalla imports are explicitly separate from Frappe schema migration.
+There is no historical Maps cleanup patch in `patches.txt`. Fresh `bench migrate` synchronizes current DocTypes and `aos.migrate.after_migrate` reasserts the current idempotent Maps/Seller location indexes through `aos.services.maps.schema`. Planet/Photon/Valhalla imports are explicitly separate from Frappe schema migration. The shared `infra/maps/manifest.env` is also validated per concern: Photon import requires only Photon/import settings, planet download only the OSM source, basemap generation only OSM + Planetiler/basemap settings, and Valhalla only OSM + Valhalla settings. Unconfigured future components therefore do not block an unrelated Maps maintenance job.
 
 ## Deployment and rollback sequence
 

@@ -17,26 +17,65 @@ validate_digest_image() {
     [[ "$1" =~ ^[^[:space:]@]+@sha256:[a-f0-9]{64}$ ]] || fail "$2 must be digest-pinned."
 }
 
-load_manifest() {
+source_manifest() {
     [[ -f "${MANIFEST_FILE}" ]] || fail "Map manifest not found: ${MANIFEST_FILE}"
     set -a
+    # The Maps manifest is deliberately shell-compatible and operator-owned.
     # shellcheck disable=SC1090
     source "${MANIFEST_FILE}"
     set +a
+}
+
+require_planet_source() {
     : "${OSM_PLANET_URL:?OSM_PLANET_URL is required}"
     : "${OSM_PLANET_SHA256:?OSM_PLANET_SHA256 is required}"
     : "${OSM_PLANET_FILENAME:?OSM_PLANET_FILENAME is required}"
+    validate_sha256 "${OSM_PLANET_SHA256}" OSM_PLANET_SHA256
+}
+
+require_map_version() {
     : "${MAP_DATA_VERSION:?MAP_DATA_VERSION is required}"
+}
+
+require_planetiler() {
     : "${BASEMAP_PMTILES_FILENAME:?BASEMAP_PMTILES_FILENAME is required}"
     : "${PLANETILER_IMAGE:?PLANETILER_IMAGE is required}"
-    : "${PHOTON_IMAGE:?PHOTON_IMAGE is required}"
-    : "${VALHALLA_IMAGE:?VALHALLA_IMAGE is required}"
-    validate_sha256 "${OSM_PLANET_SHA256}" OSM_PLANET_SHA256
     validate_digest_image "${PLANETILER_IMAGE}" PLANETILER_IMAGE
-    validate_digest_image "${VALHALLA_IMAGE}" VALHALLA_IMAGE
+}
+
+require_photon() {
+    : "${PHOTON_IMAGE:?PHOTON_IMAGE is required}"
     if [[ "${PHOTON_IMAGE}" != aos-photon:* ]]; then
         validate_digest_image "${PHOTON_IMAGE}" PHOTON_IMAGE
     fi
+}
+
+require_valhalla() {
+    : "${VALHALLA_IMAGE:?VALHALLA_IMAGE is required}"
+    validate_digest_image "${VALHALLA_IMAGE}" VALHALLA_IMAGE
+}
+
+load_planet_manifest() {
+    source_manifest
+    require_planet_source
+}
+
+load_basemap_manifest() {
+    source_manifest
+    require_planet_source
+    require_map_version
+    require_planetiler
+}
+
+load_photon_manifest() {
+    source_manifest
+    require_photon
+}
+
+load_valhalla_manifest() {
+    source_manifest
+    require_planet_source
+    require_valhalla
 }
 
 ensure_image() {
