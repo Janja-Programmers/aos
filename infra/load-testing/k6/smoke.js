@@ -25,8 +25,8 @@ export default function () {
     record(getMethod('aos.api.v1.ads.list_ads', { limit: 10, sort: 'recent' }), 'ads.list');
     record(getMethod('aos.api.v1.shorts.feed_for_you', { limit: 10, session_id: `k6-smoke-${__VU}-${__ITER}` }), 'shorts.feed_for_you');
     record(getMethod('aos.api.v1.live.list_live_streams', { limit: 10 }), 'live.list');
-    record(getMethod('aos.api.v1.maps.autocomplete_places', { q: 'Nairobi', limit: 5 }), 'maps.autocomplete');
-    record(getMethod('aos.api.v1.maps.search_places', { q: 'Nairobi', limit: 5 }), 'maps.search');
+    record(getMethod('aos.api.v1.maps.autocomplete_places', { q: 'Tokyo', limit: 5 }), 'maps.autocomplete');
+    record(getMethod('aos.api.v1.maps.search_places', { q: 'Tokyo', limit: 5 }), 'maps.search');
     record(getMethod('aos.api.v1.maps.reverse_geocode', { lat: -1.286389, lon: 36.817223 }), 'maps.reverse');
   });
 

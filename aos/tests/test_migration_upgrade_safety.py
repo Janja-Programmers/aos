@@ -7,7 +7,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import getdate, now_datetime
 
-from aos.patches.v1_0 import add_seller_location_indexes
+from aos.services.maps import schema as maps_schema
 from aos.patches.v1_0.add_unique_constraints import (
     UNIQUE_CONSTRAINTS,
     execute as apply_unique_constraints,
@@ -28,7 +28,7 @@ class TestMigrationUpgradeSafety(FrappeTestCase, AOSFeatureTestMixin):
     def setUpClass(cls):
         super().setUpClass()
         apply_unique_constraints()
-        add_seller_location_indexes.execute()
+        maps_schema.execute()
         frappe.db.commit()
 
     def setUp(self):
@@ -52,7 +52,6 @@ class TestMigrationUpgradeSafety(FrappeTestCase, AOSFeatureTestMixin):
         ]
 
         self.assertIn("aos.patches.v1_0.add_unique_constraints", patch_modules)
-        self.assertIn("aos.patches.v1_0.add_seller_location_indexes", patch_modules)
 
         for module_name in patch_modules:
             with self.subTest(patch=module_name):
@@ -86,7 +85,7 @@ class TestMigrationUpgradeSafety(FrappeTestCase, AOSFeatureTestMixin):
                     constraint["constraint_name"],
                 )
 
-        for index in add_seller_location_indexes.INDEXES:
+        for index in maps_schema.INDEXES:
             with self.subTest(index=index["name"]):
                 self.assertTrue(
                     self._index_exists(
@@ -101,9 +100,9 @@ class TestMigrationUpgradeSafety(FrappeTestCase, AOSFeatureTestMixin):
         before = self._existing_indexes_snapshot()
 
         apply_unique_constraints()
-        add_seller_location_indexes.execute()
+        maps_schema.execute()
         apply_unique_constraints()
-        add_seller_location_indexes.execute()
+        maps_schema.execute()
 
         after = self._existing_indexes_snapshot()
         self.assertEqual(before, after)
@@ -254,7 +253,7 @@ class TestMigrationUpgradeSafety(FrappeTestCase, AOSFeatureTestMixin):
     def _existing_indexes_snapshot() -> set[tuple[str, str, int]]:
         index_names = [
             *(constraint["constraint_name"] for constraint in UNIQUE_CONSTRAINTS),
-            *(index["name"] for index in add_seller_location_indexes.INDEXES),
+            *(index["name"] for index in maps_schema.INDEXES),
         ]
         rows = frappe.db.sql(
             """

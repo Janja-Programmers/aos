@@ -16,7 +16,6 @@ from aos.services.maps.internal_url import (
     InvalidInternalMapsURL,
     build_internal_maps_url,
     normalize_internal_maps_url,
-    safe_provider_body,
 )
 
 from ..constants import (
@@ -347,13 +346,11 @@ class ValhallaClient:
         to public API consumers.
         """
 
-        safe_body = safe_provider_body(response_body)
-
+        # Provider payloads may contain addresses/coordinates; never log them.
         frappe.log_error(
             message=(
                 f"Operation: {operation}\n"
-                f"Status code: {status_code}\n"
-                f"Response body:\n{safe_body}"
+                f"Status code: {status_code}"
             ),
             title="AOS Valhalla Service Error",
         )

@@ -16,13 +16,11 @@ from aos.services.maps.internal_url import (
     InvalidInternalMapsURL,
     build_internal_maps_url,
     normalize_internal_maps_url,
-    safe_provider_body,
 )
 
 from ..constants import (
     DEFAULT_NOMINATIM_BASE_URL,
     MAP_SERVICE_CONNECT_TIMEOUT_SECONDS,
-    KENYA_VIEWBOX,
     NOMINATIM_BASE_URL_CONFIG_KEY,
     NOMINATIM_REQUEST_TIMEOUT_SECONDS,
     REVERSE_GEOCODE_ADDRESS_DETAILS,
@@ -69,12 +67,11 @@ class NominatimClient:
         *,
         query: str,
         limit: int,
-        bounded: bool,
-        country_codes: str,
+        country_code: str | None = None,
         language: str | None = None,
     ) -> list[dict]:
         """
-        Search for places using the configured Kenya viewbox.
+        Search for places globally, with an optional explicit country filter.
 
         Returns raw Nominatim result dictionaries. Public response
         normalization is handled by the maps serializers.
@@ -89,15 +86,13 @@ class NominatimClient:
                 else 0
             ),
             "limit": limit,
-            "countrycodes": country_codes,
-            "viewbox": KENYA_VIEWBOX,
-            "bounded": 1 if bounded else 0,
         }
 
-        normalized_language = _normalize_optional_string(
-            language
-        )
+        normalized_country = _normalize_optional_string(country_code)
+        if normalized_country:
+            params["countrycodes"] = normalized_country.lower()
 
+        normalized_language = _normalize_optional_string(language)
         if normalized_language:
             params["accept-language"] = normalized_language
 
@@ -302,13 +297,11 @@ class NominatimClient:
         to public API consumers.
         """
 
-        safe_body = safe_provider_body(response_body)
-
+        # Provider payloads may contain addresses/coordinates; never log them.
         frappe.log_error(
             message=(
                 f"Operation: {operation}\n"
-                f"Status code: {status_code}\n"
-                f"Response body:\n{safe_body}"
+                f"Status code: {status_code}"
             ),
             title="AOS Nominatim Service Error",
         )

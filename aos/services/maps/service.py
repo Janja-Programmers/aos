@@ -17,9 +17,9 @@ from aos.api.maps.constants import (
     REVERSE_GEOCODE_CACHE_TTL_SECONDS,
     ROUTE_CACHE_TTL_SECONDS,
     SEARCH_CACHE_TTL_SECONDS,
-    SUPPORTED_COUNTRY_CODE,
 )
 from aos.api.maps.serializers import (
+    serialize_photon_place,
     serialize_photon_place_results,
     serialize_place_search_results,
     serialize_reverse_geocode_result,
@@ -36,7 +36,7 @@ from aos.services.sellers.identity import (
 )
 
 from .cache import get_cached_json, maps_cache_key, set_cached_json
-from .errors import MapsConflictError, MapsDependencyError, MapsNotFoundError, MapsStateError
+from .errors import MapsConflictError, MapsDependencyError, MapsNotFoundError
 from .observability import maps_log
 from .providers import geocoder_order
 from .repository import (
@@ -65,22 +65,22 @@ class MapsService:
         cached = get_cached_json(key, expected_type=list)
         if cached is not None:
             maps_log("maps.autocomplete", outcome="cache_hit", count=len(cached), cached=True)
-            return {"items": cached, "count": len(cached), "cached": True, "source": "cache"}
+            return {"items": cached, "count": len(cached), "cached": True}
         items, provider = self._places_with_fallback(request, autocomplete=True)
         set_cached_json(key, items, ttl_seconds=AUTOCOMPLETE_CACHE_TTL_SECONDS)
         maps_log("maps.autocomplete", provider=provider, count=len(items), cached=False)
-        return {"items": items, "count": len(items), "cached": False, "source": provider}
+        return {"items": items, "count": len(items), "cached": False}
 
     def search(self, request: dict[str, Any]) -> dict[str, Any]:
         key = maps_cache_key("search", request)
         cached = get_cached_json(key, expected_type=list)
         if cached is not None:
             maps_log("maps.search", outcome="cache_hit", count=len(cached), cached=True)
-            return {"items": cached, "count": len(cached), "cached": True, "source": "cache"}
+            return {"items": cached, "count": len(cached), "cached": True}
         items, provider = self._places_with_fallback(request, autocomplete=False)
         set_cached_json(key, items, ttl_seconds=SEARCH_CACHE_TTL_SECONDS)
         maps_log("maps.search", provider=provider, count=len(items), cached=False)
-        return {"items": items, "count": len(items), "cached": False, "source": provider}
+        return {"items": items, "count": len(items), "cached": False}
 
     def reverse(self, request: dict[str, Any]) -> dict[str, Any]:
         key = maps_cache_key("reverse", request)
@@ -94,29 +94,50 @@ class MapsService:
             language=request.get("language") or "en",
         )
         set_cached_json(key, location, ttl_seconds=REVERSE_GEOCODE_CACHE_TTL_SECONDS)
-        maps_log("maps.reverse", provider="nominatim", cached=False)
+        maps_log("maps.reverse", outcome="success", cached=False)
         return {"location": location, "cached": False}
 
     def resolve_location(self, *, latitude: float, longitude: float, language: str = "en") -> dict[str, Any]:
-        client = get_nominatim_client()
-        try:
-            raw = client.reverse_geocode(
-                latitude=latitude,
-                longitude=longitude,
-                language=language,
-            )
-        finally:
-            client.close()
-        location = serialize_reverse_geocode_result(raw)
-        if not location.get("display_address"):
-            raise MapsDependencyError("No usable address was found for this location.")
-        if str(location.get("country_code") or "").upper() != SUPPORTED_COUNTRY_CODE:
-            raise MapsStateError(
-                "Seller location must resolve inside the supported AOS Maps coverage area.",
-                code="MAP_OUTSIDE_COVERAGE",
-                http_status=422,
-            )
-        return location
+        last_error: Exception | None = None
+        for provider in geocoder_order():
+            try:
+                if provider == GEOCODER_PRIMARY_PHOTON:
+                    client = get_photon_client()
+                    try:
+                        features = client.reverse_geocode(
+                            latitude=latitude,
+                            longitude=longitude,
+                            language=language,
+                        )
+                    finally:
+                        client.close()
+                    location = serialize_photon_place(features[0]) if features else None
+                elif provider == GEOCODER_PRIMARY_NOMINATIM:
+                    client = get_nominatim_client()
+                    try:
+                        raw = client.reverse_geocode(
+                            latitude=latitude,
+                            longitude=longitude,
+                            language=language,
+                        )
+                    finally:
+                        client.close()
+                    location = serialize_reverse_geocode_result(raw)
+                else:
+                    continue
+                if not location:
+                    continue
+                if not location.get("display_address"):
+                    location["display_address"] = location.get("name")
+                if location.get("display_address"):
+                    maps_log("maps.reverse.provider", provider=provider, outcome="success")
+                    return location
+            except (PhotonClientError, NominatimClientError) as exc:
+                last_error = exc
+                maps_log("maps.provider.fallback", provider=provider, outcome="failure")
+        if last_error:
+            raise last_error
+        raise MapsDependencyError("No usable address was found for this location.")
 
     def route(self, request: dict[str, Any], *, viewer: str) -> dict[str, Any]:
         locations = list(request["locations"])
@@ -310,25 +331,24 @@ class MapsService:
                             limit=request["limit"],
                             latitude=request.get("latitude"),
                             longitude=request.get("longitude"),
-                            country_codes=request["country_codes"],
+                            country_code=request.get("country_code"),
                             language=request.get("language"),
                         )
                     finally:
                         client.close()
-                    return _supported_places(serialize_photon_place_results(raw)), "photon"
+                    return serialize_photon_place_results(raw), "photon"
                 if provider == GEOCODER_PRIMARY_NOMINATIM:
                     client = get_nominatim_client()
                     try:
                         raw = client.search_places(
                             query=request["query"],
                             limit=request["limit"],
-                            bounded=request.get("bounded", True),
-                            country_codes=request["country_codes"],
+                            country_code=request.get("country_code"),
                             language=request.get("language"),
                         )
                     finally:
                         client.close()
-                    return _supported_places(serialize_place_search_results(raw)), "nominatim"
+                    return serialize_place_search_results(raw), "nominatim"
             except (PhotonClientError, NominatimClientError) as exc:
                 last_error = exc
                 maps_log("maps.provider.fallback", provider=provider, outcome="failure")
@@ -413,20 +433,3 @@ def _serialize_pin(row: dict[str, Any], displays: dict[str, dict[str, Any]]) -> 
         "region": row.get("region"),
         "country_code": row.get("country_code"),
     }
-
-def _supported_places(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    supported: list[dict[str, Any]] = []
-    for item in items:
-        try:
-            latitude = float(item.get("latitude"))
-            longitude = float(item.get("longitude"))
-        except (TypeError, ValueError):
-            continue
-        country_code = str(item.get("country_code") or "").upper()
-        if country_code and country_code != SUPPORTED_COUNTRY_CODE:
-            continue
-        if not (-5.20 <= latitude <= 5.70 and 33.50 <= longitude <= 42.20):
-            continue
-        supported.append(item)
-    return supported
-

@@ -143,14 +143,15 @@ class TestOperationalHealth(FrappeTestCase):
             "IMAGE_SEARCH_QDRANT_URL": "http://qdrant:6333",
             "SHORT_CLASSIFICATION_SECRET": "short-classification-secret-value-0123456789abcdef",
             "IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS": "files.africaonlinestores.example-prod.com",
-            "TILESERVER_PUBLIC_URL": "https://maps.africaonlinestores.example-prod.com/",
+            "MAPS_PUBLIC_BASE_URL": "https://maps.africaonlinestores.example-prod.com/basemap",
         }
 
     def _valid_site_config(self) -> dict[str, str]:
         return {
-            "maps_photon_enabled": False,
-            "nominatim_base_url": "http://127.0.0.1:8081",
-            "valhalla_base_url": "http://127.0.0.1:8002",
+            "maps_photon_enabled": True,
+            "photon_base_url": "http://photon:2322",
+            "maps_nominatim_fallback_enabled": False,
+            "maps_routing_enabled": False,
         }
 
     def _healthy_get(self, url: str, timeout: int = 3):
@@ -182,7 +183,8 @@ class TestOperationalHealth(FrappeTestCase):
         self.assertIn("livekit_root", names)
         self.assertIn("video_processing_health", names)
         self.assertIn("video_processing_ready", names)
-        self.assertIn("tileserver_styles.json", names)
+        self.assertIn("basemap_origin_current.json", names)
+        self.assertIn("photon_status", names)
 
         serialized = self._report_text(report)
         for secret in [

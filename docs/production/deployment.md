@@ -52,16 +52,16 @@ sudo chmod 600 infra/maps/manifest.env
 
 Replace every placeholder. All Docker images used by the map build/runtime pipeline must be pinned to immutable digests.
 
-Configure Frappe map service URLs:
+Configure the canonical private Photon endpoint. In production this should resolve to a health-checked private load balancer/service spanning multiple Photon replicas, not a public host or a loopback-only development endpoint:
 
 ```bash
-bench --site <site> set-config nominatim_base_url http://127.0.0.1:8081
-bench --site <site> set-config maps_photon_enabled 0
-# Configure Photon only after deploying an approved immutable image:
-# bench --site <site> set-config photon_base_url http://photon:2322
-bench --site <site> set-config valhalla_base_url http://127.0.0.1:8002
-bench --site <site> set-config maps_geocoder_primary nominatim
-bench --site <site> set-config maps_geocoder_fallback photon
+bench --site <site> set-config maps_photon_enabled 1
+bench --site <site> set-config photon_base_url http://photon:2322
+bench --site <site> set-config maps_nominatim_fallback_enabled 0
+bench --site <site> set-config maps_routing_enabled 0
+# If routing is intentionally enabled later:
+# bench --site <site> set-config maps_routing_enabled 1
+# bench --site <site> set-config valhalla_base_url http://valhalla:8002
 ```
 
 Configure internal service URLs in `.env` and keep only product limits/timeouts in AOS Settings:
@@ -84,17 +84,20 @@ translation_max_characters: 1000
 
 ## 5. Build or restore map data
 
-For a fresh build:
+For a fresh global build, use dedicated build/import workers rather than request-serving hosts:
 
 ```bash
-./infra/maps/scripts/download-kenya.sh
-./infra/maps/scripts/prepare-kenya.sh
-./infra/maps/scripts/build-kenya-tiles.sh
-./infra/maps/scripts/build-valhalla.sh
-./infra/maps/scripts/build-map-fonts.sh
-./infra/maps/scripts/import-nominatim.sh --rebuild
-# Prepare Photon data before starting the photon service.
-# See infra/maps/manifest.env.example for PHOTON_IMAGE/volume settings.
+./infra/maps/scripts/download-planet.sh
+./infra/maps/scripts/build-world-pmtiles.sh
+# Export MAPS_OBJECT_STORAGE_* credentials, then publish the immutable PMTiles generation.
+./infra/maps/scripts/publish-basemap.py
+./infra/maps/scripts/build-photon-image.sh
+# Import into an inactive external OpenSearch target; this command deliberately
+# requires PHOTON_IMPORT_CONFIRM_TARGET=YES. Choose one maintained source path.
+# ./infra/maps/scripts/import-photon.sh --from-dump
+# ./infra/maps/scripts/import-photon.sh --from-nominatim
+# Optional routing graph build:
+# ./infra/maps/scripts/build-valhalla.sh
 ./infra/maps/scripts/verify-map-data.sh
 ```
 

@@ -49,13 +49,22 @@ def main() -> int:
 	if "@aos_rate_limited" not in api or '"error":"RATE_LIMIT"' not in api:
 		errors.append("shared sanitized rate-limit response is missing")
 
-	# TileServer GL currently emits its own wildcard CORS header. Nginx must
-	# suppress that upstream value before adding the canonical public Maps
-	# header, otherwise browsers receive a combined `*, *` value and reject it.
-	if maps.count("proxy_hide_header Access-Control-Allow-Origin;") < 2:
-		errors.append("maps proxy locations must suppress duplicate upstream CORS headers")
-	if maps.count('add_header Access-Control-Allow-Origin "*" always;') < 3:
-		errors.append("maps OPTIONS and public resources must expose the reviewed wildcard CORS policy")
+	# Maps origin serves only immutable/read-only PMTiles artifacts from private
+	# object storage. Preserve byte-range requests and keep CORS canonical.
+	if "TILESERVER" in maps or "tileserver" in maps.lower():
+		errors.append("legacy TileServer dependency remains in Maps Nginx origin")
+	if "location ^~ /basemap/" not in maps:
+		errors.append("Maps origin must expose only the /basemap/ object prefix")
+	if "proxy_force_ranges on;" not in maps:
+		errors.append("Maps PMTiles origin must support byte ranges")
+	if "${MAPS_OBJECT_STORAGE_BUCKET}" not in maps or "${MINIO_API_PORT}" not in maps:
+		errors.append("Maps origin must target the private object-storage bucket")
+	if maps.count("proxy_hide_header Access-Control-Allow-Origin;") < 1:
+		errors.append("Maps origin must suppress duplicate upstream CORS headers")
+	if maps.count('add_header Access-Control-Allow-Origin "*" always;') < 2:
+		errors.append("Maps OPTIONS/resource responses must expose canonical wildcard CORS")
+	if "limit_except GET HEAD OPTIONS" not in maps:
+		errors.append("Maps basemap origin must reject mutating HTTP methods")
 
 	if errors:
 		print("\n".join(errors), file=sys.stderr)

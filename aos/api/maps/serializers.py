@@ -115,17 +115,13 @@ def serialize_place(
         max_length=POSTCODE_MAX_LENGTH,
     )
 
+    osm_type = _normalize_optional_string(raw.get("osm_type"), max_length=20)
+    osm_id = _to_optional_int(raw.get("osm_id"))
+
     return {
-        "place_id": _to_optional_int(
-            raw.get("place_id")
-        ),
-        "osm_type": _normalize_optional_string(
-            raw.get("osm_type"),
-            max_length=20,
-        ),
-        "osm_id": _to_optional_int(
-            raw.get("osm_id")
-        ),
+        "place_id": _stable_osm_place_id(osm_type, osm_id),
+        "osm_type": osm_type,
+        "osm_id": osm_id,
         "name": name,
         "display_address": display_address,
         "latitude": latitude,
@@ -152,7 +148,6 @@ def serialize_place(
         "importance": _to_optional_float(
             raw.get("importance")
         ),
-        "source": "nominatim",
     }
 
 
@@ -227,17 +222,13 @@ def serialize_photon_place(
         country=country,
     )
 
+    osm_type = _normalize_optional_string(properties.get("osm_type"), max_length=20)
+    osm_id = _to_optional_int(properties.get("osm_id"))
+
     return {
-        "place_id": _to_optional_int(
-            properties.get("osm_id")
-        ),
-        "osm_type": _normalize_optional_string(
-            properties.get("osm_type"),
-            max_length=20,
-        ),
-        "osm_id": _to_optional_int(
-            properties.get("osm_id")
-        ),
+        "place_id": _stable_osm_place_id(osm_type, osm_id),
+        "osm_type": osm_type,
+        "osm_id": osm_id,
         "name": name,
         "display_address": display_address,
         "latitude": latitude,
@@ -269,7 +260,6 @@ def serialize_photon_place(
         "importance": _to_optional_float(
             properties.get("importance")
         ),
-        "source": "photon",
     }
 
 
@@ -289,17 +279,13 @@ def serialize_reverse_geocode_result(
         raw.get("address")
     )
 
+    osm_type = _normalize_optional_string(raw.get("osm_type"), max_length=20)
+    osm_id = _to_optional_int(raw.get("osm_id"))
+
     return {
-        "place_id": _to_optional_int(
-            raw.get("place_id")
-        ),
-        "osm_type": _normalize_optional_string(
-            raw.get("osm_type"),
-            max_length=20,
-        ),
-        "osm_id": _to_optional_int(
-            raw.get("osm_id")
-        ),
+        "place_id": _stable_osm_place_id(osm_type, osm_id),
+        "osm_type": osm_type,
+        "osm_id": osm_id,
         "name": _extract_place_name(
             raw=raw,
             address=address,
@@ -363,7 +349,6 @@ def serialize_reverse_geocode_result(
         "bounding_box": _serialize_bounding_box(
             raw.get("boundingbox")
         ),
-        "source": "nominatim",
     }
 
 
@@ -1099,6 +1084,18 @@ def _as_dict(
         return value
 
     return {}
+
+
+def _stable_osm_place_id(osm_type: str | None, osm_id: int | None) -> str | None:
+    """Return a provider-neutral durable identity when OSM identity is available."""
+    if not osm_type or osm_id is None:
+        return None
+    normalized_type = osm_type.strip().lower()
+    type_aliases = {"n": "node", "w": "way", "r": "relation"}
+    normalized_type = type_aliases.get(normalized_type, normalized_type)
+    if normalized_type not in {"node", "way", "relation"}:
+        return None
+    return f"osm:{normalized_type}:{osm_id}"
 
 
 def _normalize_optional_string(

@@ -415,7 +415,6 @@ M	ci/versions.env
 M	docker-compose.yml
 M	docs/development/testing.md
 M	docs/production/ci-cd.md
-M	docs/production/maps.md
 M	docs/production/release-checklist.md
 M	infra/analytics-pipeline/app/config.py
 M	infra/analytics-pipeline/app/main.py

@@ -22,7 +22,6 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 ENV PHOTON_VERSION="${PHOTON_VERSION}" \
     PHOTON_HOME="/opt/photon" \
-    PHOTON_DATA_DIR="/photon/photon_data" \
     PHOTON_LISTEN_IP="0.0.0.0" \
     PHOTON_PORT="2322" \
     PHOTON_MAX_RESULTS="20" \
@@ -42,7 +41,7 @@ RUN set -eux; \
 RUN set -eux; \
     groupadd --system --gid 10001 photon; \
     useradd --system --uid 10001 --gid photon --home-dir /photon --shell /usr/sbin/nologin photon; \
-    mkdir -p "${PHOTON_HOME}" "${PHOTON_DATA_DIR}"; \
+    mkdir -p "${PHOTON_HOME}" /photon; \
     chown -R photon:photon "${PHOTON_HOME}" /photon
 
 RUN set -eux; \
@@ -56,13 +55,12 @@ COPY entrypoint.sh /usr/local/bin/aos-photon-entrypoint
 RUN set -eux; \
     chmod 0755 /usr/local/bin/aos-photon-entrypoint
 
-WORKDIR /photon/photon_data
+WORKDIR /photon
 
 USER photon
 
 EXPOSE 2322
 
-VOLUME ["/photon/photon_data"]
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/aos-photon-entrypoint"]
 

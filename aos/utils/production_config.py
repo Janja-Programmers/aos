@@ -157,11 +157,6 @@ _PRIVATE_SERVICE_URLS: tuple[dict[str, Any], ...] = (
 	},
 )
 
-_MAP_SITE_CONFIG_URLS: tuple[dict[str, str], ...] = (
-	{"key": "nominatim_base_url", "name": "Nominatim base URL"},
-	{"key": "valhalla_base_url", "name": "Valhalla base URL"},
-)
-
 
 class ProductionConfigError(RuntimeError):
 	"""Raised when production configuration validation fails."""
@@ -1049,71 +1044,53 @@ def _check_maps(
 		issues,
 		env=env,
 		category="maps",
-		keys=("TILESERVER_PUBLIC_URL",),
-		label="TileServer public URL",
+		keys=("MAPS_PUBLIC_BASE_URL",),
+		label="Maps basemap/CDN public URL",
 		require_https=True,
 	)
 
-	photon_enabled = _site_value(site_config, "maps_photon_enabled").lower() in {"1", "true", "yes", "on"}
-	if photon_enabled:
-		photon_url = _site_value(site_config, "photon_base_url")
-		photon_url_ready = False
-		if photon_url and not _is_placeholder(photon_url):
+	def require_internal_url(key: str, name: str) -> None:
+		value = _site_value(site_config, key)
+		valid = False
+		if value and not _is_placeholder(value):
 			try:
-				normalized_photon_url = normalize_internal_maps_url(photon_url, service="Photon")
+				normalize_internal_maps_url(value, service=name)
 			except InvalidInternalMapsURL:
 				pass
 			else:
-				# The loopback value shipped in examples is intentionally safe while
-				# Photon is disabled, but it is not evidence that the optional
-				# production service has actually been deployed. Enabling Photon
-				# requires a dedicated private/service-network endpoint.
-				photon_url_ready = not _is_local_url(normalized_photon_url)
-		if not photon_url_ready:
+				valid = True
+		if not valid:
 			_redacted_issue(
 				issues,
 				severity="error",
 				category="maps",
-				key="photon_base_url",
-				message=(
-					"Photon is enabled but its dedicated internal service URL is missing, "
-					"invalid, public, or still set to the disabled loopback example."
-				),
-				remediation=(
-					"Set photon_base_url to the deployed private/service-network endpoint, "
-					"or disable maps_photon_enabled."
-				),
+				key=key,
+				message=f"{name} is missing, invalid, unsafe, or still a placeholder.",
+				remediation=f"Set {key} to a configured internal HTTP(S) endpoint; loopback is valid for a per-host sidecar deployment.",
 			)
 
-	for item in _MAP_SITE_CONFIG_URLS:
-		value = _site_value(site_config, item["key"])
-		if not value:
-			_redacted_issue(
-				issues,
-				severity="error",
-				category="maps",
-				key=item["key"],
-				message=f"{item['name']} is missing from site config.",
-				remediation=f"Set {item['key']} with bench set-config.",
-			)
-		elif not _is_valid_url(value):
-			_redacted_issue(
-				issues,
-				severity="error",
-				category="maps",
-				key=item["key"],
-				message=f"{item['name']} must be an HTTP(S) URL.",
-				remediation=f"Set {item['key']} to the production internal maps service URL.",
-			)
-		elif _is_placeholder(value):
-			_redacted_issue(
-				issues,
-				severity="error",
-				category="maps",
-				key=item["key"],
-				message=f"{item['name']} still looks like a placeholder/default value.",
-				remediation=f"Set {item['key']} to the production internal maps service URL.",
-			)
+	# Photon is the canonical production geocoder; it is not optional in a
+	# production-ready Maps deployment. Its external OpenSearch cluster remains
+	# an infrastructure concern and is never client-visible.
+	photon_enabled = _site_value(site_config, "maps_photon_enabled").lower() in {"1", "true", "yes", "on"}
+	if not photon_enabled:
+		_redacted_issue(
+			issues,
+			severity="error",
+			category="maps",
+			key="maps_photon_enabled",
+			message="Photon must be enabled for production Maps geocoding.",
+			remediation="Set maps_photon_enabled to 1 after deploying Photon against external OpenSearch.",
+		)
+	require_internal_url("photon_base_url", "Photon")
+
+	nominatim_fallback = _site_value(site_config, "maps_nominatim_fallback_enabled").lower() in {"1", "true", "yes", "on"}
+	if nominatim_fallback:
+		require_internal_url("nominatim_base_url", "Nominatim fallback")
+
+	routing_enabled = _site_value(site_config, "maps_routing_enabled").lower() in {"1", "true", "yes", "on"}
+	if routing_enabled:
+		require_internal_url("valhalla_base_url", "Valhalla")
 
 
 def _check_environment_and_secret_sources(

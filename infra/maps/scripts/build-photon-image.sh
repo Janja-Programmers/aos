@@ -75,7 +75,6 @@ docker run --rm --entrypoint sh "${PHOTON_IMAGE}" -c '
     java -version
     test -s /opt/photon/photon.jar
     ls -lh /opt/photon/photon.jar
-    test -d /photon/photon_data
 '
 
 echo

@@ -302,37 +302,34 @@ def _external_service_endpoints(env: Mapping[str, Any] | None) -> list[ServiceEn
 def _map_endpoints(
 	env: Mapping[str, Any] | None, site_config: Mapping[str, Any] | None
 ) -> list[ServiceEndpoint]:
-	return [
+	endpoints = [
 		ServiceEndpoint(
-			name="tileserver",
+			name="basemap_origin",
 			category="maps",
-			url=_env(env, "TILESERVER_PUBLIC_URL", ""),
-			health_path="/styles.json",
+			url=_env(env, "MAPS_PUBLIC_BASE_URL", ""),
+			health_path="/current.json",
 			ready_path=None,
 		),
 		ServiceEndpoint(
 			name="photon",
 			category="maps",
 			url=_site_value(site_config, "photon_base_url"),
-			health_path="/api?q=Nairobi&limit=1",
+			health_path="/status",
 			ready_path=None,
 			enabled=_site_value(site_config, "maps_photon_enabled").lower() in {"1", "true", "yes", "on"},
 		),
-		ServiceEndpoint(
-			name="nominatim",
-			category="maps",
-			url=_site_value(site_config, "nominatim_base_url"),
-			health_path="/status.php",
-			ready_path=None,
-		),
-		ServiceEndpoint(
-			name="valhalla",
-			category="maps",
-			url=_site_value(site_config, "valhalla_base_url"),
-			health_path="/status",
-			ready_path=None,
-		),
 	]
+	if _site_value(site_config, "maps_nominatim_fallback_enabled").lower() in {"1", "true", "yes", "on"}:
+		endpoints.append(ServiceEndpoint(
+			name="nominatim_fallback", category="maps",
+			url=_site_value(site_config, "nominatim_base_url"), health_path="/status.php", ready_path=None,
+		))
+	if _site_value(site_config, "maps_routing_enabled").lower() in {"1", "true", "yes", "on"}:
+		endpoints.append(ServiceEndpoint(
+			name="valhalla", category="maps",
+			url=_site_value(site_config, "valhalla_base_url"), health_path="/status", ready_path=None,
+		))
+	return endpoints
 
 
 def _livekit_http_url(env: Mapping[str, Any] | None) -> str:

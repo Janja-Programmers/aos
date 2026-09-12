@@ -20,8 +20,8 @@ export const options = {
 
 export default function () {
   group('maps public location endpoints', () => {
-    record(getMethod('aos.api.v1.maps.autocomplete_places', { q: __ENV.MAP_QUERY || 'Nairobi', limit: 5 }), 'maps.autocomplete');
-    record(getMethod('aos.api.v1.maps.search_places', { q: __ENV.MAP_QUERY || 'Nairobi', limit: 10 }), 'maps.search');
+    record(getMethod('aos.api.v1.maps.autocomplete_places', { q: __ENV.MAP_QUERY || 'Tokyo', limit: 5 }), 'maps.autocomplete');
+    record(getMethod('aos.api.v1.maps.search_places', { q: __ENV.MAP_QUERY || 'Tokyo', limit: 10 }), 'maps.search');
     record(getMethod('aos.api.v1.maps.reverse_geocode', {
       lat: __ENV.MAP_LAT || -1.286389,
       lon: __ENV.MAP_LON || 36.817223,

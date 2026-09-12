@@ -7,6 +7,7 @@ from aos.services.maps.validation import (
     validate_autocomplete_request,
     validate_map_points_request,
     validate_remove_seller_location_request,
+    validate_reverse_geocode_request,
     validate_route_request,
     validate_search_request,
     validate_set_seller_location_request,
@@ -14,62 +15,61 @@ from aos.services.maps.validation import (
 
 
 class TestMapsValidation(unittest.TestCase):
-    def test_search_normalizes_aliases_and_bounds(self):
-        request = validate_search_request({"q": "  Nairobi   CBD ", "limit": "5", "bounded": "true"})
-        self.assertEqual(request["query"], "Nairobi CBD")
-        self.assertEqual(request["limit"], 5)
-        self.assertTrue(request["bounded"])
+    def test_search_is_global_canonical_and_bounded(self):
+        request = validate_search_request({"q": "  Tokyo   Station ", "limit": "999", "country_code": "jp"})
+        self.assertEqual(request["query"], "Tokyo Station")
+        self.assertEqual(request["limit"], 20)
+        self.assertEqual(request["country_code"], "JP")
+        for legacy in ({"query": "Tokyo"}, {"q": "Tokyo", "bounded": True}, {"q": "Tokyo", "lat": 1}):
+            with self.subTest(legacy=legacy), self.assertRaises(MapsValidationError):
+                validate_search_request(legacy)
 
-    def test_unknown_structured_and_conflicting_inputs_are_rejected(self):
-        invalid = (
-            lambda: validate_search_request({"query": {"bad": True}}),
-            lambda: validate_search_request({"query": "Nairobi", "q": "Mombasa"}),
-            lambda: validate_autocomplete_request({"query": "Nairobi", "attacker": "x"}),
-            lambda: validate_route_request({"locations": [{"latitude": -1.2, "longitude": 36.8, "x": 1}]}),
+    def test_autocomplete_bias_requires_canonical_coordinate_pair(self):
+        request = validate_autocomplete_request(
+            {"q": "Shinjuku", "latitude": 35.6895, "longitude": 139.6917, "language": "ja"}
         )
-        for operation in invalid:
-            with self.subTest(operation=operation), self.assertRaises(MapsValidationError):
-                operation()
+        self.assertEqual(request["latitude"], 35.6895)
+        self.assertEqual(request["longitude"], 139.6917)
+        with self.assertRaises(MapsValidationError):
+            validate_autocomplete_request({"q": "Shinjuku", "latitude": 35.6})
 
-    def test_route_is_bounded_and_coverage_checked(self):
+    def test_global_wgs84_coordinate_ranges(self):
+        for latitude, longitude in ((51.5074, -0.1278), (-33.8688, 151.2093), (64.1466, -21.9426), (0, 179.9999)):
+            request = validate_reverse_geocode_request({"latitude": latitude, "longitude": longitude})
+            self.assertEqual(request["latitude"], latitude)
+            self.assertEqual(request["longitude"], longitude)
+        for bad in ((90.1, 0), (-90.1, 0), (0, 180.1), (0, -180.1)):
+            with self.subTest(bad=bad), self.assertRaises(MapsValidationError):
+                validate_reverse_geocode_request({"latitude": bad[0], "longitude": bad[1]})
+
+    def test_route_uses_one_canonical_location_shape(self):
         route = validate_route_request(
-            {
-                "origin_latitude": -1.286389,
-                "origin_longitude": 36.817223,
-                "destination_latitude": -1.292066,
-                "destination_longitude": 36.821946,
-            }
+            {"locations": [
+                {"latitude": 51.5074, "longitude": -0.1278},
+                {"latitude": 48.8566, "longitude": 2.3522},
+            ], "costing": "auto"}
         )
         self.assertEqual(len(route["locations"]), 2)
-        with self.assertRaises(MapsValidationError):
-            validate_route_request(
-                {
-                    "origin_latitude": 51.5,
-                    "origin_longitude": -0.1,
-                    "destination_latitude": -1.2,
-                    "destination_longitude": 36.8,
-                }
-            )
+        for legacy in (
+            {"origin_latitude": 1, "origin_longitude": 2, "destination_latitude": 3, "destination_longitude": 4},
+            {"locations": [{"latitude": 1, "longitude": 2, "lng": 2}, {"latitude": 3, "longitude": 4}]},
+        ):
+            with self.subTest(legacy=legacy), self.assertRaises(MapsValidationError):
+                validate_route_request(legacy)
 
-    def test_map_viewport_is_clipped_and_zoom_is_strict(self):
+    def test_global_viewport_supports_antimeridian_and_rejects_unbounded_scans(self):
         request = validate_map_points_request(
-            {"north": 5.8, "south": -5.3, "east": 42.3, "west": 33.4, "zoom": 8}
+            {"north": 12, "south": -12, "west": 170, "east": -170, "zoom": 7}
         )
-        self.assertLessEqual(request["north"], 5.7)
-        self.assertGreaterEqual(request["south"], -5.2)
+        self.assertTrue(request["crosses_antimeridian"])
         with self.assertRaises(MapsValidationError):
-            validate_map_points_request(
-                {"north": 5, "south": -5, "east": 42, "west": 33.5, "zoom": 15}
-            )
+            validate_map_points_request({"north": 80, "south": -80, "west": -170, "east": 170, "zoom": 2})
+        with self.assertRaises(MapsValidationError):
+            validate_map_points_request({"north": 5, "south": -5, "west": -10, "east": 10, "zoom": 15})
 
-    def test_location_mutations_use_strict_versions_and_public_text(self):
+    def test_location_mutations_use_strict_versions_and_global_coordinates(self):
         request = validate_set_seller_location_request(
-            {
-                "latitude": -1.286389,
-                "longitude": 36.817223,
-                "location_name": "  Main Shop ",
-                "expected_version": "0",
-            }
+            {"latitude": -33.8688, "longitude": 151.2093, "location_name": "  Main Shop ", "expected_version": "0"}
         )
         self.assertEqual(request["location_name"], "Main Shop")
         self.assertEqual(request["expected_version"], 0)

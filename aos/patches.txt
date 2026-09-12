@@ -5,7 +5,6 @@
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
 aos.patches.v1_0.add_unique_constraints
-aos.patches.v1_0.add_seller_location_indexes
 aos.patches.v1_0.install_localization_schema
 aos.patches.v1_0.add_outbox_indexes
 aos.patches.v1_0.backfill_transactional_outbox
@@ -25,7 +24,6 @@ aos.patches.v1_0.harden_reviews_subsystem
 
 aos.patches.v1_0.harden_sellers_subsystem
 aos.patches.v1_0.canonicalize_seller_operating_days
-aos.patches.v1_0.harden_maps_subsystem
 
 aos.patches.v1_0.install_social_indexes
 

@@ -26,25 +26,25 @@ from aos.api.maps.route import (
 
 @frappe.whitelist(
     allow_guest=True,
-    methods=["GET", "POST"],
+    methods=["GET"],
 )
 def autocomplete_places(**kwargs):
-    """Fast place autocomplete within the supported AOS map area."""
+    """Fast global place autocomplete with optional location bias."""
     return _autocomplete_places_impl(**_client_kwargs(kwargs))
 
 
 @frappe.whitelist(
     allow_guest=True,
-    methods=["GET", "POST"],
+    methods=["GET"],
 )
 def search_places(**kwargs):
-    """Search places within the supported AOS map area."""
+    """Search places globally through the provider-neutral AOS contract."""
     return _search_places_impl(**_client_kwargs(kwargs))
 
 
 @frappe.whitelist(
     allow_guest=True,
-    methods=["GET", "POST"],
+    methods=["GET"],
 )
 def reverse_geocode(**kwargs):
     """Resolve coordinates into a normalized address."""
@@ -53,7 +53,7 @@ def reverse_geocode(**kwargs):
 
 @frappe.whitelist(methods=["POST"])
 def get_route(**kwargs):
-    """Calculate a route between two or more supported locations."""
+    """Calculate a route between two or more WGS84 locations."""
     return _get_route_impl(**_client_kwargs(kwargs))
 
 

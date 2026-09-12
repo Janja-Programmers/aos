@@ -39,8 +39,3 @@ def build_internal_maps_url(base_url: str, endpoint: str) -> str:
     if "?" in path or "#" in path or "\\" in path:
         raise InvalidInternalMapsURL("Maps service endpoint is invalid.")
     return f"{base_url}{path}"
-
-
-def safe_provider_body(value: object, *, maximum: int = 1000) -> str:
-    text = str(value or "")[: max(0, int(maximum))]
-    return "".join(character if character in {"\n", "\t"} or ord(character) >= 32 else " " for character in text)

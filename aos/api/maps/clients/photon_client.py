@@ -1,10 +1,4 @@
-"""
-Internal Photon client.
-
-Photon is an internal infrastructure service used for fast place
-search-as-you-type. Public API endpoints should use this client instead of
-exposing Photon directly to Flutter clients.
-"""
+"""Private Photon client used behind AOS's provider-neutral Maps API."""
 
 from __future__ import annotations
 
@@ -12,314 +6,151 @@ from typing import Any
 
 import frappe
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from aos.services.maps.internal_url import (
-    InvalidInternalMapsURL,
-    build_internal_maps_url,
-    normalize_internal_maps_url,
-    safe_provider_body,
+	InvalidInternalMapsURL,
+	build_internal_maps_url,
+	normalize_internal_maps_url,
 )
 
 from ..constants import (
-    DEFAULT_PHOTON_BASE_URL,
-    KENYA_BBOX_EAST,
-    KENYA_BBOX_NORTH,
-    KENYA_BBOX_SOUTH,
-    KENYA_BBOX_WEST,
-    MAP_SERVICE_CONNECT_TIMEOUT_SECONDS,
-    PHOTON_BASE_URL_CONFIG_KEY,
-    PHOTON_REQUEST_TIMEOUT_SECONDS,
-    SUPPORTED_COUNTRY_CODE_LOWER,
+	DEFAULT_PHOTON_BASE_URL,
+	MAP_SERVICE_CONNECT_TIMEOUT_SECONDS,
+	PHOTON_BASE_URL_CONFIG_KEY,
+	PHOTON_REQUEST_TIMEOUT_SECONDS,
 )
 
 
 class PhotonClientError(Exception):
-    """Raised when the internal Photon service cannot satisfy a request."""
+	"""Raised when the private Photon service cannot satisfy a request."""
 
 
 class PhotonClient:
-    """HTTP client for the internal Photon service."""
+	"""Bounded HTTP client for Photon forward and reverse geocoding."""
 
-    def __init__(
-        self,
-        *,
-        base_url: str | None = None,
-    ):
-        configured_url = (
-            base_url
-            or frappe.conf.get(
-                PHOTON_BASE_URL_CONFIG_KEY
-            )
-            or DEFAULT_PHOTON_BASE_URL
-        )
+	def __init__(self, *, base_url: str | None = None):
+		configured_url = base_url or frappe.conf.get(PHOTON_BASE_URL_CONFIG_KEY) or DEFAULT_PHOTON_BASE_URL
+		self.base_url = _normalize_base_url(configured_url)
+		self._session = requests.Session()
+		self._session.headers.update({"Accept": "application/json", "User-Agent": "AOS-Maps/1.0"})
+		retry = Retry(
+			total=2,
+			connect=2,
+			read=1,
+			status=1,
+			backoff_factor=0.2,
+			status_forcelist=(502, 503, 504),
+			allowed_methods=frozenset({"GET"}),
+			raise_on_status=False,
+		)
+		self._session.mount("http://", HTTPAdapter(max_retries=retry, pool_connections=20, pool_maxsize=50))
+		self._session.mount("https://", HTTPAdapter(max_retries=retry, pool_connections=20, pool_maxsize=50))
 
-        self.base_url = _normalize_base_url(
-            configured_url
-        )
+	def autocomplete_places(
+		self,
+		*,
+		query: str,
+		limit: int,
+		latitude: float | None = None,
+		longitude: float | None = None,
+		country_code: str | None = None,
+		language: str | None = None,
+	) -> list[dict]:
+		params: dict[str, Any] = {"q": query, "limit": limit}
+		if latitude is not None and longitude is not None:
+			params.update({"lat": latitude, "lon": longitude})
+		if country_code:
+			params["countrycode"] = country_code.lower()
+		if language:
+			params["lang"] = language
+		payload = self._get_json(endpoint="/api", params=params, operation="place search")
+		return _features(payload, operation="place search")
 
-        self._session = requests.Session()
+	def reverse_geocode(
+		self,
+		*,
+		latitude: float,
+		longitude: float,
+		language: str | None = None,
+	) -> list[dict]:
+		params: dict[str, Any] = {"lat": latitude, "lon": longitude, "limit": 1}
+		if language:
+			params["lang"] = language
+		payload = self._get_json(endpoint="/reverse", params=params, operation="reverse geocoding")
+		return _features(payload, operation="reverse geocoding")
 
-        self._session.headers.update(
-            {
-                "Accept": "application/json",
-                "User-Agent": "AOS-Maps/1.0",
-            }
-        )
+	def status(self) -> dict:
+		payload = self._get_json(endpoint="/status", params={}, operation="status check")
+		if not isinstance(payload, dict):
+			raise PhotonClientError("Photon returned an invalid status response.")
+		return payload
 
-    def autocomplete_places(
-        self,
-        *,
-        query: str,
-        limit: int,
-        latitude: float | None = None,
-        longitude: float | None = None,
-        country_codes: str | None = None,
-        language: str | None = None,
-    ) -> list[dict]:
-        """
-        Search places using Photon.
+	def close(self) -> None:
+		self._session.close()
 
-        Returns raw GeoJSON feature dictionaries. Public response
-        normalization is handled by the maps serializers.
-        """
+	def _get_json(self, *, endpoint: str, params: dict[str, Any], operation: str) -> Any:
+		url = _build_url(base_url=self.base_url, endpoint=endpoint)
+		try:
+			response = self._session.get(
+				url,
+				params=params,
+				allow_redirects=False,
+				timeout=(MAP_SERVICE_CONNECT_TIMEOUT_SECONDS, PHOTON_REQUEST_TIMEOUT_SECONDS),
+			)
+		except requests.ConnectTimeout as exc:
+			raise PhotonClientError("The geocoding service could not be reached.") from exc
+		except requests.ReadTimeout as exc:
+			raise PhotonClientError("The geocoding service took too long to respond.") from exc
+		except requests.ConnectionError as exc:
+			raise PhotonClientError("The geocoding service is unavailable.") from exc
+		except requests.RequestException as exc:
+			raise PhotonClientError("The geocoding request failed.") from exc
 
-        params: dict[str, Any] = {
-            "q": query,
-            "limit": limit,
-            "countrycode": _first_country_code(
-                country_codes
-            ) or SUPPORTED_COUNTRY_CODE_LOWER,
-            "bbox": (
-                f"{KENYA_BBOX_WEST},"
-                f"{KENYA_BBOX_SOUTH},"
-                f"{KENYA_BBOX_EAST},"
-                f"{KENYA_BBOX_NORTH}"
-            ),
-        }
+		if response.status_code != 200:
+			self._log_service_error(operation=operation, status_code=response.status_code, response_body=response.text)
+			if response.status_code == 404:
+				return {"features": []}
+			if response.status_code == 429:
+				raise PhotonClientError("The geocoding service is temporarily busy.")
+			if 500 <= response.status_code <= 599:
+				raise PhotonClientError("The geocoding service is temporarily unavailable.")
+			raise PhotonClientError("The geocoding service rejected the request.")
+		try:
+			return response.json()
+		except requests.JSONDecodeError as exc:
+			self._log_service_error(operation=operation, status_code=response.status_code, response_body=response.text)
+			raise PhotonClientError("The geocoding service returned an invalid response.") from exc
 
-        if latitude is not None and longitude is not None:
-            params["lat"] = latitude
-            params["lon"] = longitude
-
-        normalized_language = _normalize_optional_string(
-            language
-        )
-
-        if normalized_language:
-            params["lang"] = normalized_language
-
-        response_data = self._get_json(
-            endpoint="/api",
-            params=params,
-            operation="place autocomplete",
-        )
-
-        if not isinstance(
-            response_data,
-            dict,
-        ):
-            raise PhotonClientError(
-                "Photon returned an invalid autocomplete response."
-            )
-
-        features = response_data.get(
-            "features"
-        )
-
-        if not isinstance(
-            features,
-            list,
-        ):
-            raise PhotonClientError(
-                "Photon returned an invalid feature list."
-            )
-
-        return [
-            feature
-            for feature in features
-            if isinstance(feature, dict)
-        ]
-
-    def status(self) -> dict:
-        """Fetch the internal Photon status response."""
-
-        response_data = self._get_json(
-            endpoint="/status",
-            params={},
-            operation="status check",
-        )
-
-        if not isinstance(
-            response_data,
-            dict,
-        ):
-            raise PhotonClientError(
-                "Photon returned an invalid status response."
-            )
-
-        return response_data
-
-    def close(self):
-        """Close the underlying HTTP session."""
-
-        self._session.close()
-
-    def _get_json(
-        self,
-        *,
-        endpoint: str,
-        params: dict[str, Any],
-        operation: str,
-    ) -> Any:
-        """Perform a GET request and decode its JSON response."""
-
-        url = _build_url(
-            base_url=self.base_url,
-            endpoint=endpoint,
-        )
-
-        try:
-            response = self._session.get(
-                url,
-                params=params,
-                allow_redirects=False,
-                timeout=(
-                    MAP_SERVICE_CONNECT_TIMEOUT_SECONDS,
-                    PHOTON_REQUEST_TIMEOUT_SECONDS,
-                ),
-            )
-
-        except requests.ConnectTimeout as ex:
-            raise PhotonClientError(
-                "The autocomplete service could not be reached."
-            ) from ex
-
-        except requests.ReadTimeout as ex:
-            raise PhotonClientError(
-                "The autocomplete service took too long to respond."
-            ) from ex
-
-        except requests.ConnectionError as ex:
-            raise PhotonClientError(
-                "The autocomplete service is unavailable."
-            ) from ex
-
-        except requests.RequestException as ex:
-            raise PhotonClientError(
-                "The autocomplete request failed."
-            ) from ex
-
-        if response.status_code != 200:
-            self._log_service_error(
-                operation=operation,
-                status_code=response.status_code,
-                response_body=response.text,
-            )
-
-            if response.status_code == 404:
-                raise PhotonClientError(
-                    "No matching location was found."
-                )
-
-            if response.status_code == 429:
-                raise PhotonClientError(
-                    "The autocomplete service is temporarily busy."
-                )
-
-            if 500 <= response.status_code <= 599:
-                raise PhotonClientError(
-                    "The autocomplete service is temporarily unavailable."
-                )
-
-            raise PhotonClientError(
-                "The autocomplete service rejected the request."
-            )
-
-        try:
-            return response.json()
-
-        except requests.JSONDecodeError as ex:
-            self._log_service_error(
-                operation=operation,
-                status_code=response.status_code,
-                response_body=response.text,
-            )
-
-            raise PhotonClientError(
-                "The autocomplete service returned an invalid response."
-            ) from ex
-
-    def _log_service_error(
-        self,
-        *,
-        operation: str,
-        status_code: int,
-        response_body: str,
-    ):
-        """
-        Log internal service failures without exposing the service URL
-        to public API consumers.
-        """
-
-        safe_body = safe_provider_body(response_body)
-
-        frappe.log_error(
-            message=(
-                f"Operation: {operation}\n"
-                f"Status code: {status_code}\n"
-                f"Response body:\n{safe_body}"
-            ),
-            title="AOS Photon Service Error",
-        )
+	@staticmethod
+	def _log_service_error(*, operation: str, status_code: int, response_body: str) -> None:
+		# Provider payloads may contain addresses/coordinates; never log them.
+		frappe.log_error(
+			message=f"Operation: {operation}\nStatus code: {status_code}",
+			title="AOS Photon Service Error",
+		)
 
 
 def get_photon_client() -> PhotonClient:
-    """Return a configured Photon client instance."""
+	return PhotonClient()
 
-    return PhotonClient()
+
+def _features(payload: Any, *, operation: str) -> list[dict]:
+	if not isinstance(payload, dict) or not isinstance(payload.get("features"), list):
+		raise PhotonClientError(f"Photon returned an invalid {operation} response.")
+	return [item for item in payload["features"] if isinstance(item, dict)]
 
 
 def _normalize_base_url(value: Any) -> str:
-    try:
-        return normalize_internal_maps_url(value, service="Photon")
-    except InvalidInternalMapsURL as exc:
-        raise PhotonClientError(str(exc)) from exc
+	try:
+		return normalize_internal_maps_url(value, service="Photon")
+	except InvalidInternalMapsURL as exc:
+		raise PhotonClientError(str(exc)) from exc
 
 
 def _build_url(*, base_url: str, endpoint: str) -> str:
-    try:
-        return build_internal_maps_url(base_url, endpoint)
-    except InvalidInternalMapsURL as exc:
-        raise PhotonClientError(str(exc)) from exc
-
-
-def _normalize_optional_string(
-    value: Any,
-) -> str | None:
-    """Trim optional text and normalize empty values to None."""
-
-    if value is None:
-        return None
-
-    normalized = str(
-        value
-    ).strip()
-
-    return normalized or None
-
-
-def _first_country_code(
-    value: str | None,
-) -> str | None:
-    """Return the first normalized country code from a comma list."""
-
-    normalized = _normalize_optional_string(
-        value
-    )
-
-    if not normalized:
-        return None
-
-    first = normalized.split(",", 1)[0].strip().lower()
-
-    return first or None
+	try:
+		return build_internal_maps_url(base_url, endpoint)
+	except InvalidInternalMapsURL as exc:
+		raise PhotonClientError(str(exc)) from exc

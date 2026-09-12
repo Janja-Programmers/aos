@@ -91,14 +91,15 @@ class TestProductionConfigValidation(FrappeTestCase):
 			"IMAGE_SEARCH_QDRANT_URL": "http://qdrant:6333",
 			"SHORT_CLASSIFICATION_SECRET": "short-classification-secret-value-0123456789abcdef",
 			"IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS": "files.africaonlinestores.example-prod.com",
-			"TILESERVER_PUBLIC_URL": "https://maps.africaonlinestores.example-prod.com/",
+			"MAPS_PUBLIC_BASE_URL": "https://maps.africaonlinestores.example-prod.com/basemap",
 		}
 
 	def _valid_site_config(self) -> dict[str, str]:
 		return {
-			"photon_base_url": "http://127.0.0.1:2322",
-			"nominatim_base_url": "http://127.0.0.1:8081",
-			"valhalla_base_url": "http://127.0.0.1:8002",
+			"maps_photon_enabled": True,
+			"photon_base_url": "http://photon:2322",
+			"maps_nominatim_fallback_enabled": False,
+			"maps_routing_enabled": False,
 		}
 
 	def test_restore_rehearsal_config_is_non_production_but_equivalently_hardened(self):
@@ -274,15 +275,14 @@ class TestProductionConfigValidation(FrappeTestCase):
 
 		self.assertFalse(report["ready"])
 		keys = {issue["key"] for issue in report["errors"]}
-		self.assertIn("nominatim_base_url", keys)
-		self.assertIn("valhalla_base_url", keys)
+		self.assertIn("maps_photon_enabled", keys)
+		self.assertIn("photon_base_url", keys)
 
-	def test_enabled_photon_requires_internal_url(self):
+	def test_enabled_photon_accepts_per_host_loopback_sidecar(self):
 		site_config = self._valid_site_config()
-		site_config["maps_photon_enabled"] = True
+		site_config["photon_base_url"] = "http://127.0.0.1:2322"
 		report = validate_production_config(env=self._valid_env(), site_config=site_config)
-		self.assertFalse(report["ready"])
-		self.assertIn("photon_base_url", {issue["key"] for issue in report["errors"]})
+		self.assertTrue(report["ready"], report)
 
 	def test_enabled_photon_accepts_dedicated_internal_service_url(self):
 		site_config = self._valid_site_config()

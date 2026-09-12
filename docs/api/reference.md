@@ -200,15 +200,15 @@ Owner documentation: [docs/features/localization/README.md](../features/localiza
 
 ## Maps (5)
 
-Owner documentation: [docs/features/maps/api.md](../features/maps/api.md)
+Owner documentation: [docs/features/maps/README.md](../features/maps/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
-| `/api/method/aos.api.v1.maps.autocomplete_places` | GET/POST | Guest allowed | Client | `aos/api/v1/maps/__init__.py` |
+| `/api/method/aos.api.v1.maps.autocomplete_places` | GET | Guest allowed | Client | `aos/api/v1/maps/__init__.py` |
 | `/api/method/aos.api.v1.maps.get_route` | POST | Session required | Client | `aos/api/v1/maps/__init__.py` |
 | `/api/method/aos.api.v1.maps.refresh_route` | POST | Session required | Client | `aos/api/v1/maps/__init__.py` |
-| `/api/method/aos.api.v1.maps.reverse_geocode` | GET/POST | Guest allowed | Client | `aos/api/v1/maps/__init__.py` |
-| `/api/method/aos.api.v1.maps.search_places` | GET/POST | Guest allowed | Client | `aos/api/v1/maps/__init__.py` |
+| `/api/method/aos.api.v1.maps.reverse_geocode` | GET | Guest allowed | Client | `aos/api/v1/maps/__init__.py` |
+| `/api/method/aos.api.v1.maps.search_places` | GET | Guest allowed | Client | `aos/api/v1/maps/__init__.py` |
 
 ## Media (10)
 

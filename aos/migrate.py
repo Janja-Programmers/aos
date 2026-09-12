@@ -11,7 +11,6 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from aos.patches.v1_0 import (
-    add_seller_location_indexes,
     harden_media_subsystem,
     install_accounts_indexes,
     install_activity_indexes,
@@ -27,6 +26,7 @@ from aos.patches.v1_0 import (
     install_shorts_indexes,
     install_shorts_recommendation_indexes,
 )
+from aos.services.maps import schema as maps_schema
 
 
 # Keep this list limited to schema-only, idempotent installers. Data
@@ -36,7 +36,7 @@ _SCHEMA_INVARIANT_INSTALLERS: tuple[Callable[[], None], ...] = (
     install_accounts_indexes.execute,
     harden_media_subsystem.execute,
     install_verification_indexes.execute,
-    add_seller_location_indexes.execute,
+    maps_schema.execute,
     install_shorts_indexes.execute,
     install_shorts_recommendation_indexes.execute,
     install_live_indexes.execute,

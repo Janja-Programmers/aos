@@ -267,7 +267,7 @@ required_variables=(
   FRAPPE_SOCKETIO_HOST
   FRAPPE_SOCKETIO_PORT
 
-  TILESERVER_PORT
+  MAPS_OBJECT_STORAGE_BUCKET
   LIVEKIT_PORT
   MINIO_API_PORT
 
@@ -310,10 +310,6 @@ validate_port \
 validate_port \
   "${FRAPPE_SOCKETIO_PORT}" \
   "FRAPPE_SOCKETIO_PORT"
-
-validate_port \
-  "${TILESERVER_PORT}" \
-  "TILESERVER_PORT"
 
 validate_port \
   "${LIVEKIT_PORT}" \
@@ -426,7 +422,7 @@ ${FRAPPE_WEB_PORT}
 ${FRAPPE_SOCKETIO_HOST}
 ${FRAPPE_SOCKETIO_PORT}
 
-${TILESERVER_PORT}
+${MAPS_OBJECT_STORAGE_BUCKET}
 ${LIVEKIT_PORT}
 ${MINIO_API_PORT}
 
@@ -489,7 +485,7 @@ fi
 if sudo grep -R \
   --line-number \
   --extended-regexp \
-  '\$\{(AOS|FRAPPE|TILESERVER|LIVEKIT|MINIO|NGINX)_[A-Z0-9_]+\}' \
+  '\$\{(AOS|FRAPPE|MAPS|LIVEKIT|MINIO|NGINX)_[A-Z0-9_]+\}' \
   "${NGINX_SNIPPETS_DIR}/aos-proxy-common.conf" \
   "${NGINX_SITES_AVAILABLE_DIR}/aos-api.conf" \
   "${NGINX_SITES_AVAILABLE_DIR}/aos-maps.conf" \

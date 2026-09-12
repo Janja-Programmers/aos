@@ -1,4 +1,4 @@
-"""Add indexes for seller near-me and map viewport discovery."""
+"""Current idempotent Maps/Seller geospatial schema invariants for fresh installs."""
 
 from __future__ import annotations
 

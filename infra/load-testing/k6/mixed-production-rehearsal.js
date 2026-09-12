@@ -63,7 +63,7 @@ export function publicBrowse() {
     record(getMethod('aos.api.v1.ads.list_ads', { limit: 20, q: randomItem(['phone', 'laptop', 'fashion', 'service']) }), 'ads.search');
     const adId = randomItem(AD_IDS);
     if (adId) record(getMethod('aos.api.v1.ads.get_ad', { ad_id: adId }), 'ads.detail', { allowStatuses: [404], allowCodes: ['NOT_FOUND'] });
-    record(getMethod('aos.api.v1.maps.autocomplete_places', { q: 'Nairobi', limit: 5 }), 'maps.autocomplete');
+    record(getMethod('aos.api.v1.maps.autocomplete_places', { q: 'Tokyo', limit: 5 }), 'maps.autocomplete');
     record(getMethod('aos.api.v1.live.list_live_streams', { limit: 10 }), 'live.list');
   });
   sleep(0.4 + Math.random() * 1.4);

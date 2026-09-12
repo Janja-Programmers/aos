@@ -123,14 +123,13 @@ def list_seller_map_rows(
         "s.latitude IS NOT NULL",
         "s.longitude IS NOT NULL",
         "s.latitude BETWEEN %s AND %s",
-        "s.longitude BETWEEN %s AND %s",
     ]
-    params: list[Any] = [
-        request["south"],
-        request["north"],
-        request["west"],
-        request["east"],
-    ]
+    params: list[Any] = [request["south"], request["north"]]
+    if request.get("crosses_antimeridian"):
+        conditions.append("(s.longitude >= %s OR s.longitude <= %s)")
+    else:
+        conditions.append("s.longitude BETWEEN %s AND %s")
+    params.extend([request["west"], request["east"]])
     clean_viewer = str(viewer or "").strip()
     if clean_viewer and clean_viewer != "Guest":
         conditions.append("s.user != %s")

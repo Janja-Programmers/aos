@@ -36,11 +36,6 @@ class MapsPermissionError(MapsError, PermissionError):
     http_status = 403
 
 
-class MapsStateError(MapsError):
-    code = "MAP_LOCATION_UNAVAILABLE"
-    http_status = 409
-
-
 class MapsConflictError(MapsError):
     code = "MAP_LOCATION_VERSION_CONFLICT"
     http_status = 409

@@ -31,9 +31,9 @@ class TestSellerLocationAPI(AOSFeatureTestMixin, FrappeTestCase):
     @staticmethod
     def _resolved_location():
         return {
-            "display_address": "Kenyatta Avenue, Nairobi, Kenya",
-            "locality": "Nairobi",
-            "region": "Nairobi County",
+            "display_address": "George Street, Sydney, Australia",
+            "locality": "Sydney",
+            "region": "New South Wales",
             "country_code": "KE",
         }
 
