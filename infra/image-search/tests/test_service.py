@@ -3,12 +3,11 @@ from __future__ import annotations
 import json
 
 import pytest
-from fastapi.testclient import TestClient
-from pydantic import ValidationError
-
 from app import main
 from app.config import Settings
 from app.schemas import ImageReference
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 
 TEST_CLASSIFICATION_SECRET = "classification-secret"  # pragma: allowlist secret
@@ -332,9 +331,8 @@ def test_short_frame_classification_uses_signed_internal_boundary(monkeypatch):
 	from io import BytesIO
 	from types import SimpleNamespace
 
-	from PIL import Image
-
 	from app.security import build_signature
+	from PIL import Image
 
 	secret = TEST_CLASSIFICATION_SECRET
 	settings = SimpleNamespace(
