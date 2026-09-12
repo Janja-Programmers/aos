@@ -85,6 +85,11 @@ class TestMapsContracts(unittest.TestCase):
         self.assertIn("mem_limit:", compose)
         self.assertIn("stop_grace_period:", compose)
 
+    def test_photon_metrics_flag_supplies_required_prometheus_type(self):
+        entrypoint = (ROOT / "infra/maps/photon/entrypoint.sh").read_text()
+        self.assertIn('metrics_arg="-metrics-enable prometheus"', entrypoint)
+        self.assertNotIn('metrics_arg="-metrics-enable"; fi', entrypoint)
+
     def test_single_maps_feature_document_and_no_legacy_maps_patch(self):
         docs = sorted(path.name for path in (ROOT / "docs/features/maps").glob("*.md"))
         self.assertEqual(docs, ["README.md"])

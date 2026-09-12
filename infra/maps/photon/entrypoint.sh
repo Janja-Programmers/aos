@@ -24,7 +24,7 @@ if [ "$#" -eq 0 ]; then set -- serve; fi
 if [ "$1" = "serve" ]; then
     shift
     metrics_arg=""
-    if [ "${PHOTON_METRICS_ENABLED}" = "true" ]; then metrics_arg="-metrics-enable"; fi
+    if [ "${PHOTON_METRICS_ENABLED}" = "true" ]; then metrics_arg="-metrics-enable prometheus"; fi
     # shellcheck disable=SC2086
     exec java ${JAVA_OPTS} -jar "${PHOTON_HOME}/photon.jar" serve \
         ${common_args} \
