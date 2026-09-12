@@ -256,7 +256,7 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
             patch("aos.api.social.block.rate_limit", return_value=None),
             patch("aos.api.social.block.record_block_user_activity"),
         ):
-            block_response = block_user_impl(target_user=ensure_public_account_id(sender), reason="No messages")
+            block_response = block_user_impl(account_id=ensure_public_account_id(sender), reason="No messages")
 
         self.assertTrue(block_response.get("ok"), block_response)
         frappe.set_user(sender)

@@ -77,8 +77,8 @@ class TestUserActionUniqueness(AOSFeatureTestMixin, FrappeTestCase):
         blocked = self._make_user("blocked")
         frappe.set_user(blocker)
 
-        first = block_user_impl(target_user=ensure_public_account_id(blocked), reason="spam")
-        second = block_user_impl(target_user=ensure_public_account_id(blocked), reason="spam again")
+        first = block_user_impl(account_id=ensure_public_account_id(blocked), reason="spam")
+        second = block_user_impl(account_id=ensure_public_account_id(blocked), reason="spam again")
 
         self.assertTrue(first.get("ok"), first)
         self.assertTrue(second.get("ok"), second)

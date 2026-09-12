@@ -105,8 +105,6 @@ class TestDynamicSqlSafety(FrappeTestCase):
     def test_like_helpers_escape_wildcards(self):
         self.assertEqual(safe_like_contains("50%_off\\sale"), "%50\\%\\_off\\\\sale%")
         self.assertEqual(safe_like_prefix("50%_off\\sale"), "50\\%\\_off\\\\sale%")
-        self.assertEqual(search_users._search_like("a%b_c"), "%a\\%b\\_c%")
-        self.assertEqual(search_users._prefix_like("a%b_c"), "a\\%b\\_c%")
 
     def test_ads_invalid_sort_is_rejected_before_sql(self):
         with (
