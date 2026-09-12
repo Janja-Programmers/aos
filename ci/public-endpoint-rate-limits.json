@@ -750,12 +750,6 @@
     "rationale": "Signed worker callback; authenticated by HMAC and kept outside the public edge bucket."
   },
   {
-    "endpoint": "aos.api.v1.notifications.__init__.handle_delivery_callback",
-    "access": "guest",
-    "policy": "signed_internal_exempt",
-    "rationale": "Signed worker callback; authenticated by HMAC and kept outside the public edge bucket."
-  },
-  {
     "endpoint": "aos.api.v1.notifications.__init__.clear_notifications",
     "access": "authenticated",
     "policy": "baseline_authenticated",
@@ -778,6 +772,12 @@
     "access": "authenticated",
     "policy": "baseline_authenticated",
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.notifications.__init__.handle_delivery_callback",
+    "access": "guest",
+    "policy": "signed_internal_exempt",
+    "rationale": "Signed worker callback; authenticated by HMAC and kept outside the public edge bucket."
   },
   {
     "endpoint": "aos.api.v1.notifications.__init__.list_notifications",
@@ -1224,6 +1224,12 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
+    "endpoint": "aos.api.v1.social.__init__.follow",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Nginx authenticated baseline plus Social application limit: 24 follow requests per account per minute."
+  },
+  {
     "endpoint": "aos.api.v1.social.__init__.get_block_status",
     "access": "authenticated",
     "policy": "baseline_authenticated",
@@ -1266,16 +1272,16 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
-    "endpoint": "aos.api.v1.social.__init__.toggle_follow",
+    "endpoint": "aos.api.v1.social.__init__.unblock_user",
     "access": "authenticated",
     "policy": "baseline_authenticated",
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
-    "endpoint": "aos.api.v1.social.__init__.unblock_user",
+    "endpoint": "aos.api.v1.social.__init__.unfollow",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Nginx authenticated baseline plus Social application limit: 36 unfollow requests per account per minute."
   },
   {
     "endpoint": "aos.api.v1.verification.__init__.get_my_verification",

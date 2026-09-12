@@ -23,7 +23,6 @@ from aos.api.shorts.utils import (
     build_time_id_cursor,
     encode_cursor,
 )
-search_users = importlib.import_module("aos.api.social.search_users")
 list_sellers = importlib.import_module("aos.api.sellers.list_sellers")
 seller_service = importlib.import_module("aos.services.sellers.service")
 wishlist_list = importlib.import_module("aos.api.wishlist.list")
@@ -101,11 +100,7 @@ class TestDynamicSqlSafety(FrappeTestCase):
         with self.assertRaises(ValueError):
             shorts_library._select_short_rows_with_action_sql("sv; DROP TABLE `tabUser`; --")
 
-        with self.assertRaises(ValueError):
-            search_users._not_blocked_sql(target_expr="u.name; DROP TABLE `tabUser`; --")
-
         self.assertIn("sv.creation AS action_creation", shorts_library._select_short_rows_with_action_sql("sv"))
-        self.assertIn("b.blocked_user = u.name", search_users._not_blocked_sql(target_expr="u.name"))
 
     def test_like_helpers_escape_wildcards(self):
         self.assertEqual(safe_like_contains("50%_off\\sale"), "%50\\%\\_off\\\\sale%")

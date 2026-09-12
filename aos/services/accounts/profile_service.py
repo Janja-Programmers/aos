@@ -6,7 +6,7 @@ from typing import Any
 
 import frappe
 
-from aos.api.social.relationship import build_relationship_status
+from aos.services.social.capabilities import SocialCapabilityService
 from aos.services.media.media_service import (
     MediaConflictError,
     MediaError,
@@ -47,9 +47,9 @@ class AccountProfileService:
         relationship = None
         target_user = str(row.user)
         if viewer:
-            relationship = build_relationship_status(
-                current_user=viewer,
-                target_user=target_user,
+            relationship = SocialCapabilityService().relationship_projection(
+                viewer=viewer,
+                target=target_user,
                 target_account_id=account_id,
             )
             if relationship.get("is_blocked_by_me") or relationship.get("has_blocked_me"):

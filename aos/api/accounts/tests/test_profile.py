@@ -206,7 +206,7 @@ class AccountsProfileIntegrationTests(AOSFeatureTestMixin, IntegrationTestCase):
         service = AccountProfileService(repository=repository)
         with (
             patch(
-                "aos.services.accounts.profile_service.build_relationship_status",
+                "aos.services.accounts.profile_service.SocialCapabilityService.relationship_projection",
                 return_value={"is_blocked_by_me": True, "has_blocked_me": False},
             ),
             self.assertRaises(AccountError) as caught,

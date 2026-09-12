@@ -18,6 +18,7 @@ _PUBLIC_PROFILE_FIELDS = """
     COALESCE(NULLIF(p.account_status, ''), %(active)s) AS account_status,
     COALESCE(p.total_followers, 0) AS total_followers,
     COALESCE(p.total_following, 0) AS total_following,
+    COALESCE(p.total_friends, 0) AS total_friends,
     COALESCE(p.is_verified, 0) AS is_verified,
     COALESCE(u.enabled, 0) AS enabled
 """
@@ -40,6 +41,7 @@ _PRIVATE_PROFILE_FIELDS = """
     p.purge_completed_at,
     COALESCE(p.total_followers, 0) AS total_followers,
     COALESCE(p.total_following, 0) AS total_following,
+    COALESCE(p.total_friends, 0) AS total_friends,
     COALESCE(p.is_verified, 0) AS is_verified,
     u.email,
     COALESCE(u.enabled, 0) AS enabled

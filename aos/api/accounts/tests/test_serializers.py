@@ -24,21 +24,19 @@ class AccountsSerializerIntegrationTests(IntegrationTestCase):
             account_status="Active",
             total_followers=0,
             total_following=0,
+            total_friends=0,
             is_verified=1,
             enabled=1,
         )
 
     def test_public_profile_uses_canonical_keys_and_hides_private_fields(self):
-        with (
-            patch("aos.services.accounts.serializers._friends_count", return_value=0),
-            patch(
+        with patch(
                 "aos.services.accounts.serializers.seller_summary",
                 return_value={"is_seller": False, "seller_id": None, "status": None},
-            ),
-        ):
+            ):
             payload = serialize_public_profile_row(
                 self._row(),
-                relationship={"target_user": "internal@example.com", "can_message": True},
+                relationship={"account_id": "ACC-BBBBBBBBBBBBBBBBBBBB", "can_message": True},
             )
         for field in (
             "email",
@@ -53,12 +51,10 @@ class AccountsSerializerIntegrationTests(IntegrationTestCase):
             self.assertNotIn(field, payload)
         self.assertEqual(payload["account_id"], "ACC-AAAAAAAAAAAAAAAAAAAA")
         self.assertEqual(payload["display_name"], "Dan")
-        self.assertNotIn("target_user", payload)
         self.assertTrue(payload["can_message"])
 
     def test_private_profile_never_exposes_frappe_user_name(self):
         with (
-            patch("aos.services.accounts.serializers._friends_count", return_value=0),
             patch(
                 "aos.services.accounts.serializers.seller_summary",
                 return_value={"is_seller": False, "seller_id": None, "status": None},

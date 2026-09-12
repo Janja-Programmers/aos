@@ -15,7 +15,7 @@ from frappe.utils import now_datetime
 
 from aos.api.maps.validators import clamp_bbox_to_supported_area, is_supported_location
 from aos.api.shared.sql_safety import safe_like_contains
-from aos.api.social.relationship import build_relationship_status
+from aos.services.social.capabilities import SocialCapabilityService
 from aos.services.media.media_service import MediaService
 from aos.services.social.repository import SocialRepository
 from aos.services.social.serializers import relationship_map as social_relationship_map
@@ -548,7 +548,7 @@ class SellerService:
             from aos.api.shared.user_display import get_user_display
 
             return guest_relationship(target_user=get_user_display(target_user).get("account_id"))
-        return build_relationship_status(current_user=viewer, target_user=target_user)
+        return SocialCapabilityService().relationship_projection(viewer=viewer, target=target_user)
 
     @staticmethod
     def _friend_counts(users: list[str]) -> dict[str, int]:

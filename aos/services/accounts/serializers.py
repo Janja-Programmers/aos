@@ -11,7 +11,6 @@ from aos.services.localization import serialize_preference as serialize_localiza
 from aos.services.localization.preferences import get_user_preference
 from aos.services.media.media_service import MediaService
 from aos.services.sellers.identity import public_seller_id_for_name
-from aos.services.social.repository import SocialRepository
 
 from .constants import ACCOUNT_STATUS_ACTIVE, ACCOUNT_STATUS_DELETED
 from .identity import public_account_id_for_user
@@ -43,14 +42,10 @@ def _display_name(row: Any, *, masked: bool = False) -> str:
     return value or "AOS User"
 
 
-def _friends_count(user: str) -> int:
-    return SocialRepository().friends_count(user=user)
-
-
-def _counts(user: str, row: Any, *, hidden: bool) -> dict[str, Any]:
+def _counts(row: Any, *, hidden: bool) -> dict[str, Any]:
     followers = 0 if hidden else to_non_negative_int(_get(row, "total_followers"))
     following = 0 if hidden else to_non_negative_int(_get(row, "total_following"))
-    friends = 0 if hidden else _friends_count(user)
+    friends = 0 if hidden else to_non_negative_int(_get(row, "total_friends"))
     return {
         "followers_count": followers,
         "followers_count_display": humanize_count(followers),
@@ -172,8 +167,8 @@ def serialize_public_profile_row(
     account_id = str(_get(row, "account_id") or "") or public_account_id_for_user(user)
     relation = dict(relationship or {})
     # Accounts has one canonical public identity field: top-level account_id.
-    # Social may internally project target_user; do not leak that alias here.
-    relation.pop("target_user", None)
+    # Accounts owns the top-level public identity field.
+    relation.pop("account_id", None)
     return {
         "account_id": account_id,
         "display_name": _display_name(row, masked=deleted),
@@ -181,7 +176,7 @@ def serialize_public_profile_row(
         "avatar": None if deleted else _avatar_url(row),
         "is_deleted": deleted,
         "is_verified": bool(_get(row, "is_verified")) if not deleted else False,
-        **_counts(user, row, hidden=deleted),
+        **_counts(row, hidden=deleted),
         "seller": (
             seller_summary(user, public=True)
             if include_seller and not deleted

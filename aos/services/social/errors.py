@@ -29,10 +29,5 @@ class SocialPermissionError(SocialError, PermissionError):
     http_status = 403
 
 
-class SocialConflictError(SocialError):
-    code = "SOCIAL_CONFLICT"
-    http_status = 409
-
-
 class SocialCursorError(SocialValidationError):
     code = "SOCIAL_INVALID_CURSOR"

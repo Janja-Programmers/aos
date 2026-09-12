@@ -27,7 +27,7 @@ aos.patches.v1_0.harden_sellers_subsystem
 aos.patches.v1_0.canonicalize_seller_operating_days
 aos.patches.v1_0.harden_maps_subsystem
 
-aos.patches.v1_0.harden_social_subsystem
+aos.patches.v1_0.install_social_indexes
 
 aos.patches.v1_0.harden_shorts_subsystem
 aos.patches.v1_0.install_shorts_indexes

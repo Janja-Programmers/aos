@@ -10,13 +10,13 @@ from typing import Any, Iterator
 import frappe
 
 _ALLOWED_OPERATIONS = {
-    "follow", "unfollow", "toggle_follow", "relationship", "following_list",
+    "follow", "unfollow", "relationship", "following_list",
     "followers_list", "friends_list", "search", "block", "unblock",
     "block_status", "blocked_list", "migration",
 }
 _ALLOWED_OUTCOMES = {"success", "idempotent", "rejected", "conflict", "failure"}
 _ALLOWED_REASONS = {
-    "none", "validation", "unknown_field", "alias_conflict", "self_action",
+    "none", "validation", "unknown_field", "self_action",
     "blocked", "unavailable", "duplicate", "cursor", "rate_limit", "internal",
 }
 

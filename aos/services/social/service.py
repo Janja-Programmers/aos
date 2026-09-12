@@ -1,7 +1,8 @@
-"""Canonical Social domain service.
+"""Canonical Social application service.
 
-All mutations remain in the caller-managed Frappe transaction. Database unique
-constraints are the final concurrency boundary; no service method commits.
+Social mutations remain inside the caller-owned Frappe transaction. Pair locks
+serialize incompatible relationship changes; database uniqueness is the final
+retry/concurrency boundary.
 """
 
 from __future__ import annotations
@@ -13,37 +14,23 @@ import frappe
 from aos.api.shared.formatters import humanize_count
 from aos.services.notifications.service import NotificationService
 
-from .constants import FOLLOW_NOTIFICATION_DEDUPE_SECONDS
-from .errors import SocialPermissionError, SocialValidationError
-from .observability import observe
-from .policy import SocialPolicy
-from .repository import SocialRepository
-from .serializers import (
-    opaque_block_ref,
-    relationship_map,
-    relationship_payload,
-    serialize_blocked_users,
-    serialize_users,
-)
-from .validation import (
-    ensure_known_fields,
-    normalize_action,
-    normalize_query_aliases,
-    normalize_reason,
-    normalize_search,
-    normalize_target,
-    pagination,
-    encode_cursor,
-)
+from .capabilities import SocialCapabilityService
 from .constants import (
     BLOCK_FIELDS,
     BLOCK_LIST_FIELDS,
     FOLLOW_FIELDS,
+    FOLLOW_NOTIFICATION_DEDUPE_SECONDS,
     LIST_FIELDS,
+    MAX_SEARCH_LIMIT,
     RELATIONSHIP_FIELDS,
     SEARCH_FIELDS,
-    MAX_SEARCH_LIMIT,
 )
+from .errors import SocialNotFoundError, SocialPermissionError, SocialValidationError
+from .observability import observe
+from .policy import SocialPolicy
+from .repository import SocialRepository
+from .serializers import opaque_block_ref, serialize_blocked_users, serialize_users
+from .validation import encode_cursor, ensure_known_fields, normalize_reason, normalize_search, normalize_target, pagination
 
 ActivityCallback = Callable[..., Any]
 
@@ -52,51 +39,63 @@ class SocialService:
     def __init__(self, repository: SocialRepository | None = None):
         self.repository = repository or SocialRepository()
         self.policy = SocialPolicy(self.repository)
+        self.capabilities = SocialCapabilityService(self.repository)
 
-    def toggle_follow(self, *, actor: str, payload: dict[str, Any], activity_callback: ActivityCallback | None = None) -> dict[str, Any]:
+    def follow(
+        self,
+        *,
+        actor: str,
+        payload: dict[str, Any],
+        activity_callback: ActivityCallback | None = None,
+    ) -> dict[str, Any]:
+        return self._set_follow(actor=actor, payload=payload, desired=True, activity_callback=activity_callback)
+
+    def unfollow(self, *, actor: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._set_follow(actor=actor, payload=payload, desired=False, activity_callback=None)
+
+    def _set_follow(
+        self,
+        *,
+        actor: str,
+        payload: dict[str, Any],
+        desired: bool,
+        activity_callback: ActivityCallback | None,
+    ) -> dict[str, Any]:
         ensure_known_fields(payload, FOLLOW_FIELDS)
         target = normalize_target(payload)
-        action = normalize_action(payload.get("action"))
+        operation = "follow" if desired else "unfollow"
         self.policy.require_actor(actor)
-        self.policy.require_target(actor=actor, target=target, operation="follow")
+        self.policy.require_target(actor=actor, target=target, operation=operation, allow_inactive=not desired)
         self.repository.lock_account_pair(user_a=actor, user_b=target)
         self.policy.require_actor(actor)
-        self.policy.require_target(actor=actor, target=target, operation="follow")
-        with observe("toggle_follow") as metric:
-            current_relation = self.relationship(actor=actor, target=target, require_available=False)
-            if current_relation.get("is_blocked"):
+        self.policy.require_target(actor=actor, target=target, operation=operation, allow_inactive=not desired)
+        with observe(operation) as metric:
+            relation = self.relationship(actor=actor, target=target, require_available=False)
+            if desired and relation.get("is_blocked_by_me"):
                 metric.update(outcome="rejected", reason="blocked")
                 raise SocialPermissionError("Social action is unavailable.", code="SOCIAL_BLOCKED")
+            if desired and relation.get("has_blocked_me"):
+                metric.update(outcome="rejected", reason="unavailable")
+                raise SocialNotFoundError("Profile unavailable.")
 
-            existing = self.repository.lock_follow_pair(follower=actor, target=target)
-            current = bool(existing)
-            desired = (not current) if action == "toggle" else action == "follow"
-            changed = False
             notification = "not_requested"
-
-            if desired and not current:
+            if desired:
                 follow_name, changed = self.repository.insert_follow(follower=actor, target=target)
                 if changed:
-                    notification = self._notify_follow_atomic(
-                        recipient=target, actor=actor, follow_name=follow_name
-                    )
+                    notification = self._notify_follow_atomic(recipient=target, actor=actor, follow_name=follow_name)
                     if activity_callback:
                         activity_callback(user=actor, target_user=target)
-            elif not desired and current:
+            else:
                 changed = self.repository.delete_follow(follower=actor, target=target)
 
-            # Reconciliation is deliberately set-based and transaction-local.
-            self.repository.sync_counters({actor, target})
-            relation = self.relationship(actor=actor, target=target, require_available=False)
-            totals = self.repository.profile_totals(viewer=actor, target=target)
-            status = "followed" if desired else "unfollowed"
-            metric.update(
-                outcome="success" if changed else "idempotent",
-                changed=changed,
-                notification=notification,
+            relation = self._public_relationship_projection(
+                self.relationship(actor=actor, target=target, require_available=False),
+                reject_incoming_only=False,
             )
+            totals = self.repository.profile_totals(viewer=actor, target=target)
+            metric.update(outcome="success" if changed else "idempotent", changed=changed, notification=notification)
             return {
-                "status": status,
+                "status": "followed" if desired else "unfollowed",
                 "changed": changed,
                 **relation,
                 **totals,
@@ -105,41 +104,28 @@ class SocialService:
             }
 
     def relationship(self, *, actor: str, target: str, require_available: bool = True) -> dict[str, Any]:
-        if actor == target:
-            return relationship_payload(
-                target=target,
-                is_self=True,
-                outgoing=False,
-                incoming=False,
-                blocked_by_me=False,
-                blocked_me=False,
-            )
         if require_available:
             self.policy.require_actor(actor)
             self.policy.require_target(actor=actor, target=target, operation="inspect")
-        mapping = relationship_map(repository=self.repository, viewer=actor, targets=[target])
-        return mapping[target]
+        return self.capabilities.relationship_projection(viewer=actor, target=target)
 
     def relationship_from_payload(self, *, actor: str, payload: dict[str, Any]) -> dict[str, Any]:
         ensure_known_fields(payload, RELATIONSHIP_FIELDS)
         target = normalize_target(payload)
         with observe("relationship"):
-            return self.relationship(actor=actor, target=target)
+            relation = self.relationship(actor=actor, target=target)
+            return self._public_relationship_projection(relation, reject_incoming_only=True)
 
     def list_relationships(self, *, actor: str, payload: dict[str, Any], mode: str) -> dict[str, Any]:
         ensure_known_fields(payload, LIST_FIELDS)
         self.policy.require_actor(actor)
         search = normalize_search(payload.get("search"), required=False)
-        limit, start, cursor = pagination(payload, kind=mode)
+        limit, cursor = pagination(payload, kind=mode)
+        search_fingerprint = self.repository.query_fingerprint(search) if search else ""
+        if cursor is not None and str(cursor.get("q") or "") != search_fingerprint:
+            raise SocialValidationError("Invalid Social pagination cursor.", code="SOCIAL_INVALID_CURSOR")
         with observe(f"{mode}_list") as metric:
-            rows, total = self.repository.list_social(
-                mode=mode,
-                viewer=actor,
-                limit=limit,
-                start=start,
-                cursor=cursor,
-                search=search,
-            )
+            rows = self.repository.list_social(mode=mode, viewer=actor, limit=limit, cursor=cursor, search=search)
             has_more = len(rows) > limit
             page_rows = rows[:limit]
             items = serialize_users(repository=self.repository, viewer=actor, rows=page_rows)
@@ -148,15 +134,16 @@ class SocialService:
                 last = page_rows[-1]
                 next_cursor = encode_cursor(
                     kind=mode,
-                    values={"at": str(last.get("sort_at") or ""), "name": str(last.get("edge_name") or "")},
+                    values={
+                        "at": str(last.get("sort_at") or ""),
+                        "name": str(last.get("edge_name") or ""),
+                        "q": search_fingerprint,
+                    },
                 )
             metric["count"] = len(items)
             return {
                 "items": items,
-                "total": total,
-                "total_display": humanize_count(total),
                 "limit": limit,
-                "start": start,
                 "search": search,
                 "has_more": has_more,
                 "next_cursor": next_cursor,
@@ -165,42 +152,30 @@ class SocialService:
     def search(self, *, actor: str, payload: dict[str, Any], activity_callback: ActivityCallback | None = None) -> dict[str, Any]:
         ensure_known_fields(payload, SEARCH_FIELDS)
         self.policy.require_actor(actor)
-        query = normalize_query_aliases(payload)
-        limit, start, cursor = pagination(payload, kind="search", maximum=MAX_SEARCH_LIMIT)
-        offset = start
-        if cursor is not None:
-            expected = self.repository.query_fingerprint(query)
-            if cursor.get("q") != expected:
-                raise SocialValidationError("Invalid Social pagination cursor.", code="SOCIAL_INVALID_CURSOR")
-            try:
-                offset = int(cursor.get("offset"))
-            except (TypeError, ValueError):
-                raise SocialValidationError("Invalid Social pagination cursor.", code="SOCIAL_INVALID_CURSOR") from None
-            if offset < 0 or offset > 100_000:
-                raise SocialValidationError("Invalid Social pagination cursor.", code="SOCIAL_INVALID_CURSOR")
+        query = normalize_search(payload.get("query"), required=True)
+        limit, cursor = pagination(payload, kind="search", maximum=MAX_SEARCH_LIMIT)
+        if cursor is not None and cursor.get("q") != self.repository.query_fingerprint(query):
+            raise SocialValidationError("Invalid Social pagination cursor.", code="SOCIAL_INVALID_CURSOR")
         with observe("search") as metric:
-            rows, total = self.repository.search_users(viewer=actor, query=query, limit=limit, offset=offset)
+            rows = self.repository.search_users(viewer=actor, query=query, limit=limit, cursor=cursor)
             has_more = len(rows) > limit
             page_rows = rows[:limit]
             items = serialize_users(repository=self.repository, viewer=actor, rows=page_rows)
             next_cursor = None
-            if has_more:
+            if has_more and page_rows:
+                last = page_rows[-1]
                 next_cursor = encode_cursor(
                     kind="search",
-                    values={"offset": offset + len(page_rows), "q": self.repository.query_fingerprint(query)},
+                    values={
+                        "display": str(last.get("display_name") or ""),
+                        "account_id": str(last.get("account_id") or ""),
+                        "q": self.repository.query_fingerprint(query),
+                    },
                 )
             if activity_callback:
-                activity_callback(user=actor, query=query, result_count=total)
+                activity_callback(user=actor, query=query, result_count=len(items))
             metric["count"] = len(items)
-            return {
-                "items": items,
-                "total": total,
-                "limit": limit,
-                "start": offset,
-                "query": query,
-                "has_more": has_more,
-                "next_cursor": next_cursor,
-            }
+            return {"items": items, "limit": limit, "query": query, "has_more": has_more, "next_cursor": next_cursor}
 
     def block(self, *, actor: str, payload: dict[str, Any], activity_callback: ActivityCallback | None = None) -> dict[str, Any]:
         ensure_known_fields(payload, BLOCK_FIELDS)
@@ -212,17 +187,21 @@ class SocialService:
         self.policy.require_actor(actor)
         self.policy.require_target(actor=actor, target=target, operation="block")
         with observe("block") as metric:
-            block_name, changed = self.repository.activate_block(blocker=actor, blocked=target, reason=reason)
+            block_name, block_changed = self.repository.activate_block(blocker=actor, blocked=target, reason=reason)
             removed = self.repository.remove_follows_both_directions(user_a=actor, user_b=target)
-            self.repository.sync_counters({actor, target})
-            if changed and activity_callback:
+            changed = bool(block_changed or removed)
+            if block_changed and activity_callback:
                 activity_callback(user=actor, target_user=target, reason=reason)
-            metric.update(outcome="success" if changed or removed else "idempotent", changed=bool(changed or removed))
+            metric.update(outcome="success" if changed else "idempotent", changed=changed)
+            relation = self._public_relationship_projection(
+                self.relationship(actor=actor, target=target, require_available=False),
+                reject_incoming_only=False,
+            )
             return {
                 "id": opaque_block_ref(block_name),
                 "status": "blocked",
-                "changed": bool(changed or removed),
-                **self.relationship(actor=actor, target=target, require_available=False),
+                "changed": changed,
+                **relation,
             }
 
     def unblock(self, *, actor: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -236,10 +215,14 @@ class SocialService:
         with observe("unblock") as metric:
             changed = self.repository.deactivate_block(blocker=actor, blocked=target)
             metric.update(outcome="success" if changed else "idempotent", changed=changed)
+            relation = self._public_relationship_projection(
+                self.relationship(actor=actor, target=target, require_available=False),
+                reject_incoming_only=False,
+            )
             return {
                 "status": "unblocked",
                 "changed": changed,
-                **self.relationship(actor=actor, target=target, require_available=False),
+                **relation,
             }
 
     def block_status(self, *, actor: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -248,11 +231,14 @@ class SocialService:
         self.policy.require_actor(actor)
         self.policy.require_target(actor=actor, target=target, operation="inspect", allow_inactive=True)
         with observe("block_status"):
-            relation = self.relationship(actor=actor, target=target, require_available=False)
+            relation = self._public_relationship_projection(
+                self.relationship(actor=actor, target=target, require_available=False),
+                reject_incoming_only=True,
+            )
             return {
                 key: relation[key]
                 for key in (
-                    "target_user", "is_blocked_by_me", "has_blocked_me", "is_blocked",
+                    "account_id", "is_blocked_by_me", "has_blocked_me", "is_blocked",
                     "block_status", "can_follow", "can_message", "can_call", "can_view_profile",
                 )
             }
@@ -260,9 +246,9 @@ class SocialService:
     def blocked_users(self, *, actor: str, payload: dict[str, Any]) -> dict[str, Any]:
         ensure_known_fields(payload, BLOCK_LIST_FIELDS)
         self.policy.require_actor(actor)
-        limit, start, cursor = pagination(payload, kind="blocked")
+        limit, cursor = pagination(payload, kind="blocked")
         with observe("blocked_list") as metric:
-            rows, total = self.repository.list_blocked(viewer=actor, limit=limit, start=start, cursor=cursor)
+            rows = self.repository.list_blocked(viewer=actor, limit=limit, cursor=cursor)
             has_more = len(rows) > limit
             page_rows = rows[:limit]
             items = serialize_blocked_users(page_rows)
@@ -274,19 +260,55 @@ class SocialService:
                     values={"at": str(last.get("sort_at") or ""), "name": str(last.get("block_name") or "")},
                 )
             metric["count"] = len(items)
-            return {
-                "items": items,
-                "total": total,
-                "total_display": humanize_count(total),
-                "limit": limit,
-                "start": start,
-                "has_more": has_more,
-                "next_cursor": next_cursor,
-            }
+            return {"items": items, "limit": limit, "has_more": has_more, "next_cursor": next_cursor}
 
-    def _notify_follow_atomic(
-        self, *, recipient: str, actor: str, follow_name: str | None = None
-    ) -> str:
+    @staticmethod
+    def _public_relationship_projection(
+        relation: dict[str, Any],
+        *,
+        reject_incoming_only: bool,
+    ) -> dict[str, Any]:
+        """Return a client-safe projection without revealing incoming block direction.
+
+        Internal consumers need both block directions to enforce policy, but the
+        public Social surface must not let a client discover that another account
+        blocked them. If the viewer also owns a block, only that viewer-owned
+        block is exposed. Mutation responses that must remain successful after a
+        state change return a neutral ``Unavailable`` projection for incoming-only
+        blocks instead of rolling the mutation back.
+        """
+
+        public = dict(relation)
+        blocked_by_me = bool(public.get("is_blocked_by_me"))
+        blocked_me = bool(public.get("has_blocked_me"))
+        if blocked_me and not blocked_by_me:
+            if reject_incoming_only:
+                raise SocialNotFoundError("Profile unavailable.")
+            public.update({
+                "is_following": False,
+                "is_followed_by": False,
+                "is_friend": False,
+                "relationship_status": "none",
+                "action_label": "Unavailable",
+                "is_blocked_by_me": False,
+                "has_blocked_me": False,
+                "is_blocked": False,
+                "block_status": "none",
+                "can_follow": False,
+                "can_message": False,
+                "can_call": False,
+                "can_view_profile": False,
+            })
+            return public
+        if blocked_by_me:
+            public.update({
+                "has_blocked_me": False,
+                "is_blocked": True,
+                "block_status": "blocked_by_me",
+            })
+        return public
+
+    def _notify_follow_atomic(self, *, recipient: str, actor: str, follow_name: str | None = None) -> str:
         if self.repository.recent_follow_notification_exists(
             recipient=recipient,
             actor=actor,
@@ -297,17 +319,11 @@ class SocialService:
             doc = NotificationService.notify_follow(
                 user=recipient,
                 follower=actor,
-                dedupe_key=(
-                    f"social:follow:{follow_name}:{recipient}"
-                    if follow_name
-                    else None
-                ),
+                dedupe_key=f"social:follow:{follow_name}:{recipient}" if follow_name else None,
             )
         except Exception:
-            # Notification is infrastructure. A broken delivery integration must
-            # never invalidate the already-authorized Social graph mutation.
             try:
-                frappe.log_error(frappe.get_traceback(), "AOS Follow Notification Failed")
+                frappe.log_error("Follow notification creation failed.", "AOS Follow Notification Failed")
             except Exception:
                 pass
             return "notification_failed"

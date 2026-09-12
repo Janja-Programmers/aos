@@ -32,16 +32,12 @@ def _reason_for_code(code: str) -> str:
         return "cursor"
     if code == "SOCIAL_UNKNOWN_FIELD":
         return "unknown_field"
-    if code == "SOCIAL_ALIAS_CONFLICT":
-        return "alias_conflict"
     if code == "SOCIAL_SELF_ACTION":
         return "self_action"
     if code == "SOCIAL_BLOCKED":
         return "blocked"
     if code in {"SOCIAL_ACTOR_UNAVAILABLE", "SOCIAL_PROFILE_UNAVAILABLE"}:
         return "unavailable"
-    if code == "SOCIAL_CONFLICT":
-        return "duplicate"
     return "validation"
 
 

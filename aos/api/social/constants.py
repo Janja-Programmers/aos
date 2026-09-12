@@ -1,4 +1,4 @@
-"""Backward-compatible Social API constants backed by the canonical domain."""
+"""Social endpoint rate and validation constants."""
 
 from aos.services.social.constants import (
     BLOCK_REASON_MAX_LENGTH,
@@ -11,7 +11,8 @@ from aos.services.social.constants import (
     SEARCH_MIN_LENGTH,
 )
 
-TOGGLE_FOLLOW_LIMIT_PER_MINUTE_PER_USER = RATE_LIMITS["toggle_follow"]
+FOLLOW_LIMIT_PER_MINUTE_PER_USER = RATE_LIMITS["follow"]
+UNFOLLOW_LIMIT_PER_MINUTE_PER_USER = RATE_LIMITS["unfollow"]
 GET_RELATIONSHIP_STATUS_LIMIT_PER_MINUTE_PER_USER = RATE_LIMITS["relationship"]
 GET_FOLLOWING_LIMIT_PER_MINUTE_PER_USER = RATE_LIMITS["following"]
 GET_FOLLOWERS_LIMIT_PER_MINUTE_PER_USER = RATE_LIMITS["followers"]

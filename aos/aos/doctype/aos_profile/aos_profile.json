@@ -26,6 +26,7 @@
   "total_followers",
   "column_break_vodm",
   "total_following",
+  "total_friends",
   "verification_tab",
   "is_verified"
  ],
@@ -165,6 +166,15 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Total Following",
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "total_friends",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Total Friends",
    "non_negative": 1,
    "read_only": 1
   },

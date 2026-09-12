@@ -1,4 +1,4 @@
-"""Strict Social request, alias, search, and cursor validation."""
+"""Strict Social request and cursor validation."""
 
 from __future__ import annotations
 
@@ -34,49 +34,19 @@ def ensure_known_fields(payload: dict[str, Any], allowed: Iterable[str]) -> None
         )
 
 
-def _optional_text(value: Any, *, code: str, message: str) -> str:
-    if value in (None, ""):
-        return ""
-    if not isinstance(value, str):
-        raise SocialValidationError(message, code=code)
-    return value.strip()
-
-
 def normalize_target(payload: dict[str, Any]) -> str:
-    raw_target = _optional_text(
-        payload.get("target_user"),
-        code="SOCIAL_INVALID_ACCOUNT_ID",
-        message="Invalid target account.",
-    )
-    raw_account = _optional_text(
-        payload.get("account_id"),
-        code="SOCIAL_INVALID_ACCOUNT_ID",
-        message="Invalid public account ID.",
-    )
-    if raw_target and raw_account:
-        resolved_target = resolve_account_reference(raw_target)
-        resolved_account = resolve_account_reference(raw_account)
-        if not resolved_target or not resolved_account or resolved_target != resolved_account:
-            raise SocialValidationError("Conflicting target account aliases.", code="SOCIAL_ALIAS_CONFLICT")
-        return resolved_target
-    raw = raw_account or raw_target
-    if not raw:
-        raise SocialValidationError("Target account is required.", code="SOCIAL_TARGET_REQUIRED")
-    if raw_account and not normalize_public_account_id(raw_account):
+    raw = payload.get("account_id")
+    if not isinstance(raw, str):
+        if raw in (None, ""):
+            raise SocialValidationError("Target account is required.", code="SOCIAL_TARGET_REQUIRED")
         raise SocialValidationError("Invalid public account ID.", code="SOCIAL_INVALID_ACCOUNT_ID")
-    resolved = resolve_account_reference(raw)
+    account_id = normalize_public_account_id(raw)
+    if not account_id:
+        raise SocialValidationError("Invalid public account ID.", code="SOCIAL_INVALID_ACCOUNT_ID")
+    resolved = resolve_account_reference(account_id)
     if not resolved:
-        raise SocialValidationError("Invalid target account.", code="SOCIAL_INVALID_ACCOUNT_ID")
+        raise SocialValidationError("Account does not exist.", code="SOCIAL_ACCOUNT_NOT_FOUND", http_status=404)
     return str(resolved)
-
-
-def normalize_action(value: Any) -> str:
-    action = str(value or "toggle").strip().lower()
-    aliases = {"add": "follow", "remove": "unfollow", "on": "follow", "off": "unfollow"}
-    action = aliases.get(action, action)
-    if action not in {"toggle", "follow", "unfollow"}:
-        raise SocialValidationError("Invalid follow action.", code="SOCIAL_INVALID_ACTION")
-    return action
 
 
 def normalize_reason(value: Any) -> str:
@@ -106,22 +76,6 @@ def normalize_search(value: Any, *, required: bool) -> str:
     return query
 
 
-def normalize_query_aliases(payload: dict[str, Any]) -> str:
-    query = _optional_text(
-        payload.get("query"),
-        code="SOCIAL_INVALID_SEARCH",
-        message="Search query must be text.",
-    )
-    search = _optional_text(
-        payload.get("search"),
-        code="SOCIAL_INVALID_SEARCH",
-        message="Search query must be text.",
-    )
-    if query and search and re.sub(r"\s+", " ", query) != re.sub(r"\s+", " ", search):
-        raise SocialValidationError("Conflicting search aliases.", code="SOCIAL_ALIAS_CONFLICT")
-    return normalize_search(query or search, required=True)
-
-
 def normalize_limit(value: Any, *, default: int = DEFAULT_LIST_LIMIT, maximum: int = MAX_LIST_LIMIT) -> int:
     if value in (None, ""):
         return default
@@ -134,20 +88,6 @@ def normalize_limit(value: Any, *, default: int = DEFAULT_LIST_LIMIT, maximum: i
     if limit < 1 or limit > maximum:
         raise SocialValidationError(f"List limit must be between 1 and {maximum}.", code="SOCIAL_INVALID_LIMIT")
     return limit
-
-
-def normalize_start(value: Any) -> int:
-    if value in (None, ""):
-        return 0
-    if isinstance(value, bool):
-        raise SocialValidationError("Invalid list offset.", code="SOCIAL_INVALID_OFFSET")
-    try:
-        start = int(value)
-    except (TypeError, ValueError):
-        raise SocialValidationError("Invalid list offset.", code="SOCIAL_INVALID_OFFSET") from None
-    if start < 0 or start > 100_000:
-        raise SocialValidationError("Invalid list offset.", code="SOCIAL_INVALID_OFFSET")
-    return start
 
 
 def _secret() -> bytes:
@@ -195,10 +135,5 @@ def decode_cursor(value: Any, *, kind: str) -> dict[str, Any] | None:
         raise SocialCursorError("Invalid Social pagination cursor.") from None
 
 
-def pagination(payload: dict[str, Any], *, kind: str, maximum: int = MAX_LIST_LIMIT) -> tuple[int, int, dict[str, Any] | None]:
-    limit = normalize_limit(payload.get("limit"), maximum=maximum)
-    start = normalize_start(payload.get("start"))
-    cursor = decode_cursor(payload.get("cursor"), kind=kind)
-    if cursor is not None and start:
-        raise SocialValidationError("Use either cursor or start, not both.", code="SOCIAL_PAGINATION_CONFLICT")
-    return limit, start, cursor
+def pagination(payload: dict[str, Any], *, kind: str, maximum: int = MAX_LIST_LIMIT) -> tuple[int, dict[str, Any] | None]:
+    return normalize_limit(payload.get("limit"), maximum=maximum), decode_cursor(payload.get("cursor"), kind=kind)

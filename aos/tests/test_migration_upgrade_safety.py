@@ -61,7 +61,6 @@ class TestMigrationUpgradeSafety(FrappeTestCase, AOSFeatureTestMixin):
 
     def test_required_fields_and_indexes_exist_after_migrate(self):
         required_fields = {
-            "AOS User Block": ["active_pair_key"],
             "AOS Live Stream View": ["active_identity_key"],
             "AOS Short View": ["identity_key"],
             "AOS Push Token": ["token_hash", "active_device_key", "registration_kind"],
@@ -109,30 +108,6 @@ class TestMigrationUpgradeSafety(FrappeTestCase, AOSFeatureTestMixin):
         after = self._existing_indexes_snapshot()
         self.assertEqual(before, after)
 
-    def test_user_block_legacy_duplicate_cleanup_is_idempotent(self):
-        blocker = self.make_user("blocker")
-        blocked = self.make_user("blocked")
-
-        self._insert_legacy_user_block("first", blocker, blocked)
-        self._insert_legacy_user_block("second", blocker, blocked)
-
-        apply_unique_constraints()
-        apply_unique_constraints()
-
-        rows = frappe.get_all(
-            "AOS User Block",
-            filters={"blocker_user": blocker, "blocked_user": blocked},
-            fields=["name", "status", "active_pair_key"],
-            order_by="status asc, name asc",
-        )
-
-        self.assertEqual(len(rows), 2)
-        active_rows = [row for row in rows if row.status == "Active"]
-        inactive_rows = [row for row in rows if row.status == "Unblocked"]
-        self.assertEqual(len(active_rows), 1)
-        self.assertEqual(len(inactive_rows), 1)
-        self.assertEqual(active_rows[0].active_pair_key, f"{blocker}|{blocked}")
-        self.assertFalse(inactive_rows[0].active_pair_key)
 
     def test_live_view_legacy_duplicate_cleanup_is_idempotent(self):
         host = self.make_user("live-host")
@@ -204,19 +179,6 @@ class TestMigrationUpgradeSafety(FrappeTestCase, AOSFeatureTestMixin):
 
     # RAW LEGACY FIXTURES
 
-    def _insert_legacy_user_block(self, label: str, blocker: str, blocked: str):
-        now = now_datetime()
-        frappe.db.sql(
-            """
-            INSERT INTO `tabAOS User Block`
-                (name, creation, modified, modified_by, owner, docstatus, idx,
-                 blocker_user, blocked_user, status, blocked_at, active_pair_key)
-            VALUES
-                (%s, %s, %s, 'Administrator', 'Administrator', 0, 0,
-                 %s, %s, 'Active', %s, NULL)
-            """,
-            (f"{self.prefix}-{label}-block", now, now, blocker, blocked, now),
-        )
 
     def _insert_legacy_live_view(self, label: str, live: str, user: str, session_id: str):
         now = now_datetime()

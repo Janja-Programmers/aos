@@ -36,7 +36,7 @@ import frappe
 from aos.api.shared.formatters import humanize_count
 from aos.api.shared.user_display import get_user_display as shared_get_user_display
 from aos.api.shared.user_display import get_user_display_map
-from aos.api.social.relationship import build_relationship_status
+from aos.services.social.capabilities import SocialCapabilityService
 from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.social.repository import SocialRepository
 from aos.services.social.serializers import relationship_map as social_relationship_map
@@ -1278,9 +1278,9 @@ def build_live_viewer_state(
         )
 
     else:
-        relationship = build_relationship_status(
-            current_user=viewer,
-            target_user=host_user,
+        relationship = SocialCapabilityService().relationship_projection(
+            viewer=viewer,
+            target=host_user,
         )
 
     if is_host:

@@ -32,7 +32,7 @@ FEATURE_DOCS = {
 	"search_ranking": "docs/features/search-ranking/api.md",
 	"sellers": "docs/features/sellers/api.md",
 	"shorts": "docs/features/shorts/api.md",
-	"social": "docs/features/social/api.md",
+	"social": "docs/features/social/README.md",
 	"verification": "docs/features/verification/README.md",
 	"wishlist": "docs/features/wishlist/api.md",
 }
@@ -44,6 +44,7 @@ SINGLE_FILE_FEATURE_DOCS = {
 	"localization": "docs/features/localization/README.md",
 	"media": "docs/features/media/README.md",
 	"notifications": "docs/features/notifications/README.md",
+	"social": "docs/features/social/README.md",
 	"verification": "docs/features/verification/README.md",
 }
 

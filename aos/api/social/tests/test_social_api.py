@@ -5,11 +5,11 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.api.social.block import block_user_impl, list_blocked_users_impl, unblock_user_impl
+from aos.api.social.block import block_user_impl, get_block_status_impl, list_blocked_users_impl, unblock_user_impl
 from aos.api.social.lists import get_followers_impl, get_following_impl
 from aos.api.social.relationship import get_relationship_status_impl
 from aos.api.social.search_users import search_users_impl
-from aos.api.social.toggle_follow import toggle_follow_impl
+from aos.api.social.follow import follow_impl, unfollow_impl
 from aos.services.account_purge_service import _purge_social_batch
 from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.social.service import SocialService
@@ -33,7 +33,7 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
         )
         frappe.db.set_value(
             "AOS Profile",
-            self.target,
+            {"user": self.target},
             "display_name",
             self.target_search_name,
             update_modified=False,
@@ -46,12 +46,16 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
         frappe.db.sql("DELETE FROM `tabAOS Follow` WHERE follower_user LIKE %s OR following_user LIKE %s", (email_like, email_like))
         self.cleanup_feature_rows()
 
-    def _toggle(self, **kwargs):
+    def _follow(self, **kwargs):
         with (
-            patch("aos.api.social.toggle_follow.rate_limit", return_value=None),
+            patch("aos.api.social.follow.rate_limit", return_value=None),
             patch("aos.services.social.service.SocialService._notify_follow_atomic", return_value="test"),
         ):
-            return toggle_follow_impl(**kwargs)
+            return follow_impl(**kwargs)
+
+    def _unfollow(self, **kwargs):
+        with patch("aos.api.social.follow.rate_limit", return_value=None):
+            return unfollow_impl(**kwargs)
 
     def _block(self, **kwargs):
         with (
@@ -60,9 +64,18 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
         ):
             return block_user_impl(**kwargs)
 
+    @staticmethod
+    def _counters(user: str) -> tuple[int, int, int]:
+        values = frappe.db.get_value(
+            "AOS Profile",
+            {"user": user},
+            ["total_followers", "total_following", "total_friends"],
+        )
+        return tuple(int(value or 0) for value in values)
+
     def test_guest_access_is_denied(self):
         frappe.set_user("Guest")
-        response = self._toggle(account_id=public_account_id_for_user(self.target), action="follow")
+        response = self._follow(account_id=public_account_id_for_user(self.target))
         self.assertFalse(response["ok"])
         self.assertEqual(response["error"], "UNAUTHORIZED")
 
@@ -71,44 +84,50 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertFalse(response["ok"])
         self.assertEqual(response["error"], "SOCIAL_SELF_ACTION")
 
-    def test_unknown_fields_and_alias_conflicts_are_rejected(self):
-        unknown = self._toggle(account_id=public_account_id_for_user(self.target), unexpected=1)
+    def test_unknown_fields_and_legacy_target_alias_are_rejected(self):
+        unknown = self._follow(account_id=public_account_id_for_user(self.target), unexpected=1)
         self.assertFalse(unknown["ok"])
         self.assertEqual(unknown["error"], "SOCIAL_UNKNOWN_FIELD")
 
-        conflict = self._toggle(target_user=self.target, account_id=public_account_id_for_user(self.actor))
-        self.assertFalse(conflict["ok"])
-        self.assertEqual(conflict["error"], "SOCIAL_ALIAS_CONFLICT")
+        legacy = self._follow(target_user=self.target)
+        self.assertFalse(legacy["ok"])
+        self.assertEqual(legacy["error"], "SOCIAL_UNKNOWN_FIELD")
 
     def test_self_follow_is_rejected(self):
-        response = self._toggle(account_id=public_account_id_for_user(self.actor))
+        response = self._follow(account_id=public_account_id_for_user(self.actor))
         self.assertFalse(response["ok"])
         self.assertEqual(response["error"], "SOCIAL_SELF_ACTION")
 
     def test_explicit_follow_and_unfollow_are_idempotent(self):
         account_id = public_account_id_for_user(self.target)
-        first = self._toggle(account_id=account_id, action="follow")
-        second = self._toggle(account_id=account_id, action="follow")
+        first = self._follow(account_id=account_id)
+        second = self._follow(account_id=account_id)
         self.assertTrue(first["ok"], first)
         self.assertTrue(second["ok"], second)
         self.assertTrue(first["data"]["changed"])
         self.assertFalse(second["data"]["changed"])
         self.assertEqual(frappe.db.count("AOS Follow", {"follower_user": self.actor, "following_user": self.target}), 1)
+        self.assertEqual(self._counters(self.actor), (0, 1, 0))
+        self.assertEqual(self._counters(self.target), (1, 0, 0))
 
-        removed = self._toggle(account_id=account_id, action="unfollow")
-        removed_again = self._toggle(account_id=account_id, action="unfollow")
+        removed = self._unfollow(account_id=account_id)
+        removed_again = self._unfollow(account_id=account_id)
         self.assertTrue(removed["data"]["changed"])
         self.assertFalse(removed_again["data"]["changed"])
         self.assertEqual(frappe.db.count("AOS Follow", {"follower_user": self.actor, "following_user": self.target}), 0)
+        self.assertEqual(self._counters(self.actor), (0, 0, 0))
+        self.assertEqual(self._counters(self.target), (0, 0, 0))
 
     def test_mutual_follow_is_friends_and_lists_do_not_leak_internal_user_id(self):
-        self._toggle(account_id=public_account_id_for_user(self.target), action="follow")
+        self._follow(account_id=public_account_id_for_user(self.target))
         frappe.set_user(self.target)
-        self._toggle(account_id=public_account_id_for_user(self.actor), action="follow")
+        self._follow(account_id=public_account_id_for_user(self.actor))
         frappe.set_user(self.actor)
         with patch("aos.api.social.relationship.rate_limit", return_value=None):
             relation = get_relationship_status_impl(account_id=public_account_id_for_user(self.target))
         self.assertTrue(relation["data"]["is_friend"])
+        self.assertEqual(self._counters(self.actor), (1, 1, 1))
+        self.assertEqual(self._counters(self.target), (1, 1, 1))
 
         with patch("aos.api.social.lists.rate_limit", return_value=None):
             following = get_following_impl(limit=10)
@@ -118,9 +137,9 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertNotIn(self.target, str(followers["data"]["items"]))
 
     def test_block_is_idempotent_and_atomically_removes_both_follow_edges(self):
-        self._toggle(account_id=public_account_id_for_user(self.target), action="follow")
+        self._follow(account_id=public_account_id_for_user(self.target))
         frappe.set_user(self.target)
-        self._toggle(account_id=public_account_id_for_user(self.actor), action="follow")
+        self._follow(account_id=public_account_id_for_user(self.actor))
         frappe.set_user(self.actor)
 
         first = self._block(account_id=public_account_id_for_user(self.target), reason="spam")
@@ -132,10 +151,12 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
             frappe.db.count("AOS User Block", {"blocker_user": self.actor, "blocked_user": self.target, "status": "Active"}),
             1,
         )
+        self.assertEqual(self._counters(self.actor), (0, 0, 0))
+        self.assertEqual(self._counters(self.target), (0, 0, 0))
         self.assertFalse(second["data"]["changed"])
 
     def test_blocked_users_are_excluded_from_discovery_and_social_lists(self):
-        self._toggle(account_id=public_account_id_for_user(self.target), action="follow")
+        self._follow(account_id=public_account_id_for_user(self.target))
         self._block(account_id=public_account_id_for_user(self.target))
         with patch("aos.api.social.lists.rate_limit", return_value=None):
             listing = get_following_impl(limit=10)
@@ -167,7 +188,7 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
 
     def test_suspended_target_is_not_discoverable_or_followable(self):
         frappe.db.set_value("AOS Profile", {"user": self.target}, "account_status", "Suspended", update_modified=False)
-        response = self._toggle(account_id=public_account_id_for_user(self.target), action="follow")
+        response = self._follow(account_id=public_account_id_for_user(self.target))
         self.assertEqual(response["error"], "SOCIAL_PROFILE_UNAVAILABLE")
         with patch("aos.api.social.search_users.rate_limit", return_value=None):
             search = search_users_impl(query=self.target_search_name)
@@ -175,17 +196,14 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
 
     def test_notification_failure_does_not_roll_back_follow(self):
         with (
-            patch("aos.api.social.toggle_follow.rate_limit", return_value=None),
+            patch("aos.api.social.follow.rate_limit", return_value=None),
             patch(
                 "aos.services.social.service.NotificationService.notify_follow",
                 side_effect=RuntimeError("outbox unavailable"),
             ),
             patch("aos.services.social.service.frappe.log_error") as log_error,
         ):
-            response = toggle_follow_impl(
-                account_id=public_account_id_for_user(self.target),
-                action="follow",
-            )
+            response = follow_impl(account_id=public_account_id_for_user(self.target))
         log_error.assert_called_once()
         self.assertTrue(response["ok"], response)
         self.assertTrue(response["data"]["changed"])
@@ -205,7 +223,7 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
     def test_cursor_pagination_is_deterministic_and_non_overlapping(self):
         targets = [self.target, self.make_user("page-two"), self.make_user("page-three")]
         for target in targets:
-            self._toggle(account_id=public_account_id_for_user(target), action="follow")
+            self._follow(account_id=public_account_id_for_user(target))
 
         with patch("aos.api.social.lists.rate_limit", return_value=None):
             first = get_following_impl(limit=1)
@@ -218,7 +236,7 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertNotEqual(first_id, second_id)
 
     def test_blocked_relationship_neutralizes_graph_state_in_both_directions(self):
-        self._toggle(account_id=public_account_id_for_user(self.target), action="follow")
+        self._follow(account_id=public_account_id_for_user(self.target))
         self._block(account_id=public_account_id_for_user(self.target))
 
         with patch("aos.api.social.relationship.rate_limit", return_value=None):
@@ -227,12 +245,44 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
         with patch("aos.api.social.relationship.rate_limit", return_value=None):
             target_view = get_relationship_status_impl(account_id=public_account_id_for_user(self.actor))
 
-        for response in (actor_view, target_view):
-            self.assertFalse(response["data"]["is_following"])
-            self.assertFalse(response["data"]["is_followed_by"])
-            self.assertFalse(response["data"]["is_friend"])
-            self.assertFalse(response["data"]["can_message"])
-            self.assertFalse(response["data"]["can_call"])
+        self.assertTrue(actor_view["ok"], actor_view)
+        self.assertFalse(actor_view["data"]["is_following"])
+        self.assertFalse(actor_view["data"]["is_followed_by"])
+        self.assertFalse(actor_view["data"]["is_friend"])
+        self.assertFalse(actor_view["data"]["can_message"])
+        self.assertFalse(actor_view["data"]["can_call"])
+        self.assertFalse(target_view["ok"])
+        self.assertEqual(target_view["error"], "SOCIAL_PROFILE_UNAVAILABLE")
+
+    def test_public_social_surface_never_reveals_incoming_block_direction(self):
+        # Target blocks actor first. Actor must only see generic unavailability.
+        frappe.set_user(self.target)
+        target_block = self._block(account_id=public_account_id_for_user(self.actor))
+        self.assertTrue(target_block["ok"], target_block)
+
+        frappe.set_user(self.actor)
+        with patch("aos.api.social.relationship.rate_limit", return_value=None):
+            hidden = get_relationship_status_impl(account_id=public_account_id_for_user(self.target))
+        self.assertFalse(hidden["ok"], hidden)
+        self.assertEqual(hidden["error"], "SOCIAL_PROFILE_UNAVAILABLE")
+
+        # If actor also blocks target, only actor-owned block state may be exposed.
+        own_block = self._block(account_id=public_account_id_for_user(self.target))
+        self.assertTrue(own_block["ok"], own_block)
+        self.assertTrue(own_block["data"]["is_blocked_by_me"])
+        self.assertFalse(own_block["data"]["has_blocked_me"])
+        self.assertEqual(own_block["data"]["block_status"], "blocked_by_me")
+
+        with patch("aos.api.social.block.rate_limit", return_value=None):
+            status = get_block_status_impl(account_id=public_account_id_for_user(self.target))
+            unblocked = unblock_user_impl(account_id=public_account_id_for_user(self.target))
+        self.assertTrue(status["ok"], status)
+        self.assertFalse(status["data"]["has_blocked_me"])
+        self.assertEqual(status["data"]["block_status"], "blocked_by_me")
+        self.assertTrue(unblocked["ok"], unblocked)
+        self.assertFalse(unblocked["data"]["has_blocked_me"])
+        self.assertFalse(unblocked["data"]["is_blocked"])
+        self.assertFalse(unblocked["data"]["can_view_profile"])
 
     def test_follow_notification_deduplication_does_not_create_rows(self):
         service = SocialService()
@@ -245,9 +295,9 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
         notify_follow.assert_not_called()
 
     def test_permanent_deletion_social_cleanup_is_bounded_and_complete(self):
-        self._toggle(account_id=public_account_id_for_user(self.target), action="follow")
+        self._follow(account_id=public_account_id_for_user(self.target))
         frappe.set_user(self.target)
-        self._toggle(account_id=public_account_id_for_user(self.actor), action="follow")
+        self._follow(account_id=public_account_id_for_user(self.actor))
         frappe.set_user(self.actor)
         self._block(account_id=public_account_id_for_user(self.target))
 
@@ -272,5 +322,5 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
             ),
             0,
         )
-        self.assertGreaterEqual(summary["active_social_blocks_closed"], 1)
+        self.assertGreaterEqual(summary["social_block_rows_removed"], 1)
 

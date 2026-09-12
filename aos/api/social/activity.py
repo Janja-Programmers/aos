@@ -55,7 +55,7 @@ def _safe_record(action_name: str, fn, *args, **kwargs) -> str | bool | None:
         operation = (
             "search" if action_name == "record_user_search_activity"
             else "block" if action_name == "record_block_user_activity"
-            else "toggle_follow" if action_name == "record_follow_user_activity"
+            else "follow" if action_name == "record_follow_user_activity"
             else "relationship"
         )
         social_log(operation, outcome="failure", reason="internal")

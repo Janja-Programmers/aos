@@ -23,6 +23,7 @@ from aos.patches.v1_0 import (
     install_notification_indexes,
     install_verification_indexes,
     install_report_indexes,
+    install_social_indexes,
     install_shorts_indexes,
     install_shorts_recommendation_indexes,
 )
@@ -42,6 +43,7 @@ _SCHEMA_INVARIANT_INSTALLERS: tuple[Callable[[], None], ...] = (
     install_chat_indexes.execute,
     install_call_indexes.execute,
     install_catalog_indexes.execute,
+    install_social_indexes.execute,
     install_report_indexes.execute,
     install_activity_indexes.execute,
     install_notification_indexes.execute,

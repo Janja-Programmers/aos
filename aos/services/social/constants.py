@@ -1,4 +1,4 @@
-"""Canonical Social constants and public compatibility policy."""
+"""Canonical Social constants and public contract."""
 
 FOLLOW_DOCTYPE = "AOS Follow"
 PROFILE_DOCTYPE = "AOS Profile"
@@ -28,7 +28,8 @@ FOLLOW_NOTIFICATION_DEDUPE_SECONDS = 300
 MAX_SOCIAL_EVENT_FANOUT = 500
 
 RATE_LIMITS = {
-    "toggle_follow": 24,
+    "follow": 24,
+    "unfollow": 36,
     "relationship": 180,
     "following": 90,
     "followers": 90,
@@ -40,10 +41,10 @@ RATE_LIMITS = {
     "blocked_list": 90,
 }
 
-TARGET_FIELDS = frozenset({"target_user", "account_id"})
-FOLLOW_FIELDS = frozenset({"target_user", "account_id", "action"})
-BLOCK_FIELDS = frozenset({"target_user", "account_id", "reason"})
+TARGET_FIELDS = frozenset({"account_id"})
+FOLLOW_FIELDS = TARGET_FIELDS
+BLOCK_FIELDS = frozenset({"account_id", "reason"})
 RELATIONSHIP_FIELDS = TARGET_FIELDS
-LIST_FIELDS = frozenset({"limit", "start", "cursor", "search"})
-SEARCH_FIELDS = frozenset({"query", "search", "limit", "start", "cursor"})
-BLOCK_LIST_FIELDS = frozenset({"limit", "start", "cursor"})
+LIST_FIELDS = frozenset({"limit", "cursor", "search"})
+SEARCH_FIELDS = frozenset({"query", "limit", "cursor"})
+BLOCK_LIST_FIELDS = frozenset({"limit", "cursor"})

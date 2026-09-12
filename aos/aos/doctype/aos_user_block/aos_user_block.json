@@ -11,8 +11,7 @@
   "blocked_at",
   "unblocked_at",
   "section_break_znaf",
-  "reason",
-  "active_pair_key"
+  "reason"
  ],
  "fields": [
   {
@@ -67,16 +66,8 @@
   },
   {
    "fieldname": "reason",
-   "fieldtype": "Small Text",
-   "label": "Reason"
-  },
-  {
-   "fieldname": "active_pair_key",
    "fieldtype": "Data",
-   "hidden": 1,
-   "read_only": 1,
-   "label": "Active Pair Key",
-   "no_copy": 1,
+   "label": "Reason",
    "length": 300
   }
  ],

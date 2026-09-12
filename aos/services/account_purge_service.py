@@ -102,15 +102,14 @@ def _purge_social_batch(*, user: str, limit: int) -> dict[str, int]:
             removed = len(names)
             repository.sync_counters(sorted(affected))
 
-    blocks_closed = 0
+    blocks_removed = 0
     remaining_budget = max(0, size - removed)
     if remaining_budget and _doctype_exists("AOS User Block"):
-        now = now_datetime()
         names = frappe.db.sql(
             """
             SELECT name
             FROM `tabAOS User Block`
-            WHERE status = 'Active' AND (blocker_user = %s OR blocked_user = %s)
+            WHERE blocker_user = %s OR blocked_user = %s
             ORDER BY name ASC
             LIMIT %s FOR UPDATE
             """,
@@ -119,20 +118,12 @@ def _purge_social_batch(*, user: str, limit: int) -> dict[str, int]:
         )
         names = tuple(str(name) for name in names if name)
         if names:
-            frappe.db.sql(
-                """
-                UPDATE `tabAOS User Block`
-                SET status = 'Unblocked', unblocked_at = COALESCE(unblocked_at, %(now)s),
-                    active_pair_key = NULL, modified = %(now)s
-                WHERE name IN %(names)s
-                """,
-                {"now": now, "names": names},
-            )
-            blocks_closed = len(names)
+            frappe.db.sql("DELETE FROM `tabAOS User Block` WHERE name IN %s", (names,))
+            blocks_removed = len(names)
 
     return {
         "follow_rows_removed": removed,
-        "active_social_blocks_closed": blocks_closed,
+        "social_block_rows_removed": blocks_removed,
     }
 
 
@@ -435,7 +426,7 @@ def _count_activity_remaining(user: str) -> int:
 def _remaining_bounded_private_rows(user: str) -> int:
     checks = (
         ("AOS Follow", "follower_user = %s OR following_user = %s", (user, user)),
-        ("AOS User Block", "status = 'Active' AND (blocker_user = %s OR blocked_user = %s)", (user, user)),
+        ("AOS User Block", "blocker_user = %s OR blocked_user = %s", (user, user)),
         ("AOS Wishlist", "user = %s", (user,)),
         ("AOS Notification", "user = %s", (user,)),
         ("AOS Saved Search", "user = %s", (user,)),

@@ -30,11 +30,10 @@ class TestRecoverableAccountDeletion(AOSFeatureTestMixin, FrappeTestCase):
             "aos.services.social.service.SocialService._notify_follow_atomic",
             return_value="test",
         ):
-            result = SocialService().toggle_follow(
+            result = SocialService().follow(
                 actor=follower,
                 payload={
                     "account_id": public_account_id_for_user(following),
-                    "action": "follow",
                 },
             )
         self.assertTrue(result["changed"], result)

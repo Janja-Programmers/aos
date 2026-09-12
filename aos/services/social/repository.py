@@ -1,4 +1,4 @@
-"""Bounded, parameterized Social persistence and graph queries."""
+"""Bounded, parameterized persistence for the Social graph."""
 
 from __future__ import annotations
 
@@ -9,21 +9,20 @@ import frappe
 from frappe.utils import now_datetime
 
 from aos.api.shared.db import is_duplicate_entry_error
-from aos.api.shared.sql_safety import safe_like_contains, safe_like_prefix
+from aos.api.shared.sql_safety import safe_like_prefix
 
-from .constants import BLOCK_ACTIVE, BLOCK_DOCTYPE, BLOCK_UNBLOCKED, FOLLOW_DOCTYPE, PROFILE_DOCTYPE
+from .constants import BLOCK_ACTIVE, BLOCK_DOCTYPE, BLOCK_UNBLOCKED, FOLLOW_DOCTYPE
 
 
 class SocialRepository:
     def lock_account_pair(self, *, user_a: str, user_b: str) -> None:
-        """Serialize incompatible relationship mutations in deterministic order."""
+        """Serialize incompatible pair mutations in one deterministic lock order."""
         users = tuple(sorted({str(user_a), str(user_b)}))
         if len(users) != 2:
             return
         frappe.db.sql(
             """
-            SELECT name
-            FROM `tabUser`
+            SELECT name FROM `tabUser`
             WHERE name IN %(users)s
             ORDER BY name ASC
             FOR UPDATE
@@ -32,19 +31,12 @@ class SocialRepository:
         )
 
     def lock_account_pair_shared(self, *, user_a: str, user_b: str) -> None:
-        """Share-lock account rows for read-side relationship decisions.
-
-        Live viewers may validate access concurrently. Canonical Social
-        mutations still use :meth:`lock_account_pair`, whose exclusive lock
-        waits for these readers before changing block/follow state.
-        """
         users = tuple(sorted({str(user_a), str(user_b)}))
         if len(users) != 2:
             return
         frappe.db.sql(
             """
-            SELECT name
-            FROM `tabUser`
+            SELECT name FROM `tabUser`
             WHERE name IN %(users)s
             ORDER BY name ASC
             LOCK IN SHARE MODE
@@ -59,6 +51,7 @@ class SocialRepository:
                    COALESCE(NULLIF(p.account_status, ''), 'Active') AS account_status,
                    CASE WHEN COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Deleted' THEN 1 ELSE 0 END AS is_deleted,
                    p.name AS account_id, p.display_name, p.total_followers, p.total_following,
+                   COALESCE(p.total_friends, 0) AS total_friends,
                    COALESCE(p.is_verified, 0) AS is_verified
             FROM `tabUser` u
             INNER JOIN `tabAOS Profile` p ON p.user = u.name
@@ -76,10 +69,8 @@ class SocialRepository:
     def lock_follow_pair(self, *, follower: str, target: str) -> dict[str, Any] | None:
         rows = frappe.db.sql(
             """
-            SELECT name, creation
-            FROM `tabAOS Follow`
+            SELECT name, creation FROM `tabAOS Follow`
             WHERE follower_user = %s AND following_user = %s
-            ORDER BY creation ASC, name ASC
             LIMIT 1 FOR UPDATE
             """,
             (follower, target),
@@ -91,36 +82,62 @@ class SocialRepository:
         doc = frappe.get_doc({"doctype": FOLLOW_DOCTYPE, "follower_user": follower, "following_user": target})
         try:
             doc.insert(ignore_permissions=True)
-            return doc.name, True
+            return str(doc.name), True
         except Exception as exc:
             if not is_duplicate_entry_error(exc) and not isinstance(exc, getattr(frappe, "UniqueValidationError", ())):
                 raise
-            existing = frappe.db.get_value(
-                FOLLOW_DOCTYPE,
-                {"follower_user": follower, "following_user": target},
-                "name",
-            )
+            existing = frappe.db.get_value(FOLLOW_DOCTYPE, {"follower_user": follower, "following_user": target}, "name")
             if not existing:
                 raise
             return str(existing), False
 
     def delete_follow(self, *, follower: str, target: str) -> bool:
-        frappe.db.sql(
-            "DELETE FROM `tabAOS Follow` WHERE follower_user = %s AND following_user = %s",
-            (follower, target),
-        )
-        return bool(self._rowcount())
+        existing = self.lock_follow_pair(follower=follower, target=target)
+        if not existing:
+            return False
+        was_friend = self.follow_exists(follower=target, target=follower)
+        frappe.db.sql("DELETE FROM `tabAOS Follow` WHERE name = %s", (existing["name"],))
+        self.apply_follow_delete_counters(follower=follower, target=target, was_friend=was_friend)
+        return True
 
     def remove_follows_both_directions(self, *, user_a: str, user_b: str) -> int:
-        frappe.db.sql(
+        rows = frappe.db.sql(
             """
-            DELETE FROM `tabAOS Follow`
+            SELECT name, follower_user, following_user
+            FROM `tabAOS Follow`
             WHERE (follower_user = %s AND following_user = %s)
                OR (follower_user = %s AND following_user = %s)
+            ORDER BY name ASC
+            FOR UPDATE
             """,
             (user_a, user_b, user_b, user_a),
+            as_dict=True,
         )
-        return max(0, self._rowcount())
+        if not rows:
+            return 0
+        names = tuple(str(row.name) for row in rows)
+        frappe.db.sql("DELETE FROM `tabAOS Follow` WHERE name IN %(names)s", {"names": names})
+        for row in rows:
+            self._adjust_profile_counter(str(row.following_user), "total_followers", -1)
+            self._adjust_profile_counter(str(row.follower_user), "total_following", -1)
+        if len(rows) == 2:
+            self._adjust_profile_counter(user_a, "total_friends", -1)
+            self._adjust_profile_counter(user_b, "total_friends", -1)
+        return len(rows)
+
+    def apply_follow_insert_counters(self, *, follower: str, target: str) -> None:
+        self._adjust_profile_counter(target, "total_followers", 1)
+        self._adjust_profile_counter(follower, "total_following", 1)
+        if self.follow_exists(follower=target, target=follower):
+            self._adjust_profile_counter(follower, "total_friends", 1)
+            self._adjust_profile_counter(target, "total_friends", 1)
+
+    def apply_follow_delete_counters(self, *, follower: str, target: str, was_friend: bool) -> None:
+        self._adjust_profile_counter(target, "total_followers", -1)
+        self._adjust_profile_counter(follower, "total_following", -1)
+        if was_friend:
+            self._adjust_profile_counter(follower, "total_friends", -1)
+            self._adjust_profile_counter(target, "total_friends", -1)
 
     def relationship_sets(
         self,
@@ -131,12 +148,9 @@ class SocialRepository:
         unique = sorted({str(target) for target in targets if target and str(target) != viewer})
         if not unique:
             return set(), set(), {}
-
         outgoing: set[str] = set()
         incoming: set[str] = set()
         block_map = {target: (False, False) for target in unique}
-
-        # Keep cross-feature callers bounded even when they supply a large graph.
         for index in range(0, len(unique), 200):
             chunk = tuple(unique[index : index + 200])
             follows = frappe.db.sql(
@@ -149,17 +163,8 @@ class SocialRepository:
                 {"viewer": viewer, "targets": chunk},
                 as_dict=True,
             )
-            outgoing.update(
-                str(row.following_user)
-                for row in follows
-                if str(row.follower_user) == viewer
-            )
-            incoming.update(
-                str(row.follower_user)
-                for row in follows
-                if str(row.following_user) == viewer
-            )
-
+            outgoing.update(str(row.following_user) for row in follows if str(row.follower_user) == viewer)
+            incoming.update(str(row.follower_user) for row in follows if str(row.following_user) == viewer)
             blocks = frappe.db.sql(
                 """
                 SELECT blocker_user, blocked_user
@@ -177,29 +182,10 @@ class SocialRepository:
                     block_map[blocked] = (True, block_map[blocked][1])
                 elif blocked == viewer and blocker in block_map:
                     block_map[blocker] = (block_map[blocker][0], True)
-
         return outgoing, incoming, block_map
 
-    def friends_count(self, *, user: str) -> int:
-        rows = frappe.db.sql(
-            """
-            SELECT COUNT(*) AS total
-            FROM `tabAOS Follow` outgoing
-            INNER JOIN `tabAOS Follow` incoming
-              ON incoming.follower_user = outgoing.following_user
-             AND incoming.following_user = outgoing.follower_user
-            INNER JOIN `tabAOS Profile` p ON p.user = outgoing.following_user
-            INNER JOIN `tabUser` u ON u.name = outgoing.following_user
-            WHERE outgoing.follower_user = %s
-              AND u.enabled = 1
-              AND COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'
-            """,
-            (user,),
-            as_dict=True,
-        )
-        return max(0, int(rows[0].total or 0)) if rows else 0
-
     def sync_counters(self, users: Iterable[str]) -> None:
+        """Rare reconciliation path; normal mutations use constant-time deltas."""
         unique = sorted({str(user) for user in users if user})
         for index in range(0, len(unique), 200):
             chunk = tuple(unique[index : index + 200])
@@ -211,6 +197,14 @@ class SocialRepository:
                     ),
                     p.total_following = (
                         SELECT COUNT(*) FROM `tabAOS Follow` f WHERE f.follower_user = p.user
+                    ),
+                    p.total_friends = (
+                        SELECT COUNT(*)
+                        FROM `tabAOS Follow` outgoing
+                        INNER JOIN `tabAOS Follow` incoming
+                          ON incoming.follower_user = outgoing.following_user
+                         AND incoming.following_user = outgoing.follower_user
+                        WHERE outgoing.follower_user = p.user
                     )
                 WHERE p.user IN %(users)s
                 """,
@@ -233,82 +227,66 @@ class SocialRepository:
             "current_total_following": max(0, int(getattr(by_user.get(viewer), "total_following", 0) or 0)),
         }
 
-    def lock_block_pair(self, *, blocker: str, blocked: str) -> list[dict[str, Any]]:
+    def lock_block_pair(self, *, blocker: str, blocked: str) -> dict[str, Any] | None:
         rows = frappe.db.sql(
             """
             SELECT name, status, reason, blocked_at, unblocked_at, creation, modified
             FROM `tabAOS User Block`
             WHERE blocker_user = %s AND blocked_user = %s
-            ORDER BY (status = 'Active') DESC, modified DESC, creation DESC, name DESC
-            LIMIT 2 FOR UPDATE
+            LIMIT 1 FOR UPDATE
             """,
             (blocker, blocked),
             as_dict=True,
         )
-        return [dict(row) for row in rows]
+        return dict(rows[0]) if rows else None
 
     def activate_block(self, *, blocker: str, blocked: str, reason: str) -> tuple[str, bool]:
-        rows = self.lock_block_pair(blocker=blocker, blocked=blocked)
-        active = next((row for row in rows if row.get("status") == BLOCK_ACTIVE), None)
+        row = self.lock_block_pair(blocker=blocker, blocked=blocked)
         now = now_datetime()
-        if active:
-            if reason and reason != str(active.get("reason") or ""):
-                frappe.db.set_value(BLOCK_DOCTYPE, active["name"], "reason", reason, update_modified=True)
-            return str(active["name"]), False
-        reusable = rows[0] if rows else None
-        if reusable:
+        if row:
+            if row.get("status") == BLOCK_ACTIVE:
+                if reason != str(row.get("reason") or ""):
+                    frappe.db.set_value(BLOCK_DOCTYPE, row["name"], "reason", reason, update_modified=True)
+                return str(row["name"]), False
             frappe.db.set_value(
                 BLOCK_DOCTYPE,
-                reusable["name"],
-                {
-                    "status": BLOCK_ACTIVE,
-                    "reason": reason or str(reusable.get("reason") or ""),
-                    "blocked_at": now,
-                    "unblocked_at": None,
-                    "active_pair_key": f"{blocker}|{blocked}",
-                },
+                row["name"],
+                {"status": BLOCK_ACTIVE, "reason": reason, "blocked_at": now, "unblocked_at": None},
                 update_modified=True,
             )
-            return str(reusable["name"]), True
-        doc = frappe.get_doc(
-            {
-                "doctype": BLOCK_DOCTYPE,
-                "blocker_user": blocker,
-                "blocked_user": blocked,
-                "status": BLOCK_ACTIVE,
-                "reason": reason,
-                "blocked_at": now,
-            }
-        )
+            return str(row["name"]), True
+        doc = frappe.get_doc({
+            "doctype": BLOCK_DOCTYPE,
+            "blocker_user": blocker,
+            "blocked_user": blocked,
+            "status": BLOCK_ACTIVE,
+            "reason": reason,
+            "blocked_at": now,
+        })
         try:
             doc.insert(ignore_permissions=True)
             return str(doc.name), True
         except Exception as exc:
             if not is_duplicate_entry_error(exc) and not isinstance(exc, getattr(frappe, "UniqueValidationError", ())):
                 raise
-            existing = frappe.db.get_value(
-                BLOCK_DOCTYPE,
-                {"blocker_user": blocker, "blocked_user": blocked, "status": BLOCK_ACTIVE},
-                "name",
-            )
+            existing = frappe.db.get_value(BLOCK_DOCTYPE, {"blocker_user": blocker, "blocked_user": blocked}, "name")
             if not existing:
                 raise
             return str(existing), False
 
     def deactivate_block(self, *, blocker: str, blocked: str) -> bool:
-        rows = self.lock_block_pair(blocker=blocker, blocked=blocked)
-        active = next((row for row in rows if row.get("status") == BLOCK_ACTIVE), None)
-        if not active:
+        row = self.lock_block_pair(blocker=blocker, blocked=blocked)
+        if not row or row.get("status") != BLOCK_ACTIVE:
             return False
         frappe.db.set_value(
             BLOCK_DOCTYPE,
-            active["name"],
-            {"status": BLOCK_UNBLOCKED, "unblocked_at": now_datetime(), "active_pair_key": None},
+            row["name"],
+            {"status": BLOCK_UNBLOCKED, "unblocked_at": now_datetime()},
             update_modified=True,
         )
         return True
 
-    def list_social(self, *, mode: str, viewer: str, limit: int, start: int, cursor: dict[str, Any] | None, search: str) -> tuple[list[dict[str, Any]], int]:
+    def list_social(self, *, mode: str, viewer: str, limit: int, cursor: dict[str, Any] | None, search: str) -> list[dict[str, Any]]:
         if mode not in {"following", "followers", "friends"}:
             raise ValueError("Unsupported social list mode")
         search_sql, search_params = self._search_filter(search)
@@ -321,33 +299,24 @@ class SocialRepository:
             )
         """
         active_sql = "AND u.enabled = 1 AND COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'"
-        params: dict[str, Any] = {"viewer": viewer, "limit": limit + 1, "start": start, **search_params}
+        params: dict[str, Any] = {"viewer": viewer, "limit": limit + 1, **search_params}
         cursor_sql = ""
         if mode == "following":
             target = "f.following_user"
-            sort_expr = "f.creation"
-            name_expr = "f.name"
             if cursor:
                 cursor_sql = "AND (f.creation < %(cursor_at)s OR (f.creation = %(cursor_at)s AND f.name < %(cursor_name)s))"
                 params.update(cursor_at=cursor.get("at"), cursor_name=cursor.get("name"))
             sql = f"""
                 SELECT f.name AS edge_name, f.following_user AS user, f.creation AS followed_at,
-                       f.creation AS sort_at, p.total_followers, p.total_following, p.is_verified,
-                       u.full_name, u.user_image
+                       f.creation AS sort_at, p.total_followers, p.total_following, p.total_friends,
+                       p.is_verified, p.display_name
                 FROM `tabAOS Follow` f
                 INNER JOIN `tabAOS Profile` p ON p.user = f.following_user
                 INNER JOIN `tabUser` u ON u.name = f.following_user
                 WHERE f.follower_user = %(viewer)s {active_sql}
                   {block_sql.replace('TARGET_EXPR', target)} {search_sql} {cursor_sql}
-                ORDER BY {sort_expr} DESC, {name_expr} DESC
-                LIMIT %(limit)s OFFSET %(start)s
-            """
-            count_sql = f"""
-                SELECT COUNT(*) AS total FROM `tabAOS Follow` f
-                INNER JOIN `tabAOS Profile` p ON p.user = f.following_user
-                INNER JOIN `tabUser` u ON u.name = f.following_user
-                WHERE f.follower_user = %(viewer)s {active_sql}
-                  {block_sql.replace('TARGET_EXPR', target)} {search_sql}
+                ORDER BY f.creation DESC, f.name DESC
+                LIMIT %(limit)s
             """
         elif mode == "followers":
             target = "f.follower_user"
@@ -356,33 +325,25 @@ class SocialRepository:
                 params.update(cursor_at=cursor.get("at"), cursor_name=cursor.get("name"))
             sql = f"""
                 SELECT f.name AS edge_name, f.follower_user AS user, f.creation AS followed_at,
-                       f.creation AS sort_at, p.total_followers, p.total_following, p.is_verified,
-                       u.full_name, u.user_image
+                       f.creation AS sort_at, p.total_followers, p.total_following, p.total_friends,
+                       p.is_verified, p.display_name
                 FROM `tabAOS Follow` f
                 INNER JOIN `tabAOS Profile` p ON p.user = f.follower_user
                 INNER JOIN `tabUser` u ON u.name = f.follower_user
                 WHERE f.following_user = %(viewer)s {active_sql}
                   {block_sql.replace('TARGET_EXPR', target)} {search_sql} {cursor_sql}
                 ORDER BY f.creation DESC, f.name DESC
-                LIMIT %(limit)s OFFSET %(start)s
-            """
-            count_sql = f"""
-                SELECT COUNT(*) AS total FROM `tabAOS Follow` f
-                INNER JOIN `tabAOS Profile` p ON p.user = f.follower_user
-                INNER JOIN `tabUser` u ON u.name = f.follower_user
-                WHERE f.following_user = %(viewer)s {active_sql}
-                  {block_sql.replace('TARGET_EXPR', target)} {search_sql}
+                LIMIT %(limit)s
             """
         else:
             target = "f1.following_user"
             if cursor:
-                cursor_sql = """AND (GREATEST(f1.creation, f2.creation) < %(cursor_at)s
-                    OR (GREATEST(f1.creation, f2.creation) = %(cursor_at)s AND f1.name < %(cursor_name)s))"""
+                cursor_sql = "AND (f1.creation < %(cursor_at)s OR (f1.creation = %(cursor_at)s AND f1.name < %(cursor_name)s))"
                 params.update(cursor_at=cursor.get("at"), cursor_name=cursor.get("name"))
             sql = f"""
                 SELECT f1.name AS edge_name, f1.following_user AS user, f1.creation AS followed_at,
-                       f2.creation AS followed_back_at, GREATEST(f1.creation, f2.creation) AS sort_at,
-                       p.total_followers, p.total_following, p.is_verified, u.full_name, u.user_image
+                       f2.creation AS followed_back_at, f1.creation AS sort_at,
+                       p.total_followers, p.total_following, p.total_friends, p.is_verified, p.display_name
                 FROM `tabAOS Follow` f1
                 INNER JOIN `tabAOS Follow` f2
                   ON f2.follower_user = f1.following_user AND f2.following_user = f1.follower_user
@@ -390,78 +351,51 @@ class SocialRepository:
                 INNER JOIN `tabUser` u ON u.name = f1.following_user
                 WHERE f1.follower_user = %(viewer)s {active_sql}
                   {block_sql.replace('TARGET_EXPR', target)} {search_sql} {cursor_sql}
-                ORDER BY sort_at DESC, f1.name DESC
-                LIMIT %(limit)s OFFSET %(start)s
+                ORDER BY f1.creation DESC, f1.name DESC
+                LIMIT %(limit)s
             """
-            count_sql = f"""
-                SELECT COUNT(*) AS total FROM `tabAOS Follow` f1
-                INNER JOIN `tabAOS Follow` f2
-                  ON f2.follower_user = f1.following_user AND f2.following_user = f1.follower_user
-                INNER JOIN `tabAOS Profile` p ON p.user = f1.following_user
-                INNER JOIN `tabUser` u ON u.name = f1.following_user
-                WHERE f1.follower_user = %(viewer)s {active_sql}
-                  {block_sql.replace('TARGET_EXPR', target)} {search_sql}
-            """
-        rows = frappe.db.sql(sql, params, as_dict=True)
-        totals = frappe.db.sql(count_sql, params, as_dict=True)
-        return [dict(row) for row in rows], int(totals[0].total or 0) if totals else 0
+        return [dict(row) for row in frappe.db.sql(sql, params, as_dict=True)]
 
-    def search_users(self, *, viewer: str, query: str, limit: int, offset: int) -> tuple[list[dict[str, Any]], int]:
-        contains = safe_like_contains(query)
+    def search_users(self, *, viewer: str, query: str, limit: int, cursor: dict[str, Any] | None) -> list[dict[str, Any]]:
         prefix = safe_like_prefix(query)
-        params = {
-            "viewer": viewer,
-            "contains": contains,
-            "prefix": prefix,
-            "limit": limit + 1,
-            "offset": offset,
-        }
-        where = """
-            u.enabled = 1
-            AND COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'
-
-            AND (COALESCE(p.display_name, '') LIKE %(contains)s ESCAPE '\\\\'
-              OR COALESCE(u.full_name, '') LIKE %(contains)s ESCAPE '\\\\'
-              OR COALESCE(u.first_name, '') LIKE %(contains)s ESCAPE '\\\\'
-              OR COALESCE(p.name, '') LIKE %(contains)s ESCAPE '\\\\')
-            AND NOT EXISTS (
-                SELECT 1 FROM `tabAOS User Block` b
-                WHERE b.status = 'Active'
-                  AND ((b.blocker_user = %(viewer)s AND b.blocked_user = u.name)
-                    OR (b.blocked_user = %(viewer)s AND b.blocker_user = u.name))
-            )
-        """
+        match_sql = (
+            "p.name LIKE %(prefix)s ESCAPE '\\\\'"
+            if query.upper().startswith("ACC-")
+            else "p.display_name LIKE %(prefix)s ESCAPE '\\\\'"
+        )
+        params: dict[str, Any] = {"viewer": viewer, "prefix": prefix, "limit": limit + 1}
+        cursor_sql = ""
+        if cursor:
+            cursor_sql = """AND (p.display_name > %(cursor_display)s
+                OR (p.display_name = %(cursor_display)s AND p.name > %(cursor_account)s))"""
+            params.update(cursor_display=str(cursor.get("display") or ""), cursor_account=str(cursor.get("account_id") or ""))
         rows = frappe.db.sql(
             f"""
-            SELECT u.name AS user, u.full_name, u.first_name, u.user_image,
-                   p.display_name, p.name AS account_id, p.total_followers, p.total_following, p.is_verified,
-                   CASE
-                     WHEN COALESCE(p.display_name, '') LIKE %(prefix)s ESCAPE '\\\\' THEN 0
-                     WHEN COALESCE(u.full_name, '') LIKE %(prefix)s ESCAPE '\\\\' THEN 1
-                     WHEN COALESCE(u.first_name, '') LIKE %(prefix)s ESCAPE '\\\\' THEN 2
-                     WHEN COALESCE(p.name, '') LIKE %(prefix)s ESCAPE '\\\\' THEN 3
-                     ELSE 4 END AS search_rank
-            FROM `tabUser` u
-            INNER JOIN `tabAOS Profile` p ON p.user = u.name
-            WHERE {where}
-            ORDER BY search_rank ASC, COALESCE(p.is_verified, 0) DESC,
-                     COALESCE(p.total_followers, 0) DESC,
-                     COALESCE(NULLIF(p.display_name, ''), NULLIF(u.full_name, ''), u.first_name, '') ASC,
-                     p.name ASC, u.name ASC
-            LIMIT %(limit)s OFFSET %(offset)s
+            SELECT p.user AS user, p.display_name, p.name AS account_id,
+                   p.total_followers, p.total_following, p.total_friends, p.is_verified
+            FROM `tabAOS Profile` p
+            INNER JOIN `tabUser` u ON u.name = p.user
+            WHERE u.enabled = 1
+              AND COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'
+              AND p.user != %(viewer)s
+              AND {match_sql}
+              AND NOT EXISTS (
+                  SELECT 1 FROM `tabAOS User Block` b
+                  WHERE b.status = 'Active'
+                    AND ((b.blocker_user = %(viewer)s AND b.blocked_user = p.user)
+                      OR (b.blocked_user = %(viewer)s AND b.blocker_user = p.user))
+              )
+              {cursor_sql}
+            ORDER BY p.display_name ASC, p.name ASC
+            LIMIT %(limit)s
             """,
             params,
             as_dict=True,
         )
-        totals = frappe.db.sql(
-            f"SELECT COUNT(*) AS total FROM `tabUser` u INNER JOIN `tabAOS Profile` p ON p.user = u.name WHERE {where}",
-            params,
-            as_dict=True,
-        )
-        return [dict(row) for row in rows], int(totals[0].total or 0) if totals else 0
+        return [dict(row) for row in rows]
 
-    def list_blocked(self, *, viewer: str, limit: int, start: int, cursor: dict[str, Any] | None) -> tuple[list[dict[str, Any]], int]:
-        params: dict[str, Any] = {"viewer": viewer, "status": BLOCK_ACTIVE, "limit": limit + 1, "start": start}
+    def list_blocked(self, *, viewer: str, limit: int, cursor: dict[str, Any] | None) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"viewer": viewer, "status": BLOCK_ACTIVE, "limit": limit + 1}
         cursor_sql = ""
         if cursor:
             cursor_sql = """AND (b.blocked_at < %(cursor_at)s
@@ -470,23 +404,16 @@ class SocialRepository:
         rows = frappe.db.sql(
             f"""
             SELECT b.name AS block_name, b.blocked_user AS user, b.reason,
-                   b.blocked_at, b.creation, b.blocked_at AS sort_at,
-                   p.total_followers, p.total_following, p.is_verified,
-                   u.full_name, u.user_image,
-                   COALESCE(NULLIF(p.account_status, ''), 'Active') AS account_status,
-                   CASE WHEN COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Deleted' THEN 1 ELSE 0 END AS is_deleted
+                   b.blocked_at, b.creation, b.blocked_at AS sort_at
             FROM `tabAOS User Block` b
-            LEFT JOIN `tabAOS Profile` p ON p.user = b.blocked_user
-            LEFT JOIN `tabUser` u ON u.name = b.blocked_user
             WHERE b.blocker_user = %(viewer)s AND b.status = %(status)s {cursor_sql}
             ORDER BY b.blocked_at DESC, b.name DESC
-            LIMIT %(limit)s OFFSET %(start)s
+            LIMIT %(limit)s
             """,
             params,
             as_dict=True,
         )
-        total = frappe.db.count(BLOCK_DOCTYPE, {"blocker_user": viewer, "status": BLOCK_ACTIVE})
-        return [dict(row) for row in rows], int(total or 0)
+        return [dict(row) for row in rows]
 
     def list_active_followers_for_event_page(
         self,
@@ -496,7 +423,6 @@ class SocialRepository:
         after_creation: str | None = None,
         after_name: str | None = None,
     ) -> list[dict[str, str]]:
-        """Return a deterministic, lifecycle-safe, block-aware fanout page."""
         bounded = max(1, min(int(limit or 1), 500))
         params: dict[str, object] = {"target": target, "limit": bounded}
         cursor_sql = ""
@@ -528,30 +454,23 @@ class SocialRepository:
             params,
             as_dict=True,
         )
-        return [
-            {"user": str(row.user), "creation": str(row.creation), "name": str(row.name)}
-            for row in rows
-            if row.user
-        ]
+        return [{"user": str(row.user), "creation": str(row.creation), "name": str(row.name)} for row in rows if row.user]
 
     def list_active_followers_for_event(self, *, target: str, limit: int) -> list[str]:
-        """Compatibility wrapper returning only follower User values."""
-        return [
-            row["user"]
-            for row in self.list_active_followers_for_event_page(target=target, limit=limit)
-        ]
+        return [row["user"] for row in self.list_active_followers_for_event_page(target=target, limit=limit)]
 
     def recent_follow_notification_exists(self, *, recipient: str, actor: str, seconds: int) -> bool:
-        rows = frappe.db.sql(
-            """
-            SELECT 1 FROM `tabAOS Notification`
-            WHERE user = %s AND actor = %s AND type = 'follow'
-              AND creation >= DATE_SUB(NOW(), INTERVAL %s SECOND)
-            LIMIT 1
-            """,
-            (recipient, actor, max(1, int(seconds))),
+        return bool(
+            frappe.db.sql(
+                """
+                SELECT 1 FROM `tabAOS Notification`
+                WHERE user = %s AND actor = %s AND type = 'follow'
+                  AND creation >= DATE_SUB(NOW(), INTERVAL %s SECOND)
+                LIMIT 1
+                """,
+                (recipient, actor, max(1, int(seconds))),
+            )
         )
-        return bool(rows)
 
     @staticmethod
     def query_fingerprint(query: str) -> str:
@@ -561,18 +480,17 @@ class SocialRepository:
     def _search_filter(search: str) -> tuple[str, dict[str, Any]]:
         if not search:
             return "", {}
-        value = safe_like_contains(search)
+        field = "p.name" if search.upper().startswith("ACC-") else "p.display_name"
         return (
-            """AND (COALESCE(p.display_name, '') LIKE %(search)s ESCAPE '\\\\'
-                OR COALESCE(u.full_name, '') LIKE %(search)s ESCAPE '\\\\'
-                OR COALESCE(u.first_name, '') LIKE %(search)s ESCAPE '\\\\'
-                OR COALESCE(p.name, '') LIKE %(search)s ESCAPE '\\\\')""",
-            {"search": value},
+            f"AND {field} LIKE %(search)s ESCAPE '\\\\'",
+            {"search": safe_like_prefix(search)},
         )
 
     @staticmethod
-    def _rowcount() -> int:
-        try:
-            return int(frappe.db._cursor.rowcount or 0)
-        except Exception:
-            return 0
+    def _adjust_profile_counter(user: str, field: str, delta: int) -> None:
+        if field not in {"total_followers", "total_following", "total_friends"}:
+            raise ValueError("Unsupported Social counter")
+        frappe.db.sql(
+            f"UPDATE `tabAOS Profile` SET `{field}` = GREATEST(COALESCE(`{field}`, 0) + %s, 0) WHERE user = %s",
+            (int(delta), user),
+        )
