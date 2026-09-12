@@ -7,12 +7,37 @@ cd "${ROOT_DIR}"
 ENV_FILE="${ROOT_DIR}/.env"
 MANIFEST_FILE="${MAP_MANIFEST_FILE:-${ROOT_DIR}/infra/maps/manifest.env}"
 
-# Load .env first because deployment/runtime values live there on staging.
+# Read only the build keys we need from the Docker Compose .env file.
+# Compose .env syntax is not identical to shell syntax (for example, values may
+# contain unquoted spaces), so never `source` the deployment .env here.
+read_dotenv_value() {
+    local file="$1" key="$2" line value
+    line="$(grep -E "^${key}=" "${file}" | tail -n 1 || true)"
+    [[ -n "${line}" ]] || return 1
+    value="${line#*=}"
+    value="${value%$'\r'}"
+
+    if [[ "${value}" == \"*\" && "${value}" == *\" ]]; then
+        value="${value:1:${#value}-2}"
+    elif [[ "${value}" == \'*\' && "${value}" == *\' ]]; then
+        value="${value:1:${#value}-2}"
+    fi
+
+    printf '%s' "${value}"
+}
+
+load_dotenv_key() {
+    local key="$1" value
+    if value="$(read_dotenv_value "${ENV_FILE}" "${key}")"; then
+        printf -v "${key}" '%s' "${value}"
+        export "${key}"
+    fi
+}
+
 if [[ -f "${ENV_FILE}" ]]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "${ENV_FILE}"
-    set +a
+    load_dotenv_key PHOTON_VERSION
+    load_dotenv_key PHOTON_IMAGE
+    load_dotenv_key PHOTON_JAR_SHA256
 fi
 
 # Load manifest second only when present, because local dev may not have it.
