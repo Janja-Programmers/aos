@@ -66,8 +66,8 @@ LIST_ALLOWED_FIELDS = frozenset(
         "sort",
         "limit",
         "offset",
-        # Existing seller-list near-me compatibility. Maps remains the owner
-        # of supported-area and coordinate policy.
+        # Existing seller-list near-me compatibility using global WGS84
+        # coordinates. Seller query bounds are provider-neutral.
         "latitude",
         "lat",
         "longitude",

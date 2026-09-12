@@ -7,16 +7,14 @@ viewer-specific relationship projection. API modules remain thin.
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 import frappe
 from frappe.utils import now_datetime
 
-from aos.api.maps.validators import clamp_bbox_to_supported_area, is_supported_location
 from aos.api.shared.sql_safety import safe_like_contains
-from aos.services.social.capabilities import SocialCapabilityService
 from aos.services.media.media_service import MediaService
+from aos.services.social.capabilities import SocialCapabilityService
 from aos.services.social.repository import SocialRepository
 from aos.services.social.serializers import relationship_map as social_relationship_map
 
@@ -32,6 +30,7 @@ from .errors import (
     SellerNotFoundError,
     SellerValidationError,
 )
+from .geo import radius_bbox
 from .identity import (
     migration_fallback_public_seller_id,
     normalize_public_seller_id,
@@ -305,10 +304,14 @@ class SellerService:
                     "s.latitude IS NOT NULL",
                     "s.longitude IS NOT NULL",
                     "s.latitude BETWEEN %s AND %s",
-                    "s.longitude BETWEEN %s AND %s",
                 ]
             )
-            params.extend([geo["south"], geo["north"], geo["west"], geo["east"]])
+            params.extend([geo["south"], geo["north"]])
+            if geo["crosses_antimeridian"]:
+                conditions.append("(s.longitude >= %s OR s.longitude <= %s)")
+            else:
+                conditions.append("s.longitude BETWEEN %s AND %s")
+            params.extend([geo["west"], geo["east"]])
             distance_select = self._distance_expression()
             select_params.extend([geo["latitude"], geo["latitude"], geo["longitude"]])
             having = "HAVING distance_km <= %s"
@@ -590,7 +593,7 @@ class SellerService:
         )
 
     @staticmethod
-    def _geo_context(request: dict[str, Any]) -> dict[str, float] | None:
+    def _geo_context(request: dict[str, Any]) -> dict[str, float | bool] | None:
         latitude_value = request.get("latitude") if "latitude" in request else request.get("lat")
         longitude_value = (
             request.get("longitude")
@@ -612,36 +615,17 @@ class SellerService:
             )
         latitude = normalize_coordinate(latitude_value, field="latitude", minimum=-90, maximum=90)
         longitude = normalize_coordinate(longitude_value, field="longitude", minimum=-180, maximum=180)
-        if not is_supported_location(latitude=latitude, longitude=longitude):
-            raise SellerValidationError(
-                "Location is outside the supported AOS Maps coverage area.",
-                code="INVALID_SELLER_LOCATION",
-            )
         radius = normalize_radius(
             radius_value,
             default=_DEFAULT_RADIUS_KM,
             minimum=_MIN_RADIUS_KM,
             maximum=_MAX_RADIUS_KM,
         )
-        lat_delta = radius / 111.32
-        cosine = math.cos(math.radians(latitude))
-        lon_delta = 180.0 if abs(cosine) < 0.000001 else radius / (111.32 * cosine)
-        clipped = clamp_bbox_to_supported_area(
-            north=latitude + lat_delta,
-            south=latitude - lat_delta,
-            east=longitude + lon_delta,
-            west=longitude - lon_delta,
-        )
-        if not clipped:
-            raise SellerValidationError(
-                "Nearby seller search area is outside the supported AOS Maps coverage area.",
-                code="INVALID_SELLER_LOCATION",
-            )
         return {
             "latitude": latitude,
             "longitude": longitude,
             "radius_km": radius,
-            **clipped,
+            **radius_bbox(latitude=latitude, longitude=longitude, radius_km=radius),
         }
 
     @staticmethod

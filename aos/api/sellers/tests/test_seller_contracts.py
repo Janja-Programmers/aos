@@ -118,6 +118,17 @@ class TestSellerContracts(unittest.TestCase):
         self.assertIn("LIMIT %(limit)s", operating_source)
         self.assertNotIn("frappe.db.commit", operating_source)
 
+    def test_nearby_seller_discovery_has_no_legacy_regional_maps_dependency(self):
+        service = (ROOT / "aos/services/sellers/service.py").read_text()
+        geo = (ROOT / "aos/services/sellers/geo.py").read_text()
+        self.assertNotIn("clamp_bbox_to_supported_area", service)
+        self.assertNotIn("is_supported_location", service)
+        self.assertNotIn("supported AOS Maps coverage area", service)
+        self.assertIn("crosses_antimeridian", service)
+        self.assertIn("_normalize_longitude", geo)
+        self.assertIn("_LATITUDE_MIN", geo)
+        self.assertIn("_LATITUDE_MAX", geo)
+
     def test_location_compatibility_endpoints_delegate_to_maps_domain(self):
         for filename in ("get_location.py", "set_location.py", "remove_location.py", "map_points.py"):
             source = (ROOT / "aos/api/sellers" / filename).read_text()
