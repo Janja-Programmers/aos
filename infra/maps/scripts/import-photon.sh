@@ -12,7 +12,8 @@ require_command docker
 
 ensure_image "${PHOTON_IMAGE}"
 mode="${1:---from-dump}"
-common=(--rm --network host --security-opt no-new-privileges:true \
+network="${PHOTON_IMPORT_DOCKER_NETWORK:-host}"
+common=(--rm --network "${network}" --security-opt no-new-privileges:true \
     -e "PHOTON_OPENSEARCH_TRANSPORT_ADDRESSES=${PHOTON_OPENSEARCH_TRANSPORT_ADDRESSES}" \
     -e "PHOTON_OPENSEARCH_CLUSTER=${PHOTON_OPENSEARCH_CLUSTER:-photon}" \
     -e "JAVA_OPTS=${PHOTON_IMPORT_JAVA_OPTS:--Xms2g -Xmx8g -XX:+ExitOnOutOfMemoryError}" \
@@ -37,8 +38,15 @@ if [[ "${mode}" == "--from-dump" ]]; then
     if [[ -n "${PHOTON_DUMP_SHA256:-}" && "${PHOTON_DUMP_SHA256}" != REPLACE_* ]]; then
         [[ "$(sha256_file "${dump}")" == "${PHOTON_DUMP_SHA256,,}" ]] || fail "Photon dump checksum mismatch"
     fi
-    info "Importing Photon dump into inactive OpenSearch target"
-    zstd --stdout -d "${dump}" | docker run -i "${common[@]}" import -import-file -
+    import_args=(import -import-file -)
+    if [[ -n "${PHOTON_IMPORT_COUNTRY_CODES:-}" ]]; then
+        import_args+=(-country-codes "${PHOTON_IMPORT_COUNTRY_CODES}")
+    fi
+    if [[ -n "${PHOTON_IMPORT_LANGUAGES:-}" ]]; then
+        import_args+=(-languages "${PHOTON_IMPORT_LANGUAGES}")
+    fi
+    info "Importing Photon dump into inactive OpenSearch target on Docker network ${network}"
+    zstd --stdout -d "${dump}" | docker run -i "${common[@]}" "${import_args[@]}"
 elif [[ "${mode}" == "--from-nominatim" ]]; then
     : "${PHOTON_IMPORT_DB_HOST:?PHOTON_IMPORT_DB_HOST is required}"
     : "${PHOTON_IMPORT_DB_USER:?PHOTON_IMPORT_DB_USER is required}"

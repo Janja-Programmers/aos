@@ -150,7 +150,7 @@ OpenSearch capacity must be sized from the actual imported planet index plus rec
 
 ## Photon data lifecycle
 
-A planet import/rebuild is a background/operations job, never an API request and never part of `bench migrate`. `infra/maps/scripts/import-photon.sh` requires an explicit destructive-target confirmation and supports either a verified prepared Photon dump or a maintained Nominatim source database.
+A planet import/rebuild is a background/operations job, never an API request and never part of `bench migrate`. `infra/maps/scripts/import-photon.sh` requires an explicit destructive-target confirmation and supports either a verified prepared Photon dump or a maintained Nominatim source database. The import job network is explicit via `PHOTON_IMPORT_DOCKER_NETWORK` (default `host` for externally managed OpenSearch); staging may point it at the private AOS Docker network. `PHOTON_IMPORT_COUNTRY_CODES` and `PHOTON_IMPORT_LANGUAGES` allow bounded sampled imports without changing the runtime API contract.
 
 For production reindexing, build into an inactive OpenSearch cluster/index set, validate global queries/reverse geocoding and index health, then switch the private Photon/OpenSearch target/load-balancer/alias atomically. Keep the previous healthy generation through the rollback window. Routine updates should be automated from the chosen OSM/Nominatim update pipeline or periodic verified full rebuilds; operators must record OSM data timestamp/update lag. Multiple replicas must never independently initiate the same import; the import job is an externally serialized operations task.
 
