@@ -40,6 +40,32 @@ class TestMapsContracts(unittest.TestCase):
         self.assertNotIn("maps_geocoder_primary", providers)
         self.assertNotIn("maps_geocoder_fallback", providers)
 
+    def test_photon_adapter_normalizes_browser_languages_and_uses_strong_soft_location_bias(self):
+        client = (ROOT / "aos/api/maps/clients/photon_client.py").read_text()
+        constants = (ROOT / "aos/api/maps/constants.py").read_text()
+        self.assertIn("_canonical_photon_language(language)", client)
+        self.assertIn('split("-", 1)[0]', client)
+        self.assertIn("PHOTON_SUPPORTED_LANGUAGES_CONFIG_KEY", client)
+        self.assertIn('PHOTON_DEFAULT_SUPPORTED_LANGUAGES = ("en",)', constants)
+        self.assertIn('"location_bias_scale": PHOTON_LOCATION_BIAS_SCALE', client)
+
+    def test_basemap_publication_matches_unsigned_read_only_nginx_origin(self):
+        publish = (ROOT / "infra/maps/scripts/publish-basemap.py").read_text()
+        nginx = (ROOT / "infra/nginx/maps.conf.template").read_text()
+        env_example = (ROOT / ".env.example").read_text()
+        verifier = ROOT / "infra/maps/scripts/verify-basemap-origin.py"
+        self.assertIn('"Action": ["s3:GetObject"]', publish)
+        self.assertIn('"Resource": [f"arn:aws:s3:::{bucket}/basemap/*"]', publish)
+        self.assertIn("client.set_bucket_policy", publish)
+        self.assertNotIn("MAPS_OBJECT_STORAGE_ALLOW_ANONYMOUS_READ", publish)
+        self.assertNotIn("MAPS_OBJECT_STORAGE_ALLOW_ANONYMOUS_READ", env_example)
+        self.assertIn('proxy_set_header Authorization "";', nginx)
+        self.assertIn('add_header Accept-Ranges "bytes" always;', nginx)
+        self.assertTrue(verifier.exists())
+        verifier_source = verifier.read_text()
+        self.assertIn("tile.status_code != 206", verifier_source)
+        self.assertIn('startswith(b"PMTiles")', verifier_source)
+
     def test_provider_urls_are_ssrf_hardened(self):
         source = (ROOT / "aos/services/maps/internal_url.py").read_text()
         self.assertIn("ipaddress.ip_address", source)

@@ -76,6 +76,8 @@ Current dynamic data is the explicit seller location already stored on `AOS Sell
 
 `MAPS_OBJECT_STORAGE_ALLOW_ANONYMOUS_READ` defaults to `false`. Enable it only for an intentionally anonymous range origin, such as loopback-only MinIO behind the AOS Maps Nginx/CDN path. Production object storage should otherwise remain private and use the object-store/CDN origin-access mechanism.
 
+Photon provider adaptation reduces browser BCP-47 tags such as `en-GB` to the primary code (`en`) and only forwards languages listed in the private `photon_supported_languages` site setting. Unsupported preferences are omitted so Photon uses its configured default instead of rejecting a geocoding request. Keep `photon_supported_languages` aligned with the languages imported into the active Photon index. The safe default is `en`.
+
 ## Dependencies and ownership boundaries
 
 Authentication supplies the canonical Frappe/AOS session boundary. Guest access is intentional only for global autocomplete/search/reverse geocoding; route endpoints require a session. Maps introduces no token/session system.
@@ -189,7 +191,7 @@ The Compose `photon` service uses a reproducibly built pinned Photon JAR, non-ro
 
 Valhalla runs under the operationally separate `--profile maps-routing`, is digest-pinned, loopback/private-bound, resource-bounded and health-checked. Its runtime mounts `${VALHALLA_GRAPH_CURRENT_PATH:-./maps/valhalla/current}` read-only and bypasses the scripted build entrypoint entirely by launching `valhalla_service /custom_files/valhalla.json <threads>` directly. This is deliberate: the scripted entrypoint updates hash/config files even when graph rebuilding is disabled, which is incompatible with an immutable read-only release. Expensive planet graph builds use the scripted image separately via `infra/maps/scripts/build-valhalla.sh`; serving runtime configuration never mutates the verified release.
 
-MinIO remains the existing shared production-ready object-storage service; Maps receives a dedicated bucket/prefix and credentials for publication. The Maps Nginx origin exposes only read-only basemap objects. For a multi-region production deployment, use replicated/redundant S3-compatible storage (or equivalent object storage) behind the CDN rather than treating one local MinIO volume as global HA.
+MinIO remains the existing shared production-ready object-storage service; Maps receives a dedicated bucket/prefix and credentials for publication. Because the repository's Maps Nginx origin performs unsigned read-only proxy requests, publication installs a bucket policy that grants anonymous `s3:GetObject` only for the dedicated `basemap/*` prefix. The MinIO API itself remains private/loopback and Nginx exposes only `/basemap/*`; no credentials or write operations are public. For a multi-region production deployment, use replicated/redundant S3-compatible storage (or equivalent object storage) behind the CDN rather than treating one local MinIO volume as global HA.
 
 Secrets stay in environment/secret management and are never committed. Internal Photon/OpenSearch/Valhalla endpoints stay private.
 

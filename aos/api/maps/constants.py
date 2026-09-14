@@ -78,6 +78,16 @@ COUNTRY_NAME_MAX_LENGTH = 120
 COUNTRY_CODE_LENGTH = 2
 ROUTE_LANGUAGE_MAX_LENGTH = 20
 
+
+# PHOTON PROVIDER ADAPTATION
+# Photon accepts primary language codes (for example ``en``), not arbitrary
+# browser BCP-47 tags such as ``en-GB``. The default language set mirrors the
+# upstream Photon/OpenMapTiles import defaults and can be extended explicitly
+# per deployment through site_config.
+PHOTON_SUPPORTED_LANGUAGES_CONFIG_KEY = "photon_supported_languages"
+PHOTON_DEFAULT_SUPPORTED_LANGUAGES = ("en",)
+PHOTON_LOCATION_BIAS_SCALE = 0.1
+
 # CONFIGURATION KEYS
 NOMINATIM_BASE_URL_CONFIG_KEY = "nominatim_base_url"
 PHOTON_BASE_URL_CONFIG_KEY = "photon_base_url"

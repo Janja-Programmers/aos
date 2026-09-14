@@ -19,7 +19,10 @@ from ..constants import (
 	DEFAULT_PHOTON_BASE_URL,
 	MAP_SERVICE_CONNECT_TIMEOUT_SECONDS,
 	PHOTON_BASE_URL_CONFIG_KEY,
+	PHOTON_DEFAULT_SUPPORTED_LANGUAGES,
+	PHOTON_LOCATION_BIAS_SCALE,
 	PHOTON_REQUEST_TIMEOUT_SECONDS,
+	PHOTON_SUPPORTED_LANGUAGES_CONFIG_KEY,
 )
 
 
@@ -60,11 +63,16 @@ class PhotonClient:
 	) -> list[dict]:
 		params: dict[str, Any] = {"q": query, "limit": limit}
 		if latitude is not None and longitude is not None:
-			params.update({"lat": latitude, "lon": longitude})
+			params.update({
+				"lat": latitude,
+				"lon": longitude,
+				"location_bias_scale": PHOTON_LOCATION_BIAS_SCALE,
+			})
 		if country_code:
 			params["countrycode"] = country_code.lower()
-		if language:
-			params["lang"] = language
+		photon_language = _canonical_photon_language(language)
+		if photon_language:
+			params["lang"] = photon_language
 		payload = self._get_json(endpoint="/api", params=params, operation="place search")
 		return _features(payload, operation="place search")
 
@@ -76,8 +84,9 @@ class PhotonClient:
 		language: str | None = None,
 	) -> list[dict]:
 		params: dict[str, Any] = {"lat": latitude, "lon": longitude, "limit": 1}
-		if language:
-			params["lang"] = language
+		photon_language = _canonical_photon_language(language)
+		if photon_language:
+			params["lang"] = photon_language
 		payload = self._get_json(endpoint="/reverse", params=params, operation="reverse geocoding")
 		return _features(payload, operation="reverse geocoding")
 
@@ -154,3 +163,36 @@ def _build_url(*, base_url: str, endpoint: str) -> str:
 		return build_internal_maps_url(base_url, endpoint)
 	except InvalidInternalMapsURL as exc:
 		raise PhotonClientError(str(exc)) from exc
+
+
+def _canonical_photon_language(value: Any) -> str | None:
+	"""Adapt a browser/API language tag to the languages served by Photon.
+
+	The public AOS Maps contract deliberately accepts BCP-47-style values because
+	other providers and Valhalla can use them. Photon, however, expects a primary
+	language code that is present in its index/runtime language set. Forwarding a
+	regional browser tag such as ``en-GB`` causes Photon 1.x to reject the entire
+	request with HTTP 400. Unsupported languages are therefore omitted so Photon
+	uses its configured default rather than turning a harmless locale preference
+	into a geocoding outage.
+	"""
+	if value is None:
+		return None
+	primary = str(value).strip().lower().split("-", 1)[0]
+	if not primary or len(primary) not in {2, 3} or not primary.isalpha():
+		return None
+
+	configured = frappe.conf.get(PHOTON_SUPPORTED_LANGUAGES_CONFIG_KEY)
+	if isinstance(configured, (list, tuple, set, frozenset)):
+		raw_languages = configured
+	elif configured:
+		raw_languages = str(configured).split(",")
+	else:
+		raw_languages = PHOTON_DEFAULT_SUPPORTED_LANGUAGES
+
+	supported = {
+		str(item).strip().lower().split("-", 1)[0]
+		for item in raw_languages
+		if str(item).strip()
+	}
+	return primary if primary in supported else None

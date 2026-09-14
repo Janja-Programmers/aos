@@ -38,20 +38,21 @@ def main() -> int:
     )
     if not client.bucket_exists(bucket):
         client.make_bucket(bucket, location=os.environ.get("MAPS_OBJECT_STORAGE_REGION") or None)
-    allow_anonymous_read = os.environ.get("MAPS_OBJECT_STORAGE_ALLOW_ANONYMOUS_READ", "false").strip().lower() in {
-        "1", "true", "yes", "on"
+    # The repository's public Maps Nginx origin proxies unsigned GET/HEAD/range
+    # requests to this dedicated bucket and deliberately strips Authorization.
+    # Therefore the basemap prefix itself must be anonymously readable at the
+    # object-store layer. This does NOT publish the MinIO API: production binds
+    # that endpoint privately/loopback and Nginx exposes only /basemap/*.
+    policy = {
+        "Version": "2012-10-17",
+        "Statement": [{
+            "Effect": "Allow",
+            "Principal": {"AWS": ["*"]},
+            "Action": ["s3:GetObject"],
+            "Resource": [f"arn:aws:s3:::{bucket}/basemap/*"],
+        }],
     }
-    if allow_anonymous_read:
-        policy = {
-            "Version": "2012-10-17",
-            "Statement": [{
-                "Effect": "Allow",
-                "Principal": {"AWS": ["*"]},
-                "Action": ["s3:GetObject"],
-                "Resource": [f"arn:aws:s3:::{bucket}/basemap/*"],
-            }],
-        }
-        client.set_bucket_policy(bucket, json.dumps(policy))
+    client.set_bucket_policy(bucket, json.dumps(policy))
     hasher = hashlib.sha256()
     with source.open("rb") as handle:
         for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
