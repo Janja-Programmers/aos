@@ -55,15 +55,33 @@ def main() -> int:
 		errors.append("legacy TileServer dependency remains in Maps Nginx origin")
 	if "location ^~ /basemap/" not in maps:
 		errors.append("Maps origin must expose only the /basemap/ object prefix")
-	if "proxy_force_ranges on;" not in maps:
+	basemap_start = maps.find("location ^~ /basemap/")
+	basemap_end = maps.find("location / { return 404; }", basemap_start)
+	basemap = maps[basemap_start:basemap_end] if basemap_start >= 0 and basemap_end > basemap_start else ""
+	if "proxy_force_ranges on;" not in basemap:
 		errors.append("Maps PMTiles origin must support byte ranges")
-	if "${MAPS_OBJECT_STORAGE_BUCKET}" not in maps or "${MINIO_API_PORT}" not in maps:
+	if "proxy_http_version 1.1;" not in basemap:
+		errors.append("Maps object-storage origin must use explicit HTTP/1.1 proxying")
+	if "aos-proxy-common.conf" in basemap:
+		errors.append("Maps object-storage origin must not inherit generic application proxy headers")
+	if re.search(r"proxy_set_header\s+X-(?:Real-IP|Forwarded-[A-Za-z-]+)", basemap, re.I):
+		errors.append("Maps object-storage origin must not forward application X-Forwarded/X-Real-IP headers")
+	expected_host = "proxy_set_header Host 127.0.0.1:${MINIO_API_PORT};"
+	if basemap.count("proxy_set_header Host ") != 1 or expected_host not in basemap:
+		errors.append("Maps object-storage origin must send exactly one loopback MinIO Host header")
+	if 'proxy_set_header Connection "";' not in basemap:
+		errors.append("Maps object-storage origin must clear the hop-by-hop Connection header")
+	if 'proxy_set_header Authorization "";' not in basemap:
+		errors.append("Maps public basemap origin must strip client Authorization headers")
+	if "${MAPS_OBJECT_STORAGE_BUCKET}" not in basemap or "${MINIO_API_PORT}" not in basemap:
 		errors.append("Maps origin must target the private object-storage bucket")
-	if maps.count("proxy_hide_header Access-Control-Allow-Origin;") < 1:
+	if basemap.count("proxy_hide_header Access-Control-Allow-Origin;") < 1:
 		errors.append("Maps origin must suppress duplicate upstream CORS headers")
+	if 'proxy_hide_header Accept-Ranges;' not in basemap or 'add_header Accept-Ranges "bytes" always;' not in basemap:
+		errors.append("Maps origin must publish one deterministic Accept-Ranges: bytes header")
 	if maps.count('add_header Access-Control-Allow-Origin "*" always;') < 2:
 		errors.append("Maps OPTIONS/resource responses must expose canonical wildcard CORS")
-	if "limit_except GET HEAD OPTIONS" not in maps:
+	if "limit_except GET HEAD OPTIONS" not in basemap:
 		errors.append("Maps basemap origin must reject mutating HTTP methods")
 
 	if errors:

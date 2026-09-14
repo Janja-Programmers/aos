@@ -43,16 +43,23 @@ server {
             return 204;
         }
 
-        include /etc/nginx/snippets/aos-proxy-common.conf;
+        proxy_http_version 1.1;
         proxy_connect_timeout ${NGINX_PROXY_CONNECT_TIMEOUT};
         proxy_read_timeout ${NGINX_PROXY_READ_TIMEOUT};
         proxy_send_timeout ${NGINX_PROXY_SEND_TIMEOUT};
         proxy_buffering on;
         proxy_force_ranges on;
+
+        # MinIO is a private S3-compatible origin here, not the public
+        # application upstream. Do not forward the browser-facing host,
+        # scheme or client forwarding chain into the path-style S3 request.
         proxy_set_header Host 127.0.0.1:${MINIO_API_PORT};
+        proxy_set_header Connection "";
         proxy_set_header Authorization "";
         proxy_hide_header Access-Control-Allow-Origin;
+        proxy_hide_header Accept-Ranges;
         add_header Access-Control-Allow-Origin "*" always;
+        add_header Accept-Ranges "bytes" always;
         add_header Access-Control-Expose-Headers "Accept-Ranges, Content-Length, Content-Range, ETag" always;
         proxy_pass http://127.0.0.1:${MINIO_API_PORT}/${MAPS_OBJECT_STORAGE_BUCKET}/basemap/;
     }
