@@ -38,7 +38,7 @@ from aos.services.sellers.identity import (
 from .cache import get_cached_json, maps_cache_key, set_cached_json
 from .errors import MapsConflictError, MapsDependencyError, MapsNotFoundError
 from .observability import maps_log
-from .providers import geocoder_order
+from .providers import geocoder_order, routing_enabled
 from .repository import (
     get_public_seller_location,
     get_seller_location_for_user,
@@ -152,6 +152,8 @@ class MapsService:
                     "longitude": float(seller["longitude"]),
                 }
             )
+        if not routing_enabled():
+            raise MapsDependencyError("The routing service is disabled.")
         route_request = {
             "locations": locations,
             "costing": request["costing"],

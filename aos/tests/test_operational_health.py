@@ -151,7 +151,8 @@ class TestOperationalHealth(FrappeTestCase):
             "maps_photon_enabled": True,
             "photon_base_url": "http://photon:2322",
             "maps_nominatim_fallback_enabled": False,
-            "maps_routing_enabled": False,
+            "maps_routing_enabled": True,
+            "valhalla_base_url": "http://valhalla:8002",
         }
 
     def _healthy_get(self, url: str, timeout: int = 3):
@@ -185,6 +186,7 @@ class TestOperationalHealth(FrappeTestCase):
         self.assertIn("video_processing_ready", names)
         self.assertIn("basemap_origin_current.json", names)
         self.assertIn("photon_status", names)
+        self.assertIn("valhalla_status", names)
 
         serialized = self._report_text(report)
         for secret in [

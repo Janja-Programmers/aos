@@ -58,11 +58,21 @@ Configure the canonical private Photon endpoint. In production this should resol
 bench --site <site> set-config maps_photon_enabled 1
 bench --site <site> set-config photon_base_url http://photon:2322
 bench --site <site> set-config maps_nominatim_fallback_enabled 0
-bench --site <site> set-config maps_routing_enabled 0
-# If routing is intentionally enabled later:
-# bench --site <site> set-config maps_routing_enabled 1
-# bench --site <site> set-config valhalla_base_url http://valhalla:8002
+bench --site <site> set-config maps_routing_enabled 1
+bench --site <site> set-config valhalla_base_url http://valhalla:8002
 ```
+
+Build Valhalla from the same checksum-pinned single planet PBF on a dedicated high-memory/high-disk worker. The build creates an immutable release, verification records graph/admin/timezone checksums, and activation changes only the atomic `maps/valhalla/current` symlink:
+
+```bash
+infra/maps/scripts/download-planet.sh
+infra/maps/scripts/build-valhalla.sh
+infra/maps/scripts/activate-valhalla.sh "${MAP_DATA_VERSION}"
+docker compose --profile maps-routing up -d --force-recreate valhalla
+python3 infra/maps/scripts/smoke-valhalla-global.py --base-url http://127.0.0.1:8002
+```
+
+Do not build a planet graph on an API host. Keep the previous release under `maps/valhalla/releases/` through the rollback window; rollback is the same activation command with the previous version followed by a Valhalla container recreate. Production should run multiple private Valhalla serving replicas behind a health-checked internal load balancer.
 
 Configure internal service URLs in `.env` and keep only product limits/timeouts in AOS Settings:
 

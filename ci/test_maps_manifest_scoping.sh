@@ -49,4 +49,34 @@ if MAP_MANIFEST_FILE="${TMP_DIR}/basemap.env" bash -c '
     exit 1
 fi
 
+
+cat > "${TMP_DIR}/valhalla.env" <<'MANIFEST'
+OSM_PLANET_URL=https://example.invalid/planet.osm.pbf
+OSM_PLANET_SHA256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+OSM_PLANET_FILENAME=planet.osm.pbf
+MAP_DATA_VERSION=20260914
+VALHALLA_IMAGE=ghcr.io/example/valhalla@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+MANIFEST
+
+MAP_MANIFEST_FILE="${TMP_DIR}/valhalla.env" bash -c '
+    source "$1"
+    load_valhalla_manifest
+    [[ "$MAP_DATA_VERSION" == "20260914" ]]
+' _ "${COMMON}"
+
+cat > "${TMP_DIR}/valhalla-without-version.env" <<'MANIFEST'
+OSM_PLANET_URL=https://example.invalid/planet.osm.pbf
+OSM_PLANET_SHA256=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+OSM_PLANET_FILENAME=planet.osm.pbf
+VALHALLA_IMAGE=ghcr.io/example/valhalla@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+MANIFEST
+
+if MAP_MANIFEST_FILE="${TMP_DIR}/valhalla-without-version.env" bash -c '
+    source "$1"
+    load_valhalla_manifest
+' _ "${COMMON}" >/dev/null 2>&1; then
+    echo "ERROR: Valhalla manifest unexpectedly accepted configuration without MAP_DATA_VERSION" >&2
+    exit 1
+fi
+
 echo "Maps manifest concern scoping: OK"

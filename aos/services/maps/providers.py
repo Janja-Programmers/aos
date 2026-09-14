@@ -11,6 +11,7 @@ from aos.api.maps.constants import GEOCODER_PRIMARY_NOMINATIM, GEOCODER_PRIMARY_
 
 MAPS_PHOTON_ENABLED_CONFIG_KEY = "maps_photon_enabled"
 MAPS_NOMINATIM_FALLBACK_ENABLED_CONFIG_KEY = "maps_nominatim_fallback_enabled"
+MAPS_ROUTING_ENABLED_CONFIG_KEY = "maps_routing_enabled"
 
 
 def geocoder_order() -> list[str]:
@@ -28,6 +29,10 @@ def photon_enabled() -> bool:
 
 def nominatim_fallback_enabled() -> bool:
     return _boolean_config(MAPS_NOMINATIM_FALLBACK_ENABLED_CONFIG_KEY, default=False)
+
+
+def routing_enabled() -> bool:
+    return _boolean_config(MAPS_ROUTING_ENABLED_CONFIG_KEY, default=False)
 
 
 def _boolean_config(key: str, *, default: bool) -> bool:

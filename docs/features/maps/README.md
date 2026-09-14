@@ -64,7 +64,9 @@ Nominatim is not a second primary geocoder. It may be enabled as an operator-con
 
 ### Routing
 
-The existing authenticated route boundary is retained because it is already part of Maps. Valhalla is the preferred open-source engine and is optional behind the `maps-routing` Compose profile. Routing storage is never queried directly by future Sellers/Ads/Search code. If routing is disabled, the application must fail that operation predictably without affecting the basemap or geocoder.
+The existing authenticated route boundary is retained because it is already part of Maps. Valhalla is the preferred open-source engine and is required for a production-ready Maps deployment. The `maps-routing` Compose profile exists only to keep the private routing runtime operationally separable from unrelated services; production configuration validation requires `maps_routing_enabled=1` and a safe private `valhalla_base_url`. Routing storage is never queried directly by future Sellers/Ads/Search code. A temporary routing outage must fail only the route operation with the stable dependency error while basemap/geocoding continue to work.
+
+Global routing is built from the same checksum-pinned single OSM planet snapshot used by the Maps data release. `build-valhalla.sh` writes an immutable `maps/valhalla/releases/<MAP_DATA_VERSION>` graph release and never builds inside the serving container. `verify-valhalla.sh` verifies the indexed tile extract, admin/timezone databases and release checksums. `activate-valhalla.sh` atomically changes `maps/valhalla/current`, so rollback is a pointer switch plus a serving-container recreate. The serving container mounts only `current` read-only with all build flags disabled. `smoke-valhalla-global.py` validates representative routes across Africa, Europe, Asia, North America, South America and Oceania and exercises `auto`, `pedestrian` and `bicycle` costing.
 
 ### Dynamic AOS geospatial data
 
@@ -168,11 +170,24 @@ Staging may deliberately use fewer OpenSearch nodes/resources, but that must nev
 
 World builds require dedicated capacity. Planetiler upstream examples place world PMTiles and temporary build working sets in the many-tens-of-GB range; provision significant additional SSD scratch/headroom instead of sizing only to final artifact size. Build CPU/RAM/disk are isolated from serving containers.
 
+## Valhalla routing data lifecycle
+
+1. Use the same dated, SHA-256-pinned single planet PBF identified by `MAP_DATA_VERSION`. Multiple regional PBF stitching is not the AOS production path.
+2. Run `build-valhalla.sh` on a dedicated high-memory/high-disk build worker. The script rechecks the planet checksum before building admins, time zones and the indexed graph tar.
+3. The build is staged under `maps/valhalla/releases/.<version>.building.*`; a failed build is deleted and cannot replace an active graph.
+4. `verify-valhalla.sh` validates `valhalla.json`, its `/custom_files` artifact paths, the non-empty tile extract/admin/timezone files, the planet checksum/image pin recorded in `aos-valhalla-manifest.json`, and every artifact SHA-256.
+5. A successful release is moved atomically to `maps/valhalla/releases/<MAP_DATA_VERSION>`. Existing releases are immutable and a build refuses to overwrite one.
+6. `activate-valhalla.sh <version>` verifies the target again and atomically switches `maps/valhalla/current`. Recreate serving replicas after the switch; they mount the active release read-only and never rebuild.
+7. Run `smoke-valhalla-global.py` against each candidate serving pool before it receives application traffic. `get_route` must then return real AOS `200` route results.
+8. Keep at least the previous verified release through the rollback window. Roll back by activating the previous version and recreating Valhalla serving replicas.
+
+Planet graph builds are intentionally not sized for the 15 GiB staging/API host. Staging may validate runtime behavior with a separately prepared representative graph, but production completion requires a true planet-derived release built on dedicated capacity and multiple private serving replicas behind health-checked load balancing.
+
 ## Docker and infrastructure
 
 The Compose `photon` service uses a reproducibly built pinned Photon JAR, non-root user, `tini`, restart policy, healthcheck, loopback-bound host port, bounded memory/CPU/PIDs, `nofile` ulimit, log rotation inherited from shared policy, private Docker network and graceful stop. It does not carry a local planet index.
 
-Valhalla is optional under `--profile maps-routing`, digest-pinned, loopback-bound, read-only against prebuilt graph data, resource-bounded and health-checked. Expensive graph builds run separately via `infra/maps/scripts/build-valhalla.sh`.
+Valhalla runs under the operationally separate `--profile maps-routing`, is digest-pinned, loopback/private-bound, resource-bounded and health-checked. Its runtime mounts `${VALHALLA_GRAPH_CURRENT_PATH:-./maps/valhalla/current}` read-only and bypasses the scripted build entrypoint entirely by launching `valhalla_service /custom_files/valhalla.json <threads>` directly. This is deliberate: the scripted entrypoint updates hash/config files even when graph rebuilding is disabled, which is incompatible with an immutable read-only release. Expensive planet graph builds use the scripted image separately via `infra/maps/scripts/build-valhalla.sh`; serving runtime configuration never mutates the verified release.
 
 MinIO remains the existing shared production-ready object-storage service; Maps receives a dedicated bucket/prefix and credentials for publication. The Maps Nginx origin exposes only read-only basemap objects. For a multi-region production deployment, use replicated/redundant S3-compatible storage (or equivalent object storage) behind the CDN rather than treating one local MinIO volume as global HA.
 
@@ -186,11 +201,11 @@ No precise GPS coordinates are deliberately logged. Provider exceptions/bodies a
 
 ## Observability
 
-Maps structured logs record operation, provider/fallback outcome, cache state, count and failure class without query strings or coordinates. Existing application rate-limit/dependency metrics cover API traffic. Infrastructure monitoring must additionally alert on Photon latency/error/timeout rate, OpenSearch cluster/JVM/disk/shard health, Photon restarts, basemap origin/CDN 4xx/5xx/range failures, cache hit rates, import/build failures, snapshot health, and OSM data update lag. Valhalla latency/health is required only when routing is enabled.
+Maps structured logs record operation, provider/fallback outcome, cache state, count and failure class without query strings or coordinates. Existing application rate-limit/dependency metrics cover API traffic. Infrastructure monitoring must additionally alert on Photon latency/error/timeout rate, OpenSearch cluster/JVM/disk/shard health, Photon restarts, basemap origin/CDN 4xx/5xx/range failures, cache hit rates, import/build failures, snapshot health, OSM data update lag, and Valhalla health/latency/error rate. Routing is a required production Maps dependency.
 
 ## High availability
 
-Ordinary Maps API traffic is stateless and requires no sticky sessions. Production supports multiple AOS API replicas, multiple Photon replicas, a replicated OpenSearch cluster, CDN-served immutable PMTiles, and redundant object storage. Health-based load balancing should remove individual failed Photon/AOS replicas. Heavy import/build/update jobs are separate, restartable, externally serialized and observable.
+Ordinary Maps API traffic is stateless and requires no sticky sessions. Production supports multiple AOS API replicas, multiple Photon replicas, multiple Valhalla serving replicas, a replicated OpenSearch cluster, CDN-served immutable PMTiles, and redundant object storage. Health-based load balancing should remove individual failed Photon/Valhalla/AOS replicas. Valhalla graph generation is blue/green at the release level: build and validate an inactive immutable release, then switch serving replicas to it; never rebuild underneath live routing traffic. Heavy import/build/update jobs are separate, restartable, externally serialized and observable.
 
 ## Fresh-site schema and migrations
 
@@ -198,9 +213,9 @@ There is no historical Maps cleanup patch in `patches.txt`. Fresh `bench migrate
 
 ## Deployment and rollback sequence
 
-Backend deployment order is: provision/validate external OpenSearch; build/pull Photon; import/verify the Photon planet index; start Photon; configure AOS private Photon URL and feature flags; build/publish a versioned PMTiles basemap; verify Maps origin/CDN; optionally build/start Valhalla; run `bench migrate`; restart AOS workers/web; run production configuration/operational health validators and Maps tests.
+Backend deployment order is: provision/validate external OpenSearch; build/pull Photon; import/verify the Photon planet index; start Photon; configure AOS private Photon URL; build/publish a versioned PMTiles basemap; verify Maps origin/CDN; build and verify a versioned planet Valhalla release on dedicated capacity; activate the candidate graph; start/recreate private Valhalla serving replicas; run `smoke-valhalla-global.py`; set `maps_routing_enabled=1` and the private `valhalla_base_url`; run `bench migrate`; restart AOS workers/web; run production configuration/operational health validators and Maps/API tests.
 
-Do not delete the previous Photon/OpenSearch generation or previous PMTiles version until the rollback window closes. Application rollback can point AOS back to the previous Photon private endpoint and clients/CDN back to the prior immutable basemap generation without a data migration.
+Do not delete the previous Photon/OpenSearch generation, PMTiles version or Valhalla graph release until the rollback window closes. Application rollback can point AOS back to the previous Photon private endpoint, clients/CDN back to the prior immutable basemap generation, and Valhalla serving replicas back to the previous `maps/valhalla/releases/<version>` without a schema migration. Seller-specific `refresh_route` validation remains deferred until Sellers supplies a real persisted destination, but coordinate-to-coordinate `get_route` is part of the Maps completion gate.
 
 ## Open-source quality target and deliberate omissions
 

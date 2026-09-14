@@ -75,6 +75,7 @@ load_photon_manifest() {
 load_valhalla_manifest() {
     source_manifest
     require_planet_source
+    require_map_version
     require_valhalla
 }
 

@@ -29,6 +29,7 @@ done <"${CI_ROOT}/ci/maintained-paths.txt"
 "${python_executable}" "${CI_ROOT}/ci/validate_monitoring.py" "${CI_ROOT}"
 "${python_executable}" "${CI_ROOT}/ci/validate_companion_safety.py" "${CI_ROOT}"
 "${python_executable}" "${CI_ROOT}/ci/validate_nginx_policy.py" "${CI_ROOT}"
+"${python_executable}" "${CI_ROOT}/ci/validate_maps_routing.py" "${CI_ROOT}"
 "${python_executable}" "${CI_ROOT}/ci/validate_deployment.py" "${CI_ROOT}"
 
 if command -v promtool >/dev/null 2>&1; then

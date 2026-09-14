@@ -80,10 +80,20 @@ class TestMapsContracts(unittest.TestCase):
         self.assertIn("  photon:", compose)
         self.assertIn("PHOTON_OPENSEARCH_TRANSPORT_ADDRESSES", compose)
         self.assertIn('profiles: ["maps-routing"]', compose)
+        self.assertIn('entrypoint: ["valhalla_service"]', compose)
+        self.assertIn(':/custom_files:ro', compose)
         self.assertNotIn("  tileserver:\n", compose)
         self.assertNotIn("  nominatim:\n", compose)
         self.assertIn("mem_limit:", compose)
         self.assertIn("stop_grace_period:", compose)
+
+    def test_routing_feature_flag_is_enforced_before_valhalla_calls(self):
+        providers = (ROOT / "aos/services/maps/providers.py").read_text()
+        service = (ROOT / "aos/services/maps/service.py").read_text()
+        production = (ROOT / "aos/utils/production_config.py").read_text()
+        self.assertIn('MAPS_ROUTING_ENABLED_CONFIG_KEY = "maps_routing_enabled"', providers)
+        self.assertIn("if not routing_enabled():", service)
+        self.assertIn("Valhalla routing must be enabled for production Maps.", production)
 
     def test_legacy_tileserver_font_pipeline_is_removed(self):
         self.assertFalse((ROOT / "aos/tests/test_map_font_assets.py").exists())

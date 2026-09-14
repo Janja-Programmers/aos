@@ -99,7 +99,8 @@ class TestProductionConfigValidation(FrappeTestCase):
 			"maps_photon_enabled": True,
 			"photon_base_url": "http://photon:2322",
 			"maps_nominatim_fallback_enabled": False,
-			"maps_routing_enabled": False,
+			"maps_routing_enabled": True,
+			"valhalla_base_url": "http://valhalla:8002",
 		}
 
 	def test_restore_rehearsal_config_is_non_production_but_equivalently_hardened(self):
@@ -118,6 +119,13 @@ class TestProductionConfigValidation(FrappeTestCase):
 		)
 		self.assertFalse(report["ready"])
 		self.assertIn("AOS_ENVIRONMENT", {issue["key"] for issue in report["errors"]})
+
+	def test_maps_production_config_requires_global_routing(self):
+		site_config = self._valid_site_config()
+		site_config["maps_routing_enabled"] = False
+		report = validate_production_config(env=self._valid_env(), site_config=site_config)
+		self.assertFalse(report["ready"])
+		self.assertIn("maps_routing_enabled", {issue["key"] for issue in report["errors"]})
 
 	def test_complete_staging_config_uses_production_equivalent_safety(self):
 		env = self._valid_env()
@@ -277,6 +285,8 @@ class TestProductionConfigValidation(FrappeTestCase):
 		keys = {issue["key"] for issue in report["errors"]}
 		self.assertIn("maps_photon_enabled", keys)
 		self.assertIn("photon_base_url", keys)
+		self.assertIn("maps_routing_enabled", keys)
+		self.assertIn("valhalla_base_url", keys)
 
 	def test_enabled_photon_accepts_per_host_loopback_sidecar(self):
 		site_config = self._valid_site_config()

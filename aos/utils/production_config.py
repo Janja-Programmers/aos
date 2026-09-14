@@ -1089,8 +1089,16 @@ def _check_maps(
 		require_internal_url("nominatim_base_url", "Nominatim fallback")
 
 	routing_enabled = _site_value(site_config, "maps_routing_enabled").lower() in {"1", "true", "yes", "on"}
-	if routing_enabled:
-		require_internal_url("valhalla_base_url", "Valhalla")
+	if not routing_enabled:
+		_redacted_issue(
+			issues,
+			severity="error",
+			category="maps",
+			key="maps_routing_enabled",
+			message="Valhalla routing must be enabled for production Maps.",
+			remediation="Deploy a verified global Valhalla graph/runtime, set maps_routing_enabled to 1, and configure valhalla_base_url to its private endpoint.",
+		)
+	require_internal_url("valhalla_base_url", "Valhalla")
 
 
 def _check_environment_and_secret_sources(

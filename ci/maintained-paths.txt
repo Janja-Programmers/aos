@@ -6,6 +6,7 @@ infra/maps/scripts/download-planet.sh
 infra/maps/scripts/build-world-pmtiles.sh
 infra/maps/scripts/publish-basemap.py
 infra/maps/scripts/import-photon.sh
+infra/maps/scripts/build-valhalla.sh
 infra/nginx/install.sh
 infra/nginx/issue-certificates.sh
 infra/systemd/aos-backup.service
@@ -35,3 +36,7 @@ infra/backup/rehearsal_policy.py
 ci/validate_nginx_policy.py
 ci/validate_companion_safety.py
 scripts/deploy/run-migrate.sh
+ci/validate_maps_routing.py
+infra/maps/scripts/verify-valhalla.sh
+infra/maps/scripts/activate-valhalla.sh
+infra/maps/scripts/smoke-valhalla-global.py

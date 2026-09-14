@@ -1186,26 +1186,17 @@ services:
     image: ${VALHALLA_IMAGE:?VALHALLA_IMAGE must be pinned to an immutable digest}
     restart: unless-stopped
 
-    environment:
-      tile_urls: ""
-      use_tiles_ignore_pbf: "True"
-      force_rebuild: "False"
-      build_admins: "True"
-      build_time_zones: "True"
-      build_elevation: "False"
-      build_transit: "False"
-      build_tar: "True"
-      serve_tiles: "True"
-      server_threads: ${VALHALLA_THREADS:-4}
-      tileset_name: ${VALHALLA_TILESET_NAME:-aos_world_valhalla}
-      update_existing_config: "True"
-      use_default_speeds_config: "True"
+    # Runtime bypasses the scripted build entrypoint completely. The scripted
+    # entrypoint mutates /custom_files even when rebuild flags are false; direct
+    # valhalla_service execution keeps the verified graph release truly read-only.
+    entrypoint: ["valhalla_service"]
+    command: ["/custom_files/valhalla.json", "${VALHALLA_THREADS:-4}"]
 
     ports:
       - "${VALHALLA_BIND_ADDRESS:-127.0.0.1}:${VALHALLA_PORT:-8002}:8002"
 
     volumes:
-      - ./maps/valhalla:/custom_files:ro
+      - ${VALHALLA_GRAPH_CURRENT_PATH:-./maps/valhalla/current}:/custom_files:ro
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8002/status"]
