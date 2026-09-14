@@ -28,7 +28,7 @@ from aos.api.maps.constants import (
 	SEARCH_MAX_QUERY_LENGTH,
 	SEARCH_MIN_QUERY_LENGTH,
 )
-from aos.api.sellers.constants import (
+from aos.services.sellers.constants import (
 	LOCATION_INSTRUCTIONS_MAX_LENGTH,
 	LOCATION_NAME_MAX_LENGTH,
 	SELLER_MAP_POINTS_DEFAULT_ZOOM,

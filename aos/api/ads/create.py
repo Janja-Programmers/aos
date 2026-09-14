@@ -9,7 +9,7 @@ from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 from aos.api.shared.validators import resolve_location
-from aos.services.account_service import get_or_create_seller
+from aos.services.sellers.policy import get_or_create_seller
 from aos.services.ads.api import run_ads_api
 from aos.services.ads.constants import STATUS_REVIEWING
 from aos.services.ads.errors import AdsPermissionError

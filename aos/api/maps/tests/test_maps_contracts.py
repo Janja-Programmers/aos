@@ -52,20 +52,18 @@ class TestMapsContracts(unittest.TestCase):
         self.assertNotIn('"source": "photon"', source)
         self.assertNotIn('"source": "nominatim"', source)
 
-    def test_maps_mutations_use_lock_version_and_current_schema_installer(self):
+    def test_seller_location_mutation_is_outside_maps_and_route_uses_seller_contract(self):
         service = (ROOT / "aos/services/maps/service.py").read_text()
-        repository = (ROOT / "aos/services/maps/repository.py").read_text()
-        boundary = (ROOT / "aos/services/maps/api.py").read_text()
-        self.assertIn("FOR UPDATE", repository)
-        self.assertIn("expected_version", service)
-        self.assertIn("location_version", service)
-        self.assertIn("frappe.db.savepoint(savepoint)", boundary)
-        self.assertNotIn("frappe.db.commit", service + repository + boundary)
-        patches = (ROOT / "aos/patches.txt").read_text()
-        self.assertNotIn("harden_maps_subsystem", patches)
-        self.assertNotIn("add_seller_location_indexes", patches)
+        seller_location = (ROOT / "aos/services/sellers/location.py").read_text()
+        seller_repository = (ROOT / "aos/services/sellers/repository.py").read_text()
+        self.assertNotIn("def set_seller_location", service)
+        self.assertNotIn("def remove_seller_location", service)
+        self.assertIn("get_route_destination", service)
+        self.assertIn("FOR UPDATE", seller_repository)
+        self.assertIn("expected_version", seller_location)
+        self.assertFalse((ROOT / "aos/services/maps/repository.py").exists())
         migrate = (ROOT / "aos/migrate.py").read_text()
-        self.assertIn("maps_schema.execute", migrate)
+        self.assertIn("seller_schema.execute", migrate)
 
     def test_cache_keys_and_logs_do_not_embed_queries_or_coordinates(self):
         cache = (ROOT / "aos/services/maps/cache.py").read_text()

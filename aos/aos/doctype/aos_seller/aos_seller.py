@@ -32,16 +32,6 @@ COUNTRY_CODE_LENGTH = 2
 _HTML_TAG_RE = re.compile(r"<\s*/?\s*[A-Za-z][^>]*>")
 _SCRIPT_SCHEME_RE = re.compile(r"(?:javascript|data|vbscript)\s*:", re.IGNORECASE)
 _DISALLOWED_INVISIBLE = frozenset({"\u200b", "\u2060", "\ufeff", *[chr(value) for value in range(0x202A, 0x202F)], *[chr(value) for value in range(0x2066, 0x206A)]})
-_LEGACY_OPERATING_DAY_MAP = {
-    "Mon": "Monday",
-    "Tue": "Tuesday",
-    "Wed": "Wednesday",
-    "Thu": "Thursday",
-    "Fri": "Friday",
-    "Sat": "Saturday",
-    "Sun": "Sunday",
-}
-
 
 class AOSSeller(Document):
     """Seller aggregate fail-closed persistence boundary."""
@@ -126,9 +116,6 @@ class AOSSeller(Document):
             max_length=ABOUT_BUSINESS_MAX_LENGTH,
             multiline=True,
         )
-        self.shop_banner = str(self.shop_banner or "").strip() or None
-        if self.shop_banner and not self.shop_banner.startswith("https://"):
-            frappe.throw(_("Shop banner must be a canonical HTTPS Media URL."))
 
     def _validate_storefront_ownership(self):
         previous = self.get_doc_before_save()
@@ -167,10 +154,10 @@ class AOSSeller(Document):
         if any(previous.get(field) != self.get(field) for field in location_fields):
             if not (self.flags.get("aos_seller_location_action") or self._is_privileged()):
                 frappe.throw(
-                    _("Seller location must be changed through the Maps service."),
+                    _("Seller location must be changed through the Seller service."),
                     exc=frappe.PermissionError,
                 )
-        storefront = {"business_category", "about_business", "shop_banner", "shop_banner_media", "operating_hours"}
+        storefront = {"business_category", "about_business", "shop_banner_media", "operating_hours"}
         changed = any(previous.get(field) != self.get(field) for field in storefront - {"operating_hours"})
         if _operating_hours_signature(previous.operating_hours) != _operating_hours_signature(self.operating_hours):
             changed = True
@@ -187,7 +174,6 @@ class AOSSeller(Document):
         seen_days: set[str] = set()
         for row in self.operating_hours:
             day = str(row.day_of_week or "").strip()
-            day = _LEGACY_OPERATING_DAY_MAP.get(day, day)
             if day not in OPERATING_DAYS or day in seen_days:
                 frappe.throw(_("Invalid or duplicate operating-hours day."))
             seen_days.add(day)
@@ -209,7 +195,7 @@ class AOSSeller(Document):
         # seller has deliberately published a map location: doing so makes an
         # unrelated storefront or lifecycle save interpret an empty location
         # as the valid coordinate pair (0, 0). ``has_location`` is the
-        # canonical publication flag set by the Seller/Maps location service.
+        # canonical publication flag set by the Seller location service.
         if not _is_checked(self.has_location):
             self._clear_resolved_location()
             return

@@ -18,8 +18,8 @@ class TestSellerValidation(unittest.TestCase):
     def test_storefront_text_normalizes_unicode_and_whitespace(self):
         self.assertEqual(normalize_business_category("  Home   & Garden "), "Home & Garden")
         self.assertEqual(
-            normalize_about_business("  Trusted   seller\r\n\r\n\r\nAcross Kenya "),
-            "Trusted seller\n\nAcross Kenya",
+            normalize_about_business("  Trusted   seller\r\n\r\n\r\nWorldwide "),
+            "Trusted seller\n\nWorldwide",
         )
 
     def test_storefront_text_rejects_structured_null_control_html_and_script_inputs(self):
@@ -56,9 +56,10 @@ class TestSellerValidation(unittest.TestCase):
                 normalize_operating_hours(value)
 
     def test_pagination_and_version_are_strict(self):
-        self.assertEqual(normalize_pagination({"limit": 20, "offset": 0}), (20, 0))
+        self.assertEqual(normalize_pagination({"limit": 20}), (20, ""))
+        self.assertEqual(normalize_pagination({"limit": 20, "cursor": "abc"}), (20, "abc"))
         self.assertEqual(normalize_expected_version("0"), 0)
-        for payload in ({"limit": 0}, {"limit": 51}, {"offset": -1}, {"offset": 10001}, {"limit": 2.5}, {"limit": True}):
+        for payload in ({"limit": 0}, {"limit": 51}, {"limit": 2.5}, {"limit": True}, {"cursor": True}, {"cursor": "x" * 2049}):
             with self.subTest(payload=payload), self.assertRaises(SellerValidationError):
                 normalize_pagination(payload)
         for value in (-1, True, 1.5, "x"):

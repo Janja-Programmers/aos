@@ -19,7 +19,7 @@ from aos.services.ads.errors import AdsValidationError
 from aos.services.ads.validation import decode_recent_cursor, encode_recent_cursor, normalize_public_list_filters
 from aos.services.currency_conversion import sql_conversion_expressions
 from aos.services.search_ranking_service import search_ad_candidates
-from aos.services.sellers.identity import resolve_seller_reference
+from aos.services.sellers.identity import resolve_public_seller_id
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
 from .category_filters import resolve_category_filter_values
@@ -105,7 +105,7 @@ def list_ads_impl(**kwargs):
     def _list():
         filters = normalize_public_list_filters(kwargs)
         if filters["seller"]:
-            filters["seller"] = resolve_seller_reference(filters["seller"]) or ""
+            filters["seller"] = resolve_public_seller_id(filters["seller"]) or ""
             if not filters["seller"]:
                 return _empty(filters["limit"], filters["offset"], cursor=filters["cursor"])
         if filters["q"] and len(filters["q"]) < 2:

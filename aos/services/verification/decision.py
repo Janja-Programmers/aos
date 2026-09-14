@@ -6,6 +6,7 @@ import frappe
 
 from aos.services.accounts.repository import AccountRepository
 from aos.services.notifications.service import NotificationService
+from aos.services.sellers.policy import sync_verification_projection
 
 from .constants import STATUS_APPROVED, STATUS_REJECTED, STATUS_REVOKED
 from .observability import verification_log
@@ -23,19 +24,32 @@ def apply_decision_side_effects(doc, *, previous_status: str | None) -> None:
 
     if doc.status == STATUS_APPROVED:
         _set_account_verified(user=doc.user, value=True)
+        _sync_seller_projection(doc)
         _notify_approved(doc)
         _log_transition(doc, "verification.approved")
         return
     if doc.status == STATUS_REJECTED:
+        _sync_seller_projection(doc)
         _notify_rejected(doc)
         _log_transition(doc, "verification.rejected")
         return
     if doc.status == STATUS_REVOKED:
         _set_account_verified(user=doc.user, value=False)
+        _sync_seller_projection(doc)
         _log_transition(doc, "verification.revoked")
         return
     if doc.status == "Reviewing":
         _log_transition(doc, "verification.reviewing")
+
+
+def _sync_seller_projection(doc) -> None:
+    sync_verification_projection(
+        user=doc.user,
+        verification_type=str(doc.verification_type or ""),
+        verification_status=str(doc.status or ""),
+        business_category=getattr(doc, "business_category", None),
+        source="verification",
+    )
 
 
 def _set_account_verified(*, user: str, value: bool) -> None:

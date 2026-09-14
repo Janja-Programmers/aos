@@ -310,15 +310,15 @@ Owner documentation: [docs/features/search-ranking/api.md](../features/search-ra
 
 ## Sellers (8)
 
-Owner documentation: [docs/features/sellers/api.md](../features/sellers/api.md)
+Owner documentation: [docs/features/sellers/README.md](../features/sellers/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
-| `/api/method/aos.api.v1.sellers.get_my_seller_status` | Any* | Session required | Client | `aos/api/v1/sellers/__init__.py` |
-| `/api/method/aos.api.v1.sellers.get_seller` | GET/POST | Guest allowed | Client | `aos/api/v1/sellers/__init__.py` |
-| `/api/method/aos.api.v1.sellers.get_seller_location` | GET/POST | Guest allowed | Client | `aos/api/v1/sellers/__init__.py` |
-| `/api/method/aos.api.v1.sellers.list_seller_map_points` | GET/POST | Guest allowed | Client | `aos/api/v1/sellers/__init__.py` |
-| `/api/method/aos.api.v1.sellers.list_sellers` | GET/POST | Guest allowed | Client | `aos/api/v1/sellers/__init__.py` |
+| `/api/method/aos.api.v1.sellers.get_my_seller_status` | GET | Session required | Client | `aos/api/v1/sellers/__init__.py` |
+| `/api/method/aos.api.v1.sellers.get_seller` | GET | Guest allowed | Client | `aos/api/v1/sellers/__init__.py` |
+| `/api/method/aos.api.v1.sellers.get_seller_location` | GET | Guest allowed | Client | `aos/api/v1/sellers/__init__.py` |
+| `/api/method/aos.api.v1.sellers.list_seller_map_points` | GET | Guest allowed | Client | `aos/api/v1/sellers/__init__.py` |
+| `/api/method/aos.api.v1.sellers.list_sellers` | GET | Guest allowed | Client | `aos/api/v1/sellers/__init__.py` |
 | `/api/method/aos.api.v1.sellers.remove_my_seller_location` | POST | Session required | Client | `aos/api/v1/sellers/__init__.py` |
 | `/api/method/aos.api.v1.sellers.set_my_seller_location` | POST | Session required | Client | `aos/api/v1/sellers/__init__.py` |
 | `/api/method/aos.api.v1.sellers.update_my_seller` | POST | Session required | Client | `aos/api/v1/sellers/__init__.py` |

@@ -316,8 +316,9 @@ class AOSFeatureTestMixin:
         return media
 
     def make_seller(self, user: str):
-        if frappe.db.exists("AOS Seller", user):
-            return frappe.get_doc("AOS Seller", user)
+        existing = frappe.db.get_value("AOS Seller", {"user": user}, "name")
+        if existing:
+            return frappe.get_doc("AOS Seller", existing)
 
         seller = frappe.get_doc(
             {

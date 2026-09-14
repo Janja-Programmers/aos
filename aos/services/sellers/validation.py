@@ -14,8 +14,8 @@ from .constants import (
     BUSINESS_CATEGORY_MAX_LENGTH,
     DEFAULT_LIST_LIMIT,
     LOCATION_FILTER_MAX_LENGTH,
+    MAX_CURSOR_LENGTH,
     MAX_LIST_LIMIT,
-    MAX_LIST_OFFSET,
     MAX_OPERATING_HOURS_ROWS,
     OPERATING_DAYS,
     SEARCH_MAX_LENGTH,
@@ -215,12 +215,19 @@ def _strict_integer(value: Any, *, default: int, field: str) -> int:
         raise SellerValidationError(f"Invalid {field}.", code="INVALID_SELLER_PAGINATION")
 
 
-def normalize_pagination(payload: dict[str, Any]) -> tuple[int, int]:
+def normalize_pagination(payload: dict[str, Any]) -> tuple[int, str]:
     limit = _strict_integer(payload.get("limit"), default=DEFAULT_LIST_LIMIT, field="limit")
-    offset = _strict_integer(payload.get("offset"), default=0, field="offset")
-    if limit < 1 or limit > MAX_LIST_LIMIT or offset < 0 or offset > MAX_LIST_OFFSET:
+    if limit < 1 or limit > MAX_LIST_LIMIT:
         raise SellerValidationError("Invalid seller pagination.", code="INVALID_SELLER_PAGINATION")
-    return limit, offset
+    cursor_value = payload.get("cursor")
+    if cursor_value in (None, ""):
+        return limit, ""
+    if isinstance(cursor_value, (dict, list, tuple, set, bool, bytes, bytearray)):
+        raise SellerValidationError("Invalid seller cursor.", code="INVALID_SELLER_PAGINATION")
+    cursor = str(cursor_value).strip()
+    if not cursor or len(cursor) > MAX_CURSOR_LENGTH:
+        raise SellerValidationError("Invalid seller cursor.", code="INVALID_SELLER_PAGINATION")
+    return limit, cursor
 
 
 def normalize_expected_version(value: Any) -> int | None:

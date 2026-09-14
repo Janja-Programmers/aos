@@ -66,10 +66,6 @@ def _get_seller_for_user(user: str) -> str | None:
     if not user:
         return None
 
-    # Some installs may use seller docname == user.
-    if frappe.db.exists("AOS Seller", user):
-        return user
-
     return frappe.db.get_value("AOS Seller", {"user": user}, "name")
 
 

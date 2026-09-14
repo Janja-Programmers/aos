@@ -35,28 +35,25 @@ from aos.api.sellers.get_location import (
     get_seller_location_impl as _get_seller_location_impl,
 )
 
-@frappe.whitelist(allow_guest=True, methods=["GET", "POST"])
+@frappe.whitelist(allow_guest=True, methods=["GET"])
 def list_sellers(**kwargs):
     """List marketplace sellers."""
     return _list_sellers_impl(**_client_kwargs(kwargs))
 
 
-@frappe.whitelist(allow_guest=True, methods=["GET", "POST"])
+@frappe.whitelist(allow_guest=True, methods=["GET"])
 def get_seller(**kwargs):
     """Get seller profile for storefront and ad detail."""
     return _get_seller_impl(**_client_kwargs(kwargs))
 
 
-@frappe.whitelist(
-    allow_guest=True,
-    methods=["GET", "POST"],
-)
+@frappe.whitelist(allow_guest=True, methods=["GET"])
 def list_seller_map_points(**kwargs):
     """List seller pins or clusters for a map viewport."""
     return _list_seller_map_points_impl(**_client_kwargs(kwargs))
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET"])
 def get_my_seller_status(**kwargs):
     """Get the current user's seller status for UI decisions."""
     return _get_my_seller_status_impl(**_client_kwargs(kwargs))
@@ -80,10 +77,7 @@ def remove_my_seller_location(**kwargs):
     return _remove_my_seller_location_impl(**_client_kwargs(kwargs))
 
 
-@frappe.whitelist(
-    allow_guest=True,
-    methods=["GET", "POST"],
-)
+@frappe.whitelist(allow_guest=True, methods=["GET"])
 def get_seller_location(**kwargs):
     """Get a seller location."""
     return _get_seller_location_impl(**_client_kwargs(kwargs))

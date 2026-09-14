@@ -117,6 +117,12 @@ _CONTRACTS = {
         allowed_payload_fields=frozenset({"processing_job_id", "source_media_id", "operation"}),
         required_payload_fields=frozenset({"processing_job_id", "source_media_id", "operation"}),
     ),
+    "seller_status_changed": NotificationTypeContract(
+        category=CATEGORY_MARKETPLACE,
+        event="aos_seller_status_changed",
+        allowed_payload_fields=frozenset({"seller_id", "status", "reason_code"}),
+        required_payload_fields=frozenset({"seller_id", "status"}),
+    ),
     "ad_approved": NotificationTypeContract(
         category=CATEGORY_MARKETPLACE,
         event="aos_ad_approved",

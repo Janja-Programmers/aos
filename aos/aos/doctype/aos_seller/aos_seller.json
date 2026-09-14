@@ -1,6 +1,6 @@
 {
  "actions": [],
- "autoname": "field:user",
+ "autoname": "hash",
  "creation": "2026-02-18 15:04:37.082826",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -14,7 +14,6 @@
   "status_source",
   "status_reason_code",
   "status_changed_at",
-  "shop_banner",
   "shop_banner_media",
   "section_break_rvlv",
   "about_business",
@@ -64,12 +63,6 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "shop_banner",
-   "fieldtype": "Data",
-   "label": "Shop Banner",
-   "description": "Cached public URL. New uploads should use shop_banner_media."
-  },
-  {
    "fieldname": "shop_banner_media",
    "fieldtype": "Link",
    "label": "Shop Banner Media",
@@ -83,7 +76,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Active\nSuspended\nDeleted",
+   "options": "Active\nSuspended\nClosed",
    "reqd": 1,
    "search_index": 1
   },
@@ -336,7 +329,7 @@
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Seller",
- "naming_rule": "By fieldname",
+ "naming_rule": "Random",
  "owner": "Administrator",
  "permissions": [
   {
@@ -367,7 +360,7 @@
   },
   {
    "color": "Gray",
-   "title": "Deleted"
+   "title": "Closed"
   }
  ]
 }

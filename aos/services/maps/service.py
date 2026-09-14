@@ -5,8 +5,6 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from frappe.utils import now_datetime
-
 from aos.api.maps.clients.nominatim_client import NominatimClientError, get_nominatim_client
 from aos.api.maps.clients.photon_client import PhotonClientError, get_photon_client
 from aos.api.maps.clients.valhalla_client import get_valhalla_client
@@ -25,26 +23,15 @@ from aos.api.maps.serializers import (
     serialize_reverse_geocode_result,
     serialize_route_response,
 )
-from aos.api.shared.user_display import get_user_display, get_user_display_map
-from aos.api.sellers.constants import SELLER_MAP_POINTS_MAX_ITEMS, SELLER_MAP_POINTS_MAX_RAW_SELLERS
-from aos.api.sellers.serializers import serialize_seller_location
-from aos.services.sellers.errors import SellerStateError
-from aos.services.sellers.identity import (
-    migration_fallback_public_seller_id,
-    normalize_public_seller_id,
-    public_seller_id_for_name,
-)
+from aos.api.shared.user_display import get_user_display_map
+from aos.services.sellers.constants import SELLER_MAP_POINTS_MAX_ITEMS, SELLER_MAP_POINTS_MAX_RAW_SELLERS
+from aos.services.sellers.identity import require_public_seller_id
+from aos.services.sellers.repository import get_route_destination, list_map_rows
 
 from .cache import get_cached_json, maps_cache_key, set_cached_json
-from .errors import MapsConflictError, MapsDependencyError, MapsNotFoundError
+from .errors import MapsDependencyError, MapsNotFoundError
 from .observability import maps_log
 from .providers import geocoder_order, routing_enabled
-from .repository import (
-    get_public_seller_location,
-    get_seller_location_for_user,
-    list_seller_map_rows,
-    lock_seller_for_location_mutation,
-)
 
 _LOCATION_FIELDS = (
     "latitude",
@@ -143,15 +130,10 @@ class MapsService:
         locations = list(request["locations"])
         seller_reference = request.get("destination_seller")
         if seller_reference:
-            seller = get_public_seller_location(seller_reference, viewer=viewer)
-            if not seller or not bool(seller.get("has_location")):
+            seller = get_route_destination(seller_reference, viewer=viewer)
+            if not seller:
                 raise MapsNotFoundError("Seller location not found.")
-            locations.append(
-                {
-                    "latitude": float(seller["latitude"]),
-                    "longitude": float(seller["longitude"]),
-                }
-            )
+            locations.append({"latitude": seller["latitude"], "longitude": seller["longitude"]})
         if not routing_enabled():
             raise MapsDependencyError("The routing service is disabled.")
         route_request = {
@@ -177,127 +159,8 @@ class MapsService:
         maps_log("maps.route", provider="valhalla", cached=False)
         return {"route": route, "cached": False}
 
-    def get_seller_location(self, *, seller_reference: str | None, viewer: str | None) -> dict[str, Any]:
-        is_owner = not seller_reference
-        if is_owner:
-            seller = get_seller_location_for_user(str(viewer or ""))
-        else:
-            seller = get_public_seller_location(str(seller_reference), viewer=viewer)
-        if not seller:
-            raise MapsNotFoundError("Seller location not found.")
-        display = get_user_display(seller.get("user"))
-        seller_id = normalize_public_seller_id(seller.get("public_id")) or public_seller_id_for_name(seller.get("name"))
-        maps_log("maps.seller_location.read", outcome="success", status="owner" if is_owner else "public")
-        return {
-            "seller": seller_id,
-            "seller_id": seller_id,
-            "user": display.get("account_id"),
-            "is_owner": bool(is_owner or seller.get("user") == viewer),
-            "location_version": int(seller.get("location_version") or 0),
-            "location": serialize_seller_location(seller),
-        }
-
-    def prepare_location_update(
-        self,
-        *,
-        user: str,
-        request: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        seller = get_seller_location_for_user(user)
-        if not seller:
-            raise MapsNotFoundError("Seller profile not found.")
-        if str(seller.get("status") or "").strip() != "Active":
-            raise SellerStateError(
-                "Seller account is not active.",
-                code="SELLER_INACTIVE",
-                http_status=403,
-                data={"status": str(seller.get("status") or "").strip() or None},
-            )
-        if _location_input_identical(seller, request):
-            return None
-        current_version = int(seller.get("location_version") or 0)
-        expected = request.get("expected_version")
-        if expected is not None and expected != current_version:
-            raise MapsConflictError(
-                "Seller location has changed. Refresh and try again.",
-                data={"current_version": current_version},
-            )
-        return self.resolve_location(
-            latitude=request["latitude"],
-            longitude=request["longitude"],
-            language="en",
-        )
-
-    def set_seller_location(
-        self,
-        *,
-        user: str,
-        request: dict[str, Any],
-        resolved_location: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        seller = lock_seller_for_location_mutation(user)
-        if not seller:
-            raise MapsNotFoundError("Seller profile not found.")
-        current_version = int(seller.get("location_version") or 0)
-        input_identical = _location_input_identical(seller, request)
-        expected = request.get("expected_version")
-        if input_identical:
-            return self._location_mutation_payload(seller, changed=False)
-        if expected is not None and expected != current_version:
-            raise MapsConflictError(
-                "Seller location has changed. Refresh and try again.",
-                data={"current_version": current_version},
-            )
-        if resolved_location is None:
-            raise MapsConflictError(
-                "Seller location changed while the request was being prepared. Refresh and try again.",
-                data={"current_version": current_version},
-            )
-        desired = {
-            "latitude": request["latitude"],
-            "longitude": request["longitude"],
-            "location_name": request.get("location_name"),
-            "location_instructions": request.get("location_instructions"),
-            "display_address": resolved_location["display_address"],
-            "locality": resolved_location.get("locality"),
-            "region": resolved_location.get("region"),
-            "country_code": resolved_location["country_code"],
-        }
-        for field, value in desired.items():
-            seller.set(field, value)
-        seller.has_location = 1
-        seller.location_updated_at = now_datetime()
-        seller.location_version = current_version + 1
-        seller.flags.aos_seller_location_action = True
-        seller.save(ignore_permissions=True)
-        maps_log("maps.seller_location.updated", outcome="success")
-        return self._location_mutation_payload(seller, changed=True)
-
-    def remove_seller_location(self, *, user: str, request: dict[str, Any]) -> dict[str, Any]:
-        seller = lock_seller_for_location_mutation(user)
-        if not seller:
-            raise MapsNotFoundError("Seller profile not found.")
-        current_version = int(seller.get("location_version") or 0)
-        expected = request.get("expected_version")
-        has_location = bool(seller.get("has_location"))
-        if expected is not None and expected != current_version and has_location:
-            raise MapsConflictError(
-                "Seller location has changed. Refresh and try again.",
-                data={"current_version": current_version},
-            )
-        if not has_location:
-            return self._location_mutation_payload(seller, changed=False)
-        for field in _LOCATION_FIELDS:
-            seller.set(field, None)
-        seller.has_location = 0
-        seller.location_version = current_version + 1
-        seller.flags.aos_seller_location_action = True
-        seller.save(ignore_permissions=True)
-        maps_log("maps.seller_location.removed", outcome="success")
-        return self._location_mutation_payload(seller, changed=True)
-
     def list_seller_map_points(self, request: dict[str, Any], *, viewer: str | None) -> dict[str, Any]:
-        rows = list_seller_map_rows(
+        rows = list_map_rows(
             request,
             viewer=viewer,
             maximum_rows=SELLER_MAP_POINTS_MAX_RAW_SELLERS,
@@ -358,35 +221,6 @@ class MapsService:
             raise last_error
         raise MapsDependencyError("No Maps geocoding provider is configured.")
 
-    @staticmethod
-    def _location_mutation_payload(seller, *, changed: bool) -> dict[str, Any]:
-        seller_id = public_seller_id_for_name(seller.name)
-        return {
-            "seller": seller_id,
-            "seller_id": seller_id,
-            "location_version": int(seller.get("location_version") or 0),
-            "changed": bool(changed),
-            "location": serialize_seller_location(seller),
-        }
-
-
-
-def _location_input_identical(seller: Any, request: dict[str, Any]) -> bool:
-    return bool(seller.get("has_location")) and all(
-        _same_value(seller.get(field), request.get(field))
-        for field in ("latitude", "longitude", "location_name", "location_instructions")
-    )
-
-def _same_value(left: Any, right: Any) -> bool:
-    if isinstance(right, float):
-        try:
-            return math.isclose(float(left), right, rel_tol=0, abs_tol=0.0000001)
-        except (TypeError, ValueError):
-            return False
-    return (str(left).strip() if left is not None else None) == (
-        str(right).strip() if right is not None else None
-    )
-
 
 def _cluster_rows(rows: list[dict[str, Any]], zoom: int) -> list[dict[str, Any]]:
     size = 0.5 if zoom <= 7 else 0.25 if zoom <= 9 else 0.12 if zoom <= 11 else 0.05 if zoom <= 13 else 0.02
@@ -417,14 +251,13 @@ def _cluster_rows(rows: list[dict[str, Any]], zoom: int) -> list[dict[str, Any]]
 
 def _serialize_pin(row: dict[str, Any], displays: dict[str, dict[str, Any]]) -> dict[str, Any]:
     display = displays.get(str(row.get("user") or ""), {})
-    seller_id = normalize_public_seller_id(row.get("public_id")) or migration_fallback_public_seller_id(row.get("name"))
+    seller_id = require_public_seller_id(row.get("public_id"))
     return {
         "type": "seller",
-        "seller": seller_id,
         "seller_id": seller_id,
-        "user": display.get("account_id"),
-        "display_name": display.get("display_name") or row.get("full_name"),
-        "avatar": display.get("avatar") or row.get("user_image"),
+        "account_id": display.get("account_id"),
+        "display_name": display.get("display_name") or "AOS User",
+        "avatar": display.get("avatar"),
         "business_category": row.get("business_category"),
         "seller_type": row.get("seller_type"),
         "is_verified": bool(row.get("is_verified")),

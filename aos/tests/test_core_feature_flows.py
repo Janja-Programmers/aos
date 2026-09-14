@@ -154,7 +154,7 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(ad_id)
         self.assertEqual(frappe.db.get_value("AOS Ad", ad_id, "status"), "Reviewing")
         self.assertEqual(frappe.db.get_value("AOS Ad", ad_id, "currency"), currency)
-        self.assertTrue(frappe.db.exists("AOS Seller", user))
+        self.assertTrue(frappe.db.exists("AOS Seller", {"user": user}))
         self.assertEqual(frappe.db.count("AOS Ad Image", {"parent": ad_id}), 1)
 
     def test_shorts_like_and_comment_flow_updates_viewer_state_and_records_comment(self):

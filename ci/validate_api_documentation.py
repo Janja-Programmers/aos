@@ -30,9 +30,10 @@ FEATURE_DOCS = {
 	"reviews": "docs/features/reviews/api.md",
 	"saved_search": "docs/features/saved-search/api.md",
 	"search_ranking": "docs/features/search-ranking/api.md",
-	"sellers": "docs/features/sellers/api.md",
+	"sellers": "docs/features/sellers/README.md",
 	"shorts": "docs/features/shorts/api.md",
 	"social": "docs/features/social/README.md",
+	"sellers": "docs/features/sellers/README.md",
 	"verification": "docs/features/verification/README.md",
 	"wishlist": "docs/features/wishlist/api.md",
 }
@@ -45,6 +46,7 @@ SINGLE_FILE_FEATURE_DOCS = {
 	"media": "docs/features/media/README.md",
 	"notifications": "docs/features/notifications/README.md",
 	"social": "docs/features/social/README.md",
+	"sellers": "docs/features/sellers/README.md",
 	"verification": "docs/features/verification/README.md",
 }
 

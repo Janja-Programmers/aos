@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from typing import Any, Callable
 
 import frappe
 
 from aos.api.shared.responses import fail
+from aos.api.maps.clients.nominatim_client import NominatimClientError
+from aos.api.maps.clients.photon_client import PhotonClientError
+from aos.services.maps.errors import MapsError
 from aos.services.media.media_service import (
     MediaConflictError,
     MediaError,
@@ -18,6 +22,7 @@ from aos.services.media.media_service import (
 )
 
 from .errors import SellerError, SellerNotFoundError
+from .observability import seller_log
 
 _CALLBACK_MANAGER_NAMES = (
     "before_commit",
@@ -35,6 +40,10 @@ def seller_fail(exc: Exception, *, fallback: str = "Seller request failed.") -> 
             data=exc.data,
             http_status=exc.http_status,
         )
+    if isinstance(exc, MapsError):
+        return fail(str(exc), error=exc.code, data=exc.data, http_status=exc.http_status)
+    if isinstance(exc, (NominatimClientError, PhotonClientError)):
+        return fail("Map service is temporarily unavailable.", error="MAP_SERVICE_ERROR", http_status=503)
     if isinstance(exc, MediaPermissionError):
         return fail("Seller banner access denied.", error="MEDIA_ACCESS_DENIED", http_status=403)
     if isinstance(exc, MediaStorageError):
@@ -113,6 +122,7 @@ def run_seller_api(
     fallback: str,
     log_title: str,
     transactional: bool = True,
+    operation_name: str = "request",
 ) -> dict[str, Any]:
     """Execute a Seller API operation behind a safe response boundary.
 
@@ -123,6 +133,7 @@ def run_seller_api(
     fail-fast SQL-safety boundary for malformed filters and sort values.
     """
 
+    started = time.monotonic()
     savepoint = f"aos_seller_{uuid.uuid4().hex[:16]}" if transactional else None
     callbacks_before = _snapshot_transaction_callbacks() if transactional else {}
     outbox_flag_before = _outbox_registration_flag() if transactional else None
@@ -139,14 +150,19 @@ def run_seller_api(
         )
 
     try:
-        return operation()
-    except (SellerError, MediaError) as exc:
+        result = operation()
+        seller_log("seller.api", operation=operation_name, outcome="success", duration_ms=(time.monotonic() - started) * 1000)
+        return result
+    except (SellerError, MediaError, MapsError, NominatimClientError, PhotonClientError) as exc:
         rollback_operation()
+        seller_log("seller.api", operation=operation_name, outcome="rejected", failure_class=type(exc).__name__, duration_ms=(time.monotonic() - started) * 1000)
         return seller_fail(exc, fallback=fallback)
     except frappe.DoesNotExistError:
         rollback_operation()
+        seller_log("seller.api", operation=operation_name, outcome="rejected", failure_class="not_found", duration_ms=(time.monotonic() - started) * 1000)
         return seller_fail(SellerNotFoundError("Seller not found."), fallback=fallback)
     except Exception:
         rollback_operation()
+        seller_log("seller.api", operation=operation_name, outcome="failure", failure_class="internal", duration_ms=(time.monotonic() - started) * 1000)
         frappe.log_error(frappe.get_traceback(), log_title)
         return fail(fallback, error="INTERNAL_ERROR", http_status=500)

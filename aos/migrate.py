@@ -26,7 +26,7 @@ from aos.patches.v1_0 import (
     install_shorts_indexes,
     install_shorts_recommendation_indexes,
 )
-from aos.services.maps import schema as maps_schema
+from aos.services.sellers import schema as seller_schema
 
 
 # Keep this list limited to schema-only, idempotent installers. Data
@@ -36,7 +36,7 @@ _SCHEMA_INVARIANT_INSTALLERS: tuple[Callable[[], None], ...] = (
     install_accounts_indexes.execute,
     harden_media_subsystem.execute,
     install_verification_indexes.execute,
-    maps_schema.execute,
+    seller_schema.execute,
     install_shorts_indexes.execute,
     install_shorts_recommendation_indexes.execute,
     install_live_indexes.execute,

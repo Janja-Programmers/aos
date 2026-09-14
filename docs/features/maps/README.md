@@ -70,7 +70,7 @@ Global routing is built from the same checksum-pinned single OSM planet snapshot
 
 ### Dynamic AOS geospatial data
 
-Current dynamic data is the explicit seller location already stored on `AOS Seller`: `latitude`, `longitude`, `has_location`, normalized display/locality/region/country metadata, location text, timestamp and optimistic `location_version`. Composite indexes used for viewport/nearby lookup are installed by the current idempotent `aos.services.maps.schema` migration invariant. No Maps-owned PostGIS database is justified today.
+Current dynamic data is the explicit seller location already stored on `AOS Seller`: `latitude`, `longitude`, `has_location`, normalized display/locality/region/country metadata, location text, timestamp and optimistic `location_version`. Composite indexes used for viewport/nearby lookup are installed by the current idempotent `aos.services.sellers.schema` migration invariant. No Maps-owned PostGIS database is justified today.
 
 `AOS Location`/Localization country reference data is not Maps-owned and is not duplicated.
 
@@ -209,7 +209,7 @@ Ordinary Maps API traffic is stateless and requires no sticky sessions. Producti
 
 ## Fresh-site schema and migrations
 
-There is no historical Maps cleanup patch in `patches.txt`. Fresh `bench migrate` synchronizes current DocTypes and `aos.migrate.after_migrate` reasserts the current idempotent Maps/Seller location indexes through `aos.services.maps.schema`. Planet/Photon/Valhalla imports are explicitly separate from Frappe schema migration. The shared `infra/maps/manifest.env` is also validated per concern: Photon import requires only Photon/import settings, planet download only the OSM source, basemap generation only OSM + Planetiler/basemap settings, and Valhalla only OSM + Valhalla settings. Unconfigured future components therefore do not block an unrelated Maps maintenance job.
+There is no historical Maps cleanup patch in `patches.txt`. Fresh `bench migrate` synchronizes current DocTypes and `aos.migrate.after_migrate` reasserts the current idempotent Seller location indexes through `aos.services.sellers.schema`. Planet/Photon/Valhalla imports are explicitly separate from Frappe schema migration. The shared `infra/maps/manifest.env` is also validated per concern: Photon import requires only Photon/import settings, planet download only the OSM source, basemap generation only OSM + Planetiler/basemap settings, and Valhalla only OSM + Valhalla settings. Unconfigured future components therefore do not block an unrelated Maps maintenance job.
 
 ## Deployment and rollback sequence
 

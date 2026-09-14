@@ -514,6 +514,41 @@ class NotificationService:
             dedupe_key=dedupe_key,
         )
 
+    # SELLERS
+    @classmethod
+    def notify_seller_status_changed(
+        cls,
+        *,
+        user: str,
+        seller_id: str,
+        old_status: str,
+        new_status: str,
+        reason_code: str,
+        transition_token: str,
+    ):
+        copy = {
+            "Suspended": ("Seller Suspended", "Your seller storefront has been suspended."),
+            "Active": ("Seller Reactivated", "Your seller storefront is active again."),
+            "Closed": ("Seller Closed", "Your seller storefront has been closed."),
+        }
+        title, body = copy.get(
+            str(new_status or ""),
+            ("Seller Status Updated", "Your seller storefront status has changed."),
+        )
+        return cls.notify(
+            user=user,
+            type="seller_status_changed",
+            title=title,
+            body=body,
+            payload={
+                "seller_id": seller_id,
+                "status": new_status,
+                "reason_code": reason_code,
+            },
+            event="aos_seller_status_changed",
+            dedupe_key=f"seller:status:{seller_id}:{new_status}:{transition_token}",
+        )
+
     # ADS
     @classmethod
     def notify_ad_approved(

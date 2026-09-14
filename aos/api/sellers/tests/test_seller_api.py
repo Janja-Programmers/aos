@@ -199,7 +199,7 @@ class TestSellerAPI(AOSFeatureTestMixin, FrappeTestCase):
         frappe.set_user(self.owner)
         with self._without_rate_limit("aos.api.sellers.update_my_seller.rate_limit"):
             response = update_my_seller_impl(
-                shop_banner_media=media.name,
+                shop_banner_media_id=media.name,
                 expected_version=0,
             )
 
@@ -208,6 +208,19 @@ class TestSellerAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.seller.reload()
         self.assertFalse(self.seller.shop_banner_media)
         self.assertEqual(int(self.seller.storefront_version or 0), 0)
+
+
+    def test_legacy_public_identity_and_banner_aliases_are_rejected(self):
+        with self._without_rate_limit("aos.api.sellers.get_seller.rate_limit"):
+            legacy_lookup = get_seller_impl(seller_id=self.owner)
+        self.assertFalse(legacy_lookup.get("ok"), legacy_lookup)
+        self.assertEqual(legacy_lookup.get("error"), "SELLER_NOT_FOUND")
+
+        frappe.set_user(self.owner)
+        with self._without_rate_limit("aos.api.sellers.update_my_seller.rate_limit"):
+            legacy_banner = update_my_seller_impl(shop_banner="https://example.invalid/banner.jpg")
+        self.assertFalse(legacy_banner.get("ok"), legacy_banner)
+        self.assertEqual(legacy_banner.get("error"), "INVALID_SELLER_REQUEST")
 
     def test_controller_blocks_direct_storefront_lifecycle_and_metric_mutation(self):
         frappe.set_user(self.owner)
