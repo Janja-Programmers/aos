@@ -72,7 +72,11 @@ class TestMapsContracts(unittest.TestCase):
         self.assertTrue(verifier.exists())
         verifier_source = verifier.read_text()
         self.assertIn("tile.status_code != 206", verifier_source)
-        self.assertIn('startswith(b"PMTiles")', verifier_source)
+        self.assertIn('_parse_pmtiles_header', verifier_source)
+        self.assertIn('MAPS_GLOBAL_BASEMAP_MIN_BYTES', verifier_source)
+        self.assertIn('MAPS_REQUIRE_GLOBAL_BASEMAP', verifier_source)
+        self.assertIn('num_tile_entries', verifier_source)
+        self.assertIn('PMTILES_MVT', verifier_source)
 
     def test_provider_urls_are_ssrf_hardened(self):
         source = (ROOT / "aos/services/maps/internal_url.py").read_text()

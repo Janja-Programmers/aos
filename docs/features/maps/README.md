@@ -167,7 +167,7 @@ Staging may deliberately use fewer OpenSearch nodes/resources, but that must nev
 3. Run `build-world-pmtiles.sh` on a dedicated high-memory/high-disk worker, not an API host under request load.
 4. Validate PMTiles and resulting SHA.
 5. Run `publish-basemap.py`; it uploads `basemap/<MAP_DATA_VERSION>/<filename>` first and `basemap/current.json` last.
-6. Verify CDN byte-range fetches and representative global tiles before changing client style/config.
+6. Run `verify-basemap-origin.py`; it validates HTTP range/CORS plus the PMTiles v3 header, non-empty MVT tile data, archive size, and global geographic bounds. Then verify representative global tiles before changing client style/config. Smoke/test PMTiles artifacts must never be left behind `current.json`.
 7. Roll back by repointing `current.json`/client manifest to the prior version. Clean old versions only after the rollback retention policy expires.
 
 World builds require dedicated capacity. Planetiler upstream examples place world PMTiles and temporary build working sets in the many-tens-of-GB range; provision significant additional SSD scratch/headroom instead of sizing only to final artifact size. Build CPU/RAM/disk are isolated from serving containers.
