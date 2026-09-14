@@ -63,7 +63,7 @@ def _apply_ad_action(doc, action: str) -> None:
             (doc.seller,),
             as_dict=True,
         )
-        if not seller_rows or str(seller_rows[0].status or "") == "Deleted":
+        if not seller_rows or str(seller_rows[0].status or "") == "Closed":
             return
         set_seller_status(
             doc.seller,

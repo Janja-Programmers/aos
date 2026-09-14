@@ -311,7 +311,7 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.ad.reload()
         self.assertEqual(self.ad.status, "Suspended")
 
-    def test_suspend_seller_action_does_not_resurrect_deleted_seller(self):
+    def test_suspend_seller_action_does_not_reopen_closed_seller(self):
         submitted = self._report_ad()
         self.assertTrue(submitted.get("ok"), submitted)
         frappe.set_user("Administrator")
@@ -319,8 +319,8 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
 
         set_seller_status(
             self.ad.seller,
-            status="Deleted",
-            reason_code="TEST_DELETED",
+            status="Closed",
+            reason_code="TEST_CLOSED",
             source="report_test",
             actor="Administrator",
         )
@@ -328,7 +328,7 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         doc.status = "Resolved"
         doc.admin_action = "Suspended Seller"
         doc.save(ignore_permissions=True)
-        self.assertEqual(frappe.db.get_value("AOS Seller", self.ad.seller, "status"), "Deleted")
+        self.assertEqual(frappe.db.get_value("AOS Seller", self.ad.seller, "status"), "Closed")
         self.assertEqual(doc.status, "Resolved")
 
     def test_account_deletion_cleanup_removes_reporter_private_rows_but_retains_reports_about_account(self):

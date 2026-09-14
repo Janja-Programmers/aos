@@ -215,7 +215,7 @@ class TestActivityDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(frappe.db.get_value("AOS User Activity", ads_id, "status"), "Cleared")
         self.assertEqual(frappe.db.get_value("AOS User Activity", shorts_id, "status"), "Active")
 
-    def test_legacy_identity_metadata_is_serialized_as_opaque_public_ids(self):
+    def test_legacy_seller_identity_metadata_fails_closed_without_leaking_account_id(self):
         activity_id = ActivityService.record_activity(
             user=self.user,
             activity_group="Shorts",
@@ -232,7 +232,7 @@ class TestActivityDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(response.get("ok"), response)
         item = next(row for row in response["data"]["items"] if row["id"] == activity_id)
         self.assertEqual(item["metadata"]["short_owner"], self.target_public)
-        self.assertTrue(str(item["metadata"]["seller"]).startswith("SELLER-"))
+        self.assertNotIn("seller", item["metadata"])
         self.assertNotIn(self.target, repr(item))
 
     def test_account_deletion_redacts_other_users_removed_content_snapshots(self):

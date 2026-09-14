@@ -46,6 +46,7 @@ class TestNotificationContracts(unittest.TestCase):
                 "ad_approved",
                 "ad_rejected",
                 "ad_expired",
+                "seller_status_changed",
                 "review_received",
                 "review_approved",
                 "review_rejected",
