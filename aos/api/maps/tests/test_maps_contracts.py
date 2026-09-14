@@ -57,6 +57,7 @@ class TestMapsContracts(unittest.TestCase):
         self.assertIn('"Action": ["s3:GetObject"]', publish)
         self.assertIn('"Resource": [f"arn:aws:s3:::{bucket}/basemap/*"]', publish)
         self.assertIn("client.set_bucket_policy", publish)
+        self.assertIn('sys.argv[1:] == ["--policy-only"]', publish)
         self.assertNotIn("MAPS_OBJECT_STORAGE_ALLOW_ANONYMOUS_READ", publish)
         self.assertNotIn("MAPS_OBJECT_STORAGE_ALLOW_ANONYMOUS_READ", env_example)
         self.assertIn('proxy_set_header Authorization "";', nginx)

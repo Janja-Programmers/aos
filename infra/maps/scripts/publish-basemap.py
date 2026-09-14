@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Publish a versioned PMTiles artifact atomically to S3-compatible object storage."""
+"""Publish a versioned PMTiles artifact or repair its public read policy."""
 from __future__ import annotations
 
 import hashlib
 import json
 import os
+import sys
 from pathlib import Path
 from io import BytesIO
 
@@ -21,11 +22,9 @@ def env(name: str) -> str:
 
 def main() -> int:
     root = Path(__file__).resolve().parents[3]
-    version = env("MAP_DATA_VERSION")
-    filename = env("BASEMAP_PMTILES_FILENAME")
-    source = root / "maps" / "basemap" / version / filename
-    if not source.is_file() or source.stat().st_size <= 0:
-        raise SystemExit(f"Missing basemap artifact: {source}")
+    policy_only = sys.argv[1:] == ["--policy-only"]
+    if sys.argv[1:] and not policy_only:
+        raise SystemExit("Usage: publish-basemap.py [--policy-only]")
     endpoint = env("MAPS_OBJECT_STORAGE_ENDPOINT").removeprefix("https://").removeprefix("http://")
     secure = os.environ["MAPS_OBJECT_STORAGE_ENDPOINT"].startswith("https://")
     bucket = env("MAPS_OBJECT_STORAGE_BUCKET")
@@ -53,6 +52,16 @@ def main() -> int:
         }],
     }
     client.set_bucket_policy(bucket, json.dumps(policy))
+    if policy_only:
+        print(json.dumps({"bucket": bucket, "policy": "basemap-read-only"}, sort_keys=True))
+        return 0
+
+    version = env("MAP_DATA_VERSION")
+    filename = env("BASEMAP_PMTILES_FILENAME")
+    source = root / "maps" / "basemap" / version / filename
+    if not source.is_file() or source.stat().st_size <= 0:
+        raise SystemExit(f"Missing basemap artifact: {source}")
+
     hasher = hashlib.sha256()
     with source.open("rb") as handle:
         for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):

@@ -101,6 +101,7 @@ For a fresh global build, use dedicated build/import workers rather than request
 ./infra/maps/scripts/build-world-pmtiles.sh
 # Export MAPS_OBJECT_STORAGE_* credentials, then publish the immutable PMTiles generation.
 ./infra/maps/scripts/publish-basemap.py
+MAPS_WEB_ORIGIN=https://<web-domain> ./infra/maps/scripts/verify-basemap-origin.py
 ./infra/maps/scripts/build-photon-image.sh
 # Import into an inactive external OpenSearch target; this command deliberately
 # requires PHOTON_IMPORT_CONFIRM_TARGET=YES. Choose one maintained source path.
@@ -109,6 +110,14 @@ For a fresh global build, use dedicated build/import workers rather than request
 # Optional routing graph build:
 # ./infra/maps/scripts/build-valhalla.sh
 ./infra/maps/scripts/verify-map-data.sh
+```
+
+
+If a previously published staging basemap exists but the dedicated bucket was left private, repair only the scoped read policy without uploading the PMTiles object again:
+
+```bash
+./infra/maps/scripts/publish-basemap.py --policy-only
+MAPS_WEB_ORIGIN=https://<web-domain> ./infra/maps/scripts/verify-basemap-origin.py
 ```
 
 For disaster recovery, follow `restore.md` instead.
