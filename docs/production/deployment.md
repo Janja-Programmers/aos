@@ -117,6 +117,7 @@ If a previously published staging basemap exists but the dedicated bucket was le
 
 ```bash
 ./infra/maps/scripts/publish-basemap.py --policy-only
+./infra/maps/scripts/provision-basemap-publisher.sh
 MAPS_PUBLIC_BASE_URL=https://<maps-domain>/basemap MAPS_WEB_ORIGIN=https://<web-domain> ./infra/maps/scripts/verify-basemap-origin.py
 ```
 
