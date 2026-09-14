@@ -114,6 +114,8 @@ class TestSellerContracts(unittest.TestCase):
         self.assertIn("seller_schema.execute", migrate)
         self.assertNotIn("maps_schema.execute", migrate)
         self.assertIn("idx_aos_seller_location_lat_lon", schema)
+        self.assertIn("frappe.db.get_table_columns(doctype)", schema)
+        self.assertNotIn("frappe.get_meta(doctype)", schema)
         self.assertFalse((ROOT / "aos/services/maps/schema.py").exists())
 
     def test_public_serialization_does_not_expose_future_chat_live_or_internal_ids(self):

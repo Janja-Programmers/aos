@@ -19,11 +19,19 @@ def execute() -> None:
     doctype = "AOS Seller"
     if not frappe.db.exists("DocType", doctype):
         return
-    meta = frappe.get_meta(doctype)
-    valid_fields = {field.fieldname for field in meta.fields} | {"name"}
+    # Validate against the physical table, not ``DocType.meta.fields``. Frappe's
+    # metadata field list excludes standard columns such as ``name`` and
+    # ``creation`` even though they are real columns and valid index members.
+    # ``after_migrate`` runs after DocType synchronization, so the table is the
+    # authoritative schema at this point.
+    table_columns = set(frappe.db.get_table_columns(doctype))
     for index_name, fields in SELLER_INDEXES:
-        if not set(fields) <= valid_fields:
-            frappe.throw(f"Cannot install Seller index {index_name}: schema fields are missing.")
+        missing = set(fields) - table_columns
+        if missing:
+            frappe.throw(
+                f"Cannot install Seller index {index_name}: schema fields are missing: "
+                f"{', '.join(sorted(missing))}."
+            )
         if not _index_exists(index_name):
             frappe.db.add_index(doctype, list(fields), index_name=index_name)
 
