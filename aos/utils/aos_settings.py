@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import frappe
 
-AOS_SETTINGS_CACHE_KEY = "aos:settings:snapshot:v8"
+AOS_SETTINGS_CACHE_KEY = "aos:settings:snapshot:v9"
 
 
 @dataclass(frozen=True)
@@ -26,6 +26,7 @@ class AOSSettingsSnapshot:
 	# Foreign Exchange business rules
 	base_currency: str | None
 	refresh_hours: int
+	fx_max_stale_hours: int
 
 	# Authentication public app identifiers
 	google_oauth_client_ids: str | None
@@ -110,7 +111,7 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
 	if use_cache and cache is not None:
 		try:
 			cached = cache.get_value(key)
-			if isinstance(cached, dict) and cached.get("_schema") == "v8":
+			if isinstance(cached, dict) and cached.get("_schema") == "v9":
 				payload = dict(cached)
 				payload.pop("_schema", None)
 				return AOSSettingsSnapshot(**payload)
@@ -148,6 +149,12 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
 			default=12,
 			min_value=1,
 			max_value=24 * 7,
+		),
+		fx_max_stale_hours=_clamp_int(
+			_get_field(settings, "fx_max_stale_hours", 24),
+			default=24,
+			min_value=1,
+			max_value=24 * 30,
 		),
 		# Authentication public app identifiers
 		google_oauth_client_ids=_text_or_none(_get_field(settings, "google_oauth_client_ids")),
@@ -222,7 +229,7 @@ def get_aos_settings_snapshot(use_cache: bool = True) -> AOSSettingsSnapshot:
 
 	if cache is not None:
 		try:
-			cached_payload = {"_schema": "v8", **snap.__dict__}
+			cached_payload = {"_schema": "v9", **snap.__dict__}
 			cache.set_value(key, cached_payload, expires_in_sec=60 * 5)
 		except Exception:
 			pass
@@ -235,7 +242,7 @@ def _delete_aos_settings_cache() -> None:
 		cache = frappe.cache()
 	except Exception:
 		return
-	for key in (AOS_SETTINGS_CACHE_KEY, "aos:fx:rates:v1"):
+	for key in (AOS_SETTINGS_CACHE_KEY,):
 		try:
 			cache.delete_value(key)
 		except Exception:

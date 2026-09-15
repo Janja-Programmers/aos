@@ -6,28 +6,33 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 
 class ImageReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    media_id: str = Field(..., min_length=1, max_length=180)
     image_url: str | HttpUrl = Field(..., min_length=1)
     is_primary: bool = False
-    sort_order: int = Field(default=0, ge=0)
+    sort_order: int = Field(default=0, ge=0, le=999)
 
-    @field_validator("image_url")
+    @field_validator("media_id", "image_url")
     @classmethod
-    def validate_image_url(cls, value):
+    def validate_required_text(cls, value):
         value = str(value or "").strip()
         if not value:
-            raise ValueError("image_url is required")
+            raise ValueError("value is required")
         return value
 
 
 class ReplaceImagesRequest(BaseModel):
-    images: list[ImageReference] = Field(default_factory=list)
+    model_config = ConfigDict(extra="forbid")
+    generation: str = Field(..., min_length=1, max_length=180)
+    images: list[ImageReference] = Field(default_factory=list, max_length=16)
 
 
 class ReplaceImagesResponse(BaseModel):
     ok: bool
     ad_id: str
+    generation: str
+    embedding_version: str
     indexed_count: int = 0
-    failed_count: int = 0
     message: str | None = None
 
 
@@ -41,7 +46,7 @@ class DeleteVectorsResponse(BaseModel):
 class ImageMatch(BaseModel):
     ad_id: str
     score: float
-    matched_image_url: str | None = None
+    matched_media_id: str | None = None
     is_primary: bool = False
 
 
@@ -81,8 +86,6 @@ class ShortFrameClassificationRequest(BaseModel):
         for frame in frames:
             if not isinstance(frame, str) or not frame:
                 raise ValueError("Frame is required")
-            # 1 MiB decoded is at most ~1.4 MiB base64; allow bounded headroom
-            # for configurable deployments while rejecting memory-amplification.
             if len(frame) > 7_000_000:
                 raise ValueError("Encoded frame is too large")
             total += len(frame)

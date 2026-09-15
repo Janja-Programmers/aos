@@ -96,7 +96,7 @@ def _get_primary_ad_image(ad_id: str) -> str:
         from aos.api.ads.media import get_ad_image_url
         return get_ad_image_url(rows[0])
     except Exception:
-        return (rows[0].get("image") or "").strip()
+        return ""
 
 
 def _load_ad_target(ad_id: str | None) -> dict[str, Any] | None:

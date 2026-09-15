@@ -97,7 +97,7 @@ class TestReportProductionSourceGuards(unittest.TestCase):
         user_schema = json.loads(_source("aos/aos/doctype/aos_user_report/aos_user_report.json"))
         self.assertIn("active_key", {row.get("fieldname") for row in user_schema["fields"]})
         self.assertIn("uq_aos_user_report_active", indexes)
-        self.assertIn("uq_aos_ad_report_user_ad", _source("aos/patches/v1_0/harden_ads_subsystem.py"))
+        self.assertIn("uq_aos_ad_report_user_ad", indexes)
         self.assertIn("uq_short_report_active", _source("aos/patches/v1_0/install_shorts_indexes.py"))
         self.assertIn("uq_aos_review_report_user", _source("aos/patches/v1_0/harden_reviews_subsystem.py"))
 

@@ -46,7 +46,8 @@ class TestAdsApiContracts(FrappeTestCase):
     def test_public_list_is_bounded_deterministic_and_cursor_safe(self):
         source = self._source("api/ads/list_ads.py")
         self.assertIn("LIMIT %(limit)s OFFSET %(offset)s", source)
-        self.assertIn("a.creation DESC, a.name DESC", source)
+        self.assertIn("a.creation DESC, a.public_id DESC", source)
+        self.assertIn('order_by = f"{geo_bucket} ASC, {primary}"', source)
         self.assertIn("decode_recent_cursor", source)
         self.assertIn("safe_like_contains", source)
         self.assertIn("AOS User Block", source)
@@ -55,12 +56,12 @@ class TestAdsApiContracts(FrappeTestCase):
     def test_wishlist_and_image_search_recheck_public_eligibility(self):
         wishlist = self._source("api/wishlist/list.py")
         image_search = self._source("api/ads/image_search.py")
-        for source in (wishlist, image_search):
-            self.assertIn("seller.status = 'Active'", source)
-            self.assertIn("expires_on", source)
-            self.assertIn("AOS User Block", source)
+        self.assertIn("seller.status = 'Active'", wishlist)
+        self.assertIn("expires_on", wishlist)
+        self.assertIn("AOS User Block", wishlist)
         self.assertIn("normalize_wishlist_list_filters", wishlist)
-        self.assertIn("normalize_int", image_search)
+        self.assertIn("load_public_ad_items", image_search)
+        self.assertNotIn("matched_media_id", image_search)
 
     def test_ads_apis_use_central_validation_and_lifecycle(self):
         create_source = self._source("api/ads/create.py")
@@ -74,7 +75,7 @@ class TestAdsApiContracts(FrappeTestCase):
 
     def test_v1_ads_transport_strips_cmd_before_strict_validation(self):
         response = {"ok": True}
-        with patch.object(ads_v1, "_list_ads_impl", return_value=response) as implementation:
+        with patch.object(ads_v1, "list_ads_impl", return_value=response) as implementation:
             result = ads_v1.list_ads(
                 cmd="aos.api.v1.ads.list_ads",
                 limit="20",

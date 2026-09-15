@@ -35,8 +35,8 @@ class FakeService:
 			"config": {"environment": "test"},
 		}
 
-	def replace_ad_images(self, *, ad_id, images):
-		return {"ok": True, "ad_id": ad_id, "indexed_count": len(images), "failed_count": 0}
+	def replace_ad_images(self, *, ad_id, generation, images):
+		return {"ok": True, "ad_id": ad_id, "generation": generation, "embedding_version": "test:v1", "indexed_count": len(images)}
 
 	def delete_ad_vectors(self, *, ad_id):
 		return {"ok": True, "ad_id": ad_id, "deleted": True}
@@ -95,7 +95,7 @@ def test_replace_images_requires_signed_internal_boundary(monkeypatch):
 	)
 	response = TestClient(main.app).post(
 		"/ads/AD-1/replace-images",
-		json={"images": [{"image_url": "/files/synthetic.png", "sort_order": 0}]},
+		json={"generation": "20260915120000000000:abc", "images": [{"media_id": "media-1", "image_url": "/files/synthetic.png", "sort_order": 0}]},
 	)
 	assert response.status_code == 401
 
@@ -104,7 +104,7 @@ def test_replace_images_uses_signed_service_boundary(monkeypatch):
 	monkeypatch.setattr(main, "get_service", FakeService)
 	path = "/ads/AD-1/replace-images"
 	body = json.dumps(
-		{"images": [{"image_url": "/files/synthetic.png", "sort_order": 0}]},
+		{"generation": "20260915120000000000:abc", "images": [{"media_id": "media-1", "image_url": "/files/synthetic.png", "sort_order": 0}]},
 		separators=(",", ":"),
 		sort_keys=True,
 	).encode("utf-8")
@@ -143,7 +143,7 @@ def test_service_failure_is_not_reported_as_success(monkeypatch):
 	monkeypatch.setattr(main, "get_service", FailingService)
 	path = "/ads/AD-1/replace-images"
 	body = json.dumps(
-		{"images": [{"image_url": "/files/synthetic.png", "sort_order": 0}]},
+		{"generation": "20260915120000000000:abc", "images": [{"media_id": "media-1", "image_url": "/files/synthetic.png", "sort_order": 0}]},
 		separators=(",", ":"),
 		sort_keys=True,
 	).encode("utf-8")
@@ -170,7 +170,7 @@ def test_request_schema_rejects_missing_and_invalid_fields(monkeypatch):
 	assert invalid.status_code == 422
 
 	with pytest.raises(ValidationError):
-		ImageReference(image_url="", sort_order=0)
+		ImageReference(media_id="media-1", image_url="", sort_order=0)
 
 
 def test_image_upload_validation_happens_before_service_call(monkeypatch):

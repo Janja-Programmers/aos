@@ -40,7 +40,7 @@ def expire_ads() -> None:
             expire_ad_locked(ad)
             seller_user = frappe.db.get_value("AOS Seller", ad.seller, "user")
             if seller_user:
-                NotificationService.notify_ad_expired(user=seller_user, ad_id=ad.name, title=ad.title)
+                NotificationService.notify_ad_expired(user=seller_user, ad_id=ad.public_id, title=ad.title)
             enqueue_discovery_refresh(ad.name, status=ad.status, source="ad_expiry")
             expired += 1
         except Exception:

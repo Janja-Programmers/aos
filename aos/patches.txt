@@ -16,9 +16,8 @@ aos.patches.v1_0.harden_media_subsystem
 aos.patches.v1_0.install_accounts_indexes
 aos.patches.v1_0.install_verification_indexes
 aos.patches.v1_0.install_catalog_indexes
+aos.patches.v1_0.install_marketplace_discovery_indexes
 
-aos.patches.v1_0.harden_ads_subsystem
-aos.patches.v1_0.normalize_ads_offer_fields
 aos.patches.v1_0.harden_wishlist_subsystem
 aos.patches.v1_0.harden_reviews_subsystem
 

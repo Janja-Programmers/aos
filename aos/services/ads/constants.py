@@ -53,7 +53,7 @@ MAX_DRAFT_PAYLOAD_BYTES = 64 * 1024
 MAX_DRAFT_STEP = 20
 MAX_PAGE_SIZE = 50
 DEFAULT_PAGE_SIZE = 20
-MAX_OFFSET = 100_000
+MAX_OFFSET = 5_000
 MAX_SORT_ORDER = 1_000_000
 MAX_ATTRIBUTE_TEXT_LENGTH = 500
 MAX_ATTRIBUTE_TEXTAREA_LENGTH = 5_000
@@ -83,15 +83,14 @@ CREATE_FIELDS = frozenset(
         "offer_start_date",
         "offer_end_date",
         "video_media",
-        "video_media_id",
-        "video",
+        "idempotency_key",
     }
 )
-FULL_UPDATE_FIELDS = CREATE_FIELDS | frozenset({"ad_id", "id"})
+FULL_UPDATE_FIELDS = (CREATE_FIELDS - {"idempotency_key"}) | frozenset({"ad_id", "version"})
 ACTIVE_UPDATE_FIELDS = frozenset(
     {
         "ad_id",
-        "id",
+        "version",
         "title",
         "description",
         "price_type",
@@ -102,9 +101,9 @@ ACTIVE_UPDATE_FIELDS = frozenset(
         "offer_end_date",
     }
 )
-STATUS_FIELDS = frozenset({"ad_id", "id", "action"})
-GET_AD_FIELDS = frozenset({"ad_id", "id", "currency", "country"})
-GET_MY_AD_FIELDS = frozenset({"ad_id", "id"})
+STATUS_FIELDS = frozenset({"ad_id", "action", "version"})
+GET_AD_FIELDS = frozenset({"ad_id", "currency", "country"})
+GET_MY_AD_FIELDS = frozenset({"ad_id"})
 LIST_MY_AD_FIELDS = frozenset({"limit", "offset", "status"})
 PUBLIC_LIST_FIELDS = frozenset(
     {
@@ -113,6 +112,7 @@ PUBLIC_LIST_FIELDS = frozenset(
         "location",
         "category",
         "seller",
+        "attributes",
         "q",
         "price_type",
         "promotion_type",
@@ -129,6 +129,6 @@ PUBLIC_LIST_FIELDS = frozenset(
 WISHLIST_TOGGLE_FIELDS = frozenset({"ad_id", "id", "wishlisted"})
 WISHLIST_LIST_FIELDS = PUBLIC_LIST_FIELDS
 REPORT_AD_FIELDS = frozenset({"ad", "ad_id", "reason", "details"})
-DRAFT_UPSERT_FIELDS = frozenset({"draft_id", "id", "payload", "payload_json", "last_step"})
-DRAFT_ID_FIELDS = frozenset({"draft_id", "id"})
+DRAFT_UPSERT_FIELDS = frozenset({"draft_id", "payload", "last_step", "version"})
+DRAFT_ID_FIELDS = frozenset({"draft_id", "version"})
 DRAFT_LIST_FIELDS = frozenset({"limit", "offset"})

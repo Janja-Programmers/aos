@@ -9,7 +9,7 @@ Feature documentation is the canonical human-readable description of AOS busines
 | [Authentication](authentication/README.md) | Registration, login/session, OTP, social login, password recovery/change, delete/restore authentication flow | [Contract](authentication/README.md) |
 | [Accounts](accounts/README.md) | Profile, preferences, account lifecycle, cross-domain deletion/restore ownership | [API](accounts/README.md) |
 | [Activity](activity/README.md) | Private user activity history and cleanup | [API](activity/api.md) |
-| [Ads](ads/README.md) | Marketplace Ad/draft lifecycle, discovery, Media references and moderation triggers | [API](ads/api.md) |
+| [Marketplace Discovery — Ads](marketplace-discovery/README.md) | Canonical marketplace Ad/draft lifecycle, eligibility and projections | [Ads API](ads/api.md) |
 | [Analytics ingestion](analytics/README.md) | Bounded client telemetry and durable analytics handoff | [API](analytics/api.md) |
 | [Calls](calls/README.md) | Call lifecycle, LiveKit grants, history and reconciliation | [API](calls/api.md) |
 | [Catalog](catalog/README.md) | Category/schema master data and Ad attribute rules | [API](catalog/README.md) |
@@ -22,8 +22,8 @@ Feature documentation is the canonical human-readable description of AOS busines
 | [Notifications](notifications/README.md) | In-app notifications, push tokens and delivery handoff | [API](notifications/README.md) |
 | [Reports](reports/README.md) | User/Ad/Short reporting and moderation reasons | [API](reports/api.md) |
 | [Reviews](reviews/README.md) | Reviews, eligibility, reactions, moderation and aggregates | [API](reviews/api.md) |
-| [Saved Search](saved-search/README.md) | User-scoped reusable Ads search criteria | [API](saved-search/api.md) |
-| [Search and Ranking](search-ranking/README.md) | Related-Ad recommendations and durable indexing/ranking handoff | [API](search-ranking/api.md) |
+| [Marketplace Discovery — Saved Searches](marketplace-discovery/README.md) | User-scoped canonical Ads search intent | [Saved Search API](saved-search/api.md) |
+| [Marketplace Discovery — Search Ranking](marketplace-discovery/README.md) | Candidate generation, ranking policy and derived discovery indexes | [Search Ranking API](search-ranking/api.md) |
 | [Sellers](sellers/README.md) | Seller profile/state, storefront, operating hours and location ownership | [API](sellers/api.md) |
 | [Shorts](shorts/README.md) | Short lifecycle, feeds, interactions, analytics, sounds and processing | [API](shorts/api.md) |
 | [Social](social/README.md) | Follow/friend/block relationships and privacy | [API](social/api.md) |

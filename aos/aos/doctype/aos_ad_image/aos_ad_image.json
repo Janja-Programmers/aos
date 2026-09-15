@@ -7,7 +7,6 @@
  "engine": "InnoDB",
  "field_order": [
   "media",
-  "image",
   "sort_order",
   "column_break_rfxe",
   "is_primary"
@@ -22,14 +21,6 @@
    "search_index": 1,
    "description": "Source media object. AOS ad images must use media_id.",
    "reqd": 1
-  },
-  {
-   "fieldname": "image",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Image URL",
-   "description": "Cached public URL resolved from AOS Media Object.",
-   "read_only": 1
   },
   {
    "default": "0",

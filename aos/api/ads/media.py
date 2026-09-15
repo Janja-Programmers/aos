@@ -28,16 +28,30 @@ def get_media_public_url(media_id: Any) -> str:
 
 
 def get_ad_image_url(row: Any) -> str:
-    media_id = getattr(row, "media", None)
     if isinstance(row, dict):
-        media_id = media_id or row.get("media")
+        projected = str(row.get("url") or "").strip()
+        if projected:
+            return projected
+        media_id = row.get("media")
+    else:
+        projected = str(getattr(row, "url", "") or "").strip()
+        if projected:
+            return projected
+        media_id = getattr(row, "media", None)
     return public_media_url(media_id)
 
 
 def get_ad_video_url(ad_doc: Any) -> str:
-    media_id = getattr(ad_doc, "video_media", None)
     if isinstance(ad_doc, dict):
-        media_id = media_id or ad_doc.get("video_media")
+        projected = str(ad_doc.get("video_url") or "").strip()
+        if projected:
+            return projected
+        media_id = ad_doc.get("video_media")
+    else:
+        projected = str(getattr(ad_doc, "video_url", "") or "").strip()
+        if projected:
+            return projected
+        media_id = getattr(ad_doc, "video_media", None)
     return public_media_url(media_id)
 
 
@@ -93,3 +107,52 @@ def attach_ad_media(
         return doc, None
     except Exception as exc:
         return None, response_from_media_exception(exc, kind="Ad")
+
+
+def project_ad_image_urls(rows: list[Any]) -> list[Any]:
+    """Attach canonical public URLs to bounded AOS Ad Image rows in one query."""
+    attachments: list[tuple[str, str]] = []
+    for row in rows or []:
+        if isinstance(row, dict):
+            media_id = str(row.get("media") or "").strip()
+            parent = str(row.get("parent") or "").strip()
+        else:
+            media_id = str(getattr(row, "media", "") or "").strip()
+            parent = str(getattr(row, "parent", "") or "").strip()
+        if media_id and parent:
+            attachments.append((media_id, parent))
+    urls = (
+        MediaService().get_public_attachment_url_map(
+            attachments,
+            purpose="ad_image",
+            attached_doctype=AD_DOCTYPE,
+            attached_field="images",
+        )
+        if attachments else {}
+    )
+    for row in rows or []:
+        if isinstance(row, dict):
+            key=(str(row.get("media") or "").strip(), str(row.get("parent") or "").strip())
+            row["url"] = urls.get(key, "")
+        else:
+            key=(str(getattr(row,"media","") or "").strip(), str(getattr(row,"parent","") or "").strip())
+            setattr(row, "url", urls.get(key, ""))
+    return rows
+
+
+def project_ad_video_url(ad_doc: Any) -> str:
+    """Project the one canonical attached Ad video through Media."""
+    media_id = str(getattr(ad_doc, "video_media", "") or "").strip()
+    ad_name = str(getattr(ad_doc, "name", "") or "").strip()
+    if not media_id or not ad_name:
+        setattr(ad_doc, "video_url", "")
+        return ""
+    urls = MediaService().get_public_attachment_url_map(
+        [(media_id, ad_name)],
+        purpose="ad_video",
+        attached_doctype=AD_DOCTYPE,
+        attached_field="video_media",
+    )
+    url=urls.get((media_id,ad_name), "")
+    setattr(ad_doc, "video_url", url)
+    return url

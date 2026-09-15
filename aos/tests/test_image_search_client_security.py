@@ -18,9 +18,10 @@ class _Response:
     def json(self):
         return {
             "ok": True,
-            "ad_id": "AD-1",
+            "ad_id": "ad_public_1",
+            "generation": "20260915120000000000:abc",
+            "embedding_version": "test:v1",
             "indexed_count": 1,
-            "failed_count": 0,
         }
 
 
@@ -41,8 +42,9 @@ class TestImageSearchClientSecurity(FrappeTestCase):
 
         with patch("aos.integrations.ai.image_search_client.time.time", return_value=1700000000):
             result = client.replace_ad_images(
-                ad_id="AD-1",
-                images=[{"image_url": "https://files.example.test/ad.jpg", "sort_order": 0}],
+                ad_id="ad_public_1",
+                generation="20260915120000000000:abc",
+                images=[{"media_id": "media-1", "image_url": "https://files.example.test/ad.jpg", "sort_order": 0}],
             )
 
         self.assertTrue(result["ok"])
@@ -57,7 +59,7 @@ class TestImageSearchClientSecurity(FrappeTestCase):
                 self._settings().internal_secret,
                 timestamp=timestamp,
                 method="POST",
-                path="/ads/AD-1/replace-images",
+                path="/ads/ad_public_1/replace-images",
                 body=body,
             ),
         )

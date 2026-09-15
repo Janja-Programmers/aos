@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
-from aos.api.media.consumer_helpers import public_media_url
 from aos.services.media.media_service import MediaService
 
 from .errors import AdsValidationError
@@ -16,7 +15,7 @@ def prepare_image_rows(rows: Iterable[dict[str, Any]], *, user: str, ad_name: st
     service = MediaService()
     prepared: list[dict[str, Any]] = []
     for row in rows:
-        media_id = str(row.get("media") or row.get("media_id") or "").strip()
+        media_id = str(row.get("media") or "").strip()
         if not media_id:
             raise AdsValidationError("Image media id is required.", code="AD_MEDIA_REQUIRED")
         media = service.validate_media_for_use(
@@ -29,7 +28,6 @@ def prepare_image_rows(rows: Iterable[dict[str, Any]], *, user: str, ad_name: st
         prepared.append(
             {
                 "media": media.name,
-                "image": public_media_url(media.name),
                 "is_primary": int(row.get("is_primary") or 0),
                 "sort_order": int(row.get("sort_order") or 0),
             }
@@ -37,10 +35,10 @@ def prepare_image_rows(rows: Iterable[dict[str, Any]], *, user: str, ad_name: st
     return prepared
 
 
-def prepare_video(media_id: Any, *, user: str, ad_name: str | None = None) -> tuple[str | None, str | None]:
+def prepare_video(media_id: Any, *, user: str, ad_name: str | None = None) -> str | None:
     clean_id = str(media_id or "").strip()
     if not clean_id:
-        return None, None
+        return None
     media = MediaService().validate_media_for_use(
         media_id=clean_id,
         user=user,
@@ -48,7 +46,7 @@ def prepare_video(media_id: Any, *, user: str, ad_name: str | None = None) -> tu
         attached_doctype=AD_DOCTYPE if ad_name else None,
         attached_name=ad_name,
     )
-    return media.name, public_media_url(media.name)
+    return media.name
 
 
 def attach_all(*, user: str, ad_name: str, image_ids: Iterable[str], video_id: str | None) -> None:

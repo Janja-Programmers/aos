@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "naming_series",
+  "public_id",
   "user",
   "title_hint",
   "country_hint",
@@ -27,6 +28,14 @@
    "label": "Series",
    "options": "DRAFT-.YYYY.-.#####",
    "read_only": 1
+  },
+  {
+   "fieldname": "public_id",
+   "fieldtype": "Data",
+   "label": "Public ID",
+   "read_only": 1,
+   "unique": 1,
+   "no_copy": 1
   },
   {
    "default": "Draft",

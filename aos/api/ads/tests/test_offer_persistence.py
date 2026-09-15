@@ -6,7 +6,6 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from aos.api.ads.update import _existing_values
-from aos.patches.v1_0 import normalize_ads_offer_fields
 from aos.services.ads.errors import AdsValidationError
 from aos.services.ads.validation import normalize_pricing, persisted_offer_value
 
@@ -70,32 +69,3 @@ class TestAdsOfferPersistence(TestCase):
                     {"price_type": "Negotiable", "price": "125", "offer_price": "0"},
                     category="CAT-1",
                 )
-
-    def test_offer_cleanup_patch_is_install_safe_and_does_not_commit(self):
-        with (
-            patch.object(normalize_ads_offer_fields.frappe.db, "table_exists", return_value=True),
-            patch.object(normalize_ads_offer_fields.frappe.db, "has_column", return_value=True),
-            patch.object(normalize_ads_offer_fields.frappe.db, "sql") as sql,
-            patch.object(normalize_ads_offer_fields.frappe.db, "commit", create=True) as commit,
-            patch.object(normalize_ads_offer_fields.frappe, "logger") as logger,
-        ):
-            normalize_ads_offer_fields.execute()
-
-        sql.assert_called_once()
-        statement = " ".join(str(sql.call_args.args[0]).split()).upper()
-        self.assertIn("UPDATE `TABAOS AD`", statement)
-        self.assertIn("COALESCE(PRICE_TYPE, '') != 'FIXED'", statement)
-        self.assertIn("SET OFFER_PRICE = 0", statement)
-        self.assertNotIn("SET OFFER_PRICE = NULL", statement)
-        self.assertIn("COALESCE(OFFER_PRICE, 0) <= 0", statement)
-        commit.assert_not_called()
-        logger.assert_called_once_with("aos.ads", allow_site=True)
-
-    def test_offer_cleanup_patch_is_noop_without_ad_table(self):
-        with (
-            patch.object(normalize_ads_offer_fields.frappe.db, "table_exists", return_value=False),
-            patch.object(normalize_ads_offer_fields.frappe.db, "sql") as sql,
-        ):
-            normalize_ads_offer_fields.execute()
-
-        sql.assert_not_called()

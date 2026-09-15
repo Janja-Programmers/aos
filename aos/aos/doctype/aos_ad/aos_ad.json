@@ -9,6 +9,8 @@
  "field_order": [
   "basic_tab",
   "naming_series",
+  "public_id",
+  "submission_key_hash",
   "title",
   "category",
   "seller",
@@ -17,7 +19,6 @@
   "location",
   "section_break_uqvx",
   "video_media",
-  "video",
   "images",
   "details_tab",
   "details",
@@ -37,6 +38,8 @@
   "average_rating",
   "total_reports",
   "reviewed_by",
+  "review_source",
+  "review_result",
   "status",
   "column_break_uadk",
   "total_reviews",
@@ -148,13 +151,6 @@
    "search_index": 1
   },
   {
-   "fieldname": "video",
-   "fieldtype": "Data",
-   "label": "Video URL",
-   "description": "Cached public URL resolved from AOS Media Object.",
-   "read_only": 1
-  },
-  {
    "fieldname": "images",
    "fieldtype": "Table",
    "label": "Images",
@@ -170,6 +166,39 @@
    "options": "Reviewing\nActive\nDeclined\nSold\nExpired\nDeleted\nSuspended",
    "search_index": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "public_id",
+   "fieldtype": "Data",
+   "label": "Public ID",
+   "read_only": 1,
+   "unique": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "submission_key_hash",
+   "fieldtype": "Data",
+   "label": "Submission Key Hash",
+   "read_only": 1,
+   "unique": 1,
+   "no_copy": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "review_source",
+   "fieldtype": "Select",
+   "label": "Review Source",
+   "options": "Automatic\nManual",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "review_result",
+   "fieldtype": "Select",
+   "label": "Review Result",
+   "options": "Approved\nRejected\nNeeds Review",
+   "read_only": 1,
+   "no_copy": 1
   },
   {
    "fieldname": "reviewed_by",

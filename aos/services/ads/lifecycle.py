@@ -45,6 +45,11 @@ _SYSTEM_TRANSITIONS: dict[str, tuple[frozenset[str], str]] = {
     "moderation_allow": (frozenset({STATUS_REVIEWING, STATUS_DECLINED, STATUS_ACTIVE}), STATUS_ACTIVE),
     "moderation_reject": (frozenset({STATUS_REVIEWING, STATUS_ACTIVE}), STATUS_DECLINED),
     "moderation_review": (frozenset({STATUS_REVIEWING, STATUS_DECLINED, STATUS_ACTIVE}), STATUS_REVIEWING),
+    # Human review can override an automatic decision without inventing a new
+    # lifecycle state: approve a pending/auto-declined Ad or reject a
+    # pending/auto-approved Ad. Terminal/suspended states remain unavailable.
+    "manual_review_allow": (frozenset({STATUS_REVIEWING, STATUS_DECLINED}), STATUS_ACTIVE),
+    "manual_review_reject": (frozenset({STATUS_REVIEWING, STATUS_ACTIVE}), STATUS_DECLINED),
     "seller_resubmit": (frozenset({STATUS_REVIEWING, STATUS_DECLINED}), STATUS_REVIEWING),
     "expire": (frozenset({STATUS_ACTIVE}), STATUS_EXPIRED),
     "suspend": (
@@ -101,3 +106,15 @@ def validate_status_transition(old_status: Any, new_status: Any, *, action: Any)
 
 def is_public_status(status: Any) -> bool:
     return str(status or "").strip() == STATUS_ACTIVE
+
+
+def owner_capabilities(status: Any) -> dict[str, bool]:
+    """Return server-owned owner actions; clients must not infer lifecycle rules."""
+    clean = normalize_status(status)
+    return {
+        "can_edit": clean in {STATUS_REVIEWING, STATUS_DECLINED, STATUS_ACTIVE},
+        "can_mark_sold": clean == STATUS_ACTIVE,
+        "can_mark_available": clean == STATUS_SOLD,
+        "can_renew": clean == STATUS_EXPIRED,
+        "can_delete": clean in {STATUS_REVIEWING, STATUS_DECLINED, STATUS_SOLD, STATUS_EXPIRED, STATUS_DELETED},
+    }

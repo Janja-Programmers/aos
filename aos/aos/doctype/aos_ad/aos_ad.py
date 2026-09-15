@@ -27,8 +27,9 @@ from aos.services.media.media_service import MediaError, MediaService
 from aos.services.localization import validate_country, validate_currency
 from aos.utils.aos_settings import get_aos_settings_snapshot
 from aos.utils.doctype_permissions import has_doctype_permission
+from aos.services.marketplace_discovery.ids import ensure_public_id
 
-_SYSTEM_ACTIONS = frozenset({"moderation_allow", "moderation_reject", "moderation_review", "expire", "suspend"})
+_SYSTEM_ACTIONS = frozenset({"moderation_allow", "moderation_reject", "moderation_review", "manual_review_allow", "manual_review_reject", "expire", "suspend"})
 
 
 def _clean(value: Any) -> str:
@@ -49,6 +50,7 @@ class AOSAd(Document):
     """
 
     def before_insert(self):
+        ensure_public_id(self)
         if not self.expires_on:
             self.expires_on = add_days(today(), get_aos_settings_snapshot().ad_expiry_days)
         if not self.status:
@@ -100,6 +102,21 @@ class AOSAd(Document):
     def on_trash(self):
         if self.seller and self.status == "Active":
             self._adjust_seller_active_ad_count(self.seller, -1)
+
+        # Hard deletion is exceptional (normal user deletion is a lifecycle
+        # state), but derived indexes must still converge if an authorized
+        # maintenance operation removes the aggregate. Capture the public ID
+        # before the row disappears and dispatch only after commit.
+        public_id = _clean(getattr(self, "public_id", None))
+        if public_id:
+            from aos.services.ads.indexing import enqueue_discovery_delete
+
+            enqueue_discovery_delete(
+                self.name,
+                public_id=public_id,
+                generation=str(getattr(self, "modified", "") or ""),
+                source="ad_hard_delete",
+            )
 
     @staticmethod
     def _adjust_seller_active_ad_count(seller: str, delta: int) -> None:
@@ -246,7 +263,7 @@ class AOSAd(Document):
             )
         images = [
             {
-                "media": row.media,
+                "media_id": row.media,
                 "is_primary": row.is_primary,
                 "sort_order": row.sort_order,
             }
@@ -365,14 +382,37 @@ class AOSAd(Document):
         if self.is_new():
             return
         previous = self.get_doc_before_save()
-        if not previous or previous.status == self.status:
+        if not previous:
+            return
+        action = self._status_action()
+        status_changed = previous.status != self.status
+        if not status_changed and action not in {"moderation_review"}:
             return
         now = now_datetime()
-        if self.meta.has_field("status_changed_on"):
+        if status_changed and self.meta.has_field("status_changed_on"):
             self.status_changed_on = now
-        action = self._status_action()
         if action.startswith("moderation_"):
-            self.reviewed_by = _clean(getattr(frappe.session, "user", "")) or "Administrator"
+            # Automatic moderation is not a human review. Never fabricate an
+            # Administrator/session reviewer. Moderation sets the decision
+            # source/result through explicit flags at its integration boundary.
+            self.review_source = "Automatic"
+            self.review_result = {
+                "moderation_allow": "Approved",
+                "moderation_reject": "Rejected",
+                "moderation_review": "Needs Review",
+            }.get(action)
+            self.reviewed_by = None
+            self.reviewed_on = now
+        elif action.startswith("manual_review_"):
+            reviewer = _clean(self.flags.get("aos_reviewed_by"))
+            if not reviewer or reviewer == "Guest":
+                frappe.throw("Manual review requires an authorized reviewer.", exc=frappe.PermissionError)
+            self.review_source = "Manual"
+            self.review_result = {
+                "manual_review_allow": "Approved",
+                "manual_review_reject": "Rejected",
+            }.get(action)
+            self.reviewed_by = reviewer
             self.reviewed_on = now
         if self.status == "Active" and self.meta.has_field("published_on") and not self.published_on:
             self.published_on = now

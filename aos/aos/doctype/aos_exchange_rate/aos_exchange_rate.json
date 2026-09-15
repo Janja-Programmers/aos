@@ -7,6 +7,9 @@
  "engine": "InnoDB",
  "field_order": [
   "currency",
+  "base_currency",
+  "rate_version",
+  "provider_timestamp",
   "last_updated",
   "column_break_rwhs",
   "rate_vs_base"
@@ -27,6 +30,25 @@
    "label": "Rate Vs Base",
    "precision": "9",
    "reqd": 1
+  },
+  {
+   "fieldname": "base_currency",
+   "fieldtype": "Link",
+   "label": "Base Currency",
+   "options": "Currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rate_version",
+   "fieldtype": "Data",
+   "label": "Rate Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "provider_timestamp",
+   "fieldtype": "Datetime",
+   "label": "Provider Timestamp",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_rwhs",

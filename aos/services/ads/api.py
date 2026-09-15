@@ -47,14 +47,29 @@ def run_ads_api(
     fallback: str,
     log_title: str,
 ) -> dict[str, Any]:
+    """Run one Ads operation inside a request-local savepoint.
+
+    The API boundary converts domain exceptions into response envelopes, so it
+    must explicitly roll back partial writes before returning a failure. A
+    savepoint protects only this operation and never rolls back unrelated outer
+    transaction work. Nested Ads operations use independent savepoints.
+    """
+    savepoint = f"aos_ads_{frappe.generate_hash(length=10)}"
+    frappe.db.savepoint(savepoint)
     try:
-        return operation()
+        response = operation()
+        if isinstance(response, dict) and not response.get("ok"):
+            frappe.db.rollback(save_point=savepoint)
+        return response
     except (AdsError, CatalogError, MediaError) as exc:
+        frappe.db.rollback(save_point=savepoint)
         return ads_fail(exc, fallback=fallback)
     except frappe.DoesNotExistError:
+        frappe.db.rollback(save_point=savepoint)
         from .errors import AdsNotFoundError
 
         return ads_fail(AdsNotFoundError("Ad not found."), fallback=fallback)
     except Exception:
+        frappe.db.rollback(save_point=savepoint)
         frappe.log_error(frappe.get_traceback(), log_title)
         return fail(fallback, error="INTERNAL_ERROR", http_status=500)

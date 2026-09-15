@@ -6,12 +6,11 @@
  "engine": "InnoDB",
  "field_order": [
   "naming_series",
+  "public_id",
   "title",
   "user",
   "fingerprint",
   "column_break_zrry",
-  "last_used",
-  "use_count",
   "is_active",
   "section_break_txhq",
   "params_json"
@@ -23,7 +22,16 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Title",
-   "reqd": 1
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "public_id",
+   "fieldtype": "Data",
+   "label": "Public ID",
+   "read_only": 1,
+   "unique": 1,
+   "no_copy": 1
   },
   {
    "fieldname": "fingerprint",
@@ -37,24 +45,12 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "last_used",
-   "fieldtype": "Datetime",
-   "in_list_view": 1,
-   "label": "Last Used"
-  },
-  {
-   "default": "1",
-   "fieldname": "use_count",
-   "fieldtype": "Int",
-   "in_list_view": 1,
-   "label": "Use Count"
-  },
-  {
    "default": "1",
    "fieldname": "is_active",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Is Active"
+   "label": "Is Active",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_txhq",
@@ -64,7 +60,8 @@
    "fieldname": "params_json",
    "fieldtype": "JSON",
    "label": "Params JSON",
-   "reqd": 1
+   "reqd": 1,
+   "read_only": 1
   },
   {
    "fieldname": "user",
@@ -73,7 +70,8 @@
    "in_standard_filter": 1,
    "label": "User",
    "options": "User",
-   "reqd": 1
+   "reqd": 1,
+   "read_only": 1
   },
   {
    "default": "SEARCH-.YYYY.-.#####",

@@ -45,7 +45,6 @@ def apply_ad_values(doc: object, values: Mapping[str, Any], *, include_market: b
         "offer_start_date",
         "offer_end_date",
         "video_media",
-        "video",
     )
     for field in scalar_fields:
         if field in values:

@@ -114,15 +114,21 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
+    "endpoint": "aos.api.v1.ads.__init__.related_ads",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Frontend-consumed bounded Related Ads discovery; covered by the public guest edge baseline and canonical Ads eligibility recheck."
+  },
+  {
+    "endpoint": "aos.api.v1.ads.__init__.review_ad",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Authorized administrative manual-review action; requires server-side reviewer capability and optimistic version checks."
+  },
+  {
     "endpoint": "aos.api.v1.ads.__init__.search_ads_by_image",
     "access": "guest",
     "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
-  },
-  {
-    "endpoint": "aos.api.v1.ads.__init__.set_ad_status",
-    "access": "authenticated",
-    "policy": "baseline_authenticated",
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
@@ -130,6 +136,12 @@
     "access": "authenticated",
     "policy": "baseline_authenticated",
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.ads.__init__.transition_ad",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Authenticated owner lifecycle mutation; covered by the authenticated edge baseline with server-side authorization and optimistic version checks."
   },
   {
     "endpoint": "aos.api.v1.ads.__init__.update_ad",
@@ -888,6 +900,12 @@
     "rationale": "Covered by the Nginx public API baseline and a stricter operation-specific Reviews application limit."
   },
   {
+    "endpoint": "aos.api.v1.saved_search.__init__.create_saved_search",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Authenticated owner-scoped Saved Search creation with per-account quota and duplicate fingerprint protection."
+  },
+  {
     "endpoint": "aos.api.v1.saved_search.__init__.delete_saved_search",
     "access": "authenticated",
     "policy": "baseline_authenticated",
@@ -900,22 +918,16 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
-    "endpoint": "aos.api.v1.saved_search.__init__.save_search",
+    "endpoint": "aos.api.v1.saved_search.__init__.update_saved_search",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Authenticated owner-scoped Saved Search update with row locking and optimistic version checks."
   },
   {
     "endpoint": "aos.api.v1.search_ranking.__init__.handle_callback",
     "access": "guest",
     "policy": "signed_internal_exempt",
     "rationale": "Signed worker callback; authenticated by HMAC and kept outside the public edge bucket."
-  },
-  {
-    "endpoint": "aos.api.v1.search_ranking.__init__.related_ads",
-    "access": "guest",
-    "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
     "endpoint": "aos.api.v1.sellers.__init__.get_my_seller_status",

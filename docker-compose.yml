@@ -16,6 +16,9 @@ services:
     container_name: aos-qdrant
     restart: unless-stopped
 
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}
+
     ports:
       - "${QDRANT_BIND_ADDRESS:-127.0.0.1}:${QDRANT_PORT:-6333}:6333"
 
@@ -24,12 +27,11 @@ services:
 
     healthcheck:
       test:
-        [
-          "CMD",
-          "bash",
-          "-c",
-          "exec 3<>/dev/tcp/127.0.0.1/6333 && printf 'GET /readyz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q '200 OK' <&3",
-        ]
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/6333 && printf 'GET /readyz HTTP/1.1\r\nHost: localhost\r\napi-key: %s\r\nConnection: close\r\n\r\n' "$${QDRANT__SERVICE__API_KEY}" >&3 && grep -q '200 OK' <&3
       interval: 30s
       timeout: 10s
       retries: 5
@@ -409,8 +411,10 @@ services:
       IMAGE_SEARCH_DEVICE: ${IMAGE_SEARCH_DEVICE:-cpu}
       IMAGE_SEARCH_VECTOR_SIZE: ${IMAGE_SEARCH_VECTOR_SIZE:-512}
       IMAGE_SEARCH_QDRANT_URL: ${IMAGE_SEARCH_QDRANT_URL:-http://qdrant:6333}
-      IMAGE_SEARCH_QDRANT_API_KEY: ${IMAGE_SEARCH_QDRANT_API_KEY:-}
-      IMAGE_SEARCH_COLLECTION: ${IMAGE_SEARCH_COLLECTION:-ads}
+      IMAGE_SEARCH_QDRANT_API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}
+      IMAGE_SEARCH_COLLECTION: ${IMAGE_SEARCH_COLLECTION:-aos_ad_images_v2}
+      IMAGE_SEARCH_EMBEDDING_VERSION: ${IMAGE_SEARCH_EMBEDDING_VERSION:-ViT-B-32:laion2b_s34b_b79k:v1}
+      IMAGE_SEARCH_COLLECTION_SCHEMA_VERSION: ${IMAGE_SEARCH_COLLECTION_SCHEMA_VERSION:-2}
       IMAGE_SEARCH_LIMIT: ${IMAGE_SEARCH_LIMIT:-50}
       IMAGE_SEARCH_MAX_LIMIT: ${IMAGE_SEARCH_MAX_LIMIT:-100}
       IMAGE_SEARCH_SCORE_THRESHOLD: ${IMAGE_SEARCH_SCORE_THRESHOLD:-0.75}

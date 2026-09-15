@@ -24,7 +24,7 @@ from urllib.parse import quote
 
 import requests
 
-from aos.utils.aos_config import get_first_env, get_image_search_service_url
+from aos.utils.aos_config import get_env_int, get_first_env, get_image_search_service_url
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
 
@@ -44,6 +44,10 @@ DEFAULT_SERVICE_URL = "http://127.0.0.1:8110"
 DEFAULT_TIMEOUT_SECONDS = 20
 DEFAULT_LIMIT = 20
 MAX_LIMIT = 100
+DEFAULT_MAX_RETRIES = 2
+DEFAULT_RETRY_BACKOFF_MS = 250
+MAX_RETRY_BACKOFF_SECONDS = 2.0
+RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
 
 @dataclass(frozen=True)
@@ -53,6 +57,8 @@ class ImageSearchClientSettings:
     default_limit: int
     max_limit: int
     internal_secret: str = field(default="", repr=False)
+    max_retries: int = DEFAULT_MAX_RETRIES
+    retry_backoff_ms: int = DEFAULT_RETRY_BACKOFF_MS
 
 
 def _clamp_int(value: Any, *, default: int, min_value: int, max_value: int) -> int:
@@ -93,6 +99,8 @@ def get_image_search_client_settings() -> ImageSearchClientSettings:
             default_limit=DEFAULT_LIMIT,
             max_limit=MAX_LIMIT,
             internal_secret=str(get_first_env("IMAGE_SEARCH_INTERNAL_SECRET", "SHORT_CLASSIFICATION_SECRET", default="") or ""),
+            max_retries=get_env_int("IMAGE_SEARCH_CLIENT_MAX_RETRIES", DEFAULT_MAX_RETRIES, min_value=0, max_value=5),
+            retry_backoff_ms=get_env_int("IMAGE_SEARCH_CLIENT_RETRY_BACKOFF_MS", DEFAULT_RETRY_BACKOFF_MS, min_value=0, max_value=2000),
         )
 
     service_url = _clean_url(
@@ -127,6 +135,8 @@ def get_image_search_client_settings() -> ImageSearchClientSettings:
         default_limit=default_limit,
         max_limit=max_limit,
         internal_secret=str(get_first_env("IMAGE_SEARCH_INTERNAL_SECRET", "SHORT_CLASSIFICATION_SECRET", default="") or ""),
+        max_retries=get_env_int("IMAGE_SEARCH_CLIENT_MAX_RETRIES", DEFAULT_MAX_RETRIES, min_value=0, max_value=5),
+        retry_backoff_ms=get_env_int("IMAGE_SEARCH_CLIENT_RETRY_BACKOFF_MS", DEFAULT_RETRY_BACKOFF_MS, min_value=0, max_value=2000),
     )
 
 
@@ -194,35 +204,37 @@ def _normalize_limit(value: Any, *, settings: ImageSearchClientSettings) -> int:
 
 
 def _clean_image_references(images: Iterable[Dict[str, Any]] | None) -> List[Dict[str, Any]]:
-    clean: List[Dict[str, Any]] = []
+    """Validate the canonical Media-backed image indexing contract.
 
+    Image-search indexing is an internal derived-index operation. It accepts
+    only canonical Media IDs plus a resolved fetch URL; historical raw-image
+    aliases are deliberately rejected rather than normalized.
+    """
+    clean: List[Dict[str, Any]] = []
+    seen_media: set[str] = set()
     for row in images or []:
         if not isinstance(row, dict):
+            raise ImageSearchValidationError("Each image reference must be an object.")
+        unknown = set(row) - {"media_id", "image_url", "is_primary", "sort_order"}
+        if unknown:
+            raise ImageSearchValidationError("Unknown image reference field.")
+        media_id = str(row.get("media_id") or "").strip()
+        image_url = str(row.get("image_url") or "").strip()
+        if not media_id or not image_url:
+            raise ImageSearchValidationError("media_id and image_url are required.")
+        if media_id in seen_media:
             continue
-
-        image_url = str(
-            row.get("image_url")
-            or row.get("image")
-            or row.get("file_url")
-            or ""
-        ).strip()
-
-        if not image_url:
-            continue
-
+        seen_media.add(media_id)
         clean.append(
             {
+                "media_id": media_id,
                 "image_url": image_url,
-                "is_primary": bool(int(row.get("is_primary") or 0)),
+                "is_primary": bool(row.get("is_primary") or False),
                 "sort_order": _clamp_int(
-                    row.get("sort_order"),
-                    default=0,
-                    min_value=0,
-                    max_value=999,
+                    row.get("sort_order"), default=0, min_value=0, max_value=999
                 ),
             }
         )
-
     return clean
 
 
@@ -257,6 +269,18 @@ def _file_tuple(image_file: Any) -> tuple[str, BinaryIO, str]:
     return filename, stream, content_type
 
 
+def _is_retryable_status(status_code: int) -> bool:
+    return int(status_code or 0) in RETRYABLE_STATUS_CODES
+
+
+def _sleep_before_retry(settings: ImageSearchClientSettings, retry_index: int) -> None:
+    base = max(0.0, min(float(settings.retry_backoff_ms) / 1000.0, MAX_RETRY_BACKOFF_SECONDS))
+    if base <= 0:
+        return
+    delay = min(base * (2 ** max(0, int(retry_index))), MAX_RETRY_BACKOFF_SECONDS)
+    time.sleep(delay)
+
+
 class ImageSearchClient:
     """HTTP client for the external AOS Image Search service."""
 
@@ -286,49 +310,63 @@ class ImageSearchClient:
             if json_payload is not None
             else b""
         )
-        headers: dict[str, str] = {}
-        if json_payload is not None:
-            headers["Content-Type"] = "application/json"
-        if signed_internal:
-            secret = str(self.settings.internal_secret or "").strip()
-            if not secret:
-                raise ImageSearchUnavailableError("Image search internal authentication is not configured.")
-            timestamp = str(int(time.time()))
-            headers.update(
-                {
-                    "X-AOS-Timestamp": timestamp,
-                    "X-AOS-Signature": _internal_signature(
-                        secret,
-                        timestamp=timestamp,
-                        method=method,
-                        path=request_path,
-                        body=body,
-                    ),
-                }
-            )
-        try:
-            response = self.session.request(
-                method=method,
-                url=self._url(request_path),
-                data=body if body else None,
-                headers=headers or None,
-                timeout=self.settings.timeout_seconds,
-            )
-        except requests.Timeout:
-            raise ImageSearchUnavailableError(
-                "Image search service timed out. Please try again."
-            )
-        except requests.RequestException:
-            raise ImageSearchUnavailableError(
-                "Image search service is unavailable. Please try again."
-            )
+        attempts = max(1, int(self.settings.max_retries) + 1)
+        last_transport_error: Exception | None = None
 
-        payload = _parse_json_response(response)
+        for attempt in range(attempts):
+            headers: dict[str, str] = {}
+            if json_payload is not None:
+                headers["Content-Type"] = "application/json"
+            if signed_internal:
+                secret = str(self.settings.internal_secret or "").strip()
+                if not secret:
+                    raise ImageSearchUnavailableError("Image search internal authentication is not configured.")
+                timestamp = str(int(time.time()))
+                headers.update(
+                    {
+                        "X-AOS-Timestamp": timestamp,
+                        "X-AOS-Signature": _internal_signature(
+                            secret,
+                            timestamp=timestamp,
+                            method=method,
+                            path=request_path,
+                            body=body,
+                        ),
+                    }
+                )
+            try:
+                response = self.session.request(
+                    method=method,
+                    url=self._url(request_path),
+                    data=body if body else None,
+                    headers=headers or None,
+                    timeout=self.settings.timeout_seconds,
+                )
+            except (requests.Timeout, requests.RequestException) as exc:
+                last_transport_error = exc
+                if attempt + 1 < attempts:
+                    _sleep_before_retry(self.settings, attempt)
+                    continue
+                if isinstance(exc, requests.Timeout):
+                    raise ImageSearchUnavailableError(
+                        "Image search service timed out. Please try again."
+                    ) from exc
+                raise ImageSearchUnavailableError(
+                    "Image search service is unavailable. Please try again."
+                ) from exc
 
-        if response.status_code >= 400:
-            raise ImageSearchUnavailableError(_extract_error_message(payload))
+            if _is_retryable_status(response.status_code) and attempt + 1 < attempts:
+                _sleep_before_retry(self.settings, attempt)
+                continue
 
-        return payload
+            payload = _parse_json_response(response)
+            if response.status_code >= 400:
+                raise ImageSearchUnavailableError(_extract_error_message(payload))
+            return payload
+
+        raise ImageSearchUnavailableError(
+            "Image search service is unavailable. Please try again."
+        ) from last_transport_error
 
     def health_check(self) -> Dict[str, Any]:
         """Call GET /health on the image-search service."""
@@ -378,16 +416,17 @@ class ImageSearchClient:
         self,
         *,
         ad_id: str,
+        generation: str,
         images: Iterable[Dict[str, Any]] | None,
     ) -> Dict[str, Any]:
-        """Replace all indexed image vectors for an ad.
-
-        The operation is intentionally idempotent. The AI service deletes the
-        ad's current vectors and indexes the supplied current image set.
-        """
+        """Upsert one complete immutable vector generation for a public Ad ID."""
 
         clean_ad_id = _clean_ad_id(ad_id)
+        clean_generation = str(generation or "").strip()
+        if not clean_generation:
+            raise ImageSearchValidationError("generation is required.")
         payload = {
+            "generation": clean_generation,
             "images": _clean_image_references(images),
         }
 
@@ -401,20 +440,16 @@ class ImageSearchClient:
         if result.get("ok") is not True:
             raise ImageSearchUnavailableError(_extract_error_message(result))
 
+        returned_generation = str(result.get("generation") or "").strip()
+        if returned_generation != clean_generation:
+            raise ImageSearchUnavailableError("Image search service returned an unexpected generation.")
         return {
             "ok": True,
             "ad_id": str(result.get("ad_id") or clean_ad_id),
+            "generation": returned_generation,
+            "embedding_version": str(result.get("embedding_version") or "").strip(),
             "indexed_count": _clamp_int(
-                result.get("indexed_count"),
-                default=0,
-                min_value=0,
-                max_value=1000,
-            ),
-            "failed_count": _clamp_int(
-                result.get("failed_count"),
-                default=0,
-                min_value=0,
-                max_value=1000,
+                result.get("indexed_count"), default=0, min_value=0, max_value=1000
             ),
             "message": result.get("message"),
         }
@@ -449,36 +484,55 @@ class ImageSearchClient:
 
         search_limit = _normalize_limit(limit, settings=self.settings)
         filename, stream, content_type = _file_tuple(image_file)
+        attempts = max(1, int(self.settings.max_retries) + 1)
+        last_transport_error: Exception | None = None
 
-        try:
-            response = self.session.post(
-                self._url("/search/image"),
-                files={"image": (filename, stream, content_type)},
-                data={"limit": str(search_limit)},
-                timeout=self.settings.timeout_seconds,
-            )
-        except requests.Timeout:
-            raise ImageSearchUnavailableError(
-                "Image search service timed out. Please try again."
-            )
-        except requests.RequestException:
-            raise ImageSearchUnavailableError(
-                "Image search service is unavailable. Please try again."
-            )
+        for attempt in range(attempts):
+            try:
+                stream.seek(0)
+            except Exception:
+                if attempt > 0:
+                    raise ImageSearchUnavailableError(
+                        "Image search upload cannot be retried because the input stream is not seekable."
+                    )
+            try:
+                response = self.session.post(
+                    self._url("/search/image"),
+                    files={"image": (filename, stream, content_type)},
+                    data={"limit": str(search_limit)},
+                    timeout=self.settings.timeout_seconds,
+                )
+            except (requests.Timeout, requests.RequestException) as exc:
+                last_transport_error = exc
+                if attempt + 1 < attempts:
+                    _sleep_before_retry(self.settings, attempt)
+                    continue
+                if isinstance(exc, requests.Timeout):
+                    raise ImageSearchUnavailableError(
+                        "Image search service timed out. Please try again."
+                    ) from exc
+                raise ImageSearchUnavailableError(
+                    "Image search service is unavailable. Please try again."
+                ) from exc
 
-        payload = _parse_json_response(response)
+            if _is_retryable_status(response.status_code) and attempt + 1 < attempts:
+                _sleep_before_retry(self.settings, attempt)
+                continue
 
-        if response.status_code >= 400:
-            raise ImageSearchUnavailableError(_extract_error_message(payload))
+            payload = _parse_json_response(response)
+            if response.status_code >= 400:
+                raise ImageSearchUnavailableError(_extract_error_message(payload))
+            if payload.get("ok") is not True:
+                raise ImageSearchUnavailableError(_extract_error_message(payload))
+            return {
+                "ok": True,
+                "items": _clean_search_items(payload.get("items")),
+                "message": payload.get("message") or "Search successful.",
+            }
 
-        if payload.get("ok") is not True:
-            raise ImageSearchUnavailableError(_extract_error_message(payload))
-
-        return {
-            "ok": True,
-            "items": _clean_search_items(payload.get("items")),
-            "message": payload.get("message") or "Search successful.",
-        }
+        raise ImageSearchUnavailableError(
+            "Image search service is unavailable. Please try again."
+        ) from last_transport_error
 
 
 def _clean_search_items(items: Any) -> List[Dict[str, Any]]:
@@ -506,7 +560,7 @@ def _clean_search_items(items: Any) -> List[Dict[str, Any]]:
             {
                 "ad_id": ad_id,
                 "score": score,
-                "matched_image_url": str(row.get("matched_image_url") or "").strip() or None,
+                "matched_media_id": str(row.get("matched_media_id") or "").strip() or None,
                 "is_primary": bool(row.get("is_primary") or False),
             }
         )
@@ -518,9 +572,10 @@ def _clean_search_items(items: Any) -> List[Dict[str, Any]]:
 def replace_ad_images(
     *,
     ad_id: str,
+    generation: str,
     images: Iterable[Dict[str, Any]] | None,
 ) -> Dict[str, Any]:
-    return ImageSearchClient().replace_ad_images(ad_id=ad_id, images=images)
+    return ImageSearchClient().replace_ad_images(ad_id=ad_id, generation=generation, images=images)
 
 
 def delete_ad_vectors(*, ad_id: str) -> Dict[str, Any]:

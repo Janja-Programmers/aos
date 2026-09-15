@@ -14,6 +14,7 @@
   "foreign_exchange_section",
   "base_currency",
   "refresh_hours",
+  "fx_max_stale_hours",
   "authentication_tab",
   "oauth_section",
   "google_oauth_client_ids",
@@ -97,6 +98,13 @@
    "label": "Refresh Hours",
    "description": "Number of hours between automatic FX rate refresh",
    "default": "12"
+  },
+  {
+   "fieldname": "fx_max_stale_hours",
+   "fieldtype": "Int",
+   "label": "FX Maximum Stale Hours",
+   "default": "24",
+   "description": "Maximum age of a rate snapshot allowed for display conversion, filtering and sorting."
   },
   {
    "fieldname": "authentication_tab",

@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -151,7 +150,6 @@ def _prepare_missing_target_delete(job: Any) -> str:
 		return "replacement_required"
 
 	job.action = "delete"
-	job.document_json = _json_dumps({})
 	job.indexed = 0
 	job.last_error = None
 	return "converted"
@@ -204,6 +202,14 @@ def _save_search_index_job(job: Any) -> None:
 	job.save(ignore_permissions=True)
 
 
+def _search_job_idempotency_key(
+	*, target_doctype: str, target_name: str, index_kind: str, action: str, document: dict[str, Any]
+) -> str:
+	generation = _clean(document.get("generation") or document.get("modified") or document.get("id"))
+	material = "\0".join([target_doctype, target_name, index_kind, action, generation])
+	return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
 def create_search_index_job(
 	*,
 	target_doctype: str,
@@ -229,6 +235,16 @@ def create_search_index_job(
 	if action != "delete" and not frappe.db.exists(target_doctype, target_name):
 		raise SearchRankingError("Search index target does not exist")
 
+	idempotency_key = _search_job_idempotency_key(
+		target_doctype=target_doctype, target_name=target_name, index_kind=index_kind, action=action, document=document or {}
+	)
+	existing = frappe.db.get_value("AOS Search Index Job", {"idempotency_key": idempotency_key}, "name")
+	if existing:
+		job = frappe.get_doc("AOS Search Index Job", existing)
+		if enqueue and job.status in {"Queued", "Failed"}:
+			enqueue_search_index_dispatch(job.name)
+		return job
+
 	job = frappe.get_doc(
 		{
 			"doctype": "AOS Search Index Job",
@@ -241,7 +257,7 @@ def create_search_index_job(
 			"status": "Queued",
 			"attempt_count": 0,
 			"max_attempts": config.max_attempts,
-			"idempotency_key": uuid.uuid4().hex,
+			"idempotency_key": idempotency_key,
 			"document_json": _json_dumps(document or {}),
 		}
 	)
@@ -270,6 +286,7 @@ def enqueue_search_index_dispatch(search_job_id: str) -> object:
 
 def build_search_index_job_payload(job) -> dict[str, Any]:
 	dispatch_context = outbox_dispatch_context(job_doctype="AOS Search Index Job", job_name=job.name)
+	document = _json_loads(job.document_json, {})
 	return {
 		**dispatch_context,
 		"job_id": job.name,
@@ -278,11 +295,12 @@ def build_search_index_job_payload(job) -> dict[str, Any]:
 		"target": {
 			"doctype": job.target_doctype,
 			"name": job.target_name,
+			"index_id": _clean(document.get("id")) or job.target_name,
 			"owner": job.target_owner,
 			"index_kind": job.index_kind,
 			"source": job.source,
 		},
-		"document": _json_loads(job.document_json, {}),
+		"document": document,
 		"callback_url": get_search_ranking_config().callback_url,
 	}
 
@@ -453,42 +471,87 @@ def mark_search_index_job_failed(
 
 
 def build_ad_index_document(ad_id: str) -> dict[str, Any]:
-	ad = frappe.get_doc("AOS Ad", ad_id)
-	seller_status = frappe.db.get_value("AOS Seller", ad.seller, "status") or ""
-	seller_user = frappe.db.get_value("AOS Seller", ad.seller, "user") or ad.seller
-	seller_name = frappe.db.get_value("AOS Seller", ad.seller, "shop_name") or seller_user
-	seller_verified = frappe.db.get_value("AOS Profile", {"user": seller_user}, "is_verified") or 0
+	row = frappe.db.sql(
+		"""
+		SELECT a.name, a.public_id, a.title, a.description, a.status, a.country, a.location,
+		       a.category, a.seller, a.price_type, a.price, a.currency, a.average_rating,
+		       a.total_reviews, a.view_count, a.wishlist_count, a.expires_on, a.creation, a.modified,
+		       s.status AS seller_status, s.user AS seller_user, s.shop_name AS seller_name,
+		       u.enabled AS user_enabled, p.account_status, p.is_verified AS seller_verified
+		FROM `tabAOS Ad` a
+		LEFT JOIN `tabAOS Seller` s ON s.name=a.seller
+		LEFT JOIN `tabUser` u ON u.name=s.user
+		LEFT JOIN `tabAOS Profile` p ON p.user=s.user
+		WHERE a.name=%s
+		LIMIT 1
+		""",
+		(ad_id,),
+		as_dict=True,
+	)
+	if not row:
+		raise SearchRankingError("Ad not found")
+	ad = row[0]
+	public_id = _clean(ad.public_id)
+	if not public_id:
+		raise SearchRankingError("Ad public id is missing")
+	attributes = frappe.get_all(
+		"AOS Ad Attribute Value",
+		filters={"parent": ad_id, "parenttype": "AOS Ad"},
+		fields=["attribute", "value_text", "value_json"],
+		order_by="idx asc",
+		limit=100,
+	)
+	attribute_values: dict[str, Any] = {}
 	keywords: list[str] = []
-	for value in [
-		getattr(ad, "title", ""),
-		getattr(ad, "category", ""),
-		getattr(ad, "location", ""),
-		getattr(ad, "country", ""),
-	]:
+	for value in [ad.title, ad.category, ad.location, ad.country, ad.seller_name]:
 		if _clean(value):
 			keywords.append(_clean(value))
+	for item in attributes:
+		key = _clean(item.attribute)
+		if not key:
+			continue
+		value: Any = _clean(item.value_text)
+		if not value and item.value_json:
+			value = _json_loads(item.value_json, [])
+		attribute_values[key] = value
+		keywords.append(key)
+		if isinstance(value, list):
+			keywords.extend(_clean(v) for v in value if _clean(v))
+		elif _clean(value):
+			keywords.append(_clean(value))
+
+	from frappe.utils import getdate, nowdate
+	eligible = (
+		_clean(ad.status) == "Active"
+		and _clean(ad.seller_status) == "Active"
+		and int(ad.user_enabled or 0) == 1
+		and (_clean(ad.account_status) or "Active") == "Active"
+		and (not ad.expires_on or getdate(ad.expires_on) >= getdate(nowdate()))
+	)
 	return {
-		"id": ad.name,
-		"name": ad.name,
-		"title": getattr(ad, "title", "") or "",
-		"description": getattr(ad, "description", "") or "",
-		"status": getattr(ad, "status", "") or "",
-		"country": getattr(ad, "country", "") or "",
-		"location": getattr(ad, "location", "") or "",
-		"category": getattr(ad, "category", "") or "",
-		"seller": getattr(ad, "seller", "") or "",
-		"seller_status": seller_status,
-		"seller_name": seller_name,
-		"seller_verified": int(seller_verified or 0),
-		"price_type": getattr(ad, "price_type", "") or "",
-		"price": float(getattr(ad, "price", 0) or 0),
-		"currency": getattr(ad, "currency", "") or "",
-		"average_rating": float(getattr(ad, "average_rating", 0) or 0),
-		"total_reviews": int(getattr(ad, "total_reviews", 0) or 0),
-		"view_count": int(getattr(ad, "view_count", 0) or 0),
-		"wishlist_count": int(getattr(ad, "wishlist_count", 0) or 0),
-		"creation": str(getattr(ad, "creation", "") or ""),
-		"modified": str(getattr(ad, "modified", "") or ""),
+		"id": public_id,
+		"title": ad.title or "",
+		"description": ad.description or "",
+		"status": ad.status or "",
+		"eligible": bool(eligible),
+		"country": ad.country or "",
+		"location": ad.location or "",
+		"category": ad.category or "",
+		"seller": ad.seller or "",
+		"seller_status": ad.seller_status or "",
+		"seller_name": ad.seller_name or ad.seller_user or "",
+		"seller_verified": int(ad.seller_verified or 0),
+		"attributes": attribute_values,
+		"price_type": ad.price_type or "",
+		"price": float(ad.price or 0),
+		"currency": ad.currency or "",
+		"average_rating": float(ad.average_rating or 0),
+		"total_reviews": int(ad.total_reviews or 0),
+		"view_count": int(ad.view_count or 0),
+		"wishlist_count": int(ad.wishlist_count or 0),
+		"creation": str(ad.creation or ""),
+		"modified": str(ad.modified or ""),
+		"generation": str(ad.modified or ""),
 		"keywords": keywords,
 	}
 
@@ -521,18 +584,48 @@ def build_short_index_document(short_id: str) -> dict[str, Any]:
 	}
 
 
+def enqueue_ad_search_delete(
+	ad_id: str,
+	*,
+	public_id: str,
+	generation: str | None = None,
+	source: str = "ad_delete",
+	enqueue: bool = True,
+) -> object | None:
+	"""Persist a derived-index delete while the aggregate may be disappearing.
+
+	The canonical public ID is captured by the caller before deletion so a hard
+	delete can never fall back to a Frappe document name in the companion index.
+	"""
+	clean_public_id = _clean(public_id)
+	if not clean_public_id:
+		raise SearchRankingError("Ad public ID is required for index deletion")
+	document = {
+		"id": clean_public_id,
+		"generation": _clean(generation) or f"delete:{clean_public_id}",
+	}
+	return create_search_index_job(
+		target_doctype="AOS Ad",
+		target_name=_clean(ad_id),
+		index_kind="ad",
+		action="delete",
+		source=source,
+		document=document,
+		enqueue=enqueue,
+	)
+
+
 def enqueue_ad_search_index(ad_id: str, *, source: str = "ad_update", enqueue: bool = True) -> object | None:
 	action = "upsert"
 	document: dict[str, Any] = {}
 	target_owner = None
-	if frappe.db.exists("AOS Ad", ad_id):
-		document = build_ad_index_document(ad_id)
-		target_owner = frappe.db.get_value("AOS Seller", document.get("seller"), "user") or document.get(
-			"seller"
-		)
-		if document.get("status") != "Active" or document.get("seller_status") != "Active":
-			action = "delete"
-	else:
+	if not frappe.db.exists("AOS Ad", ad_id):
+		raise SearchRankingError("Missing Ads require enqueue_ad_search_delete with a captured public ID")
+	document = build_ad_index_document(ad_id)
+	target_owner = frappe.db.get_value("AOS Seller", document.get("seller"), "user") or document.get(
+		"seller"
+	)
+	if not document.get("eligible"):
 		action = "delete"
 	return create_search_index_job(
 		target_doctype="AOS Ad",

@@ -157,6 +157,15 @@ doc_events = {
 		"on_update": "aos.services.localization.localization_master_changed",
 		"on_trash": "aos.services.localization.localization_master_changed",
 	},
+	"AOS Seller": {
+		"on_update": "aos.services.marketplace_discovery.signals.seller_signal_changed",
+	},
+	"AOS Profile": {
+		"on_update": "aos.services.marketplace_discovery.signals.profile_signal_changed",
+	},
+	"User": {
+		"on_update": "aos.services.marketplace_discovery.signals.user_signal_changed",
+	},
 	"Error Log": {
 		"validate": "aos.utils.secure_logging.redact_error_log_document",
 		"before_insert": "aos.utils.secure_logging.redact_error_log_document",

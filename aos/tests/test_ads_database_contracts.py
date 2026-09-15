@@ -3,19 +3,14 @@ from __future__ import annotations
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.patches.v1_0 import harden_ads_subsystem
+from aos.patches.v1_0 import install_marketplace_discovery_indexes
 
 
 class TestAdsDatabaseContracts(FrappeTestCase):
     def test_ads_patch_is_idempotent_and_indexes_exist(self):
-        harden_ads_subsystem.execute()
-        harden_ads_subsystem.execute()
-        for index_name, (doctype, fields) in {
-            **harden_ads_subsystem._INDEXES,
-            **harden_ads_subsystem._UNIQUES,
-        }.items():
-            if not harden_ads_subsystem._supports(doctype, fields):
-                continue
+        install_marketplace_discovery_indexes.execute()
+        install_marketplace_discovery_indexes.execute()
+        for doctype, index_name, fields, _unique in install_marketplace_discovery_indexes.INDEXES:
             rows = frappe.db.sql(
                 """
                 SELECT INDEX_NAME FROM information_schema.STATISTICS

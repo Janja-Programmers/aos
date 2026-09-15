@@ -50,6 +50,14 @@ _PUBLIC_MESSAGES = {
     "AD_PRIMARY_IMAGE_REQUIRED": "Exactly one primary ad image is required.",
     "AD_PRICE_REQUIRED": "A valid price is required.",
     "AD_SELLER_INACTIVE": "Seller account is not active.",
+    "AD_CONFLICT": "The ad changed since it was loaded.",
+    "SEARCH_INVALID_FILTERS": "Invalid search filters.",
+    "SEARCH_UNAVAILABLE": "Search is temporarily unavailable.",
+    "IMAGE_SEARCH_UNAVAILABLE": "Image search is temporarily unavailable.",
+    "SAVED_SEARCH_NOT_FOUND": "Saved search not found.",
+    "SAVED_SEARCH_CONFLICT": "Saved search changed or already exists.",
+    "SAVED_SEARCH_LIMIT_REACHED": "Saved search limit reached.",
+    "FX_RATE_UNAVAILABLE": "Exchange-rate data is unavailable.",
 }
 
 

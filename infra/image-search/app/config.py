@@ -75,7 +75,11 @@ class Settings:
 
 		self.qdrant_url = _get_str("IMAGE_SEARCH_QDRANT_URL", "http://qdrant:6333")
 		self.qdrant_api_key = _get_optional_str("IMAGE_SEARCH_QDRANT_API_KEY")
-		self.collection = _get_str("IMAGE_SEARCH_COLLECTION", "ads")
+		self.collection = _get_str("IMAGE_SEARCH_COLLECTION", "aos_ad_images_v2")
+		self.embedding_version = _get_str(
+			"IMAGE_SEARCH_EMBEDDING_VERSION", f"{self.model_name}:{self.pretrained}:v1"
+		)
+		self.collection_schema_version = _get_str("IMAGE_SEARCH_COLLECTION_SCHEMA_VERSION", "2")
 
 		self.default_limit = _get_int("IMAGE_SEARCH_LIMIT", 50, minimum=1)
 		self.max_limit = _get_int("IMAGE_SEARCH_MAX_LIMIT", 100, minimum=1)
@@ -151,6 +155,8 @@ class Settings:
 			"device": self.device,
 			"vector_size": self.vector_size,
 			"collection": self.collection,
+			"embedding_version": self.embedding_version,
+			"collection_schema_version": self.collection_schema_version,
 			"default_limit": self.default_limit,
 			"max_limit": self.max_limit,
 			"score_threshold": self.score_threshold,

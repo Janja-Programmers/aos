@@ -1,9 +1,6 @@
-# Copyright (c) 2026, Africa Online Stores and contributors
-# For license information, please see license.txt
-
-# import frappe
 from frappe.model.document import Document
-
+from aos.services.marketplace_discovery.ids import ensure_public_id
 
 class AOSAdDraft(Document):
-	pass
+    def before_insert(self):
+        ensure_public_id(self)

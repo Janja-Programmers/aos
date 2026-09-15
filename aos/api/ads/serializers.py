@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 import frappe
 
 from aos.services.catalog.errors import CatalogError
+from aos.services.ads.lifecycle import owner_capabilities
 from aos.services.catalog.service import CatalogService, attribute_key, resolve_pricing
 from aos.services.sellers.identity import public_seller_id_for_name
 from aos.api.ads.media import get_ad_image_url, get_ad_video_url
@@ -166,12 +167,12 @@ def _primary_image(
     images: List[Dict[str, Any]],
 ) -> str:
     for image in images:
-        image_url = _norm(image.get("image") or image.get("url"))
+        image_url = _norm(image.get("url"))
         if _to_int(image.get("is_primary")) == 1 and image_url:
             return image_url
 
     for image in images:
-        image_url = _norm(image.get("image") or image.get("url"))
+        image_url = _norm(image.get("url"))
         if image_url:
             return image_url
 
@@ -201,8 +202,6 @@ def serialize_ad_images(
         items.append(
             {
                 "media_id": media_id or None,
-                "media": media_id or None,
-                "image": image_url,
                 "url": image_url,
                 "is_primary": _to_int(
                     getattr(
@@ -231,7 +230,7 @@ def serialize_ad_images(
         key=lambda x: (
             0 if x["is_primary"] else 1,
             x["sort_order"],
-            x["image"] or "",
+            x["url"] or "",
         )
     )
 
@@ -340,7 +339,7 @@ def serialize_ad_list_item(
         original_price_display = ""
 
     return {
-        "id": ad_doc.name,
+        "id": _norm(getattr(ad_doc, "public_id", None)),
         "price": _to_float(getattr(ad_doc, "price", None)),
         "currency": _norm(getattr(ad_doc, "currency", display_currency)),
         "original_price_value": _to_float(getattr(ad_doc, "price", None)),
@@ -449,9 +448,6 @@ def serialize_ad_detail(
             ad_doc,
             is_wishlisted=is_wishlisted,
         ),
-        "seller": public_seller_id_for_name(
-            getattr(ad_doc, "seller", None)
-        ),
         "seller_id": public_seller_id_for_name(
             getattr(ad_doc, "seller", None)
         ),
@@ -463,21 +459,14 @@ def serialize_ad_detail(
             )
             or ""
         ),
-        "video": get_ad_video_url(ad_doc),
-        "video_media": _norm(
-            getattr(
-                ad_doc,
-                "video_media",
-                None,
-            )
-        ) or None,
-        "video_media_id": _norm(
-            getattr(
-                ad_doc,
-                "video_media",
-                None,
-            )
-        ) or None,
+        "video": (
+            {
+                "media_id": _norm(getattr(ad_doc, "video_media", None)),
+                "url": get_ad_video_url(ad_doc),
+            }
+            if _norm(getattr(ad_doc, "video_media", None))
+            else None
+        ),
         "images": images,
         "details": serialize_ad_details(
             ad_doc
@@ -516,7 +505,7 @@ def serialize_my_ad_list_item(
     )
 
     return {
-        "id": ad_doc.name,
+        "id": _norm(getattr(ad_doc, "public_id", None)),
         "title": _norm(
             getattr(
                 ad_doc,
@@ -531,6 +520,8 @@ def serialize_my_ad_list_item(
                 None,
             )
         ),
+        "version": str(getattr(ad_doc, "modified", "") or ""),
+        "capabilities": owner_capabilities(_norm(getattr(ad_doc, "status", None))),
         "country": _norm(
             getattr(
                 ad_doc,
@@ -584,13 +575,6 @@ def serialize_ad_for_edit(
     ):
         images.append(
             {
-                "media": _norm(
-                    getattr(
-                        row,
-                        "media",
-                        None,
-                    )
-                ) or None,
                 "media_id": _norm(
                     getattr(
                         row,
@@ -598,7 +582,6 @@ def serialize_ad_for_edit(
                         None,
                     )
                 ) or None,
-                "image": get_ad_image_url(row),
                 "url": get_ad_image_url(row),
                 "is_primary": _to_int(
                     getattr(
@@ -621,7 +604,7 @@ def serialize_ad_for_edit(
         key=lambda x: (
             0 if x["is_primary"] else 1,
             x["sort_order"],
-            x["image"],
+            x["url"],
         )
     )
 
@@ -666,7 +649,7 @@ def serialize_ad_for_edit(
         )
 
     return {
-        "id": ad_doc.name,
+        "id": _norm(getattr(ad_doc, "public_id", None)),
         "title": getattr(
             ad_doc,
             "title",
@@ -677,6 +660,8 @@ def serialize_ad_for_edit(
             "status",
             None,
         ),
+        "version": str(getattr(ad_doc, "modified", "") or ""),
+        "capabilities": owner_capabilities(getattr(ad_doc, "status", None)),
         "country": getattr(
             ad_doc,
             "country",
@@ -704,16 +689,13 @@ def serialize_ad_for_edit(
             None,
         ),
         "images": images,
-        "video": get_ad_video_url(ad_doc),
-        "video_media": getattr(
-            ad_doc,
-            "video_media",
-            None,
-        ),
-        "video_media_id": getattr(
-            ad_doc,
-            "video_media",
-            None,
+        "video": (
+            {
+                "media_id": _norm(getattr(ad_doc, "video_media", None)),
+                "url": get_ad_video_url(ad_doc),
+            }
+            if _norm(getattr(ad_doc, "video_media", None))
+            else None
         ),
         "details": details,
         "description": getattr(

@@ -128,7 +128,7 @@ def upsert_ad(redis: Redis, doc: dict[str, Any]) -> None:
 		raise ValueError("ad id is required")
 	status = _clean(doc.get("status"))
 	seller_status = _clean(doc.get("seller_status"))
-	if status != "Active" or seller_status != "Active":
+	if status != "Active" or seller_status != "Active" or not _bool(doc.get("eligible")):
 		delete_ad(redis, ad_id)
 		return
 	redis.hset(
@@ -196,18 +196,43 @@ def _load_short(redis: Redis, short_id: str) -> dict[str, Any] | None:
 	return _load(raw, None)
 
 
+def _attribute_match(actual: Any, expected: Any) -> bool:
+	actual_values = actual if isinstance(actual, list) else [actual]
+	expected_values = expected if isinstance(expected, list) else [expected]
+	actual_clean = {_clean(v).lower() for v in actual_values if _clean(v)}
+	expected_clean = {_clean(v).lower() for v in expected_values if _clean(v)}
+	return bool(expected_clean) and expected_clean.issubset(actual_clean)
+
+
+def _matches_ad_filters(doc: dict[str, Any], filters: dict[str, Any]) -> bool:
+	categories = filters.get("categories") or filters.get("category") or []
+	if not isinstance(categories, list):
+		categories = [categories]
+	category_values = {_clean(value) for value in categories if _clean(value)}
+	if category_values and _clean(doc.get("category")) not in category_values:
+		return False
+	seller = _clean(filters.get("seller"))
+	if seller and _clean(doc.get("seller")) != seller:
+		return False
+	attributes = filters.get("attributes") if isinstance(filters.get("attributes"), dict) else {}
+	doc_attributes = doc.get("attributes") if isinstance(doc.get("attributes"), dict) else {}
+	for key, expected in attributes.items():
+		if not _attribute_match(doc_attributes.get(str(key)), expected):
+			return False
+	return True
+
+
 def search_ads(redis: Redis, payload: dict[str, Any]) -> dict[str, Any]:
 	settings = get_settings()
 	query = _clean(payload.get("q") or payload.get("query"))
 	limit = max(1, min(int(payload.get("limit") or 20), 100))
-	offset = max(0, int(payload.get("offset") or 0))
+	offset = max(0, min(int(payload.get("offset") or 0), 5000))
 	filters = payload.get("filters") if isinstance(payload.get("filters"), dict) else {}
-	country = _clean(filters.get("country"))
-	location = _clean(filters.get("location"))
-	category = _clean(filters.get("category"))
-	seller = _clean(filters.get("seller"))
 
-	scan_count = max(limit + offset + 100, settings.max_ad_candidates)
+	# Geography is deliberately not accepted here. Frappe performs the final
+	# exact-location -> same-country -> global rerank after authoritative
+	# eligibility filtering.
+	scan_count = min(max(limit + offset + 100, settings.max_ad_candidates), 5000)
 	ids = [
 		x.decode() if isinstance(x, bytes) else str(x)
 		for x in redis.zrevrange(AD_ACTIVE_ZSET, 0, scan_count - 1)
@@ -215,15 +240,9 @@ def search_ads(redis: Redis, payload: dict[str, Any]) -> dict[str, Any]:
 	ranked: list[dict[str, Any]] = []
 	for ad_id in ids:
 		doc = _load_ad(redis, ad_id)
-		if not doc:
+		if not doc or not _bool(doc.get("eligible")):
 			continue
-		if country and _clean(doc.get("country")) != country:
-			continue
-		if location and _clean(doc.get("location")) != location:
-			continue
-		if category and _clean(doc.get("category")) != category:
-			continue
-		if seller and _clean(doc.get("seller")) != seller:
+		if not _matches_ad_filters(doc, filters):
 			continue
 		text_score = _text_score(query, doc)
 		if query and text_score <= 0:
@@ -231,7 +250,7 @@ def search_ads(redis: Redis, payload: dict[str, Any]) -> dict[str, Any]:
 		base_score = _ad_base_score(doc)
 		score = base_score + text_score * settings.text_match_weight
 		ranked.append({"id": ad_id, "score": score, "match_score": text_score})
-	ranked.sort(key=lambda x: (x["score"], x["id"]), reverse=True)
+	ranked.sort(key=lambda x: (-float(x["score"]), str(x["id"])))
 	page = ranked[offset : offset + limit]
 	return {"ok": True, "items": page, "total_candidates": len(ranked)}
 
@@ -263,14 +282,38 @@ def feed_shorts(redis: Redis, payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def related_ads(redis: Redis, payload: dict[str, Any]) -> dict[str, Any]:
+	settings = get_settings()
 	ad_id = _clean(payload.get("ad_id"))
 	limit = max(1, min(int(payload.get("limit") or 20), 100))
 	source = _load_ad(redis, ad_id)
-	if not source:
+	if not source or not _bool(source.get("eligible")):
 		return {"ok": True, "items": [], "total_candidates": 0}
-	q = " ".join([_clean(source.get("title")), _clean(source.get("category"))])
-	result = search_ads(
-		redis, {"q": q, "limit": limit + 1, "offset": 0, "filters": {"country": source.get("country")}}
-	)
-	items = [row for row in result.get("items") or [] if row.get("id") != ad_id][:limit]
-	return {"ok": True, "items": items, "total_candidates": len(items)}
+	ids = [
+		x.decode() if isinstance(x, bytes) else str(x)
+		for x in redis.zrevrange(AD_ACTIVE_ZSET, 0, min(settings.max_ad_candidates, 5000) - 1)
+	]
+	source_attrs = source.get("attributes") if isinstance(source.get("attributes"), dict) else {}
+	source_price = _float(source.get("price"))
+	ranked: list[dict[str, Any]] = []
+	for candidate_id in ids:
+		if candidate_id == ad_id:
+			continue
+		doc = _load_ad(redis, candidate_id)
+		if not doc or not _bool(doc.get("eligible")):
+			continue
+		score = _ad_base_score(doc)
+		if _clean(doc.get("category")) == _clean(source.get("category")):
+			score += 250.0
+		candidate_attrs = doc.get("attributes") if isinstance(doc.get("attributes"), dict) else {}
+		shared = sum(1 for key, value in source_attrs.items() if key in candidate_attrs and _attribute_match(candidate_attrs[key], value))
+		score += shared * 35.0
+		text_score = _text_score(" ".join([_clean(source.get("title")), _clean(source.get("category"))]), doc)
+		score += text_score * settings.text_match_weight
+		if source_price > 0 and _clean(doc.get("currency")) == _clean(source.get("currency")):
+			price = _float(doc.get("price"))
+			if price > 0:
+				score += max(0.0, 20.0 - abs(price - source_price) / source_price * 20.0)
+		ranked.append({"id": candidate_id, "score": score})
+	ranked.sort(key=lambda x: (-float(x["score"]), str(x["id"])))
+	items = ranked[:limit]
+	return {"ok": True, "items": items, "total_candidates": len(ranked)}

@@ -17,6 +17,7 @@ from aos.services.ads.errors import AdsValidationError
 from aos.services.ads.validation import ensure_known_fields, normalize_pagination, normalize_text
 
 from .constants import MY_ADS_LIMIT_PER_MINUTE_PER_USER
+from .media import project_ad_image_urls
 from .serializers import serialize_my_ad_list_item
 
 
@@ -58,8 +59,8 @@ def list_my_ads_impl(**kwargs):
             values["status"] = status
         rows = frappe.db.sql(
             f"""
-            SELECT name, title, country, location, status, currency, price,
-                   offer_price, offer_start_date, offer_end_date, creation,
+            SELECT name, public_id, title, country, location, status, currency, price,
+                   offer_price, offer_start_date, offer_end_date, creation, modified,
                    CASE
                      WHEN offer_price IS NOT NULL AND offer_price > 0
                       AND (offer_start_date IS NULL OR offer_start_date <= %(today)s)
@@ -80,11 +81,12 @@ def list_my_ads_impl(**kwargs):
             for image in frappe.get_all(
                 "AOS Ad Image",
                 filters={"parenttype": "AOS Ad", "parent": ["in", names]},
-                fields=["parent", "media", "image", "is_primary", "sort_order"],
+                fields=["parent", "media", "is_primary", "sort_order"],
                 order_by="parent asc, is_primary desc, sort_order asc, name asc",
                 limit=max(1, len(names) * MAX_IMAGES),
             ):
                 images_by_ad.setdefault(image.parent, []).append(image)
+        project_ad_image_urls([image for images in images_by_ad.values() for image in images])
         items = []
         for row in rows:
             row.images = images_by_ad.get(row.name, [])

@@ -66,8 +66,8 @@ _DETAIL_KEYS = frozenset(
         "value_json",
     }
 )
-_IMAGE_KEYS = frozenset({"media", "media_id", "id", "is_primary", "sort_order", "image", "url"})
-_DRAFT_PAYLOAD_FIELDS = CREATE_FIELDS
+_IMAGE_KEYS = frozenset({"media_id", "is_primary", "sort_order"})
+_DRAFT_PAYLOAD_FIELDS = CREATE_FIELDS - {"idempotency_key"}
 _MONEY_QUANTUM = Decimal(1).scaleb(-MONEY_DECIMAL_PLACES)
 _MONEY_MAX_ABS = Decimal(10) ** (MONEY_MAX_DIGITS - MONEY_DECIMAL_PLACES) - _MONEY_QUANTUM
 
@@ -91,10 +91,10 @@ def persisted_offer_value(price_type: Any, value: Any) -> Any:
         return value
 
 
-def ensure_known_fields(payload: Mapping[str, Any], allowed: Iterable[str], *, aliases: Iterable[str] = ()) -> None:
+def ensure_known_fields(payload: Mapping[str, Any], allowed: Iterable[str]) -> None:
     if not isinstance(payload, Mapping):
         raise AdsValidationError("Invalid request payload.", code="INVALID_AD_INPUT")
-    allowed_set = set(allowed) | set(aliases)
+    allowed_set = set(allowed)
     unknown = sorted(str(key) for key in payload if str(key) not in allowed_set)
     if unknown:
         raise AdsValidationError(
@@ -440,10 +440,7 @@ def normalize_images(
     primary_count = 0
     for index, raw in enumerate(rows):
         ensure_known_fields(raw, _IMAGE_KEYS)
-        media_value = raw.get("media") or raw.get("media_id") or raw.get("id")
-        if isinstance(media_value, dict):
-            media_value = media_value.get("media_id") or media_value.get("id") or media_value.get("name")
-        media_id = normalize_identifier(media_value, field="image media", required=True, max_length=140)
+        media_id = normalize_identifier(raw.get("media_id"), field="image media", required=True, max_length=140)
         if media_id in seen:
             raise AdsValidationError("Duplicate image selected.", code="DUPLICATE_AD_MEDIA")
         seen.add(media_id)
@@ -456,7 +453,7 @@ def normalize_images(
             minimum=0,
             maximum=MAX_SORT_ORDER,
         )
-        result.append({"media": media_id, "media_id": media_id, "is_primary": is_primary, "sort_order": sort_order})
+        result.append({"media": media_id, "is_primary": is_primary, "sort_order": sort_order})
     if primary_count > 1 or (require_primary and primary_count != 1):
         raise AdsValidationError("Exactly one primary image is required.", code="AD_PRIMARY_IMAGE_REQUIRED")
     return result
@@ -555,7 +552,7 @@ def normalize_full_ad_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     details = normalize_details(payload.get("details"), category=category_id)
     images = normalize_images(payload.get("images"), require_images=True)
     video_media = normalize_identifier(
-        payload.get("video_media") or payload.get("video_media_id") or payload.get("video"),
+        payload.get("video_media"),
         field="video_media",
         required=False,
     )
@@ -673,11 +670,20 @@ def _normalize_listing_filters(
 def normalize_public_list_filters(payload: Mapping[str, Any]) -> dict[str, Any]:
     from .constants import PUBLIC_LIST_FIELDS
 
-    return _normalize_listing_filters(
+    result = _normalize_listing_filters(
         payload,
         allowed_fields=PUBLIC_LIST_FIELDS,
         include_cursor=True,
     )
+    if result["q"] and len(result["q"]) < 2:
+        raise AdsValidationError(
+            "Search query must contain at least two characters.",
+            code="INVALID_SEARCH_QUERY",
+        )
+    from aos.services.marketplace_discovery.search_query import normalize_search_attributes
+    attrs, _public = normalize_search_attributes(payload.get("attributes"), category=result.get("category") or "")
+    result["attributes"] = attrs
+    return result
 
 
 def normalize_wishlist_list_filters(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -740,24 +746,28 @@ def decode_wishlist_cursor(value: Any) -> tuple[str, str]:
     name = normalize_identifier(payload.get("name"), field="cursor", required=True)
     return str(saved_on_value), name
 
-def encode_recent_cursor(*, creation: Any, name: Any) -> str:
-    payload = {"v": 1, "sort": "recent", "creation": str(creation or ""), "name": str(name or "")}
+def encode_recent_cursor(*, geo_bucket: int, creation: Any, public_id: Any) -> str:
+    payload = {
+        "v": 2, "sort": "recent", "geo_bucket": int(geo_bucket),
+        "creation": str(creation or ""), "public_id": str(public_id or ""),
+    }
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
-def decode_recent_cursor(value: Any) -> tuple[str, str]:
+def decode_recent_cursor(value: Any) -> tuple[int, str, str]:
     token = normalize_text(value, field="cursor", max_length=500, required=True)
     try:
         padded = token + "=" * (-len(token) % 4)
         payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
     except Exception:
         raise AdsValidationError("Invalid pagination cursor.", code="INVALID_AD_CURSOR") from None
-    if not isinstance(payload, dict) or payload.get("v") != 1 or payload.get("sort") != "recent":
+    if not isinstance(payload, dict) or payload.get("v") != 2 or payload.get("sort") != "recent":
         raise AdsValidationError("Invalid pagination cursor.", code="INVALID_AD_CURSOR")
+    bucket = normalize_int(payload.get("geo_bucket"), field="geo_bucket", minimum=0, maximum=2)
     creation = normalize_text(payload.get("creation"), field="cursor", max_length=64, required=True)
-    name = normalize_identifier(payload.get("name"), field="cursor", required=True)
-    return creation, name
+    public_id = normalize_identifier(payload.get("public_id"), field="cursor", required=True)
+    return bucket, creation, public_id
 
 
 def _json_safe(value: Any, *, depth: int = 0) -> Any:
@@ -825,8 +835,8 @@ def normalize_draft_payload(value: Any) -> dict[str, Any]:
 
 def normalize_draft_request(payload: Mapping[str, Any]) -> tuple[str, dict[str, Any], int]:
     ensure_known_fields(payload, DRAFT_UPSERT_FIELDS)
-    draft_id = normalize_identifier(payload.get("draft_id") or payload.get("id"), field="draft_id")
-    draft_payload = normalize_draft_payload(payload.get("payload") if "payload" in payload else payload.get("payload_json"))
+    draft_id = normalize_identifier(payload.get("draft_id"), field="draft_id")
+    draft_payload = normalize_draft_payload(payload.get("payload"))
     last_step = normalize_int(payload.get("last_step"), field="last_step", default=1, minimum=1, maximum=MAX_DRAFT_STEP)
     return draft_id, draft_payload, last_step
 

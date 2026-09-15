@@ -48,6 +48,7 @@ def _perform_search_work(payload: dict[str, Any]) -> dict[str, Any]:
 	document = payload.get("document") if isinstance(payload.get("document"), dict) else {}
 	doctype = str(target.get("doctype") or "").strip()
 	name = str(target.get("name") or "").strip()
+	index_id = str(target.get("index_id") or document.get("id") or name).strip()
 
 	if not job_id:
 		raise SearchRankingError("job_id is required")
@@ -59,7 +60,7 @@ def _perform_search_work(payload: dict[str, Any]) -> dict[str, Any]:
 		redis = get_redis()
 		if doctype == "AOS Ad":
 			if action == "delete":
-				delete_ad(redis, name)
+				delete_ad(redis, index_id)
 			else:
 				upsert_ad(redis, document)
 		elif doctype == "AOS Short":

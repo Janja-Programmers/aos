@@ -121,6 +121,7 @@ async def replace_ad_images(
 	try:
 		return get_service().replace_ad_images(
 			ad_id=_clean_ad_id(ad_id),
+			generation=payload.generation,
 			images=payload.images,
 		)
 	except Exception as exc:
