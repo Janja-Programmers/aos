@@ -814,11 +814,22 @@ def normalize_draft_payload(value: Any) -> dict[str, Any]:
             safe[field] = normalize_text(safe.get(field), field=field, max_length=max_length, multiline=multiline)
     if "images" in safe:
         # Incomplete drafts may have zero images, but supplied rows must be valid.
-        safe["images"] = normalize_images(
+        # Persist the frontend-canonical shape (`media_id`) rather than the
+        # aggregate-internal child-row shape (`media`) so a loaded draft can be
+        # resubmitted verbatim and submit_ad_draft can feed it into create_ad.
+        normalized_images = normalize_images(
             safe.get("images"),
             require_images=False,
             require_primary=False,
         )
+        safe["images"] = [
+            {
+                "media_id": row["media"],
+                "is_primary": row["is_primary"],
+                "sort_order": row["sort_order"],
+            }
+            for row in normalized_images
+        ]
     if "details" in safe:
         raw_details = safe.get("details")
         if not isinstance(raw_details, list) or any(not isinstance(row, dict) for row in raw_details):

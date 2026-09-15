@@ -66,7 +66,7 @@ def _payload_dict(value: Any) -> dict[str, Any]:
 def _primary_media_id(row) -> str:
     payload=_payload_dict(row.payload_json); images=payload.get("images") or []
     primary=next((item for item in images if isinstance(item,dict) and int(item.get("is_primary") or 0)==1), images[0] if images else None)
-    return str(primary.get("media") or "").strip() if isinstance(primary,dict) else ""
+    return str(primary.get("media_id") or "").strip() if isinstance(primary,dict) else ""
 
 
 def _preview(row, currency: str, media_urls: dict[str,str] | None=None) -> dict[str, Any]:

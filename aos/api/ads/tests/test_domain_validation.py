@@ -197,7 +197,10 @@ class TestAdsDomainValidation(FrappeTestCase):
             {"title": "Draft", "images": [{"media_id": "MEDIA-1", "is_primary": 0}]}
         )
         self.assertEqual(result["title"], "Draft")
-        self.assertEqual(result["images"][0]["media"], "MEDIA-1")
+        self.assertEqual(result["images"][0]["media_id"], "MEDIA-1")
+        self.assertNotIn("media", result["images"][0])
+        round_trip = normalize_images(result["images"], require_images=False, require_primary=False)
+        self.assertEqual(round_trip[0]["media"], "MEDIA-1")
         with self.assertRaises(AdsValidationError):
             normalize_draft_payload({"owner": "attacker@example.com"})
         with self.assertRaises(AdsValidationError):
