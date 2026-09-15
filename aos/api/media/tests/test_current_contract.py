@@ -72,6 +72,18 @@ class MediaCurrentContractTests(unittest.TestCase):
             self.assertIn(name, compose)
         self.assertIn("background_removal_models:/models/rembg", compose)
 
+
+    def test_ai_companions_are_ready_before_docker_marks_them_healthy(self):
+        compose = self.source("docker-compose.yml")
+        image_search = compose.split("  image-search:", 1)[1].split("  background-removal:", 1)[0]
+        background = compose.split("  background-removal:", 1)[1].split("  video-api:", 1)[0]
+        self.assertIn('http://127.0.0.1:8000/ready', image_search)
+        self.assertIn('http://127.0.0.1:8000/ready', background)
+        self.assertIn('image_search_models:/models/openclip', image_search)
+        self.assertIn('AOS_MEDIA_PUBLIC_BASE_URL:', image_search)
+        self.assertIn('HF_HOME: /models/openclip/huggingface', image_search)
+        self.assertIn('TORCH_HOME: /models/openclip/torch', image_search)
+
     def test_initialized_cleanup_is_expiry_driven_only(self):
         service = self.source("aos/services/media/media_service.py")
         tasks = self.source("aos/tasks/media.py")

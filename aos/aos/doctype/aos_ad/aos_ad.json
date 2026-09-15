@@ -117,7 +117,7 @@
    "fieldtype": "Select",
    "label": "Price Type",
    "reqd": 1,
-   "options": "Fixed\nNegotiable\nContact for price\nFree"
+   "options": "Fixed\nNegotiable\nContact for price"
   },
   {
    "fieldname": "price",

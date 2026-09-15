@@ -429,20 +429,27 @@ services:
       IMAGE_SEARCH_SHORT_CLASSIFICATION_MODEL_VERSION: ${IMAGE_SEARCH_SHORT_CLASSIFICATION_MODEL_VERSION:-openclip-v1}
       IMAGE_SEARCH_FILE_BASE_URL: ${IMAGE_SEARCH_FILE_BASE_URL:-}
       IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS: ${IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS:-}
+      AOS_MEDIA_PUBLIC_BASE_URL: ${AOS_MEDIA_PUBLIC_BASE_URL:-}
+      XDG_CACHE_HOME: /models/openclip/cache
+      HF_HOME: /models/openclip/huggingface
+      TORCH_HOME: /models/openclip/torch
 
     ports:
       - "${IMAGE_SEARCH_BIND_ADDRESS:-127.0.0.1}:${IMAGE_SEARCH_PORT:-8110}:8000"
+
+    volumes:
+      - image_search_models:/models/openclip
 
     depends_on:
       qdrant:
         condition: service_healthy
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/ready"]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 90s
+      timeout: 30s
+      retries: 10
+      start_period: 300s
 
     mem_limit: "${IMAGE_SEARCH_MEMORY_LIMIT:-4g}"
     cpus: "${IMAGE_SEARCH_CPU_LIMIT:-3.00}"
@@ -476,11 +483,11 @@ services:
       - background_removal_models:/models/rembg
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/ready"]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 90s
+      timeout: 30s
+      retries: 10
+      start_period: 300s
 
     mem_limit: "${BACKGROUND_REMOVAL_MEMORY_LIMIT:-3g}"
     cpus: "${BACKGROUND_REMOVAL_CPU_LIMIT:-2.00}"
@@ -1228,6 +1235,9 @@ services:
 volumes:
   background_removal_models:
     name: aos_background_removal_models
+
+  image_search_models:
+    name: aos_image_search_models
 
   qdrant_data:
     external: true

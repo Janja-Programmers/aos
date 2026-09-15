@@ -81,11 +81,12 @@ def get_ad_impl(**kwargs):
             values["viewer"]=viewer
             conditions.append("""NOT EXISTS (SELECT 1 FROM `tabAOS User Block` b WHERE b.status='Active'
                 AND ((b.blocker_user=%(viewer)s AND b.blocked_user=s.user) OR (b.blocker_user=s.user AND b.blocked_user=%(viewer)s)))""")
-        row=frappe.db.sql(f"""SELECT a.name FROM `tabAOS Ad` a INNER JOIN `tabAOS Seller` s ON s.name=a.seller
+        row=frappe.db.sql(f"""SELECT a.name, loc.location AS location_name FROM `tabAOS Ad` a INNER JOIN `tabAOS Seller` s ON s.name=a.seller
+            LEFT JOIN `tabAOS Location` loc ON loc.name=a.location
             INNER JOIN `tabAOS Profile` p ON p.user=s.user INNER JOIN `tabUser` u ON u.name=s.user
             WHERE {' AND '.join(conditions)} LIMIT 1""",values,as_dict=True)
         if not row: raise AdsNotFoundError("Ad not found.")
-        ad_name=str(row[0].name); ad_doc=frappe.get_doc("AOS Ad",ad_name)
+        ad_name=str(row[0].name); ad_doc=frappe.get_doc("AOS Ad",ad_name); ad_doc.location_name=str(row[0].location_name or "")
         ad_doc.images=list(ad_doc.images or [])[:MAX_IMAGES]; ad_doc.details=list(ad_doc.details or [])[:MAX_AD_ATTRIBUTES]
         project_ad_image_urls(ad_doc.images); project_ad_video_url(ad_doc)
         _apply_display_price(ad_doc,requested_currency=display_currency,today=today)

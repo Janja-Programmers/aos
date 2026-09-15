@@ -47,7 +47,7 @@ def list_my_ads_impl(**kwargs):
                 data={"items": [], "pagination": {"limit": limit, "offset": offset, "total": 0}},
             )
 
-        conditions = ["seller = %(seller)s"]
+        conditions = ["a.seller = %(seller)s"]
         values: Dict[str, Any] = {
             "seller": seller.name,
             "today": getdate(nowdate()),
@@ -55,21 +55,23 @@ def list_my_ads_impl(**kwargs):
             "offset": offset,
         }
         if status:
-            conditions.append("status = %(status)s")
+            conditions.append("a.status = %(status)s")
             values["status"] = status
         rows = frappe.db.sql(
             f"""
-            SELECT name, public_id, title, country, location, status, currency, price,
-                   offer_price, offer_start_date, offer_end_date, creation, modified,
+            SELECT a.name, a.public_id, a.title, a.country, a.location, loc.location AS location_name,
+                   a.status, a.currency, a.price, a.price_type, a.offer_price, a.offer_start_date,
+                   a.offer_end_date, a.creation, a.modified,
                    CASE
-                     WHEN offer_price IS NOT NULL AND offer_price > 0
-                      AND (offer_start_date IS NULL OR offer_start_date <= %(today)s)
-                      AND (offer_end_date IS NULL OR offer_end_date >= %(today)s)
-                     THEN offer_price ELSE price
+                     WHEN a.offer_price IS NOT NULL AND a.offer_price > 0
+                      AND (a.offer_start_date IS NULL OR a.offer_start_date <= %(today)s)
+                      AND (a.offer_end_date IS NULL OR a.offer_end_date >= %(today)s)
+                     THEN a.offer_price ELSE a.price
                    END AS current_price
-            FROM `tabAOS Ad`
+            FROM `tabAOS Ad` a
+            LEFT JOIN `tabAOS Location` loc ON loc.name=a.location
             WHERE {' AND '.join(conditions)}
-            ORDER BY modified DESC, name DESC
+            ORDER BY a.modified DESC, a.name DESC
             LIMIT %(limit)s OFFSET %(offset)s
             """,
             values,

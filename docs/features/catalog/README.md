@@ -62,7 +62,7 @@ A stable marketplace category. `allow_rename` is disabled; the document `name` i
 | `is_active` | Controls public availability. An inactive ancestor hides its children from public reads and Ads validation. |
 | `is_service` | Marks a sellable service category and permits price units. |
 | `pricing_requirement` | `Required`, `Optional`, or `Hidden`; interpreted by Ads pricing validation. |
-| `allowed_price_types` | Canonical newline-delimited allowlist from `Fixed`, `Negotiable`, `Contact for price`, `Free`. |
+| `allowed_price_types` | Canonical newline-delimited allowlist from `Fixed`, `Negotiable`, `Contact for price`. |
 | `allowed_price_units` | Canonical newline-delimited service-unit choices. Empty for non-service categories. |
 | `attributes` | Child table of category-specific attribute relationships. |
 | `attribute_dependencies` | Child table of category-scoped dependency groups: one row per dependent attribute + parent option, with allowed child options stored one per line. |

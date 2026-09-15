@@ -289,7 +289,6 @@ def _external_service_endpoints(env: Mapping[str, Any] | None) -> list[ServiceEn
 			name="image_search",
 			category="ai_ml",
 			url=_env(env, "IMAGE_SEARCH_SERVICE_URL", "http://127.0.0.1:8110"),
-			ready_required=False,
 		),
 		ServiceEndpoint(
 			name="background_removal",

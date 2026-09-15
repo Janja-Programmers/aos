@@ -61,9 +61,9 @@ MAX_ATTRIBUTE_JSON_LENGTH = 8_000
 MONEY_DECIMAL_PLACES = 6
 MONEY_MAX_DIGITS = 21
 
-ALLOWED_PRICE_TYPES = frozenset({"Fixed", "Negotiable", "Contact for price", "Free"})
+ALLOWED_PRICE_TYPES = frozenset({"Fixed", "Negotiable", "Contact for price"})
 PRICE_TYPES_REQUIRING_AMOUNT = frozenset({"Fixed", "Negotiable"})
-PRICE_TYPES_WITHOUT_AMOUNT = frozenset({"Contact for price", "Free"})
+PRICE_TYPES_WITHOUT_AMOUNT = frozenset({"Contact for price"})
 
 PUBLIC_LIST_SORTS = frozenset({"rating_high", "price_low", "price_high", "recent"})
 PUBLIC_PROMOTION_TYPES = frozenset({"offer", "deal", "flash_sale"})

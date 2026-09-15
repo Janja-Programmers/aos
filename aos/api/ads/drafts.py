@@ -69,15 +69,15 @@ def _primary_media_id(row) -> str:
     return str(primary.get("media_id") or "").strip() if isinstance(primary,dict) else ""
 
 
-def _preview(row, currency: str, media_urls: dict[str,str] | None=None) -> dict[str, Any]:
+def _preview(row, currency: str, media_urls: dict[str,str] | None=None, location_names: dict[str,str] | None=None) -> dict[str, Any]:
     payload=_payload_dict(row.payload_json)
     media_id=_primary_media_id(row); image_url=(media_urls or {}).get(media_id) if media_id else None
     price_type=str(payload.get("price_type") or "")
     price=payload.get("price")
     return {
         "id":row.public_id,"version":str(row.modified),"title":row.title_hint or "Untitled draft","status":"Draft",
-        "location":row.location_hint,"category":row.category_hint,"currency":currency or None,"price_type":price_type or None,
-        "current_price":_money_display(currency,price,price_type) if price is not None or price_type in {"Contact for price","Free"} else None,
+        "location":row.location_hint,"location_name":(location_names or {}).get(str(row.location_hint or ""), ""),"category":row.category_hint,"currency":currency or None,"price_type":price_type or None,
+        "current_price":_money_display(currency,price,price_type) if price is not None or price_type == "Contact for price" else None,
         "primary_image":image_url,"modified_at":row.modified,
     }
 
@@ -112,7 +112,9 @@ def list_my_ad_drafts_impl(**kwargs):
         rows=frappe.get_all(_DT,filters={"user":user,"status":"Draft"},fields=["name","public_id","title_hint","category_hint","location_hint","payload_json","modified"],order_by="modified desc, public_id desc",offset=offset,limit=limit)
         media_ids=[mid for row in rows if (mid:=_primary_media_id(row))]
         media_urls=MediaService().get_public_url_map(media_ids) if media_ids else {}
-        return ok("Drafts fetched.",data={"items":[_preview(row,currency,media_urls) for row in rows],"pagination":{"limit":limit,"offset":offset,"returned":len(rows)}})
+        location_ids=sorted({str(row.location_hint or "").strip() for row in rows if str(row.location_hint or "").strip()})
+        location_names={row.name: str(row.location or "") for row in frappe.get_all("AOS Location", filters={"name":["in",location_ids]}, fields=["name","location"], limit=max(1,len(location_ids)))} if location_ids else {}
+        return ok("Drafts fetched.",data={"items":[_preview(row,currency,media_urls,location_names) for row in rows],"pagination":{"limit":limit,"offset":offset,"returned":len(rows)}})
     return run_ads_api(_list,fallback="Failed to fetch drafts.",log_title="AOS List Drafts Failed")
 
 
@@ -124,7 +126,9 @@ def get_my_ad_draft_impl(**kwargs):
     def _get():
         ensure_known_fields(kwargs,{"draft_id"}); public_id=normalize_identifier(kwargs.get("draft_id"),field="draft_id",required=True); doc=_owned(public_id,user)
         payload=_payload_dict(doc.payload_json)
-        return ok("Draft fetched.",data={"item":{"id":doc.public_id,"version":str(doc.modified),"status":doc.status,"last_step":doc.last_step,"payload":payload}})
+        location_id=str(payload.get("location") or "").strip()
+        location_name=str(frappe.db.get_value("AOS Location", location_id, "location") or "") if location_id else ""
+        return ok("Draft fetched.",data={"item":{"id":doc.public_id,"version":str(doc.modified),"status":doc.status,"last_step":doc.last_step,"location_name":location_name,"payload":payload}})
     return run_ads_api(_get,fallback="Failed to fetch draft.",log_title="AOS Get Draft Failed")
 
 

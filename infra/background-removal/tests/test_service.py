@@ -50,6 +50,15 @@ def test_health_does_not_load_a_model(monkeypatch):
 	assert response.json()["processor_loaded"] is False
 
 
+
+
+def test_ready_warms_the_processor_boundary(monkeypatch):
+	monkeypatch.setattr(main, "get_service", FakeService)
+	response = TestClient(main.app).get("/ready")
+	assert response.status_code == 200
+	assert response.json()["ready"] is True
+	assert response.json()["processor_loaded"] is True
+
 def test_remove_background_requires_internal_bearer_secret(monkeypatch):
 	monkeypatch.setattr(main, "get_service", FakeService)
 	client = TestClient(main.app)

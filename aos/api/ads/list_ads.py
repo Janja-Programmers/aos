@@ -213,7 +213,7 @@ def list_ads_impl(**kwargs):
         order_by = f"{geo_bucket} ASC, {primary}"
         rows = frappe.db.sql(
             f"""
-            SELECT a.name, a.public_id, a.title, a.status, a.country, a.location, a.category, a.seller,
+            SELECT a.name, a.public_id, a.title, a.status, a.country, a.location, loc.location AS location_name, a.category, a.seller,
                    a.currency, {original_fx['currency']} AS display_currency,
                    %(display_currency)s AS requested_display_currency,
                    {original_fx['available']} AS conversion_available,
@@ -225,6 +225,7 @@ def list_ads_impl(**kwargs):
                    {current_fx['amount']} AS current_price
             FROM `tabAOS Ad` a
             INNER JOIN `tabAOS Seller` s ON s.name=a.seller
+            LEFT JOIN `tabAOS Location` loc ON loc.name=a.location
             INNER JOIN `tabAOS Profile` p ON p.user=s.user
             INNER JOIN `tabUser` u ON u.name=s.user
             LEFT JOIN `tabAOS Exchange Rate` er_source ON er_source.currency=a.currency

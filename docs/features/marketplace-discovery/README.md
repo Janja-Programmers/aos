@@ -16,7 +16,9 @@ Dependencies remain owned by their production-ready domains: Localization suppli
 
 `AOS Ad` is the aggregate root. `public_id` is its opaque public identity; Frappe `name` never crosses the public Marketplace Discovery boundary. `submission_key_hash` provides create idempotency. `AOS Ad Image` and `AOS Ad Attribute Value` are canonical child selections; unique indexes prevent duplicate Media references or duplicate attributes per Ad. Media rows contain Media IDs only, never storage paths, signed URLs or object keys. `AOS Ad Draft` has its own opaque public ID and optimistic version; its persisted wizard payload remains frontend-canonical, including `images[].media_id`, so a fetched draft can round-trip directly through update and submission without internal field aliases. `AOS Saved Search` has an opaque public ID, owner, canonical JSON query, fingerprint, active flag and optimistic version. `AOS Exchange Rate` stores one coherent rate snapshot version across currencies.
 
-The original `price` and `currency` on an Ad are business state and are never rewritten because exchange rates change. Display conversion and cross-currency comparison are derived.
+The original `price` and `currency` on an Ad are business state and are never rewritten because exchange rates change. Display conversion and cross-currency comparison are derived. Public and owner card projections preserve the canonical `location` ID for filtering/mutations and also expose `location_name` for display; clients must render the label rather than the opaque location ID.
+
+Canonical Ads price types are `Fixed`, `Negotiable`, and `Contact for price`. `Free` is not a supported Ads or Catalog price type. Normal category choices are driven by Catalog `allowed_price_types`; service categories may explicitly include `Contact for price`, while goods never gain it implicitly.
 
 ## Ads lifecycle
 
@@ -96,7 +98,7 @@ Qdrant payload stores public Ad ID, Media ID, deterministic Ad generation, embed
 
 Qdrant outage or embedding failure cannot roll back a valid Ads database transaction. Image search may return `IMAGE_SEARCH_UNAVAILABLE`; it must never trust a stale vector for authorization or publication state. Reindex/cleanup tasks are bounded maintenance operations and are not public APIs. Frappe-to-image-search calls use finite configurable retries with bounded exponential backoff for transient transport/429/5xx failures; vector generations and delete operations are idempotent so retries converge rather than duplicate state.
 
-The repository Qdrant service is digest-pinned, persistent, health-checked, resource-limited, log-rotated, private-by-default (loopback host binding), and API-key protected. The image-search service is private-by-default, waits for Qdrant health, uses signed internal mutations, has bounded upload/search limits and declares embedding/schema versions explicitly. Production sizing is deployment-specific; Qdrant storage/worker capacity and embedding throughput must be sized from measured corpus/query rates rather than staging hardware.
+The repository Qdrant service is digest-pinned, persistent, health-checked, resource-limited, log-rotated, private-by-default (loopback host binding), and API-key protected. The image-search service is private-by-default, waits for Qdrant health, uses signed internal mutations, has bounded upload/search limits and declares embedding/schema versions explicitly. Docker health uses the companion `/ready` endpoint so OpenCLIP and Qdrant are verified before the container is marked healthy; the OpenCLIP cache is persisted across restarts. The image-search fetch allowlist automatically includes the canonical `AOS_MEDIA_PUBLIC_BASE_URL` host in addition to explicit trusted hosts. Production sizing is deployment-specific; Qdrant storage/worker capacity and embedding throughput must be sized from measured corpus/query rates rather than staging hardware.
 
 ## Saved Searches
 

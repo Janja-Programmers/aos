@@ -18,5 +18,5 @@ ALLOWED_ATTRIBUTE_TYPES = frozenset(
     {"Text", "Number", "Select", "Boolean", "Date", "Year", "Textarea", "MultiSelect"}
 )
 ALLOWED_PRICING_REQUIREMENTS = frozenset({"Required", "Optional", "Hidden"})
-ALLOWED_PRICE_TYPES = frozenset({"Fixed", "Negotiable", "Contact for price", "Free"})
+ALLOWED_PRICE_TYPES = frozenset({"Fixed", "Negotiable", "Contact for price"})
 SELECT_ATTRIBUTE_TYPES = frozenset({"Select", "MultiSelect"})

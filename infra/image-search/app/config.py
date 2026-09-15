@@ -138,6 +138,11 @@ class Settings:
 			base_host = (urlsplit(self.file_base_url).hostname or "").lower().rstrip(".")
 			if base_host:
 				explicit_hosts.add(base_host)
+		media_public_base_url = _get_optional_str("AOS_MEDIA_PUBLIC_BASE_URL")
+		if media_public_base_url:
+			media_host = (urlsplit(media_public_base_url).hostname or "").lower().rstrip(".")
+			if media_host:
+				explicit_hosts.add(media_host)
 		self.allowed_image_hosts = tuple(sorted(explicit_hosts))
 
 	def clamp_limit(self, value: int | None) -> int:

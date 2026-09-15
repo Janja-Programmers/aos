@@ -203,13 +203,14 @@ class TestProductionConfigValidation(FrappeTestCase):
 		env = self._valid_env()
 		env.pop("SHORT_CLASSIFICATION_SECRET")
 		env.pop("IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS")
+		env.pop("AOS_MEDIA_PUBLIC_BASE_URL")
 
 		report = validate_production_config(env=env, site_config=self._valid_site_config())
 
 		self.assertFalse(report["ready"])
 		keys = {issue["key"] for issue in report["errors"]}
 		self.assertIn("SHORT_CLASSIFICATION_SECRET/IMAGE_SEARCH_INTERNAL_SECRET", keys)
-		self.assertIn("IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS/IMAGE_SEARCH_FILE_BASE_URL", keys)
+		self.assertIn("IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS/IMAGE_SEARCH_FILE_BASE_URL/AOS_MEDIA_PUBLIC_BASE_URL", keys)
 
 	def test_image_search_allowed_hosts_rejects_wildcards_and_urls(self):
 		env = self._valid_env()

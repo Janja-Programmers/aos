@@ -462,7 +462,10 @@ def normalize_images(
 def normalize_pricing(payload: Mapping[str, Any], *, category: Any) -> dict[str, Any]:
     _category_id, _attributes, pricing, is_service = _catalog_schema(category)
     requirement = str(pricing.get("pricing_requirement") or "Optional")
-    allowed_types = set(pricing.get("allowed_price_types") or ALLOWED_PRICE_TYPES)
+    # Categories explicitly own pricing choices. When an Optional schema omits
+    # allowed_price_types, the safe default is the normal priced modes only;
+    # Contact for price is service-only and must be explicitly configured.
+    allowed_types = set(pricing.get("allowed_price_types") or PRICE_TYPES_REQUIRING_AMOUNT)
     allowed_units = set(pricing.get("allowed_price_units") or [])
 
     price_type = normalize_text(payload.get("price_type"), field="price_type", max_length=40, required=requirement == "Required")

@@ -86,6 +86,15 @@ def test_health_does_not_load_or_download_a_model(monkeypatch):
 	assert response.json()["model_loaded"] is False
 
 
+
+
+def test_ready_checks_model_and_vector_store_boundary(monkeypatch):
+	monkeypatch.setattr(main, "get_service", FakeService)
+	response = TestClient(main.app).get("/ready")
+	assert response.status_code == 200
+	assert response.json()["ready"] is True
+	assert response.json()["vector_store_ready"] is True
+
 def test_replace_images_requires_signed_internal_boundary(monkeypatch):
 	monkeypatch.setattr(main, "get_service", FakeService)
 	monkeypatch.setattr(

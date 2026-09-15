@@ -230,7 +230,7 @@ class TestOperationalHealth(FrappeTestCase):
         self.assertNotIn("super-secret-value", serialized)
         self.assertNotIn("should-not-leak", serialized)
 
-    def test_optional_image_search_ready_failure_is_degraded_not_unhealthy(self):
+    def test_image_search_ready_failure_makes_marketplace_discovery_unready(self):
         env = self._valid_env()
 
         def image_search_ready_fails(url: str, timeout: int = 3):
@@ -249,13 +249,13 @@ class TestOperationalHealth(FrappeTestCase):
                 storage_factory=_FakeStorage,
             )
 
-        self.assertTrue(report.get("ready"), report)
+        self.assertFalse(report.get("ready"), report)
         image_ready = [
             check for check in report.get("checks", [])
             if check.get("name") == "image_search_ready"
         ]
         self.assertEqual(len(image_ready), 1)
-        self.assertEqual(image_ready[0].get("status"), "degraded")
+        self.assertEqual(image_ready[0].get("status"), "unhealthy")
         serialized = self._report_text(report)
         self.assertNotIn("vector store detail", serialized)
 

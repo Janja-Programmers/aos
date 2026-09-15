@@ -1000,14 +1000,15 @@ def _check_ai_services(issues: list[dict[str, Any]], env: Mapping[str, Any] | No
 
 	allowed_hosts, allowed_hosts_key = _env_value(env, "IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS")
 	file_base_url, file_base_key = _env_value(env, "IMAGE_SEARCH_FILE_BASE_URL")
-	if not allowed_hosts and not file_base_url:
+	media_public_url, _ = _env_value(env, "AOS_MEDIA_PUBLIC_BASE_URL")
+	if not allowed_hosts and not file_base_url and not media_public_url:
 		_redacted_issue(
 			issues,
 			severity="error",
 			category="ai_ml",
-			key="IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS/IMAGE_SEARCH_FILE_BASE_URL",
+			key="IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS/IMAGE_SEARCH_FILE_BASE_URL/AOS_MEDIA_PUBLIC_BASE_URL",
 			message="Image-search remote image fetching has no trusted host configured.",
-			remediation="Set IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS to the exact production media/API hostnames or configure IMAGE_SEARCH_FILE_BASE_URL.",
+			remediation="Set the canonical AOS_MEDIA_PUBLIC_BASE_URL or configure IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS/IMAGE_SEARCH_FILE_BASE_URL.",
 		)
 	if file_base_url and not _public_url_is_safe(file_base_url, require_https=True):
 		_redacted_issue(

@@ -20,6 +20,16 @@ def test_settings_accept_shared_internal_secret_and_build_exact_host_allowlist(m
 	assert settings.allowed_image_hosts == ("api.example.test", "cdn.example.test")
 
 
+
+
+def test_settings_automatically_trust_canonical_media_public_host(monkeypatch):
+	monkeypatch.delenv("IMAGE_SEARCH_FILE_BASE_URL", raising=False)
+	monkeypatch.delenv("IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS", raising=False)
+	monkeypatch.setenv("AOS_MEDIA_PUBLIC_BASE_URL", "https://aos-files-staging.duckdns.org")
+	settings = Settings()
+	assert settings.allowed_image_hosts == ("aos-files-staging.duckdns.org",)
+	assert _resolve_url("https://aos-files-staging.duckdns.org/aos-public/ad.jpg", settings)
+
 def test_remote_image_fetch_is_limited_to_exact_trusted_hosts(monkeypatch):
 	settings = _settings(monkeypatch)
 

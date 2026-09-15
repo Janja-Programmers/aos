@@ -62,6 +62,22 @@ def _to_int(value: Any, default: int = 0) -> int:
         return default
 
 
+
+
+@lru_cache(maxsize=2048)
+def _get_location_label(location_id: str) -> str:
+    clean = _norm(location_id)
+    if not clean:
+        return ""
+    return _norm(frappe.db.get_value("AOS Location", clean, "location") or "")
+
+
+def _location_label(ad_doc: Any) -> str:
+    explicit = _norm(getattr(ad_doc, "location_name", None))
+    if explicit:
+        return explicit
+    return _get_location_label(_norm(getattr(ad_doc, "location", None)))
+
 def _clean_string_list(values: Any) -> List[str]:
     if not isinstance(values, (list, tuple)):
         return []
@@ -141,9 +157,6 @@ def _money_display(
 
     if price_type == "Contact for price":
         return "Contact for price"
-
-    if price_type == "Free":
-        return "Free"
 
     amount = _to_float(price)
 
@@ -387,6 +400,7 @@ def serialize_ad_list_item(
                 None,
             )
         ),
+        "location_name": _location_label(ad_doc),
         "category": _norm(
             getattr(
                 ad_doc,
@@ -536,6 +550,7 @@ def serialize_my_ad_list_item(
                 None,
             )
         ),
+        "location_name": _location_label(ad_doc),
         "current_price": price_display,
         "primary_image": _primary_image(
             images
@@ -672,6 +687,7 @@ def serialize_ad_for_edit(
             "location",
             None,
         ),
+        "location_name": _location_label(ad_doc),
         "category": getattr(
             ad_doc,
             "category",

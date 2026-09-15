@@ -220,6 +220,8 @@ def validate_category_document(doc: Any) -> None:
         price_units = []
     elif requirement == "Required" and not price_types:
         raise CatalogValidationError("Required pricing needs at least one price type.", code="INVALID_CATEGORY_SCHEMA")
+    if not doc.is_service and "Contact for price" in price_types:
+        raise CatalogValidationError("Contact for price is only valid for service categories.", code="INVALID_CATEGORY_SCHEMA")
     if not doc.is_service and price_units:
         raise CatalogValidationError("Price units are only valid for service categories.", code="INVALID_CATEGORY_SCHEMA")
     doc.pricing_requirement = requirement

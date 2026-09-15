@@ -36,6 +36,8 @@ Check status:
 docker compose ps qdrant image-search
 curl http://127.0.0.1:8110/health
 curl http://127.0.0.1:8110/ready
+
+Docker health uses `/ready`, not `/health`, so the service is not considered healthy until the OpenCLIP model is loaded and Qdrant is reachable. The model cache is persisted in the `aos_image_search_models` volume so restarts do not repeatedly cold-download weights.
 ```
 
 `/health` should be fast. `/ready` verifies model readiness and Qdrant access, so it can be slower during cold startup.
@@ -61,7 +63,7 @@ Do not configure Qdrant in AOS Settings. Qdrant connection details belong to the
 
 `SHORT_CLASSIFICATION_SECRET` also authenticates Frappe-to-image-search mutation calls. Internal replace/delete requests are signed over the timestamp, HTTP method, request path, and exact request body; stale or invalid signatures are rejected.
 
-Remote ad-image downloads are restricted to exact hostnames in `IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS` (plus the hostname from `IMAGE_SEARCH_FILE_BASE_URL`). Redirects are not followed. Include every production media/CDN hostname that the service is expected to fetch, and do not use wildcards or URL values in the allowlist.
+Remote ad-image downloads are restricted to exact hostnames in `IMAGE_SEARCH_ALLOWED_IMAGE_HOSTS`, plus the hostnames derived from `IMAGE_SEARCH_FILE_BASE_URL` and the canonical `AOS_MEDIA_PUBLIC_BASE_URL` that Docker Compose passes into the service. Redirects are not followed. Add only additional production image hosts explicitly; do not use wildcards or URL values in the allowlist.
 
 For a host-based Frappe deployment with Docker Compose services bound privately, use:
 
