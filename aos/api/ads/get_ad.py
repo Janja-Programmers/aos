@@ -68,7 +68,14 @@ def get_ad_impl(**kwargs):
         _country, display_currency, market_error=resolve_market_context(country=kwargs.get("country"), currency=kwargs.get("currency"))
         if market_error: return market_error
         viewer=current_user(); today=getdate(nowdate())
-        conditions=["a.public_id=%(public_id)s","a.status='Active'","s.status='Active'","u.enabled=1","COALESCE(NULLIF(p.account_status,''),'Active')='Active'","(a.expires_on IS NULL OR a.expires_on >= %(today)s)"]
+        conditions = [
+            "a.public_id = %(public_id)s",
+            "a.status = 'Active'",
+            "s.status = 'Active'",
+            "u.enabled = 1",
+            "COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'",
+            "(a.expires_on IS NULL OR a.expires_on >= %(today)s)",
+        ]
         values={"public_id":public_id,"today":today}
         if viewer != "Guest":
             values["viewer"]=viewer

@@ -34,4 +34,4 @@ def review_ad_impl(**kwargs):
             data={"id": doc.public_id, "status": doc.status, "version": str(doc.modified), "review_result": doc.review_result},
         )
 
-    return run_ads_api(_review, fallback="Failed to review ad.", log_title="AOS Manual Ad Review Failed")
+    return run_ads_api(_review, fallback="Failed to review ad.", log_title="AOS Manual Ad Review Failed", transactional=True)

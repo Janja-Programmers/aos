@@ -46,30 +46,38 @@ def run_ads_api(
     *,
     fallback: str,
     log_title: str,
+    transactional: bool = False,
 ) -> dict[str, Any]:
-    """Run one Ads operation inside a request-local savepoint.
+    """Run one Ads operation and normalize domain failures.
 
-    The API boundary converts domain exceptions into response envelopes, so it
-    must explicitly roll back partial writes before returning a failure. A
-    savepoint protects only this operation and never rolls back unrelated outer
-    transaction work. Nested Ads operations use independent savepoints.
+    Read-only operations do not open a database savepoint. This keeps strict
+    request validation ahead of all SQL on read paths and avoids unnecessary
+    transactional work for high-volume discovery traffic. Mutations opt into a
+    request-local savepoint so caught failures roll back only the Marketplace
+    Discovery write, never unrelated outer transaction work.
     """
-    savepoint = f"aos_ads_{frappe.generate_hash(length=10)}"
-    frappe.db.savepoint(savepoint)
+    savepoint = f"aos_ads_{frappe.generate_hash(length=10)}" if transactional else None
+    if savepoint:
+        frappe.db.savepoint(savepoint)
+
+    def _rollback() -> None:
+        if savepoint:
+            frappe.db.rollback(save_point=savepoint)
+
     try:
         response = operation()
         if isinstance(response, dict) and not response.get("ok"):
-            frappe.db.rollback(save_point=savepoint)
+            _rollback()
         return response
     except (AdsError, CatalogError, MediaError) as exc:
-        frappe.db.rollback(save_point=savepoint)
+        _rollback()
         return ads_fail(exc, fallback=fallback)
     except frappe.DoesNotExistError:
-        frappe.db.rollback(save_point=savepoint)
+        _rollback()
         from .errors import AdsNotFoundError
 
         return ads_fail(AdsNotFoundError("Ad not found."), fallback=fallback)
     except Exception:
-        frappe.db.rollback(save_point=savepoint)
+        _rollback()
         frappe.log_error(frappe.get_traceback(), log_title)
         return fail(fallback, error="INTERNAL_ERROR", http_status=500)

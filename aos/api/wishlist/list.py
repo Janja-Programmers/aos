@@ -156,6 +156,8 @@ def list_wishlist_impl(**kwargs):
             "w.user = %(user)s",
             "w.status = 'Active'",
             "a.status = 'Active'",
+            "a.public_id IS NOT NULL",
+            "a.public_id <> ''",
             "seller.status = 'Active'",
             "seller_user.enabled = 1",
             "COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'",
@@ -261,7 +263,7 @@ def list_wishlist_impl(**kwargs):
             SELECT
                 w.name AS wishlist_id,
                 {saved_on_sql} AS wishlist_saved_on,
-                a.name, a.title, a.status, a.country, a.location, a.category, a.seller,
+                a.name, a.public_id, a.title, a.status, a.country, a.location, a.category, a.seller,
                 a.currency, {original_conversion['currency']} AS display_currency,
                 %(display_currency)s AS requested_display_currency,
                 {original_conversion['available']} AS conversion_available,

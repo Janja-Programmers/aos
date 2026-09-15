@@ -355,7 +355,6 @@ class AOSFeatureTestMixin:
                 "images": [
                     {
                         "media": image_media.name,
-                        "image": f"https://cdn.example.test/{image_media.name}.jpg",
                         "is_primary": 1,
                         "sort_order": 0,
                     }

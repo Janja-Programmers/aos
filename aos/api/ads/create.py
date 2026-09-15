@@ -87,4 +87,4 @@ def create_ad_impl(**kwargs):
             "review_job_queued": bool(getattr(moderation_job,"name",None)),
         })
 
-    return run_ads_api(_create, fallback="Failed to create ad.", log_title="AOS Create Ad Failed")
+    return run_ads_api(_create, fallback="Failed to create ad.", log_title="AOS Create Ad Failed", transactional=True)

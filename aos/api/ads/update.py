@@ -102,4 +102,4 @@ def update_ad_impl(**kwargs):
         ads_log("updated", status=doc.status, outcome="success")
         return ok(message, data={"id":doc.public_id,"status":doc.status,"version":str(doc.modified),"review_job_queued":review_job_queued})
 
-    return run_ads_api(_update, fallback="Failed to update ad.", log_title="AOS Update Ad Failed")
+    return run_ads_api(_update, fallback="Failed to update ad.", log_title="AOS Update Ad Failed", transactional=True)

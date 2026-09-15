@@ -12,7 +12,7 @@ from typing import Any
 import frappe
 from frappe.utils import add_to_date, getdate, now_datetime, nowdate
 
-from aos.services.ads.constants import MAX_IMAGES
+from aos.api.ads.constants import MAX_IMAGES
 from aos.api.ads.serializers import serialize_ad_list_item
 from aos.api.shared.utils import get_active_wishlist_ad_ids
 from aos.services.currency_conversion import sql_conversion_expressions
@@ -83,8 +83,8 @@ def load_public_ad_items(
         "a.public_id IN %(candidate_ids)s",
         "a.status='Active'",
         "s.status='Active'",
-        "u.enabled=1",
-        "COALESCE(NULLIF(p.account_status,''), 'Active')='Active'",
+        "u.enabled = 1",
+        "COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'",
         "(a.expires_on IS NULL OR a.expires_on >= %(today)s)",
     ]
     if viewer and viewer != "Guest":

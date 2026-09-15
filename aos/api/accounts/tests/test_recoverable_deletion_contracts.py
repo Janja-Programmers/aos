@@ -82,18 +82,24 @@ class TestRecoverableDeletionContracts(unittest.TestCase):
 
 
     def test_preserved_marketplace_rows_are_hidden_in_secondary_public_paths(self):
-        for relative in (
+        direct_eligibility_paths = (
             "aos/api/ads/list_ads.py",
             "aos/api/ads/get_ad.py",
-            "aos/api/ads/image_search.py",
             "aos/api/wishlist/list.py",
             "aos/api/search_ranking/recommendations.py",
-        ):
+            "aos/services/marketplace_discovery/projection.py",
+        )
+        for relative in direct_eligibility_paths:
             source = self._source(relative)
             self.assertIn("enabled = 1", source, relative)
             self.assertNotIn("p.is_deleted", source, relative)
             self.assertNotIn("profile.is_deleted", source, relative)
             self.assertIn("account_status", source, relative)
+
+        image_search = self._source("aos/api/ads/image_search.py")
+        self.assertIn("load_public_ad_items", image_search)
+        self.assertNotIn("p.is_deleted", image_search)
+        self.assertNotIn("profile.is_deleted", image_search)
 
     def test_hourly_purge_job_is_registered(self):
         hooks = self._source("aos/hooks.py")

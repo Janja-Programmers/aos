@@ -150,6 +150,7 @@ def _prepare_missing_target_delete(job: Any) -> str:
 		return "replacement_required"
 
 	job.action = "delete"
+	job.document_json = _json_dumps({})
 	job.indexed = 0
 	job.last_error = None
 	return "converted"

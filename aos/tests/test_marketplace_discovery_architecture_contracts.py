@@ -16,12 +16,12 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
             source=text(path)
             assert 'execute_endpoint' in source
             assert 'transport.execute' not in source
-    
+
     def test_no_unversioned_marketplace_whitelists(self):
         for folder in ('aos/api/ads','aos/api/saved_search','aos/api/search_ranking'):
             for path in (ROOT/folder).glob('*.py'):
                 assert '@frappe.whitelist' not in path.read_text(encoding='utf-8'), path
-    
+
     def test_ad_schema_has_public_ids_and_no_raw_media_fields(self):
         ad=json.loads(text('aos/aos/doctype/aos_ad/aos_ad.json'))
         fields={row['fieldname']:row for row in ad['fields'] if row.get('fieldname')}
@@ -30,7 +30,7 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         assert 'video' not in fields
         image=json.loads(text('aos/aos/doctype/aos_ad_image/aos_ad_image.json'))
         assert 'image' not in {row.get('fieldname') for row in image['fields']}
-    
+
     def test_manual_review_does_not_fabricate_human_reviewer(self):
         source=text('aos/aos/doctype/aos_ad/aos_ad.py')
         assert 'self.review_source = "Automatic"' in source
@@ -39,7 +39,7 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         assert 'self.reviewed_by = reviewer' in source
         review=text('aos/services/ads/review.py')
         assert 'has_doctype_permission' in review and 'assert_version' in review and 'lock_ad' in review
-    
+
     def test_geography_is_final_reusable_policy(self):
         geo=text('aos/services/marketplace_discovery/geography.py')
         assert 'stable_geographic_rerank' in geo
@@ -48,7 +48,7 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         assert 'geo_bucket' in listing and 'order_by = f"{geo_bucket} ASC, {primary}"' in listing
         projection=text('aos/services/marketplace_discovery/projection.py')
         assert 'stable_geographic_rerank(' in projection
-    
+
     def test_related_and_image_search_recheck_canonical_projection(self):
         related=text('aos/api/search_ranking/recommendations.py')
         image=text('aos/api/ads/image_search.py')
@@ -56,7 +56,7 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         assert 'load_public_ad_items' in image
         assert 'matched_media_id' not in image
         assert 'score' not in image.split('return ok',1)[-1]
-    
+
     def test_qdrant_is_versioned_private_and_authenticated(self):
         compose=text('docker-compose.yml')
         assert 'QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}' in compose
@@ -67,14 +67,14 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
             assert field in store
         assert 'max(existing) > generation' in store
         assert 'must_not=[FieldCondition(key="generation"' in store
-    
+
     def test_fx_uses_provider_timestamp_and_coherent_snapshot(self):
         refresh=text('aos/tasks/fx.py')
         reads=text('aos/services/fx_service.py')+text('aos/services/currency_conversion.py')
         assert 'provider_timestamp' in refresh and 'fx_max_stale_hours' in refresh
         assert 'provider_timestamp' in reads and 'rate_version' in reads
         assert 'requests.' not in text('aos/services/currency_conversion.py')
-    
+
     def test_saved_search_is_canonical_owner_cursor_contract(self):
         service=text('aos/api/saved_search/service.py')
         assert 'persisted_search_intent' in service
@@ -83,7 +83,7 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         assert 'ORDER BY modified DESC, public_id DESC' in service
         assert 'OFFSET' not in service
         assert '{"public_id":public_id,"user":user,"is_active":1}' in service
-    
+
     def test_schema_installer_replaces_migration_compatibility_patches(self):
         patches=text('aos/patches.txt')
         assert 'install_marketplace_discovery_indexes' in patches
@@ -93,7 +93,7 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         assert not (ROOT/'aos/patches/v1_0/normalize_ads_offer_fields.py').exists()
         migrate=text('aos/migrate.py')
         assert 'install_marketplace_discovery_indexes.execute' in migrate
-    
+
     def test_canonical_docs_and_api_owners_are_current(self):
         assert (ROOT/'docs/features/marketplace-discovery/README.md').exists()
         for path in (
@@ -107,8 +107,8 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         assert not (ROOT/'docs/features/ads/README.md').exists()
         assert not (ROOT/'docs/features/search-ranking/README.md').exists()
         assert not (ROOT/'docs/features/saved-search/README.md').exists()
-    
-    
+
+
     def test_ads_media_input_is_canonical_media_id_only(self):
         validation=text('aos/services/ads/validation.py')
         media=text('aos/services/ads/media.py')
@@ -117,14 +117,14 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         assert 'raw.get("image")' not in validation and 'raw.get("url")' not in validation
         assert 'public_media_url' not in media
         assert '"image":' not in media
-    
-    
+
+
     def test_ad_location_validation_uses_canonical_location_lookup(self):
         source=text('aos/aos/doctype/aos_ad/aos_ad.py')
         expected='frappe.db.get_value(\n            "AOS Location",\n            self.location,\n            ["country", "is_active"],\n            as_dict=True,\n        )'
         assert expected in source
-    
-    
+
+
     def test_changed_doctype_field_orders_cover_marketplace_fields(self):
         cases={
             'aos/aos/doctype/aos_ad/aos_ad.json': {'public_id','submission_key_hash','review_source','review_result'},
@@ -137,8 +137,8 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
             doc=json.loads(text(path))
             order=set(doc.get('field_order') or [])
             assert required <= order, (path, required-order)
-    
-    
+
+
     def test_ads_notifications_expose_public_ad_ids(self):
         review=text('aos/services/ads/review.py')
         moderation=text('aos/services/moderation_service.py')
@@ -147,8 +147,8 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         assert moderation.count('ad_id=ad.public_id') >= 2
         assert 'ad_id=ad.name' not in moderation
         assert 'ad_id=ad.public_id' in expiry and 'ad_id=ad.name' not in expiry
-    
-    
+
+
     def test_dependency_signal_changes_reproject_ads_in_bounded_batches(self):
         hooks=text('aos/hooks.py')
         signals=text('aos/services/marketplace_discovery/signals.py')
@@ -157,43 +157,51 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         assert 'marketplace_discovery.signals.user_signal_changed' in hooks
         assert 'limit=size + 1' in signals and 'order_by="name asc"' in signals
         assert 'enqueue_discovery_refresh' in signals
-    
-    
+
+
     def test_missing_ad_index_delete_requires_captured_public_id(self):
         source=text('aos/services/search_ranking_service.py')
         assert 'Missing Ads require enqueue_ad_search_delete with a captured public ID' in source
         assert 'def enqueue_ad_search_delete' in source
-    
-    
+
+
     def test_manual_review_can_override_automatic_nonterminal_decisions(self):
         lifecycle=text('aos/services/ads/lifecycle.py')
         assert 'frozenset({STATUS_REVIEWING, STATUS_DECLINED}), STATUS_ACTIVE' in lifecycle
         assert 'frozenset({STATUS_REVIEWING, STATUS_ACTIVE}), STATUS_DECLINED' in lifecycle
-    
-    
+
+
     def test_saved_search_reuses_live_search_query_minimum(self):
         validation=text('aos/services/ads/validation.py')
         search_query=text('aos/services/marketplace_discovery/search_query.py')
         assert 'Search query must contain at least two characters.' in validation
         assert 'normalize_public_list_filters(dict(payload))' in search_query
-    
-    
+
+
     def test_ads_caught_failures_rollback_only_to_local_savepoint(self):
         api=text('aos/services/ads/api.py')
         assert 'frappe.db.savepoint(savepoint)' in api
         assert 'frappe.db.rollback(save_point=savepoint)' in api
         for path in ('aos/api/ads/create.py','aos/api/ads/update.py','aos/api/ads/status.py','aos/api/ads/review.py','aos/api/ads/drafts.py'):
             assert 'frappe.db.rollback()' not in text(path)
-    
-    
+
+        for path in ('aos/api/ads/create.py','aos/api/ads/update.py','aos/api/ads/status.py','aos/api/ads/review.py'):
+            assert 'transactional=True' in text(path), path
+        drafts = text('aos/api/ads/drafts.py')
+        for operation in ('_save', '_abandon', '_submit'):
+            assert f'run_ads_api({operation}' in drafts
+        for path in ('aos/api/ads/list_ads.py','aos/api/ads/get_ad.py','aos/api/ads/get_my_ad.py','aos/api/ads/list_my_ads.py','aos/api/wishlist/list.py','aos/api/search_ranking/recommendations.py'):
+            assert 'transactional=True' not in text(path), path
+
+
     def test_saved_search_caught_mutations_use_local_savepoints(self):
         api=text('aos/api/saved_search/api.py')
         assert 'frappe.db.savepoint(savepoint)' in api
         assert 'frappe.db.rollback(save_point=savepoint)' in api
         for path in ('aos/api/saved_search/create.py','aos/api/saved_search/update.py','aos/api/saved_search/delete.py'):
             assert 'run_saved_search_mutation' in text(path)
-    
-    
+
+
     def test_image_search_client_has_bounded_transient_retries(self):
         source = text("aos/integrations/ai/image_search_client.py")
         assert "IMAGE_SEARCH_CLIENT_MAX_RETRIES" in source

@@ -5,10 +5,12 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils import now_datetime
 
 from aos.api.ads.get_ad import get_ad_impl
 from aos.api.ads.list_ads import list_ads_impl
 from aos.api.wishlist.list import list_wishlist_impl
+from aos.services.fx_service import FXSnapshot
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
@@ -42,21 +44,54 @@ class TestConversionEndpoints(AOSFeatureTestMixin, FrappeTestCase):
 
     def _remember_rate(self, currency: str):
         if currency not in self.rate_backups:
-            self.rate_backups[currency] = frappe.db.get_value("AOS Exchange Rate", currency, ["currency", "rate_vs_base", "last_updated"], as_dict=True)
+            self.rate_backups[currency] = frappe.db.get_value(
+                "AOS Exchange Rate",
+                currency,
+                ["currency", "rate_vs_base", "base_currency", "rate_version", "provider_timestamp", "last_updated"],
+                as_dict=True,
+            )
 
     def _set_rate(self, currency: str, rate: float | None):
         self._remember_rate(currency)
         if frappe.db.exists("AOS Exchange Rate", currency):
             frappe.delete_doc("AOS Exchange Rate", currency, force=True, ignore_permissions=True)
         if rate is not None:
-            frappe.get_doc({"doctype": "AOS Exchange Rate", "currency": currency, "rate_vs_base": rate}).insert(ignore_permissions=True)
+            now = now_datetime()
+            frappe.get_doc(
+                {
+                    "doctype": "AOS Exchange Rate",
+                    "currency": currency,
+                    "rate_vs_base": rate,
+                    "base_currency": self.base,
+                    "rate_version": f"test-{self.prefix}",
+                    "provider_timestamp": now,
+                    "last_updated": now,
+                }
+            ).insert(ignore_permissions=True)
 
     def _patches(self, module: str, display_currency: str):
-        settings = SimpleNamespace(base_currency=self.base, flash_sale_window_days=7)
+        settings = SimpleNamespace(
+            base_currency=self.base,
+            flash_sale_window_days=7,
+            fx_max_stale_hours=24,
+        )
+        if module == "aos.api.ads.get_ad":
+            fx_boundary = patch(
+                f"{module}.get_fx_snapshot",
+                return_value=FXSnapshot(
+                    base_currency=self.base,
+                    rate_version=f"test-{self.prefix}",
+                    as_of=now_datetime(),
+                    rates={self.base: 1.0},
+                    fresh=True,
+                ),
+            )
+        else:
+            fx_boundary = patch(f"{module}.get_aos_settings_snapshot", return_value=settings)
         return (
             patch(f"{module}.rate_limit", return_value=None),
             patch(f"{module}.resolve_market_context", return_value=(self.country, display_currency, None)),
-            patch(f"{module}.get_aos_settings_snapshot", return_value=settings),
+            fx_boundary,
         )
 
     def test_list_missing_source_rate_keeps_original_number_and_currency(self):
@@ -64,7 +99,7 @@ class TestConversionEndpoints(AOSFeatureTestMixin, FrappeTestCase):
         self._set_rate(self.source, None)
         with self._patches("aos.api.ads.list_ads", self.base)[0], self._patches("aos.api.ads.list_ads", self.base)[1], self._patches("aos.api.ads.list_ads", self.base)[2]:
             response = list_ads_impl(limit=50)
-        item = next(row for row in response["data"]["items"] if row["id"] == self.ad.name)
+        item = next(row for row in response["data"]["items"] if row["id"] == self.ad.public_id)
         self.assertEqual((item["display_price"], item["display_currency"]), (100, self.source))
         self.assertFalse(item["price_conversion"]["available"])
 
@@ -72,7 +107,7 @@ class TestConversionEndpoints(AOSFeatureTestMixin, FrappeTestCase):
         frappe.db.set_value("AOS Ad", self.ad.name, {"currency": self.base, "price": 100})
         self._set_rate(self.target, None)
         with self._patches("aos.api.ads.get_ad", self.target)[0], self._patches("aos.api.ads.get_ad", self.target)[1], self._patches("aos.api.ads.get_ad", self.target)[2]:
-            response = get_ad_impl(ad_id=self.ad.name)
+            response = get_ad_impl(ad_id=self.ad.public_id)
         item = response["data"]["item"]
         self.assertEqual((item["display_price"], item["display_currency"]), (100, self.base))
         self.assertFalse(item["price_conversion"]["available"])
@@ -85,7 +120,7 @@ class TestConversionEndpoints(AOSFeatureTestMixin, FrappeTestCase):
         frappe.set_user(self.buyer_user)
         with self._patches("aos.api.wishlist.list", self.base)[0], self._patches("aos.api.wishlist.list", self.base)[1], self._patches("aos.api.wishlist.list", self.base)[2]:
             response = list_wishlist_impl(limit=50)
-        item = next(row for row in response["data"]["items"] if row["id"] == self.ad.name)
+        item = next(row for row in response["data"]["items"] if row["id"] == self.ad.public_id)
         self.assertEqual((item["display_price"], item["display_currency"]), (100, self.source))
         self.assertFalse(item["price_conversion"]["available"])
 
@@ -95,7 +130,7 @@ class TestConversionEndpoints(AOSFeatureTestMixin, FrappeTestCase):
         self._set_rate(self.target, 4)
         with self._patches("aos.api.ads.list_ads", self.target)[0], self._patches("aos.api.ads.list_ads", self.target)[1], self._patches("aos.api.ads.list_ads", self.target)[2]:
             response = list_ads_impl(limit=50)
-        item = next(row for row in response["data"]["items"] if row["id"] == self.ad.name)
+        item = next(row for row in response["data"]["items"] if row["id"] == self.ad.public_id)
         self.assertEqual((item["display_price"], item["display_currency"]), (200, self.target))
         self.assertTrue(item["price_conversion"]["available"])
         self.assertEqual(item["price_conversion"]["rate"], 2)

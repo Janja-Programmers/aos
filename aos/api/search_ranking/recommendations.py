@@ -42,11 +42,11 @@ def _source(ad_name: str):
         INNER JOIN `tabAOS Seller` s ON s.name=a.seller
         INNER JOIN `tabAOS Profile` p ON p.user=s.user
         INNER JOIN `tabUser` u ON u.name=s.user
-        WHERE a.name=%s
-          AND a.status='Active'
-          AND s.status='Active'
-          AND u.enabled=1
-          AND COALESCE(NULLIF(p.account_status,''), 'Active')='Active'
+        WHERE a.name = %s
+          AND a.status = 'Active'
+          AND s.status = 'Active'
+          AND u.enabled = 1
+          AND COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'
           AND (a.expires_on IS NULL OR a.expires_on >= %s)
         LIMIT 1
         """,
@@ -67,12 +67,12 @@ def _fallback_candidates(*, category: str, exclude: str, limit: int) -> list[str
             INNER JOIN `tabAOS Seller` s ON s.name=a.seller
             INNER JOIN `tabAOS Profile` p ON p.user=s.user
             INNER JOIN `tabUser` u ON u.name=s.user
-            WHERE a.status='Active'
-              AND a.category=%s
-              AND a.public_id<>%s
-              AND s.status='Active'
-              AND u.enabled=1
-              AND COALESCE(NULLIF(p.account_status,''), 'Active')='Active'
+            WHERE a.status = 'Active'
+              AND a.category = %s
+              AND a.public_id <> %s
+              AND s.status = 'Active'
+              AND u.enabled = 1
+              AND COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'
               AND (a.expires_on IS NULL OR a.expires_on >= %s)
             ORDER BY a.average_rating DESC, a.total_reviews DESC, a.creation DESC, a.public_id DESC
             LIMIT %s

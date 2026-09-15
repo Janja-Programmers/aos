@@ -98,7 +98,7 @@ def upsert_ad_draft_impl(**kwargs):
         doc.payload_json=payload; doc.title_hint=hints["title_hint"]; doc.category_hint=hints["category_hint"]; doc.location_hint=hints["location_hint"]; doc.last_step=last_step
         doc.save(ignore_permissions=True)
         return ok("Draft saved.",data={"id":doc.public_id,"status":doc.status,"version":str(doc.modified)})
-    return run_ads_api(_save,fallback="Failed to save draft.",log_title="AOS Save Draft Failed")
+    return run_ads_api(_save,fallback="Failed to save draft.",log_title="AOS Save Draft Failed",transactional=True)
 
 
 def list_my_ad_drafts_impl(**kwargs):
@@ -140,7 +140,7 @@ def abandon_ad_draft_impl(**kwargs):
         if doc.status!="Draft": raise AdsConflictError("Only Draft items can be abandoned.")
         doc.status="Abandoned"; doc.save(ignore_permissions=True)
         return ok("Draft abandoned.",data={"id":doc.public_id,"version":str(doc.modified),"changed":True})
-    return run_ads_api(_abandon,fallback="Failed to abandon draft.",log_title="AOS Abandon Draft Failed")
+    return run_ads_api(_abandon,fallback="Failed to abandon draft.",log_title="AOS Abandon Draft Failed",transactional=True)
 
 
 def submit_ad_draft_impl(**kwargs):
@@ -163,4 +163,4 @@ def submit_ad_draft_impl(**kwargs):
         public_ad_id=str((result.get("data") or {}).get("id") or ""); internal_ad=resolve_ad_name(public_ad_id)
         doc.status="Submitted"; doc.submitted_ad=internal_ad; doc.save(ignore_permissions=True)
         return ok("Draft submitted.",data={"draft_id":doc.public_id,"submitted_ad_id":public_ad_id,"changed":True})
-    return run_ads_api(_submit,fallback="Failed to submit draft.",log_title="AOS Submit Draft Failed")
+    return run_ads_api(_submit,fallback="Failed to submit draft.",log_title="AOS Submit Draft Failed",transactional=True)

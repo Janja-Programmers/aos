@@ -133,9 +133,12 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
 
         with (
             patch("aos.api.ads.create.rate_limit", return_value=None),
-            patch("aos.api.ads.create.validate_ad_media_for_use", return_value=(image_media, None)),
-            patch("aos.api.ads.create.attach_ad_media", return_value=(image_media, None)),
-            patch("aos.api.ads.create.get_media_public_url", return_value=f"https://cdn.example.test/{image_media.name}.jpg"),
+            patch(
+                "aos.api.ads.create.prepare_image_rows",
+                return_value=[{"media": image_media.name, "is_primary": 1, "sort_order": 0}],
+            ),
+            patch("aos.api.ads.create.prepare_video", return_value=None),
+            patch("aos.api.ads.create.attach_all"),
             patch("aos.api.ads.create.enqueue_ad_moderation", return_value=SimpleNamespace(name="MOD-TEST", status="Queued")),
             patch("aos.api.ads.create.record_ad_posted_activity"),
         ):
@@ -147,15 +150,18 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
                 price_type="Fixed",
                 price=123,
                 images=[{"media_id": image_media.name, "is_primary": 1, "sort_order": 0}],
+                idempotency_key=f"{self.prefix}-create-ad",
             )
 
         self.assertTrue(response.get("ok"), response)
-        ad_id = response.get("data", {}).get("id")
-        self.assertTrue(ad_id)
-        self.assertEqual(frappe.db.get_value("AOS Ad", ad_id, "status"), "Reviewing")
-        self.assertEqual(frappe.db.get_value("AOS Ad", ad_id, "currency"), currency)
+        public_ad_id = response.get("data", {}).get("id")
+        self.assertTrue(public_ad_id)
+        ad_name = frappe.db.get_value("AOS Ad", {"public_id": public_ad_id}, "name")
+        self.assertTrue(ad_name)
+        self.assertEqual(frappe.db.get_value("AOS Ad", ad_name, "status"), "Reviewing")
+        self.assertEqual(frappe.db.get_value("AOS Ad", ad_name, "currency"), currency)
         self.assertTrue(frappe.db.exists("AOS Seller", {"user": user}))
-        self.assertEqual(frappe.db.count("AOS Ad Image", {"parent": ad_id}), 1)
+        self.assertEqual(frappe.db.count("AOS Ad Image", {"parent": ad_name}), 1)
 
     def test_shorts_like_and_comment_flow_updates_viewer_state_and_records_comment(self):
         owner = self.make_user("short-owner")

@@ -133,7 +133,7 @@ class TestWishlistAPI(AOSFeatureTestMixin, FrappeTestCase):
         first_page = self._list(limit=1)
         self.assertTrue(first_page.get("ok"), first_page)
         first_data = first_page.get("data", {})
-        self.assertEqual([item.get("id") for item in first_data.get("items", [])], [second_ad.name])
+        self.assertEqual([item.get("id") for item in first_data.get("items", [])], [second_ad.public_id])
         pagination = first_data.get("pagination", {})
         self.assertTrue(pagination.get("has_more"))
         self.assertTrue(pagination.get("next_cursor"))
@@ -142,7 +142,7 @@ class TestWishlistAPI(AOSFeatureTestMixin, FrappeTestCase):
         second_page = self._list(limit=1, cursor=pagination["next_cursor"])
         self.assertTrue(second_page.get("ok"), second_page)
         second_data = second_page.get("data", {})
-        self.assertEqual([item.get("id") for item in second_data.get("items", [])], [self.ad.name])
+        self.assertEqual([item.get("id") for item in second_data.get("items", [])], [self.ad.public_id])
         self.assertFalse(second_data.get("pagination", {}).get("has_more"))
         self.assertIsNone(second_data.get("pagination", {}).get("next_cursor"))
 

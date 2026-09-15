@@ -180,10 +180,14 @@ class TestAdsDomainValidation(FrappeTestCase):
         self.assertEqual(parsed["sort"], "recent")
 
     def test_recent_cursor_round_trip_and_tamper_rejection(self):
-        cursor = encode_recent_cursor(creation="2026-07-24 01:02:03.123456", name="AD-2026-00001")
+        cursor = encode_recent_cursor(
+            geo_bucket=1,
+            creation="2026-07-24 01:02:03.123456",
+            public_id="ad_test-public-id",
+        )
         self.assertEqual(
             decode_recent_cursor(cursor),
-            ("2026-07-24 01:02:03.123456", "AD-2026-00001"),
+            (1, "2026-07-24 01:02:03.123456", "ad_test-public-id"),
         )
         with self.assertRaises(AdsValidationError):
             decode_recent_cursor("not-a-valid-cursor")

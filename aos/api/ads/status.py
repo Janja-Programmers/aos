@@ -61,4 +61,4 @@ def set_ad_status_impl(**kwargs):
         ads_log("status_changed", status=doc.status, outcome="success")
         return ok("Ad lifecycle updated.", data={"id":doc.public_id,"status":doc.status,"version":str(doc.modified),"expires_on":doc.expires_on,"changed":transition.changed})
 
-    return run_ads_api(_change, fallback="Failed to update ad lifecycle.", log_title="AOS Ad Transition Failed")
+    return run_ads_api(_change, fallback="Failed to update ad lifecycle.", log_title="AOS Ad Transition Failed", transactional=True)
