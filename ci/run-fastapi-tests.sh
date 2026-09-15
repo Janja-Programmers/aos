@@ -5,6 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib.sh"
 
+target="${1:-all}"
+if [[ "${target}" == "background-removal" ]]; then
+    exec "${SCRIPT_DIR}/run-background-removal-tests.sh"
+fi
+
 assert_python_version
 python_executable="$(python314)"
 
@@ -43,5 +48,10 @@ run_one() {
 }
 
 while IFS= read -r service; do
+    [[ "${service}" == "background-removal" ]] && continue
     run_one "${service}"
-done < <(service_list "${1:-all}")
+done < <(service_list "${target}")
+
+if [[ "${target}" == "all" ]]; then
+    "${SCRIPT_DIR}/run-background-removal-tests.sh"
+fi

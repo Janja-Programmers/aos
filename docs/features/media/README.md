@@ -118,9 +118,11 @@ Infrastructure identity and secrets must not be stored in Desk. Media uses the p
 | `AOS_MEDIA_PROCESSING_RECOVERY_LIMIT` | Bounded reconciliation batch size. |
 | `BACKGROUND_REMOVAL_SERVICE_URL` | Private deployment URL of the background-removal service. |
 | `BACKGROUND_REMOVAL_SERVICE_SECRET` | Internal bearer credential shared only by Media workers and the processor. |
-| `BACKGROUND_REMOVAL_MODEL_NAME` | rembg model selected by the processor; default `u2net`. |
 | `BACKGROUND_REMOVAL_MAX_IMAGE_BYTES` | Processor-side hard request ceiling, independent of the runtime product policy in AOS Settings. |
 | `BACKGROUND_REMOVAL_MAX_IMAGE_PIXELS` | Processor-side decoded-pixel ceiling. |
+| `BACKGROUND_REMOVAL_MAX_CONCURRENT_INFERENCES` | Per-replica bounded ONNX inference concurrency; default `2`. |
+| `BACKGROUND_REMOVAL_INFERENCE_ACQUIRE_TIMEOUT_SECONDS` | Maximum wait for an inference slot before a retryable `BACKGROUND_REMOVAL_BUSY`; default `1`. |
+| `BACKGROUND_REMOVAL_CPU_THREADS` | Per-replica OpenMP thread ceiling used by the CPU-only inference runtime; default `2`. |
 
 The MinIO container uses `MINIO_*` deployment variables because MinIO itself is infrastructure. Media application code uses only the provider-neutral `AOS_OBJECT_STORAGE_*` contract.
 
@@ -555,7 +557,7 @@ Raw S3/MinIO/Hetzner/AWS exceptions, bucket credentials, internal hosts, object 
 
 The repository Compose keeps MinIO for development/staging. MinIO stores `/data` in the named `minio_data` volume so container recreation does not discard objects. Its API and console bind to `127.0.0.1` by default, both have explicit ports, health checks, restart policy and resource/pid limits. Browser upload CORS is explicit and must not be broad anonymous bucket write access; clients upload with presigned operations.
 
-The background-removal container has a readiness health check that loads the rembg model before the container is considered healthy, restart/resource/pid limits, localhost-bound host port by default, internal bearer authentication and a non-root runtime user. The processor is intentionally CPU-only today, always returns PNG, and uses the image-defined `/models/rembg` cache path backed by the `background_removal_models` named volume; there are no redundant device/output/model-path environment switches. Media workers remain responsible for fetching/storing Media objects.
+The background-removal container is an immutable, offline-capable inference appliance. It uses its own digest-pinned Python 3.13 runtime because the reviewed rembg stack is validated independently from the Frappe/other companion-service Python 3.14 runtime. The reviewed U2Net model is downloaded only during image build, verified against the repository manifest, stored below the current `REMBG_HOME=/opt/aos/rembg` layout, made root-owned/read-only, and re-verified by SHA-256 before an ONNX session is created. There is no mutable model volume and no runtime model selector or first-request model download. The container runs as UID/GID 10001 with a read-only root filesystem, all Linux capabilities dropped, and only `/tmp` plus the Numba JIT cache exposed as ephemeral tmpfs. Docker health uses `/ready`, so a replica is not healthy until the bundled model is usable. Inference concurrency is bounded per replica and saturation returns retryable `BACKGROUND_REMOVAL_BUSY`. Media workers remain responsible for fetching/storing Media objects.
 
 Production should not expose the MinIO admin console, should set `AOS_OBJECT_STORAGE_MANAGE_BUCKETS=false`, should pre-provision object buckets/CORS/policy and should point `AOS_OBJECT_STORAGE_*` at Hetzner. `AOS_MEDIA_PUBLIC_BASE_URL` should point at the production CDN/media domain. The same application contract supports AWS S3 later.
 

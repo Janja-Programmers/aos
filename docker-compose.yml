@@ -472,22 +472,30 @@ services:
 
     environment:
       BACKGROUND_REMOVAL_SERVICE_SECRET: ${BACKGROUND_REMOVAL_SERVICE_SECRET:?BACKGROUND_REMOVAL_SERVICE_SECRET is required}
-      BACKGROUND_REMOVAL_MODEL_NAME: ${BACKGROUND_REMOVAL_MODEL_NAME:-u2net}
       BACKGROUND_REMOVAL_MAX_IMAGE_BYTES: ${BACKGROUND_REMOVAL_MAX_IMAGE_BYTES:-10485760}
       BACKGROUND_REMOVAL_MAX_IMAGE_PIXELS: ${BACKGROUND_REMOVAL_MAX_IMAGE_PIXELS:-16000000}
+      BACKGROUND_REMOVAL_MAX_CONCURRENT_INFERENCES: ${BACKGROUND_REMOVAL_MAX_CONCURRENT_INFERENCES:-2}
+      BACKGROUND_REMOVAL_INFERENCE_ACQUIRE_TIMEOUT_SECONDS: ${BACKGROUND_REMOVAL_INFERENCE_ACQUIRE_TIMEOUT_SECONDS:-1}
+      OMP_NUM_THREADS: ${BACKGROUND_REMOVAL_CPU_THREADS:-2}
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
 
     ports:
       - "${BACKGROUND_REMOVAL_BIND_ADDRESS:-127.0.0.1}:${BACKGROUND_REMOVAL_PORT:-8120}:8000"
 
-    volumes:
-      - background_removal_models:/models/rembg
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+      - /var/cache/aos/numba:size=256m,mode=0700,uid=10001,gid=10001
+    cap_drop:
+      - ALL
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/ready"]
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8000/ready"]
       interval: 30s
-      timeout: 30s
-      retries: 10
-      start_period: 300s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
 
     mem_limit: "${BACKGROUND_REMOVAL_MEMORY_LIMIT:-3g}"
     cpus: "${BACKGROUND_REMOVAL_CPU_LIMIT:-2.00}"
@@ -1233,9 +1241,6 @@ services:
       - aos_net
 
 volumes:
-  background_removal_models:
-    name: aos_background_removal_models
-
   image_search_models:
     name: aos_image_search_models
 

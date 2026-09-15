@@ -72,6 +72,7 @@ def validate_versions(root: Path, failures: list[str]) -> None:
 
 	for key in (
 		"PYTHON_VERSION",
+		"BACKGROUND_REMOVAL_PYTHON_VERSION",
 		"FRAPPE_BENCH_VERSION",
 		"NODE_VERSION",
 		"SHELLCHECK_VERSION",
@@ -85,6 +86,8 @@ def validate_versions(root: Path, failures: list[str]) -> None:
 			failures.append(f"ci/versions.env: {key} must be an exact three-part version")
 	if not values.get("PYTHON_VERSION", "").startswith("3.14."):
 		failures.append("ci/versions.env: PYTHON_VERSION must be Python 3.14")
+	if not values.get("BACKGROUND_REMOVAL_PYTHON_VERSION", "").startswith("3.13."):
+		failures.append("ci/versions.env: BACKGROUND_REMOVAL_PYTHON_VERSION must be Python 3.13")
 	for key in (
 		"FRAPPE_REF",
 		"FRAPPE_BENCH_REF",
@@ -105,18 +108,23 @@ def validate_versions(root: Path, failures: list[str]) -> None:
 			failures.append(f"ci/versions.env: {key} must be a SHA-256")
 	if not re.fullmatch(r"v\d+\.\d+\.\d+", values.get("FRAPPE_RELEASE", "")):
 		failures.append("ci/versions.env: FRAPPE_RELEASE must be an exact stable release tag")
-	for key in ("MARIADB_IMAGE", "REDIS_IMAGE", "PYTHON_IMAGE"):
+	for key in ("MARIADB_IMAGE", "REDIS_IMAGE", "PYTHON_IMAGE", "BACKGROUND_REMOVAL_PYTHON_IMAGE"):
 		if not DIGEST_IMAGE.fullmatch(values.get(key, "")):
 			failures.append(f"ci/versions.env: {key} must be an immutable digest reference")
 
 
 def validate_matrices(root: Path, failures: list[str]) -> None:
 	expected = (root / "ci" / "service-matrix.txt").read_text(encoding="utf-8").splitlines()
+	standard_runtime = [service for service in expected if service != "background-removal"]
 	workflow = yaml.safe_load((root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
 	for job_name in ("fastapi-unit-tests", "python314-runtime-compatibility"):
 		actual = workflow["jobs"][job_name]["strategy"]["matrix"]["service"]
-		if actual != expected:
-			failures.append(f".github/workflows/ci.yml: {job_name} matrix differs from ci/service-matrix.txt")
+		if actual != standard_runtime:
+			failures.append(
+				f".github/workflows/ci.yml: {job_name} matrix must contain every standard Python 3.14 service and exclude background-removal"
+			)
+	if "background-removal-runtime" not in workflow.get("jobs", {}):
+		failures.append(".github/workflows/ci.yml: dedicated background-removal-runtime job is missing")
 
 
 def main() -> int:

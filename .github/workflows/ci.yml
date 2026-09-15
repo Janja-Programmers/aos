@@ -131,7 +131,6 @@ jobs:
       matrix:
         service:
           - analytics-pipeline
-          - background-removal
           - image-search
           - moderation
           - notification-delivery
@@ -165,7 +164,6 @@ jobs:
       matrix:
         service:
           - analytics-pipeline
-          - background-removal
           - image-search
           - moderation
           - notification-delivery
@@ -187,6 +185,97 @@ jobs:
         with:
           name: python314-${{ matrix.service }}
           path: ${{ runner.temp }}/aos-artifacts/compatibility/${{ matrix.service }}
+          if-no-files-found: error
+          retention-days: 14
+
+  background-removal-runtime:
+    name: background-removal-runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install exact Background Removal Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: 3.13.13
+      - name: Run Background Removal unit and contract tests
+        run: |
+          AOS_CI_ARTIFACTS="${RUNNER_TEMP}/aos-artifacts" ci/run-background-removal-tests.sh
+          python ci/validate-background-removal-runtime.py
+      - name: Build immutable Background Removal image
+        run: docker build --pull --tag aos-background-removal:ci infra/background-removal
+      - name: Prove offline immutable runtime
+        env:
+          BACKGROUND_REMOVAL_TEST_SECRET: ci-background-removal-secret-0123456789
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "${RUNNER_TEMP}/aos-artifacts/background-removal-runtime"
+          docker run --detach --name aos-background-removal-ci \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,size=256m,mode=1777 \
+            --tmpfs /var/cache/aos/numba:rw,nosuid,nodev,size=256m,mode=0700,uid=10001,gid=10001 \
+            --env "BACKGROUND_REMOVAL_SERVICE_SECRET=${BACKGROUND_REMOVAL_TEST_SECRET}" \
+            aos-background-removal:ci
+
+          ready=0
+          for attempt in $(seq 1 90); do
+            if docker exec aos-background-removal-ci curl --fail --silent http://127.0.0.1:8000/ready \
+              >"${RUNNER_TEMP}/aos-artifacts/background-removal-runtime/ready.json" 2>/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [[ "${ready}" != "1" ]]; then
+            docker logs aos-background-removal-ci || true
+            exit 1
+          fi
+
+          docker exec aos-background-removal-ci sh -lc '
+            set -eu
+            test "$(id -u)" = "10001"
+            test "$(python -c '"'"'import platform; print(platform.python_version())'"'"')" = "3.13.13"
+            test "$REMBG_HOME" = "/opt/aos/rembg"
+            test "$NUMBA_CACHE_DIR" = "/var/cache/aos/numba"
+            test -w "$NUMBA_CACHE_DIR"
+            test ! -w /opt/aos/rembg/models/u2net/u2net.onnx
+            echo "8d10d2f3bb75ae3b6d527c77944fc5e7dcd94b29809d47a739a7a728a912b491  /opt/aos/rembg/models/u2net/u2net.onnx" | sha256sum -c -
+            if touch /app/should-not-write 2>/dev/null; then exit 1; fi
+          '
+
+          docker exec aos-background-removal-ci python - <<'PY'
+          from PIL import Image
+          Image.new("RGB", (16, 16), (255, 0, 0)).save("/tmp/input.png")
+          PY
+          docker exec aos-background-removal-ci sh -lc '
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${BACKGROUND_REMOVAL_SERVICE_SECRET}" \
+              -F "image=@/tmp/input.png;type=image/png" \
+              http://127.0.0.1:8000/remove-background \
+              --output /tmp/output.png
+            python - <<'"'"'PY'"'"'
+          from PIL import Image
+          with Image.open("/tmp/output.png") as image:
+              image.load()
+              assert image.format == "PNG"
+              assert image.mode == "RGBA"
+          PY
+          '
+          docker inspect aos-background-removal-ci >"${RUNNER_TEMP}/aos-artifacts/background-removal-runtime/inspect.json"
+          docker logs aos-background-removal-ci >"${RUNNER_TEMP}/aos-artifacts/background-removal-runtime/container.log" 2>&1
+      - name: Remove runtime test container
+        if: always()
+        run: docker rm --force aos-background-removal-ci >/dev/null 2>&1 || true
+      - name: Upload Background Removal runtime evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: background-removal-runtime
+          path: ${{ runner.temp }}/aos-artifacts
           if-no-files-found: error
           retention-days: 14
 
@@ -387,6 +476,7 @@ jobs:
       - semgrep
       - fastapi-unit-tests
       - python314-runtime-compatibility
+      - background-removal-runtime
       - frappe-tests
       - production-foundation-unit-tests
       - compose-validation

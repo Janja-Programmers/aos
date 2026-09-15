@@ -78,7 +78,26 @@ Use this after image-search deployment, Qdrant restore issues, vector corruption
 
 ## Background-removal service check
 
-Directly test the private service with a known image:
+Background Removal must be both alive and model-ready. The production image bundles the reviewed U2Net artifact under `REMBG_HOME=/opt/aos/rembg`; runtime Internet access is not required to become ready.
+
+```bash
+curl -fsS http://127.0.0.1:8120/health | python3 -m json.tool
+curl -fsS http://127.0.0.1:8120/ready | python3 -m json.tool
+
+docker inspect aos-background-removal \
+  --format='Status={{.State.Status}} Health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} ReadonlyRootfs={{.HostConfig.ReadonlyRootfs}} CapDrop={{json .HostConfig.CapDrop}}'
+
+docker compose exec background-removal sh -lc '
+set -eu
+test "$(id -u)" = "10001"
+test "$REMBG_HOME" = "/opt/aos/rembg"
+test -w "$NUMBA_CACHE_DIR"
+test ! -w /opt/aos/rembg/models/u2net/u2net.onnx
+echo "8d10d2f3bb75ae3b6d527c77944fc5e7dcd94b29809d47a739a7a728a912b491  /opt/aos/rembg/models/u2net/u2net.onnx" | sha256sum -c -
+'
+```
+
+Directly test the private inference boundary with a known image:
 
 ```bash
 curl -X POST http://127.0.0.1:8120/remove-background \
@@ -87,6 +106,8 @@ curl -X POST http://127.0.0.1:8120/remove-background \
   --output /tmp/aos-removed-bg.png
 file /tmp/aos-removed-bg.png
 ```
+
+A replica returning `/health` 200 but `/ready` 503 is alive but must not receive inference traffic. Do not weaken readiness or enable runtime model downloads to recover it; inspect `docker compose logs background-removal` and verify the immutable model/cache runtime contract first.
 
 Use this when background removal fails. The client-facing Media endpoint queues a durable processing job rather than calling this service directly; if the private service test works but AOS processing fails, inspect Media ownership, the `long` worker queue, processing-job state, rate limits, and `aos.api.v1.media.remove_background` logs.
 

@@ -2,8 +2,7 @@
 
 ## Pinned toolchain
 
-AOS targets Python `3.14.6` exclusively (`>=3.14,<3.15`). The framework and
-toolchain pins are machine-readable in `ci/versions.env`: stable Frappe
+AOS Frappe and the standard companion-service runtime target Python `3.14.6` (`>=3.14,<3.15`). Background Removal is an intentional isolated exception pinned to Python `3.13.13`; its rembg/ONNX runtime is validated by a dedicated production-runtime gate rather than the generic Python 3.14 compatibility matrix. The framework and toolchain pins are machine-readable in `ci/versions.env`: stable Frappe
 `v16.27.1` at commit `f33ac3f00ab818e21b25ddbec93efb653fd9aa1b`,
 Frappe Bench `5.31.0`, and Node `24.18.0`. Set `AOS_PYTHON` to an executable
 for Python 3.14.6 when it is not available as `python3.14`.
@@ -45,11 +44,7 @@ python ci/validate_api_documentation.py --write
 python ci/validate_api_documentation.py
 ```
 
-`make fastapi` uses reduced, exactly pinned test dependencies so no model is
-downloaded or initialized. `make compat` is deliberately separate: it installs
-each service's complete hash-locked production dependency graph, runs
-`pip check`, and imports its application/configuration entry points under
-Python 3.14.6.
+`make fastapi` uses reduced, exactly pinned test dependencies so no model is downloaded or initialized by unit tests. It runs standard services under Python 3.14.6 and then delegates Background Removal to `ci/run-background-removal-tests.sh` under exact Python 3.13.13. `make compat` likewise checks standard production locks under Python 3.14.6 and delegates Background Removal to its dedicated Python 3.13.13 compatibility runner. CI keeps those runtimes in separate jobs: the Background Removal runtime job installs its production lock, builds the immutable model image, starts it with networking disabled and a read-only root filesystem, requires `/ready`, verifies the model checksum/permissions/runtime UID, and performs an actual PNG inference.
 
 Each service has a documented line-coverage floor in
 `ci/coverage-floors.env`; the test runner passes that value to pytest-cov and
@@ -114,23 +109,19 @@ make fastapi
 make compat
 ```
 
-The script regenerates hash-locked root, CI, service production, and reduced
-service-test locks. Do not hand-edit generated lock files. Test-only
-requirements remain separate from production requirements and use exact
-versions.
+The script regenerates hash-locked root, CI, service production, and reduced service-test locks. Standard service locks target the repository Python 3.14 interpreter; Background Removal locks target `BACKGROUND_REMOVAL_PYTHON_VERSION` (3.13.13). Do not hand-edit generated lock files. Test-only requirements remain separate from production requirements and use exact versions.
 
 ## Adding a FastAPI service
 
-Add the service name to all three locations, failing the review if any differ:
+For a standard FastAPI companion service, add the service name to all three locations, failing the review if any differ:
 
 1. `ci/service-matrix.txt` (local source of truth).
 2. The `fastapi-unit-tests` matrix in `.github/workflows/ci.yml`.
 3. The `python314-runtime-compatibility` matrix in the same workflow.
 
-Also provide `requirements.txt`, `requirements.lock`,
-`requirements-test.txt`, `requirements-test.lock`, a digest-pinned Python 3.14 Dockerfile, an importable
-`app.main`, and collected tests under `tests/`. Update Compose with a
-healthcheck and loopback host binding when it publishes a private port.
+Also provide `requirements.txt`, `requirements.lock`, `requirements-test.txt`, `requirements-test.lock`, a digest-pinned Python 3.14 Dockerfile, an importable `app.main`, and collected tests under `tests/`. Update Compose with a healthcheck and loopback host binding when it publishes a private port.
+
+A service that genuinely requires a different production interpreter must not be silently added to the Python 3.14 matrices. It needs an explicit version/image pin, target-aware lock generation, a dedicated test/runtime job, repository validator coverage, and inclusion in the required CI gate. Background Removal is the reference exception: it is pinned to Python 3.13.13 and uses `ci/run-background-removal-tests.sh` plus the `background-removal-runtime` CI job.
 
 ## Prerequisites and limitations
 

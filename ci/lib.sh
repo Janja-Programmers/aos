@@ -42,6 +42,28 @@ assert_python_version() {
         || die "Expected Python ${PYTHON_VERSION}; found ${actual} at ${python_executable}."
 }
 
+background_removal_python() {
+    if [[ -n "${AOS_BACKGROUND_REMOVAL_PYTHON:-}" ]]; then
+        [[ -x "${AOS_BACKGROUND_REMOVAL_PYTHON}" ]] \
+            || die "AOS_BACKGROUND_REMOVAL_PYTHON is not executable: ${AOS_BACKGROUND_REMOVAL_PYTHON}"
+        printf '%s\n' "${AOS_BACKGROUND_REMOVAL_PYTHON}"
+        return
+    fi
+
+    command -v "python${BACKGROUND_REMOVAL_PYTHON_VERSION%.*}" >/dev/null 2>&1 \
+        || die "Python ${BACKGROUND_REMOVAL_PYTHON_VERSION} is required for background-removal. Set AOS_BACKGROUND_REMOVAL_PYTHON to its executable."
+    command -v "python${BACKGROUND_REMOVAL_PYTHON_VERSION%.*}"
+}
+
+assert_background_removal_python_version() {
+    local python_executable
+    python_executable="$(background_removal_python)"
+    local actual
+    actual="$(${python_executable} -c 'import platform; print(platform.python_version())')"
+    [[ "${actual}" == "${BACKGROUND_REMOVAL_PYTHON_VERSION}" ]] \
+        || die "Expected background-removal Python ${BACKGROUND_REMOVAL_PYTHON_VERSION}; found ${actual} at ${python_executable}."
+}
+
 assert_service() {
     local service="$1"
     [[ -n "${service}" ]] || die "A service name is required."

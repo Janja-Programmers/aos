@@ -9,9 +9,9 @@ help:
 	  'make hygiene                    Tracked-file and secret scan' \
 	  'make audit                      Audit every production and CI dependency lock' \
 	  'make semgrep                    Run pinned Frappe/Python Semgrep rules' \
-	  'make fastapi                    Unit-test all eight FastAPI services' \
+	  'make fastapi                    Unit-test all eight FastAPI services across their pinned runtimes' \
 	  'make fastapi-service SERVICE=x  Unit-test one service' \
-	  'make compat                     Install/check all production service locks' \
+	  'make compat                     Install/check all production service locks across their pinned runtimes' \
 	  'make compat-service SERVICE=x   Install/check one production service lock' \
 	  'make frappe                     Run AOS tests in configured Bench/site' \
 	  'make compose                    Validate Compose without starting services' \

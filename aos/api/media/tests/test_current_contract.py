@@ -62,15 +62,25 @@ class MediaCurrentContractTests(unittest.TestCase):
         compose = self.source("docker-compose.yml")
         current = {
             "BACKGROUND_REMOVAL_SERVICE_SECRET",
-            "BACKGROUND_REMOVAL_MODEL_NAME",
             "BACKGROUND_REMOVAL_MAX_IMAGE_BYTES",
             "BACKGROUND_REMOVAL_MAX_IMAGE_PIXELS",
+            "BACKGROUND_REMOVAL_MAX_CONCURRENT_INFERENCES",
+            "BACKGROUND_REMOVAL_INFERENCE_ACQUIRE_TIMEOUT_SECONDS",
         }
         for name in current:
             self.assertIn(name, config)
             self.assertIn(name, env_example)
             self.assertIn(name, compose)
-        self.assertIn("background_removal_models:/models/rembg", compose)
+        self.assertNotIn("BACKGROUND_REMOVAL_MODEL_NAME", compose)
+        self.assertNotIn("background_removal_models", compose)
+        background = compose.split("  background-removal:", 1)[1].split("  video-api:", 1)[0]
+        self.assertIn("read_only: true", background)
+        self.assertIn("/var/cache/aos/numba", background)
+        self.assertIn("cap_drop:", background)
+        self.assertIn("- ALL", background)
+        dockerfile = self.source("infra/background-removal/Dockerfile")
+        self.assertIn("REMBG_HOME=/opt/aos/rembg", dockerfile)
+        self.assertNotIn("U2NET" + "_HOME", dockerfile)
 
 
     def test_ai_companions_are_ready_before_docker_marks_them_healthy(self):

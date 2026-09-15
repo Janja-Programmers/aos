@@ -19,6 +19,15 @@ done
 uv pip compile --python "${python_executable}" --generate-hashes \
 	"${CI_ROOT}/pyproject.toml" -o "${CI_ROOT}/ci/requirements/root-production.lock"
 while IFS= read -r service; do
+	if [[ "${service}" == "background-removal" ]]; then
+		uv pip compile --python-version "${BACKGROUND_REMOVAL_PYTHON_VERSION}" --generate-hashes \
+			"${CI_ROOT}/infra/${service}/requirements.txt" \
+			-o "${CI_ROOT}/infra/${service}/requirements.lock"
+		uv pip compile --python-version "${BACKGROUND_REMOVAL_PYTHON_VERSION}" --generate-hashes \
+			"${CI_ROOT}/infra/${service}/requirements-test.txt" \
+			-o "${CI_ROOT}/infra/${service}/requirements-test.lock"
+		continue
+	fi
 	uv pip compile --python "${python_executable}" --generate-hashes \
 		"${CI_ROOT}/infra/${service}/requirements.txt" \
 		-o "${CI_ROOT}/infra/${service}/requirements.lock"

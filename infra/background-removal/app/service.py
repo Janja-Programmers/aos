@@ -13,6 +13,9 @@ class BackgroundRemovalService:
         self.settings = get_settings()
         self.processor = BackgroundRemovalProcessor(self.settings)
 
+    def warmup(self) -> None:
+        self.processor.ensure_loaded()
+
     def health(self) -> dict:
         return {
             "ok": True,
