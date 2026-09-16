@@ -82,10 +82,12 @@ class TestRecoverableDeletionContracts(unittest.TestCase):
 
 
     def test_preserved_marketplace_rows_are_hidden_in_secondary_public_paths(self):
+        # Eligibility may be enforced directly or through one canonical public-Ad
+        # boundary. Keep this contract aligned with the Ads/Wishlist DRY rule:
+        # secondary consumers must not grow their own seller/account visibility
+        # implementation merely to duplicate these predicates.
         direct_eligibility_paths = (
             "aos/api/ads/list_ads.py",
-            "aos/api/ads/get_ad.py",
-            "aos/api/wishlist/list.py",
             "aos/api/search_ranking/recommendations.py",
             "aos/services/marketplace_discovery/projection.py",
         )
@@ -95,6 +97,22 @@ class TestRecoverableDeletionContracts(unittest.TestCase):
             self.assertNotIn("p.is_deleted", source, relative)
             self.assertNotIn("profile.is_deleted", source, relative)
             self.assertIn("account_status", source, relative)
+
+        visibility = self._source("aos/services/ads/visibility.py")
+        self.assertIn("enabled = 1", visibility)
+        self.assertIn("account_status", visibility)
+        self.assertNotIn("p.is_deleted", visibility)
+        self.assertNotIn("profile.is_deleted", visibility)
+
+        get_ad = self._source("aos/api/ads/get_ad.py")
+        self.assertIn("require_public_ad_for_viewer", get_ad)
+        self.assertNotIn("p.is_deleted", get_ad)
+        self.assertNotIn("profile.is_deleted", get_ad)
+
+        wishlist = self._source("aos/api/wishlist/list.py")
+        self.assertIn("load_public_ad_items", wishlist)
+        self.assertNotIn("p.is_deleted", wishlist)
+        self.assertNotIn("profile.is_deleted", wishlist)
 
         image_search = self._source("aos/api/ads/image_search.py")
         self.assertIn("load_public_ad_items", image_search)
