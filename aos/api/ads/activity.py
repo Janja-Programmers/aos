@@ -84,7 +84,7 @@ def _get_primary_ad_image(ad_id: str) -> str:
             "parent": ad_id,
             "parenttype": AD_DOCTYPE,
         },
-        fields=["media", "image", "is_primary", "sort_order"],
+        fields=["media", "is_primary", "sort_order"],
         order_by="is_primary desc, sort_order asc",
         limit=1,
     )
@@ -93,7 +93,9 @@ def _get_primary_ad_image(ad_id: str) -> str:
         return ""
 
     try:
-        from aos.api.ads.media import get_ad_image_url
+        from aos.api.ads.media import get_ad_image_url, project_ad_image_urls
+
+        project_ad_image_urls(rows)
         return get_ad_image_url(rows[0])
     except Exception:
         return ""
@@ -183,7 +185,7 @@ def record_ad_view_activity(
     if not user:
         return None
 
-    target = _load_ad_target(ad_id)
+    target = _safe_record("load_ad_target", _load_ad_target, ad_id)
     if not target:
         return None
 
@@ -213,7 +215,7 @@ def record_ad_wishlist_activity(
     if not user:
         return None
 
-    target = _load_ad_target(ad_id)
+    target = _safe_record("load_ad_target", _load_ad_target, ad_id)
     if not target:
         return None
 
@@ -260,7 +262,7 @@ def record_ad_posted_activity(
     if not user:
         return None
 
-    target = _load_ad_target(ad_id)
+    target = _safe_record("load_ad_target", _load_ad_target, ad_id)
     if not target:
         return None
 
@@ -290,7 +292,7 @@ def record_ad_report_activity(
     if not user or not report_id:
         return None
 
-    target = _load_ad_target(ad_id)
+    target = _safe_record("load_ad_target", _load_ad_target, ad_id)
     if not target:
         return None
 

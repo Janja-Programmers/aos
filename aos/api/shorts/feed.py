@@ -15,6 +15,7 @@ import frappe
 from aos.api.shared.auth import require_login, current_user
 from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok, fail
+from aos.api.ads.media import project_ad_thumbnail_urls
 from aos.api.shared.validators import require_id
 from aos.api.shared.sql_safety import clean_safe_docnames
 
@@ -273,6 +274,7 @@ def _build_response(
         else len(safe_rows) > limit
     )
     visible_rows = safe_rows[:limit]
+    project_ad_thumbnail_urls(visible_rows)
 
     short_ids = [
         row.get("name")
@@ -384,14 +386,14 @@ def _select_short_rows_sql() -> str:
             ad.price AS ad_price,
             ad.currency AS ad_currency,
             (
-                SELECT adi.image
+                SELECT adi.media
                 FROM `tabAOS Ad Image` adi
                 WHERE adi.parent = ad.name
                 AND adi.parenttype = 'AOS Ad'
                 AND adi.parentfield = 'images'
                 ORDER BY adi.is_primary DESC, adi.sort_order ASC, adi.idx ASC
                 LIMIT 1
-            ) AS ad_thumbnail
+            ) AS ad_thumbnail_media
 
         FROM `tabAOS Short` s
         LEFT JOIN `tabUser` u ON u.name = s.owner

@@ -8,6 +8,7 @@ import frappe
 from frappe.utils import add_days, getdate, nowdate
 
 from aos.api.ads.category_filters import resolve_category_filter_values
+from aos.api.ads.media import project_ad_image_urls
 from aos.api.ads.serializers import serialize_ad_list_item
 from aos.api.shared.auth import require_login
 from aos.api.shared.market_context import resolve_market_context
@@ -297,10 +298,11 @@ def list_wishlist_impl(**kwargs):
             image_rows = frappe.get_all(
                 "AOS Ad Image",
                 filters={"parenttype": "AOS Ad", "parent": ["in", ad_names]},
-                fields=["parent", "media", "image", "is_primary", "sort_order"],
+                fields=["parent", "media", "is_primary", "sort_order"],
                 order_by="parent asc, is_primary desc, sort_order asc, name asc",
                 limit=max(1, len(ad_names) * MAX_IMAGES),
             )
+            project_ad_image_urls(image_rows)
             for image in image_rows:
                 images_by_ad.setdefault(image.parent, []).append(image)
 

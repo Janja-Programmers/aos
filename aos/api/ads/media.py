@@ -140,6 +140,48 @@ def project_ad_image_urls(rows: list[Any]) -> list[Any]:
     return rows
 
 
+def project_ad_thumbnail_urls(
+    rows: list[Any],
+    *,
+    ad_field: str = "ad",
+    media_field: str = "ad_thumbnail_media",
+    output_field: str = "ad_thumbnail",
+) -> list[Any]:
+    """Project one canonical Ad image Media reference per response row in one query."""
+    attachments: list[tuple[str, str]] = []
+    for row in rows or []:
+        if isinstance(row, dict):
+            media_id = str(row.get(media_field) or "").strip()
+            ad_name = str(row.get(ad_field) or "").strip()
+        else:
+            media_id = str(getattr(row, media_field, "") or "").strip()
+            ad_name = str(getattr(row, ad_field, "") or "").strip()
+        if media_id and ad_name:
+            attachments.append((media_id, ad_name))
+
+    urls = (
+        MediaService().get_public_attachment_url_map(
+            attachments,
+            purpose="ad_image",
+            attached_doctype=AD_DOCTYPE,
+            attached_field="images",
+        )
+        if attachments
+        else {}
+    )
+
+    for row in rows or []:
+        if isinstance(row, dict):
+            media_id = str(row.get(media_field) or "").strip()
+            ad_name = str(row.get(ad_field) or "").strip()
+            row[output_field] = urls.get((media_id, ad_name), "")
+        else:
+            media_id = str(getattr(row, media_field, "") or "").strip()
+            ad_name = str(getattr(row, ad_field, "") or "").strip()
+            setattr(row, output_field, urls.get((media_id, ad_name), ""))
+    return rows
+
+
 def project_ad_video_url(ad_doc: Any) -> str:
     """Project the one canonical attached Ad video through Media."""
     media_id = str(getattr(ad_doc, "video_media", "") or "").strip()

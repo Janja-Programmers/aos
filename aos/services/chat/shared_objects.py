@@ -11,6 +11,7 @@ from aos.api.shared.blocking import get_blocked_user_set
 from aos.api.shared.user_display import get_user_display_map
 from aos.services.accounts.constants import ACCOUNT_STATUS_ACTIVE
 from aos.services.sellers.identity import public_seller_id_for_name
+from aos.services.media.media_service import MediaService
 
 
 def _clean_ids(values: Iterable[str]) -> list[str]:
@@ -43,7 +44,7 @@ def _fetch_ad_thumbnails(ad_ids: list[str]) -> dict[str, str | None]:
         return {}
     rows = frappe.db.sql(
         """
-        SELECT adi.parent AS ad, adi.image AS image
+        SELECT adi.parent AS ad, adi.media AS media
         FROM `tabAOS Ad Image` adi
         INNER JOIN (
             SELECT ranked.parent, MIN(ranked.rank_key) AS best_rank
@@ -58,8 +59,8 @@ def _fetch_ad_thumbnails(ad_ids: list[str]) -> dict[str, str | None]:
                 WHERE parent IN %(ad_ids)s
                   AND parenttype = 'AOS Ad'
                   AND parentfield = 'images'
-                  AND image IS NOT NULL
-                  AND image != ''
+                  AND media IS NOT NULL
+                  AND media != ''
             ) ranked
             GROUP BY ranked.parent
         ) best
@@ -76,7 +77,22 @@ def _fetch_ad_thumbnails(ad_ids: list[str]) -> dict[str, str | None]:
         {"ad_ids": tuple(ad_ids)},
         as_dict=True,
     )
-    return {str(row.ad): row.image for row in rows}
+    attachments = [
+        (str(row.media or "").strip(), str(row.ad or "").strip())
+        for row in rows
+        if str(row.media or "").strip() and str(row.ad or "").strip()
+    ]
+    urls = MediaService().get_public_attachment_url_map(
+        attachments,
+        purpose="ad_image",
+        attached_doctype="AOS Ad",
+        attached_field="images",
+    ) if attachments else {}
+    return {
+        ad_id: urls.get((media_id, ad_id))
+        for media_id, ad_id in attachments
+        if urls.get((media_id, ad_id))
+    }
 
 
 def _eligible_ad_rows(ad_ids: list[str]) -> tuple[list[Any], dict[str, Any], dict[str, Any], dict[str, Any]]:

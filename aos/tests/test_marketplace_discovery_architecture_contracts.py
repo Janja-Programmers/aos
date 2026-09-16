@@ -238,3 +238,25 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         assert "RETRYABLE_STATUS_CODES" in source
         assert "_sleep_before_retry" in source
         assert "stream.seek(0)" in source
+    def test_ad_image_consumers_use_media_not_removed_image_column(self):
+        activity=text('aos/api/ads/activity.py')
+        wishlist=text('aos/api/wishlist/list.py')
+        chat=text('aos/services/chat/shared_objects.py')
+        shorts_feed=text('aos/api/shorts/feed.py')
+        shorts_management=text('aos/api/shorts/management.py')
+        media=text('aos/api/ads/media.py')
+
+        for source in (activity, wishlist, chat, shorts_feed, shorts_management):
+            assert 'SELECT adi.image' not in source
+            assert '"media", "image"' not in source
+        assert 'project_ad_image_urls(rows)' in activity
+        assert 'project_ad_image_urls(image_rows)' in wishlist
+        assert 'get_public_attachment_url_map' in chat
+        assert 'project_ad_thumbnail_urls(visible_rows)' in shorts_feed
+        assert 'project_ad_thumbnail_urls(rows)' in shorts_management
+        assert 'def project_ad_thumbnail_urls(' in media
+
+    def test_ad_activity_is_best_effort_for_primary_mutations(self):
+        activity=text('aos/api/ads/activity.py')
+        assert activity.count('_safe_record("load_ad_target", _load_ad_target, ad_id)') >= 4
+
