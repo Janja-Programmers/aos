@@ -39,13 +39,13 @@ def _enqueue_seller_refresh(seller_name: str, *, source: str) -> None:
 
 def seller_signal_changed(doc: Any, method: str | None = None) -> None:
     del method
-    if _changed(doc, ("status", "shop_name", "user")):
+    if _changed(doc, ("status", "user")):
         _enqueue_seller_refresh(getattr(doc, "name", ""), source="seller_signal_changed")
 
 
 def profile_signal_changed(doc: Any, method: str | None = None) -> None:
     del method
-    if not _changed(doc, ("account_status", "is_verified")):
+    if not _changed(doc, ("account_status", "is_verified", "display_name")):
         return
     user = str(getattr(doc, "user", "") or "").strip()
     seller = frappe.db.get_value("AOS Seller", {"user": user}, "name") if user else None

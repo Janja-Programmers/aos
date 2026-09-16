@@ -477,7 +477,7 @@ def build_ad_index_document(ad_id: str) -> dict[str, Any]:
 		SELECT a.name, a.public_id, a.title, a.description, a.status, a.country, a.location,
 		       a.category, a.seller, a.price_type, a.price, a.currency, a.average_rating,
 		       a.total_reviews, a.wishlist_count, a.expires_on, a.creation, a.modified,
-		       s.status AS seller_status, s.user AS seller_user, s.shop_name AS seller_name,
+		       s.status AS seller_status, s.user AS seller_user, p.display_name AS seller_name,
 		       u.enabled AS user_enabled, p.account_status, p.is_verified AS seller_verified
 		FROM `tabAOS Ad` a
 		LEFT JOIN `tabAOS Seller` s ON s.name=a.seller

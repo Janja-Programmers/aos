@@ -165,6 +165,22 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         assert 'def enqueue_ad_search_delete' in source
 
 
+    def test_ad_search_index_uses_canonical_account_display_name(self):
+        source=text('aos/services/search_ranking_service.py')
+        signals=text('aos/services/marketplace_discovery/signals.py')
+        seller_schema=json.loads(text('aos/aos/doctype/aos_seller/aos_seller.json'))
+        profile_schema=json.loads(text('aos/aos/doctype/aos_profile/aos_profile.json'))
+        seller_fields={field.get('fieldname') for field in seller_schema.get('fields') or []}
+        profile_fields={field.get('fieldname') for field in profile_schema.get('fields') or []}
+        assert 'shop_name' not in seller_fields
+        assert 'display_name' in profile_fields
+        assert 's.shop_name' not in source
+        assert 'p.display_name AS seller_name' in source
+        assert '("status", "shop_name", "user")' not in signals
+        assert '("status", "user")' in signals
+        assert '("account_status", "is_verified", "display_name")' in signals
+
+
     def test_ad_search_index_uses_only_authoritative_ad_metrics(self):
         source=text('aos/services/search_ranking_service.py')
         store=text('infra/search-ranking/app/store.py')
