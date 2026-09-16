@@ -138,7 +138,7 @@ class TestMediaBackgroundProcessing(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(result.purpose, "profile_image")
         self.assertTrue(self.storage.object_exists(result.bucket, result.object_key))
 
-    def test_success_state_survives_notification_failure_and_emits_once(self):
+    def test_success_does_not_create_redundant_notification(self):
         job = self._request()
         with (
             patch(
@@ -150,14 +150,13 @@ class TestMediaBackgroundProcessing(AOSFeatureTestMixin, FrappeTestCase):
                 return_value=SimpleNamespace(content=PNG_64),
             ),
             patch(
-                "aos.services.notifications.service.NotificationService.notify_media_processing_completed",
-                side_effect=RuntimeError("notification unavailable"),
-            ) as notify,
+                "aos.services.notifications.service.NotificationService.notify_media_processing_failed"
+            ) as notify_failure,
         ):
             self.assertEqual(self.processing.process(job_id=job.name), "Succeeded")
             self.assertEqual(self.processing.process(job_id=job.name), "Succeeded")
 
-        notify.assert_called_once()
+        notify_failure.assert_not_called()
         final_job = frappe.get_doc("AOS Media Processing Job", job.name)
         self.assertEqual(final_job.status, "Succeeded")
         self.assertTrue(final_job.result_media)

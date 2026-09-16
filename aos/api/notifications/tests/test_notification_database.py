@@ -127,6 +127,30 @@ class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertNotIn(notification.name, {item["id"] for item in cross_list["data"]["items"]})
         self.assertTrue(frappe.db.exists("AOS Notification", notification.name))
 
+    def test_all_inbox_and_unread_count_fail_closed_on_unsupported_stored_types(self):
+        stale_name = f"stale-{uuid.uuid4().hex}"
+        frappe.db.sql(
+            """
+            INSERT INTO `tabAOS Notification`
+                (`name`, `creation`, `modified`, `modified_by`, `owner`, `docstatus`, `idx`,
+                 `user`, `type`, `title`, `body`, `payload`, `is_read`)
+            VALUES
+                (%s, NOW(6), NOW(6), 'Administrator', 'Administrator', 0, 0,
+                 %s, 'media_processing_completed', 'Old media success', 'Old success row', '{}', 0)
+            """,
+            (stale_name, self.owner),
+        )
+        active = self._notify_follow(dedupe_key=f"{self.prefix}:supported")
+
+        with self._without_inbox_limits():
+            listed = list_notifications_impl(category="all", limit=20)
+
+        self.assertTrue(listed.get("ok"), listed)
+        ids = {item["id"] for item in listed["data"]["items"]}
+        self.assertIn(active.name, ids)
+        self.assertNotIn(stale_name, ids)
+        self.assertEqual(listed["data"]["unread_count"], 1)
+
     def test_mark_read_and_mark_all_are_idempotent_and_owner_scoped(self):
         first = self._notify_follow(dedupe_key=f"{self.prefix}:first")
         second = self._notify_follow(dedupe_key=f"{self.prefix}:second")

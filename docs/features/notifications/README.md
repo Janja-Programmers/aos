@@ -129,7 +129,7 @@ The current type registry is `aos.services.notifications.contracts`.
 | Category | Types |
 | --- | --- |
 | `communication` | `message`, `missed_call` |
-| `activity` | `follow`, `new_short`, `short_like`, `short_comment`, `short_mention`, `comment_reply`, `live_started`, `media_processing_completed`, `media_processing_failed` |
+| `activity` | `follow`, `new_short`, `short_like`, `short_comment`, `short_mention`, `comment_reply`, `live_started`, `media_processing_failed` |
 | `marketplace` | `ad_approved`, `ad_rejected`, `ad_expired`, `review_received`, `review_approved`, `review_rejected` |
 | `account` | `verification_approved`, `verification_rejected` |
 

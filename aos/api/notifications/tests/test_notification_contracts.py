@@ -36,7 +36,6 @@ class TestNotificationContracts(unittest.TestCase):
                 "short_mention",
                 "comment_reply",
                 "live_started",
-                "media_processing_completed",
                 "media_processing_failed",
             },
         )

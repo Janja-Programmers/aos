@@ -714,25 +714,6 @@ class NotificationService:
 
     # MEDIA
     @classmethod
-    def notify_media_processing_completed(
-        cls, *, user: str, job_id: str, source_media_id: str, result_media_id: str
-    ):
-        return cls.notify(
-            user=user,
-            type="media_processing_completed",
-            title="Media Ready",
-            body="Your background removal is complete.",
-            payload={
-                "processing_job_id": job_id,
-                "source_media_id": source_media_id,
-                "result_media_id": result_media_id,
-                "operation": "background_removal",
-            },
-            event="aos_media_processing_completed",
-            dedupe_key=f"media:processing:{job_id}:succeeded",
-        )
-
-    @classmethod
     def notify_media_processing_failed(cls, *, user: str, job_id: str, source_media_id: str):
         return cls.notify(
             user=user,

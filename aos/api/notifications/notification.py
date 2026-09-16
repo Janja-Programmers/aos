@@ -12,7 +12,7 @@ from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import fail, ok
 from aos.services.accounts.http import set_private_no_store
 from aos.services.notifications.realtime import publish_state_after_commit
-from aos.services.notifications.contracts import CATEGORY_ALL, CATEGORY_TYPES, VALID_CATEGORIES
+from aos.services.notifications.contracts import CATEGORY_ALL, CATEGORY_TYPES, NOTIFICATION_TYPES, VALID_CATEGORIES
 from aos.services.notifications.repository import get_unread_count
 from aos.services.notifications.serializers import serialize_notifications
 from aos.services.notifications.validation import (
@@ -50,7 +50,10 @@ def _resolve_category(value):
             "Invalid notification category. Allowed values are: "
             f"{', '.join(VALID_CATEGORIES)}."
         )
-    return category, CATEGORY_TYPES.get(category), None
+    notification_types = CATEGORY_TYPES.get(category)
+    if category == CATEGORY_ALL:
+        notification_types = tuple(sorted(NOTIFICATION_TYPES))
+    return category, notification_types, None
 
 
 def _resolve_limit(value):

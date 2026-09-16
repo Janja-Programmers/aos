@@ -305,7 +305,7 @@ class MediaProcessingService:
         if queued or changed:
             frappe.db.commit()
         for job_id in terminal_failures:
-            self._notify_terminal_job(job_id=job_id, succeeded=False)
+            self._notify_terminal_failure(job_id=job_id)
         return queued
 
     def _claim(self, job_id: str):
@@ -330,7 +330,7 @@ class MediaProcessingService:
             job.next_attempt_at = None
             job.save(ignore_permissions=True)
             frappe.db.commit()
-            self._notify_terminal_job(job_id=job_id, succeeded=False)
+            self._notify_terminal_failure(job_id=job_id)
             return None
         job.status = "Processing"
         job.attempt_count = int(job.attempt_count or 0) + 1
@@ -353,7 +353,6 @@ class MediaProcessingService:
         job.last_error_message = ""
         job.save(ignore_permissions=True)
         frappe.db.commit()
-        self._notify_terminal_job(job_id=job_id, succeeded=True)
 
     def _record_failure(self, job_id: str, *, retryable: bool, code: str) -> str:
         if retryable:
@@ -366,7 +365,7 @@ class MediaProcessingService:
         job.last_error_message = "Media processing failed safely."
         job.save(ignore_permissions=True)
         frappe.db.commit()
-        self._notify_terminal_job(job_id=job_id, succeeded=False)
+        self._notify_terminal_failure(job_id=job_id)
         return "Failed"
 
     def _record_retry(self, job_id: str, *, code: str) -> str:
@@ -388,7 +387,7 @@ class MediaProcessingService:
         job.save(ignore_permissions=True)
         frappe.db.commit()
         if result == "Failed":
-            self._notify_terminal_job(job_id=job_id, succeeded=False)
+            self._notify_terminal_failure(job_id=job_id)
         media_log(
             "processing_retry_scheduled" if result == "Retry Waiting" else "processing_failed",
             media_id=job.source_media,
@@ -400,32 +399,29 @@ class MediaProcessingService:
         return result
 
     @staticmethod
-    def _notify_terminal_job(*, job_id: str, succeeded: bool) -> None:
-        """Request a user-visible Notification only after Media state committed."""
+    def _notify_terminal_failure(*, job_id: str) -> None:
+        """Notify only terminal failures after Media state committed.
+
+        Successful background removal is presented in the initiating editor, where
+        the user must Accept or Decline the derived image. Persisting an inbox
+        notification for the same success is redundant noise.
+        """
         try:
             job = frappe.db.get_value(
                 "AOS Media Processing Job",
                 job_id,
-                ["owner_user", "source_media", "result_media", "status"],
+                ["owner_user", "source_media", "status"],
                 as_dict=True,
             )
-            if not job or (succeeded and job.status != "Succeeded") or (not succeeded and job.status != "Failed"):
+            if not job or job.status != "Failed":
                 return
             from aos.services.notifications.service import NotificationService
 
-            if succeeded and job.result_media:
-                NotificationService.notify_media_processing_completed(
-                    user=job.owner_user,
-                    job_id=job_id,
-                    source_media_id=job.source_media,
-                    result_media_id=job.result_media,
-                )
-            elif not succeeded:
-                NotificationService.notify_media_processing_failed(
-                    user=job.owner_user,
-                    job_id=job_id,
-                    source_media_id=job.source_media,
-                )
+            NotificationService.notify_media_processing_failed(
+                user=job.owner_user,
+                job_id=job_id,
+                source_media_id=job.source_media,
+            )
             # This transaction contains Notification-owned rows only; the Media
             # terminal transition was committed before this helper was called.
             frappe.db.commit()
