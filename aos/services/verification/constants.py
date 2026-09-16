@@ -37,18 +37,6 @@ BUSINESS_TYPES = frozenset(
     {"Sole Proprietorship", "Partnership", "Limited Company", "Corporation"}
 )
 
-TRANSPORT_FIELDS = frozenset(
-    {
-        "cmd",
-        "doctype",
-        "docname",
-        "csrf_token",
-        "sid",
-        "api_key",
-        "api_secret",
-    }
-)
-
 SUBMIT_FIELDS = frozenset(
     {
         "verification_type",

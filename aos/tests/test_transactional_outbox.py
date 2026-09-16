@@ -367,7 +367,6 @@ class TestTransactionalOutbox(FrappeTestCase):
 		status_rows = [
 			SimpleNamespace(status="Queued", total=4),
 			SimpleNamespace(status="Failed", total=2),
-			SimpleNamespace(status="Claimed", total=1),
 			SimpleNamespace(status="Dead Letter", total=3),
 		]
 		service_rows = [

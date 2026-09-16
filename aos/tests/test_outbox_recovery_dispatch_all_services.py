@@ -413,7 +413,7 @@ class TestOutboxRecoveryDispatchAllServices(FrappeTestCase):
 					with patch("aos.services.transactional_outbox.register_after_commit_publish"):
 						outbox = create_outbox(fixture, max_attempts=3)
 					self._track(fixture, outbox)
-					outbox.status = "Dispatched"
+					outbox.status = "Queued"
 					outbox.attempt_count = 1
 					outbox.dispatch_generation = 1
 					outbox.current_dispatch_token = uuid.uuid4().hex

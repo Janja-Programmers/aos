@@ -25,7 +25,6 @@ from .constants import (
     MAX_LEGAL_NAME_LENGTH,
     MIN_IDEMPOTENCY_KEY_LENGTH,
     SUBMIT_FIELDS,
-    TRANSPORT_FIELDS,
     TYPE_INDIVIDUAL,
     VERIFICATION_TYPES,
 )
@@ -61,10 +60,6 @@ def _text(
         raise VerificationValidationError(f"{field.replace('_', ' ').title()} is too long.")
     return text
 
-
-def strip_transport_fields(payload: dict[str, Any] | None) -> dict[str, Any]:
-    raw = dict(payload or {})
-    return {str(key): value for key, value in raw.items() if str(key) not in TRANSPORT_FIELDS}
 
 
 def ensure_known_submit_fields(payload: dict[str, Any]) -> None:
@@ -197,7 +192,7 @@ def normalize_submit_payload(
     *,
     require_idempotency: bool = True,
 ) -> dict[str, Any]:
-    raw = strip_transport_fields(payload)
+    raw = {str(key): value for key, value in dict(payload or {}).items()}
     ensure_known_submit_fields(raw)
     verification_type = _verification_type(raw.get("verification_type"))
     result: dict[str, Any] = {

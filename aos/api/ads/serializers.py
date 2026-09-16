@@ -10,7 +10,6 @@ The mobile app needs four shapes:
 
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
 import frappe
@@ -22,18 +21,13 @@ from aos.services.sellers.identity import public_seller_id_for_name
 from aos.api.ads.media import get_ad_image_url, get_ad_video_url
 
 
-@lru_cache(maxsize=128)
 def _get_currency_symbol(code: str) -> str:
     code = str(code or "").strip()
 
     if not code:
         return ""
 
-    symbol = frappe.db.get_value(
-        "Currency",
-        code,
-        "symbol",
-    ) or ""
+    symbol = frappe.get_cached_value("Currency", code, "symbol") or ""
 
     symbol = str(symbol).strip()
 
@@ -64,12 +58,11 @@ def _to_int(value: Any, default: int = 0) -> int:
 
 
 
-@lru_cache(maxsize=2048)
 def _get_location_label(location_id: str) -> str:
     clean = _norm(location_id)
     if not clean:
         return ""
-    return _norm(frappe.db.get_value("AOS Location", clean, "location") or "")
+    return _norm(frappe.get_cached_value("AOS Location", clean, "location") or "")
 
 
 def _location_label(ad_doc: Any) -> str:
@@ -358,8 +351,6 @@ def serialize_ad_list_item(
         "original_price_value": _to_float(getattr(ad_doc, "price", None)),
         "original_currency": _norm(getattr(ad_doc, "currency", display_currency)),
         "display_price": current_price,
-        "displayed_price_value": current_price,
-        "displayed_currency": display_currency,
         "display_currency": display_currency,
         "requested_display_currency": _norm(getattr(ad_doc, "requested_display_currency", display_currency)),
         "price_conversion": {

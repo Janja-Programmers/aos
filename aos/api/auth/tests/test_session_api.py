@@ -121,6 +121,7 @@ class TestAuthSessionAPI(AOSFeatureTestMixin, FrappeTestCase):
             mobile_response = login_impl(identifier=mobile, password="StrongPass123!", client_type="mobile")
         self.assertTrue(mobile_response.get("ok"), mobile_response)
         self.assertEqual(mobile_response["data"]["session"]["sid"], "sid-mobile")
+        self.assertTrue(mobile_response["data"]["session"]["csrf_token"])
         self.assertEqual(
             set(mobile_response["data"]["preferences"]),
             {"country", "currency", "language", "location"},
@@ -146,6 +147,7 @@ class TestAuthSessionAPI(AOSFeatureTestMixin, FrappeTestCase):
             web_response = login_impl(identifier=web, password="StrongPass123!", client_type="web")
         self.assertTrue(web_response.get("ok"), web_response)
         self.assertNotIn("sid", web_response["data"]["session"])
+        self.assertTrue(web_response["data"]["session"]["csrf_token"])
 
     def test_enabled_user_missing_profile_is_bootstrap_failure_not_disabled(self):
         user = self.make_user("missing-profile")

@@ -18,59 +18,59 @@ from aos.api.social.lists import (
 )
 from aos.api.social.relationship import get_relationship_status_impl as _get_relationship_status_impl
 from aos.api.social.search_users import search_users_impl as _search_users_impl
-from aos.api.v1._transport import client_kwargs as _client_kwargs
+from aos.api.shared.transport import execute_endpoint as _execute_endpoint
 
 
 @frappe.whitelist(methods=["POST"])
 def follow(**kwargs):
-    return _follow_impl(**_client_kwargs(kwargs))
+    return _execute_endpoint(_follow_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def unfollow(**kwargs):
-    return _unfollow_impl(**_client_kwargs(kwargs))
+    return _execute_endpoint(_unfollow_impl, kwargs)
 
 
 @frappe.whitelist(methods=["GET"])
 def get_relationship_status(**kwargs):
-    return _get_relationship_status_impl(**_client_kwargs(kwargs))
+    return _execute_endpoint(_get_relationship_status_impl, kwargs)
 
 
 @frappe.whitelist(methods=["GET"])
 def get_following(**kwargs):
-    return _get_following_impl(**_client_kwargs(kwargs))
+    return _execute_endpoint(_get_following_impl, kwargs)
 
 
 @frappe.whitelist(methods=["GET"])
 def get_followers(**kwargs):
-    return _get_followers_impl(**_client_kwargs(kwargs))
+    return _execute_endpoint(_get_followers_impl, kwargs)
 
 
 @frappe.whitelist(methods=["GET"])
 def get_friends(**kwargs):
-    return _get_friends_impl(**_client_kwargs(kwargs))
+    return _execute_endpoint(_get_friends_impl, kwargs)
 
 
 @frappe.whitelist(methods=["GET"])
 def search_users(**kwargs):
-    return _search_users_impl(**_client_kwargs(kwargs))
+    return _execute_endpoint(_search_users_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def block_user(**kwargs):
-    return _block_user_impl(**_client_kwargs(kwargs))
+    return _execute_endpoint(_block_user_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def unblock_user(**kwargs):
-    return _unblock_user_impl(**_client_kwargs(kwargs))
+    return _execute_endpoint(_unblock_user_impl, kwargs)
 
 
 @frappe.whitelist(methods=["GET"])
 def get_block_status(**kwargs):
-    return _get_block_status_impl(**_client_kwargs(kwargs))
+    return _execute_endpoint(_get_block_status_impl, kwargs)
 
 
 @frappe.whitelist(methods=["GET"])
 def list_blocked_users(**kwargs):
-    return _list_blocked_users_impl(**_client_kwargs(kwargs))
+    return _execute_endpoint(_list_blocked_users_impl, kwargs)

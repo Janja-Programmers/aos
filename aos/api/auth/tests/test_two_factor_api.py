@@ -95,6 +95,7 @@ class TestAuthTwoFactorAPI(AOSFeatureTestMixin, FrappeTestCase):
 
         self.assertTrue(response.get("ok"), response)
         self.assertEqual(response["data"]["session"]["sid"], "sid-2fa")
+        self.assertTrue(response["data"]["session"]["csrf_token"])
         manager.post_login.assert_called_once_with()
         self.assertEqual(replay.get("error"), "TOKEN_INVALID")
         challenge.reload()

@@ -317,11 +317,11 @@ Standard AOS failure envelope:
 
 ### Canonical authenticated bootstrap payload
 
-Successful password/social/2FA login uses this shape. `sid` appears only when `client_type = "mobile"`.
+Successful password/social/2FA login uses this shape. `csrf_token` is the canonical Frappe session CSRF token required with cookie/session authentication on unsafe methods. `sid` appears only when `client_type = "mobile"`.
 
 ```json
 {
-  "session": {"authenticated": true, "sid": "<mobile-only>"},
+  "session": {"authenticated": true, "csrf_token": "<session-csrf-token>", "sid": "<mobile-only>"},
   "user": {
     "account_id": "ACC-EXAMPLEOPAQUEID",
     "email": "jane@example.com",
@@ -522,7 +522,7 @@ Inputs: **none**. Any client field is `AUTH_UNKNOWN_FIELD`.
 
 Example: request with valid Frappe web cookie or mobile session transport and no Authentication parameters.
 
-Success: `200`, message `Session fetched.`, canonical bootstrap payload with `data.session = {"authenticated":true}`. `sid` is **never** returned by `me`.
+Success: `200`, message `Session fetched.`, canonical bootstrap payload with `data.session = {"authenticated":true,"csrf_token":"<session-csrf-token>"}`. `sid` is **never** returned by `me`.
 
 Stable errors: `AUTH_UNKNOWN_FIELD`, `SESSION_INVALID`, account-state errors, `ACCOUNT_BOOTSTRAP_UNAVAILABLE`, `SERVICE_UNAVAILABLE`.
 
@@ -723,14 +723,16 @@ AOS uses Frappe database + Redis-backed sessions; Authentication does not implem
 - send `client_type: "web"`;
 - login response intentionally omits `sid` from JSON;
 - Frappe sets the `sid` cookie HttpOnly, `SameSite=Lax`, and Secure when the request is HTTPS;
-- browser state-changing requests follow Frappe's CSRF/session rules;
+- the backend bootstrap also returns `session.csrf_token`; the AOS web BFF stores it in a separate host-only HttpOnly cookie, strips it from browser-facing JSON, and forwards it as `X-Frappe-CSRF-Token` only on authenticated unsafe backend requests;
+- browser state-changing requests therefore follow Frappe's CSRF/session rules without exposing the backend session credentials to client components;
 - `me` never exposes the `sid` value.
 
 ### Mobile
 
 - send `client_type: "mobile"`;
 - login response intentionally includes `data.session.sid` so the native client can persist/use the Frappe session identifier through its secure session transport;
-- the client must treat the value as a credential and never log/analytics-report it.
+- authenticated unsafe requests must send `data.session.csrf_token` as `X-Frappe-CSRF-Token` alongside the session transport;
+- the client must treat both values as session credentials and never log/analytics-report them.
 
 ### Expiration
 

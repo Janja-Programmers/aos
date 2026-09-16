@@ -492,8 +492,6 @@ def _safe_outbox_metrics(lines: list[str]) -> None:
 	]
 	allowed_states = {
 		"Queued",
-		"Claimed",
-		"Dispatched",
 		"Published",
 		"Dispatch Uncertain",
 		"Reconciliation Pending",

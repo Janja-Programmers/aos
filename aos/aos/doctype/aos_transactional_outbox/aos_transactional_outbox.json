@@ -93,7 +93,7 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "Queued\nClaimed\nDispatched\nPublished\nDispatch Uncertain\nReconciliation Pending\nCompleted\nCompleted With Failure\nFailed\nManual Review\nDead Letter\nCancelled",
+   "options": "Queued\nPublished\nDispatch Uncertain\nReconciliation Pending\nCompleted\nCompleted With Failure\nFailed\nManual Review\nDead Letter\nCancelled",
    "default": "Queued",
    "reqd": 1,
    "in_list_view": 1

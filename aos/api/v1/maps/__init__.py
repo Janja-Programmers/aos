@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import frappe
 
-from aos.api.v1._transport import client_kwargs as _client_kwargs
+from aos.api.shared.transport import execute_endpoint as _execute_endpoint
 
 from aos.api.maps.autocomplete import (
     autocomplete_places_impl as _autocomplete_places_impl,
@@ -30,7 +30,7 @@ from aos.api.maps.route import (
 )
 def autocomplete_places(**kwargs):
     """Fast global place autocomplete with optional location bias."""
-    return _autocomplete_places_impl(**_client_kwargs(kwargs))
+    return _execute_endpoint(_autocomplete_places_impl, kwargs)
 
 
 @frappe.whitelist(
@@ -39,7 +39,7 @@ def autocomplete_places(**kwargs):
 )
 def search_places(**kwargs):
     """Search places globally through the provider-neutral AOS contract."""
-    return _search_places_impl(**_client_kwargs(kwargs))
+    return _execute_endpoint(_search_places_impl, kwargs)
 
 
 @frappe.whitelist(
@@ -48,16 +48,16 @@ def search_places(**kwargs):
 )
 def reverse_geocode(**kwargs):
     """Resolve coordinates into a normalized address."""
-    return _reverse_geocode_impl(**_client_kwargs(kwargs))
+    return _execute_endpoint(_reverse_geocode_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def get_route(**kwargs):
     """Calculate a route between two or more WGS84 locations."""
-    return _get_route_impl(**_client_kwargs(kwargs))
+    return _execute_endpoint(_get_route_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
 def refresh_route(**kwargs):
     """Refresh a route from the buyer's current location to a seller."""
-    return _refresh_route_impl(**_client_kwargs(kwargs))
+    return _execute_endpoint(_refresh_route_impl, kwargs)

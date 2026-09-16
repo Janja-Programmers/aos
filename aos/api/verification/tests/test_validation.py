@@ -38,11 +38,12 @@ class TestVerificationValidation(unittest.TestCase):
         payload.update(overrides)
         return payload
 
-    def test_transport_fields_are_stripped(self):
-        result = normalize_submit_payload(
-            self._individual(cmd="aos.api.v1.verification.submit_verification")
-        )
-        self.assertEqual(result["verification_type"], "Individual")
+    def test_transport_metadata_is_not_a_domain_alias(self):
+        with self.assertRaises(VerificationValidationError) as ctx:
+            normalize_submit_payload(
+                self._individual(cmd="aos.api.v1.verification.submit_verification")
+            )
+        self.assertEqual(ctx.exception.code, "VERIFICATION_UNKNOWN_FIELD")
 
     def test_unknown_business_field_is_rejected(self):
         with self.assertRaises(VerificationValidationError) as ctx:

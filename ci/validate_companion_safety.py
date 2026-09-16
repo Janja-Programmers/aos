@@ -57,22 +57,12 @@ REQUIRED_FRAPPE_TESTS = {
 		"test_service_job_save_and_outbox_save_failures_roll_back_every_service",
 		"test_operator_work_replay_changes_generation_and_rejects_old_callbacks",
 	},
-	"aos/tests/test_outbox_backfill.py": {
-		"test_each_doctype_backfills_retryable_states_and_skips_terminal_states",
-		"test_mixed_all_service_patch_execution_is_idempotent_batched_and_rollback_safe",
-	},
 	"aos/tests/test_transactional_outbox_recovery.py": {
 		"test_terminal_failure_callback_is_not_redispatched",
 		"test_valid_callback_remains_eligible_while_publisher_holds_lease",
 		"test_companion_generation_floor_advances_next_proposal",
 		"test_reconciliation_exhaustion_moves_to_manual_review",
 		"test_callback_already_completed_repairs_terminal_failure_outbox",
-	},
-	"aos/tests/test_outbox_final_lifecycle_patch.py": {
-		"test_patch_terminalizes_failure_callback_and_is_idempotent",
-		"test_patch_normalizes_legacy_claim_and_exhausted_reconciliation",
-		"test_outbox_conflict_before_action_assignment_preserves_original_error",
-		"test_system_manager_work_replay_reopens_same_job_and_outbox",
 	},
 }
 

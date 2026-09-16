@@ -82,7 +82,6 @@ Expired publisher leases are recovered in bounded deterministic batches. Recover
 A matching callback remains eligible during a publisher lease, status reconciliation, or recovery HTTP request. Callback validation accepts authoritative active/proposed correlation in:
 
 - `Queued`
-- legacy `Claimed`/`Dispatched`
 - `Published`
 - `Failed`
 - `Dispatch Uncertain`
@@ -179,24 +178,9 @@ Analytics applies a Redis Lua claim-and-increment operation atomically.
 
 Generated timestamps, retries, callback generations, and RQ execution IDs are excluded from identity. The guarantee is effectively once within the configured dedupe TTL and Redis persistence boundary.
 
-## Legacy normalization
+## Fresh-site schema
 
-Registered patches:
-
-- `backfill_transactional_outbox`
-- `normalize_outbox_recovery_state`
-- `separate_worker_callback_lifecycle`
-- `finalize_outbox_failure_reconciliation`
-
-They are batched, idempotent, and commit-free. Legacy failure callbacks become `Completed With Failure`; claim statuses normalize back to lease-based lifecycle states; legacy processing jobs reconcile rather than pretending modern correlation; exhausted uncertainty/reconciliation becomes callback-resolvable manual review.
-
-```bash
-bench --site <site> migrate
-bench --site <site> execute aos.patches.v1_0.finalize_outbox_failure_reconciliation.execute
-bench --site <site> execute aos.patches.v1_0.finalize_outbox_failure_reconciliation.execute
-```
-
-The second execution must make no additional changes.
+AOS targets fresh-site installation. `aos.patches.v1_0.add_outbox_indexes` is the only outbox patch retained: it installs current schema indexes after DocType synchronization. Historical outbox backfill and lifecycle-reconciliation patches are intentionally absent; current producers write the canonical outbox lifecycle directly.
 
 ## Diagnostics
 

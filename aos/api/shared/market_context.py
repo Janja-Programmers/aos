@@ -6,13 +6,6 @@ from aos.services.localization import get_default_preferences, validate_country,
 from aos.services.localization.preferences import get_user_preference
 
 
-# INTERNAL HELPERS
-def _get_user_preference(user: str):
-	"""Compatibility wrapper around the canonical preference cache service."""
-
-	return get_user_preference(user)
-
-
 # COUNTRY
 def resolve_market_country(country: str | None = None):
 	"""
@@ -29,7 +22,7 @@ def resolve_market_country(country: str | None = None):
 
 	# Logged-in users → always use preference
 	if user and user != "Guest":
-		pref = _get_user_preference(user)
+		pref = get_user_preference(user)
 
 		if not pref or not pref.get("country"):
 			return None, fail(
@@ -67,7 +60,7 @@ def resolve_market_currency(currency: str | None = None):
 
 	# Logged-in users → always use preference
 	if user and user != "Guest":
-		pref = _get_user_preference(user)
+		pref = get_user_preference(user)
 
 		if not pref or not pref.get("currency"):
 			return None, fail(

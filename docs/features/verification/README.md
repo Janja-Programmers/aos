@@ -232,7 +232,7 @@ Business fields:
 - `business_address` — required
 - `business_website` — optional HTTP/HTTPS URL
 
-Unknown fields are rejected. Known Frappe transport fields (`cmd`, CSRF/session transport values) are ignored by the domain payload validator and are never treated as business fields.
+Unknown fields are rejected. The canonical `aos.api.shared.transport.execute_endpoint` boundary strips only Frappe-owned `cmd` routing metadata before the domain validator runs. Session/CSRF credentials remain HTTP transport concerns and are never accepted as Verification business fields.
 
 Success `data` contains:
 

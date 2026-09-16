@@ -11,7 +11,9 @@ ROOT = Path(__file__).resolve().parents[4]
 class TestSellerContracts(unittest.TestCase):
     def test_v1_surface_is_strict_and_transport_clean(self):
         source = (ROOT / "aos/api/v1/sellers/__init__.py").read_text()
-        self.assertIn("_client_kwargs(kwargs)", source)
+        self.assertEqual(source.count("_execute_endpoint("), 8)
+        self.assertIn("aos.api.shared.transport", source)
+        self.assertNotIn("aos.api.v1._transport", source)
         self.assertNotIn('methods=["GET", "POST"]', source)
         self.assertNotIn("frappe.db", source)
 
@@ -125,6 +127,8 @@ class TestSellerContracts(unittest.TestCase):
         self.assertNotIn('"email"', serializers)
         self.assertNotIn('"phone"', serializers)
         self.assertNotIn('"name": _public_id', serializers)
+        self.assertIn("get_user_display_map", serializers)
+        self.assertNotIn("user_image", serializers)
 
     def test_every_seller_endpoint_has_rate_limit_coverage(self):
         registry = json.loads((ROOT / "ci/public-endpoint-rate-limits.json").read_text())

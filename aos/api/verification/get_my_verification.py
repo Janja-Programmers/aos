@@ -11,7 +11,6 @@ from aos.api.shared.responses import fail, ok
 from aos.services.accounts.http import set_private_no_store
 from aos.services.verification.errors import VerificationError, VerificationValidationError
 from aos.services.verification.service import VerificationService
-from aos.services.verification.validation import strip_transport_fields
 
 from .constants import GET_MY_VERIFICATION_LIMIT, GET_MY_VERIFICATION_WINDOW_SECONDS
 
@@ -34,7 +33,7 @@ def get_my_verification_impl(**kwargs):
         return rl
 
     try:
-        unexpected = sorted(strip_transport_fields(kwargs))
+        unexpected = sorted(str(key) for key in kwargs)
         if unexpected:
             raise VerificationValidationError(
                 f"Unsupported verification fields: {', '.join(unexpected)}.",

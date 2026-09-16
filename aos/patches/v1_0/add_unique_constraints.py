@@ -100,17 +100,6 @@ def _dedupe_short_comment_likes():
         _sync_short_comment_like_counts(affected_comments)
 
 
-def _dedupe_reviews():
-    """Deprecated non-destructive compatibility helper.
-
-    Reviews are reconciled by ``harden_reviews_subsystem`` where duplicate
-    records are retained and withdrawn deterministically. Historical versions
-    deleted rows here; keeping this helper as a no-op prevents accidental data
-    loss when older operational scripts still import it.
-    """
-
-    return set()
-
 
 def _dedupe_review_reactions():
     affected_reviews = _delete_duplicate_docs(

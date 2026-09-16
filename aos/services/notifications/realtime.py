@@ -35,25 +35,18 @@ def _after_commit(callback: Callable[[], None]) -> None:
             except Exception:
                 pass
 
-    manager = getattr(frappe.db, "after_commit", None)
-    if manager is not None and hasattr(manager, "add"):
+    try:
+        frappe.db.after_commit.add(_safe_callback)
+    except Exception:
+        # Never publish before commit merely because callback registration
+        # failed; the durable REST inbox remains authoritative.
         try:
-            manager.add(_safe_callback)
+            frappe.log_error(
+                "Notification realtime callback registration failed.",
+                "AOS Notification realtime failure",
+            )
         except Exception:
-            # Never publish before commit merely because callback registration
-            # failed; REST inbox reconciliation remains authoritative.
-            try:
-                frappe.log_error(
-                    "Notification realtime callback registration failed.",
-                    "AOS Notification realtime failure",
-                )
-            except Exception:
-                pass
-        return
-
-    # Compatibility for isolated tests/mocks. Real Frappe requests use the
-    # transaction callback manager above.
-    _safe_callback()
+            pass
 
 
 def _publish(*, user: str, message: dict[str, Any]) -> None:

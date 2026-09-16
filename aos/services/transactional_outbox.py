@@ -27,7 +27,7 @@ from aos.services.callback_correlation import accepted_dispatch_generations
 from aos.utils.doctype_permissions import has_doctype_permission
 
 OUTBOX_DOCTYPE = "AOS Transactional Outbox"
-ACTIVE_STATUSES = ("Queued", "Claimed", "Dispatched", "Published", "Dispatch Uncertain", "Reconciliation Pending", "Failed")
+ACTIVE_STATUSES = ("Queued", "Published", "Dispatch Uncertain", "Reconciliation Pending", "Failed")
 CALLBACK_TIMEOUT_ERROR = "DOWNSTREAM_CALLBACK_DEADLINE_EXCEEDED"
 DISPATCH_UNCERTAIN_ERROR = "DOWNSTREAM_TRANSPORT_OUTCOME_UNKNOWN"
 FINAL_CALLBACK_STATUSES = ("Completed", "Completed With Failure", "Dead Letter", "Cancelled")
@@ -459,7 +459,7 @@ def recover_stale_claims(
 		f"""
 	    SELECT name
 	    FROM `tab{OUTBOX_DOCTYPE}`
-	    WHERE status IN ('Queued', 'Failed', 'Dispatch Uncertain', 'Reconciliation Pending', 'Claimed', 'Dispatched')
+	    WHERE status IN ('Queued', 'Failed', 'Dispatch Uncertain', 'Reconciliation Pending')
 	      AND lease_expires_at IS NOT NULL
 	      AND lease_expires_at < %s{name_filter}
 	    ORDER BY lease_expires_at ASC, creation ASC, name ASC
@@ -481,8 +481,7 @@ def recover_stale_claims(
 	frappe.db.sql(
 		f"""
 	    UPDATE `tab{OUTBOX_DOCTYPE}`
-	    SET status = CASE WHEN status IN ('Claimed', 'Dispatched') THEN 'Queued' ELSE status END,
-	        claimed_by = NULL, claim_token = NULL,
+	    SET claimed_by = NULL, claim_token = NULL,
 	        claimed_at = NULL, lease_expires_at = NULL, next_attempt_at = %s,
 	        last_error = 'Publisher claim lease expired before completion',
 	        pending_dispatch_reason = 'publisher_lease_expired'
@@ -1063,7 +1062,7 @@ def dispatch_claimed_outbox(outbox_name: str, claim_token: str) -> Any:
 		return outbox
 	if outbox.claim_token != claim_token:
 		raise OutboxConflictError("Outbox claim token no longer owns this dispatch.")
-	if outbox.status not in {"Queued", "Failed", "Dispatch Uncertain", "Reconciliation Pending", "Claimed", "Dispatched"}:
+	if outbox.status not in {"Queued", "Failed", "Dispatch Uncertain", "Reconciliation Pending"}:
 		raise OutboxConflictError(f"Outbox record cannot dispatch from status {outbox.status}.")
 
 	kwargs = json.loads(outbox.dispatch_kwargs_json or "{}")
@@ -1299,8 +1298,6 @@ def validate_callback_idempotency(
 
 	if outbox.status not in {
 		"Queued",
-		"Claimed",
-		"Dispatched",
 		"Published",
 		"Failed",
 		"Dispatch Uncertain",

@@ -17,6 +17,14 @@ from .responses import fail
 
 _SAFE_KEY_RE = re.compile(r"[^a-zA-Z0-9:_-]+")
 
+_WINDOW_SCRIPT = """
+local current = redis.call('INCR', KEYS[1])
+if current == 1 then
+  redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1]))
+end
+return current
+"""
+
 
 def request_ip() -> str:
 	"""Best-effort client IP, with bounded/sanitized fallback."""
@@ -54,29 +62,17 @@ def rate_limit_key(*parts: Any) -> str:
 
 
 def cache_incr(key: str, ttl_seconds: int) -> int:
-	"""Increment a cached counter with TTL.
-
-	Tries to use atomic `cache.incr` when available. Ensures a TTL is set.
-	"""
+	"""Atomically increment a site-scoped shared Redis counter with a fixed TTL."""
 
 	cache = frappe.cache()
 	safe_key = str(key or "").strip()[:512]
-
-	# Prefer atomic increments (Redis).
-	try:
-		val = cache.incr(safe_key)
-		# ensure TTL exists (best effort)
-		try:
-			cache.expire(safe_key, ttl_seconds)
-		except Exception:
-			# Some cache implementations may not expose expire.
-			pass
-		return int(val)
-	except Exception:
-		# Fallback for older/mocked cache.
-		val = int(cache.get_value(safe_key) or 0) + 1
-		cache.set_value(safe_key, val, expires_in_sec=ttl_seconds)
-		return int(val)
+	if not safe_key:
+		raise ValueError("Rate-limit key is required.")
+	ttl = max(1, int(ttl_seconds))
+	# RedisWrapper.eval does not apply Frappe's site prefix automatically.
+	# Explicit namespacing keeps counters isolated when sites share Redis.
+	redis_key = cache.make_key(safe_key)
+	return int(cache.eval(_WINDOW_SCRIPT, 1, redis_key, ttl))
 
 
 def rate_limit(key: str, ttl_seconds: int, limit: int, message: str):

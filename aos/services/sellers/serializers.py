@@ -6,18 +6,15 @@ import re
 from datetime import time, timedelta
 from typing import Any
 
-import frappe
 from frappe.utils import formatdate
 
 from aos.api.shared.formatters import format_rating, humanize_count, to_float, to_non_negative_int
-from aos.api.shared.user_display import get_user_display
+from aos.api.shared.user_display import get_user_display, get_user_display_map
 from aos.services.media.media_service import MediaService
 
 from .constants import STATUS_ACTIVE
 from .identity import normalize_public_seller_id
 from .policy import seller_capabilities
-
-_EMAIL_LIKE_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
 def _get(row: Any, key: str, default: Any = None) -> Any:
@@ -280,37 +277,6 @@ def serialize_location_response(row: Any, *, owner: bool, changed: bool | None =
 
 
 def display_map(users: list[str]) -> dict[str, dict[str, Any]]:
-    """Bulk-load privacy-safe Account displays for bounded Seller discovery."""
+    """Bulk-load Seller public identities through the canonical Accounts projection."""
 
-    unique = sorted({str(user or "").strip() for user in users if user})
-    if not unique:
-        return {}
-    rows = frappe.db.sql(
-        """
-        SELECT u.name AS internal_user, u.full_name, u.first_name, u.user_image,
-               u.enabled, p.name AS account_id, p.display_name, p.profile_image_media,
-               p.account_status
-        FROM `tabUser` u
-        INNER JOIN `tabAOS Profile` p ON p.user = u.name
-        WHERE u.name IN %(users)s
-        """,
-        {"users": tuple(unique)},
-        as_dict=True,
-    )
-    media_ids = [str(row.profile_image_media) for row in rows if row.profile_image_media]
-    avatar_urls = MediaService().get_public_url_map(media_ids)
-    result: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        user = str(row.internal_user or "")
-        status = str(row.account_status or "Active")
-        unavailable = not bool(int(row.enabled or 0)) or status != "Active"
-        raw_name = str(row.display_name or row.full_name or row.first_name or "").strip()
-        display_name = raw_name if raw_name and not _EMAIL_LIKE_RE.fullmatch(raw_name) else "AOS User"
-        if unavailable:
-            display_name = "Unavailable User"
-        result[user] = {
-            "account_id": str(row.account_id or "").strip() or None,
-            "display_name": display_name,
-            "avatar": None if unavailable else avatar_urls.get(str(row.profile_image_media or "")) or row.user_image or None,
-        }
-    return result
+    return get_user_display_map(users)

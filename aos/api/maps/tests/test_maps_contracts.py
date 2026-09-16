@@ -10,7 +10,9 @@ ROOT = Path(__file__).resolve().parents[4]
 class TestMapsContracts(unittest.TestCase):
     def test_v1_search_surface_is_get_only_and_transport_clean(self):
         source = (ROOT / "aos/api/v1/maps/__init__.py").read_text()
-        self.assertIn("_client_kwargs(kwargs)", source)
+        self.assertEqual(source.count("_execute_endpoint("), 5)
+        self.assertIn("aos.api.shared.transport", source)
+        self.assertNotIn("aos.api.v1._transport", source)
         self.assertEqual(source.count('allow_guest=True,\n    methods=["GET"]'), 3)
         self.assertNotIn('methods=["GET", "POST"]', source)
         self.assertNotIn("frappe.db", source)

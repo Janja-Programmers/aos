@@ -24,7 +24,9 @@ class TestSocialStaticContracts:
         for endpoint in endpoints:
             assert f"def {endpoint}" in source
         assert "def toggle_follow" not in source
-        assert source.count("**_client_kwargs(kwargs)") == len(endpoints)
+        assert source.count("_execute_endpoint(") == len(endpoints)
+        assert "aos.api.shared.transport" in source
+        assert "aos.api.v1._transport" not in source
         assert not (ROOT / "aos/api/social/toggle_follow.py").exists()
 
     def test_request_contract_has_no_legacy_aliases_or_offsets(self):
@@ -230,3 +232,8 @@ class TestSocialStaticContracts:
         ]
         for path in paths:
             assert "frappe.db.commit" not in path.read_text()
+    def test_activity_uses_canonical_account_avatar_only(self):
+        source = (ROOT / "aos/api/social/activity.py").read_text()
+        assert 'display.get("avatar")' in source
+        assert 'display.get("user_image")' not in source
+

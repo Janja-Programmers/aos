@@ -28,7 +28,7 @@
 
 ## Outbox and workers
 
-- [ ] Legacy backfill patch completed without duplicates.
+- [ ] Fresh-site schema installers and invariant indexes complete without duplicates.
 - [ ] Queue depth and oldest queued age are within policy.
 - [ ] No stale claims, overdue published callbacks, or unexplained dead letters remain.
 - [ ] Signed callback routes and bounded callback edge limits are healthy.

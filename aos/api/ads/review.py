@@ -1,4 +1,4 @@
-"""Frontend-consumed manual review action for authorized reviewers."""
+"""Authorized manual Ads review API action for staff/reviewer tooling."""
 from __future__ import annotations
 
 import frappe

@@ -150,6 +150,8 @@ class TestAuthArchitectureContracts(unittest.TestCase):
         fn = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "serialize_session")
         fn_source = ast.get_source_segment(serializer, fn) or ""
         self.assertNotIn("expires_at", fn_source)
+        self.assertIn("get_csrf_token()", fn_source)
+        self.assertIn("csrf_token", fn_source)
 
     def test_fresh_site_auth_does_not_run_upgrade_only_identity_patch(self):
         patches = source("aos/patches.txt")

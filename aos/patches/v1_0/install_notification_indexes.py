@@ -25,10 +25,6 @@ INDEXES: tuple[tuple[str, str, tuple[str, ...], bool], ...] = (
     ("AOS Notification Delivery Job", "idx_aos_notification_job_retention", ("status", "completed_at", "name"), False),
 )
 
-# Historical tests/importers used this name. It is not a compatibility API; it
-# is simply a source-level alias inside the schema installer.
-INDEX_DEFINITIONS = tuple((doctype, name, columns) for doctype, name, columns, _ in INDEXES)
-
 
 def execute() -> None:
     for doctype, name, columns, unique in INDEXES:

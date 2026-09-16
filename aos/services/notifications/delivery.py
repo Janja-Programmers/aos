@@ -347,7 +347,7 @@ def _delivery_suppression_reason(job) -> str | None:
 	if _clean(job.event) != TRANSIENT_INCOMING_CALL_EVENT:
 		return "unsupported_transient_event"
 	data = _json_loads(job.payload_json, {})
-	call_id = _clean(data.get("call_id") or data.get("id")) if isinstance(data, dict) else ""
+	call_id = _clean(data.get("call_id")) if isinstance(data, dict) else ""
 	if not call_id or not frappe.db.exists("AOS Call", call_id):
 		return "call_missing"
 	call = frappe.db.get_value("AOS Call", call_id, ["caller", "receiver", "status"], as_dict=True) or {}
@@ -750,8 +750,11 @@ def dispatch_notification_delivery_job(delivery_job_id: str) -> object:
 			job.attempt_count = previous_work_attempt_count + 1
 		else:
 			job.attempt_count = previous_work_attempt_count
+		service_job_id = _clean(data.get("service_job_id"))
+		if not service_job_id:
+			raise NotificationDeliveryError("Notification companion response is missing service_job_id")
 		job.status = "Processing"
-		job.service_job_id = str(data.get("service_job_id") or data.get("job_id") or job.service_job_id or "")
+		job.service_job_id = service_job_id
 		job.started_at = now_datetime()
 		job.save(ignore_permissions=True)
 		frappe.db.commit()

@@ -64,6 +64,7 @@ class TestAuthSocialLoginAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(response.get("ok"), response)
         self.assertEqual(get_bound_user("google", "google-123"), email)
         self.assertEqual(response["data"]["session"]["sid"], "social-sid")
+        self.assertTrue(response["data"]["session"]["csrf_token"])
 
     def test_apple_subject_binding_allows_later_token_without_email(self):
         email = f"{self.prefix}-apple@example.com"
@@ -79,6 +80,7 @@ class TestAuthSocialLoginAPI(AOSFeatureTestMixin, FrappeTestCase):
             second = apple_login_impl(id_token="later", client_type="web")
         self.assertTrue(second.get("ok"), second)
         self.assertNotIn("sid", second["data"]["session"])
+        self.assertTrue(second["data"]["session"]["csrf_token"])
 
     def test_unbound_apple_token_without_email_is_rejected(self):
         with patch("aos.api.auth.apple_login.get_apple_oauth_client_ids", return_value=["apple-client"]), patch(

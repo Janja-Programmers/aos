@@ -37,6 +37,8 @@ class TestPriceConversionSerialization(TestCase):
         self.assertEqual(payload["display_price"], 1000)
         self.assertEqual(payload["currency"], "KES")
         self.assertEqual(payload["display_currency"], "KES")
+        self.assertNotIn("displayed_price_value", payload)
+        self.assertNotIn("displayed_currency", payload)
         self.assertFalse(payload["price_conversion"]["available"])
         self.assertEqual(payload["price_conversion"]["reason"], "MISSING_EXCHANGE_RATE")
 

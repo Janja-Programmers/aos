@@ -122,7 +122,7 @@ def _load_user_target(target_user: str | None) -> dict[str, Any] | None:
         "target_name": public_user,
         "target_title": title,
         "target_subtitle": "Profile",
-        "target_image": display.get("avatar") or display.get("user_image") or "",
+        "target_image": display.get("avatar") or "",
         "route_type": ROUTE_TYPE_PROFILE,
         "route_id": public_user,
         "metadata": {

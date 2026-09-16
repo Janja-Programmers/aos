@@ -2,18 +2,16 @@
 
 Run destructive or provider-facing cases only in staging or an isolated rehearsal environment. Replace placeholders and keep credentials in restricted environment files.
 
-## 1. Migrations and patch idempotency
+## 1. Fresh-site migration and schema idempotency
 
 ```bash
 cd /home/aos/frappe-bench
 bench --site <site> execute aos.utils.production_config.assert_production_config_ready
 bench --site <site> execute aos.utils.migration_preflight.assert_migration_preflight_ready
 /home/aos/aos/scripts/deploy/run-migrate.sh --site <site>
-bench --site <site> execute aos.patches.v1_0.finalize_outbox_failure_reconciliation.execute
-bench --site <site> execute aos.patches.v1_0.finalize_outbox_failure_reconciliation.execute
 ```
 
-Expected: migration succeeds, no failure marker remains, and the second patch execution is idempotent.
+Expected: migration succeeds, no failure marker remains, and current schema/index installers are idempotently reasserted by the normal migration path.
 
 ## 2. Retryable work failure
 

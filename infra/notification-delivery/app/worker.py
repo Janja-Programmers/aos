@@ -188,7 +188,7 @@ def _is_android_token(token: dict[str, Any]) -> bool:
 
 
 def _incoming_call_collapse_key(data_payload: dict[str, str]) -> str | None:
-	call_id = str(data_payload.get("call_id") or data_payload.get("id") or "").strip()
+	call_id = str(data_payload.get("call_id") or "").strip()
 	if not call_id:
 		return None
 	# Call IDs are server-controlled public IDs. Keep the key short and stable so

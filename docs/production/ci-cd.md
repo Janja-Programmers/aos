@@ -24,7 +24,7 @@ The required CI gate includes:
 - Secret scanning, tracked-runtime-artifact checks, and lock-file credential checks.
 - Dependency vulnerability audit and Semgrep.
 - Eight isolated companion-service test jobs, including sensitive FastAPI 422 validation handling, stable downstream dispatch IDs, generation replacement, duplicate-active handling, and callback replay.
-- A disposable Frappe/MariaDB/Redis site, migrations, patch-rerun coverage, and the complete AOS Frappe suite. `ci/assert_frappe_tests.py` fails when the outbox redispatch, callback atomicity, legacy backfill, metrics, backup-readiness, or migration-preflight modules are missing.
+- A disposable Frappe/MariaDB/Redis site, migrations, patch-rerun coverage, and the complete AOS Frappe suite. `ci/assert_frappe_tests.py` fails when the outbox redispatch, callback atomicity, recovery, metrics, backup-readiness, or migration-preflight modules are missing.
 - Backup discovery, encryption, encrypted-only local retention, cleanup, readiness, and strict rehearsal-policy tests.
 - Prometheus config/rule validation, Alertmanager validation and linkage, scrape-target/absence alert coverage, Redis-metrics-backend alert coverage, Nginx callback-rate policy, systemd units, Docker Compose, shell syntax, ShellCheck, deployment dry runs, GitHub Actions pinning, and documentation paths.
 

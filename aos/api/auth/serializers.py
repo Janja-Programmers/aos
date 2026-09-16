@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import frappe
+from frappe.sessions import get_csrf_token
 
 from aos.api.auth.observability import log_auth_exception
 from aos.services.accounts.serializers import seller_summary
@@ -68,7 +69,10 @@ def serialize_seller_summary(user: str) -> dict[str, Any]:
 
 
 def serialize_session(*, sid: str | None = None, include_sid: bool = False) -> dict[str, Any]:
-	payload: dict[str, Any] = {"authenticated": True}
+	csrf_token = str(get_csrf_token() or "").strip()
+	if not csrf_token:
+		raise RuntimeError("Authentication session CSRF invariant is missing")
+	payload: dict[str, Any] = {"authenticated": True, "csrf_token": csrf_token}
 	if include_sid:
 		payload["sid"] = sid
 	return payload

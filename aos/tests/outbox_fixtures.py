@@ -9,8 +9,16 @@ from typing import Any
 
 import frappe
 
-from aos.patches.v1_0.backfill_transactional_outbox import SPECS, LegacyJobSpec
 from aos.services.transactional_outbox import ensure_outbox_for_job
+
+
+_OUTBOX_FIXTURE_DISPATCH = {
+	"video_processing": ("long", 3600),
+	"moderation": ("long", 900),
+	"search_indexing": ("short", 600),
+	"notification_delivery": ("short", 600),
+	"analytics_ingestion": ("short", 600),
+}
 
 
 @dataclass(frozen=True)
@@ -276,17 +284,13 @@ def create_durable_job(
 
 
 def create_outbox(fixture: DurableJobFixture, *, max_attempts: int = 3) -> Any:
-	spec = next(item for item in SPECS if item.service_type == fixture.service_type)
+	queue, timeout_seconds = _OUTBOX_FIXTURE_DISPATCH[fixture.service_type]
 	return ensure_outbox_for_job(
 		service_type=fixture.service_type,
 		job=fixture.job,
-		queue=spec.queue,
-		timeout_seconds=spec.timeout_seconds,
+		queue=queue,
+		timeout_seconds=timeout_seconds,
 		aggregate_doctype=fixture.domain_doctype,
 		aggregate_name=fixture.domain_name,
 		max_attempts=max_attempts,
 	)
-
-
-def legacy_spec(service_type: str) -> LegacyJobSpec:
-	return next(item for item in SPECS if item.service_type == service_type)
