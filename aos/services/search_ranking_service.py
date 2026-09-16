@@ -476,7 +476,7 @@ def build_ad_index_document(ad_id: str) -> dict[str, Any]:
 		"""
 		SELECT a.name, a.public_id, a.title, a.description, a.status, a.country, a.location,
 		       a.category, a.seller, a.price_type, a.price, a.currency, a.average_rating,
-		       a.total_reviews, a.view_count, a.wishlist_count, a.expires_on, a.creation, a.modified,
+		       a.total_reviews, a.wishlist_count, a.expires_on, a.creation, a.modified,
 		       s.status AS seller_status, s.user AS seller_user, s.shop_name AS seller_name,
 		       u.enabled AS user_enabled, p.account_status, p.is_verified AS seller_verified
 		FROM `tabAOS Ad` a
@@ -548,7 +548,6 @@ def build_ad_index_document(ad_id: str) -> dict[str, Any]:
 		"currency": ad.currency or "",
 		"average_rating": float(ad.average_rating or 0),
 		"total_reviews": int(ad.total_reviews or 0),
-		"view_count": int(ad.view_count or 0),
 		"wishlist_count": int(ad.wishlist_count or 0),
 		"creation": str(ad.creation or ""),
 		"modified": str(ad.modified or ""),

@@ -165,6 +165,19 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         assert 'def enqueue_ad_search_delete' in source
 
 
+    def test_ad_search_index_uses_only_authoritative_ad_metrics(self):
+        source=text('aos/services/search_ranking_service.py')
+        store=text('infra/search-ranking/app/store.py')
+        ad_schema=json.loads(text('aos/aos/doctype/aos_ad/aos_ad.json'))
+        fields={field.get('fieldname') for field in ad_schema.get('fields') or []}
+        assert 'view_count' not in fields
+        assert 'a.view_count' not in source
+        assert '"view_count": int(ad.view_count' not in source
+        assert 'doc.get("view_count")' not in store
+        assert 'wishlist_count' in source
+        assert 'doc.get("wishlist_count")' in store
+
+
     def test_manual_review_can_override_automatic_nonterminal_decisions(self):
         lifecycle=text('aos/services/ads/lifecycle.py')
         assert 'frozenset({STATUS_REVIEWING, STATUS_DECLINED}), STATUS_ACTIVE' in lifecycle

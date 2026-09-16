@@ -101,7 +101,6 @@ def short_key(short_id: str) -> str:
 def _ad_base_score(doc: dict[str, Any]) -> float:
 	rating = _float(doc.get("average_rating"))
 	reviews = _float(doc.get("total_reviews"))
-	views = _float(doc.get("view_count"))
 	wishlists = _float(doc.get("wishlist_count"))
 	verified = 20.0 if _bool(doc.get("seller_verified")) else 0.0
 	created = _timestamp(doc.get("creation"))
@@ -109,7 +108,6 @@ def _ad_base_score(doc: dict[str, Any]) -> float:
 	return (
 		rating * 20.0
 		+ math.log1p(reviews) * 10.0
-		+ math.log1p(views) * 2.0
 		+ math.log1p(wishlists) * 4.0
 		+ verified
 		+ recency
