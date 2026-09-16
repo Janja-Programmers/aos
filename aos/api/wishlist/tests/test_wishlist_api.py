@@ -208,6 +208,73 @@ class TestWishlistAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertFalse(response.get("ok"), response)
         self.assertEqual(response.get("error"), "INVALID_WISHLIST_CURSOR")
 
+    def test_list_searches_only_within_saved_ads_and_filters_server_side(self):
+        second_ad = self.make_ad(seller_user=self.seller_user, status="Active")
+        frappe.db.set_value("AOS Ad", self.ad.name, "title", "Wishlist Camera Alpha", update_modified=False)
+        frappe.db.set_value("AOS Ad", second_ad.name, "title", "Wishlist Laptop Beta", update_modified=False)
+        self.assertTrue(self._add(ad_id=self.ad.public_id).get("ok"))
+        self.assertTrue(self._add(ad_id=second_ad.public_id).get("ok"))
+
+        response = self._list(q="camera")
+
+        self.assertTrue(response.get("ok"), response)
+        self.assertEqual([item.get("id") for item in response["data"]["items"]], [self.ad.public_id])
+
+    def test_list_supports_price_sort_and_price_filter_with_cursor(self):
+        second_ad = self.make_ad(seller_user=self.seller_user, status="Active")
+        frappe.db.set_value("AOS Ad", self.ad.name, "price", 300, update_modified=False)
+        frappe.db.set_value("AOS Ad", second_ad.name, "price", 100, update_modified=False)
+        self.assertTrue(self._add(ad_id=self.ad.public_id).get("ok"))
+        self.assertTrue(self._add(ad_id=second_ad.public_id).get("ok"))
+
+        first = self._list(sort="price_low", price_min="50", price_max="350", limit=1)
+        self.assertTrue(first.get("ok"), first)
+        self.assertEqual([item.get("id") for item in first["data"]["items"]], [second_ad.public_id])
+        cursor = first["data"]["pagination"]["next_cursor"]
+        self.assertTrue(cursor)
+
+        second = self._list(sort="price_low", price_min="50", price_max="350", limit=1, cursor=cursor)
+        self.assertTrue(second.get("ok"), second)
+        self.assertEqual([item.get("id") for item in second["data"]["items"]], [self.ad.public_id])
+
+    def test_list_cursor_is_bound_to_filter_and_sort_scope(self):
+        second_ad = self.make_ad(seller_user=self.seller_user, status="Active")
+        self.assertTrue(self._add(ad_id=self.ad.public_id).get("ok"))
+        self.assertTrue(self._add(ad_id=second_ad.public_id).get("ok"))
+        first = self._list(limit=1, sort="saved_recent")
+        cursor = first["data"]["pagination"]["next_cursor"]
+        self.assertTrue(cursor)
+
+        changed_sort = self._list(limit=1, sort="saved_oldest", cursor=cursor)
+        changed_query = self._list(limit=1, sort="saved_recent", q="phone", cursor=cursor)
+
+        self.assertFalse(changed_sort.get("ok"), changed_sort)
+        self.assertEqual(changed_sort.get("error"), "INVALID_WISHLIST_CURSOR")
+        self.assertFalse(changed_query.get("ok"), changed_query)
+        self.assertEqual(changed_query.get("error"), "INVALID_WISHLIST_CURSOR")
+
+    def test_list_supports_category_location_seller_rating_and_verified_filters(self):
+        second_seller_user = self.make_user("seller-two")
+        other_ad = self.make_ad(seller_user=second_seller_user, status="Active")
+        seller = self.make_seller(self.seller_user)
+        profile_name = frappe.db.get_value("AOS Profile", {"user": self.seller_user}, "name")
+        frappe.db.set_value("AOS Profile", profile_name, "is_verified", 1, update_modified=False)
+        frappe.db.set_value("AOS Ad", self.ad.name, "average_rating", 4.5, update_modified=False)
+        frappe.db.set_value("AOS Ad", other_ad.name, "average_rating", 2.0, update_modified=False)
+        self.assertTrue(self._add(ad_id=self.ad.public_id).get("ok"))
+        self.assertTrue(self._add(ad_id=other_ad.public_id).get("ok"))
+
+        response = self._list(
+            category=self.ad.category,
+            location=self.ad.location,
+            seller=seller.public_id,
+            rating_min="4",
+            verified_seller=1,
+        )
+
+        self.assertTrue(response.get("ok"), response)
+        self.assertEqual([item.get("id") for item in response["data"]["items"]], [self.ad.public_id])
+
     def test_list_omits_unavailable_moderation_hidden_and_blocked_ads(self):
         second_ad = self.make_ad(seller_user=self.seller_user, status="Active")
         self.assertTrue(self._add(ad_id=self.ad.public_id).get("ok"))

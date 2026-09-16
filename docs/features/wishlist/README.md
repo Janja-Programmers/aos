@@ -79,15 +79,24 @@ The operation converges on `wishlisted=false`. Repeating removal is successful w
 
 `GET /api/method/aos.api.v1.wishlist.list_wishlist`
 
-Accepted fields are only:
+Accepted fields are:
 
 - `limit` — bounded by the Ads page-size ceiling.
-- `cursor` — opaque recent-order cursor.
+- `cursor` — opaque keyset cursor bound to the active search/filter/sort scope.
 - `country`, `currency` — display/market context consumed by canonical Ads projection.
+- `q` — server-side search within the authenticated user's saved Ads (title/description; minimum two characters).
+- `sort` — one of `saved_recent` (default), `saved_oldest`, `price_low`, `price_high`, `rating_high`.
+- `category` — canonical Catalog category filter, including the same category-resolution semantics used by Ads discovery.
+- `location` — canonical Ads/Maps location identifier.
+- `seller` — canonical public Seller identifier.
+- `price_type` — canonical Ads price type.
+- `price_min`, `price_max` — display-currency price range; cross-currency filtering fails closed when a current conversion is unavailable.
+- `rating_min` — minimum current Ad rating from 0 through 5.
+- `verified_seller` — `0`/`1`; when true only Ads whose canonical seller profile is verified are returned.
 
-Wishlist-specific search, seller/category filters, price filters, rating filters, promotion filters, sort aliases, and offset pagination are not part of the current contract. Those belong to Marketplace Discovery rather than the relationship domain.
+`offset`, promotion aliases, attribute-search payloads, legacy identifiers, and generic Marketplace Discovery ranking controls are intentionally not accepted. Search/filter/sort are scoped to the authenticated user's Wishlist membership and do not turn Wishlist into a second Ads API.
 
-Relationships are scanned in deterministic `saved_on DESC, wishlist name DESC` order. The scan has bounded headroom so stale hidden relationships do not cause unbounded work. Public card hydration is then delegated in one bounded batch to `load_public_ad_items`; unavailable Ads are omitted without exposing the reason. Returned cards always have `is_wishlisted=true` and include `wishlisted_on`.
+Pagination is deterministic keyset pagination for every supported sort. The cursor includes a hash of the active market/search/filter/sort scope, so a cursor from one query cannot be reused after changing filters or ordering. The relationship/eligibility query selects only the bounded page plus one row; public card hydration is then delegated in one bounded batch to `load_public_ad_items`. Ads remains authoritative for card serialization, Media, seller/account eligibility re-checks, currency presentation, and visibility. Returned cards always have `is_wishlisted=true` and include `wishlisted_on`.
 
 ## Ad lifecycle and deletion
 
@@ -123,4 +132,4 @@ The current fresh-site architecture has no `toggle_wishlist` endpoint, alias, wr
 
 ## Validation
 
-The backend suite covers authenticated add/remove, guest rejection, owner isolation, duplicate retries, unavailable Ad removal, canonical public identifiers, hidden/moderation-blocked listing behavior, cursor validation/order, exact derived counts, ranking side-effect failure safety, API legacy rejection, schema indexes, and static guards against reintroducing the removed transport or duplicated Ads projection logic.
+The backend suite covers authenticated add/remove, guest rejection, owner isolation, duplicate retries, unavailable Ad removal, canonical public identifiers, hidden/moderation-blocked listing behavior, Wishlist-scoped search and filters, all supported sort/cursor paths, query-bound cursor rejection, exact derived counts, ranking side-effect failure safety, API legacy rejection, schema indexes, and static guards against reintroducing the removed transport or duplicated Ads card projection logic.

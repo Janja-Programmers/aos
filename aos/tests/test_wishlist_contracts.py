@@ -18,43 +18,64 @@ from aos.services.wishlist.validation import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_wishlist_cursor_round_trips_and_list_contract_is_narrow():
-    request = normalize_wishlist_list_request({})
+def test_wishlist_cursor_round_trips_and_list_contract_supports_scoped_discovery():
+    request = normalize_wishlist_list_request({"q": "phone", "sort": "price_low", "price_min": "10"})
     token = encode_wishlist_cursor(
-        saved_on="2026-07-27 12:00:00.000001",
-        name="WISH-0123456789abcdef0123456789abcdef",
+        request=request,
+        keys={
+            "saved_on": "2026-07-27 12:00:00.000001",
+            "name": "WISH-0123456789abcdef0123456789abcdef",
+            "available": 1,
+            "price": "120.50",
+        },
     )
 
     assert request["limit"] > 0
-    assert set(request) == {"country", "currency", "limit", "cursor"}
-    assert decode_wishlist_cursor(token) == (
-        "2026-07-27 12:00:00.000001",
-        "WISH-0123456789abcdef0123456789abcdef",
-    )
+    assert set(request) == {
+        "country", "currency", "location", "category", "seller", "q",
+        "price_type", "price_min", "price_max", "rating_min", "verified_seller",
+        "sort", "limit", "cursor",
+    }
+    keys = decode_wishlist_cursor(token, request=request)
+    assert keys["saved_on"] == "2026-07-27 12:00:00.000001"
+    assert keys["name"] == "WISH-0123456789abcdef0123456789abcdef"
+    assert keys["available"] == "1"
+    assert keys["price"] == "120.50"
 
 
 def test_wishlist_cursor_rejects_invalid_datetime_payload():
+    request = normalize_wishlist_list_request({})
     token = encode_wishlist_cursor(
-        saved_on="not-a-datetime",
-        name="WISH-0123456789abcdef0123456789abcdef",
+        request=request,
+        keys={"saved_on": "not-a-datetime", "name": "WISH-0123456789abcdef0123456789abcdef"},
     )
 
     try:
-        decode_wishlist_cursor(token)
+        decode_wishlist_cursor(token, request=request)
     except Exception as exc:
         assert getattr(exc, "code", "") == "INVALID_WISHLIST_CURSOR"
     else:
         raise AssertionError("invalid cursor datetime was accepted")
 
 
-def test_wishlist_list_rejects_marketplace_filters_and_offset_compatibility():
-    for payload in (
-        {"offset": 0},
-        {"sort": "recent"},
-        {"seller": "seller_public"},
-        {"category": "category_public"},
-        {"q": "phone"},
-    ):
+def test_wishlist_list_accepts_current_scoped_filters_but_rejects_offset_and_legacy_fields():
+    request = normalize_wishlist_list_request({
+        "q": "phone",
+        "sort": "saved_oldest",
+        "location": "LOC-1",
+        "category": "CAT-1",
+        "seller": "SELLER-ABCDEFGHIJKLMNOPQRST",
+        "price_type": "Fixed",
+        "price_min": "10",
+        "price_max": "1000",
+        "rating_min": "4",
+        "verified_seller": 1,
+    })
+    assert request["q"] == "phone"
+    assert request["sort"] == "saved_oldest"
+    assert request["verified_seller"] == 1
+
+    for payload in ({"offset": 0}, {"listing_id": "ad_public"}, {"promotion_type": "deal"}):
         try:
             normalize_wishlist_list_request(payload)
         except Exception as exc:
@@ -152,8 +173,9 @@ def test_wishlist_api_uses_explicit_domain_methods_and_canonical_ads_projection(
     assert "rate_limit_key(" in list_source
     assert "load_public_ad_items" in list_source
     assert "project_ad_image_urls" not in list_source
-    assert "AOS Seller" not in list_source
-    assert "AOS Exchange Rate" not in list_source
+    assert "load_public_ad_items" in list_source
+    assert "serialize_ad_list_item" not in list_source
+    assert "MediaService" not in list_source
     assert "require_public_ad_for_viewer" in service
     assert "resolve_ad_name" in service
     assert "frappe.db.commit()" not in mutation
