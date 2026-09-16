@@ -299,9 +299,9 @@ def related_ads(redis: Redis, payload: dict[str, Any]) -> dict[str, Any]:
 		doc = _load_ad(redis, candidate_id)
 		if not doc or not _bool(doc.get("eligible")):
 			continue
+		if _clean(doc.get("category")) != _clean(source.get("category")):
+			continue
 		score = _ad_base_score(doc)
-		if _clean(doc.get("category")) == _clean(source.get("category")):
-			score += 250.0
 		candidate_attrs = doc.get("attributes") if isinstance(doc.get("attributes"), dict) else {}
 		shared = sum(1 for key, value in source_attrs.items() if key in candidate_attrs and _attribute_match(candidate_attrs[key], value))
 		score += shared * 35.0

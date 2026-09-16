@@ -53,6 +53,11 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         related=text('aos/api/search_ranking/recommendations.py')
         image=text('aos/api/ads/image_search.py')
         assert 'related_ad_candidates' in related and 'load_public_ad_items' in related
+        assert 'required_category=source.category' in related
+        projection=text('aos/services/marketplace_discovery/projection.py')
+        assert 'a.category = %(required_category)s' in projection
+        ranking=text('infra/search-ranking/app/store.py')
+        assert 'doc.get("category")) != _clean(source.get("category"))' in ranking
         assert 'load_public_ad_items' in image
         assert 'matched_media_id' not in image
         assert 'score' not in image.split('return ok',1)[-1]

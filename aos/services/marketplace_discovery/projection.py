@@ -51,6 +51,7 @@ def load_public_ad_items(
     viewer: str = "Guest",
     limit: int = 20,
     exclude_public_id: str | None = None,
+    required_category: str = "",
 ) -> list[dict[str, Any]]:
     """Hydrate bounded derived-index candidates through canonical DB truth.
 
@@ -87,6 +88,9 @@ def load_public_ad_items(
         "COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'",
         "(a.expires_on IS NULL OR a.expires_on >= %(today)s)",
     ]
+    if _clean(required_category):
+        values["required_category"] = _clean(required_category)
+        conditions.append("a.category = %(required_category)s")
     if viewer and viewer != "Guest":
         values["viewer"] = viewer
         conditions.append(

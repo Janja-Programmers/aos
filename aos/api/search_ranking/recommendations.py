@@ -118,6 +118,7 @@ def related_ads_impl(**kwargs):
             viewer=current_user(),
             limit=limit,
             exclude_public_id=public_id,
+            required_category=source.category,
         )
         return ok("Related ads fetched.", data={"items": items})
 

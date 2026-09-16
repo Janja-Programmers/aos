@@ -70,7 +70,7 @@ The reranker is stable: the primary ranking order is preserved inside each bucke
 
 ## Related Ads
 
-`aos.api.v1.ads.related_ads` is the canonical detail-page endpoint. The source Ad is excluded. Search Ranking generates bounded candidates using relatedness signals (category, shared Catalog selections, text, price proximity and quality signals supported by the current index). The Ads projection then rechecks canonical eligibility, excludes the source, batch-projects Media, and applies geography last. If the optional ranking service is unavailable, a bounded authoritative category/quality candidate fallback is used; optional semantic infrastructure failing never exposes an ineligible Ad.
+`aos.api.v1.ads.related_ads` is the canonical detail-page endpoint. The source Ad is excluded and exact source-category membership is a hard eligibility boundary: unrelated categories are never returned merely to fill the section. Within that category, Search Ranking orders bounded candidates using shared Catalog selections, text overlap, price proximity and quality/recency signals supported by the current index. The Ads projection rechecks the category and all canonical marketplace eligibility, excludes the source, batch-projects Media, and applies geography last. If the optional ranking service is unavailable, a bounded authoritative same-category quality fallback is used; optional derived infrastructure failing never exposes an ineligible or cross-category Ad.
 
 ## FX contract
 
