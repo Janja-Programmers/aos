@@ -246,6 +246,7 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
     def test_ad_image_consumers_use_media_not_removed_image_column(self):
         activity=text('aos/api/ads/activity.py')
         wishlist=text('aos/api/wishlist/list.py')
+        projection=text('aos/services/marketplace_discovery/projection.py')
         chat=text('aos/services/chat/shared_objects.py')
         shorts_feed=text('aos/api/shorts/feed.py')
         shorts_management=text('aos/api/shorts/management.py')
@@ -255,7 +256,8 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
             assert 'SELECT adi.image' not in source
             assert '"media", "image"' not in source
         assert 'project_ad_image_urls(rows)' in activity
-        assert 'project_ad_image_urls(image_rows)' in wishlist
+        assert 'load_public_ad_items' in wishlist
+        assert 'get_public_attachment_url_map' in projection
         assert 'get_public_attachment_url_map' in chat
         assert 'project_ad_thumbnail_urls(visible_rows)' in shorts_feed
         assert 'project_ad_thumbnail_urls(rows)' in shorts_management

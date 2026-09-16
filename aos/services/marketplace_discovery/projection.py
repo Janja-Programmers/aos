@@ -52,6 +52,7 @@ def load_public_ad_items(
     limit: int = 20,
     exclude_public_id: str | None = None,
     required_category: str = "",
+    geography_rerank: bool = True,
 ) -> list[dict[str, Any]]:
     """Hydrate bounded derived-index candidates through canonical DB truth.
 
@@ -137,7 +138,18 @@ def load_public_ad_items(
     if not primary_rows:
         return []
 
-    names = [row.name for row in primary_rows]
+    if geography_rerank:
+        primary_rows = stable_geographic_rerank(
+            primary_rows,
+            country=country,
+            location=location,
+            country_key="country",
+            location_key="location",
+        )
+
+    page_limit = max(1, min(int(limit or 20), 100))
+    page_rows = primary_rows[:page_limit]
+    names = [row.name for row in page_rows]
     images_by_ad: dict[str, list[dict[str, Any]]] = {name: [] for name in names}
     image_rows = frappe.get_all(
         "AOS Ad Image",
@@ -150,16 +162,9 @@ def load_public_ad_items(
         images_by_ad.setdefault(image.parent, []).append(dict(image))
     _attach_image_urls(images_by_ad)
 
-    primary_rows = stable_geographic_rerank(
-        primary_rows,
-        country=country,
-        location=location,
-        country_key="country",
-        location_key="location",
-    )
-    wishlisted = get_active_wishlist_ad_ids(viewer) if viewer != "Guest" else set()
+    wishlisted = get_active_wishlist_ad_ids(viewer, ad_ids=names) if viewer != "Guest" else set()
     result: list[dict[str, Any]] = []
-    for row in primary_rows[: max(1, min(int(limit or 20), 100))]:
+    for row in page_rows:
         row.images = images_by_ad.get(row.name, [])
         row.is_offer_active = bool(
             row.offer_price

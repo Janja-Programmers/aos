@@ -11,8 +11,8 @@ from aos.api.shared.rate_limit import rate_limit, request_ip
 from aos.api.shared.responses import ok
 from aos.services.ads.api import run_ads_api
 from aos.services.ads.constants import GET_AD_FIELDS, MAX_AD_ATTRIBUTES, MAX_IMAGES
-from aos.services.ads.errors import AdsNotFoundError
 from aos.services.ads.validation import ensure_known_fields, normalize_identifier
+from aos.services.ads.visibility import require_public_ad_for_viewer
 from aos.services.analytics_pipeline_service import emit_analytics_event
 from aos.services.currency_conversion import convert_amount
 from aos.services.fx_service import get_fx_snapshot
@@ -68,25 +68,8 @@ def get_ad_impl(**kwargs):
         _country, display_currency, market_error=resolve_market_context(country=kwargs.get("country"), currency=kwargs.get("currency"))
         if market_error: return market_error
         viewer=current_user(); today=getdate(nowdate())
-        conditions = [
-            "a.public_id = %(public_id)s",
-            "a.status = 'Active'",
-            "s.status = 'Active'",
-            "u.enabled = 1",
-            "COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'",
-            "(a.expires_on IS NULL OR a.expires_on >= %(today)s)",
-        ]
-        values={"public_id":public_id,"today":today}
-        if viewer != "Guest":
-            values["viewer"]=viewer
-            conditions.append("""NOT EXISTS (SELECT 1 FROM `tabAOS User Block` b WHERE b.status='Active'
-                AND ((b.blocker_user=%(viewer)s AND b.blocked_user=s.user) OR (b.blocker_user=s.user AND b.blocked_user=%(viewer)s)))""")
-        row=frappe.db.sql(f"""SELECT a.name, loc.location AS location_name FROM `tabAOS Ad` a INNER JOIN `tabAOS Seller` s ON s.name=a.seller
-            LEFT JOIN `tabAOS Location` loc ON loc.name=a.location
-            INNER JOIN `tabAOS Profile` p ON p.user=s.user INNER JOIN `tabUser` u ON u.name=s.user
-            WHERE {' AND '.join(conditions)} LIMIT 1""",values,as_dict=True)
-        if not row: raise AdsNotFoundError("Ad not found.")
-        ad_name=str(row[0].name); ad_doc=frappe.get_doc("AOS Ad",ad_name); ad_doc.location_name=str(row[0].location_name or "")
+        visible=require_public_ad_for_viewer(public_id=public_id, viewer=viewer)
+        ad_name=str(visible.name); ad_doc=frappe.get_doc("AOS Ad",ad_name); ad_doc.location_name=str(visible.location_name or "")
         ad_doc.images=list(ad_doc.images or [])[:MAX_IMAGES]; ad_doc.details=list(ad_doc.details or [])[:MAX_AD_ATTRIBUTES]
         project_ad_image_urls(ad_doc.images); project_ad_video_url(ad_doc)
         _apply_display_price(ad_doc,requested_currency=display_currency,today=today)

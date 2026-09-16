@@ -134,7 +134,7 @@ class TestDynamicSqlSafety(FrappeTestCase):
         self.assertEqual(response.get("error"), "INVALID_AD_CURSOR")
         self.assertEqual(frappe.local.response.get("http_status_code"), 422)
 
-    def test_wishlist_invalid_sort_is_rejected_before_sql(self):
+    def test_wishlist_legacy_sort_parameter_is_rejected_before_sql(self):
         with (
             patch.object(wishlist_list, "rate_limit", return_value=None),
             patch.object(wishlist_list, "request_ip", return_value="127.0.0.1"),
@@ -145,7 +145,7 @@ class TestDynamicSqlSafety(FrappeTestCase):
             response = wishlist_list.list_wishlist_impl(sort="recent; DROP TABLE `tabAOS Wishlist`; --")
 
         self.assertFalse(response.get("ok"))
-        self.assertEqual(response.get("error"), "VALIDATION_ERROR")
+        self.assertEqual(response.get("error"), "INVALID_WISHLIST_REQUEST")
         self.assertEqual(frappe.local.response.get("http_status_code"), 422)
 
     def test_wishlist_invalid_cursor_is_rejected_before_listing_sql(self):

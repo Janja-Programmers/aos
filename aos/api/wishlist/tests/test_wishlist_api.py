@@ -7,8 +7,9 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import now_datetime
 
+from aos.api.wishlist.add import add_to_wishlist_impl
 from aos.api.wishlist.list import list_wishlist_impl
-from aos.api.wishlist.toggle import toggle_wishlist_impl
+from aos.api.wishlist.remove import remove_from_wishlist_impl
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
@@ -20,6 +21,7 @@ class TestWishlistAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.configure_test_localization_defaults()
         self.seller_user = self.make_user("seller")
         self.buyer_user = self.make_user("buyer")
+        self.other_buyer = self.make_user("other-buyer")
         self.ad = self.make_ad(seller_user=self.seller_user, status="Active")
         frappe.set_user(self.buyer_user)
 
@@ -27,28 +29,36 @@ class TestWishlistAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.cleanup_feature_rows()
         frappe.set_user("Administrator")
 
-    def _toggle(self, **kwargs):
+    def _add(self, **kwargs):
         with (
-            patch("aos.api.wishlist.toggle.rate_limit", return_value=None),
-            patch("aos.api.wishlist.toggle.record_ad_wishlist_activity"),
-            patch("aos.api.wishlist.toggle.hide_ad_wishlist_activity"),
+            patch("aos.api.wishlist.mutation.rate_limit", return_value=None),
+            patch("aos.api.wishlist.mutation._schedule_activity"),
             patch("aos.services.wishlist.counters._enqueue_search_refresh"),
         ):
-            return toggle_wishlist_impl(**kwargs)
+            return add_to_wishlist_impl(**kwargs)
+
+    def _remove(self, **kwargs):
+        with (
+            patch("aos.api.wishlist.mutation.rate_limit", return_value=None),
+            patch("aos.api.wishlist.mutation._schedule_activity"),
+            patch("aos.services.wishlist.counters._enqueue_search_refresh"),
+        ):
+            return remove_from_wishlist_impl(**kwargs)
 
     def _list(self, **kwargs):
         with patch("aos.api.wishlist.list.rate_limit", return_value=None):
             return list_wishlist_impl(**kwargs)
 
     def test_explicit_add_and_remove_are_idempotent_and_keep_exact_count(self):
-        added = self._toggle(ad_id=self.ad.name, wishlisted=1)
-        added_again = self._toggle(ad_id=self.ad.name, wishlisted=1)
-        removed = self._toggle(ad_id=self.ad.name, wishlisted=0)
-        removed_again = self._toggle(ad_id=self.ad.name, wishlisted=0)
+        added = self._add(ad_id=self.ad.public_id)
+        added_again = self._add(ad_id=self.ad.public_id)
+        removed = self._remove(ad_id=self.ad.public_id)
+        removed_again = self._remove(ad_id=self.ad.public_id)
 
         self.assertTrue(added.get("ok"), added)
         self.assertTrue(added.get("data", {}).get("wishlisted"))
         self.assertTrue(added.get("data", {}).get("changed"))
+        self.assertEqual(added.get("data", {}).get("ad_id"), self.ad.public_id)
         self.assertEqual(added.get("data", {}).get("wishlist_count"), 1)
 
         self.assertTrue(added_again.get("ok"), added_again)
@@ -58,11 +68,11 @@ class TestWishlistAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(removed.get("ok"), removed)
         self.assertFalse(removed.get("data", {}).get("wishlisted"))
         self.assertTrue(removed.get("data", {}).get("changed"))
-        self.assertIsNone(removed.get("data", {}).get("wishlist_count"))
+        self.assertEqual(removed.get("data", {}).get("wishlist_count"), 0)
 
         self.assertTrue(removed_again.get("ok"), removed_again)
         self.assertFalse(removed_again.get("data", {}).get("changed"))
-        self.assertIsNone(removed_again.get("data", {}).get("wishlist_count"))
+        self.assertEqual(removed_again.get("data", {}).get("wishlist_count"), 0)
 
         row = frappe.db.get_value(
             "AOS Wishlist",
@@ -75,43 +85,89 @@ class TestWishlistAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(row.removed_on)
         self.assertEqual(int(frappe.db.get_value("AOS Ad", self.ad.name, "wishlist_count") or 0), 0)
 
-    def test_legacy_toggle_preserves_sequential_toggle_semantics(self):
-        first = self._toggle(id=self.ad.name)
-        second = self._toggle(id=self.ad.name)
+    def test_legacy_toggle_shape_and_internal_ad_name_are_rejected(self):
+        legacy = self._add(id=self.ad.public_id, wishlisted=1)
+        internal_name = self._add(ad_id=self.ad.name)
 
-        self.assertTrue(first.get("ok"), first)
-        self.assertTrue(first.get("data", {}).get("wishlisted"))
-        self.assertTrue(second.get("ok"), second)
-        self.assertFalse(second.get("data", {}).get("wishlisted"))
+        self.assertFalse(legacy.get("ok"), legacy)
+        self.assertEqual(legacy.get("error"), "INVALID_WISHLIST_REQUEST")
+        self.assertFalse(internal_name.get("ok"), internal_name)
+        self.assertEqual(internal_name.get("error"), "AD_NOT_FOUND")
+
+    def test_guest_is_rejected_and_cannot_create_relationship(self):
+        frappe.set_user("Guest")
+        response = self._add(ad_id=self.ad.public_id)
+
+        self.assertFalse(response.get("ok"), response)
+        self.assertFalse(frappe.db.exists("AOS Wishlist", {"ad": self.ad.name}))
+
+    def test_owner_isolation_prevents_removing_another_users_relationship(self):
+        added = self._add(ad_id=self.ad.public_id)
+        self.assertTrue(added.get("ok"), added)
+
+        frappe.set_user(self.other_buyer)
+        removed = self._remove(ad_id=self.ad.public_id)
+
+        self.assertTrue(removed.get("ok"), removed)
+        self.assertFalse(removed.get("data", {}).get("wishlisted"))
+        self.assertFalse(removed.get("data", {}).get("changed"))
+        self.assertTrue(
+            frappe.db.exists(
+                "AOS Wishlist",
+                {"user": self.buyer_user, "ad": self.ad.name, "status": "Active"},
+            )
+        )
 
     def test_seller_cannot_wishlist_own_ad(self):
         frappe.set_user(self.seller_user)
-
-        response = self._toggle(ad_id=self.ad.name, wishlisted=1)
+        response = self._add(ad_id=self.ad.public_id)
 
         self.assertFalse(response.get("ok"), response)
         self.assertEqual(response.get("error"), "OWN_AD_WISHLIST_FORBIDDEN")
         self.assertFalse(frappe.db.exists("AOS Wishlist", {"user": self.seller_user, "ad": self.ad.name}))
 
-    def test_stale_unavailable_ad_can_still_be_removed_by_owner(self):
-        added = self._toggle(ad_id=self.ad.name, wishlisted=1)
+    def test_unavailable_ad_can_be_removed_but_not_readded(self):
+        added = self._add(ad_id=self.ad.public_id)
         self.assertTrue(added.get("ok"), added)
         frappe.db.set_value("AOS Ad", self.ad.name, "status", "Sold", update_modified=False)
 
-        removed = self._toggle(ad_id=self.ad.name, wishlisted=0)
-        readd = self._toggle(ad_id=self.ad.name, wishlisted=1)
+        removed = self._remove(ad_id=self.ad.public_id)
+        removed_again = self._remove(ad_id=self.ad.public_id)
+        readd = self._add(ad_id=self.ad.public_id)
 
         self.assertTrue(removed.get("ok"), removed)
         self.assertFalse(removed.get("data", {}).get("wishlisted"))
+        self.assertTrue(removed_again.get("ok"), removed_again)
+        self.assertFalse(removed_again.get("data", {}).get("changed"))
         self.assertFalse(readd.get("ok"), readd)
         self.assertEqual(readd.get("error"), "AD_NOT_FOUND")
 
+    def test_remove_does_not_reveal_hidden_ad_without_owner_relationship(self):
+        frappe.db.set_value("AOS Ad", self.ad.name, "status", "Reviewing", update_modified=False)
+
+        response = self._remove(ad_id=self.ad.public_id)
+
+        self.assertFalse(response.get("ok"), response)
+        self.assertEqual(response.get("error"), "AD_NOT_FOUND")
+
+    def test_deleted_ad_is_hidden_but_relationship_can_still_be_removed(self):
+        added = self._add(ad_id=self.ad.public_id)
+        self.assertTrue(added.get("ok"), added)
+        frappe.db.set_value("AOS Ad", self.ad.name, "status", "Deleted", update_modified=False)
+
+        listed = self._list()
+        removed = self._remove(ad_id=self.ad.public_id)
+
+        self.assertTrue(listed.get("ok"), listed)
+        self.assertEqual(listed.get("data", {}).get("items"), [])
+        self.assertTrue(removed.get("ok"), removed)
+        self.assertFalse(removed.get("data", {}).get("wishlisted"))
+        self.assertTrue(removed.get("data", {}).get("changed"))
+
     def test_list_defaults_to_recent_saved_order_and_supports_cursor_pagination(self):
         second_ad = self.make_ad(seller_user=self.seller_user, status="Active")
-        first_added = self._toggle(ad_id=self.ad.name, wishlisted=1)
-        second_added = self._toggle(ad_id=second_ad.name, wishlisted=1)
-        self.assertTrue(first_added.get("ok"), first_added)
-        self.assertTrue(second_added.get("ok"), second_added)
+        self.assertTrue(self._add(ad_id=self.ad.public_id).get("ok"))
+        self.assertTrue(self._add(ad_id=second_ad.public_id).get("ok"))
 
         older = now_datetime() - timedelta(minutes=2)
         newer = now_datetime() - timedelta(minutes=1)
@@ -137,7 +193,7 @@ class TestWishlistAPI(AOSFeatureTestMixin, FrappeTestCase):
         pagination = first_data.get("pagination", {})
         self.assertTrue(pagination.get("has_more"))
         self.assertTrue(pagination.get("next_cursor"))
-        self.assertEqual(pagination.get("next_offset"), 1)
+        self.assertNotIn("next_offset", pagination)
 
         second_page = self._list(limit=1, cursor=pagination["next_cursor"])
         self.assertTrue(second_page.get("ok"), second_page)
@@ -146,9 +202,17 @@ class TestWishlistAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertFalse(second_data.get("pagination", {}).get("has_more"))
         self.assertIsNone(second_data.get("pagination", {}).get("next_cursor"))
 
-    def test_list_omits_unavailable_and_blocked_ads_without_exposing_reason(self):
-        added = self._toggle(ad_id=self.ad.name, wishlisted=1)
-        self.assertTrue(added.get("ok"), added)
+    def test_list_rejects_malformed_cursor(self):
+        response = self._list(cursor="not-a-valid-cursor")
+
+        self.assertFalse(response.get("ok"), response)
+        self.assertEqual(response.get("error"), "INVALID_WISHLIST_CURSOR")
+
+    def test_list_omits_unavailable_moderation_hidden_and_blocked_ads(self):
+        second_ad = self.make_ad(seller_user=self.seller_user, status="Active")
+        self.assertTrue(self._add(ad_id=self.ad.public_id).get("ok"))
+        self.assertTrue(self._add(ad_id=second_ad.public_id).get("ok"))
+        frappe.db.set_value("AOS Ad", second_ad.name, "status", "Reviewing", update_modified=False)
         frappe.get_doc(
             {
                 "doctype": "AOS User Block",
@@ -163,20 +227,93 @@ class TestWishlistAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(response.get("ok"), response)
         self.assertEqual(response.get("data", {}).get("items"), [])
 
-    def test_rate_limit_key_does_not_embed_raw_user_email(self):
-        captured: dict[str, str] = {}
+    def test_invalid_ad_returns_canonical_not_found(self):
+        response = self._add(ad_id="ad_does-not-exist")
+        self.assertFalse(response.get("ok"), response)
+        self.assertEqual(response.get("error"), "AD_NOT_FOUND")
+
+    def test_search_ranking_refresh_only_follows_real_state_transitions(self):
+        with (
+            patch("aos.api.wishlist.mutation.rate_limit", return_value=None),
+            patch("aos.api.wishlist.mutation._schedule_activity"),
+            patch("aos.services.wishlist.counters._enqueue_search_refresh") as refresh,
+        ):
+            first_add = add_to_wishlist_impl(ad_id=self.ad.public_id)
+            retry_add = add_to_wishlist_impl(ad_id=self.ad.public_id)
+            first_remove = remove_from_wishlist_impl(ad_id=self.ad.public_id)
+            retry_remove = remove_from_wishlist_impl(ad_id=self.ad.public_id)
+
+        self.assertTrue(first_add.get("data", {}).get("changed"))
+        self.assertFalse(retry_add.get("data", {}).get("changed"))
+        self.assertTrue(first_remove.get("data", {}).get("changed"))
+        self.assertFalse(retry_remove.get("data", {}).get("changed"))
+        self.assertEqual(refresh.call_count, 2)
+        self.assertEqual(refresh.call_args_list[0].kwargs.get("source"), "wishlist_insert")
+        self.assertEqual(refresh.call_args_list[1].kwargs.get("source"), "wishlist_remove")
+
+    def test_search_ranking_enqueue_failure_does_not_corrupt_successful_add(self):
+        with (
+            patch("aos.api.wishlist.mutation.rate_limit", return_value=None),
+            patch("aos.api.wishlist.mutation._schedule_activity"),
+            patch(
+                "aos.services.search_ranking_service.enqueue_ad_search_index",
+                side_effect=RuntimeError("ranking unavailable"),
+            ),
+        ):
+            response = add_to_wishlist_impl(ad_id=self.ad.public_id)
+
+        self.assertTrue(response.get("ok"), response)
+        self.assertTrue(
+            frappe.db.exists(
+                "AOS Wishlist",
+                {"user": self.buyer_user, "ad": self.ad.name, "status": "Active"},
+            )
+        )
+        self.assertEqual(int(frappe.db.get_value("AOS Ad", self.ad.name, "wishlist_count") or 0), 1)
+
+    def test_activity_scheduling_failure_is_best_effort(self):
+        with (
+            patch("aos.api.wishlist.mutation.rate_limit", return_value=None),
+            patch("aos.services.wishlist.counters._enqueue_search_refresh"),
+            patch("aos.api.wishlist.mutation.frappe.enqueue", side_effect=RuntimeError("queue unavailable")),
+        ):
+            response = add_to_wishlist_impl(ad_id=self.ad.public_id)
+
+        self.assertTrue(response.get("ok"), response)
+        self.assertTrue(response.get("data", {}).get("wishlisted"))
+
+    def test_account_purge_removes_relationship_and_recomputes_count(self):
+        from aos.services.account_purge_service import _purge_wishlist_batch
+
+        added = self._add(ad_id=self.ad.public_id)
+        self.assertTrue(added.get("ok"), added)
+        self.assertEqual(int(frappe.db.get_value("AOS Ad", self.ad.name, "wishlist_count") or 0), 1)
+
+        with patch("aos.services.wishlist.counters._enqueue_search_refresh"):
+            removed = _purge_wishlist_batch(user=self.buyer_user, limit=100)
+
+        self.assertEqual(removed, 1)
+        self.assertFalse(frappe.db.exists("AOS Wishlist", {"user": self.buyer_user, "ad": self.ad.name}))
+        self.assertEqual(int(frappe.db.get_value("AOS Ad", self.ad.name, "wishlist_count") or 0), 0)
+
+    def test_rate_limit_key_does_not_embed_raw_user_email_and_is_shared_by_add_remove(self):
+        captured: list[str] = []
 
         def capture_rate_limit(**kwargs):
-            captured["key"] = kwargs["key"]
+            captured.append(kwargs["key"])
             return None
 
         with (
-            patch("aos.api.wishlist.toggle.rate_limit", side_effect=capture_rate_limit),
-            patch("aos.api.wishlist.toggle.record_ad_wishlist_activity"),
+            patch("aos.api.wishlist.mutation.rate_limit", side_effect=capture_rate_limit),
+            patch("aos.api.wishlist.mutation._schedule_activity"),
             patch("aos.services.wishlist.counters._enqueue_search_refresh"),
         ):
-            response = toggle_wishlist_impl(ad_id=self.ad.name, wishlisted=1)
+            add_response = add_to_wishlist_impl(ad_id=self.ad.public_id)
+            remove_response = remove_from_wishlist_impl(ad_id=self.ad.public_id)
 
-        self.assertTrue(response.get("ok"), response)
-        self.assertNotIn(self.buyer_user.lower(), captured["key"])
-        self.assertIn("sha256", captured["key"])
+        self.assertTrue(add_response.get("ok"), add_response)
+        self.assertTrue(remove_response.get("ok"), remove_response)
+        self.assertEqual(len(captured), 2)
+        self.assertEqual(captured[0], captured[1])
+        self.assertNotIn(self.buyer_user.lower(), captured[0])
+        self.assertIn("sha256", captured[0])

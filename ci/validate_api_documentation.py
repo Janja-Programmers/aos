@@ -35,7 +35,7 @@ FEATURE_DOCS = {
 	"social": "docs/features/social/README.md",
 	"sellers": "docs/features/sellers/README.md",
 	"verification": "docs/features/verification/README.md",
-	"wishlist": "docs/features/wishlist/api.md",
+	"wishlist": "docs/features/wishlist/README.md",
 }
 
 SINGLE_FILE_FEATURE_DOCS = {

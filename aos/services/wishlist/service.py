@@ -1,155 +1,163 @@
-"""Race-safe wishlist state transitions."""
+"""Race-safe, idempotent Wishlist relationship service."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 import frappe
-from frappe.utils import getdate, nowdate
 
-from aos.services.ads.errors import AdsNotFoundError, AdsValidationError
+from aos.api.shared.db import is_duplicate_entry_error
+from aos.services.ads.errors import AdsValidationError
+from aos.services.ads.visibility import require_public_ad_for_viewer
+from aos.services.marketplace_discovery.ids import resolve_ad_name
 
 from .constants import WISHLIST_STATUS_ACTIVE, WISHLIST_STATUS_REMOVED
 
 
 @dataclass(frozen=True, slots=True)
 class WishlistMutationResult:
-    ad_id: str
+    public_ad_id: str
+    ad_name: str
     wishlisted: bool
     changed: bool
-    wishlist_count: int | None
+    wishlist_count: int
 
 
 class WishlistService:
-    """Own wishlist eligibility and mutation invariants.
+    """Own the authenticated user ↔ Ad Wishlist relationship.
 
-    The unique ``(user, ad)`` database index is the final race guard. Existing
-    logical rows are locked before state changes, while first-time concurrent
-    inserts recover from ``DuplicateEntryError`` and converge on the requested
-    state.
+    Public callers supply the canonical opaque Ads public identifier. The
+    Wishlist row stores the internal Frappe Ad Link. A database unique index on
+    ``(user, ad)`` and deterministic DocType naming are authoritative duplicate
+    guards; process-local state is never used for correctness.
     """
 
-    def set_state(
-        self,
-        *,
-        user: str,
-        ad_id: str,
-        requested: bool | None,
-    ) -> WishlistMutationResult:
-        user = str(user or "").strip()
-        ad_id = str(ad_id or "").strip()
-        if not user or user == "Guest":
-            raise AdsValidationError("Invalid wishlist owner.", code="INVALID_WISHLIST_REQUEST")
-        if not ad_id:
-            raise AdsValidationError("Ad is required.", code="INVALID_WISHLIST_REQUEST")
+    def add(self, *, user: str, public_ad_id: str) -> WishlistMutationResult:
+        user = self._normalize_owner(user)
+        ad = require_public_ad_for_viewer(public_id=public_ad_id, viewer=user)
+        if str(ad.seller_user or "").strip() == user:
+            raise AdsValidationError(
+                "You cannot add your own ad to your wishlist.",
+                code="OWN_AD_WISHLIST_FORBIDDEN",
+            )
 
-        rows = frappe.db.sql(
-            """
-            SELECT name, status
-            FROM `tabAOS Wishlist`
-            WHERE user = %s AND ad = %s
-            ORDER BY creation ASC, name ASC
-            LIMIT 1
-            FOR UPDATE
-            """,
-            (user, ad_id),
-            as_dict=True,
+        changed = self._activate(user=user, ad_name=str(ad.name))
+        return self._result(
+            public_ad_id=str(ad.public_id),
+            ad_name=str(ad.name),
+            wishlisted=True,
+            changed=changed,
         )
-        doc = frappe.get_doc("AOS Wishlist", rows[0].name) if rows else None
-        current = bool(doc and doc.status == WISHLIST_STATUS_ACTIVE)
-        desired = (not current) if requested is None else bool(requested)
 
-        # Removal remains idempotent even when an Ad has since expired, been
-        # moderated, or become blocked. This prevents stale private rows from
-        # becoming impossible for their owner to clear.
-        if desired:
-            self._assert_add_allowed(user=user, ad_id=ad_id)
+    def remove(self, *, user: str, public_ad_id: str) -> WishlistMutationResult:
+        user = self._normalize_owner(user)
+        clean_public_id = str(public_ad_id or "").strip()
+        ad_name = resolve_ad_name(clean_public_id)
+
+        # A retained relationship is sufficient authority to clear/retry a
+        # private save even after the Ad becomes unavailable. If this user has
+        # never had the relationship, require the normal Ads visibility boundary
+        # so remove cannot become an oracle for hidden/moderated Ad existence.
+        existing = self._locked_relationship(user=user, ad_name=ad_name)
+        if not existing:
+            visible = require_public_ad_for_viewer(public_id=clean_public_id, viewer=user)
+            ad_name = str(visible.name)
+            # Re-check after visibility validation to converge if another worker
+            # created the relationship between the first lookup and this point.
+            existing = self._locked_relationship(user=user, ad_name=ad_name)
 
         changed = False
-        if doc:
-            if current != desired:
-                doc.status = WISHLIST_STATUS_ACTIVE if desired else WISHLIST_STATUS_REMOVED
-                doc.save(ignore_permissions=True)
-                changed = True
-        elif desired:
-            changed = self._insert_or_restore(user=user, ad_id=ad_id)
+        if existing and existing.status != WISHLIST_STATUS_REMOVED:
+            existing.status = WISHLIST_STATUS_REMOVED
+            existing.save(ignore_permissions=True)
+            changed = True
 
-        wishlist_count = None
-        if desired:
-            count_value = frappe.db.get_value("AOS Ad", ad_id, "wishlist_count")
-            wishlist_count = int(count_value or 0) if count_value is not None else None
-        return WishlistMutationResult(
-            ad_id=ad_id,
-            wishlisted=desired,
+        return self._result(
+            public_ad_id=clean_public_id,
+            ad_name=ad_name,
+            wishlisted=False,
             changed=changed,
-            wishlist_count=wishlist_count,
         )
 
-    def _insert_or_restore(self, *, user: str, ad_id: str) -> bool:
+    @staticmethod
+    def _normalize_owner(user: str) -> str:
+        clean = str(user or "").strip()
+        if not clean or clean == "Guest":
+            raise AdsValidationError(
+                "Invalid wishlist owner.",
+                code="INVALID_WISHLIST_REQUEST",
+            )
+        return clean
+
+    @staticmethod
+    def _relationship_name(*, user: str, ad_name: str) -> str | None:
+        value = frappe.db.get_value(
+            "AOS Wishlist",
+            {"user": user, "ad": ad_name},
+            "name",
+        )
+        return str(value) if value else None
+
+    def _locked_relationship(self, *, user: str, ad_name: str):
+        name = self._relationship_name(user=user, ad_name=ad_name)
+        if not name:
+            return None
+        try:
+            return frappe.get_doc("AOS Wishlist", name, for_update=True)
+        except frappe.DoesNotExistError:
+            return None
+
+    def _activate(self, *, user: str, ad_name: str) -> bool:
+        existing = self._locked_relationship(user=user, ad_name=ad_name)
+        if existing:
+            if existing.status == WISHLIST_STATUS_ACTIVE:
+                return False
+            existing.status = WISHLIST_STATUS_ACTIVE
+            existing.save(ignore_permissions=True)
+            return True
+
+        savepoint = f"aos_wishlist_insert_{frappe.generate_hash(length=10)}"
+        frappe.db.savepoint(savepoint)
         doc = frappe.get_doc(
             {
                 "doctype": "AOS Wishlist",
                 "user": user,
-                "ad": ad_id,
+                "ad": ad_name,
                 "status": WISHLIST_STATUS_ACTIVE,
             }
         )
         try:
             doc.insert(ignore_permissions=True)
             return True
-        except frappe.DuplicateEntryError:
-            existing = frappe.db.get_value(
-                "AOS Wishlist",
-                {"user": user, "ad": ad_id},
-                "name",
-            )
-            if not existing:
+        except Exception as exc:
+            if not is_duplicate_entry_error(exc):
                 raise
+            frappe.db.rollback(save_point=savepoint)
 
-            doc = frappe.get_doc("AOS Wishlist", existing)
-            if doc.status == WISHLIST_STATUS_ACTIVE:
-                return False
-
-            doc.status = WISHLIST_STATUS_ACTIVE
-            doc.save(ignore_permissions=True)
-            return True
+        # Another worker won the first-insert race. Lock that durable row and
+        # converge on Active rather than surfacing a harmless retry as failure.
+        existing = self._locked_relationship(user=user, ad_name=ad_name)
+        if not existing:
+            raise frappe.DuplicateEntryError("Wishlist relationship duplicate could not be resolved")
+        if existing.status == WISHLIST_STATUS_ACTIVE:
+            return False
+        existing.status = WISHLIST_STATUS_ACTIVE
+        existing.save(ignore_permissions=True)
+        return True
 
     @staticmethod
-    def _assert_add_allowed(*, user: str, ad_id: str) -> None:
-        ad = frappe.db.get_value(
-            "AOS Ad",
-            ad_id,
-            ["name", "status", "seller", "expires_on"],
-            as_dict=True,
+    def _result(
+        *,
+        public_ad_id: str,
+        ad_name: str,
+        wishlisted: bool,
+        changed: bool,
+    ) -> WishlistMutationResult:
+        count = int(frappe.db.get_value("AOS Ad", ad_name, "wishlist_count") or 0)
+        return WishlistMutationResult(
+            public_ad_id=public_ad_id,
+            ad_name=ad_name,
+            wishlisted=wishlisted,
+            changed=changed,
+            wishlist_count=count,
         )
-        today = getdate(nowdate())
-        if not ad or ad.status != "Active" or (ad.expires_on and getdate(ad.expires_on) < today):
-            raise AdsNotFoundError("Ad not found.")
-
-        seller = frappe.db.get_value(
-            "AOS Seller",
-            ad.seller,
-            ["user", "status"],
-            as_dict=True,
-        )
-        if not seller or seller.status != "Active":
-            raise AdsNotFoundError("Ad not found.")
-        if seller.user == user:
-            raise AdsValidationError(
-                "You cannot add your own ad to your wishlist.",
-                code="OWN_AD_WISHLIST_FORBIDDEN",
-            )
-
-        blocked = frappe.db.sql(
-            """
-            SELECT 1
-            FROM `tabAOS User Block`
-            WHERE status = 'Active'
-              AND ((blocker_user = %s AND blocked_user = %s)
-                OR (blocker_user = %s AND blocked_user = %s))
-            LIMIT 1
-            """,
-            (user, seller.user, seller.user, user),
-        )
-        if blocked:
-            raise AdsNotFoundError("Ad not found.")

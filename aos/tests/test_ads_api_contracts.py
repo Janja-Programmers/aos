@@ -20,7 +20,7 @@ class TestAdsApiContracts(FrappeTestCase):
             "api/ads/update.py",
             "api/ads/status.py",
             "api/ads/drafts.py",
-            "api/wishlist/toggle.py",
+            "api/wishlist/mutation.py",
             "api/reports/report_ad.py",
             "tasks/ads.py",
         ]
@@ -38,10 +38,12 @@ class TestAdsApiContracts(FrappeTestCase):
 
     def test_public_detail_does_not_select_raw_ad_documents(self):
         source = self._source("api/ads/get_ad.py")
+        visibility = self._source("services/ads/visibility.py")
         self.assertNotIn("a.*", source)
-        self.assertIn("a.status = 'Active'", source)
-        self.assertIn("s.status = 'Active'", source)
-        self.assertIn("AOS User Block", source)
+        self.assertIn("require_public_ad_for_viewer", source)
+        self.assertIn("a.status = 'Active'", visibility)
+        self.assertIn("s.status = 'Active'", visibility)
+        self.assertIn("AOS User Block", visibility)
 
     def test_public_detail_emits_analytics_with_keyword_only_canonical_fields(self):
         source = self._source("api/ads/get_ad.py")
@@ -80,13 +82,14 @@ class TestAdsApiContracts(FrappeTestCase):
         self.assertIn("AOS User Block", source)
         self.assertIn("MAX_IMAGES", source)
 
-    def test_wishlist_and_image_search_recheck_public_eligibility(self):
+    def test_wishlist_and_image_search_reuse_canonical_public_projection(self):
         wishlist = self._source("api/wishlist/list.py")
+        wishlist_service = self._source("services/wishlist/service.py")
         image_search = self._source("api/ads/image_search.py")
-        self.assertIn("seller.status = 'Active'", wishlist)
-        self.assertIn("expires_on", wishlist)
-        self.assertIn("AOS User Block", wishlist)
-        self.assertIn("normalize_wishlist_list_filters", wishlist)
+        self.assertIn("load_public_ad_items", wishlist)
+        self.assertIn("require_public_ad_for_viewer", wishlist_service)
+        self.assertNotIn("AOS Seller", wishlist)
+        self.assertNotIn("AOS Exchange Rate", wishlist)
         self.assertIn("load_public_ad_items", image_search)
         self.assertNotIn("matched_media_id", image_search)
 

@@ -14,7 +14,7 @@ aos.patches.v1_0.install_verification_indexes
 aos.patches.v1_0.install_catalog_indexes
 aos.patches.v1_0.install_marketplace_discovery_indexes
 
-aos.patches.v1_0.harden_wishlist_subsystem
+aos.patches.v1_0.install_wishlist_indexes
 aos.patches.v1_0.harden_reviews_subsystem
 
 

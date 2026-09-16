@@ -1314,15 +1314,21 @@
     "rationale": "Signed worker callback; authenticated by HMAC and kept outside the public edge bucket."
   },
   {
+    "endpoint": "aos.api.v1.wishlist.__init__.add_to_wishlist",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; Wishlist also applies a hashed per-user application limit."
+  },
+  {
     "endpoint": "aos.api.v1.wishlist.__init__.list_wishlist",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Covered by the Nginx public API baseline; Wishlist also applies a hashed per-user bounded read limit."
   },
   {
-    "endpoint": "aos.api.v1.wishlist.__init__.toggle_wishlist",
+    "endpoint": "aos.api.v1.wishlist.__init__.remove_from_wishlist",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Covered by the Nginx public API baseline; Wishlist also applies a hashed per-user application limit."
   }
 ]

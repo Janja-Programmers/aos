@@ -29,6 +29,7 @@ class TestMigrationHookContracts(unittest.TestCase):
             "install_live_indexes.execute",
             "install_report_indexes.execute",
             "install_activity_indexes.execute",
+            "install_wishlist_indexes.execute",
         }
         missing = sorted(item for item in required if item not in source)
         self.assertEqual(missing, [])

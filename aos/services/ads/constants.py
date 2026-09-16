@@ -6,7 +6,6 @@ AD_DOCTYPE = "AOS Ad"
 AD_DRAFT_DOCTYPE = "AOS Ad Draft"
 AD_IMAGE_DOCTYPE = "AOS Ad Image"
 AD_ATTRIBUTE_VALUE_DOCTYPE = "AOS Ad Attribute Value"
-WISHLIST_DOCTYPE = "AOS Wishlist"
 AD_REPORT_DOCTYPE = "AOS Ad Report"
 
 STATUS_REVIEWING = "Reviewing"
@@ -126,8 +125,6 @@ PUBLIC_LIST_FIELDS = frozenset(
         "cursor",
     }
 )
-WISHLIST_TOGGLE_FIELDS = frozenset({"ad_id", "id", "wishlisted"})
-WISHLIST_LIST_FIELDS = PUBLIC_LIST_FIELDS
 REPORT_AD_FIELDS = frozenset({"ad", "ad_id", "reason", "details"})
 DRAFT_UPSERT_FIELDS = frozenset({"draft_id", "payload", "last_step", "version"})
 DRAFT_ID_FIELDS = frozenset({"draft_id", "version"})

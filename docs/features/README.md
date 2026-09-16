@@ -28,7 +28,7 @@ Feature documentation is the canonical human-readable description of AOS busines
 | [Shorts](shorts/README.md) | Short lifecycle, feeds, interactions, analytics, sounds and processing | [API](shorts/api.md) |
 | [Social](social/README.md) | Follow/friend/block relationships and privacy | [API](social/api.md) |
 | [Verification](verification/README.md) | Personal/business verification requests and private evidence | [API](verification/README.md) |
-| [Wishlist](wishlist/README.md) | User Ad wishlist state and reads | [API](wishlist/api.md) |
+| [Wishlist](wishlist/README.md) | Private user ↔ Ad saved relationship | API documented in feature README |
 
 ## Platform-only HTTP surfaces
 

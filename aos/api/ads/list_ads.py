@@ -236,8 +236,8 @@ def list_ads_impl(**kwargs):
             """, values, as_dict=True,
         )
 
-        wishlisted = get_active_wishlist_ad_ids(viewer) if rows and viewer != "Guest" else set()
         names = [row.name for row in rows]
+        wishlisted = get_active_wishlist_ad_ids(viewer, ad_ids=names) if names and viewer != "Guest" else set()
         images: Dict[str, List[Dict[str, Any]]] = {name: [] for name in names}
         if names:
             image_rows = frappe.get_all(
