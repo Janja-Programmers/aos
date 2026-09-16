@@ -15,9 +15,8 @@ from aos.api.shared.responses import ok
 from aos.api.shared.sql_safety import safe_like_contains
 from aos.services.ads.api import run_ads_api
 from aos.services.ads.errors import AdsValidationError
-from aos.services.currency_conversion import sql_conversion_expressions
-from aos.services.marketplace_discovery.projection import load_public_ad_items
-from aos.services.sellers.identity import resolve_public_seller_id
+from aos.services.marketplace_discovery.projection import load_public_ad_items, public_ad_sql_context
+from aos.services.sellers.identity import normalize_public_seller_id
 from aos.services.wishlist.constants import WISHLIST_LIST_LIMIT_PER_MINUTE_PER_USER
 from aos.services.wishlist.validation import (
     decode_wishlist_cursor,
@@ -122,13 +121,29 @@ def list_wishlist_impl(**kwargs):
 
     def _list():
         request = normalize_wishlist_list_request(kwargs)
+
+        # Cursor payloads are untrusted request data. Decode and validate them
+        # before market/settings/catalog/database reads so malformed cursors
+        # are rejected without touching listing SQL or side-effect logging.
+        cursor_keys: dict[str, str] | None = None
+        if request["cursor"]:
+            cursor_keys = decode_wishlist_cursor(request["cursor"], request=request)
+            required = {"saved_on", "name"}
+            if request["sort"] in {"price_low", "price_high"}:
+                required |= {"available", "price"}
+            elif request["sort"] == "rating_high":
+                required |= {"rating", "reviews"}
+            if not required.issubset(cursor_keys):
+                raise AdsValidationError("Invalid wishlist pagination cursor.", code="INVALID_WISHLIST_CURSOR")
+
         country, display_currency, market_error = resolve_market_context(country=request["country"], currency=request["currency"])
         if market_error:
             return market_error
 
+        seller_public_id = ""
         if request["seller"]:
-            request["seller"] = resolve_public_seller_id(request["seller"]) or ""
-            if not request["seller"]:
+            seller_public_id = normalize_public_seller_id(request["seller"])
+            if not seller_public_id:
                 return _empty(limit=request["limit"])
 
         categories: list[str] = []
@@ -137,32 +152,37 @@ def list_wishlist_impl(**kwargs):
             if not categories:
                 return _empty(limit=request["limit"])
 
-        settings = get_aos_settings_snapshot()
+        needs_fx = bool(
+            request["sort"] in {"price_low", "price_high"}
+            or request["price_min"] is not None
+            or request["price_max"] is not None
+        )
+        sql_context = public_ad_sql_context(viewer_param="user", include_fx=needs_fx)
         today = getdate(nowdate())
         values: dict[str, Any] = {
             "user": user,
             "today": today,
-            "display_currency": display_currency,
-            "base_currency": settings.base_currency,
-            "fx_fresh_after": add_to_date(now_datetime(), hours=-settings.fx_max_stale_hours, as_string=True),
             "limit_plus_one": request["limit"] + 1,
         }
+        if needs_fx:
+            settings = get_aos_settings_snapshot()
+            values.update(
+                {
+                    "display_currency": display_currency,
+                    "base_currency": settings.base_currency,
+                    "fx_fresh_after": add_to_date(
+                        now_datetime(),
+                        hours=-settings.fx_max_stale_hours,
+                        as_string=True,
+                    ),
+                }
+            )
         conditions = [
             "w.user = %(user)s",
             "w.status = 'Active'",
             "a.public_id IS NOT NULL",
             "a.public_id <> ''",
-            "a.status = 'Active'",
-            "s.status = 'Active'",
-            "u.enabled = 1",
-            "COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'",
-            "(a.expires_on IS NULL OR a.expires_on >= %(today)s)",
-            """NOT EXISTS (
-                SELECT 1 FROM `tabAOS User Block` b
-                WHERE b.status='Active'
-                  AND ((b.blocker_user=%(user)s AND b.blocked_user=s.user)
-                    OR (b.blocker_user=s.user AND b.blocked_user=%(user)s))
-            )""",
+            *sql_context.conditions,
         ]
         if request["q"]:
             values["q"] = safe_like_contains(request["q"])
@@ -173,9 +193,9 @@ def list_wishlist_impl(**kwargs):
         if request["location"]:
             values["location"] = request["location"]
             conditions.append("a.location = %(location)s")
-        if request["seller"]:
-            values["seller"] = request["seller"]
-            conditions.append("a.seller = %(seller)s")
+        if seller_public_id:
+            values["seller_public_id"] = seller_public_id
+            conditions.append("s.public_id = %(seller_public_id)s")
         if request["price_type"]:
             values["price_type"] = request["price_type"]
             conditions.append("a.price_type = %(price_type)s")
@@ -185,52 +205,45 @@ def list_wishlist_impl(**kwargs):
         if request["verified_seller"]:
             conditions.append("COALESCE(p.is_verified,0) = 1")
 
-        offer_active = """a.offer_price IS NOT NULL AND a.offer_price > 0
-            AND (a.offer_start_date IS NULL OR a.offer_start_date <= %(today)s)
-            AND (a.offer_end_date IS NULL OR a.offer_end_date >= %(today)s)"""
-        native_current = f"CASE WHEN {offer_active} THEN a.offer_price ELSE a.price END"
-        current_fx = sql_conversion_expressions(amount_sql=native_current, fresh_after_param="%(fx_fresh_after)s")
+        current_fx = sql_context.current_fx
         if request["price_min"] is not None:
+            assert current_fx is not None
             values["price_min"] = request["price_min"]
             conditions.extend([f"({current_fx['available']})=1", f"({current_fx['amount']}) >= %(price_min)s"])
         if request["price_max"] is not None:
+            assert current_fx is not None
             values["price_max"] = request["price_max"]
             conditions.extend([f"({current_fx['available']})=1", f"({current_fx['amount']}) <= %(price_max)s"])
 
-        if request["cursor"]:
-            keys = decode_wishlist_cursor(request["cursor"], request=request)
-            required = {"saved_on", "name"}
-            if request["sort"] in {"price_low", "price_high"}:
-                required |= {"available", "price"}
-            elif request["sort"] == "rating_high":
-                required |= {"rating", "reviews"}
-            if not required.issubset(keys):
-                raise AdsValidationError("Invalid wishlist pagination cursor.", code="INVALID_WISHLIST_CURSOR")
+        conversion_available = current_fx["available"] if current_fx is not None else "1"
+        current_price = current_fx["amount"] if current_fx is not None else "0"
+        if cursor_keys is not None:
             conditions.append(
                 _cursor_condition(
-                    request["sort"], keys, values,
-                    conversion_available=current_fx["available"], current_price=current_fx["amount"],
+                    request["sort"], cursor_keys, values,
+                    conversion_available=conversion_available,
+                    current_price=current_price,
                 )
             )
 
-        order_by = _order_sql(request["sort"], conversion_available=current_fx["available"], current_price=current_fx["amount"])
+        order_by = _order_sql(
+            request["sort"],
+            conversion_available=conversion_available,
+            current_price=current_price,
+        )
         rows = frappe.db.sql(
             f"""
             SELECT
                 w.name AS wishlist_id,
                 w.saved_on AS wishlist_saved_on,
                 a.public_id,
-                ({current_fx['available']}) AS sort_conversion_available,
-                ({current_fx['amount']}) AS sort_current_price,
+                ({conversion_available}) AS sort_conversion_available,
+                ({current_price}) AS sort_current_price,
                 COALESCE(a.average_rating,0) AS sort_rating,
                 COALESCE(a.total_reviews,0) AS sort_reviews
             FROM `tabAOS Wishlist` w
             INNER JOIN `tabAOS Ad` a ON a.name = w.ad
-            INNER JOIN `tabAOS Seller` s ON s.name = a.seller
-            INNER JOIN `tabAOS Profile` p ON p.user = s.user
-            INNER JOIN `tabUser` u ON u.name = s.user
-            LEFT JOIN `tabAOS Exchange Rate` er_source ON er_source.currency = a.currency
-            LEFT JOIN `tabAOS Exchange Rate` er_target ON er_target.currency = %(display_currency)s
+            {' '.join(sql_context.joins)}
             WHERE {' AND '.join(conditions)}
             ORDER BY {order_by}
             LIMIT %(limit_plus_one)s

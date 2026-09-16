@@ -6,7 +6,7 @@ import base64
 import hashlib
 import json
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
 from aos.services.ads.constants import (
@@ -56,6 +56,15 @@ def _ensure_wishlist_fields(payload: Mapping[str, Any], allowed: frozenset[str])
         raise AdsValidationError("Invalid wishlist request.", code="INVALID_WISHLIST_REQUEST")
 
 
+def _wishlist_value(normalizer, *args, **kwargs):
+    """Map shared Ads primitive-validation failures to the Wishlist contract."""
+
+    try:
+        return normalizer(*args, **kwargs)
+    except AdsValidationError as exc:
+        raise AdsValidationError("Invalid wishlist request.", code="INVALID_WISHLIST_REQUEST") from exc
+
+
 def normalize_wishlist_mutation(payload: Mapping[str, Any]) -> str:
     _ensure_wishlist_fields(payload, WISHLIST_MUTATION_FIELDS)
     try:
@@ -66,35 +75,59 @@ def normalize_wishlist_mutation(payload: Mapping[str, Any]) -> str:
 
 def normalize_wishlist_list_request(payload: Mapping[str, Any]) -> dict[str, Any]:
     _ensure_wishlist_fields(payload, WISHLIST_LIST_FIELDS)
-    sort = normalize_text(payload.get("sort") or "saved_recent", field="sort", max_length=32, required=True)
+    sort = _wishlist_value(
+        normalize_text,
+        payload.get("sort") or "saved_recent",
+        field="sort",
+        max_length=32,
+        required=True,
+    )
     if sort not in WISHLIST_LIST_SORTS:
         raise AdsValidationError("Invalid wishlist sort.", code="INVALID_WISHLIST_REQUEST")
-    q = normalize_text(payload.get("q"), field="q", max_length=MAX_SEARCH_QUERY_LENGTH)
+    q = _wishlist_value(normalize_text, payload.get("q"), field="q", max_length=MAX_SEARCH_QUERY_LENGTH)
     if q and len(q) < 2:
         raise AdsValidationError("Search query must contain at least two characters.", code="INVALID_SEARCH_QUERY")
-    price_type = normalize_text(payload.get("price_type"), field="price_type", max_length=40)
+    price_type = _wishlist_value(normalize_text, payload.get("price_type"), field="price_type", max_length=40)
     if price_type and price_type not in ALLOWED_PRICE_TYPES:
         raise AdsValidationError("Invalid wishlist request.", code="INVALID_WISHLIST_REQUEST")
-    price_min = normalize_decimal(payload.get("price_min"), field="price_min", minimum=Decimal("0"))
-    price_max = normalize_decimal(payload.get("price_max"), field="price_max", minimum=Decimal("0"))
+    price_min = _wishlist_value(normalize_decimal, payload.get("price_min"), field="price_min", minimum=Decimal("0"))
+    price_max = _wishlist_value(normalize_decimal, payload.get("price_max"), field="price_max", minimum=Decimal("0"))
     if price_min is not None and price_max is not None and price_min > price_max:
         raise AdsValidationError("price_min cannot be greater than price_max.", code="INVALID_WISHLIST_REQUEST")
-    rating_min = normalize_decimal(payload.get("rating_min"), field="rating_min", minimum=Decimal("0"), maximum=Decimal("5"))
+    rating_min = _wishlist_value(
+        normalize_decimal,
+        payload.get("rating_min"),
+        field="rating_min",
+        minimum=Decimal("0"),
+        maximum=Decimal("5"),
+    )
     return {
-        "country": normalize_identifier(payload.get("country"), field="country"),
-        "currency": normalize_identifier(payload.get("currency"), field="currency"),
-        "location": normalize_identifier(payload.get("location"), field="location"),
-        "category": normalize_identifier(payload.get("category"), field="category"),
-        "seller": normalize_identifier(payload.get("seller"), field="seller"),
+        "country": _wishlist_value(normalize_identifier, payload.get("country"), field="country"),
+        "currency": _wishlist_value(normalize_identifier, payload.get("currency"), field="currency"),
+        "location": _wishlist_value(normalize_identifier, payload.get("location"), field="location"),
+        "category": _wishlist_value(normalize_identifier, payload.get("category"), field="category"),
+        "seller": _wishlist_value(normalize_identifier, payload.get("seller"), field="seller"),
         "q": q,
         "price_type": price_type,
         "price_min": decimal_storage(price_min),
         "price_max": decimal_storage(price_max),
         "rating_min": decimal_storage(rating_min),
-        "verified_seller": normalize_flag(payload.get("verified_seller"), field="verified_seller", default=0),
+        "verified_seller": _wishlist_value(
+            normalize_flag,
+            payload.get("verified_seller"),
+            field="verified_seller",
+            default=0,
+        ),
         "sort": sort,
-        "limit": normalize_int(payload.get("limit"), field="limit", default=DEFAULT_PAGE_SIZE, minimum=1, maximum=MAX_PAGE_SIZE),
-        "cursor": normalize_text(payload.get("cursor"), field="cursor", max_length=1000),
+        "limit": _wishlist_value(
+            normalize_int,
+            payload.get("limit"),
+            field="limit",
+            default=DEFAULT_PAGE_SIZE,
+            minimum=1,
+            maximum=MAX_PAGE_SIZE,
+        ),
+        "cursor": _wishlist_value(normalize_text, payload.get("cursor"), field="cursor", max_length=1000),
     }
 
 
@@ -140,13 +173,31 @@ def decode_wishlist_cursor(value: Any, *, request: Mapping[str, Any]) -> dict[st
         raise AdsValidationError("Invalid wishlist pagination cursor.", code="INVALID_WISHLIST_CURSOR")
     keys = {str(key): str(val) for key, val in payload["keys"].items()}
     saved_on = keys.get("saved_on")
-    if saved_on:
-        try:
-            parsed = datetime.fromisoformat(saved_on)
-        except ValueError:
-            raise AdsValidationError("Invalid wishlist pagination cursor.", code="INVALID_WISHLIST_CURSOR") from None
-        if parsed.tzinfo is not None:
-            raise AdsValidationError("Invalid wishlist pagination cursor.", code="INVALID_WISHLIST_CURSOR")
-    if not keys.get("name"):
+    if not saved_on or not keys.get("name"):
         raise AdsValidationError("Invalid wishlist pagination cursor.", code="INVALID_WISHLIST_CURSOR")
+    try:
+        parsed = datetime.fromisoformat(saved_on)
+    except ValueError:
+        raise AdsValidationError("Invalid wishlist pagination cursor.", code="INVALID_WISHLIST_CURSOR") from None
+    if parsed.tzinfo is not None:
+        raise AdsValidationError("Invalid wishlist pagination cursor.", code="INVALID_WISHLIST_CURSOR")
+
+    sort = str(request.get("sort") or "saved_recent")
+    if sort in {"price_low", "price_high"}:
+        if keys.get("available") not in {"0", "1"}:
+            raise AdsValidationError("Invalid wishlist pagination cursor.", code="INVALID_WISHLIST_CURSOR")
+        try:
+            price = Decimal(keys.get("price", ""))
+        except (InvalidOperation, ValueError):
+            raise AdsValidationError("Invalid wishlist pagination cursor.", code="INVALID_WISHLIST_CURSOR") from None
+        if not price.is_finite() or price < 0:
+            raise AdsValidationError("Invalid wishlist pagination cursor.", code="INVALID_WISHLIST_CURSOR")
+    elif sort == "rating_high":
+        try:
+            rating = Decimal(keys.get("rating", ""))
+            reviews = int(keys.get("reviews", ""))
+        except (InvalidOperation, ValueError):
+            raise AdsValidationError("Invalid wishlist pagination cursor.", code="INVALID_WISHLIST_CURSOR") from None
+        if not rating.is_finite() or rating < 0 or rating > 5 or reviews < 0:
+            raise AdsValidationError("Invalid wishlist pagination cursor.", code="INVALID_WISHLIST_CURSOR")
     return keys

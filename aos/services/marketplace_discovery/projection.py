@@ -7,6 +7,7 @@ rerank without trusting a derived index for visibility.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import frappe
@@ -19,6 +20,73 @@ from aos.services.currency_conversion import sql_conversion_expressions
 from aos.services.marketplace_discovery.geography import stable_geographic_rerank
 from aos.services.media.media_service import MediaService
 from aos.utils.aos_settings import get_aos_settings_snapshot
+
+
+@dataclass(frozen=True, slots=True)
+class PublicAdSqlContext:
+    """Canonical SQL fragments for public Ad eligibility and FX projection.
+
+    Discovery surfaces may add their own *scope* predicates (for example a
+    Wishlist owner relationship), but seller/account eligibility, blocking,
+    expiry and price conversion stay owned here so those rules cannot drift.
+    """
+
+    joins: tuple[str, ...]
+    conditions: tuple[str, ...]
+    offer_active: str
+    original_fx: dict[str, str] | None
+    current_fx: dict[str, str] | None
+
+
+def public_ad_sql_context(*, viewer_param: str = "viewer", include_fx: bool = True) -> PublicAdSqlContext:
+    joins = [
+        "INNER JOIN `tabAOS Seller` s ON s.name=a.seller",
+        "INNER JOIN `tabAOS Profile` p ON p.user=s.user",
+        "INNER JOIN `tabUser` u ON u.name=s.user",
+    ]
+    conditions = [
+        "a.status='Active'",
+        "s.status='Active'",
+        "u.enabled = 1",
+        "COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'",
+        "(a.expires_on IS NULL OR a.expires_on >= %(today)s)",
+    ]
+    if viewer_param:
+        conditions.append(
+            f"""NOT EXISTS (
+                SELECT 1 FROM `tabAOS User Block` b
+                WHERE b.status='Active'
+                  AND ((b.blocker_user=%({viewer_param})s AND b.blocked_user=s.user)
+                    OR (b.blocker_user=s.user AND b.blocked_user=%({viewer_param})s))
+            )"""
+        )
+
+    offer_active = """a.offer_price IS NOT NULL AND a.offer_price > 0
+        AND (a.offer_start_date IS NULL OR a.offer_start_date <= %(today)s)
+        AND (a.offer_end_date IS NULL OR a.offer_end_date >= %(today)s)"""
+    if not include_fx:
+        return PublicAdSqlContext(
+            joins=tuple(joins),
+            conditions=tuple(conditions),
+            offer_active=offer_active,
+            original_fx=None,
+            current_fx=None,
+        )
+
+    joins.extend(
+        [
+            "LEFT JOIN `tabAOS Exchange Rate` er_source ON er_source.currency=a.currency",
+            "LEFT JOIN `tabAOS Exchange Rate` er_target ON er_target.currency=%(display_currency)s",
+        ]
+    )
+    native_current = f"CASE WHEN {offer_active} THEN a.offer_price ELSE a.price END"
+    return PublicAdSqlContext(
+        joins=tuple(joins),
+        conditions=tuple(conditions),
+        offer_active=offer_active,
+        original_fx=sql_conversion_expressions(amount_sql="a.price", fresh_after_param="%(fx_fresh_after)s"),
+        current_fx=sql_conversion_expressions(amount_sql=native_current, fresh_after_param="%(fx_fresh_after)s"),
+    )
 
 
 def _clean(value: Any) -> str:
@@ -81,34 +149,19 @@ def load_public_ad_items(
         "fx_fresh_after": add_to_date(now_datetime(), hours=-settings.fx_max_stale_hours, as_string=True),
         "today": today,
     }
-    conditions = [
-        "a.public_id IN %(candidate_ids)s",
-        "a.status='Active'",
-        "s.status='Active'",
-        "u.enabled = 1",
-        "COALESCE(NULLIF(p.account_status, ''), 'Active') = 'Active'",
-        "(a.expires_on IS NULL OR a.expires_on >= %(today)s)",
-    ]
+    sql_context = public_ad_sql_context(
+        viewer_param="viewer" if viewer and viewer != "Guest" else "",
+        include_fx=True,
+    )
+    conditions = ["a.public_id IN %(candidate_ids)s", *sql_context.conditions]
     if _clean(required_category):
         values["required_category"] = _clean(required_category)
         conditions.append("a.category = %(required_category)s")
     if viewer and viewer != "Guest":
         values["viewer"] = viewer
-        conditions.append(
-            """NOT EXISTS (
-                SELECT 1 FROM `tabAOS User Block` b
-                WHERE b.status='Active'
-                  AND ((b.blocker_user=%(viewer)s AND b.blocked_user=s.user)
-                    OR (b.blocker_user=s.user AND b.blocked_user=%(viewer)s))
-            )"""
-        )
-
-    offer_active = """a.offer_price IS NOT NULL AND a.offer_price > 0
-        AND (a.offer_start_date IS NULL OR a.offer_start_date <= %(today)s)
-        AND (a.offer_end_date IS NULL OR a.offer_end_date >= %(today)s)"""
-    native_current = f"CASE WHEN {offer_active} THEN a.offer_price ELSE a.price END"
-    original_fx = sql_conversion_expressions(amount_sql="a.price", fresh_after_param="%(fx_fresh_after)s")
-    current_fx = sql_conversion_expressions(amount_sql=native_current, fresh_after_param="%(fx_fresh_after)s")
+    original_fx = sql_context.original_fx
+    current_fx = sql_context.current_fx
+    assert original_fx is not None and current_fx is not None
 
     rows = frappe.db.sql(
         f"""
@@ -122,12 +175,9 @@ def load_public_ad_items(
                {original_fx['amount']} AS original_price_converted,
                {current_fx['amount']} AS current_price
         FROM `tabAOS Ad` a
-        INNER JOIN `tabAOS Seller` s ON s.name=a.seller
+        {' '.join(sql_context.joins[:1])}
         LEFT JOIN `tabAOS Location` loc ON loc.name=a.location
-        INNER JOIN `tabAOS Profile` p ON p.user=s.user
-        INNER JOIN `tabUser` u ON u.name=s.user
-        LEFT JOIN `tabAOS Exchange Rate` er_source ON er_source.currency=a.currency
-        LEFT JOIN `tabAOS Exchange Rate` er_target ON er_target.currency=%(display_currency)s
+        {' '.join(sql_context.joins[1:])}
         WHERE {' AND '.join(conditions)}
         """,
         values,
