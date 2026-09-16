@@ -71,12 +71,29 @@ class MediaProcessingService:
         existing = frappe.db.get_value(
             "AOS Media Processing Job", {"request_key": request_key}, "name"
         )
-        if existing:
-            return frappe.get_doc("AOS Media Processing Job", existing)
-
         max_attempts = get_env_int(
             "AOS_MEDIA_PROCESSING_MAX_ATTEMPTS", 3, min_value=1, max_value=10
         )
+        if existing:
+            job = frappe.get_doc("AOS Media Processing Job", existing, for_update=True)
+            if job.status == "Failed":
+                # A new owner request is an explicit retry of the same idempotent
+                # operation. Reuse the durable row but reset terminal execution
+                # state so a transient/code failure does not permanently poison
+                # this source-media/result-purpose pair.
+                job.status = "Queued"
+                job.attempt_count = 0
+                job.max_attempts = max_attempts
+                job.started_at = None
+                job.completed_at = None
+                job.next_attempt_at = None
+                job.result_media = None
+                job.last_error_code = ""
+                job.last_error_message = ""
+                job.save(ignore_permissions=True)
+                self.enqueue(job.name, after_commit=True)
+            return job
+
         doc = frappe.get_doc(
             {
                 "doctype": "AOS Media Processing Job",

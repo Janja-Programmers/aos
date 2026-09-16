@@ -130,6 +130,29 @@ def get_background_removal_client_settings() -> BackgroundRemovalClientSettings:
     )
 
 
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def _is_png_response(response: requests.Response, content: bytes) -> bool:
+    """Validate the canonical processor response before persisting it as media.
+
+    The private background-removal service contract is intentionally strict:
+    it returns a PNG payload, ``Content-Type: image/png``, and the
+    ``X-AOS-Output-Format: png`` marker.  Checking all three prevents an HTML,
+    JSON, proxy, or otherwise malformed 200 response from being stored as an
+    AOS Media Object.
+    """
+
+    headers = getattr(response, "headers", {}) or {}
+    content_type = str(headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+    output_format = str(headers.get("X-AOS-Output-Format") or "").strip().lower()
+    return (
+        content_type == "image/png"
+        and output_format == "png"
+        and bytes(content or b"").startswith(PNG_SIGNATURE)
+    )
+
+
 def _parse_json_response(response: requests.Response) -> Dict[str, Any]:
     try:
         payload = response.json()

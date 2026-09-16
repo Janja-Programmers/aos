@@ -74,6 +74,35 @@ class TestMediaBackgroundProcessing(AOSFeatureTestMixin, FrappeTestCase):
             1,
         )
 
+    def test_explicit_request_requeues_terminal_failed_job(self):
+        job = self._request()
+        frappe.db.set_value(
+            "AOS Media Processing Job",
+            job.name,
+            {
+                "status": "Failed",
+                "attempt_count": 3,
+                "completed_at": frappe.utils.now_datetime(),
+                "last_error_code": "MEDIA_PROCESSING_ERROR",
+                "last_error_message": "Media processing failed safely.",
+            },
+            update_modified=False,
+        )
+
+        with patch.object(self.processing, "enqueue") as enqueue:
+            retried = self.processing.request_background_removal(
+                user=self.user,
+                source_media_id=self.source.name,
+                result_purpose="profile_image",
+            )
+
+        self.assertEqual(retried.name, job.name)
+        self.assertEqual(retried.status, "Queued")
+        self.assertEqual(int(retried.attempt_count or 0), 0)
+        self.assertFalse(retried.completed_at)
+        self.assertFalse(retried.last_error_code)
+        enqueue.assert_called_once_with(job.name, after_commit=True)
+
     def test_processing_job_is_owner_scoped(self):
         job = self._request()
         with self.assertRaises(MediaPermissionError) as exc:

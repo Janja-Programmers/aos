@@ -43,6 +43,33 @@ class TestAdsApiContracts(FrappeTestCase):
         self.assertIn("s.status = 'Active'", source)
         self.assertIn("AOS User Block", source)
 
+    def test_public_detail_emits_analytics_with_keyword_only_canonical_fields(self):
+        source = self._source("api/ads/get_ad.py")
+        tree = ast.parse(source, filename="api/ads/get_ad.py")
+        calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "emit_analytics_event"
+        ]
+        self.assertEqual(len(calls), 1)
+        call = calls[0]
+        self.assertEqual(call.args, [])
+        keyword_names = {item.arg for item in call.keywords}
+        self.assertTrue(
+            {
+                "event_type",
+                "event_group",
+                "user",
+                "target_doctype",
+                "target_name",
+                "route_type",
+                "route_id",
+                "source",
+            }.issubset(keyword_names)
+        )
+
     def test_public_list_is_bounded_deterministic_and_cursor_safe(self):
         source = self._source("api/ads/list_ads.py")
         self.assertIn("LIMIT %(limit)s OFFSET %(offset)s", source)

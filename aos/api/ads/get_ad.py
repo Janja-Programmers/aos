@@ -92,7 +92,18 @@ def get_ad_impl(**kwargs):
         _apply_display_price(ad_doc,requested_currency=display_currency,today=today)
         item=serialize_ad_detail(ad_doc,is_wishlisted=_viewer_has_wishlisted(viewer=viewer,ad_name=ad_name))
         _record_view_best_effort(viewer=viewer,ad_name=ad_name)
-        try: emit_analytics_event("ad_view", actor=viewer if viewer != "Guest" else None, target_type="AOS Ad", target_id=ad_name)
-        except Exception: frappe.log_error(frappe.get_traceback(),"AOS Ad View Analytics Failed")
+        try:
+            emit_analytics_event(
+                event_type="ad_view",
+                event_group="ads",
+                user=viewer if viewer != "Guest" else None,
+                target_doctype="AOS Ad",
+                target_name=ad_name,
+                route_type="ad",
+                route_id=ad_name,
+                source="ads.get_ad",
+            )
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "AOS Ad View Analytics Failed")
         return ok("Ad fetched.",data={"item":item})
     return run_ads_api(_get,fallback="Failed to fetch ad.",log_title="AOS Get Ad Failed")
