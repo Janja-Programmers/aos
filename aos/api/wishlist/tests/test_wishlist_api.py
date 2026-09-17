@@ -220,6 +220,26 @@ class TestWishlistAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(response.get("ok"), response)
         self.assertEqual([item.get("id") for item in response["data"]["items"]], [self.ad.public_id])
 
+    def test_fixture_cleanup_removes_renamed_ads_by_immutable_name(self):
+        ad_name = self.ad.name
+        seller_name = self.ad.seller
+        category_name = self.ad.category
+        location_name = self.ad.location
+
+        frappe.db.set_value(
+            "AOS Ad",
+            ad_name,
+            "title",
+            "Wishlist Camera Alpha",
+            update_modified=False,
+        )
+        self.cleanup_feature_rows()
+
+        self.assertFalse(frappe.db.exists("AOS Ad", ad_name))
+        self.assertFalse(frappe.db.exists("AOS Seller", seller_name))
+        self.assertFalse(frappe.db.exists("AOS Category", category_name))
+        self.assertFalse(frappe.db.exists("AOS Location", location_name))
+
     def test_list_supports_price_sort_and_price_filter_with_cursor(self):
         second_ad = self.make_ad(seller_user=self.seller_user, status="Active")
         frappe.db.set_value("AOS Ad", self.ad.name, "price", 300, update_modified=False)

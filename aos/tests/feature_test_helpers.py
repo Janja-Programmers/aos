@@ -24,6 +24,7 @@ class AOSFeatureTestMixin:
 
     prefix: str
     created_users: list[str]
+    created_ad_names: list[str]
 
     def make_prefix(self, namespace: str = "feature") -> str:
         return f"{namespace}-{uuid.uuid4().hex[:10]}"
@@ -369,6 +370,16 @@ class AOSFeatureTestMixin:
             frappe.db.commit()
         finally:
             frappe.set_user(original_user)
+
+        # Track the immutable Frappe document identity for teardown. Tests are
+        # free to mutate public/business fields such as title, category, status,
+        # or location; cleanup must never depend on those mutable values.
+        created_ad_names = getattr(self, "created_ad_names", None)
+        if created_ad_names is None:
+            created_ad_names = []
+            self.created_ad_names = created_ad_names
+        if ad.name not in created_ad_names:
+            created_ad_names.append(ad.name)
         return ad
 
     def make_conversation(self, user_a: str, user_b: str, *, with_message: bool = False):
@@ -576,6 +587,42 @@ class AOSFeatureTestMixin:
 
         frappe.db.sql("DELETE FROM `tabAOS Ad Report` WHERE reported_by LIKE %s OR ad IN (SELECT name FROM `tabAOS Ad` WHERE title LIKE %s)", (email_like, like))
         frappe.db.sql("DELETE FROM `tabAOS Wishlist` WHERE user LIKE %s OR ad IN (SELECT name FROM `tabAOS Ad` WHERE title LIKE %s)", (email_like, like))
+
+        # ``make_ad`` records exact immutable Ad names. Delete those fixtures by
+        # identity before the legacy prefix sweep so a test that deliberately
+        # changes an Ad title cannot strand an Active Ad while its Seller/User,
+        # Category, Location, or Media fixtures are removed below. Keep this
+        # idempotent because tearDown may run after a partially failed test.
+        for ad_name in list(getattr(self, "created_ad_names", [])):
+            if not ad_name:
+                continue
+            frappe.db.sql(
+                "DELETE FROM `tabAOS Review Reaction` WHERE review IN "
+                "(SELECT name FROM `tabAOS Review` WHERE ad=%s)",
+                (ad_name,),
+            )
+            frappe.db.sql(
+                "DELETE FROM `tabAOS Review Report` WHERE review IN "
+                "(SELECT name FROM `tabAOS Review` WHERE ad=%s)",
+                (ad_name,),
+            )
+            frappe.db.sql(
+                "DELETE FROM `tabAOS Review Image` WHERE parent IN "
+                "(SELECT name FROM `tabAOS Review` WHERE ad=%s)",
+                (ad_name,),
+            )
+            frappe.db.sql("DELETE FROM `tabAOS Review` WHERE ad=%s", (ad_name,))
+            frappe.db.sql("DELETE FROM `tabAOS Ad Report` WHERE ad=%s", (ad_name,))
+            frappe.db.sql("DELETE FROM `tabAOS Wishlist` WHERE ad=%s", (ad_name,))
+            frappe.db.sql("DELETE FROM `tabAOS Ad Image` WHERE parent=%s", (ad_name,))
+            frappe.db.sql(
+                "DELETE FROM `tabAOS Ad Attribute Value` "
+                "WHERE parent=%s AND parenttype='AOS Ad'",
+                (ad_name,),
+            )
+            frappe.db.sql("DELETE FROM `tabAOS Ad` WHERE name=%s", (ad_name,))
+
+        self.created_ad_names = []
         frappe.db.sql("DELETE FROM `tabAOS Ad Image` WHERE parent IN (SELECT name FROM `tabAOS Ad` WHERE title LIKE %s)", (like,))
         frappe.db.sql("DELETE FROM `tabAOS Ad` WHERE title LIKE %s", (like,))
         frappe.db.sql(

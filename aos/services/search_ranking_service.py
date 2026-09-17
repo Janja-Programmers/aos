@@ -622,10 +622,14 @@ def enqueue_ad_search_index(ad_id: str, *, source: str = "ad_update", enqueue: b
 	if not frappe.db.exists("AOS Ad", ad_id):
 		raise SearchRankingError("Missing Ads require enqueue_ad_search_delete with a captured public ID")
 	document = build_ad_index_document(ad_id)
-	target_owner = frappe.db.get_value("AOS Seller", document.get("seller"), "user") or document.get(
-		"seller"
-	)
-	if not document.get("eligible"):
+	seller_user = _clean(frappe.db.get_value("AOS Seller", document.get("seller"), "user"))
+	target_owner = seller_user if seller_user and frappe.db.exists("User", seller_user) else None
+
+	# ``target_owner`` is a Link to User. Never fall back to an AOS Seller
+	# document name when an Ad has become orphaned or its Seller/User disappears
+	# between projection and enqueue. Such a candidate is not publicly eligible;
+	# converge the derived search index by scheduling a delete with no bogus Link.
+	if not document.get("eligible") or not target_owner:
 		action = "delete"
 	return create_search_index_job(
 		target_doctype="AOS Ad",

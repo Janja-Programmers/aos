@@ -11,6 +11,7 @@ from aos.services.search_ranking_service import (
 	SearchRankingConfig,
 	_prepare_missing_target_delete,
 	create_search_index_job,
+	enqueue_ad_search_index,
 )
 
 
@@ -100,3 +101,41 @@ class TestSearchRankingStaleTargets(FrappeTestCase):
 		self.assertEqual(state, "replacement_required")
 		self.assertEqual(job.action, "upsert")
 		self.assertTrue(job.flags.ignore_links)
+
+	def test_orphaned_ad_never_uses_seller_name_as_user_target_owner(self):
+		document = {
+			"id": "ad_test_orphan",
+			"seller": "SELLER-MISSING",
+			"eligible": False,
+		}
+		created = object()
+
+		def exists(doctype, name):
+			if doctype == "AOS Ad":
+				return True
+			if doctype == "User":
+				return False
+			return False
+
+		with (
+			patch("aos.services.search_ranking_service.frappe.db.exists", side_effect=exists),
+			patch(
+				"aos.services.search_ranking_service.build_ad_index_document",
+				return_value=document,
+			),
+			patch(
+				"aos.services.search_ranking_service.frappe.db.get_value",
+				return_value="deleted-seller@example.com",
+			),
+			patch(
+				"aos.services.search_ranking_service.create_search_index_job",
+				return_value=created,
+			) as create_job,
+		):
+			result = enqueue_ad_search_index("AD-ORPHAN", enqueue=False)
+
+		self.assertIs(result, created)
+		kwargs = create_job.call_args.kwargs
+		self.assertEqual(kwargs["action"], "delete")
+		self.assertIsNone(kwargs["target_owner"])
+		self.assertNotEqual(kwargs["target_owner"], document["seller"])
