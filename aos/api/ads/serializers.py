@@ -543,6 +543,7 @@ def serialize_my_ad_list_item(
             )
         ),
         "location_name": _location_label(ad_doc),
+        "decline_reason": _norm(getattr(ad_doc, "decline_reason", None)) or None,
         "current_price": price_display,
         "primary_image": _primary_image(
             images
@@ -623,8 +624,7 @@ def serialize_ad_for_edit(
     ):
         details.append(
             {
-                "attribute": _norm(getattr(row, "attribute_key", None))
-                or attribute_key(getattr(row, "attribute", None)),
+                "attribute": _norm(getattr(row, "attribute", None)),
                 "value_text": getattr(
                     row,
                     "value_text",
@@ -680,6 +680,7 @@ def serialize_ad_for_edit(
             None,
         ),
         "location_name": _location_label(ad_doc),
+        "decline_reason": _norm(getattr(ad_doc, "decline_reason", None)) or None,
         "category": getattr(
             ad_doc,
             "category",

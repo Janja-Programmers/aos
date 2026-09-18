@@ -120,7 +120,7 @@
    "fieldname": "google_oauth_client_ids",
    "fieldtype": "Small Text",
    "label": "Google OAuth Client IDs",
-   "description": "Allowed Google OAuth client IDs, one per line or comma-separated."
+   "description": "Allowed Google OAuth token audiences, one per line or comma-separated. Include the exact web NEXT_PUBLIC_GOOGLE_CLIENT_ID and every Android/iOS OAuth client ID accepted by AOS."
   },
   {
    "fieldname": "column_break_auth_oauth",

@@ -85,6 +85,14 @@ class TestNotificationContracts(unittest.TestCase):
         with self.assertRaises(NotificationContractError):
             validate_persistent_payload("message", {"conversation_id": "CONV-1"})
 
+    def test_ad_rejected_payload_exposes_bounded_reason(self):
+        payload = validate_persistent_payload(
+            "ad_rejected",
+            {"ad_id": "ad_example", "reason": "Missing required product details."},
+        )
+        self.assertEqual(payload["ad_id"], "ad_example")
+        self.assertEqual(payload["reason"], "Missing required product details.")
+
     def test_public_payload_sanitizer_fails_closed_for_invalid_persisted_data(self):
         safe = sanitize_public_payload(
             "short_comment",

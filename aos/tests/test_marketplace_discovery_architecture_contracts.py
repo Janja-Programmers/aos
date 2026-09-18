@@ -150,6 +150,24 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         assert 'ad_id=ad.public_id' in expiry and 'ad_id=ad.name' not in expiry
 
 
+
+    def test_declined_ad_owner_contract_exposes_reason_and_canonical_attribute_identity(self):
+        listing = text('aos/api/ads/list_my_ads.py')
+        serializers = text('aos/api/ads/serializers.py')
+        notifications = text('aos/services/notifications/service.py')
+        contracts = text('aos/services/notifications/contracts.py')
+        review = text('aos/services/ads/review.py')
+        moderation = text('aos/services/moderation_service.py')
+
+        assert 'a.decline_reason' in listing
+        assert serializers.count('"decline_reason": _norm(getattr(ad_doc, "decline_reason", None)) or None') >= 2
+        assert '"attribute": _norm(getattr(row, "attribute", None))' in serializers
+        assert '"attribute": _norm(getattr(row, "attribute_key", None))' not in serializers
+        assert 'allowed_payload_fields=frozenset({"ad_id", "reason"})' in contracts
+        assert 'payload["reason"] = clean_reason' in notifications
+        assert 'reason=doc.decline_reason' in review
+        assert 'reason=ad.decline_reason' in moderation
+
     def test_dependency_signal_changes_reproject_ads_in_bounded_batches(self):
         hooks=text('aos/hooks.py')
         signals=text('aos/services/marketplace_discovery/signals.py')

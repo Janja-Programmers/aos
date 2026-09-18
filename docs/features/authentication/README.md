@@ -543,7 +543,7 @@ Success: `200`, `Login successful.`, canonical authenticated bootstrap payload; 
 
 Stable errors include `AUTH_UNKNOWN_FIELD`, `VALIDATION_ERROR`, `CONFIG_ERROR`, `TOKEN_INVALID`, `TOKEN_EXPIRED`, `EMAIL_NOT_VERIFIED`, `SOCIAL_IDENTITY_CONFLICT`, account/bootstrap errors, `TWO_FACTOR_REQUIRED`, `RATE_LIMIT`, `SERVICE_UNAVAILABLE`.
 
-Security/side effects: verifies RS256 signature, Google issuer/audience/expiry/required claims and verified email. Immutable provider `sub` is the durable identity. A first social sign-in may atomically create User/Profile/Preference + opaque AOS Auth Identity; an existing provider binding is authoritative and is never silently rebound by email. Session creation occurs only after account/bootstrap checks.
+Security/side effects: verifies RS256 signature, Google issuer/audience/expiry/required claims and verified email. Accepted audiences come from **AOS Settings → Authentication → Google OAuth Client IDs**. For web sign-in, this allowlist must contain the exact `NEXT_PUBLIC_GOOGLE_CLIENT_ID` used by the deployed web app; Android/iOS OAuth client IDs may be listed alongside it. Immutable provider `sub` is the durable identity. A first social sign-in may atomically create User/Profile/Preference + opaque AOS Auth Identity; an existing provider binding is authoritative and is never silently rebound by email. Session creation occurs only after account/bootstrap checks.
 
 Idempotency/retry: existing bound identity is reuse-safe; first-account creation relies on DB uniqueness and identity-binding constraints. Session creation itself is non-idempotent.
 

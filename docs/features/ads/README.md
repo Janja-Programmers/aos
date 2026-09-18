@@ -147,6 +147,10 @@ Manual composite indexes and uniqueness rules used by Ads are installed by `aos.
 | `reviewed_by` | Link → User | NO | — | Reviewer. |
 | `reviewed_on` | Datetime | NO | — | Review timestamp. |
 
+## Declined owner projection
+
+Seller-owned Ads reads expose `decline_reason` for declined listings. `get_my_ad` returns the complete editable Ad projection using Catalog attribute IDs in each detail row so the edit workflow can restore saved attribute values. Public buyer reads remain restricted by Ads visibility rules and do not expose declined Ads.
+
 ## API
 
 <!-- BEGIN CODE-DERIVED ENDPOINTS -->

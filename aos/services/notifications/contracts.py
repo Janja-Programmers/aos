@@ -122,7 +122,7 @@ _CONTRACTS = {
     "ad_rejected": NotificationTypeContract(
         category=CATEGORY_MARKETPLACE,
         event="aos_ad_rejected",
-        allowed_payload_fields=frozenset({"ad_id"}),
+        allowed_payload_fields=frozenset({"ad_id", "reason"}),
         required_payload_fields=frozenset({"ad_id"}),
     ),
     "ad_expired": NotificationTypeContract(

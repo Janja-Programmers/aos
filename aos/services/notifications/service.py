@@ -578,17 +578,24 @@ class NotificationService:
         user: str,
         ad_id: str,
         title: str | None = None,
+        reason: str | None = None,
     ):
+        clean_reason = " ".join(str(reason or "").replace("\x00", "").split()).strip()
+        base = (
+            f"Your ad '{title}' was rejected"
+            if title
+            else "Your ad was rejected"
+        )
+        body = f"{base}. Reason: {clean_reason}" if clean_reason else base
+        payload = {"ad_id": ad_id}
+        if clean_reason:
+            payload["reason"] = clean_reason
         return cls.notify(
             user=user,
             type="ad_rejected",
             title="Ad Rejected",
-            body=(
-                f"Your ad '{title}' was rejected"
-                if title
-                else "Your ad was rejected"
-            ),
-            payload={"ad_id": ad_id},
+            body=body,
+            payload=payload,
             event="aos_ad_rejected",
         )
 

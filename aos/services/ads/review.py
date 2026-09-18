@@ -52,6 +52,6 @@ def review_ad(*, public_id: str, decision: str, reason: str, version: str, revie
         if clean_decision == "approve":
             NotificationService.notify_ad_approved(user=owner, ad_id=doc.public_id, title=doc.title)
         else:
-            NotificationService.notify_ad_rejected(user=owner, ad_id=doc.public_id, title=doc.title)
+            NotificationService.notify_ad_rejected(user=owner, ad_id=doc.public_id, title=doc.title, reason=doc.decline_reason)
     enqueue_discovery_refresh(doc.name, status=doc.status, source=f"ad_{action}")
     return doc

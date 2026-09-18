@@ -680,7 +680,7 @@ def _notify_ad_rejected(*, user: str, ad) -> None:
 	try:
 		from aos.services.notifications.service import NotificationService
 
-		NotificationService.notify_ad_rejected(user=user, ad_id=ad.public_id, title=ad.title)
+		NotificationService.notify_ad_rejected(user=user, ad_id=ad.public_id, title=ad.title, reason=ad.decline_reason)
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "Ad moderation rejected notification failed")
 

@@ -61,7 +61,7 @@ def list_my_ads_impl(**kwargs):
             f"""
             SELECT a.name, a.public_id, a.title, a.country, a.location, loc.location AS location_name,
                    a.status, a.currency, a.price, a.price_type, a.offer_price, a.offer_start_date,
-                   a.offer_end_date, a.creation, a.modified,
+                   a.offer_end_date, a.decline_reason, a.creation, a.modified,
                    CASE
                      WHEN a.offer_price IS NOT NULL AND a.offer_price > 0
                       AND (a.offer_start_date IS NULL OR a.offer_start_date <= %(today)s)

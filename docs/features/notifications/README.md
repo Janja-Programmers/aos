@@ -30,6 +30,10 @@ Client -> versioned Notifications API -> inbox/read/delete/token services -> Mar
 | AOS Push Token | user/device/transport/token | scoped unique lifecycle | Device ownership and routing. |
 | Delivery Job / Outbox | aggregate/status/attempt timing | durable indexed state | Retry-safe asynchronous provider work. |
 
+## Ad rejection notifications
+
+`ad_rejected` notifications carry the opaque public `ad_id` plus the bounded rejection `reason` when one exists. The notification body includes the reason for immediate user feedback; clients must route the owner to seller-owned listing management rather than the public Active-only Ad detail surface.
+
 ## API
 The versioned Notifications API lists/paginates the private inbox, marks one/all read, deletes/clears supported records, and manages push-token registration lifecycle. Inputs are authenticated, bounded and strict; provider callbacks use their separate signed internal boundary.
 
