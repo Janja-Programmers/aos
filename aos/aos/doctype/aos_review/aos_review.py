@@ -162,10 +162,24 @@ class AOSReview(Document):
         previous = self.get_doc_before_save()
         if not previous:
             return
-        if not any(self.has_value_changed(fieldname) for fieldname in _CONTENT_FIELDS):
+
+        changed_fields = {
+            fieldname for fieldname in _CONTENT_FIELDS if self.has_value_changed(fieldname)
+        }
+        if not changed_fields:
             return
-        if self._review_action() != "owner_edit":
-            frappe.throw("Review content requires the owner edit action.", exc=frappe.PermissionError)
+
+        action = self._review_action()
+        if action == "owner_edit":
+            return
+
+        # Withdrawal owns one content-side effect: detaching every Review Media
+        # relationship. It must not be usable to rewrite text/rating or replace
+        # the media set with another selection.
+        if action == "owner_withdraw" and changed_fields == {"review_images"} and not self.review_images:
+            return
+
+        frappe.throw("Review content requires the owner edit action.", exc=frappe.PermissionError)
 
     def _validate_status_transition(self) -> None:
         previous = self.get_doc_before_save()

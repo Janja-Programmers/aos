@@ -27,6 +27,7 @@ class TestReviewsDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.author = self.make_user("author")
         self.viewer = self.make_user("viewer")
         self.other = self.make_user("other")
+        self.moderator = self.make_system_user("moderator")
         self.ad = self.make_ad(seller_user=self.seller_user)
         self.make_conversation(self.author, self.seller_user, with_message=True)
         frappe.set_user(self.author)
@@ -62,14 +63,14 @@ class TestReviewsDatabase(AOSFeatureTestMixin, FrappeTestCase):
 
     def _approve(self, public_id: str):
         doc = self._doc(public_id)
-        frappe.set_user("Administrator")
+        frappe.set_user(self.moderator)
         with patch("aos.services.reviews.moderation.notify_review_decision", return_value=None):
             review_review(
                 review_id=public_id,
                 decision="approve",
                 reason="",
                 version=str(doc.modified),
-                reviewer="Administrator",
+                reviewer=self.moderator,
             )
         return self._doc(public_id)
 
@@ -153,6 +154,19 @@ class TestReviewsDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(media.status, "Orphaned")
         self.assertFalse(media.attached_name)
 
+    def test_withdraw_action_only_allows_server_owned_media_detachment(self):
+        media = self.make_media(owner=self.author, purpose="review_image")
+        public_id = self._create(media=[media.name])["review"]["id"]
+        doc = self._doc(public_id)
+
+        frappe.set_user(self.author)
+        doc.flags.aos_review_action = "owner_withdraw"
+        doc.status = "Withdrawn"
+        doc.title = "Changed during withdrawal"
+        doc.set("review_images", [])
+        with self.assertRaises(frappe.PermissionError):
+            doc.save(ignore_permissions=True)
+
     def test_manual_and_automated_moderation_are_generation_safe(self):
         public_id = self._create()["review"]["id"]
         doc = self._doc(public_id)
@@ -166,7 +180,7 @@ class TestReviewsDatabase(AOSFeatureTestMixin, FrappeTestCase):
                 decision="reject",
                 reason="Contains disallowed content.",
                 version=str(approved.modified),
-                reviewer="Administrator",
+                reviewer=self.moderator,
             )
         self.assertEqual(rejected.status, "Rejected")
         self.assertEqual(rejected.review_notes, "Contains disallowed content.")

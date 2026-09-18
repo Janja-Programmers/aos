@@ -12,6 +12,7 @@ from aos.api.reports.report_user import report_user_impl
 from aos.api.reviews.report import report_review_impl
 from aos.services.accounts.identity import ensure_public_account_id
 from aos.services.account_deletion_service import _cleanup_report_account_data
+from aos.services.reviews.moderation import review_review
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
@@ -28,6 +29,7 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.seller_owner = self.make_user("seller")
         self.short_owner = self.make_user("short-owner")
         self.review_author = self.make_user("review-author")
+        self.review_moderator = self.make_system_user("review-moderator")
         self.reason = self.make_report_reason()
         self.ad = self.make_ad(seller_user=self.seller_owner)
         self.short = self.make_short(owner=self.short_owner)
@@ -69,11 +71,16 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         )
         review.insert(ignore_permissions=True)
 
-        frappe.set_user("Administrator")
-        review.flags.aos_review_action = "manual_approve"
-        review.flags.aos_reviewed_by = "Administrator"
-        review.status = "Approved"
-        review.save(ignore_permissions=True)
+        frappe.set_user(self.review_moderator)
+        with patch("aos.services.reviews.moderation.notify_review_decision", return_value=None):
+            review_review(
+                review_id=review.public_id,
+                decision="approve",
+                reason="",
+                version=str(review.modified),
+                reviewer=self.review_moderator,
+            )
+        review.reload()
         return review
 
     def _report_user(self, **overrides):

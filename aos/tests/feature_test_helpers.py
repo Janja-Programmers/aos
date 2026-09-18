@@ -40,6 +40,32 @@ class AOSFeatureTestMixin:
         if clean not in values:
             values.append(clean)
 
+    def make_system_user(self, label: str, *, roles: tuple[str, ...] = ("System Manager",)) -> str:
+        """Create a normal enabled System User with explicit role-derived permissions.
+
+        Tests should use this instead of the framework Administrator account when
+        they need to exercise Desk/operator authorization.
+        """
+        email = f"{self.prefix}-{label}@example.com"
+        if not frappe.db.exists("User", email):
+            user = frappe.get_doc(
+                {
+                    "doctype": "User",
+                    "email": email,
+                    "first_name": "Feature",
+                    "last_name": label.title(),
+                    "enabled": 1,
+                    "user_type": "System User",
+                    "send_welcome_email": 0,
+                }
+            )
+            user.insert(ignore_permissions=True)
+            if roles:
+                user.add_roles(*roles)
+            if email not in self.created_users:
+                self.created_users.append(email)
+        return email
+
     def make_user(self, label: str, *, enabled: int = 1, with_preference: bool = True) -> str:
         email = f"{self.prefix}-{label}@example.com"
         created_user = not frappe.db.exists("User", email)
