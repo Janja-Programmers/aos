@@ -55,21 +55,21 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
             self.assertTrue(rows, f"missing Report domain index {index_name}")
 
     def _make_approved_review(self):
-        frappe.set_user("Administrator")
+        frappe.set_user(self.review_author)
         review = frappe.get_doc(
             {
                 "doctype": "AOS Review",
                 "ad": self.ad.name,
-                "reviewer": self.review_author,
                 "rating": 5,
                 "title": "Useful review",
                 "comment": "Useful report feature test review.",
-                "status": "Approved",
                 "eligibility_basis": "communication",
                 "moderation_generation": 1,
             }
         )
         review.insert(ignore_permissions=True)
+
+        frappe.set_user("Administrator")
         review.flags.aos_review_action = "manual_approve"
         review.flags.aos_reviewed_by = "Administrator"
         review.status = "Approved"

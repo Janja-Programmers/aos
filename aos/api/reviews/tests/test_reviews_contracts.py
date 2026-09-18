@@ -83,6 +83,11 @@ class TestReviewsContracts(unittest.TestCase):
         fields = {field.get("fieldname") for field in schema.get("fields", [])}
         self.assertEqual(fields, {"media"})
 
+    def test_review_controller_does_not_shadow_frappe_internal_action_state(self):
+        controller = (ROOT / "aos/aos/doctype/aos_review/aos_review.py").read_text()
+        self.assertIn("def _review_action(self)", controller)
+        self.assertNotIn("def _action(self)", controller)
+
     def test_reaction_relationship_and_aggregate_updates_are_atomic(self):
         controller = (ROOT / "aos/aos/doctype/aos_review_reaction/aos_review_reaction.py").read_text()
         aggregate = (ROOT / "aos/services/reviews/aggregates.py").read_text()

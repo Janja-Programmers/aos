@@ -11,6 +11,7 @@ from frappe.model.document import Document
 from aos.services.reviews.aggregates import apply_reaction_count_delta
 from aos.services.reviews.constants import STATUS_APPROVED
 from aos.services.reviews.validation import normalize_reaction
+from aos.utils.doctype_permissions import has_doctype_permission
 
 
 def review_reaction_name(*, review: str, user: str) -> str:
@@ -81,7 +82,15 @@ class AOSReviewReaction(Document):
 
 
 def update_review_reaction_counts(review_name):
-    """Operator reconciliation entry point."""
+    """Permission-protected operator reconciliation entry point."""
+    user = str(getattr(frappe.session, "user", "") or "").strip()
+    if not has_doctype_permission(
+        user=user,
+        doctype="AOS Review Reaction",
+        ptype="read",
+    ):
+        frappe.throw("Not permitted.", exc=frappe.PermissionError)
+
     from aos.services.reviews.aggregates import recompute_review_reaction_counts
 
     return recompute_review_reaction_counts(review_id=review_name, lock_review=True)

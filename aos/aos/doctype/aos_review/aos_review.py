@@ -104,7 +104,7 @@ class AOSReview(Document):
         self._validate_status_transition()
 
     def before_save(self):
-        action = self._action()
+        action = self._review_action()
         previous = self.get_doc_before_save()
         if previous and action in _DECISION_ACTIONS and (previous.status != self.status or action == "moderation_review"):
             reviewer = str(self.flags.get("aos_reviewed_by") or "").strip()
@@ -141,7 +141,7 @@ class AOSReview(Document):
             new_rating=None,
         )
 
-    def _action(self) -> str:
+    def _review_action(self) -> str:
         return str(self.flags.get("aos_review_action") or "").strip().lower()
 
     def _validate_media_rows(self) -> None:
@@ -164,7 +164,7 @@ class AOSReview(Document):
             return
         if not any(self.has_value_changed(fieldname) for fieldname in _CONTENT_FIELDS):
             return
-        if self._action() != "owner_edit":
+        if self._review_action() != "owner_edit":
             frappe.throw("Review content requires the owner edit action.", exc=frappe.PermissionError)
 
     def _validate_status_transition(self) -> None:
@@ -175,7 +175,7 @@ class AOSReview(Document):
             return
         if previous.status == self.status:
             return
-        action = self._action()
+        action = self._review_action()
         target = _ACTION_TRANSITIONS.get(action, {}).get(previous.status)
         if target != self.status:
             frappe.throw("Invalid review status transition.", exc=frappe.ValidationError)
