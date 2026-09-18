@@ -21,15 +21,7 @@ def get_review_impl(**kwargs):
     if limited:
         return limited
     return run_review_api(
-        lambda: ok(
-            "Review fetched.",
-            data={
-                "review": ReviewService().get(
-                    review_id=kwargs.get("review_id") or kwargs.get("review"),
-                    viewer=viewer,
-                )
-            },
-        ),
+        lambda: ok("Review fetched.", data={"review": ReviewService().get(payload=kwargs, viewer=viewer)}),
         fallback="Failed to fetch review.",
         log_title="AOS Get Review Failed",
     )

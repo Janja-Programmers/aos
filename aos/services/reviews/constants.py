@@ -13,7 +13,6 @@ STATUS_REJECTED = "Rejected"
 STATUS_HIDDEN = "Hidden"
 STATUS_WITHDRAWN = "Withdrawn"
 PUBLIC_STATUSES = frozenset({STATUS_APPROVED})
-TERMINAL_STATUSES = frozenset({STATUS_REJECTED, STATUS_WITHDRAWN})
 ALL_STATUSES = frozenset(
     {STATUS_PENDING, STATUS_APPROVED, STATUS_REJECTED, STATUS_HIDDEN, STATUS_WITHDRAWN}
 )
@@ -30,19 +29,8 @@ MAX_REVIEW_IMAGES = 5
 
 ELIGIBILITY_BASIS_COMMUNICATION = "communication"
 
-PUBLIC_SORTS = {
-    "newest": "creation desc, name desc",
-    "helpful": "like_count desc, creation desc, name desc",
-    "rating_high": "rating desc, creation desc, name desc",
-    "rating_low": "rating asc, creation desc, name desc",
-}
-SELF_SORTS = {
-    "newest": "creation desc, name desc",
-    "oldest": "creation asc, name asc",
-    "rating_high": "rating desc, creation desc, name desc",
-    "rating_low": "rating asc, creation desc, name desc",
-}
-
+PUBLIC_SORTS = frozenset({"newest", "helpful", "rating_high", "rating_low"})
+SELF_SORTS = PUBLIC_SORTS | frozenset({"oldest"})
 REACTIONS = frozenset({"Like", "Dislike"})
 
 DEFAULT_LIST_LIMIT = 20

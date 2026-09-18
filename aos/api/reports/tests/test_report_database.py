@@ -70,6 +70,10 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
             }
         )
         review.insert(ignore_permissions=True)
+        review.flags.aos_review_action = "manual_approve"
+        review.flags.aos_reviewed_by = "Administrator"
+        review.status = "Approved"
+        review.save(ignore_permissions=True)
         return review
 
     def _report_user(self, **overrides):
@@ -104,7 +108,7 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
             return report_short_impl(**payload)
 
     def _report_review(self, **overrides):
-        payload = {"review_id": self.review.name, "reason": self.reason, "details": "Abusive review"}
+        payload = {"review_id": self.review.public_id, "reason": self.reason, "details": "Abusive review"}
         payload.update(overrides)
         with patch("aos.api.reviews.report.rate_limit", return_value=None):
             return report_review_impl(**payload)
@@ -194,16 +198,16 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         own = self._report_short()
         self.assertFalse(own.get("ok"), own)
 
-    def test_review_report_is_idempotent_and_rejects_alias_conflict(self):
+    def test_review_report_is_idempotent_and_rejects_unknown_fields(self):
         first = self._report_review()
         repeated = self._report_review()
-        conflict = self._report_review(review=self.ad.name)
+        invalid = self._report_review(review=self.ad.name)
         self.assertTrue(first.get("ok"), first)
         self.assertTrue(repeated.get("ok"), repeated)
-        self.assertEqual(first["data"]["id"], repeated["data"]["id"])
-        self.assertTrue(repeated["data"].get("idempotent"))
-        self.assertFalse(conflict.get("ok"), conflict)
-        self.assertEqual(conflict.get("error"), "INVALID_REVIEW_REQUEST")
+        self.assertEqual(first["data"]["report_id"], repeated["data"]["report_id"])
+        self.assertFalse(repeated["data"].get("changed"))
+        self.assertFalse(invalid.get("ok"), invalid)
+        self.assertEqual(invalid.get("error"), "INVALID_REVIEW_REQUEST")
 
     def test_non_reviewer_cannot_resolve_report_even_with_ignore_permissions(self):
         submitted = self._report_user()

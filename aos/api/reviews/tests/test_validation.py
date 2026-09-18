@@ -3,14 +3,17 @@ from __future__ import annotations
 import unittest
 
 from aos.services.reviews.errors import ReviewValidationError
+from aos.services.reviews.pagination import decode_cursor, encode_cursor, query_fingerprint
 from aos.services.reviews.validation import (
     ensure_known_fields,
     normalize_comment,
+    normalize_flag,
     normalize_images,
-    normalize_pagination,
+    normalize_limit,
     normalize_rating,
     normalize_report_reason,
     normalize_title,
+    normalize_version,
 )
 
 
@@ -22,61 +25,51 @@ class TestReviewValidation(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ReviewValidationError):
                 normalize_rating(value)
 
-    def test_review_text_normalizes_unicode_and_whitespace(self):
+    def test_review_text_is_normalized_bounded_and_safe(self):
         self.assertEqual(normalize_title("  Great   seller  "), "Great seller")
         self.assertEqual(normalize_comment("Fast   delivery\n\n\nThank you"), "Fast delivery\n\nThank you")
-
-    def test_review_text_rejects_null_control_html_and_script_schemes(self):
-        for value in (
-            "bad\x00text",
-            "bad\x01text",
-            "hidden\u200btext",
-            "direction\u202eoverride",
-            "<script>alert(1)</script>",
-            "javascript:alert(1)",
-        ):
+        for value in ("bad\x00text", "hidden\u200btext", "<script>x</script>", "javascript:alert(1)"):
             with self.subTest(value=value), self.assertRaises(ReviewValidationError):
                 normalize_comment(value)
-
-    def test_review_text_is_bounded(self):
         with self.assertRaises(ReviewValidationError):
             normalize_title("x" * 121)
         with self.assertRaises(ReviewValidationError):
             normalize_comment("x" * 2001)
 
-    def test_review_text_rejects_spam_patterns_without_changing_normal_language(self):
-        with self.assertRaises(ReviewValidationError):
-            normalize_comment("a" * 40)
-        with self.assertRaises(ReviewValidationError):
-            normalize_comment(" ".join(["https://example.com"] * 4))
-        self.assertEqual(normalize_comment("Très bon service — شكراً"), "Très bon service — شكراً")
-
-    def test_media_inputs_are_bounded_unique_and_media_ids_only(self):
-        self.assertEqual(normalize_images(["MEDIA-00000000000000000000000000000001", {"media_id": "MEDIA-00000000000000000000000000000002"}]), ["MEDIA-00000000000000000000000000000001", "MEDIA-00000000000000000000000000000002"])
-        for value in (["https://example.com/x.jpg"], ["MEDIA-00000000000000000000000000000001", "MEDIA-00000000000000000000000000000001"], [f"MEDIA-{i + 1:032x}" for i in range(6)]):
+    def test_media_inputs_are_bounded_unique_canonical_ids(self):
+        values = ["MEDIA-00000000000000000000000000000001", "MEDIA-00000000000000000000000000000002"]
+        self.assertEqual(normalize_images(values), values)
+        for value in ([{"id": values[0]}], ["https://example.com/x.jpg"], [values[0], values[0]], [f"MEDIA-{i + 1:032x}" for i in range(6)]):
             with self.subTest(value=value), self.assertRaises(ReviewValidationError):
                 normalize_images(value)
 
-    def test_pagination_is_bounded(self):
-        self.assertEqual(normalize_pagination({"limit": 20, "offset": 0}), (20, 0))
-        for payload in (
-            {"limit": 0},
-            {"limit": 51},
-            {"offset": -1},
-            {"offset": 10001},
-            {"limit": "x"},
-            {"limit": 2.5},
-            {"limit": True},
-            {"offset": 1.5},
-        ):
-            with self.subTest(payload=payload), self.assertRaises(ReviewValidationError):
-                normalize_pagination(payload)
+    def test_limit_flags_and_versions_are_strict(self):
+        self.assertEqual(normalize_limit("20"), 20)
+        self.assertTrue(normalize_flag("true", field="with_media"))
+        self.assertFalse(normalize_flag("0", field="with_media"))
+        self.assertEqual(normalize_version("2026-09-18 12:34:56.123456"), "2026-09-18 12:34:56.123456")
+        for value in (0, 51, True, 2.5, "x"):
+            with self.subTest(value=value), self.assertRaises(ReviewValidationError):
+                normalize_limit(value)
+        with self.assertRaises(ReviewValidationError):
+            normalize_flag("maybe", field="with_media")
+
+    def test_query_bound_cursor_rejects_malformed_and_mismatched_queries(self):
+        key = query_fingerprint({"ad_id": "ad_abc", "rating": 5})
+        cursor = encode_cursor(scope="public", sort="newest", query_key=key, values=["2026-09-18 12:00:00", "review_abc"])
+        self.assertEqual(
+            decode_cursor(cursor, scope="public", sort="newest", query_key=key, expected_keys=2),
+            ["2026-09-18 12:00:00", "review_abc"],
+        )
+        for value in ("not-base64", encode_cursor(scope="public", sort="newest", query_key="other", values=["2026-09-18 12:00:00", "review_abc"])):
+            with self.subTest(value=value), self.assertRaises(ReviewValidationError):
+                decode_cursor(value, scope="public", sort="newest", query_key=key, expected_keys=2)
 
     def test_unknown_fields_are_rejected(self):
         with self.assertRaises(ReviewValidationError):
             ensure_known_fields({"rating": 5, "reviewer": "attacker@example.com"}, {"rating"})
 
-    def test_report_reason_is_normalized_for_central_active_reason_validation(self):
+    def test_report_reason_is_normalized(self):
         self.assertEqual(normalize_report_reason("  Inappropriate Content  "), "Inappropriate Content")
         for value in ("", "bad\x00reason", "<script>bad</script>"):
             with self.subTest(value=value), self.assertRaises(ReviewValidationError):

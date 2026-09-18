@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 import unicodedata
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable
 
@@ -13,6 +14,7 @@ from aos.services.media.identifiers import normalize_media_id
 from .constants import (
     COMMENT_MAX_LENGTH,
     COMMENT_MIN_LENGTH,
+    DEFAULT_LIST_LIMIT,
     MAX_LIST_LIMIT,
     MAX_REVIEW_IMAGES,
     RATING_MAX,
@@ -32,11 +34,11 @@ _REPEAT_RE = re.compile(r"(.)\1{39,}", re.DOTALL)
 _URL_RE = re.compile(r"https?://", re.IGNORECASE)
 _DISALLOWED_INVISIBLE = frozenset(
     {
-        "\u200b",  # zero-width space
-        "\u2060",  # word joiner
-        "\ufeff",  # zero-width no-break/BOM
-        *[chr(value) for value in range(0x202A, 0x202F)],  # bidi embeddings/overrides
-        *[chr(value) for value in range(0x2066, 0x206A)],  # bidi isolates
+        "\u200b",
+        "\u2060",
+        "\ufeff",
+        *[chr(value) for value in range(0x202A, 0x202F)],
+        *[chr(value) for value in range(0x2066, 0x206A)],
     }
 )
 
@@ -63,10 +65,33 @@ def normalize_identifier(
     text = unicodedata.normalize("NFKC", str(value or "")).strip()
     if not text:
         if required:
-            raise ReviewValidationError(f"{field.replace('_', ' ').title()} is required.", code=f"INVALID_{field.upper()}")
+            raise ReviewValidationError(
+                f"{field.replace('_', ' ').title()} is required.",
+                code=f"INVALID_{field.upper()}",
+            )
         return ""
     if len(text) > max_length or not _IDENTIFIER_RE.fullmatch(text):
         raise ReviewValidationError(f"Invalid {field}.", code=f"INVALID_{field.upper()}")
+    return text
+
+
+def normalize_version(value: Any, *, required: bool = True) -> str:
+    if isinstance(value, (dict, list, tuple, set, bool)):
+        raise ReviewValidationError("Invalid review version.", code="INVALID_REVIEW_VERSION")
+    text = unicodedata.normalize("NFKC", str(value or "")).strip()
+    if not text:
+        if required:
+            raise ReviewValidationError("Review version is required.", code="INVALID_REVIEW_VERSION")
+        return ""
+    if len(text) > 32 or not re.fullmatch(
+        r"[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?",
+        text,
+    ):
+        raise ReviewValidationError("Invalid review version.", code="INVALID_REVIEW_VERSION")
+    try:
+        datetime.fromisoformat(text)
+    except ValueError:
+        raise ReviewValidationError("Invalid review version.", code="INVALID_REVIEW_VERSION") from None
     return text
 
 
@@ -76,7 +101,7 @@ def normalize_rating(value: Any) -> int:
     try:
         rating = Decimal(str(value).strip())
     except (InvalidOperation, ValueError, TypeError):
-        raise ReviewValidationError("Invalid rating.", code="INVALID_RATING")
+        raise ReviewValidationError("Invalid rating.", code="INVALID_RATING") from None
     if not rating.is_finite():
         raise ReviewValidationError("Invalid rating.", code="INVALID_RATING")
     if rating < RATING_MIN or rating > RATING_MAX:
@@ -168,12 +193,12 @@ def normalize_images(value: Any) -> list[str]:
     if value in (None, ""):
         return []
     if not isinstance(value, list):
-        raise ReviewValidationError("Images must be a list.", code="INVALID_REVIEW_MEDIA")
+        raise ReviewValidationError("Media must be a list.", code="INVALID_REVIEW_MEDIA")
     normalized: list[str] = []
     seen: set[str] = set()
     for item in value:
-        if isinstance(item, dict):
-            item = item.get("media_id") or item.get("media")
+        if not isinstance(item, str):
+            raise ReviewValidationError("Invalid review media.", code="INVALID_REVIEW_MEDIA")
         media_id = normalize_media_id(item)
         if media_id is None:
             raise ReviewValidationError("Invalid review media.", code="INVALID_REVIEW_MEDIA")
@@ -192,20 +217,29 @@ def _strict_integer(value: Any, *, default: int) -> int:
     if isinstance(value, bool) or isinstance(value, (dict, list, tuple, set, float)):
         raise ReviewValidationError("Invalid pagination.", code="INVALID_REVIEW_PAGINATION")
     text = str(value).strip()
-    if not re.fullmatch(r"-?\d+", text):
+    if not re.fullmatch(r"\d+", text):
         raise ReviewValidationError("Invalid pagination.", code="INVALID_REVIEW_PAGINATION")
     try:
         return int(text)
     except (TypeError, ValueError, OverflowError):
-        raise ReviewValidationError("Invalid pagination.", code="INVALID_REVIEW_PAGINATION")
+        raise ReviewValidationError("Invalid pagination.", code="INVALID_REVIEW_PAGINATION") from None
 
 
-def normalize_pagination(payload: dict[str, Any]) -> tuple[int, int]:
-    limit = _strict_integer(payload.get("limit"), default=20)
-    offset = _strict_integer(payload.get("offset"), default=0)
-    if limit < 1 or limit > MAX_LIST_LIMIT or offset < 0 or offset > 10000:
+def normalize_limit(value: Any) -> int:
+    limit = _strict_integer(value, default=DEFAULT_LIST_LIMIT)
+    if limit < 1 or limit > MAX_LIST_LIMIT:
         raise ReviewValidationError("Invalid pagination.", code="INVALID_REVIEW_PAGINATION")
-    return limit, offset
+    return limit
+
+
+def normalize_flag(value: Any, *, field: str) -> bool | None:
+    if value in (None, ""):
+        return None
+    if value in (True, 1, "1", "true", "True"):
+        return True
+    if value in (False, 0, "0", "false", "False"):
+        return False
+    raise ReviewValidationError(f"Invalid {field}.", code="INVALID_REVIEW_FILTER")
 
 
 def normalize_rating_filter(value: Any) -> int | None:
@@ -229,4 +263,15 @@ def normalize_report_reason(value: Any) -> str:
         maximum=140,
         required=True,
         multiline=False,
+    )
+
+
+def normalize_moderation_reason(value: Any) -> str:
+    return _normalize_text(
+        value,
+        field="moderation_reason",
+        minimum=0,
+        maximum=1000,
+        required=False,
+        multiline=True,
     )

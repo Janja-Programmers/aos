@@ -240,17 +240,19 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
             patch("aos.api.reviews.create.enqueue_review_moderation", return_value=SimpleNamespace(name="REV-MOD", status="Queued")),
         ):
             response = create_review_impl(
-                ad=ad.name,
+                ad_id=ad.public_id,
                 rating=5,
                 title="Excellent seller",
                 comment="Good communication and fast response.",
+                media=[],
             )
 
         self.assertTrue(response.get("ok"), response)
-        review_id = response.get("data", {}).get("id")
+        review_id = response.get("data", {}).get("review", {}).get("id")
         self.assertTrue(review_id)
-        self.assertEqual(frappe.db.get_value("AOS Review", review_id, "reviewer"), reviewer)
-        self.assertEqual(frappe.db.get_value("AOS Review", review_id, "status"), "Pending")
+        review_name = frappe.db.get_value("AOS Review", {"public_id": review_id}, "name")
+        self.assertEqual(frappe.db.get_value("AOS Review", review_name, "reviewer"), reviewer)
+        self.assertEqual(frappe.db.get_value("AOS Review", review_name, "status"), "Pending")
 
     def test_chat_send_message_is_blocked_when_receiver_blocked_sender(self):
         sender = self.make_user("chat-sender")

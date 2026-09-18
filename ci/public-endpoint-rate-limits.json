@@ -852,6 +852,12 @@
     "rationale": "Covered by the Nginx public API baseline and a stricter operation-specific Reviews application limit."
   },
   {
+    "endpoint": "aos.api.v1.reviews.__init__.dislike_review",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline and the shared Reviews reaction application limit."
+  },
+  {
     "endpoint": "aos.api.v1.reviews.__init__.get_review",
     "access": "guest",
     "policy": "baseline_guest",
@@ -862,6 +868,12 @@
     "access": "guest",
     "policy": "baseline_guest",
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.reviews.__init__.like_review",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline and the shared Reviews reaction application limit."
   },
   {
     "endpoint": "aos.api.v1.reviews.__init__.list_my_reviews",
@@ -888,10 +900,16 @@
     "rationale": "Covered by the Nginx public API baseline and a stricter operation-specific Reviews application limit."
   },
   {
-    "endpoint": "aos.api.v1.reviews.__init__.toggle_reaction",
+    "endpoint": "aos.api.v1.reviews.__init__.undislike_review",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Covered by the Nginx public API baseline and the shared Reviews reaction application limit."
+  },
+  {
+    "endpoint": "aos.api.v1.reviews.__init__.unlike_review",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline and the shared Reviews reaction application limit."
   },
   {
     "endpoint": "aos.api.v1.reviews.__init__.update_review",

@@ -21,13 +21,7 @@ def get_review_viewer_state_impl(**kwargs):
     if limited:
         return limited
     return run_review_api(
-        lambda: ok(
-            "Review viewer state fetched.",
-            data=ReviewService().viewer_state(
-                ad_id=kwargs.get("ad_id") or kwargs.get("ad"),
-                viewer=viewer,
-            ),
-        ),
+        lambda: ok("Review viewer state fetched.", data=ReviewService().viewer_state(payload=kwargs, viewer=viewer)),
         fallback="Failed to fetch review viewer state.",
         log_title="AOS Review Viewer State Failed",
     )

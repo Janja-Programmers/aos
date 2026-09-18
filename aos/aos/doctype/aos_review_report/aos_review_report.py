@@ -11,9 +11,13 @@ from aos.services.reports.lifecycle import prepare_new_report, stamp_review_meta
 from aos.services.reports.repository import locked_previous_report
 from aos.services.reports.validation import normalize_reason, validate_active_reason
 from aos.services.reviews.constants import STATUS_APPROVED
+from aos.utils.identifiers import new_prefixed_name
 
 
 class AOSReviewReport(Document):
+    def autoname(self):
+        self.name = new_prefixed_name("RREPORT")
+
     def before_insert(self):
         user = str(getattr(frappe.session, "user", "") or "")
         if user not in {"", "Guest", "Administrator"}:

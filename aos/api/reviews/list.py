@@ -9,8 +9,6 @@ from aos.services.reviews.api import run_review_api
 from aos.services.reviews.constants import RATE_LIMITS
 from aos.services.reviews.service import ReviewService
 
-ALLOWED_SORTS = {"newest", "helpful", "rating_high", "rating_low"}
-
 
 def list_reviews_impl(**kwargs):
     viewer = optional_active_user()

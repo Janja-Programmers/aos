@@ -12,6 +12,7 @@ _PREFIX = {
     "AOS Ad": "ad",
     "AOS Ad Draft": "draft",
     "AOS Saved Search": "search",
+    "AOS Review": "review",
 }
 
 

@@ -50,12 +50,14 @@ class TestReportProductionSourceGuards(unittest.TestCase):
             self.assertIn("frappe.db.rollback(save_point=savepoint)", source, relative)
             self.assertNotIn("frappe.db.commit", source, relative)
 
-    def test_review_report_boundary_is_savepoint_scoped_without_full_transaction_rollback(self):
+    def test_review_report_boundary_uses_the_shared_review_savepoint_boundary(self):
         source = _source("aos/api/reviews/report.py")
-        self.assertIn("frappe.db.savepoint(savepoint)", source)
-        self.assertIn("frappe.db.rollback(save_point=savepoint)", source)
-        self.assertNotIn("frappe.db.commit", source)
-        self.assertNotIn("frappe.db.rollback()", source)
+        boundary = _source("aos/services/reviews/api.py")
+        self.assertIn("run_review_api(", source)
+        self.assertIn("frappe.db.savepoint(savepoint)", boundary)
+        self.assertIn("frappe.db.rollback(save_point=savepoint)", boundary)
+        self.assertNotIn("frappe.db.commit", boundary)
+        self.assertNotIn("frappe.db.rollback()", boundary)
 
     def test_report_service_never_commits_outer_transactions(self):
         offenders = []
@@ -99,7 +101,7 @@ class TestReportProductionSourceGuards(unittest.TestCase):
         self.assertIn("uq_aos_user_report_active", indexes)
         self.assertIn("uq_aos_ad_report_user_ad", indexes)
         self.assertIn("uq_short_report_active", _source("aos/patches/v1_0/install_shorts_indexes.py"))
-        self.assertIn("uq_aos_review_report_user", _source("aos/patches/v1_0/harden_reviews_subsystem.py"))
+        self.assertIn("uq_aos_review_report_user", _source("aos/patches/v1_0/install_report_indexes.py"))
 
     def test_report_statuses_and_actions_are_not_invented(self):
         expected = {
@@ -188,12 +190,14 @@ class TestReportProductionSourceGuards(unittest.TestCase):
             controller = _source(f"aos/aos/doctype/{name}/{name}.py")
             self.assertIn("locked_previous_report", controller)
 
-    def test_review_reporting_locks_target_before_visibility_and_duplicate_checks(self):
+    def test_review_reporting_resolves_and_locks_the_public_review_before_duplicate_checks(self):
         service = _source("aos/services/reviews/service.py")
-        block = service.split("def report(self", 1)[1].split("@staticmethod", 1)[0]
-        self.assertIn("`tabAOS Review`", block)
-        self.assertIn("FOR UPDATE", block)
-        self.assertLess(block.index("FOR UPDATE"), block.index("review.status != STATUS_APPROVED"))
+        block = service.split("def report(self", 1)[1].split("def _set_reaction", 1)[0]
+        self.assertIn("_public_review_row(public_id=public_id, viewer=user, lock=True)", block)
+        self.assertLess(block.index("_public_review_row"), block.index("frappe.db.get_value"))
+        public_lookup = service.split("def _public_review_row", 1)[1].split("@staticmethod", 1)[0]
+        self.assertIn("r.status = %s", public_lookup)
+        self.assertIn("FOR UPDATE", public_lookup)
 
     def test_reporter_owned_private_rows_are_removed_only_after_restore_window(self):
         source = _source("aos/services/account_deletion_service.py")

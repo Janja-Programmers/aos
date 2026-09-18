@@ -5,8 +5,7 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "media",
-  "image"
+  "media"
  ],
  "fields": [
   {
@@ -15,18 +14,12 @@
    "in_list_view": 1,
    "label": "Media",
    "options": "AOS Media Object",
-   "reqd": 1
-  },
-  {
-   "fieldname": "image",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Image",
-   "read_only": 0
+   "reqd": 1,
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
+ "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
  "modified": "2026-07-02 00:00:00.000000",

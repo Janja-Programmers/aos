@@ -1,11 +1,10 @@
 {
  "actions": [],
- "autoname": "naming_series:",
  "creation": "2026-02-16 17:48:24.779350",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
+  "public_id",
   "ad",
   "title",
   "reviewer",
@@ -32,11 +31,14 @@
  ],
  "fields": [
   {
-   "default": "RVW-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "RVW-.YYYY.-.#####"
+   "fieldname": "public_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Review ID",
+   "no_copy": 1,
+   "read_only": 1,
+   "unique": 1
   },
   {
    "fieldname": "ad",
@@ -46,21 +48,23 @@
    "label": "Ad",
    "options": "AOS Ad",
    "reqd": 1,
-   "search_index": 1
+   "read_only": 1
   },
   {
    "fieldname": "rating",
-   "fieldtype": "Float",
+   "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Rating",
-   "reqd": 1
+   "reqd": 1,
+   "read_only": 1
   },
   {
    "default": "0",
    "fieldname": "like_count",
    "fieldtype": "Int",
    "label": "Like Count",
-   "read_only": 1
+   "read_only": 1,
+   "in_list_view": 0
   },
   {
    "fieldname": "column_break_faua",
@@ -74,22 +78,23 @@
    "label": "Reviewer",
    "options": "User",
    "read_only": 1,
-   "reqd": 1,
-   "search_index": 1
+   "reqd": 1
   },
   {
    "fieldname": "title",
    "fieldtype": "Data",
    "label": "Title",
    "reqd": 1,
-   "length": 120
+   "length": 120,
+   "read_only": 1
   },
   {
    "default": "0",
    "fieldname": "dislike_count",
    "fieldtype": "Int",
    "label": "Dislike Count",
-   "read_only": 1
+   "read_only": 1,
+   "in_list_view": 0
   },
   {
    "fieldname": "section_break_qehr",
@@ -99,7 +104,8 @@
    "fieldname": "review_images",
    "fieldtype": "Table",
    "label": "Review Images",
-   "options": "AOS Review Image"
+   "options": "AOS Review Image",
+   "read_only": 1
   },
   {
    "default": "Pending",
@@ -108,13 +114,15 @@
    "in_list_view": 1,
    "label": "Status",
    "options": "Pending\nApproved\nRejected\nHidden\nWithdrawn",
-   "search_index": 1
+   "read_only": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "comment",
    "fieldtype": "Small Text",
    "label": "Comment",
-   "reqd": 1
+   "reqd": 1,
+   "read_only": 1
   },
   {
    "fieldname": "review_tab",
@@ -198,19 +206,18 @@
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Review",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {
-   "create": 1,
-   "delete": 1,
+   "create": 0,
+   "delete": 0,
    "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 1,
+   "share": 0,
    "write": 1
   }
  ],
@@ -239,5 +246,10 @@
    "color": "Gray",
    "title": "Withdrawn"
   }
- ]
+ ],
+ "allow_rename": 0,
+ "track_changes": 1,
+ "index_web_pages_for_search": 0,
+ "title_field": "public_id",
+ "search_fields": "public_id,reviewer,ad"
 }

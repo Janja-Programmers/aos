@@ -1,11 +1,9 @@
 {
  "actions": [],
- "autoname": "naming_series:",
  "creation": "2026-07-28 12:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "review",
   "reported_by",
   "reason",
@@ -16,13 +14,6 @@
   "reviewed_on"
  ],
  "fields": [
-  {
-   "default": "RVR-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "RVR-.YYYY.-.#####"
-  },
   {
    "fieldname": "review",
    "fieldtype": "Link",
@@ -87,7 +78,6 @@
  ],
  "module": "AOS",
  "name": "AOS Review Report",
- "naming_rule": "By \"Naming Series\" field",
  "permissions": [
   {
    "create": 1,

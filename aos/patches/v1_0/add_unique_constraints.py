@@ -48,11 +48,6 @@ USER_ACTION_UNIQUE_CONSTRAINTS = [
         "constraint_name": "unique_aos_short_comment_like_user",
     },
     {
-        "doctype": "AOS Review Reaction",
-        "fields": ["review", "user"],
-        "constraint_name": "unique_aos_review_reaction_user",
-    },
-    {
         "doctype": "AOS Live Stream View",
         "fields": ["live_stream", "active_identity_key"],
         "constraint_name": "unique_aos_live_stream_view_active",
@@ -73,7 +68,6 @@ UNIQUE_CONSTRAINTS = [
 
 def execute():
     _dedupe_short_comment_likes()
-    _dedupe_review_reactions()
     _normalize_live_view_active_keys()
     _normalize_short_view_identity_keys()
 
@@ -98,19 +92,6 @@ def _dedupe_short_comment_likes():
 
     if affected_comments:
         _sync_short_comment_like_counts(affected_comments)
-
-
-
-def _dedupe_review_reactions():
-    affected_reviews = _delete_duplicate_docs(
-        doctype="AOS Review Reaction",
-        fields=["review", "user"],
-        order_by="modified desc, creation desc, name desc",
-    )
-
-    if affected_reviews:
-        _sync_review_reaction_counts(affected_reviews)
-
 
 
 
@@ -392,80 +373,6 @@ def _sync_short_comment_like_counts(comment_ids: Iterable[str]):
             WHERE c.name = %s
             """,
             (comment_id,),
-        )
-
-
-def _sync_review_reaction_counts(review_ids: Iterable[str]):
-    for review_id in set(review_ids):
-        frappe.db.sql(
-            """
-            UPDATE `tabAOS Review` r
-            SET
-                like_count = (
-                    SELECT COUNT(*)
-                    FROM `tabAOS Review Reaction` rr
-                    WHERE rr.review = r.name
-                      AND rr.reaction = 'Like'
-                ),
-                dislike_count = (
-                    SELECT COUNT(*)
-                    FROM `tabAOS Review Reaction` rr
-                    WHERE rr.review = r.name
-                      AND rr.reaction = 'Dislike'
-                )
-            WHERE r.name = %s
-            """,
-            (review_id,),
-        )
-
-
-def _sync_review_metrics(ad_ids: Iterable[str]):
-    for ad_id in set(ad_ids):
-        result = frappe.db.sql(
-            """
-            SELECT AVG(rating) AS avg_rating, COUNT(*) AS total_reviews
-            FROM `tabAOS Review`
-            WHERE ad = %s
-              AND status = 'Approved'
-            """,
-            (ad_id,),
-            as_dict=True,
-        )[0]
-
-        frappe.db.set_value(
-            "AOS Ad",
-            ad_id,
-            {
-                "average_rating": round(result.avg_rating or 0, 2),
-                "total_reviews": int(result.total_reviews or 0),
-            },
-            update_modified=False,
-        )
-
-        seller = frappe.db.get_value("AOS Ad", ad_id, "seller")
-        if not seller:
-            continue
-
-        result = frappe.db.sql(
-            """
-            SELECT AVG(r.rating) AS avg_rating, COUNT(r.name) AS total_reviews
-            FROM `tabAOS Review` r
-            INNER JOIN `tabAOS Ad` a ON a.name = r.ad
-            WHERE a.seller = %s
-              AND r.status = 'Approved'
-            """,
-            (seller,),
-            as_dict=True,
-        )[0]
-
-        frappe.db.set_value(
-            "AOS Seller",
-            seller,
-            {
-                "rating": round(result.avg_rating or 0, 2),
-                "total_reviews": int(result.total_reviews or 0),
-            },
-            update_modified=False,
         )
 
 

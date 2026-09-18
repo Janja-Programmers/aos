@@ -23,13 +23,7 @@ def delete_review_impl(**kwargs):
     if limited:
         return limited
     return run_review_api(
-        lambda: ok(
-            "Review withdrawn.",
-            data=ReviewService().withdraw(
-                user=user,
-                review_id=kwargs.get("review_id") or kwargs.get("review"),
-            ),
-        ),
+        lambda: ok("Review withdrawn.", data=ReviewService().withdraw(user=user, payload=kwargs)),
         fallback="Failed to withdraw review.",
         log_title="AOS Delete Review Failed",
     )

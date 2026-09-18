@@ -39,6 +39,7 @@
   "section_break_xlao",
   "total_ads",
   "rating",
+  "review_rating_sum",
   "total_reviews",
   "chat_response_time_seconds",
   "column_break_xojx",
@@ -94,6 +95,14 @@
    "fieldtype": "Float",
    "label": "Rating",
    "precision": "2",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "review_rating_sum",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Review Rating Sum",
    "read_only": 1
   },
   {
