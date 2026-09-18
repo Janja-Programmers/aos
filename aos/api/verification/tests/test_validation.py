@@ -14,7 +14,7 @@ class TestVerificationValidation(unittest.TestCase):
             "phone_number": "+254700000001",
             "idempotency_key": "verification-test-key",
             "verification_documents": [
-                {"document_type": "Identity Document", "media_id": "MEDIA-ABC123"}
+                {"document_type": "Identity Document", "media_id": "MEDIA-00000000000000000000000000000001"}
             ],
         }
         payload.update(overrides)
@@ -32,7 +32,7 @@ class TestVerificationValidation(unittest.TestCase):
             "business_address": "Nairobi",
             "idempotency_key": "business-verification-key",
             "verification_documents": [
-                {"document_type": "Registration Document", "media_id": "MEDIA-ABC124"}
+                {"document_type": "Registration Document", "media_id": "MEDIA-00000000000000000000000000000002"}
             ],
         }
         payload.update(overrides)
@@ -50,25 +50,25 @@ class TestVerificationValidation(unittest.TestCase):
             normalize_submit_payload(self._individual(status="Approved"))
         self.assertEqual(ctx.exception.code, "VERIFICATION_UNKNOWN_FIELD")
 
-    def test_unknown_document_field_is_rejected(self):
+    def test_unknown_document_media_field_is_rejected(self):
         with self.assertRaises(VerificationValidationError) as ctx:
             normalize_submit_payload(
                 self._individual(
                     verification_documents=[
-                        {"document_type": "ID", "media": "MEDIA-ABC123"}
+                        {"document_type": "ID", "media": "MEDIA-00000000000000000000000000000001"}
                     ]
                 )
             )
         self.assertEqual(ctx.exception.code, "VERIFICATION_UNKNOWN_FIELD")
 
-    def test_unknown_document_field_is_rejected(self):
+    def test_unknown_document_url_field_is_rejected(self):
         with self.assertRaises(VerificationValidationError) as ctx:
             normalize_submit_payload(
                 self._individual(
                     verification_documents=[
                         {
                             "document_type": "ID",
-                            "media_id": "MEDIA-ABC123",
+                            "media_id": "MEDIA-00000000000000000000000000000001",
                             "url": "https://evil.test/x",
                         }
                     ]
@@ -81,8 +81,8 @@ class TestVerificationValidation(unittest.TestCase):
             normalize_submit_payload(
                 self._individual(
                     verification_documents=[
-                        {"document_type": "Front", "media_id": "MEDIA-ABC123"},
-                        {"document_type": "Back", "media_id": "MEDIA-ABC123"},
+                        {"document_type": "Front", "media_id": "MEDIA-00000000000000000000000000000001"},
+                        {"document_type": "Back", "media_id": "MEDIA-00000000000000000000000000000001"},
                     ]
                 )
             )
@@ -105,7 +105,7 @@ class TestVerificationValidation(unittest.TestCase):
                     verification_documents=[
                         {
                             "document_type": "ID",
-                            "media_id": "MEDIA-ABC123",
+                            "media_id": "MEDIA-00000000000000000000000000000001",
                             "issue_date": "2026-08-10",
                             "expiry_date": "2026-08-09",
                         }
@@ -126,7 +126,7 @@ class TestVerificationValidation(unittest.TestCase):
 
     def test_too_many_documents_is_rejected(self):
         documents = [
-            {"document_type": f"Doc {index}", "media_id": f"MEDIA-ABC{index:03d}"}
+            {"document_type": f"Doc {index}", "media_id": f"MEDIA-{index + 1:032x}"}
             for index in range(11)
         ]
         with self.assertRaises(VerificationValidationError):

@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import re
-
 from aos.api.shared.responses import fail
-
-_MEDIA_ID_RE = re.compile(r"^MEDIA-[A-Za-z0-9._-]{1,96}$")
+from aos.services.media.identifiers import normalize_media_id
 
 
 def reject_unknown_fields(kwargs: dict, *, allowed: set[str]):
@@ -19,10 +16,10 @@ def reject_unknown_fields(kwargs: dict, *, allowed: set[str]):
 
 
 def require_media_id(value):
-    media_id = str(value or "").strip()
-    if not media_id:
+    if value in (None, ""):
         return None, fail("Media id is required.", error="VALIDATION_ERROR")
-    if len(media_id) > 128 or "\x00" in media_id or not _MEDIA_ID_RE.fullmatch(media_id):
+    media_id = normalize_media_id(value)
+    if media_id is None:
         return None, fail("Invalid media id.", error="VALIDATION_ERROR")
     return media_id, None
 

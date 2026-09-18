@@ -25,10 +25,10 @@ class TestCategoryMediaHooks(FrappeTestCase):
     def test_new_category_image_is_validated_through_media_policy(self):
         category = FakeCategory(
             _new=False,
-            image_media="MEDIA-NEW",
+            image_media="MEDIA-00000000000000000000000000000001",
             doctype="AOS Category",
             name="Category",
-            _before=SimpleNamespace(image_media="MEDIA-OLD"),
+            _before=SimpleNamespace(image_media="MEDIA-00000000000000000000000000000002"),
         )
         with (
             patch("aos.services.catalog.category_media.MediaService") as service_factory,
@@ -38,18 +38,18 @@ class TestCategoryMediaHooks(FrappeTestCase):
             prepare_category_image(category)
 
         service_factory.return_value.validate_media_for_use.assert_called_once_with(
-            media_id="MEDIA-NEW",
+            media_id="MEDIA-00000000000000000000000000000001",
             user="Administrator",
             purpose="category_icon",
             attached_doctype="AOS Category",
             attached_name="Category",
         )
-        self.assertEqual(category._previous_image_media_id, "MEDIA-OLD")
+        self.assertEqual(category._previous_image_media_id, "MEDIA-00000000000000000000000000000002")
 
     def test_replacement_attaches_new_before_releasing_old(self):
         category = FakeCategory(
-            image_media="MEDIA-NEW",
-            _previous_image_media_id="MEDIA-OLD",
+            image_media="MEDIA-00000000000000000000000000000001",
+            _previous_image_media_id="MEDIA-00000000000000000000000000000002",
             doctype="AOS Category",
             name="Category",
         )
@@ -66,27 +66,27 @@ class TestCategoryMediaHooks(FrappeTestCase):
 
         self.assertEqual(sequence, ["attach", "release"])
         service.attach_media.assert_called_once_with(
-            media_id="MEDIA-NEW",
+            media_id="MEDIA-00000000000000000000000000000001",
             user="Administrator",
             purpose="category_icon",
             attached_doctype="AOS Category",
             attached_name="Category",
             attached_field="image_media",
-            replacing_media_id="MEDIA-OLD",
+            replacing_media_id="MEDIA-00000000000000000000000000000002",
         )
         service.release_media.assert_called_once_with(
-            media_id="MEDIA-OLD",
+            media_id="MEDIA-00000000000000000000000000000002",
             user="Administrator",
             attached_doctype="AOS Category",
             attached_name="Category",
-            replacement_media_id="MEDIA-NEW",
+            replacement_media_id="MEDIA-00000000000000000000000000000001",
             system=True,
         )
 
     def test_unchanged_image_is_lifecycle_noop(self):
         category = FakeCategory(
-            image_media="MEDIA-SAME",
-            _previous_image_media_id="MEDIA-SAME",
+            image_media="MEDIA-00000000000000000000000000000003",
+            _previous_image_media_id="MEDIA-00000000000000000000000000000003",
             doctype="AOS Category",
             name="Category",
         )
@@ -96,8 +96,8 @@ class TestCategoryMediaHooks(FrappeTestCase):
 
     def test_missing_previous_media_does_not_block_replacement(self):
         category = FakeCategory(
-            image_media="MEDIA-NEW",
-            _previous_image_media_id="MEDIA-MISSING",
+            image_media="MEDIA-00000000000000000000000000000001",
+            _previous_image_media_id="MEDIA-00000000000000000000000000000004",
             doctype="AOS Category",
             name="Category",
         )
@@ -127,7 +127,7 @@ class TestCategoryMediaHooks(FrappeTestCase):
             patch("aos.services.catalog.category_media.frappe.logger"),
         ):
             session.user = "Administrator"
-            category.image_media = "MEDIA-STALE"
+            category.image_media = "MEDIA-00000000000000000000000000000005"
             release_category_image_on_delete(category)
         service.release_media.assert_called_once()
 

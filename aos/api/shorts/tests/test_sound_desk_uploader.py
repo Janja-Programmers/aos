@@ -14,7 +14,7 @@ from aos.api.shorts.sounds import create_sound_impl
 class TestSoundMediaHooks(FrappeTestCase):
     def test_sound_media_is_validated_and_public_fields_are_synchronized(self):
         sound = SimpleNamespace(
-            sound_media="MEDIA-SOUND-1",
+            sound_media="MEDIA-00000000000000000000000000000001",
             doctype="AOS Sound",
             name="new-aos-sound-1",
             owner="Administrator",
@@ -23,7 +23,7 @@ class TestSoundMediaHooks(FrappeTestCase):
             is_new=lambda: True,
         )
         media = SimpleNamespace(
-            name="MEDIA-SOUND-1",
+            name="MEDIA-00000000000000000000000000000001",
             object_key="sounds/uploads/example.mp3",
             duration_seconds=42.5,
         )
@@ -39,7 +39,7 @@ class TestSoundMediaHooks(FrappeTestCase):
             AOSSound._sync_sound_media(sound)
 
         service.validate_media_for_use.assert_called_once_with(
-            media_id="MEDIA-SOUND-1",
+            media_id="MEDIA-00000000000000000000000000000001",
             user="Administrator",
             purpose="sound_upload",
             attached_doctype=None,
@@ -50,9 +50,9 @@ class TestSoundMediaHooks(FrappeTestCase):
         self.assertEqual(sound.duration_seconds, 42.5)
 
     def test_existing_sound_audio_is_immutable(self):
-        previous = SimpleNamespace(sound_media="MEDIA-SOUND-OLD")
+        previous = SimpleNamespace(sound_media="MEDIA-00000000000000000000000000000002")
         sound = SimpleNamespace(
-            sound_media="MEDIA-SOUND-NEW",
+            sound_media="MEDIA-00000000000000000000000000000003",
             doctype="AOS Sound",
             name="SOUND-2026-00001",
             owner="Administrator",
@@ -66,7 +66,7 @@ class TestSoundMediaHooks(FrappeTestCase):
 
     def test_sound_update_attaches_media_through_shared_lifecycle(self):
         sound = SimpleNamespace(
-            sound_media="MEDIA-SOUND-1",
+            sound_media="MEDIA-00000000000000000000000000000001",
             doctype="AOS Sound",
             name="SOUND-2026-00001",
             owner="Administrator",
@@ -79,7 +79,7 @@ class TestSoundMediaHooks(FrappeTestCase):
             AOSSound._finalize_sound_media_relationship(sound)
 
         service_factory.return_value.attach_media.assert_called_once_with(
-            media_id="MEDIA-SOUND-1",
+            media_id="MEDIA-00000000000000000000000000000001",
             user="Administrator",
             purpose="sound_upload",
             attached_doctype="AOS Sound",
@@ -89,7 +89,7 @@ class TestSoundMediaHooks(FrappeTestCase):
 
     def test_sound_delete_releases_media(self):
         sound = SimpleNamespace(
-            sound_media="MEDIA-SOUND-1",
+            sound_media="MEDIA-00000000000000000000000000000001",
             doctype="AOS Sound",
             name="SOUND-2026-00001",
             owner="Administrator",
@@ -102,7 +102,7 @@ class TestSoundMediaHooks(FrappeTestCase):
             AOSSound.on_trash(sound)
 
         service_factory.return_value.release_media.assert_called_once_with(
-            media_id="MEDIA-SOUND-1",
+            media_id="MEDIA-00000000000000000000000000000001",
             user="Administrator",
             attached_doctype="AOS Sound",
             attached_name="SOUND-2026-00001",

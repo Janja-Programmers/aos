@@ -6,10 +6,11 @@ import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from aos.services.media.identifiers import MEDIA_ID_RE
+
 from .errors import ShortsError
 
 SHORT_ID_RE = re.compile(r"^SHORT-\d{4}-\d{5}$")
-MEDIA_ID_RE = re.compile(r"^MEDIA-\d{4}-\d{5}$")
 SOUND_ID_RE = re.compile(r"^SOUND-\d{4}-\d{5}$")
 ACCOUNT_ID_RE = re.compile(r"^ACC-[A-Z2-7]{20}$")
 CONVERSATION_ID_RE = re.compile(r"^CONV-\d{4}-\d{5}$")

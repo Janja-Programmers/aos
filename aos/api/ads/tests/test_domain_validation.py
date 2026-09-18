@@ -38,20 +38,20 @@ class TestAdsDomainValidation(FrappeTestCase):
     def test_images_require_uniqueness_and_one_primary(self):
         rows = normalize_images(
             [
-                {"media_id": "MEDIA-1", "is_primary": 1, "sort_order": 1},
-                {"media_id": "MEDIA-2", "is_primary": 0, "sort_order": 2},
+                {"media_id": "MEDIA-00000000000000000000000000000001", "is_primary": 1, "sort_order": 1},
+                {"media_id": "MEDIA-00000000000000000000000000000002", "is_primary": 0, "sort_order": 2},
             ]
         )
-        self.assertEqual([row["media"] for row in rows], ["MEDIA-1", "MEDIA-2"])
+        self.assertEqual([row["media"] for row in rows], ["MEDIA-00000000000000000000000000000001", "MEDIA-00000000000000000000000000000002"])
         with self.assertRaises(AdsValidationError):
             normalize_images(
                 [
-                    {"media_id": "MEDIA-1", "is_primary": 1},
-                    {"media_id": "MEDIA-1", "is_primary": 0},
+                    {"media_id": "MEDIA-00000000000000000000000000000001", "is_primary": 1},
+                    {"media_id": "MEDIA-00000000000000000000000000000001", "is_primary": 0},
                 ]
             )
         with self.assertRaises(AdsValidationError):
-            normalize_images([{"media_id": "MEDIA-1", "is_primary": 0}])
+            normalize_images([{"media_id": "MEDIA-00000000000000000000000000000001", "is_primary": 0}])
 
     def test_category_attributes_are_typed_snapshotted_and_unique(self):
         schema = [
@@ -194,13 +194,13 @@ class TestAdsDomainValidation(FrappeTestCase):
 
     def test_draft_payload_is_bounded_and_strict(self):
         result = normalize_draft_payload(
-            {"title": "Draft", "images": [{"media_id": "MEDIA-1", "is_primary": 0}]}
+            {"title": "Draft", "images": [{"media_id": "MEDIA-00000000000000000000000000000001", "is_primary": 0}]}
         )
         self.assertEqual(result["title"], "Draft")
-        self.assertEqual(result["images"][0]["media_id"], "MEDIA-1")
+        self.assertEqual(result["images"][0]["media_id"], "MEDIA-00000000000000000000000000000001")
         self.assertNotIn("media", result["images"][0])
         round_trip = normalize_images(result["images"], require_images=False, require_primary=False)
-        self.assertEqual(round_trip[0]["media"], "MEDIA-1")
+        self.assertEqual(round_trip[0]["media"], "MEDIA-00000000000000000000000000000001")
         with self.assertRaises(AdsValidationError):
             normalize_draft_payload({"owner": "attacker@example.com"})
         with self.assertRaises(AdsValidationError):

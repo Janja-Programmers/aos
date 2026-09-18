@@ -6,6 +6,7 @@ from typing import Any
 
 import frappe
 
+from aos.services.media.identifiers import normalize_media_id
 from aos.services.media.media_service import (
     MediaConflictError,
     MediaNotFoundError,
@@ -24,8 +25,8 @@ def normalize_category_image_media_id(value: Any) -> str:
         return ""
     if not isinstance(value, str):
         raise CatalogValidationError("Invalid category image media.", code="INVALID_CATEGORY_IMAGE")
-    media_id = value.strip()
-    if len(media_id) > 140 or not media_id.startswith("MEDIA-"):
+    media_id = normalize_media_id(value)
+    if media_id is None:
         raise CatalogValidationError("Invalid category image media.", code="INVALID_CATEGORY_IMAGE")
     return media_id
 

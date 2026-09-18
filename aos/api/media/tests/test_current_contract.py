@@ -29,6 +29,28 @@ class MediaCurrentContractTests(unittest.TestCase):
         ):
             self.assertIn(canonical, "\n".join((upload, urls, background)))
 
+
+    def test_media_identifier_grammar_is_owned_once_by_media(self):
+        identifiers = self.source("aos/services/media/identifiers.py")
+        self.assertIn(r'^MEDIA-[0-9a-f]{32}$', identifiers)
+
+        consumers = (
+            "aos/api/media/validators.py",
+            "aos/api/media/consumer_helpers.py",
+            "aos/services/accounts/validation.py",
+            "aos/services/catalog/category_media.py",
+            "aos/services/chat/validation.py",
+            "aos/services/reviews/validation.py",
+            "aos/services/shorts/validation.py",
+            "aos/services/verification/validation.py",
+        )
+        for relative in consumers:
+            with self.subTest(relative=relative):
+                source = self.source(relative)
+                self.assertIn("services.media.identifiers", source)
+                self.assertNotIn(r'MEDIA-\d{4}-\d{5}', source)
+                self.assertNotIn(r'MEDIA-[A-Za-z0-9._-]', source)
+
     def test_media_schema_does_not_persist_delivery_url(self):
         schema = json.loads(self.source("aos/aos/doctype/aos_media_object/aos_media_object.json"))
         fields = {row.get("fieldname") for row in schema.get("fields", [])}

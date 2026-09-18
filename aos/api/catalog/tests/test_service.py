@@ -85,12 +85,12 @@ class TestCatalogService(TestCase):
         repo = FakeCatalogRepository(
             [
                 category("B Root", group=1, order=2),
-                category("A Root", group=1, order=1, image_media="MEDIA-A"),
+                category("A Root", group=1, order=1, image_media="MEDIA-00000000000000000000000000000001"),
                 category("Leaf Z", parent="A Root", order=2),
                 category("Leaf A", parent="A Root", order=1),
             ]
         )
-        media = FakeMediaService({("MEDIA-A", "A Root"): "https://cdn.example.test/a.webp"})
+        media = FakeMediaService({("MEDIA-00000000000000000000000000000001", "A Root"): "https://cdn.example.test/a.webp"})
         tree = CatalogService(repo, media_service=media).list_public_categories()
 
         self.assertEqual([item["id"] for item in tree], ["A Root", "B Root"])
@@ -98,7 +98,7 @@ class TestCatalogService(TestCase):
         self.assertEqual(tree[0]["image_url"], "https://cdn.example.test/a.webp")
         self.assertNotIn("image_media", tree[0])
         self.assertNotIn("icon", tree[0])
-        self.assertEqual(media.calls, [([("MEDIA-A", "A Root")], "category_icon", "AOS Category", "image_media")])
+        self.assertEqual(media.calls, [([("MEDIA-00000000000000000000000000000001", "A Root")], "category_icon", "AOS Category", "image_media")])
 
     def test_inactive_parent_hides_active_child(self):
         repo = FakeCatalogRepository(
@@ -136,7 +136,7 @@ class TestCatalogService(TestCase):
 
     def test_schema_uses_bounded_bulk_queries_and_stored_attribute_key(self):
         repo = FakeCatalogRepository(
-            [category("Root", group=1), category("Leaf", parent="Root", image_media="MEDIA-LEAF")],
+            [category("Root", group=1), category("Leaf", parent="Root", image_media="MEDIA-00000000000000000000000000000003")],
             rows=[
                 {
                     "name": "ROW-1",
@@ -151,7 +151,7 @@ class TestCatalogService(TestCase):
             ],
             attributes={"Condition": attribute_definition(key="listing_condition")},
         )
-        media = FakeMediaService({("MEDIA-LEAF", "Leaf"): "https://cdn.example.test/leaf.webp"})
+        media = FakeMediaService({("MEDIA-00000000000000000000000000000003", "Leaf"): "https://cdn.example.test/leaf.webp"})
         schema = CatalogService(repo, media_service=media).get_public_schema("Leaf")
 
         self.assertEqual(schema["attributes"][0]["key"], "listing_condition")

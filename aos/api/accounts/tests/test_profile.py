@@ -139,7 +139,7 @@ class AccountsProfileIntegrationTests(AOSFeatureTestMixin, IntegrationTestCase):
             "AOS Profile",
             account_id,
             "profile_image_media",
-            "MEDIA-MISSING-PREVIOUS",
+            "MEDIA-ffffffffffffffffffffffffffffffff",
             update_modified=False,
         )
         frappe.set_user(user)
@@ -161,7 +161,7 @@ class AccountsProfileIntegrationTests(AOSFeatureTestMixin, IntegrationTestCase):
             "AOS Profile",
             account_id,
             "profile_image_media",
-            "MEDIA-MISSING-PREVIOUS",
+            "MEDIA-ffffffffffffffffffffffffffffffff",
             update_modified=False,
         )
         frappe.db.set_value("User", user, "user_image", "https://stale.invalid/avatar.png", update_modified=False)

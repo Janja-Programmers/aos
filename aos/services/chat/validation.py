@@ -8,6 +8,8 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any, Mapping, Pattern
 
+from aos.services.media.identifiers import MEDIA_ID_RE
+
 from .errors import ChatError
 
 CONVERSATION_ID_RE = re.compile(r"^CONV-\d{4}-\d{5}$")
@@ -15,7 +17,6 @@ MESSAGE_ID_RE = re.compile(r"^MSG-\d{4}-\d{5}$")
 LIVE_ID_RE = re.compile(r"^LIVE-\d{4}-\d{5}$")
 SHORT_ID_RE = re.compile(r"^SHORT-\d{4}-\d{5}$")
 AD_ID_RE = re.compile(r"^AD-\d{4}-\d{5}$")
-MEDIA_ID_RE = re.compile(r"^MEDIA-\d{4}-\d{5}$")
 PUBLIC_ACCOUNT_ID_RE = re.compile(r"^ACC-[A-Z2-7]{20}$")
 SAFE_ROW_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,139}$")
 

@@ -52,8 +52,8 @@ class TestReviewValidation(unittest.TestCase):
         self.assertEqual(normalize_comment("Très bon service — شكراً"), "Très bon service — شكراً")
 
     def test_media_inputs_are_bounded_unique_and_media_ids_only(self):
-        self.assertEqual(normalize_images(["MEDIA-ABCDEF", {"media_id": "MEDIA-GHIJKL"}]), ["MEDIA-ABCDEF", "MEDIA-GHIJKL"])
-        for value in (["https://example.com/x.jpg"], ["MEDIA-ABCDEF", "MEDIA-ABCDEF"], [f"MEDIA-ABC{i:03d}" for i in range(6)]):
+        self.assertEqual(normalize_images(["MEDIA-00000000000000000000000000000001", {"media_id": "MEDIA-00000000000000000000000000000002"}]), ["MEDIA-00000000000000000000000000000001", "MEDIA-00000000000000000000000000000002"])
+        for value in (["https://example.com/x.jpg"], ["MEDIA-00000000000000000000000000000001", "MEDIA-00000000000000000000000000000001"], [f"MEDIA-{i + 1:032x}" for i in range(6)]):
             with self.subTest(value=value), self.assertRaises(ReviewValidationError):
                 normalize_images(value)
 

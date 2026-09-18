@@ -7,6 +7,8 @@ import re
 import unicodedata
 from typing import Any, Callable
 
+from aos.services.media.identifiers import normalize_media_id
+
 from .errors import AccountValidationError
 
 DISPLAY_NAME_MIN_LEN = 2
@@ -15,7 +17,6 @@ LEGAL_NAME_MIN_LEN = 2
 LEGAL_NAME_MAX_LEN = 160
 BIO_MAX_LEN = 500
 PHONE_MAX_LEN = 32
-AVATAR_MEDIA_ID_RE = re.compile(r"^MEDIA-[A-Z0-9-]{6,64}$", re.IGNORECASE)
 PHONE_RE = re.compile(r"^\+[1-9][0-9]{6,14}$")
 ALLOWED_GENDERS = {"", "Male", "Female", "Other", "Prefer not to say"}
 
@@ -123,10 +124,10 @@ def validate_gender(value: Any) -> str:
 def validate_avatar_media_id(value: Any) -> str:
     if not isinstance(value, str):
         raise AccountValidationError("Invalid avatar media.", code="INVALID_AVATAR_MEDIA")
-    raw = value.strip().upper()
-    if not raw or not AVATAR_MEDIA_ID_RE.fullmatch(raw):
+    media_id = normalize_media_id(value)
+    if media_id is None:
         raise AccountValidationError("Invalid avatar media.", code="INVALID_AVATAR_MEDIA")
-    return raw
+    return media_id
 
 
 def _truthy(value: Any) -> bool:

@@ -8,6 +8,8 @@ import unicodedata
 from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable
 
+from aos.services.media.identifiers import normalize_media_id
+
 from .constants import (
     COMMENT_MAX_LENGTH,
     COMMENT_MIN_LENGTH,
@@ -172,8 +174,8 @@ def normalize_images(value: Any) -> list[str]:
     for item in value:
         if isinstance(item, dict):
             item = item.get("media_id") or item.get("media")
-        media_id = normalize_identifier(item, field="review_media", max_length=140)
-        if not media_id.upper().startswith("MEDIA-"):
+        media_id = normalize_media_id(item)
+        if media_id is None:
             raise ReviewValidationError("Invalid review media.", code="INVALID_REVIEW_MEDIA")
         if media_id in seen:
             raise ReviewValidationError("Duplicate review media.", code="INVALID_REVIEW_MEDIA")

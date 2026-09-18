@@ -18,6 +18,7 @@ from aos.api.shorts.constants import (
     VALID_SOUND_SOURCE_TYPES,
     VALID_SOUND_STATUSES,
 )
+from aos.services.media.identifiers import normalize_media_id
 from aos.services.media.media_service import MediaError, MediaService
 
 SOUND_MEDIA_PURPOSE = "sound_upload"
@@ -33,7 +34,7 @@ def _clean(value: Any) -> str:
 def _normalize_media_id(value: Any) -> str:
     if isinstance(value, dict):
         value = value.get("media_id") or value.get("id") or value.get("name")
-    return _clean(value)
+    return normalize_media_id(value) or ""
 
 
 def _media_actor(doc: Document) -> str:

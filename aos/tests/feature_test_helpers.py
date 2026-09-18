@@ -490,7 +490,7 @@ class AOSFeatureTestMixin:
         frappe.db.commit()
         return live
 
-    def fake_media_doc(self, *, name: str = "MEDIA-TEST", purpose: str = "profile_image"):
+    def fake_media_doc(self, *, name: str = "MEDIA-00000000000000000000000000000001", purpose: str = "profile_image"):
         return SimpleNamespace(
             name=name,
             purpose=purpose,

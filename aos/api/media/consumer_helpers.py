@@ -8,6 +8,7 @@ import frappe
 
 from aos.api.shared.public_errors import safe_exception_message
 from aos.api.shared.responses import fail
+from aos.services.media.identifiers import normalize_media_id as normalize_canonical_media_id
 from aos.services.media.media_service import (
     MediaNotFoundError,
     MediaPermissionError,
@@ -21,7 +22,7 @@ def clean_str(value: Any) -> str:
 
 
 def normalize_media_id(value: Any) -> str:
-    return clean_str(value)
+    return normalize_canonical_media_id(value) or ""
 
 
 def public_media_url(media_id: Any) -> str:

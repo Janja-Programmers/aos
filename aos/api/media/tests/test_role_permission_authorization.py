@@ -10,7 +10,7 @@ from aos.services.media.media_service import MediaPermissionError, MediaService
 class TestMediaRolePermissionAuthorization(TestCase):
     def test_category_writer_can_manage_media_uploaded_by_another_admin(self):
         doc = SimpleNamespace(
-            name="MEDIA-CATEGORY-OLD",
+            name="MEDIA-00000000000000000000000000000006",
             owner_user="original-admin@example.com",
             attached_doctype="AOS Category",
             attached_name="Vehicles",
@@ -32,7 +32,7 @@ class TestMediaRolePermissionAuthorization(TestCase):
 
     def test_category_writer_denial_does_not_fall_back_to_role_names(self):
         doc = SimpleNamespace(
-            name="MEDIA-CATEGORY-OLD",
+            name="MEDIA-00000000000000000000000000000006",
             owner_user="original-admin@example.com",
             attached_doctype="AOS Category",
             attached_name="Vehicles",
@@ -67,7 +67,7 @@ class TestMediaRolePermissionAuthorization(TestCase):
 
     def test_verification_reviewer_read_uses_request_permission(self):
         doc = SimpleNamespace(
-            name="MEDIA-VERIFY-1",
+            name="MEDIA-00000000000000000000000000000007",
             purpose="verification_document",
             visibility="Private",
             owner_user="owner@example.com",

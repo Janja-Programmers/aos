@@ -13,7 +13,7 @@ class TestCategoryMediaProjection(TestCase):
         service._public_url_for_doc = lambda row: f"https://cdn.example.test/{row.name}.webp"
         rows = [
             SimpleNamespace(
-                name="MEDIA-1",
+                name="MEDIA-00000000000000000000000000000001",
                 attached_name="Actual Category",
                 bucket="public",
                 object_key="catalog/categories/media-1.webp",
@@ -21,7 +21,7 @@ class TestCategoryMediaProjection(TestCase):
         ]
         with patch("aos.services.media.media_service.frappe.get_all", return_value=rows) as get_all:
             result = service.get_public_attachment_url_map(
-                [("MEDIA-1", "Expected Category")],
+                [("MEDIA-00000000000000000000000000000001", "Expected Category")],
                 purpose="category_icon",
                 attached_doctype="AOS Category",
                 attached_field="image_media",
@@ -38,17 +38,17 @@ class TestCategoryMediaProjection(TestCase):
         service = MediaService.__new__(MediaService)
         service._public_url_for_doc = lambda row: f"https://cdn.example.test/{row.name}.webp"
         rows = [
-            SimpleNamespace(name="MEDIA-1", attached_name="Category A", bucket="public", object_key="a"),
-            SimpleNamespace(name="MEDIA-2", attached_name="Category B", bucket="public", object_key="b"),
+            SimpleNamespace(name="MEDIA-00000000000000000000000000000001", attached_name="Category A", bucket="public", object_key="a"),
+            SimpleNamespace(name="MEDIA-00000000000000000000000000000002", attached_name="Category B", bucket="public", object_key="b"),
         ]
         with patch("aos.services.media.media_service.frappe.get_all", return_value=rows):
             result = service.get_public_attachment_url_map(
-                [("MEDIA-1", "Category A"), ("MEDIA-2", "Other")],
+                [("MEDIA-00000000000000000000000000000001", "Category A"), ("MEDIA-00000000000000000000000000000002", "Other")],
                 purpose="category_icon",
                 attached_doctype="AOS Category",
                 attached_field="image_media",
             )
         self.assertEqual(
             result,
-            {("MEDIA-1", "Category A"): "https://cdn.example.test/MEDIA-1.webp"},
+            {("MEDIA-00000000000000000000000000000001", "Category A"): "https://cdn.example.test/MEDIA-00000000000000000000000000000001.webp"},
         )

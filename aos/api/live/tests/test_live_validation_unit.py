@@ -50,17 +50,17 @@ class TestLivePublicValidation(unittest.TestCase):
     def test_conflicting_cover_aliases_are_rejected(self):
         with self.assertRaises(LiveError) as raised:
             validate_public_kwargs(
-                {"title": "Launch", "live_cover_media": "MEDIA-A", "media_id": "MEDIA-B"},
+                {"title": "Launch", "live_cover_media": "MEDIA-00000000000000000000000000000001", "media_id": "MEDIA-00000000000000000000000000000002"},
                 ENDPOINT_SPECS["start_live"],
             )
         self.assertEqual(raised.exception.code, "LIVE_ALIAS_CONFLICT")
 
     def test_matching_cover_aliases_remain_backward_compatible(self):
         clean = validate_public_kwargs(
-            {"title": "Launch", "live_cover_media": "MEDIA-A", "media_id": "MEDIA-A"},
+            {"title": "Launch", "live_cover_media": "MEDIA-00000000000000000000000000000001", "media_id": "MEDIA-00000000000000000000000000000001"},
             ENDPOINT_SPECS["start_live"],
         )
-        self.assertEqual(clean["live_cover_media"], "MEDIA-A")
+        self.assertEqual(clean["live_cover_media"], "MEDIA-00000000000000000000000000000001")
 
     def test_live_identifier_is_canonical(self):
         clean = validate_public_kwargs(

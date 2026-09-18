@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from aos.services.accounts.validation import validate_phone
+from aos.services.media.identifiers import normalize_media_id
 
 from .constants import (
     BUSINESS_TYPES,
@@ -31,7 +32,6 @@ from .constants import (
 from .errors import VerificationValidationError
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-_MEDIA_ID_RE = re.compile(r"^MEDIA-[A-Za-z0-9._-]{1,96}$")
 _IDEMPOTENCY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,119}$")
 
 
@@ -124,8 +124,8 @@ def normalize_document_payload(row: Any) -> dict[str, Any]:
             f"Unsupported verification document fields: {', '.join(unknown)}.",
             code="VERIFICATION_UNKNOWN_FIELD",
         )
-    media_id = str(row.get("media_id") or "").strip()
-    if not media_id or len(media_id) > 128 or not _MEDIA_ID_RE.fullmatch(media_id):
+    media_id = normalize_media_id(row.get("media_id"))
+    if media_id is None:
         raise VerificationValidationError(
             "Invalid verification document media.", code="VERIFICATION_INVALID_DOCUMENT"
         )

@@ -21,7 +21,7 @@ LIVE_COVER_MEDIA_FIELD = "live_cover_media"
 
 
 def looks_like_media_id(value: Any) -> bool:
-    return normalize_media_id(value).startswith("MEDIA-")
+    return bool(normalize_media_id(value))
 
 
 def response_from_media_exception(exc: Exception):

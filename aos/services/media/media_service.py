@@ -13,6 +13,7 @@ import frappe
 from frappe.query_builder.functions import Count
 from frappe.utils import add_to_date, get_datetime, now_datetime
 
+from aos.services.media.identifiers import normalize_media_id
 from aos.services.media.content_validation import (
     CHUNK_SIZE,
     MediaContentValidationError,
@@ -1120,9 +1121,11 @@ class MediaService:
 
     # GET / URLS
     def get_media_doc(self, media_id: str):
-        clean_id = str(media_id or "").strip()
-        if not clean_id:
+        if media_id in (None, ""):
             raise MediaValidationError("Media id is required", code="VALIDATION_ERROR")
+        clean_id = normalize_media_id(media_id)
+        if clean_id is None:
+            raise MediaValidationError("Invalid media id", code="VALIDATION_ERROR")
         if not frappe.db.exists("AOS Media Object", clean_id):
             raise MediaNotFoundError("Media not found")
         return frappe.get_doc("AOS Media Object", clean_id)
@@ -2700,8 +2703,8 @@ class MediaService:
 
     @staticmethod
     def _lock_media_row(media_id: str) -> None:
-        clean_id = str(media_id or "").strip()
-        if not clean_id:
+        clean_id = normalize_media_id(media_id)
+        if clean_id is None:
             return
         frappe.db.sql(
             "SELECT name FROM `tabAOS Media Object` WHERE name = %s FOR UPDATE",

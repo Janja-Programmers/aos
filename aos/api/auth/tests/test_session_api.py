@@ -173,7 +173,7 @@ class TestAuthSessionAPI(AOSFeatureTestMixin, FrappeTestCase):
             account_id="ACC-TEST",
             email="avatar@example.com",
             display_name="Avatar User",
-            profile_image_media="MEDIA-1",
+            profile_image_media="MEDIA-00000000000000000000000000000001",
             enabled=1,
             account_status="Active",
             is_verified=0,
