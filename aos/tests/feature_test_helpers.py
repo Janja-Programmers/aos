@@ -59,7 +59,16 @@ class AOSFeatureTestMixin:
                     "send_welcome_email": 0,
                 }
             )
-            user.insert(ignore_permissions=True)
+            # System-user fixtures exercise role/DocType authorization, not
+            # Frappe's coarse site-wide User creation throttle. Scope the
+            # framework-supported import bypass to this one test fixture insert
+            # and restore the exact prior flag even if the insert fails.
+            previous_in_import = frappe.flags.get("in_import", False)
+            frappe.flags.in_import = True
+            try:
+                user.insert(ignore_permissions=True)
+            finally:
+                frappe.flags.in_import = previous_in_import
             if roles:
                 user.add_roles(*roles)
             if email not in self.created_users:
