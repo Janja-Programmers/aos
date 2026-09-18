@@ -9,6 +9,7 @@ from frappe.tests.utils import FrappeTestCase
 from aos.api.verification.get_my_verification import get_my_verification_impl
 from aos.api.verification.submit_verification import submit_verification_impl
 from aos.services.media.media_service import MediaPermissionError, MediaService
+from aos.services.verification.review import review_verification_request as apply_review_action
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
@@ -68,12 +69,20 @@ class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         frappe.set_user("Administrator")
         request_name = frappe.db.get_value("AOS Verification Request", {"user": self.owner}, "name")
         doc = frappe.get_doc("AOS Verification Request", request_name)
-        doc.status = status
-        if reason is not None:
-            doc.rejection_reason = reason
+        action = {
+            "Reviewing": "start_review",
+            "Approved": "approve",
+            "Rejected": "reject",
+            "Revoked": "revoke",
+        }[status]
         with patch("aos.services.notifications.service.NotificationService._deliver"):
-            doc.save(ignore_permissions=True)
-        return doc
+            return apply_review_action(
+                request_name=request_name,
+                action=action,
+                reason=reason,
+                version=str(doc.modified),
+                reviewer="Administrator",
+            )
 
     def test_submission_is_server_owned_idempotent_and_attaches_private_media(self):
         first = self._submit_individual()
@@ -166,6 +175,34 @@ class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         request.reload()
         self.assertEqual(request.status, "Pending")
         self.assertFalse(int(frappe.db.get_value("AOS Profile", {"user": self.owner}, "is_verified") or 0))
+
+    def test_authorized_reviewer_cannot_assign_status_without_review_action(self):
+        submitted = self._submit_individual()
+        self.assertTrue(submitted.get("ok"), submitted)
+        frappe.set_user("Administrator")
+        request = frappe.get_doc("AOS Verification Request", submitted["data"]["verification_id"])
+        request.status = "Approved"
+        with self.assertRaises(frappe.ValidationError):
+            request.save(ignore_permissions=True)
+        request.reload()
+        self.assertEqual(request.status, "Pending")
+
+    def test_review_action_rejects_stale_desk_version(self):
+        from frappe.exceptions import TimestampMismatchError
+
+        submitted = self._submit_individual()
+        self.assertTrue(submitted.get("ok"), submitted)
+        frappe.set_user("Administrator")
+        request = frappe.get_doc("AOS Verification Request", submitted["data"]["verification_id"])
+        with self.assertRaises(TimestampMismatchError):
+            apply_review_action(
+                request_name=request.name,
+                action="approve",
+                version="2000-01-01 00:00:00.000000",
+                reviewer="Administrator",
+            )
+        request.reload()
+        self.assertEqual(request.status, "Pending")
 
     def test_approval_projects_profile_and_notification_without_private_review_data(self):
         submitted = self._submit_individual()
@@ -323,12 +360,16 @@ class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
         request = frappe.get_doc(
             "AOS Verification Request", submitted["data"]["verification_id"]
         )
-        request.status = "Approved"
         with patch(
             "aos.services.verification.decision.NotificationService.notify_verification_approved",
             side_effect=RuntimeError("notification unavailable"),
         ):
-            request.save(ignore_permissions=True)
+            request = apply_review_action(
+                request_name=request.name,
+                action="approve",
+                version=str(request.modified),
+                reviewer="Administrator",
+            )
         request.reload()
         self.assertEqual(request.status, "Approved")
         self.assertTrue(request.verified_on)

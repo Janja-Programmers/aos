@@ -25,12 +25,18 @@ REVIEW_STATUSES = frozenset({STATUS_REVIEWING, STATUS_APPROVED, STATUS_REJECTED,
 
 # Revoked means an approval was withdrawn. Pending/Reviewing requests are
 # rejected, not revoked. Account deletion uses the explicit system action.
-REVIEWER_TRANSITIONS = {
-    STATUS_PENDING: frozenset({STATUS_REVIEWING, STATUS_APPROVED, STATUS_REJECTED}),
-    STATUS_REVIEWING: frozenset({STATUS_APPROVED, STATUS_REJECTED}),
-    STATUS_APPROVED: frozenset({STATUS_REVOKED}),
-    STATUS_REJECTED: frozenset(),
-    STATUS_REVOKED: frozenset(),
+REVIEW_ACTION_START = "start_review"
+REVIEW_ACTION_APPROVE = "approve"
+REVIEW_ACTION_REJECT = "reject"
+REVIEW_ACTION_REVOKE = "revoke"
+
+# Reviewer transitions are action-driven. Desk and any future staff tooling must
+# choose one of these explicit actions rather than assigning ``status`` directly.
+REVIEW_ACTION_TRANSITIONS = {
+    REVIEW_ACTION_START: (frozenset({STATUS_PENDING}), STATUS_REVIEWING),
+    REVIEW_ACTION_APPROVE: (frozenset({STATUS_PENDING, STATUS_REVIEWING}), STATUS_APPROVED),
+    REVIEW_ACTION_REJECT: (frozenset({STATUS_PENDING, STATUS_REVIEWING}), STATUS_REJECTED),
+    REVIEW_ACTION_REVOKE: (frozenset({STATUS_APPROVED}), STATUS_REVOKED),
 }
 
 BUSINESS_TYPES = frozenset(

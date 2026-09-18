@@ -7,6 +7,7 @@ import re
 
 import frappe
 from frappe import _
+from frappe.exceptions import TimestampMismatchError
 from frappe.model.document import Document
 
 from aos.services.media.media_service import MediaService
@@ -71,6 +72,15 @@ class AOSVerificationRequest(Document):
             frappe.throw(_("Verification request no longer exists."))
         if previous.user != self.user:
             frappe.throw(_("Verification request ownership cannot be changed."))
+
+        expected_modified = str(
+            getattr(self.flags, "aos_verification_expected_modified", "") or ""
+        ).strip()
+        if expected_modified and str(previous.modified or "").strip() != expected_modified:
+            frappe.throw(
+                _("This verification request changed since it was loaded. Reload it and try again."),
+                TimestampMismatchError,
+            )
         return previous
 
     def _validate_request(self, previous=None):

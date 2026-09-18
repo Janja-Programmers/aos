@@ -42,7 +42,8 @@
    "in_standard_filter": 1,
    "label": "Status",
    "options": "Pending\nReviewing\nApproved\nRejected\nRevoked",
-   "reqd": 1
+   "reqd": 1,
+   "read_only": 1
   },
   {
    "fieldname": "verified_on",
@@ -109,7 +110,7 @@
    "fieldname": "rejection_reason",
    "fieldtype": "Small Text",
    "label": "Rejection Reason",
-   "mandatory_depends_on": "eval: doc.status == \"Rejected\""
+   "read_only": 1
   },
   {
    "fieldname": "verification_documents",
@@ -229,7 +230,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-05-11 18:58:46.216686",
+ "modified": "2026-09-18 19:30:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Verification Request",

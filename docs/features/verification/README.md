@@ -11,8 +11,9 @@ Authentication supplies identity/session, Accounts owns profiles and the `is_ver
 
 ## Architecture
 ```text
-Versioned Verification API -> verification service/policy/repository -> AOS Verification Request + child evidence -> Accounts projection
-                                                  -> Media evidence boundary / NotificationService
+Owner v1 API -> verification submission/service/policy/repository -> AOS Verification Request + child evidence -> Accounts projection
+Staff Desk actions -> Verification review service -> same DocType lifecycle/controller -> Accounts/Seller projections + NotificationService
+Owner submission/evidence -> Media evidence boundary
 ```
 
 ## Data Model
@@ -30,7 +31,7 @@ Versioned Verification API -> verification service/policy/repository -> AOS Veri
 | AOS Profile | `is_verified` | maintained projection | Fast cross-feature verified-state read. |
 
 ## API
-Verification endpoints expose the current user's request/status, submission/evidence actions, and authorized review operations defined by the current code-derived inventory. Inputs are strict and authorization/state transitions are enforced server-side.
+The public Verification API exposes only the authenticated owner's submission/resubmission and status read contracts. Staff review is deliberately separate: Frappe Desk invokes a permission-protected DocType review method, not a public v1 client endpoint. Inputs are strict and all lifecycle transitions are enforced server-side.
 
 <!-- BEGIN CODE-DERIVED ENDPOINTS -->
 ## Endpoint inventory (code-derived)
@@ -49,7 +50,7 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 Verification consumes Accounts identity, Media evidence management and Notifications delivery. Accounts and Sellers read verification through Verification repository helpers/projections; they do not query or mutate Verification state machines directly.
 
 ## Transaction / Concurrency Model
-Submission/review transitions use row locks and explicit allowed-state checks; notification/outbox work is coordinated without widening the critical transaction around external network calls. UUID-backed names avoid a shared naming-series allocator.
+Submission/review transitions use row locks and explicit action-to-transition checks; reviewer decisions carry the Desk-loaded `modified` value so stale forms fail before mutation. Notification/outbox work is coordinated without widening the critical transaction around external network calls. UUID-backed names avoid a shared naming-series allocator.
 
 ## Caching
 Public verified-state reads use the persisted Accounts projection; canonical request state remains in MariaDB. Any shared cache is advisory and not a correctness boundary.
@@ -124,13 +125,13 @@ One row per account. The unique `user` schema invariant enforces this at the dat
 | `name` | Server | Stable domain request identity using `VER-<uuid4hex>`. Exposed publicly only as `verification_id`. |
 | `user` | Server | Internal Accounts/User relationship. Never accepted from the public Verification API. |
 | `verification_type` | Submission | `Individual` or `Business`; immutable during review. |
-| `status` | Server/reviewer | `Pending`, `Reviewing`, `Approved`, `Rejected`, or `Revoked`; transitions are centralized. |
+| `status` | Server | `Pending`, `Reviewing`, `Approved`, `Rejected`, or `Revoked`; read-only in Desk and changed only by explicit review/resubmission/system actions. |
 | `submitted_on` | Server | Time of the current submission/resubmission; used for deterministic review ordering. |
 | `verified_on` | Server | Server-stamped approval/rejection decision timestamp used for decision audit/dedupe; preserved if a later revocation occurs. |
 | `verified_by` | Server | Internal authorized approval/rejection reviewer identity; never returned by owner APIs. |
 | `revoked_on` | Server | Server-stamped revocation timestamp; separate from the original approval audit. |
 | `revoked_by` | Server | Internal authorized revoking reviewer identity; never returned by owner APIs. |
-| `rejection_reason` | Reviewer | Bounded reason required only for `Rejected`; owner-visible only on its own rejected request. |
+| `rejection_reason` | Server from reviewer action | Bounded reason required by the `Reject` Desk action; read-only after the decision and owner-visible only on its own rejected request. |
 | `legal_name` | Submission | Individual legal name; cleared for Business. |
 | `phone_number` | Submission | Canonically validated individual phone; cleared for Business. |
 | `business_name` | Submission | Business legal/trading name; cleared for Individual. |
@@ -169,20 +170,20 @@ Evidence rows store only the canonical Media reference and document metadata.
 
 New requests can only be created by `VerificationService` and always start `Pending`.
 
-Reviewer transitions are:
+Reviewer actions and transitions are:
 
-- `Pending -> Reviewing`
-- `Pending -> Approved`
-- `Pending -> Rejected`
-- `Reviewing -> Approved`
-- `Reviewing -> Rejected`
-- `Approved -> Revoked`
+- `start_review`: `Pending -> Reviewing`
+- `approve`: `Pending/Reviewing -> Approved`
+- `reject`: `Pending/Reviewing -> Rejected`
+- `revoke`: `Approved -> Revoked`
+
+The action name is part of the server-side transition contract. A reviewer cannot obtain the same transition by assigning `status` directly.
 
 `Rejected` and `Revoked` are terminal for Desk editing. The authenticated owner can resubmit either state through the canonical submission API, which returns the existing row to `Pending`, clears prior decision metadata and replaces evidence.
 
 `Revoked` means an existing approval was withdrawn. Pending/Reviewing requests are rejected rather than revoked. Accounts permanent-deletion cleanup may use an explicit internal system transition to revoke outstanding/approved records without impersonating a reviewer.
 
-Status assignment is never accepted from the public client. The DocType controller reloads/locks the authoritative previous row and revalidates reviewer authority and transition legality, so a stale Desk form or `ignore_permissions=True` alone cannot bypass the state machine.
+Status assignment is never accepted from a public client **or as an ordinary Desk field edit**. `status` and `rejection_reason` are read-only in Desk. The DocType controller reloads/locks the authoritative previous row and requires an explicit review action before accepting a reviewer transition. The action carries the form's `modified` version, so a stale Desk form is rejected and `ignore_permissions=True` alone cannot bypass the state machine.
 
 ### Submission transaction and concurrency
 
@@ -233,11 +234,23 @@ Verification never performs object-store I/O directly.
 
 Reviewer authorization is effective backend **Write** permission on `AOS Verification Request`. The source DocType grants this to `System Manager`; deployments can delegate through standard Frappe permission configuration without introducing a client-supplied reviewer flag.
 
-Creation/deletion/sharing are disabled on the source reviewer DocPerm. Submission identity and evidence fields are read-only in Desk and server-enforced immutable during review. Reviewers can change the status according to the state machine and supply a rejection reason when required.
+Creation/deletion/sharing are disabled on the source reviewer DocPerm. Submission identity, evidence, `status`, `rejection_reason`, reviewer identities and decision timestamps are read-only in Desk and server-enforced immutable outside the canonical action boundary.
 
-Approval/revocation locks the Accounts profile before the Verification row and updates the Accounts verified projection in the same transaction. Reviewer identity/timestamps are server-derived from the authenticated reviewer session. Revocation records `revoked_by`/`revoked_on` and preserves the original approval `verified_by`/`verified_on` audit.
+The Desk exposes only state-valid actions:
 
-There is deliberately no public reviewer/admin Verification API in v1. Review is a staff Desk operation protected by Frappe permissions and server lifecycle checks, so there is no separate Verification reviewer endpoint to expose in Postman or rate-limit as a client API.
+| Current state | Desk actions |
+|---|---|
+| `Pending` | `Start Review`, `Approve`, `Reject` |
+| `Reviewing` | `Approve`, `Reject` |
+| `Approved` | `Revoke` |
+| `Rejected` | none; owner may resubmit |
+| `Revoked` | none; owner may resubmit |
+
+`Reject` requires a bounded rejection reason. `Approve`, `Reject`, and `Revoke` display confirmation/prompt UI and all actions reload the document after success. The Desk method is `aos.aos.doctype.aos_verification_request.review.review_verification_request`; it is POST-only, requires effective backend Write permission on `AOS Verification Request`, derives the reviewer from the Frappe session, and is not part of the public v1 client API.
+
+Approval/revocation locks the Accounts profile before the Verification row and updates the Accounts verified projection in the same transaction. Reviewer identity/timestamps are server-derived from the authenticated reviewer session. Revocation records `revoked_by`/`revoked_on` and preserves the original approval `verified_by`/`verified_on` audit. The Desk action also supplies the loaded `modified` version; concurrent/stale review attempts must reload before retrying.
+
+There is deliberately no public reviewer/admin Verification API in v1. Postman and web/mobile clients therefore remain unchanged; only authorized Frappe Desk staff use the internal review method.
 
 
 

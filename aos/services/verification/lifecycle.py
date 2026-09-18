@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .constants import (
-    REVIEWER_TRANSITIONS,
+    REVIEW_ACTION_TRANSITIONS,
     REVIEW_STATUSES,
     STATUS_APPROVED,
     STATUS_PENDING,
@@ -51,8 +51,12 @@ def validate_status_transition(doc, previous, *, actor: str | None) -> None:
     if status in REVIEW_STATUSES or old_status in REVIEW_STATUSES:
         if not is_reviewer(actor):
             raise VerificationPermissionError("Only authorized reviewers can change verification status.")
-        if status not in REVIEWER_TRANSITIONS.get(old_status, frozenset()):
-            raise VerificationConflictError("Verification status transition is not allowed.")
+        transition = REVIEW_ACTION_TRANSITIONS.get(action)
+        if not transition:
+            raise VerificationConflictError("Verification decisions must use an explicit review action.")
+        allowed_sources, target = transition
+        if old_status not in allowed_sources or status != target:
+            raise VerificationConflictError("Verification review action is not allowed in the current state.")
         return
 
     raise VerificationConflictError("Verification status transition is not allowed.")

@@ -28,18 +28,42 @@ class TestVerificationLifecycle(unittest.TestCase):
             )
 
     @patch("aos.services.verification.lifecycle.is_reviewer", return_value=True)
-    def test_reviewer_can_approve_pending(self, _reviewer):
+    def test_reviewer_can_approve_pending_through_explicit_action(self, _reviewer):
         validate_status_transition(
-            self._doc("Approved"),
+            self._doc("Approved", action="approve"),
             SimpleNamespace(status="Pending"),
             actor="reviewer@example.com",
         )
 
     @patch("aos.services.verification.lifecycle.is_reviewer", return_value=True)
+    def test_reviewer_cannot_assign_review_status_without_action(self, _reviewer):
+        with self.assertRaises(VerificationConflictError):
+            validate_status_transition(
+                self._doc("Approved"),
+                SimpleNamespace(status="Pending"),
+                actor="reviewer@example.com",
+            )
+
+    @patch("aos.services.verification.lifecycle.is_reviewer", return_value=True)
+    def test_review_actions_match_their_authorized_transitions(self, _reviewer):
+        for old_status, new_status, action in (
+            ("Pending", "Reviewing", "start_review"),
+            ("Pending", "Rejected", "reject"),
+            ("Reviewing", "Approved", "approve"),
+            ("Reviewing", "Rejected", "reject"),
+            ("Approved", "Revoked", "revoke"),
+        ):
+            validate_status_transition(
+                self._doc(new_status, action=action),
+                SimpleNamespace(status=old_status),
+                actor="reviewer@example.com",
+            )
+
+    @patch("aos.services.verification.lifecycle.is_reviewer", return_value=True)
     def test_terminal_status_cannot_regress_through_desk(self, _reviewer):
         with self.assertRaises(VerificationConflictError):
             validate_status_transition(
-                self._doc("Pending"),
+                self._doc("Pending", action="start_review"),
                 SimpleNamespace(status="Rejected"),
                 actor="reviewer@example.com",
             )
