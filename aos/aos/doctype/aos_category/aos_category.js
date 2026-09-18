@@ -53,6 +53,20 @@
     ));
   }
 
+  function dependencySourceChanged(frm, cdt, cdn) {
+    const row = (globalThis.locals && globalThis.locals[cdt] && globalThis.locals[cdt][cdn]) || {};
+    const dependency = String(row.depends_on_attribute || "").trim();
+    const override = String(row.options_override || "").trim();
+    if (dependency && override) {
+      frappe.model.set_value(cdt, cdn, "options_override", "");
+      frappe.show_alert({
+        message: __("Options Override cleared. Dependent options are defined in Attribute Dependencies."),
+        indicator: "blue",
+      });
+    }
+    frm.refresh_field("attributes");
+  }
+
   function escapeHtml(value) {
     if (frappe.utils && typeof frappe.utils.escape_html === "function") {
       return frappe.utils.escape_html(String(value || ""));
@@ -359,6 +373,12 @@
     image_media(frm) {
       renderUploader(frm);
       resolvePreview(frm);
+    },
+  });
+
+  frappe.ui.form.on("AOS Category Attribute Row", {
+    depends_on_attribute(frm, cdt, cdn) {
+      dependencySourceChanged(frm, cdt, cdn);
     },
   });
 })();

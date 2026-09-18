@@ -313,8 +313,19 @@ def _validate_category_attribute_rows(doc: Any) -> None:
                 "Only select attributes support option overrides.",
                 code="INVALID_CATEGORY_SCHEMA",
             )
+        if row.depends_on_attribute and override:
+            raise CatalogValidationError(
+                "Dependent attributes must leave Options Override blank and define their options through Attribute Dependencies.",
+                code="INVALID_CATEGORY_SCHEMA",
+            )
         row.options_override = "\n".join(override)
-        effective_options[row.attribute] = override or definition_options
+        # A dependent Select has exactly one category-level source of truth:
+        # the union of its Attribute Dependency child-options.  Definition
+        # options and Options Override remain authoritative only for
+        # independent attributes.
+        effective_options[row.attribute] = (
+            [] if row.depends_on_attribute else (override or definition_options)
+        )
 
         if not row.depends_on_attribute:
             continue
@@ -518,8 +529,10 @@ def _validate_attribute_dependency_mappings(
     )
     seen_groups: set[tuple[str, str]] = set()
     seen_mapping_keys: set[str] = set()
-    covered_children: dict[str, set[str]] = {attribute: set() for attribute in graph}
+    derived_children: dict[str, list[str]] = {attribute: [] for attribute in graph}
+    derived_child_values: dict[str, dict[str, str]] = {attribute: {} for attribute in graph}
     covered_parents: dict[str, set[str]] = {attribute: set() for attribute in graph}
+    normalized_mappings: list[tuple[str, str, list[str], Any]] = []
     expanded_mapping_count = 0
 
     for mapping in mappings:
@@ -540,19 +553,6 @@ def _validate_attribute_dependency_mappings(
         if not parent_attribute:
             raise CatalogValidationError(
                 "Dependency mapping references an attribute without Depends On Attribute.",
-                code="INVALID_CATEGORY_SCHEMA",
-            )
-
-        allowed_children = set(effective_options.get(child_attribute) or [])
-        invalid_children = [option for option in child_options if option not in allowed_children]
-        if invalid_children:
-            raise CatalogValidationError(
-                "Dependency mapping contains an invalid dependent option.",
-                code="INVALID_CATEGORY_SCHEMA",
-            )
-        if parent_option not in set(effective_options.get(parent_attribute) or []):
-            raise CatalogValidationError(
-                "Dependency mapping contains an invalid parent option.",
                 code="INVALID_CATEGORY_SCHEMA",
             )
 
@@ -583,12 +583,52 @@ def _validate_attribute_dependency_mappings(
                 code="INVALID_CATEGORY_SCHEMA",
             )
 
-        covered_children[child_attribute].update(child_options)
         covered_parents[child_attribute].add(parent_option)
+        canonical_child_options: list[str] = []
+        for option in child_options:
+            key = option.casefold()
+            canonical = derived_child_values[child_attribute].get(key)
+            if canonical is None:
+                canonical = option
+                derived_child_values[child_attribute][key] = canonical
+                derived_children[child_attribute].append(canonical)
+                if len(derived_children[child_attribute]) > MAX_ATTRIBUTE_OPTIONS:
+                    raise CatalogValidationError(
+                        "Too many dependent options for an attribute.",
+                        code="INVALID_CATEGORY_SCHEMA",
+                    )
+            canonical_child_options.append(canonical)
         mapping.child_attribute = child_attribute
         mapping.parent_option = parent_option
-        mapping.child_options = "\n".join(child_options)
+        mapping.child_options = "\n".join(canonical_child_options)
         mapping.mapping_key = mapping_key
+        normalized_mappings.append(
+            (child_attribute, parent_option, canonical_child_options, mapping)
+        )
+
+    # Dependency mappings define the effective child option universe.  This is
+    # intentionally done before parent-option validation so multi-level chains
+    # (for example Brand -> Model -> Variant) can use a derived dependent
+    # attribute as the parent of another dependent attribute.
+    for child_attribute in graph:
+        child_row = rows_by_attribute[child_attribute]
+        if not int(child_row.is_active or 0):
+            continue
+        options = derived_children.get(child_attribute) or []
+        if not options:
+            raise CatalogValidationError(
+                "Dependent Select attributes require Attribute Dependency options.",
+                code="INVALID_CATEGORY_SCHEMA",
+            )
+        effective_options[child_attribute] = options
+
+    for child_attribute, parent_option, _child_options, _mapping in normalized_mappings:
+        parent_attribute = graph[child_attribute]
+        if parent_option not in set(effective_options.get(parent_attribute) or []):
+            raise CatalogValidationError(
+                "Dependency mapping contains an invalid parent option.",
+                code="INVALID_CATEGORY_SCHEMA",
+            )
 
     for child_attribute in graph:
         child_row = rows_by_attribute[child_attribute]
@@ -599,11 +639,6 @@ def _validate_attribute_dependency_mappings(
         if not child_options or not parent_options:
             raise CatalogValidationError(
                 "Dependent Select attributes require options on both attributes.",
-                code="INVALID_CATEGORY_SCHEMA",
-            )
-        if covered_children.get(child_attribute, set()) != child_options:
-            raise CatalogValidationError(
-                "Every dependent option must map to at least one parent option.",
                 code="INVALID_CATEGORY_SCHEMA",
             )
         if int(child_row.is_required or 0) and covered_parents.get(child_attribute, set()) != parent_options:

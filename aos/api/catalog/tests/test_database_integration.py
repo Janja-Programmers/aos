@@ -201,7 +201,7 @@ class TestCatalogDatabaseIntegration(FrappeTestCase):
 
     def test_real_dependent_attribute_flow(self):
         brand = self._attribute("Brand", options="HP\nApple")
-        model = self._attribute("Model", options="EliteBook\nProBook\nMacBook Air")
+        model = self._attribute("Model", options="")
         leaf = self._leaf(
             "",
             suffix="Laptops",
@@ -246,6 +246,10 @@ class TestCatalogDatabaseIntegration(FrappeTestCase):
             model_schema["depends_on"],
             {"id": brand.name, "key": brand.attribute_key},
         )
+        self.assertEqual(
+            model_schema["options"],
+            ["EliteBook", "ProBook", "MacBook Air"],
+        )
         self.assertNotIn("_dependency_options", model_schema)
 
         hp = CatalogService().get_public_attribute_options(
@@ -270,9 +274,9 @@ class TestCatalogDatabaseIntegration(FrappeTestCase):
         self.assertTrue(response["ok"])
         self.assertEqual(response["data"]["options"], ["EliteBook", "ProBook"])
 
-    def test_dependency_mapping_requires_complete_child_coverage(self):
+    def test_dependent_attribute_requires_dependency_mappings(self):
         brand = self._attribute("Brand Incomplete", options="HP\nApple")
-        model = self._attribute("Model Incomplete", options="EliteBook\nMacBook Air")
+        model = self._attribute("Model Incomplete", options="")
         with self.assertRaises(Exception):
             self._leaf(
                 "",

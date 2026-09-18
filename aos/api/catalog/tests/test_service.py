@@ -252,7 +252,7 @@ class TestCatalogService(TestCase):
             ],
             attributes={
                 "Brand": attribute_definition("Brand", key="brand", options="HP\nApple"),
-                "Model": attribute_definition("Model", key="model", options="EliteBook\nProBook\nMacBook Air"),
+                "Model": attribute_definition("Model", key="model", options="Legacy Model"),
             },
             dependencies=[
                 {"name": "D1", "parent": "Laptops", "idx": 1, "child_attribute": "Model", "parent_option": "HP", "child_options": "EliteBook\nProBook"},
@@ -264,6 +264,7 @@ class TestCatalogService(TestCase):
         self.assertEqual([item["key"] for item in schema["attributes"]], ["brand", "model"])
         model = next(item for item in schema["attributes"] if item["key"] == "model")
         self.assertEqual(model["depends_on"], {"id": "Brand", "key": "brand"})
+        self.assertEqual(model["options"], ["EliteBook", "ProBook", "MacBook Air"])
         self.assertNotIn("_dependency_options", model)
 
         hp = service.get_public_attribute_options(
@@ -276,10 +277,58 @@ class TestCatalogService(TestCase):
         )
         self.assertEqual(apple["options"], ["MacBook Air"])
 
+    def test_dependent_attribute_rejects_parallel_options_override(self):
+        repo = FakeCatalogRepository(
+            [category("Laptops")],
+            rows=[
+                {"name": "BRAND", "parent": "Laptops", "idx": 1, "attribute": "Brand", "sort_order": 1, "options_override": "HP", "depends_on_attribute": "", "is_required": 1, "is_active": 1},
+                {"name": "MODEL", "parent": "Laptops", "idx": 2, "attribute": "Model", "sort_order": 2, "options_override": "EliteBook", "depends_on_attribute": "Brand", "is_required": 1, "is_active": 1},
+            ],
+            attributes={
+                "Brand": attribute_definition("Brand", key="brand", options=""),
+                "Model": attribute_definition("Model", key="model", options=""),
+            },
+            dependencies=[
+                {"name": "D1", "parent": "Laptops", "idx": 1, "child_attribute": "Model", "parent_option": "HP", "child_options": "EliteBook"},
+            ],
+        )
+        with self.assertRaises(CatalogDataError):
+            CatalogService(repo).get_public_schema("Laptops")
+
+    def test_multi_level_dependencies_derive_each_child_option_universe(self):
+        chain = [
+            {
+                "name": "Cars",
+                "attributes": [
+                    {"name": "MAKE", "idx": 1, "attribute": "Make", "sort_order": 1, "options_override": "Toyota\nFord", "depends_on_attribute": "", "is_required": 1, "is_active": 1},
+                    {"name": "MODEL", "idx": 2, "attribute": "Model", "sort_order": 2, "options_override": "", "depends_on_attribute": "Make", "is_required": 1, "is_active": 1},
+                    {"name": "TRIM", "idx": 3, "attribute": "Trim", "sort_order": 3, "options_override": "", "depends_on_attribute": "Model", "is_required": 1, "is_active": 1},
+                ],
+                "attribute_dependencies": [
+                    {"name": "D1", "child_attribute": "Model", "parent_option": "Toyota", "child_options": "Corolla"},
+                    {"name": "D2", "child_attribute": "Model", "parent_option": "Ford", "child_options": "Focus"},
+                    {"name": "D3", "child_attribute": "Trim", "parent_option": "Corolla", "child_options": "LE\nXSE"},
+                    {"name": "D4", "child_attribute": "Trim", "parent_option": "Focus", "child_options": "ST"},
+                ],
+                "attribute_definitions": {
+                    "Make": attribute_definition("Make", key="make", options=""),
+                    "Model": attribute_definition("Model", key="model", options=""),
+                    "Trim": attribute_definition("Trim", key="trim", options=""),
+                },
+            }
+        ]
+        resolved = resolve_attributes(chain, include_dependency_map=True)
+        self.assertEqual([item["id"] for item in resolved], ["Make", "Model", "Trim"])
+        model = next(item for item in resolved if item["id"] == "Model")
+        trim = next(item for item in resolved if item["id"] == "Trim")
+        self.assertEqual(model["options"], ["Corolla", "Focus"])
+        self.assertEqual(trim["options"], ["LE", "XSE", "ST"])
+        self.assertEqual(trim["_dependency_options"]["Corolla"], ["LE", "XSE"])
+
     def test_dependency_cycle_and_incomplete_mapping_fail_closed(self):
         definitions = {
             "Brand": attribute_definition("Brand", key="brand", options="HP\nApple"),
-            "Model": attribute_definition("Model", key="model", options="EliteBook\nMacBook Air"),
+            "Model": attribute_definition("Model", key="model", options=""),
         }
         cycle = [
             {

@@ -124,7 +124,12 @@ def resolve_attributes(
                 raise CatalogDataError("Catalog attribute options are invalid.") from exc
             if override_options and field_type not in SELECT_ATTRIBUTE_TYPES:
                 raise CatalogDataError("Catalog attribute options are invalid.")
-            options = override_options or definition_options
+            depends_on_attribute = str(row.get("depends_on_attribute") or "").strip()
+            if depends_on_attribute and override_options:
+                raise CatalogDataError(
+                    "Dependent Catalog attributes cannot define option overrides."
+                )
+            options = [] if depends_on_attribute else (override_options or definition_options)
             if options and field_type not in SELECT_ATTRIBUTE_TYPES:
                 raise CatalogDataError("Catalog attribute options are invalid.")
             by_attribute[attribute_name] = {
@@ -138,7 +143,7 @@ def resolve_attributes(
                 "options": options,
                 "sort_order": _database_sort_order(row.get("sort_order") or 0),
                 "_source_category": category_id,
-                "_depends_on_attribute": str(row.get("depends_on_attribute") or "").strip(),
+                "_depends_on_attribute": depends_on_attribute,
             }
 
     _apply_attribute_dependencies(
@@ -218,6 +223,8 @@ def _apply_attribute_dependencies(
             dependencies_by_category[category_id][child_attribute].append(row)
 
     graph: dict[str, str] = {}
+    parsed_mappings: dict[str, dict[str, list[str]]] = {}
+    ordered_child_options: dict[str, list[str]] = {}
     expanded_mapping_count = 0
     for attribute_id, item in by_attribute.items():
         parent_id = str(item.get("_depends_on_attribute") or "").strip()
@@ -234,20 +241,15 @@ def _apply_attribute_dependencies(
             raise CatalogDataError("Catalog dependency parent attribute is missing.")
         if item.get("type") != "Select" or parent.get("type") != "Select":
             raise CatalogDataError("Catalog dependencies require Select attributes.")
-        child_options = list(item.get("options") or [])
-        parent_options = list(parent.get("options") or [])
-        if not child_options or not parent_options:
-            raise CatalogDataError("Catalog dependent attributes require canonical options.")
         if int(item.get("required") or 0) and not int(parent.get("required") or 0):
             raise CatalogDataError("A required dependent attribute requires its parent attribute.")
         if not mapping_rows:
             raise CatalogDataError("Catalog dependent attribute has no option mappings.")
 
-        allowed_children = set(child_options)
-        allowed_parents = set(parent_options)
         seen_parent_groups: set[str] = set()
-        covered_children: set[str] = set()
-        by_parent: dict[str, set[str]] = defaultdict(set)
+        by_parent: dict[str, list[str]] = {}
+        child_options: list[str] = []
+        canonical_child_values: dict[str, str] = {}
         for row in mapping_rows:
             parent_option = str(row.get("parent_option") or "").strip()
             try:
@@ -258,20 +260,49 @@ def _apply_attribute_dependencies(
                 )
             except CatalogValidationError as exc:
                 raise CatalogDataError("Catalog dependency option mapping is invalid.") from exc
-            if not row_child_options or parent_option not in allowed_parents:
+            if not row_child_options:
                 raise CatalogDataError("Catalog dependency option mapping is invalid.")
             if parent_option in seen_parent_groups:
                 raise CatalogDataError("Catalog contains duplicate dependency parent mappings.")
-            if any(option not in allowed_children for option in row_child_options):
-                raise CatalogDataError("Catalog dependency option mapping is invalid.")
             seen_parent_groups.add(parent_option)
             expanded_mapping_count += len(row_child_options)
             if expanded_mapping_count > MAX_CATEGORY_ATTRIBUTE_DEPENDENCIES:
                 raise CatalogDataError("Catalog attribute dependency mapping limit exceeded.")
-            covered_children.update(row_child_options)
-            by_parent[parent_option].update(row_child_options)
-        if covered_children != allowed_children:
-            raise CatalogDataError("Every dependent option must map to a parent option.")
+            canonical_row_options: list[str] = []
+            for option in row_child_options:
+                key = option.casefold()
+                canonical = canonical_child_values.get(key)
+                if canonical is None:
+                    canonical = option
+                    canonical_child_values[key] = canonical
+                    child_options.append(canonical)
+                    if len(child_options) > MAX_ATTRIBUTE_OPTIONS:
+                        raise CatalogDataError("Catalog dependent option limit exceeded.")
+                canonical_row_options.append(canonical)
+            by_parent[parent_option] = canonical_row_options
+        if not child_options:
+            raise CatalogDataError("Catalog dependent attribute has no options.")
+
+        parsed_mappings[attribute_id] = by_parent
+        ordered_child_options[attribute_id] = child_options
+        graph[attribute_id] = parent_id
+
+    # Dependency rows are the sole category-level option source for dependent
+    # attributes.  Populate every derived option universe before validating
+    # parent references so dependency chains can safely be multi-level.
+    for attribute_id, child_options in ordered_child_options.items():
+        by_attribute[attribute_id]["options"] = child_options
+
+    for attribute_id, parent_id in graph.items():
+        item = by_attribute[attribute_id]
+        parent = by_attribute[parent_id]
+        parent_options = list(parent.get("options") or [])
+        if not parent_options:
+            raise CatalogDataError("Catalog dependency parent has no canonical options.")
+        allowed_parents = set(parent_options)
+        by_parent = parsed_mappings[attribute_id]
+        if any(parent_option not in allowed_parents for parent_option in by_parent):
+            raise CatalogDataError("Catalog dependency option mapping is invalid.")
         if int(item.get("required") or 0) and set(by_parent) != allowed_parents:
             raise CatalogDataError(
                 "Every parent option must provide an option for a required dependent attribute."
@@ -280,10 +311,9 @@ def _apply_attribute_dependencies(
         item["depends_on"] = {"id": parent_id, "key": parent["key"]}
         if include_dependency_map:
             item["_dependency_options"] = {
-                parent_option: [option for option in child_options if option in children]
+                parent_option: list(children)
                 for parent_option, children in by_parent.items()
             }
-        graph[attribute_id] = parent_id
 
     for start in graph:
         seen: set[str] = set()

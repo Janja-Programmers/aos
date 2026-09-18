@@ -205,6 +205,39 @@ class TestCatalogIntegrity(TestCase):
         )
         assert_attribute_schema_change_safe(expanded)
 
+    @patch("aos.services.catalog.integrity.frappe.db.exists")
+    def test_dependency_child_global_options_are_not_its_category_option_source(self, exists):
+        def present(doctype, _filters):
+            return doctype == "AOS Category Attribute Dependency Row"
+
+        exists.side_effect = present
+        before = FakeDoc(field_type="Select", options="Legacy One")
+        changed = FakeDoc(
+            _new=False,
+            name="Model",
+            field_type="Select",
+            options="Legacy Two",
+            _before=before,
+        )
+        assert_attribute_schema_change_safe(changed)
+
+    @patch("aos.services.catalog.integrity.frappe.db.exists")
+    def test_dependency_parent_global_options_remain_protected(self, exists):
+        def present(doctype, _filters):
+            return doctype == "AOS Category Attribute Row"
+
+        exists.side_effect = present
+        before = FakeDoc(field_type="Select", options="HP\nApple")
+        changed = FakeDoc(
+            _new=False,
+            name="Brand",
+            field_type="Select",
+            options="HP\nApple\nDell",
+            _before=before,
+        )
+        with self.assertRaises(CatalogValidationError):
+            assert_attribute_schema_change_safe(changed)
+
 
     @patch("aos.services.catalog.integrity.frappe.db.get_value", return_value="HP\nApple")
     @patch("aos.services.catalog.integrity.frappe.get_all", return_value=[])
@@ -221,7 +254,7 @@ class TestCatalogIntegrity(TestCase):
             allowed_price_units="",
             attributes=[
                 relation("Brand", required=1, options="HP\nApple"),
-                relation("Model", required=1, options="EliteBook", depends_on="Brand"),
+                relation("Model", required=1, options="", depends_on="Brand"),
             ],
             attribute_dependencies=[
                 SimpleNamespace(child_attribute="Model", parent_option="HP", child_options="EliteBook")
@@ -241,7 +274,7 @@ class TestCatalogIntegrity(TestCase):
                 relation(
                     "Model",
                     required=1,
-                    options="EliteBook\nMacBook Air",
+                    options="",
                     depends_on="Brand",
                 ),
             ],

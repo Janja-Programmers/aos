@@ -159,7 +159,7 @@ class TestCatalogValidation(TestCase):
     def test_dependent_select_attributes_require_complete_acyclic_mappings(self, get_all):
         get_all.return_value = [
             {"name": "Brand", "field_type": "Select", "options": "HP\nApple", "is_active": 1},
-            {"name": "Model", "field_type": "Select", "options": "EliteBook\nMacBook Air", "is_active": 1},
+            {"name": "Model", "field_type": "Select", "options": "Legacy Model", "is_active": 1},
         ]
         brand = SimpleNamespace(
             attribute="Brand",
@@ -198,6 +198,11 @@ class TestCatalogValidation(TestCase):
         validate_category_document(doc)
         self.assertEqual(mappings[0].child_options, "EliteBook")
         self.assertEqual(len(mappings[0].mapping_key), 64)
+
+        model.options_override = "EliteBook\nMacBook Air"
+        with self.assertRaises(CatalogValidationError):
+            validate_category_document(doc)
+        model.options_override = ""
 
         doc.attribute_dependencies = mappings[:1]
         with self.assertRaises(CatalogValidationError):

@@ -387,14 +387,14 @@ def assert_attribute_schema_change_safe(doc: Any) -> None:
             max_items=MAX_ATTRIBUTE_OPTIONS,
         )
     )
-    if not previous_options.issubset(current_options):
+    if (used_by_ads or dependency_parent) and not previous_options.issubset(current_options):
         raise CatalogValidationError(
             "Options referenced by existing ads or dependency rules cannot be removed.",
             code="ATTRIBUTE_IN_USE",
         )
-    if dependency_referenced and previous_options != current_options:
+    if dependency_parent and previous_options != current_options:
         raise CatalogValidationError(
-            "Global options for an attribute used by dependency rules cannot change in place; update category-specific options and mappings atomically instead.",
+            "Global options for an attribute used as a dependency parent cannot change in place; update category-specific parent options and mappings atomically instead.",
             code="ATTRIBUTE_IN_USE",
         )
 

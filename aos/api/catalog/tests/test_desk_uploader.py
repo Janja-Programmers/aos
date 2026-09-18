@@ -6,6 +6,14 @@ from unittest import TestCase
 
 ROOT = Path(__file__).resolve().parents[4]
 CATEGORY_JSON = ROOT / "aos" / "aos" / "doctype" / "aos_category" / "aos_category.json"
+CATEGORY_ATTRIBUTE_JSON = (
+    ROOT
+    / "aos"
+    / "aos"
+    / "doctype"
+    / "aos_category_attribute_row"
+    / "aos_category_attribute_row.json"
+)
 DEPENDENCY_JSON = (
     ROOT
     / "aos"
@@ -71,6 +79,19 @@ class TestCategoryDeskMediaContract(TestCase):
         self.assertIn('field_type: "Select"', script)
         self.assertIn('dependentOnly: true', script)
         self.assertIn('attribute !== exclude', script)
+
+    def test_dependent_rows_use_dependency_mappings_as_the_only_option_source(self):
+        definition = json.loads(CATEGORY_ATTRIBUTE_JSON.read_text())
+        fields = {field["fieldname"]: field for field in definition["fields"]}
+        override = fields["options_override"]
+
+        self.assertEqual(override.get("depends_on"), "eval:!doc.depends_on_attribute")
+        self.assertIn("Leave blank for dependent attributes", override.get("description", ""))
+
+        script = CATEGORY_JS.read_text()
+        self.assertIn('frappe.ui.form.on("AOS Category Attribute Row"', script)
+        self.assertIn('frappe.model.set_value(cdt, cdn, "options_override", "")', script)
+        self.assertIn("Dependent options are defined in Attribute Dependencies", script)
 
     def test_client_policy_matches_media_category_purpose_contract(self):
         script = CATEGORY_JS.read_text()

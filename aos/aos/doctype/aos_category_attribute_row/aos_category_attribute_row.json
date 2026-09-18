@@ -24,6 +24,8 @@
    "reqd": 1
   },
   {
+   "depends_on": "eval:!doc.depends_on_attribute",
+   "description": "Category-specific options for an independent Select/MultiSelect attribute. Leave blank for dependent attributes; their options come from Attribute Dependencies.",
    "fieldname": "options_override",
    "fieldtype": "Small Text",
    "in_list_view": 1,
