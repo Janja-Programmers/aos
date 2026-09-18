@@ -1,12 +1,10 @@
 {
  "actions": [],
  "allow_rename": 0,
- "autoname": "naming_series:",
  "creation": "2026-03-16 19:55:18.425506",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "user",
   "verification_type",
   "verified_by",
@@ -188,15 +186,6 @@
    "read_only": 1
   },
   {
-   "default": "VER-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "VER-.YYYY.-.#####",
-   "read_only": 1,
-   "hidden": 1
-  },
-  {
    "fieldname": "submitted_on",
    "fieldtype": "Datetime",
    "label": "Submitted On",
@@ -244,7 +233,6 @@
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Verification Request",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {

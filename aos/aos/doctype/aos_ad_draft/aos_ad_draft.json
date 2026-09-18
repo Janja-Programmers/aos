@@ -1,12 +1,10 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "naming_series:",
  "creation": "2026-02-11 11:56:41.529221",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "public_id",
   "user",
   "title_hint",
@@ -21,14 +19,6 @@
   "payload_json"
  ],
  "fields": [
-  {
-   "default": "DRAFT-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "DRAFT-.YYYY.-.#####",
-   "read_only": 1
-  },
   {
    "fieldname": "public_id",
    "fieldtype": "Data",
@@ -121,7 +111,6 @@
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad Draft",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {

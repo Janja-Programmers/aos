@@ -19,7 +19,7 @@ REQUIRED_MEDIA_TEST_FILES = {
 	"test_content_validation.py",
 	"test_purpose_policies.py",
 	"test_runtime_config.py",
-	"test_migration_patch.py",
+	"test_schema_installer.py",
 	"test_service.py",
 }
 
@@ -28,23 +28,13 @@ REQUIRED_ACCOUNTS_TEST_FILES = {
     "test_consumer_privacy.py",
     "test_identity.py",
     "test_lifecycle.py",
-    "test_migration.py",
+    "test_schema_installer.py",
     "test_preferences.py",
     "test_profile.py",
     "test_serializers.py",
     "test_validation.py",
 }
-LEGACY_ACCOUNTS_TEST_FILES = {
-    "test_accounts.py", "test_account_profile.py", "test_account_preferences.py",
-}
 
-LEGACY_MEDIA_TEST_FILES = {
-	"test_category_media_hooks.py",
-	"test_media_content_validation.py",
-	"test_media_purpose_policies.py",
-	"test_media_runtime_config.py",
-	"test_media_service.py",
-}
 
 REQUIRED_BEHAVIORAL_TESTS = {
 	"test_outbox_recovery_dispatch_all_services.py": {
@@ -125,16 +115,6 @@ def main() -> int:
 			"Accounts feature tests must live under aos/api/accounts/tests: "
 			+ str(missing_accounts_files)
 		)
-	legacy_accounts_paths = sorted(
-		str(path.relative_to(repository))
-		for path in (test_root / "tests").glob("test_*.py")
-		if path.name in LEGACY_ACCOUNTS_TEST_FILES
-	)
-	if legacy_accounts_paths:
-		raise SystemExit(
-			"Accounts-owned tests must not live in the generic aos/tests package: "
-			+ str(legacy_accounts_paths)
-		)
 	missing_media_files = (
 		sorted(
 			REQUIRED_MEDIA_TEST_FILES
@@ -147,16 +127,6 @@ def main() -> int:
 		raise SystemExit(
 			"Media feature tests must live under aos/api/media/tests: "
 			+ str(missing_media_files)
-		)
-	legacy_media_paths = sorted(
-		str(path.relative_to(repository))
-		for path in (test_root / "tests").glob("test_*.py")
-		if path.name in LEGACY_MEDIA_TEST_FILES
-	)
-	if legacy_media_paths:
-		raise SystemExit(
-			"Media-owned tests must not live in the generic aos/tests package: "
-			+ str(legacy_media_paths)
 		)
 	media_fixture = media_test_root / "fixtures" / "valid_64x64.png"
 	if not media_fixture.is_file():

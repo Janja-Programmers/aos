@@ -8,9 +8,9 @@ from .aos_wishlist import wishlist_name
 
 class IntegrationTestAOSWishlist(IntegrationTestCase):
     def test_deterministic_name_is_stable_and_pair_specific(self):
-        first = wishlist_name("buyer@example.com", "AD-2026-00001")
-        repeated = wishlist_name("buyer@example.com", "AD-2026-00001")
-        other = wishlist_name("buyer@example.com", "AD-2026-00002")
+        first = wishlist_name("buyer@example.com", "AD-00000000000000000000000000000001")
+        repeated = wishlist_name("buyer@example.com", "AD-00000000000000000000000000000001")
+        other = wishlist_name("buyer@example.com", "AD-00000000000000000000000000000002")
 
         self.assertEqual(first, repeated)
         self.assertNotEqual(first, other)

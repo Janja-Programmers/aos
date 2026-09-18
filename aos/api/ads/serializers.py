@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 import frappe
 
 from aos.services.catalog.errors import CatalogError
+from aos.services.localization import location_label as localization_location_label
 from aos.services.ads.lifecycle import owner_capabilities
 from aos.services.catalog.service import CatalogService, attribute_key, resolve_pricing
 from aos.services.sellers.identity import public_seller_id_for_name
@@ -62,7 +63,7 @@ def _get_location_label(location_id: str) -> str:
     clean = _norm(location_id)
     if not clean:
         return ""
-    return _norm(frappe.get_cached_value("AOS Location", clean, "location") or "")
+    return _norm(localization_location_label(clean))
 
 
 def _location_label(ad_doc: Any) -> str:

@@ -94,7 +94,7 @@ class TestCategoryMediaHooks(FrappeTestCase):
             finalize_category_image(category)
         service_factory.assert_not_called()
 
-    def test_stale_old_media_does_not_block_repair(self):
+    def test_missing_previous_media_does_not_block_replacement(self):
         category = FakeCategory(
             image_media="MEDIA-NEW",
             _previous_image_media_id="MEDIA-MISSING",

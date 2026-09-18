@@ -14,7 +14,7 @@ import frappe
 
 from aos.api.shared.responses import fail
 
-from .validators import validate_country, validate_currency, validate_language
+from .validators import validate_country, validate_currency, validate_language, validate_location
 
 USER_PREFERENCE_CACHE_SCHEMA = "v3"
 USER_PREFERENCE_CACHE_TTL_SECONDS = 300
@@ -116,22 +116,12 @@ def get_user_preference_for_update(user: str):
 
 
 def validate_location_preference(value: Any, *, country: str | None = None):
-    """Validate an optional active location and its owning country."""
+    """Validate an optional active location through Localization's canonical rule."""
 
-    location = str(value or "").strip()
-    if not location:
-        return "", None
-    row = frappe.db.get_value(
-        "AOS Location",
-        location,
-        ["name", "country", "is_active"],
-        as_dict=True,
-    )
-    if not row or not int(row.is_active or 0):
-        return None, fail("Invalid or disabled location.", error="INVALID_LOCATION")
-    if country and row.country != country:
-        return None, fail("Location does not belong to the selected country.", error="INVALID_LOCATION")
-    return row.name, None
+    location, error = validate_location(value, country=country, required=False)
+    if error:
+        return None, error
+    return location or "", None
 
 
 def update_user_preference(
@@ -144,7 +134,7 @@ def update_user_preference(
 ):
     """Apply a strict partial update under one row lock without committing.
 
-    Country is a mutable browsing/buyer market. When it changes, a previously
+    Country is a mutable browsing/buyer market. When it changes, an existing
     selected location that belongs to another country is cleared. Currency and
     language remain independent unless explicitly supplied by the client.
     """

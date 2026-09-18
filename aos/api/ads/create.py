@@ -48,9 +48,7 @@ def create_ad_impl(**kwargs):
         location_name, location_error = resolve_location(values["location"], country=market_country)
         if location_error:
             return location_error
-        location_country = frappe.db.get_value("AOS Location", location_name, "country")
-        if not location_country or location_country != market_country:
-            return fail("Invalid location for your market.", error="INVALID_LOCATION")
+        location_country = market_country
 
         seller = get_or_create_seller(current_user)
         if not seller or seller.status != "Active":

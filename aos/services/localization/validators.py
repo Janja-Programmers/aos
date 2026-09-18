@@ -18,6 +18,7 @@ from .repository import (
 	country_by_code,
 	country_by_name,
 	currency_by_name,
+	location_by_name,
 	language_by_value,
 	languages_matching_candidates,
 )
@@ -45,6 +46,26 @@ def validate_country(value: Any, *, required: bool = True):
 		return None, fail("Invalid country.", error="INVALID_COUNTRY", data={"field": "country"})
 	return str(row.name), None
 
+
+def validate_location(value: Any, *, country: str | None = None, required: bool = False):
+	"""Resolve one active AOS Location and optionally enforce country ownership."""
+	location = clean_text(value, max_length=140)
+	if not location:
+		if required:
+			return None, fail("Location is required.", error="INVALID_LOCATION", data={"field": "location"})
+		return None, None
+	row = location_by_name(location)
+	if not row:
+		return None, fail("Invalid location.", error="INVALID_LOCATION", data={"field": "location"})
+	if not int(row.is_active or 0):
+		return None, fail("Selected location is inactive.", error="INVALID_LOCATION", data={"field": "location"})
+	if country and str(row.country or "") != str(country or ""):
+		return None, fail(
+			"Location does not belong to the selected country.",
+			error="INVALID_LOCATION",
+			data={"field": "location"},
+		)
+	return str(row.name), None
 
 def validate_currency(value: Any, *, required: bool = True):
 	value = clean_text(value, max_length=MAX_CURRENCY_INPUT_LENGTH).upper()

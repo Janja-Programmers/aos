@@ -41,9 +41,9 @@ class TestLocalizationAPI(AOSFeatureTestMixin, FrappeTestCase):
 			self.assertEqual(set(data["languages"][0]), {"id", "code", "name", "flag"})
 
 	def test_bundle_rejects_unknown_request_fields(self):
-		response = get_locale_bundle_impl(legacy=True)
+		response = get_locale_bundle_impl(unexpected=True)
 		self.assertEqual(response["error"], "LOCALIZATION_UNKNOWN_FIELD")
-		self.assertEqual(response["data"]["fields"], ["legacy"])
+		self.assertEqual(response["data"]["fields"], ["unexpected"])
 
 	def test_guest_context_accepts_independent_explicit_values(self):
 		country, language, currency = self.preference_defaults()
@@ -118,7 +118,7 @@ class TestLocalizationAPI(AOSFeatureTestMixin, FrappeTestCase):
 		self.assertEqual([row["name"] for row in second["data"]["locations"]], [f"{self.prefix} Gamma"])
 		self.assertFalse(second["data"]["pagination"]["has_more"])
 
-	def test_locations_reject_invalid_pagination_search_and_removed_aliases(self):
+	def test_locations_reject_invalid_pagination_search_and_unknown_fields(self):
 		country = self.preference_defaults()[0]
 		with patch("aos.api.localization.locations.localization_rate_limit", return_value=None):
 			invalid_limit = get_locations_impl(country=country, limit=0)
@@ -127,8 +127,8 @@ class TestLocalizationAPI(AOSFeatureTestMixin, FrappeTestCase):
 		self.assertEqual(invalid_limit["error"], "INVALID_LIMIT")
 		self.assertEqual(invalid_offset["error"], "INVALID_OFFSET")
 		self.assertEqual(invalid_search["error"], "INVALID_SEARCH_QUERY")
-		self.assertEqual(get_locations_impl(country=country, start=0)["error"], "LOCALIZATION_UNKNOWN_FIELD")
-		self.assertEqual(get_locations_impl(country=country, search=self.prefix)["error"], "LOCALIZATION_UNKNOWN_FIELD")
+		self.assertEqual(get_locations_impl(country=country, page_start=0)["error"], "LOCALIZATION_UNKNOWN_FIELD")
+		self.assertEqual(get_locations_impl(country=country, query_text=self.prefix)["error"], "LOCALIZATION_UNKNOWN_FIELD")
 
 	def test_authenticated_locations_reject_country_override(self):
 		user = self.make_user("locations-override")
@@ -170,8 +170,8 @@ class TestLocalizationAPI(AOSFeatureTestMixin, FrappeTestCase):
 		from aos.api.v1 import localization as v1_localization
 
 		with patch.object(v1_localization, "_get_locale_bundle_impl", return_value={"ok": True}) as bundle_impl:
-			v1_localization.get_locale_bundle(cmd="aos.api.v1.localization.get_locale_bundle", legacy=True)
-			bundle_impl.assert_called_once_with(legacy=True)
+			v1_localization.get_locale_bundle(cmd="aos.api.v1.localization.get_locale_bundle", unexpected=True)
+			bundle_impl.assert_called_once_with(unexpected=True)
 
 		with patch.object(v1_localization, "_resolve_locale_context_impl", return_value={"ok": True}) as context_impl:
 			v1_localization.resolve_locale_context(
@@ -194,12 +194,8 @@ class TestLocalizationAPI(AOSFeatureTestMixin, FrappeTestCase):
 
 		response = v1_localization.get_locale_bundle(
 			cmd="aos.api.v1.localization.get_locale_bundle",
-			legacy=True,
+			unexpected=True,
 		)
 		self.assertEqual(response["error"], "LOCALIZATION_UNKNOWN_FIELD")
-		self.assertEqual(response["data"]["fields"], ["legacy"])
+		self.assertEqual(response["data"]["fields"], ["unexpected"])
 
-	def test_removed_resolve_preference_context_endpoint_is_absent(self):
-		from aos.api.v1 import localization as v1_localization
-
-		self.assertFalse(hasattr(v1_localization, "resolve_preference_context"))

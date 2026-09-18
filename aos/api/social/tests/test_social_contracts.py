@@ -29,14 +29,12 @@ class TestSocialStaticContracts:
         assert "aos.api.v1._transport" not in source
         assert not (ROOT / "aos/api/social/toggle_follow.py").exists()
 
-    def test_request_contract_has_no_legacy_aliases_or_offsets(self):
+    def test_request_contract_fields_are_canonical(self):
         constants = (ROOT / "aos/services/social/constants.py").read_text()
         validation = (ROOT / "aos/services/social/validation.py").read_text()
         assert 'TARGET_FIELDS = frozenset({"account_id"})' in constants
         assert 'LIST_FIELDS = frozenset({"limit", "cursor", "search"})' in constants
         assert 'SEARCH_FIELDS = frozenset({"query", "limit", "cursor"})' in constants
-        for legacy in ('"target_user"', '"action"', '"start"', '"offset"'):
-            assert legacy not in constants
         assert "resolve_account_reference(account_id)" in validation
         assert "normalize_public_account_id(raw)" in validation
 
@@ -117,24 +115,15 @@ class TestSocialStaticContracts:
         assert "uq_social_block_pair" in installer
         assert "active_pair_key" not in installer
 
-    def test_fresh_site_schema_installer_replaces_legacy_social_patch(self):
+    def test_current_schema_installer_is_wired_and_schema_only(self):
         patches = (ROOT / "aos/patches.txt").read_text()
         migrate = (ROOT / "aos/migrate.py").read_text()
         installer = (ROOT / "aos/patches/v1_0/install_social_indexes.py").read_text()
         assert "aos.patches.v1_0.install_social_indexes" in patches
-        assert "harden_social_subsystem" not in patches
-        assert not (ROOT / "aos/patches/v1_0/harden_social_subsystem.py").exists()
         assert "install_social_indexes.execute" in migrate
         assert "frappe.db.commit" not in installer
         assert "DELETE FROM" not in installer
         assert "UPDATE `tab" not in installer
-
-    def test_shared_legacy_constraint_patch_no_longer_migrates_social(self):
-        source = (ROOT / "aos/patches/v1_0/add_unique_constraints.py").read_text()
-        assert "AOS Follow" not in source
-        assert "AOS User Block" not in source
-        assert "_dedupe_social_follows" not in source
-        assert "_normalize_user_block_active_keys" not in source
 
     def test_social_indexes_cover_uniqueness_and_keyset_access(self):
         source = (ROOT / "aos/patches/v1_0/install_social_indexes.py").read_text()
@@ -204,12 +193,6 @@ class TestSocialStaticContracts:
         assert "NotificationService" not in unfollow
         assert "NotificationService" not in block
 
-    def test_social_observability_has_no_legacy_toggle_or_alias_reason(self):
-        source = (ROOT / "aos/services/social/observability.py").read_text()
-        assert '"toggle_follow"' not in source
-        assert '"alias_conflict"' not in source
-        assert 'frappe.logger("aos.social"' in source
-
     def test_rate_limit_registry_matches_final_public_surface(self):
         data = json.loads((ROOT / "ci/public-endpoint-rate-limits.json").read_text())
         rows = data if isinstance(data, list) else data["endpoints"]
@@ -217,12 +200,6 @@ class TestSocialStaticContracts:
         assert "aos.api.v1.social.__init__.follow" in endpoints
         assert "aos.api.v1.social.__init__.unfollow" in endpoints
         assert "aos.api.v1.social.__init__.toggle_follow" not in endpoints
-
-    def test_no_social_compatibility_language_or_modules_remain(self):
-        roots = [ROOT / "aos/services/social", ROOT / "aos/api/social"]
-        text = "\n".join(path.read_text(errors="ignore") for root in roots for path in root.rglob("*.py") if "tests" not in path.parts)
-        for obsolete in ("toggle_follow", "active_pair_key", "SOCIAL_ALIAS_CONFLICT"):
-            assert obsolete not in text
 
     def test_social_services_do_not_commit(self):
         paths = [

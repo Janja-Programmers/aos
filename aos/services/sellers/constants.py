@@ -5,7 +5,6 @@ from __future__ import annotations
 SELLER_DOCTYPE = "AOS Seller"
 PROFILE_DOCTYPE = "AOS Profile"
 USER_DOCTYPE = "User"
-VERIFICATION_DOCTYPE = "AOS Verification Request"
 
 STATUS_ACTIVE = "Active"
 STATUS_SUSPENDED = "Suspended"

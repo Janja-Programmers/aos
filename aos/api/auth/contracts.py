@@ -11,10 +11,9 @@ from aos.api.shared.responses import fail
 
 
 def reject_unknown_fields(kwargs: dict[str, Any], allowed: Iterable[str]):
-    """Reject request aliases and accidental compatibility fields.
+    """Reject fields outside the current Authentication request contract.
 
-    Authentication has one current contract. Unknown keys are never silently
-    accepted because that can preserve deprecated frontend behavior unnoticed.
+    Unknown keys fail closed so validation remains explicit and auditable.
     """
     allowed_set = set(allowed)
     unknown = sorted(str(key) for key in kwargs if key not in allowed_set)

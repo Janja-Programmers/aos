@@ -80,7 +80,7 @@ class AccountPreferenceIntegrationTests(AOSFeatureTestMixin, IntegrationTestCase
         user = self.make_user("strict-read")
         frappe.set_user(user)
         with patch("aos.api.accounts.get_my_preference.rate_limit", return_value=None):
-            response = get_my_preference_impl(legacy=True)
+            response = get_my_preference_impl(unexpected=True)
         self.assertEqual(response["error"], "PREFERENCE_UNKNOWN_FIELD")
 
     def test_update_preference_rejects_unknown_fields(self):
@@ -175,7 +175,7 @@ class AccountPreferenceIntegrationTests(AOSFeatureTestMixin, IntegrationTestCase
 
         frappe.set_user("Administrator")
         ad.reload()
-        ad.flags.aos_status_action = "migration"
+        ad.flags.aos_status_action = "import"
         ad.save(ignore_permissions=True)
         self.assertEqual(ad.country, current_country)
 

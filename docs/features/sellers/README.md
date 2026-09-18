@@ -1,5 +1,37 @@
 # Sellers
 
+## Overview
+Sellers owns the marketplace seller aggregate, public seller identity/storefront projection, seller lifecycle/restrictions, business profile data, location association and seller discovery.
+
+## Responsibilities
+Sellers owns seller creation/update/lifecycle, `SELLER-*` public IDs, storefront/public/private projections, seller-specific authorization, discovery filters/sorting, active-hours/business fields and seller restrictions.
+
+## Boundaries
+Accounts owns user/profile identity, Verification owns verification workflow, Media owns images, Maps/Localization own geographic primitives/reference validation, Notifications owns notifications, Catalog owns listing taxonomy, and Social owns relationships/blocking.
+
+## Architecture
+```text
+Versioned Sellers API -> seller service/policy/repository/discovery -> AOS Seller
+                                    -> Accounts / Verification / Media / Localization / Maps / Social boundaries
+```
+
+## Data Model
+- `AOS Seller`: one seller aggregate linked to its owning User/Account; internal hash name with independently generated random `SELLER-*` public ID.
+- Verification state is not duplicated: discovery uses `AOS Profile.is_verified` as a read projection and bounded Verification summaries for metadata.
+- Seller media and location fields link to their canonical owner domains.
+
+## Fields
+| Model | Field | Required / constraint | Purpose |
+|---|---|---|---|
+| AOS Seller | `user` | unique owner relationship | Canonical account ownership. |
+| AOS Seller | `public_id` | unique random `SELLER-*` | Opaque frontend seller identity. |
+| AOS Seller | status/restriction fields | lifecycle constrained | Selling eligibility and reason state. |
+| AOS Seller | business/storefront fields | bounded | Public seller presentation. |
+| AOS Seller | media/location fields | canonical links | Shared Media and location/geography integration. |
+
+## API
+Sellers endpoints expose the current seller state, create/update operations, public storefront/discovery and seller-specific actions shown in the generated inventory. Mutations derive owner identity from the session and enforce current restriction/lifecycle policy.
+
 <!-- BEGIN CODE-DERIVED ENDPOINTS -->
 ## Endpoint inventory (code-derived)
 
@@ -19,18 +51,34 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
+## Cross-feature Dependencies
+Sellers resolves Accounts identity, calls Verification helpers/projections, uses Media for media lifecycle, Localization/Maps for location/geography, Social for relationships/blocking and Notifications for delivery. It no longer embeds Verification-table SQL in discovery.
 
-## Purpose and ownership
+## Transaction / Concurrency Model
+Seller ownership/public-ID uniqueness are database constraints. Public IDs are generated without a preflight existence query; duplicate-key handling is the race-safe collision boundary. State mutations use normal request transactions and row-level serialization where needed.
+
+## Caching
+Public/storefront reads may consume shared caches/projections; seller correctness remains database-backed. Cache keys/state are not worker-local correctness dependencies.
+
+## Performance / Scalability
+Seller discovery filters/sorts verified state through the indexed Accounts projection rather than joining the Verification aggregate, then batch-fetches bounded verification metadata for returned rows. Random IDs avoid centralized series allocation. Discovery/index load requires representative scale testing.
+
+## Testing
+Tests under `aos/api/sellers/tests` and cross-feature suites cover lifecycle, authorization, discovery, verification/media/location integration, IDs, concurrency and errors. Test helpers track exact Seller rows and dependent records for fail-safe cleanup.
+
+## Detailed Reference
+
+### Purpose and ownership
 
 Sellers is the marketplace storefront aggregate for one canonical AOS account. It owns the opaque public Seller identity, operational lifecycle, storefront profile, saved storefront location, Seller-owned concurrency versions, and Seller-facing aggregate counters. A Seller has exactly one canonical owner through `AOS Seller.user`; staff/team membership is intentionally not implemented because it is not a current product requirement.
 
 Sellers does **not** own authentication, account identity, media storage, geocoding/routing providers, verification decisions, notification delivery, social relationships, or Catalog taxonomy. It consumes the production contracts of Authentication, Accounts, Media, Maps, Verification, Notifications, Social, and Catalog instead of duplicating them.
 
-## Identity
+### Identity
 
-The only public Seller identifier is an immutable opaque ID matching `SELLER-[A-Z2-7]{20}`. Internal Frappe document names, User IDs/e-mail addresses, database row names, DocType names, and numeric identifiers are never accepted as public Seller references. Fresh Seller documents use random Frappe document names (`autoname: hash`) and receive a random public ID at insert time. There is no migration fallback or legacy Seller-reference resolver.
+The only public Seller identifier is an immutable opaque ID matching `SELLER-[A-Z2-7]{20}`. Internal Frappe document names, User IDs/e-mail addresses, database row names, DocType names, and numeric identifiers are never accepted as public Seller references. Fresh Seller documents use random Frappe document names (`autoname: hash`) and receive a random public ID at insert time.
 
-## Lifecycle
+### Lifecycle
 
 Operational status is a single state machine and is separate from Verification:
 
@@ -44,7 +92,7 @@ Creation is idempotent per account and produces `Active`. The database unique co
 
 Verification is an orthogonal fact. `AOS Verification Request` remains canonical for Pending/Reviewing/Approved/Rejected/Revoked. An approved Business verification may project the Seller type/category; rejection or revocation does not silently suspend, close, or reactivate the Seller. Account verification, business verification, and Seller operational status therefore cannot contradict one another through independent booleans.
 
-## Public and private model
+### Public and private model
 
 Public Seller reads expose only reviewed storefront data: `seller_id`, privacy-safe Account display identity, Seller type/category, verification projection, Media-backed banner URL, public storefront text, operating hours, explicit saved storefront location, bounded marketplace aggregates, and Social relationship projection. Seller discovery exposes coarse location plus optional distance; the direct Seller/location endpoint may expose exact coordinates because they represent an explicitly published storefront destination used for directions.
 
@@ -52,15 +100,15 @@ Owner-only mutation/concurrency data includes Media object references, storefron
 
 Storefront text is Unicode-normalized, bounded, plain text only, and rejects control/invisible characters, HTML tags, and script/data URL schemes. Operating hours use canonical full weekday names only.
 
-## Authorization
+### Authorization
 
-Authentication/session identity comes from the hardened Auth boundary. Owner access is centralized through `AOS Seller.user`; public reads use the Social block boundary and active Account/Seller checks. Seller APIs never trust client-supplied owner IDs. Direct ownership mutation is forbidden by the DocType persistence boundary. There is no Seller-specific token/session system and no speculative staff-role model.
+Authentication/session identity comes from the canonical Auth boundary. Owner access is centralized through `AOS Seller.user`; public reads use the Social block boundary and active Account/Seller checks. Seller APIs never trust client-supplied owner IDs. Direct ownership mutation is forbidden by the DocType persistence boundary. There is no Seller-specific token/session system and no speculative staff-role model.
 
-## Media integration
+### Media integration
 
-Seller banner media is stored only as `shop_banner_media`, a canonical `AOS Media Object` reference. Upload/storage, ownership checks, public URL projection, attach/release lifecycle, and replacement handling use `MediaService`. The old cached `shop_banner` URL field and request aliases are removed. The public response may include `shop_banner_url`, derived from Media, and owner mutation responses may include `shop_banner_media_id`.
+Seller banner media is stored only as `shop_banner_media`, a canonical `AOS Media Object` reference. Upload/storage, ownership checks, public URL projection, attach/release lifecycle, and replacement handling use `MediaService`. The public response may include `shop_banner_url`, derived from Media, and owner mutation responses may include `shop_banner_media_id`; storage remains authoritative through `shop_banner_media`.
 
-## Maps and Seller location
+### Maps and Seller location
 
 Sellers owns Seller location records and all mutation business rules. Maps owns reusable WGS84 coordinate validation, reverse geocoding/search, provider abstraction, routing, viewport primitives, and clustering. Seller code never calls Photon/Nominatim directly and never stores provider-specific fields.
 
@@ -70,11 +118,11 @@ Device GPS is never persisted automatically. APIs contain no country bounding re
 
 Maps routing resolves `destination_seller_id` through `aos.services.sellers.repository.get_route_destination`. A valid active Seller with a persisted location therefore supports `refresh_route`; a missing/hidden/unlocated Seller continues to produce the existing Maps `MAP_LOCATION_NOT_FOUND` contract.
 
-## Verification, Notifications, Catalog and Social
+### Verification, Notifications, Catalog and Social
 
-Verification decisions are read from the canonical Verification request and projected without creating a Seller verification subsystem. Seller lifecycle changes use `NotificationService.notify_seller_status_changed`; delivery failures are isolated by the hardened Notifications boundary and must not corrupt committed Seller state. Social owns follow/friend/block state; Sellers reads that state in bounded bulk form and does not duplicate it. Catalog remains the owner of product taxonomy/schema. Seller `business_category` is storefront/verification metadata and does not transfer Catalog taxonomy ownership to Sellers.
+Verification decisions are read from the canonical Verification request and projected without creating a Seller verification subsystem. Seller lifecycle changes use `NotificationService.notify_seller_status_changed`; delivery failures are isolated by the canonical Notifications boundary and must not corrupt committed Seller state. Social owns follow/friend/block state; Sellers reads that state in bounded bulk form and does not duplicate it. Catalog remains the owner of product taxonomy/schema. Seller `business_category` is storefront/verification metadata and does not transfer Catalog taxonomy ownership to Sellers.
 
-## API contract
+### API contract
 
 Public v1 endpoints are intentionally small:
 
@@ -87,50 +135,50 @@ Public v1 endpoints are intentionally small:
 - `POST set_my_seller_location`: explicit owner save with Maps validation/geocoding and optimistic versioning.
 - `POST remove_my_seller_location`: explicit owner removal with optimistic versioning.
 
-Read aliases, GET/POST compatibility, email/internal-name Seller references, banner aliases, offset pagination, and deprecated helper endpoints are not part of the current contract. Internal lifecycle/reconciliation helpers are not public APIs.
+Public Seller reads use opaque Seller IDs and cursor pagination; owner mutations use the documented canonical request fields. Internal lifecycle/reconciliation helpers are not public APIs.
 
 Responses use the shared AOS envelope and stable public error codes. Raw exceptions, SQL, provider hostnames/names, filesystem paths, DocType internals, and credentials are never returned.
 
-## Concurrency and idempotency
+### Concurrency and idempotency
 
 One Seller per Account and public ID uniqueness are enforced by database constraints. Creation handles duplicate-insert races by reloading the winning Seller. Storefront and location writes use row locks plus monotonic versions. Identical mutation retries are no-ops even if the supplied version is stale; conflicting state changes return deterministic 409 errors. Lifecycle transitions are row-locked and illegal transitions fail. Media attach/release participates in the Seller request savepoint/callback boundary so a rejected mutation cannot leave queued side effects from the failed operation.
 
-## Scale, pagination and indexing
+### Scale, pagination and indexing
 
 Public Seller discovery is stateless and bounded. It uses parameterized SQL, stable keyset pagination, selective joins, batched Account/Media/Social display projection, and an `N+1`-free friend-count aggregate. Nearby discovery uses a WGS84 bounding-box prefilter followed by Haversine distance and handles antimeridian/polar cases. Map viewports are bounded by Maps validation and raw/item caps. Current Seller schema installers reassert composite indexes after DocType synchronization.
 
 No correctness depends on process-local locks, caches, sticky sessions, or a single Frappe replica. Database locking/constraints are authoritative across replicas.
 
-## Caching
+### Caching
 
-Seller does not maintain an authorization-sensitive shared response cache in this phase. Public Media URLs and Maps operations use their hardened subsystem caches. This avoids mixing owner/private, block-dependent, verification, lifecycle, and exact-location responses in a shared Seller cache. Any future Seller cache must use bounded TTLs and deterministic invalidation scoped to public data only.
+Seller does not maintain an authorization-sensitive shared response cache in this phase. Public Media URLs and Maps operations use their canonical subsystem caches. This avoids mixing owner/private, block-dependent, verification, lifecycle, and exact-location responses in a shared Seller cache. Any future Seller cache must use bounded TTLs and deterministic invalidation scoped to public data only.
 
-## Rate limits and abuse protection
+### Rate limits and abuse protection
 
 All public Seller endpoints are registered in the shared deployment rate-limit manifest. High-value mutations use both authenticated-user and IP dimensions; public discovery/detail/location reads are IP limited and authenticated reads also use a user dimension where applicable. Sellers uses the shared limiter only; there is no Seller-specific authoritative in-process limiter.
 
-## Security and privacy
+### Security and privacy
 
 The design explicitly covers IDOR/ownership checks, opaque identity, block-aware public reads, mass-assignment rejection, parameterized SQL, bounded filters/cursors/payloads, plain-text XSS controls, Media authorization, no user-supplied remote URLs, no Seller-side SSRF providers, Verification separation, optimistic concurrency, deterministic lifecycle rules, and sanitized dependency failures. Location logging excludes coordinates/address text. Verification evidence, tokens, secrets, and private contact/business data are never Seller telemetry.
 
-## Observability and failure behavior
+### Observability and failure behavior
 
 Seller API operations emit structured `aos.sellers` telemetry containing operation, outcome/failure class, bounded latency, optional opaque hashed Seller reference, lifecycle status, and bounded counts. Logs never contain precise coordinates, full address/storefront text, authentication tokens, verification documents, or private contacts. Maps/Media/Notifications retain their own dependency telemetry.
 
-External geocoder failures are mapped to the hardened Maps dependency error; Media failures use Media-safe public codes; unexpected failures return `INTERNAL_ERROR` and are logged server-side. Notification delivery failure does not roll back Seller lifecycle state under the Notifications contract.
+External geocoder failures are mapped to the canonical Maps dependency error; Media failures use Media-safe public codes; unexpected failures return `INTERNAL_ERROR` and are logged server-side. Notification delivery failure does not roll back Seller lifecycle state under the Notifications contract.
 
-## Fresh-site migration and deployment
+### Schema and deployment
 
-AOS is installed on a fresh site. Historical Seller data-migration patches, deterministic IDs, operating-day conversion, legacy URL fields, compatibility wrappers, and old Seller-location-in-Maps persistence are removed. `aos.migrate.after_migrate` runs the current idempotent Seller schema/index installer after DocType sync; it does not replay historical data migration.
+`aos.migrate.after_migrate` runs the idempotent Seller schema/index installer after DocType sync so the current Seller indexes are always present on a fresh site and after normal schema synchronization.
 
-Deployment must provide the already-hardened Auth/Accounts/Media/Maps/Verification/Notifications/Social/Catalog dependencies and production database/shared rate-limit infrastructure. Seller has no extra single-node service requirement.
+Deployment must provide the already-canonical Auth/Accounts/Media/Maps/Verification/Notifications/Social/Catalog dependencies and production database/shared rate-limit infrastructure. Seller has no extra single-node service requirement.
 
-## Testing and release gate
+### Testing and release gate
 
 Backend tests cover strict validation, opaque IDs, creation races/constraints, owner/non-owner boundaries, Media ownership, public/private serialization, global/antimeridian/high-latitude location behavior, location optimistic concurrency/idempotency, lifecycle transitions, verification projection, notification isolation, pagination/index/static invariants, malformed identifiers, mass assignment, dependency sanitization, and Seller-to-Maps routing lookup.
 
 Sellers is not marked production-ready until backend CI, client Postman validation, web CI, and a real `valid Seller location -> Maps refresh_route -> 200` staging test all pass. Postman and web changes are separate phases.
 
-## Future-feature boundary
+### Future-feature boundary
 
 Ads, Reviews, Search Ranking, Wishlist, Shorts, Live, Call, Chat, Activity, Reports and Moderation may consume the opaque Seller identity, lifecycle/capabilities, public profile, or route-destination lookup later. Their business rules do not belong in Seller APIs. Existing aggregate hooks required by current code remain server-controlled, but Seller public contracts do not expose future Chat/Live state.

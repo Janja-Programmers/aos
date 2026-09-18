@@ -17,6 +17,35 @@ def has_field(doctype: str, fieldname: str) -> bool:
 	return bool(frappe.get_meta(doctype).has_field(fieldname))
 
 
+def location_by_name(value: str):
+	"""Return the canonical location row needed by domain validators."""
+	return frappe.db.get_value(
+		"AOS Location",
+		str(value or "").strip(),
+		["name", "location", "country", "is_active"],
+		as_dict=True,
+	)
+
+
+def location_label(value: str) -> str:
+	clean = str(value or "").strip()
+	if not clean:
+		return ""
+	return str(frappe.get_cached_value("AOS Location", clean, "location") or "").strip()
+
+
+def location_labels(values: list[str] | tuple[str, ...] | set[str]) -> dict[str, str]:
+	clean = sorted({str(value or "").strip() for value in values if str(value or "").strip()})
+	if not clean:
+		return {}
+	rows = frappe.get_all(
+		"AOS Location",
+		filters={"name": ["in", clean]},
+		fields=["name", "location"],
+		limit=len(clean),
+	)
+	return {str(row.name): str(row.location or "") for row in rows}
+
 def country_by_name(value: str):
 	return frappe.db.get_value("Country", value, ["name", "code"], as_dict=True)
 

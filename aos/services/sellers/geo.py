@@ -1,8 +1,8 @@
 """Global WGS84 helpers for seller proximity discovery.
 
 Seller discovery owns its query bounding box. Maps owns geocoding/routing and
-seller-location APIs; seller list filtering must not depend on provider or
-legacy regional-coverage helpers.
+seller-location APIs; seller list filtering remains provider-neutral and
+globally valid.
 """
 
 from __future__ import annotations

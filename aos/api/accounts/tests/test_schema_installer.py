@@ -7,7 +7,7 @@ import unittest
 _AOS_ROOT = Path(__file__).resolve().parents[3]
 
 
-class AccountsMigrationContracts(unittest.TestCase):
+class AccountsSchemaInstallerContracts(unittest.TestCase):
     """Fresh-site Accounts schema invariants stay wired to the current installer."""
 
     def test_accounts_schema_installer_is_reasserted_after_model_sync(self):
@@ -15,7 +15,7 @@ class AccountsMigrationContracts(unittest.TestCase):
         self.assertIn("install_accounts_indexes.execute", source)
         self.assertIn("_SCHEMA_INVARIANT_INSTALLERS", source)
 
-    def test_accounts_patch_is_registered_in_post_model_sync(self):
+    def test_accounts_installer_is_registered_in_post_model_sync(self):
         patches = (_AOS_ROOT / "patches.txt").read_text(encoding="utf-8")
         marker = "[post_model_sync]"
         self.assertIn(marker, patches)

@@ -62,7 +62,7 @@ class TestChatPublicValidation(unittest.TestCase):
         clean = validate_public_kwargs(
             {
                 "conversation_id": "CONV-2026-00001",
-                "attachments": [{"media_id": "MEDIA-2026-00001", "file_type": "image"}],
+                "attachments": [{"media_id": "MEDIA-00000000000000000000000000000001", "file_type": "image"}],
             },
             ENDPOINT_SPECS["send_message"],
         )
@@ -71,7 +71,7 @@ class TestChatPublicValidation(unittest.TestCase):
             validate_public_kwargs(
                 {
                     "conversation_id": "CONV-2026-00001",
-                    "attachments": [{"media_id": "MEDIA-2026-00001", "owner": "forged"}],
+                    "attachments": [{"media_id": "MEDIA-00000000000000000000000000000001", "owner": "forged"}],
                 },
                 ENDPOINT_SPECS["send_message"],
             )
@@ -80,7 +80,7 @@ class TestChatPublicValidation(unittest.TestCase):
             validate_public_kwargs(
                 {
                     "conversation_id": "CONV-2026-00001",
-                    "attachments": [{"media": "MEDIA-2026-00001", "media_id": "MEDIA-2026-00002"}],
+                    "attachments": [{"media": "MEDIA-00000000000000000000000000000001", "media_id": "MEDIA-00000000000000000000000000000002"}],
                 },
                 ENDPOINT_SPECS["send_message"],
             )
@@ -89,7 +89,7 @@ class TestChatPublicValidation(unittest.TestCase):
             validate_public_kwargs(
                 {
                     "conversation_id": "CONV-2026-00001",
-                    "attachments": [{"media_id": f"MEDIA-2026-{index:05d}"} for index in range(MAX_ATTACHMENTS + 1)],
+                    "attachments": [{"media_id": f"MEDIA-{index:032x}"} for index in range(MAX_ATTACHMENTS + 1)],
                 },
                 ENDPOINT_SPECS["send_message"],
             )

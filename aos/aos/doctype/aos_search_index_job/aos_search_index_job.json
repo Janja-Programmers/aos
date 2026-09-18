@@ -7,7 +7,6 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "target_section",
   "target_doctype",
   "target_name",
@@ -36,14 +35,6 @@
   "completed_at"
  ],
  "fields": [
-  {
-   "fieldname": "naming_series",
-   "label": "Naming Series",
-   "fieldtype": "Select",
-   "options": "SRCH-JOB-.YYYY.-.#####",
-   "default": "SRCH-JOB-.YYYY.-.#####",
-   "reqd": 1
-  },
   {
    "fieldname": "target_section",
    "label": "Target",
@@ -199,7 +190,6 @@
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Search Index Job",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {

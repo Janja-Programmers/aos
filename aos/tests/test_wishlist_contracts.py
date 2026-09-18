@@ -58,7 +58,7 @@ def test_wishlist_cursor_rejects_invalid_datetime_payload():
         raise AssertionError("invalid cursor datetime was accepted")
 
 
-def test_wishlist_list_accepts_current_scoped_filters_but_rejects_offset_and_legacy_fields():
+def test_wishlist_list_accepts_scoped_filters_and_rejects_unknown_fields():
     request = normalize_wishlist_list_request({
         "q": "phone",
         "sort": "saved_oldest",
@@ -75,7 +75,7 @@ def test_wishlist_list_accepts_current_scoped_filters_but_rejects_offset_and_leg
     assert request["sort"] == "saved_oldest"
     assert request["verified_seller"] == 1
 
-    for payload in ({"offset": 0}, {"listing_id": "ad_public"}, {"promotion_type": "deal"}):
+    for payload in ({"offset": 0}, {"unknown_ad_key": "ad_public"}, {"promotion_type": "deal"}):
         try:
             normalize_wishlist_list_request(payload)
         except Exception as exc:
@@ -84,18 +84,18 @@ def test_wishlist_list_accepts_current_scoped_filters_but_rejects_offset_and_leg
             raise AssertionError(f"non-canonical Wishlist list payload was accepted: {payload}")
 
 
-def test_wishlist_mutation_rejects_legacy_aliases_and_toggle_state():
+def test_wishlist_mutation_accepts_only_canonical_fields():
     for payload in (
-        {"id": "ad_public"},
+        {"unknown_id": "ad_public"},
         {"ad_id": "ad_public", "wishlisted": 1},
-        {"listing_id": "ad_public"},
+        {"ad_id": "ad_public", "extra": True},
     ):
         try:
             normalize_wishlist_mutation(payload)
         except Exception as exc:
             assert getattr(exc, "code", "") == "INVALID_WISHLIST_REQUEST"
         else:
-            raise AssertionError(f"legacy Wishlist payload was accepted: {payload}")
+            raise AssertionError(f"non-canonical Wishlist payload was accepted: {payload}")
 
 
 def test_wishlist_wrappers_expose_only_explicit_add_remove_and_list_methods():

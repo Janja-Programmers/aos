@@ -3,7 +3,7 @@
 The Ads package owns listing lifecycle, input normalization, authorization, and
 persistence-facing invariants. It deliberately delegates identity, seller
 eligibility, Catalog schema, Media, localization, currency conversion,
-notifications, and companion dispatch to their hardened shared services.
+notifications, and companion dispatch to their canonical shared services.
 """
 
 from .errors import AdsError, AdsConflictError, AdsNotFoundError, AdsPermissionError, AdsValidationError

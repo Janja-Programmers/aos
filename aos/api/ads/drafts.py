@@ -1,7 +1,7 @@
 """Canonical owner Ad Draft endpoints.
 
 Drafts persist only the normalized posting-wizard payload. They have opaque
-public IDs, optimistic versions, strict ownership and no legacy payload aliases.
+public IDs, optimistic versions, strict ownership, and strict request fields.
 """
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from typing import Any
 import frappe
 
 from aos.services.media.media_service import MediaService
+from aos.services.localization import location_label, location_labels
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok
@@ -113,7 +114,7 @@ def list_my_ad_drafts_impl(**kwargs):
         media_ids=[mid for row in rows if (mid:=_primary_media_id(row))]
         media_urls=MediaService().get_public_url_map(media_ids) if media_ids else {}
         location_ids=sorted({str(row.location_hint or "").strip() for row in rows if str(row.location_hint or "").strip()})
-        location_names={row.name: str(row.location or "") for row in frappe.get_all("AOS Location", filters={"name":["in",location_ids]}, fields=["name","location"], limit=max(1,len(location_ids)))} if location_ids else {}
+        location_names=location_labels(location_ids)
         return ok("Drafts fetched.",data={"items":[_preview(row,currency,media_urls,location_names) for row in rows],"pagination":{"limit":limit,"offset":offset,"returned":len(rows)}})
     return run_ads_api(_list,fallback="Failed to fetch drafts.",log_title="AOS List Drafts Failed")
 
@@ -127,7 +128,7 @@ def get_my_ad_draft_impl(**kwargs):
         ensure_known_fields(kwargs,{"draft_id"}); public_id=normalize_identifier(kwargs.get("draft_id"),field="draft_id",required=True); doc=_owned(public_id,user)
         payload=_payload_dict(doc.payload_json)
         location_id=str(payload.get("location") or "").strip()
-        location_name=str(frappe.db.get_value("AOS Location", location_id, "location") or "") if location_id else ""
+        location_name=location_label(location_id) if location_id else ""
         return ok("Draft fetched.",data={"item":{"id":doc.public_id,"version":str(doc.modified),"status":doc.status,"last_step":doc.last_step,"location_name":location_name,"payload":payload}})
     return run_ads_api(_get,fallback="Failed to fetch draft.",log_title="AOS Get Draft Failed")
 

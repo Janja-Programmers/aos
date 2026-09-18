@@ -1,8 +1,70 @@
 # AOS Verification
 
+## Overview
+Verification owns the AOS identity/business verification workflow from evidence submission through review decision and public verified-state projection.
+
+## Responsibilities
+Verification owns request lifecycle/state transitions, evidence linkage, reviewer actions, current verification summary/projection, notification emission, and verification-specific retention/security rules.
+
+## Boundaries
+Authentication supplies identity/session, Accounts owns profiles and the `is_verified` read projection, Media owns evidence object lifecycle, Notifications owns delivery, and Sellers consumes verification state rather than defining its own verification machine.
+
+## Architecture
+```text
+Versioned Verification API -> verification service/policy/repository -> AOS Verification Request + child evidence -> Accounts projection
+                                                  -> Media evidence boundary / NotificationService
+```
+
+## Data Model
+- `AOS Verification Request`: canonical verification aggregate, named `VER-<uuid4hex>` independently on every node.
+- `AOS Verification Document`: child evidence references and metadata.
+- `AOS Profile.is_verified`: Accounts-owned denormalized read projection maintained from canonical Verification state.
+
+## Fields
+| Model | Field | Required / constraint | Purpose |
+|---|---|---|---|
+| AOS Verification Request | `name` | `VER-<uuid4hex>` PK | Stable opaque request identity without naming-series contention. |
+| AOS Verification Request | user / verification_type | canonical ownership/type | One user's workflow context. |
+| AOS Verification Request | status / review fields | state-machine constrained | Submission/review lifecycle. |
+| AOS Verification Document | media reference | Media Link | Evidence ownership without provider-specific storage data. |
+| AOS Profile | `is_verified` | maintained projection | Fast cross-feature verified-state read. |
+
+## API
+Verification endpoints expose the current user's request/status, submission/evidence actions, and authorized review operations defined by the current code-derived inventory. Inputs are strict and authorization/state transitions are enforced server-side.
+
+<!-- BEGIN CODE-DERIVED ENDPOINTS -->
+## Endpoint inventory (code-derived)
+
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
+| Endpoint | HTTP | Decorator access | Audience |
+|---|---|---|---|
+| `get_my_verification` | GET | Session required | Client |
+| `submit_verification` | POST | Session required | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
+<!-- END CODE-DERIVED ENDPOINTS -->
+
+## Cross-feature Dependencies
+Verification consumes Accounts identity, Media evidence management and Notifications delivery. Accounts and Sellers read verification through Verification repository helpers/projections; they do not query or mutate Verification state machines directly.
+
+## Transaction / Concurrency Model
+Submission/review transitions use row locks and explicit allowed-state checks; notification/outbox work is coordinated without widening the critical transaction around external network calls. UUID-backed names avoid a shared naming-series allocator.
+
+## Caching
+Public verified-state reads use the persisted Accounts projection; canonical request state remains in MariaDB. Any shared cache is advisory and not a correctness boundary.
+
+## Performance / Scalability
+Single-user summary and bounded batch-summary helpers avoid N+1/direct cross-domain queries. The `is_verified` profile projection supports Seller filtering/sorting without joining the Verification aggregate on every discovery query. Review write volume remains database-bound and should be load tested.
+
+## Testing
+Tests under `aos/api/verification/tests` plus integration tests cover request creation/submission, evidence, review transitions, authorization, projection synchronization, notifications, indexes and failure behavior. Test fixtures clean child evidence/media/request/profile state in dependency order.
+
+## Detailed Reference
+
 This file is the single canonical documentation source for the Verification backend, including ownership, data model, lifecycle, public API, security, operations, retention, integrations, and validation.
 
-## Feature overview
+### Feature overview
 
 Verification owns the lifecycle for an account submitting private identity/business evidence and an authorized reviewer deciding whether that account is verified. It owns the verification request, its sensitive evidence references, the review state machine, the Accounts verified projection, and the decision notification intent.
 
@@ -15,52 +77,51 @@ The current product supports two request types only:
 
 There is exactly one `AOS Verification Request` per account. Rejected or revoked requests are resubmitted by replacing the submission/evidence on that same row. This bounds account lookups, prevents parallel “current” records, and preserves the review record identity.
 
-## Production-ready dependencies
+### Production-ready dependencies
 
-### Authentication
+#### Authentication
 
 All public Verification APIs derive identity from the canonical authenticated Frappe/AOS session through the shared auth boundary. Verification accepts no client `user`, email identity alias, password, session token, API secret, or custom auth token.
 
-### Accounts
+#### Accounts
 
 `AOS Profile` is the canonical account identity/lifecycle row. Submission locks the Accounts profile before touching the Verification row so concurrent submission, account deletion, and approval follow a consistent lock order. Public account identity uses the opaque `ACC-*` profile identity.
 
 `AOS Profile.is_verified` is a read-optimized Accounts projection. Its lifecycle is not independently client-controlled: Verification approval sets it, Verification revocation clears it, and Accounts deletion lifecycle remains authoritative for deleted-account visibility/retention behavior. `get_my_verification` derives Verification truth from the Verification request state rather than trusting that projection as a second source of truth.
 
-### Media
+#### Media
 
 Evidence uses the canonical Media purpose `verification_document`. Verification stores only Media IDs and requires Media to enforce ownership, private visibility, readiness, attachment lifecycle, signed access, deletion/orphan policy, and storage-provider details.
 
-Clients cannot submit bucket names, object keys, filesystem paths, provider names, credentials, direct storage URLs, legacy file URLs, or arbitrary `File` references.
+Clients submit Media IDs only; bucket names, object keys, filesystem paths, provider names, credentials, direct storage URLs, and arbitrary `File` references are not accepted.
 
-### Notifications
+#### Notifications
 
 Approved and rejected decisions use the canonical Notifications service. Verification writes only the canonical notification intent; Notifications owns persistence, dedupe, durable delivery jobs/outbox, realtime publication, provider delivery and retries.
 
 The notification intent participates safely in the decision transaction using Notifications' savepoint isolation. External delivery/realtime occurs after commit through the production Notifications/outbox architecture, so provider failure cannot roll back an already accepted Verification decision.
 
-### Localization
+#### Localization
 
 Verification currently stores no country/language/currency master data. If future product requirements need such reference data, the Localization domain must remain authoritative.
 
-### Catalog
+#### Catalog
 
 Verification currently has no genuine Catalog dependency. Business category is submission text, not a duplicated Catalog taxonomy. If a future product decision binds it to Catalog, Verification must consume the finalized Catalog identifier contract rather than create a private copy.
 
-### Sellers
+#### Sellers
 
-Verification intentionally does not depend on Sellers. Verification is hardened before Sellers and may verify a Business account whether or not a Seller row exists. When Sellers is hardened, Sellers may consume the finalized Verification/Accounts verified contract; Verification must not create, activate, or mutate Seller state.
+Verification does not depend on Sellers and may verify a Business account whether or not a Seller row exists. Sellers consumes the canonical Verification/Accounts verified contract; Verification does not create, activate, or mutate Seller state.
 
-## Data layer
+### Data layer
 
-### `AOS Verification Request`
+#### `AOS Verification Request`
 
 One row per account. The unique `user` schema invariant enforces this at the database layer.
 
 | Field | Ownership | Purpose |
 |---|---|---|
-| `name` | Server | Stable domain request identity using `VER-.YYYY.-.#####`. Exposed publicly only as `verification_id`. |
-| `naming_series` | Server | Generates Verification request identity; hidden/read-only in Desk. |
+| `name` | Server | Stable domain request identity using `VER-<uuid4hex>`. Exposed publicly only as `verification_id`. |
 | `user` | Server | Internal Accounts/User relationship. Never accepted from the public Verification API. |
 | `verification_type` | Submission | `Individual` or `Business`; immutable during review. |
 | `status` | Server/reviewer | `Pending`, `Reviewing`, `Approved`, `Rejected`, or `Revoked`; transitions are centralized. |
@@ -90,7 +151,7 @@ Manual indexes/invariants installed by `install_verification_indexes`:
 - `(status, verified_on, name)` — terminal decision/operations queries;
 - unique child `media` — one verification evidence Media object cannot be referenced by two Verification document rows.
 
-### `AOS Verification Document`
+#### `AOS Verification Document`
 
 Sensitive child table owned exclusively by `AOS Verification Request`.
 
@@ -102,9 +163,9 @@ Sensitive child table owned exclusively by `AOS Verification Request`.
 | `expiry_date` | Submission | Optional expiry date; cannot precede issue date. |
 | `media` | Submission through Media contract | Canonical `AOS Media Object` identity. Must be private, owned by the account, purpose `verification_document`, and attachable to this request. |
 
-There is no legacy attachment URL/storage field.
+Evidence rows store only the canonical Media reference and document metadata.
 
-## State machine
+### State machine
 
 New requests can only be created by `VerificationService` and always start `Pending`.
 
@@ -123,7 +184,7 @@ Reviewer transitions are:
 
 Status assignment is never accepted from the public client. The DocType controller reloads/locks the authoritative previous row and revalidates reviewer authority and transition legality, so a stale Desk form or `ignore_permissions=True` alone cannot bypass the state machine.
 
-## Submission transaction and concurrency
+### Submission transaction and concurrency
 
 Submission performs the following bounded transaction work:
 
@@ -140,7 +201,7 @@ The public API owns a savepoint and rolls back all Verification/Media database c
 
 The Accounts-profile-first lock order serializes the first insert as well as resubmission across horizontally scaled workers. Database uniqueness is the final invariant if competing code paths ever bypass that serialization.
 
-### Idempotency
+#### Idempotency
 
 `idempotency_key` is mandatory for submission, 8–120 characters, and never stored raw.
 
@@ -152,9 +213,9 @@ The Accounts-profile-first lock order serializes the first insert as well as res
 
 A resubmission therefore requires a fresh idempotency key.
 
-## Evidence / Media policy
+### Evidence / Media policy
 
-Each submission must contain 1–10 evidence rows. Every row must contain only the canonical fields `document_type`, optional `document_number`, optional dates, and `media_id`. Unknown fields are rejected, including legacy aliases such as `media`, `attachment_media`, URL/path/storage metadata, and nested storage objects.
+Each submission must contain 1–10 evidence rows. Every row must contain only the canonical fields `document_type`, optional `document_number`, optional dates, and `media_id`. Unknown fields are rejected; URL/path/storage metadata and nested storage objects are outside the contract.
 
 Before a request is persisted and again at the DocType integrity boundary, evidence is validated through Media:
 
@@ -168,7 +229,7 @@ Before a request is persisted and again at the DocType integrity boundary, evide
 
 Verification never performs object-store I/O directly.
 
-## Review decisions
+### Review decisions
 
 Reviewer authorization is effective backend **Write** permission on `AOS Verification Request`. The source DocType grants this to `System Manager`; deployments can delegate through standard Frappe permission configuration without introducing a client-supplied reviewer flag.
 
@@ -178,24 +239,13 @@ Approval/revocation locks the Accounts profile before the Verification row and u
 
 There is deliberately no public reviewer/admin Verification API in v1. Review is a staff Desk operation protected by Frappe permissions and server lifecycle checks, so there is no separate Verification reviewer endpoint to expose in Postman or rate-limit as a client API.
 
-<!-- BEGIN CODE-DERIVED ENDPOINTS -->
-## Endpoint inventory (code-derived)
 
-This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
 
-| Endpoint | HTTP | Decorator access | Audience |
-|---|---|---|---|
-| `get_my_verification` | GET | Session required | Client |
-| `submit_verification` | POST | Session required | Client |
-
-`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
-<!-- END CODE-DERIVED ENDPOINTS -->
-
-## Public API
+### Public API
 
 The public v1 surface contains exactly two authenticated endpoints. This `README.md` contains both the code-derived inventory and the authoritative Verification semantics.
 
-### `POST aos.api.v1.verification.submit_verification`
+#### `POST aos.api.v1.verification.submit_verification`
 
 Frontend use: submit a first Verification request or resubmit a rejected/revoked request after all evidence has completed the Media flow.
 
@@ -244,7 +294,7 @@ Success `data` contains:
 
 It never returns raw document numbers, internal User identity, reviewer identity, private URLs, bucket/object keys, credentials, or storage provider metadata.
 
-### `GET aos.api.v1.verification.get_my_verification`
+#### `GET aos.api.v1.verification.get_my_verification`
 
 Frontend use: render the authenticated owner's verification status/settings screen.
 
@@ -261,7 +311,7 @@ Success `data` contains:
 
 The response is private/no-store.
 
-## Public error contract
+### Public error contract
 
 Verification uses the shared response envelope and stable mappings. Important domain errors include:
 
@@ -285,7 +335,7 @@ Verification uses the shared response envelope and stable mappings. Important do
 
 Raw Frappe/database/provider exceptions and stack traces are never returned.
 
-## Notifications
+### Notifications
 
 User-visible decision policy:
 
@@ -299,7 +349,7 @@ User-visible decision policy:
 
 Approved/rejected dedupe keys use Verification ID plus the server-stamped decision token, so retries of one decision cannot create duplicate user notifications while a later resubmission/decision can create a new one. Metadata is bounded by the canonical Notifications contract and contains only public `account_id` plus `verification_id`.
 
-## Account deletion and restore
+### Account deletion and restore
 
 Recoverable Accounts deletion remains owned by Accounts. Public account serializers already hide verified state while an account is deleted. Verification does not add a parallel delete/restore API.
 
@@ -314,7 +364,7 @@ On permanent account cleanup, the existing Accounts deletion service:
 
 If an account is restored during the recoverable window, existing approved Verification remains valid because the account was not permanently purged. After permanent purge/revocation there is no restore path; if future account recreation is allowed it must submit fresh evidence rather than resurrecting a revoked record.
 
-## Security and privacy
+### Security and privacy
 
 Verification data is highly sensitive.
 
@@ -332,36 +382,36 @@ Verification data is highly sensitive.
 
 Verification does not claim malware/antivirus scanning because no such finalized dependency exists. It inherits the production Media validation contract for allowed content types, extensions, content parsing/validation, size and private storage.
 
-## Retention
+### Retention
 
 - Active Pending/Reviewing/Approved requests retain the current private evidence needed for review/audit.
-- Rejected and Revoked requests retain evidence until resubmission or account retention cleanup so the decision record remains explainable; resubmission releases evidence no longer used.
+- Rejected and Revoked requests retain evidence until resubmission or account retention cleanup so the decision record remains explainable; resubmission releases evidence excluded from the new submission.
 - Released `verification_document` Media follows Media's private orphan retention/deletion policy (currently one day at the Media-purpose layer).
 - Permanent account purge releases raw evidence and removes safe child references while retaining the non-document Verification decision row.
 - No expiry/reverification scheduler exists because the product/schema has no verification-expiry requirement yet.
 
-## Background/internal behavior
+### Background/internal behavior
 
 Verification currently has no feature-owned scheduled job or background worker. Media cleanup and Notifications delivery run in their respective production-ready domains. Internal account-deletion integration remains in the Accounts deletion service and is not a client API.
 
-## Observability
+### Observability
 
 Structured events include submission/resubmission, evidence release, review progress/decision and notification-intent outcomes. Logs use public account/Verification identifiers and bounded status/count fields only; they must not contain legal names, document numbers, phone numbers, addresses, private URLs, session IDs or raw payloads.
 
-## Fresh-site schema installation
+### Schema installation
 
-This project targets a fresh site. There is no Verification legacy migration/reconciliation patch.
+This project targets a fresh site.
 
-`aos.patches.v1_0.install_verification_indexes` is a current, schema-only, idempotent installer and is also reasserted by `aos.migrate.after_migrate` after DocType synchronization. It creates the exact current indexes/uniqueness invariants and contains no historical duplicate cleanup, fallback columns or compatibility behavior.
+`aos.patches.v1_0.install_verification_indexes` is schema-only and idempotent and is also reasserted by `aos.migrate.after_migrate` after DocType synchronization. It creates the current indexes and uniqueness invariants.
 
 `bench migrate` is expected to create the current DocTypes, fields and indexes directly.
 
-## Tests and validation
+### Tests and validation
 
 Feature tests live in `aos/api/verification/tests/` and cover:
 
 - exact public endpoint surface and HTTP methods;
-- strict top-level/document input contracts and removal of legacy aliases/modules;
+- strict top-level/document input contracts;
 - canonical Accounts/Media/Notifications dependencies and absence of Sellers dependency;
 - state transitions and reviewer authorization;
 - server-owned immutable review/submission metadata;
@@ -388,7 +438,7 @@ python ci/validate_deployment.py
 python ci/validate_repository.py
 ```
 
-Authoritative migrated-site validation:
+Authoritative site validation:
 
 ```bash
 bench --site <site> migrate

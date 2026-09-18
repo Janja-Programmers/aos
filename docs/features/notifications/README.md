@@ -1,8 +1,37 @@
 # Notifications API
 
-Notifications is the canonical AOS domain for the private inbox, realtime notification-center synchronization, push-device lifecycle, durable asynchronous provider delivery, retries, signed callbacks, retention and delivery observability. Notification Delivery is an internal Notifications subdomain, not a separate product feature.
+## Overview
+Notifications owns the private AOS notification inbox, unread/read lifecycle, device-token registry, durable delivery orchestration, provider retry/callback state, retention, and foreground realtime synchronization.
 
-This file is the single canonical Notifications feature document. Feature-specific producers such as Chat and Live may document their own business events, but the integration boundary and delivery behavior are defined here only.
+## Responsibilities
+Notifications creates canonical notification records through one service boundary, maintains dedupe/idempotency state, owns unread mutations/deletion, registers/deactivates push devices, queues delivery work, processes provider results, and emits authorized realtime updates.
+
+## Boundaries
+Authentication supplies the recipient identity/device ownership context. Verification, Social, Sellers, Ads and other producer domains call the Notification service; they do not insert notification rows or implement provider delivery independently.
+
+## Architecture
+```text
+Producer/API -> NotificationService -> AOS Notification + Transactional Outbox -> delivery worker -> AOS Notification Delivery Job -> push provider
+Client -> versioned Notifications API -> inbox/read/delete/token services -> MariaDB/Redis/realtime
+```
+
+## Data Model
+- `AOS Notification`: canonical private inbox record with recipient/category/type/read/deletion/dedupe state.
+- `AOS Push Token`: per-device transport registration and lifecycle.
+- `AOS Notification Delivery Job`: durable asynchronous delivery attempt/state.
+- `AOS Transactional Outbox`: durable cross-transaction handoff for provider/realtime work; hash-named with no series field.
+
+## Fields
+| Model | Field | Required / constraint | Purpose |
+|---|---|---|---|
+| AOS Notification | recipient/type/category | indexed | Inbox ownership and filtering. |
+| AOS Notification | `dedupe_key` | uniqueness where supplied | Producer idempotency boundary. |
+| AOS Notification | read/deleted timestamps | lifecycle state | Unread counts and user mutations. |
+| AOS Push Token | user/device/transport/token | scoped unique lifecycle | Device ownership and routing. |
+| Delivery Job / Outbox | aggregate/status/attempt timing | durable indexed state | Retry-safe asynchronous provider work. |
+
+## API
+The versioned Notifications API lists/paginates the private inbox, marks one/all read, deletes/clears supported records, and manages push-token registration lifecycle. Inputs are authenticated, bounded and strict; provider callbacks use their separate signed internal boundary.
 
 <!-- BEGIN CODE-DERIVED ENDPOINTS -->
 ## Endpoint inventory (code-derived)
@@ -24,17 +53,40 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
-## Overview
+## Cross-feature Dependencies
+Authentication is authoritative for user/session/device ownership. Verification, Social, Sellers and Ads publish through `NotificationService`. Notification serialization may link to current domain resources, but producer domains retain ownership of those resources.
 
-Notifications is the single canonical AOS domain for the private notification inbox, read state, recipient routing, device registrations, durable push orchestration, provider callbacks, delivery retries, deduplication and delivery observability. The former Notification Delivery product/API surface is not a separate feature; delivery is an internal Notifications subdomain.
+## Transaction / Concurrency Model
+Notification + outbox creation is atomic; dedupe keys/unique constraints are the race-safe guard rather than check-then-insert alone. Delivery runs asynchronously with durable jobs, bounded retries and explicit worker commit boundaries. Read/delete mutations are recipient-scoped and idempotent where appropriate.
+
+## Caching
+Unread/realtime state uses shared infrastructure and durable database truth. Device/provider correctness never depends on a Python process global or sticky session.
+
+## Performance / Scalability
+Inbox queries use recipient/state/order indexes and bounded pagination. Delivery is decoupled from request writes through durable jobs/outbox. Provider work can scale horizontally; DB/outbox throughput, queue lag and Redis/realtime capacity remain load-test concerns.
+
+## Testing
+Tests under `aos/api/notifications/tests` and shared suites cover inbox/read/delete behavior, categories, token ownership/rotation/deactivation, dedupe, transactional outbox, callbacks, retries, retention and concurrency. Teardown removes delivery/outbox rows before parent notifications/users to prevent cross-suite pollution.
+
+## Detailed Reference
+
+Notifications is the canonical AOS domain for the private inbox, realtime notification-center synchronization, push-device lifecycle, durable asynchronous provider delivery, retries, signed callbacks, retention and delivery observability. Notification Delivery is an internal Notifications subdomain, not a separate product feature.
+
+This file is the single canonical Notifications feature document. Feature-specific producers such as Chat and Live may document their own business events, but the integration boundary and delivery behavior are defined here only.
+
+
+
+### Overview
+
+Notifications is the single canonical AOS domain for the private notification inbox, read state, recipient routing, device registrations, durable push orchestration, provider callbacks, delivery retries, deduplication and delivery observability. Delivery is an internal Notifications subdomain rather than a separate client-facing feature.
 
 Originating domains remain authoritative for business state. Notifications must never decide whether a follow exists, an Ad is approved, a verification succeeded, or Media processing succeeded. The producer commits its authoritative mutation first. Notifications owns only the notification intent, persistence, transport and delivery state.
 
 No public arbitrary-notification endpoint exists. Internal producers use `aos.services.notifications.service.NotificationService` and provider-specific code stays behind `aos.services.notifications.delivery` and the private delivery companion.
 
-## Data model
+### Data model
 
-### `AOS Notification`
+#### `AOS Notification`
 
 The user-facing inbox record.
 
@@ -46,7 +98,7 @@ The user-facing inbox record.
 - `is_read`: owner-scoped read state.
 - `dedupe_key`: optional unique deterministic logical-event identity. Database uniqueness is the concurrency arbiter.
 
-### `AOS Push Token`
+#### `AOS Push Token`
 
 Private provider registration state for an authenticated account/device.
 
@@ -62,11 +114,11 @@ Private provider registration state for an authenticated account/device.
 
 Multiple devices per account are supported. Re-registering the same token or device is idempotent. A device claimed by a different signed-in account disables previous active registrations for that device. Invalid provider registrations are disabled by hashed identity after provider response.
 
-### `AOS Notification Delivery Job`
+#### `AOS Notification Delivery Job`
 
 Internal durable delivery state. It is not a public product API.
 
-Important fields include recipient, optional inbox notification, `persistent`/`transient` kind, channel, event, bounded copy/options, unique `idempotency_key`, attempt counters, status, dispatch timestamps, safe request/response diagnostics and aggregate success/failure counts. The recipient and inbox-notification values are stored as identifier snapshots rather than live Frappe Links: new and nonterminal jobs validate that the referenced rows still exist, while existing terminal delivery records may retain those historical identifiers after account/inbox cleanup. This prevents deletion races from dead-lettering already-suppressible work while preserving creation-time integrity. Raw credentials and unrestricted provider error payloads are not persisted.
+Important fields include recipient, optional inbox notification, `persistent`/`transient` kind, channel, event, bounded copy/options, unique `idempotency_key`, attempt counters, status, dispatch timestamps, safe request/response diagnostics and aggregate success/failure counts. The recipient and inbox-notification values are stored as identifier snapshots rather than live Frappe Links: new and nonterminal jobs validate that the referenced rows still exist, while terminal delivery records may retain those identifier snapshots after account/inbox cleanup. This prevents deletion races from dead-lettering already-suppressible work while preserving creation-time integrity. Raw credentials and unrestricted provider error payloads are not persisted.
 
 Canonical states are:
 
@@ -74,11 +126,11 @@ Canonical states are:
 Queued → Dispatching → Processing → Delivered | Skipped | Failed | Cancelled
 ```
 
-### `AOS Transactional Outbox`
+#### `AOS Transactional Outbox`
 
 Shared platform outbox used by Notifications for commit-safe delivery handoff. It stores the job reference, deterministic idempotency key, dispatch method, lease/claim state, bounded retry state, dispatch generation/token, callback/reconciliation state and terminal result digest. Notifications reuses this platform primitive rather than creating a second queue architecture.
 
-## Notification lifecycle and transaction boundary
+### Notification lifecycle and transaction boundary
 
 ```text
 originating feature mutation
@@ -98,7 +150,7 @@ Foreground `aos_notification_center` realtime events are also registered only af
 
 Incoming Calls are the intentional transient exception: `aos_incoming_call` creates push-only delivery work and no inbox row. The authoritative Calls state is rechecked before dispatch. Missed calls remain persistent notifications.
 
-## Canonical integration contract
+### Canonical integration contract
 
 Trusted backend producers call the canonical Notifications service; they do not insert `AOS Notification` directly and do not call Firebase/provider code.
 
@@ -110,7 +162,7 @@ When integrating any feature:
 
 Provider delivery must never be performed inline inside the originating business transaction.
 
-## Idempotency, deduplication and provider retry
+### Idempotency, deduplication and provider retry
 
 These are separate guarantees:
 
@@ -122,7 +174,7 @@ Delivery callbacks carry dispatch generation/token identities and are handled at
 
 FCM cannot guarantee exactly-once device presentation if a worker crashes after provider acceptance but before durable result recording. Clients must tolerate duplicate pushes and reconcile persistent events using `notification_id`.
 
-## Canonical notification types
+### Canonical notification types
 
 The current type registry is `aos.services.notifications.contracts`.
 
@@ -135,7 +187,7 @@ The current type registry is `aos.services.notifications.contracts`.
 
 Each type allow-lists its scalar payload fields. Unknown fields, arbitrary nested dictionaries/lists and oversized payloads are rejected. Title/body are normalized and bounded before persistence and provider delivery.
 
-## Inbox/read state
+### Inbox/read state
 
 All owner APIs derive identity from the authenticated session; no endpoint accepts a recipient/account argument. Queries are owner-scoped in SQL and private responses are `no-store`.
 
@@ -145,7 +197,7 @@ Unread count is derived from indexed `(user, is_read, creation)` state instead o
 
 `delete_notification` and `clear_notifications` remove only the authenticated owner's rows. They never expose existence of another account's notification through a successful cross-owner mutation.
 
-## Retention
+### Retention
 
 The inbox is a recent-event product surface, not a permanent audit ledger. Retention is configurable and enabled by default:
 
@@ -161,7 +213,7 @@ Cleanup runs on the scheduler in bounded batches. Inbox cleanup uses the `(creat
 
 Changing inbox retention changes product-visible history and must be treated as a product/operations decision. The defaults bound table growth for a global deployment while retaining substantially more inbox history than delivery diagnostics.
 
-## Device-token lifecycle and security
+### Device-token lifecycle and security
 
 `register_push_token` requires authentication plus explicit `token`, `registration_kind`, `device_type`, and `device_id`. Unknown fields are rejected. Registration uses narrow row locks, unique token hash/device constraints and bounded deadlock retry; concurrent claims converge on one canonical registration.
 
@@ -171,7 +223,7 @@ Account deletion removes push tokens and cancels queued/nonterminal notification
 
 Raw tokens, callback secrets, Firebase credentials and private notification content are excluded from operational logs. Diagnostics use hashes/fingerprints and bounded error categories.
 
-## Provider abstraction and asynchronous delivery
+### Provider abstraction and asynchronous delivery
 
 The Notifications domain talks to a private delivery companion through the transactional outbox. The companion owns Firebase Admin/FCM specifics. Android, iOS/APNs-through-FCM and web/WebPush-through-FCM options are generated from server-owned configuration. Feature modules never call FCM directly.
 
@@ -181,7 +233,7 @@ Partial success is terminally recorded instead of resending all devices and know
 
 Public web push bootstrap returns only Firebase public client configuration and a VAPID **public** key. Admin service-account JSON, private keys and service/callback secrets are never returned.
 
-## Signed provider callback
+### Signed provider callback
 
 The only externally HTTP-exposed delivery operation is:
 
@@ -199,7 +251,7 @@ It is `allow_guest=True` only because the private companion cannot have a browse
 
 This endpoint belongs to Notifications. There is no separate public `notification_delivery` API namespace.
 
-## Public API contract
+### Public API contract
 
 All public versioned endpoints are under `aos.api.v1.notifications` and all use `aos.api.shared.transport.execute_endpoint`. Frappe transport metadata such as `cmd` is stripped by the shared executor; true unknown client fields reach endpoint validation and are rejected.
 
@@ -219,15 +271,15 @@ All client endpoints require authentication and use the standard AOS response en
 
 Stable Notifications errors include `INVALID_NOTIFICATION_INPUT`, `NOTIFICATION_NOT_FOUND`, `DEVICE_TOKEN_INVALID`, `DELIVERY_CALLBACK_INVALID`, shared authorization errors such as `UNAUTHORIZED`, callback conflict codes from the shared callback state machine, and `INTERNAL_ERROR`. Provider stack traces, credentials and raw internal exceptions are never returned.
 
-## Foreground realtime
+### Foreground realtime
 
 Recipient-scoped Frappe event: `aos_notification_center`, payload version `1`.
 
 Actions are `created`, `read`, `read_all`, `deleted`, and `cleared`. `created` contains the public-safe notification plus unread count; state actions contain only the minimum identifiers/counts needed for reconciliation. Publication is `user=` scoped and after-commit only.
 
-## Indexes and scale
+### Indexes and scale
 
-Manual indexes are installed idempotently on migration and reasserted from `after_migrate` so fresh installs and migrated installs converge:
+Manual indexes are installed idempotently on migration and reasserted from `after_migrate` so normal schema synchronization converges on the same index set:
 
 - inbox owner timeline `(user, creation, name)`;
 - category timeline `(user, type, creation, name)`;
@@ -242,15 +294,15 @@ Manual indexes are installed idempotently on migration and reasserted from `afte
 
 Notification list serialization bulk-resolves actor display data rather than querying one actor per row. Inbox pagination is keyset based and bounded. Unread count is index-backed and scoped to one recipient. No shared/private cross-user cache is used; current database/index behavior is preferable to introducing a cache-coherency race.
 
-## Observability
+### Observability
 
 Structured notification logs use canonical notification IDs/account IDs where safe, delivery/job identities, status/outcome, retry counts and bounded error categories. Token diagnostics use only hashes/fingerprints. Notification title/body, raw provider payloads, raw tokens and credentials are not emitted merely for debugging.
 
 Operational delivery records preserve enough status/count/timestamp data for retry and incident diagnosis, with retention bounded separately from the user inbox.
 
-## Finalized-feature retrofit audit
+### Finalized-feature retrofit audit
 
-This hardening pass audited the five reference features without redesigning their contracts:
+Current cross-feature notification ownership is:
 
 | Feature | Decision |
 | --- | --- |
@@ -260,14 +312,14 @@ This hardening pass audited the five reference features without redesigning thei
 | Accounts | No additional generic notification added. Account lifecycle cleanup integrates with Notifications for token/job cancellation, while security/auth messaging remains owned by Authentication. |
 | Catalog | No end-user notification added. Catalog is reference/configuration data and ordinary changes should not create notification noise. |
 
-Regression testing for these domains remains authoritative; Notifications integration must be the smallest possible change and may not weaken their transport, validation, authorization, transaction or performance guarantees.
+Notification integrations preserve each producer domain's transport, validation, authorization, transaction and performance guarantees.
 
-## Account deletion/restore
+### Account deletion/restore
 
 Account deletion disables/removes device registrations and cancels pending Notification delivery/outbox work. New delivery is suppressed for unavailable/deleted recipients. Inbox/private-data lifecycle follows the Accounts deletion service and documented retention/purge behavior. Restore does not silently reactivate stale push registrations.
 
-Delivery jobs are retained for a bounded operational window and may therefore outlive the User or inbox Notification they originally referenced. Existing jobs that reach `Delivered`, `Skipped`, or `Cancelled` may retain those historical Link values after deletion; terminal-state persistence deliberately ignores only those now-stale links. New and nonterminal jobs still require live User/Notification references. If a queued job discovers that its recipient or inbox row disappeared, it is completed locally as `Skipped` (for example `recipient_missing` or `notification_missing`) rather than retried/dead-lettered.
+Delivery jobs are retained for a bounded operational window and may therefore outlive the User or inbox Notification they originally referenced. Existing jobs that reach `Delivered`, `Skipped`, or `Cancelled` may retain those identifier snapshots after deletion; terminal-state persistence deliberately ignores only those now-stale links. New and nonterminal jobs still require live User/Notification references. If a queued job discovers that its recipient or inbox row disappeared, it is completed locally as `Skipped` (for example `recipient_missing` or `notification_missing`) rather than retried/dead-lettered.
 
-## Unsupported capabilities
+### Unsupported capabilities
 
-The current product does not include notification preferences/quiet hours, email/SMS notification delivery, public arbitrary notification creation, a materialized unread-counter DocType, scheduled notification campaigns, a direct APNs/PushKit adapter, or an independent browser Web Push provider. These should be added only under an explicit product contract, not inferred during infrastructure hardening.
+The current product does not include notification preferences/quiet hours, email/SMS notification delivery, public arbitrary notification creation, a materialized unread-counter DocType, scheduled notification campaigns, a direct APNs/PushKit adapter, or an independent browser Web Push provider. Additional capabilities require an explicit product contract and belong in the Notifications domain.

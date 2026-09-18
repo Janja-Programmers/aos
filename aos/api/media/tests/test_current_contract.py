@@ -50,11 +50,11 @@ class MediaCurrentContractTests(unittest.TestCase):
         self.assertNotIn("def clear_live_cover_media", live)
 
     def test_multipart_index_is_part_of_the_canonical_media_patch(self):
-        patch = self.source("aos/patches/v1_0/harden_media_subsystem.py")
+        patch = self.source("aos/patches/v1_0/install_media_indexes.py")
         registry = self.source("aos/patches.txt")
         self.assertIn("idx_aos_media_multipart_active", patch)
         media_patch_entries = [line.strip() for line in registry.splitlines() if "media" in line.lower()]
-        self.assertEqual(media_patch_entries, ["aos.patches.v1_0.harden_media_subsystem"])
+        self.assertEqual(media_patch_entries, ["aos.patches.v1_0.install_media_indexes"])
 
     def test_background_removal_exposes_only_current_runtime_settings(self):
         config = self.source("infra/background-removal/app/config.py")

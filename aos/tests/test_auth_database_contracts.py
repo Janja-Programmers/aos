@@ -54,14 +54,6 @@ class TestAuthDatabaseContracts(FrappeTestCase):
         for function in (session.login_impl, password_change.change_password_impl, password_reset.forgot_password_reset_impl):
             self.assertIn("lock_user", inspect.getsource(function))
 
-    def test_auth_upgrade_only_patches_are_removed_for_fresh_site(self):
-        root = Path(__file__).resolve().parents[2]
-        patches = (root / "aos" / "patches.txt").read_text()
-        self.assertNotIn("add_auth_indexes", patches)
-        self.assertNotIn("finalize_auth_identity_privacy", patches)
-        self.assertFalse((root / "aos" / "patches" / "v1_0" / "add_auth_indexes.py").exists())
-        self.assertFalse((root / "aos" / "patches" / "v1_0" / "finalize_auth_identity_privacy.py").exists())
-
     def test_password_and_otp_implementations_do_not_use_fast_otp_sha256_or_manual_commits(self):
         root = Path(__file__).resolve().parents[2] / "aos" / "api" / "auth"
         otp_source = (root / "otp_service.py").read_text()

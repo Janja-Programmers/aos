@@ -1,8 +1,8 @@
 """Install Accounts query indexes that are not expressible in DocType metadata.
 
 The patch is schema-only and idempotent. A matching index is verified by both
-its name and ordered column list so an older/malformed index with the same name
-cannot silently satisfy the migration guard.
+its name and ordered column list so an incorrect index with the same name cannot
+silently satisfy the schema invariant.
 """
 
 from __future__ import annotations

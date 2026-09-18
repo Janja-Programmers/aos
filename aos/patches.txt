@@ -8,7 +8,7 @@ aos.patches.v1_0.add_unique_constraints
 aos.patches.v1_0.install_localization_schema
 aos.patches.v1_0.add_outbox_indexes
 
-aos.patches.v1_0.harden_media_subsystem
+aos.patches.v1_0.install_media_indexes
 aos.patches.v1_0.install_accounts_indexes
 aos.patches.v1_0.install_verification_indexes
 aos.patches.v1_0.install_catalog_indexes

@@ -13,13 +13,13 @@ from frappe.utils import now_datetime
 
 from aos.services.media.media_service import MediaService
 from aos.services.social.capabilities import SocialCapabilityService
+from aos.services.verification.repository import get_request_summary_for_user
 
 from .constants import GET_ALLOWED_FIELDS, STATUS_ACTIVE, STATUS_ALLOWED_FIELDS, UPDATE_ALLOWED_FIELDS
 from .errors import SellerConflictError, SellerNotFoundError, SellerValidationError
 from .identity import normalize_public_seller_id, require_public_seller_id, resolve_public_seller_id
 from .observability import seller_log
 from .policy import get_seller_for_user, require_storefront_update_allowed
-from .repository import get_verification_for_user
 from .serializers import serialize_operating_hours, serialize_public_detail, serialize_status
 from .validation import (
     ensure_known_fields,
@@ -45,7 +45,7 @@ class SellerService:
         request = dict(payload or {})
         ensure_known_fields(request, STATUS_ALLOWED_FIELDS)
         row = get_seller_for_user(user)
-        verification = get_verification_for_user(user)
+        verification = get_request_summary_for_user(user)
         result = serialize_status(row, verification=verification)
         seller_log(
             "seller.status.checked",
@@ -91,7 +91,7 @@ class SellerService:
             order_by="idx asc",
             limit=7,
         )
-        verification = get_verification_for_user(row.user)
+        verification = get_request_summary_for_user(row.user)
         row.total_friends = self._friend_count(row.user)
         result = serialize_public_detail(
             row,

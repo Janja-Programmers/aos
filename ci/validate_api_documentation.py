@@ -14,7 +14,7 @@ END = "<!-- END CODE-DERIVED ENDPOINTS -->"
 FEATURE_DOCS = {
 	"accounts": "docs/features/accounts/README.md",
 	"activity": "docs/features/activity/api.md",
-	"ads": "docs/features/ads/api.md",
+	"ads": "docs/features/ads/README.md",
 	"analytics_pipeline": "docs/features/analytics/api.md",
 	"auth": "docs/features/authentication/README.md",
 	"calls": "docs/features/calls/api.md",
@@ -28,26 +28,45 @@ FEATURE_DOCS = {
 	"notifications": "docs/features/notifications/README.md",
 	"reports": "docs/features/reports/api.md",
 	"reviews": "docs/features/reviews/api.md",
-	"saved_search": "docs/features/saved-search/api.md",
-	"search_ranking": "docs/features/search-ranking/api.md",
+	"saved_search": "docs/features/saved-search/README.md",
+	"search_ranking": "docs/features/search-ranking/README.md",
 	"sellers": "docs/features/sellers/README.md",
 	"shorts": "docs/features/shorts/api.md",
 	"social": "docs/features/social/README.md",
-	"sellers": "docs/features/sellers/README.md",
 	"verification": "docs/features/verification/README.md",
 	"wishlist": "docs/features/wishlist/README.md",
 }
 
+REQUIRED_HARDENED_FEATURE_SECTIONS = (
+	"## Overview",
+	"## Responsibilities",
+	"## Boundaries",
+	"## Architecture",
+	"## Data Model",
+	"## Fields",
+	"## API",
+	"## Cross-feature Dependencies",
+	"## Transaction / Concurrency Model",
+	"## Caching",
+	"## Performance / Scalability",
+	"## Testing",
+)
+
 SINGLE_FILE_FEATURE_DOCS = {
 	"accounts": "docs/features/accounts/README.md",
+	"ads": "docs/features/ads/README.md",
 	"auth": "docs/features/authentication/README.md",
 	"catalog": "docs/features/catalog/README.md",
 	"localization": "docs/features/localization/README.md",
+	"maps": "docs/features/maps/README.md",
 	"media": "docs/features/media/README.md",
 	"notifications": "docs/features/notifications/README.md",
-	"social": "docs/features/social/README.md",
+	"saved_search": "docs/features/saved-search/README.md",
+	"search_ranking": "docs/features/search-ranking/README.md",
 	"sellers": "docs/features/sellers/README.md",
+	"social": "docs/features/social/README.md",
 	"verification": "docs/features/verification/README.md",
+	"wishlist": "docs/features/wishlist/README.md",
 }
 
 PLATFORM_DOCS = {
@@ -240,7 +259,11 @@ def _replace_generated_block(text: str, block: str) -> str:
 	lines = text.splitlines()
 	if not lines or not lines[0].startswith("# "):
 		raise RuntimeError("API document must start with one H1 before endpoint inventory can be inserted")
-	return "\n".join([lines[0], "", block, "", *lines[1:]]).rstrip() + "\n"
+	try:
+		api_index = lines.index("## API")
+	except ValueError:
+		return "\n".join([lines[0], "", block, "", *lines[1:]]).rstrip() + "\n"
+	return "\n".join([*lines[: api_index + 1], "", block, "", *lines[api_index + 1 :]]).rstrip() + "\n"
 
 
 def render_reference(endpoints: list[Endpoint]) -> str:
@@ -317,6 +340,12 @@ def validate_docs(endpoints: list[Endpoint]) -> list[str]:
 			errors.append(
 				f"single-file feature {domain} must have exactly one documentation file named README.md; found {markdown_files}"
 			)
+		readme = ROOT / relative
+		if readme.exists():
+			text = readme.read_text(encoding="utf-8")
+			for heading in REQUIRED_HARDENED_FEATURE_SECTIONS:
+				if heading not in text:
+					errors.append(f"hardened feature {domain} README is missing required section: {heading}")
 
 	feature_index = ROOT / "docs/features/README.md"
 	if not feature_index.exists():

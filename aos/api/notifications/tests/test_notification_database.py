@@ -33,7 +33,7 @@ from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
 class TestNotificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
-    """DB-backed Notification behavior on a migrated Frappe site."""
+    """DB-backed Notification behavior on a configured Frappe test site."""
 
     def setUp(self):
         self.prefix = self.make_prefix("notification")

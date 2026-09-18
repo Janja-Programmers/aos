@@ -20,9 +20,9 @@ class TestMapsValidation(unittest.TestCase):
         self.assertEqual(request["query"], "Tokyo Station")
         self.assertEqual(request["limit"], 20)
         self.assertEqual(request["country_code"], "JP")
-        for legacy in ({"query": "Tokyo"}, {"q": "Tokyo", "bounded": True}, {"q": "Tokyo", "lat": 1}):
-            with self.subTest(legacy=legacy), self.assertRaises(MapsValidationError):
-                validate_search_request(legacy)
+        for invalid in ({"query": "Tokyo"}, {"q": "Tokyo", "bounded": True}, {"q": "Tokyo", "lat": 1}):
+            with self.subTest(invalid=invalid), self.assertRaises(MapsValidationError):
+                validate_search_request(invalid)
 
     def test_autocomplete_bias_requires_canonical_coordinate_pair(self):
         request = validate_autocomplete_request(
@@ -50,12 +50,12 @@ class TestMapsValidation(unittest.TestCase):
             ], "costing": "auto"}
         )
         self.assertEqual(len(route["locations"]), 2)
-        for legacy in (
+        for invalid in (
             {"origin_latitude": 1, "origin_longitude": 2, "destination_latitude": 3, "destination_longitude": 4},
             {"locations": [{"latitude": 1, "longitude": 2, "lng": 2}, {"latitude": 3, "longitude": 4}]},
         ):
-            with self.subTest(legacy=legacy), self.assertRaises(MapsValidationError):
-                validate_route_request(legacy)
+            with self.subTest(invalid=invalid), self.assertRaises(MapsValidationError):
+                validate_route_request(invalid)
 
     def test_global_viewport_supports_antimeridian_and_rejects_unbounded_scans(self):
         request = validate_map_points_request(

@@ -71,7 +71,7 @@ class AccountValidationTests(unittest.TestCase):
         with self.assertRaises(AccountValidationError):
             validate_profile_patch({})
 
-    def test_patch_rejects_legacy_aliases(self):
+    def test_update_rejects_unknown_fields(self):
         with self.assertRaises(AccountValidationError):
             validate_profile_patch({"full_name": "Dan Kalutu", "mobile_no": "+254712345678"})
 

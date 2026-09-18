@@ -32,12 +32,7 @@ class AOSProfile(Document):
     """
 
     def autoname(self):
-        for _ in range(8):
-            candidate = generate_public_account_id()
-            if not frappe.db.exists("AOS Profile", candidate):
-                self.name = candidate
-                return
-        frappe.throw("Unable to allocate account id.", frappe.ValidationError)
+        self.name = generate_public_account_id()
 
     def validate(self):
         self._validate_name()

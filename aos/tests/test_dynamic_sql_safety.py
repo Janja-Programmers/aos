@@ -87,11 +87,11 @@ class TestDynamicSqlSafety(FrappeTestCase):
         candidate_clause, order_clause = shorts_feed._short_candidate_sql(
             ["SHORT-2026-00001", unsafe]
         )
-        ad_order_clause = ads_list._search_order_sql(["AD-2026-00001", unsafe])
+        ad_order_clause = ads_list._search_order_sql(["ad_example_public_1", unsafe])
 
         self.assertIn("SHORT-2026-00001", candidate_clause)
         self.assertIn("SHORT-2026-00001", order_clause)
-        self.assertIn("AD-2026-00001", ad_order_clause)
+        self.assertIn("ad_example_public_1", ad_order_clause)
         self.assertNotIn("DROP TABLE", candidate_clause)
         self.assertNotIn("DROP TABLE", order_clause)
         self.assertNotIn("DROP TABLE", ad_order_clause)

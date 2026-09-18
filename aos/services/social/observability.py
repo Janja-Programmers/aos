@@ -12,7 +12,7 @@ import frappe
 _ALLOWED_OPERATIONS = {
     "follow", "unfollow", "relationship", "following_list",
     "followers_list", "friends_list", "search", "block", "unblock",
-    "block_status", "blocked_list", "migration",
+    "block_status", "blocked_list", "unknown",
 }
 _ALLOWED_OUTCOMES = {"success", "idempotent", "rejected", "conflict", "failure"}
 _ALLOWED_REASONS = {
@@ -23,7 +23,7 @@ _ALLOWED_REASONS = {
 
 def social_log(operation: str, *, outcome: str, latency_ms: int = 0, reason: str = "none", changed: bool | None = None, notification: str | None = None, count: int | None = None) -> None:
     payload = {
-        "operation": operation if operation in _ALLOWED_OPERATIONS else "migration",
+        "operation": operation if operation in _ALLOWED_OPERATIONS else "unknown",
         "outcome": outcome if outcome in _ALLOWED_OUTCOMES else "failure",
         "latency_ms": max(0, min(int(latency_ms or 0), 3_600_000)),
         "reason": reason if reason in _ALLOWED_REASONS else "internal",

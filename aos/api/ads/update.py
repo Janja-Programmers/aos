@@ -74,10 +74,6 @@ def update_ad_impl(**kwargs):
             ad_country = str(doc.country or "").strip()
             location_name, location_error = resolve_location(values["location"], country=ad_country)
             if location_error: return location_error
-            location_country = frappe.db.get_value("AOS Location", location_name, "country")
-            if not location_country or str(location_country) != ad_country:
-                return fail("Location does not belong to the ad market.", error="INVALID_LOCATION")
-
             image_rows = prepare_image_rows(values["images"], user=user, ad_name=doc.name)
             video_id = prepare_video(values.get("video_media"), user=user, ad_name=doc.name)
             values.update({"location":location_name,"images":image_rows,"video_media":video_id})

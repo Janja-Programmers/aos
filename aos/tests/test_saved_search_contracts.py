@@ -11,7 +11,7 @@ from aos.api.saved_search.list import list_saved_searches_impl
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
-class TestSavedSearchHardening(AOSFeatureTestMixin, FrappeTestCase):
+class TestSavedSearchContracts(AOSFeatureTestMixin, FrappeTestCase):
     def setUp(self):
         self.prefix=self.make_prefix("saved-search"); self.created_users=[]
         self.user=self.make_user("owner",with_preference=True); frappe.set_user(self.user)

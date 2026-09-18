@@ -2,13 +2,11 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
- "autoname": "naming_series:",
  "creation": "2026-01-30 11:08:26.301766",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "basic_tab",
-  "naming_series",
   "public_id",
   "submission_key_hash",
   "title",
@@ -125,13 +123,6 @@
    "label": "Price",
    "options": "currency",
    "precision": "6"
-  },
-  {
-   "default": "AD-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "AD-.YYYY.-.#####"
   },
   {
    "fieldname": "price_unit",
@@ -380,7 +371,6 @@
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Ad",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {

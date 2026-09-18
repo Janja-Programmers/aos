@@ -11,6 +11,7 @@ from aos.services.localization import serialize_preference as serialize_localiza
 from aos.services.localization.preferences import get_user_preference
 from aos.services.media.media_service import MediaService
 from aos.services.sellers.identity import public_seller_id_for_name
+from aos.services.verification.repository import get_request_summary_for_user
 
 from .constants import ACCOUNT_STATUS_ACTIVE, ACCOUNT_STATUS_DELETED
 from .identity import public_account_id_for_user
@@ -76,13 +77,7 @@ def seller_summary(user: str, *, public: bool = False) -> dict[str, Any]:
 
 
 def verification_summary(user: str) -> dict[str, Any]:
-    row = frappe.db.get_value(
-        "AOS Verification Request",
-        {"user": user},
-        ["status", "verification_type", "verified_on"],
-        order_by="creation desc",
-        as_dict=True,
-    )
+    row = get_request_summary_for_user(user)
     if not row:
         return {"status": None, "verification_type": None, "verified_on": None}
     return {"status": row.status, "verification_type": row.verification_type, "verified_on": row.verified_on}

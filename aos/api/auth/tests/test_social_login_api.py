@@ -117,8 +117,8 @@ class TestAuthSocialLoginAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertFalse(frappe.db.exists("User", email2))
         self.assertEqual(get_bound_user("google", "stable-sub"), email1)
 
-    def test_unknown_legacy_fields_are_rejected(self):
-        response = google_login_impl(id_token="token", client_type="web", access_token="legacy")
+    def test_unknown_fields_are_rejected(self):
+        response = google_login_impl(id_token="token", client_type="web", unexpected="x")
         self.assertEqual(response.get("error"), "AUTH_UNKNOWN_FIELD")
 
     def test_apple_present_email_must_be_provider_verified(self):

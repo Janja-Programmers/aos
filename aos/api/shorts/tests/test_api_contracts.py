@@ -34,7 +34,7 @@ class TestShortsApiContracts(FrappeTestCase):
     def test_create_short_accepts_reusable_sound_selection(self):
         clean = validate_public_kwargs(
             {
-                "raw_video_media": "MEDIA-2026-00001",
+                "raw_video_media": "MEDIA-00000000000000000000000000000001",
                 "sound_id": "SOUND-2026-00001",
                 "sound_start_ms": 1000,
                 "sound_duration_ms": 5000,
@@ -51,7 +51,7 @@ class TestShortsApiContracts(FrappeTestCase):
     def test_conflicting_aliases_and_malformed_ids_are_rejected(self):
         with self.assertRaises(ShortsError) as ctx:
             validate_public_kwargs(
-                {"raw_video_media": "MEDIA-2026-00001", "media_id": "MEDIA-2026-00002"},
+                {"raw_video_media": "MEDIA-00000000000000000000000000000001", "media_id": "MEDIA-00000000000000000000000000000002"},
                 ENDPOINT_SPECS["create_short"],
             )
         self.assertEqual(ctx.exception.code, "SHORTS_ALIAS_CONFLICT")

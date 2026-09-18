@@ -85,12 +85,12 @@ class TestWishlistAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(row.removed_on)
         self.assertEqual(int(frappe.db.get_value("AOS Ad", self.ad.name, "wishlist_count") or 0), 0)
 
-    def test_legacy_toggle_shape_and_internal_ad_name_are_rejected(self):
-        legacy = self._add(id=self.ad.public_id, wishlisted=1)
+    def test_unknown_fields_and_internal_ad_name_are_rejected(self):
+        invalid = self._add(ad_id=self.ad.public_id, unexpected=True)
         internal_name = self._add(ad_id=self.ad.name)
 
-        self.assertFalse(legacy.get("ok"), legacy)
-        self.assertEqual(legacy.get("error"), "INVALID_WISHLIST_REQUEST")
+        self.assertFalse(invalid.get("ok"), invalid)
+        self.assertEqual(invalid.get("error"), "INVALID_WISHLIST_REQUEST")
         self.assertFalse(internal_name.get("ok"), internal_name)
         self.assertEqual(internal_name.get("error"), "AD_NOT_FOUND")
 

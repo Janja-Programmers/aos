@@ -1,11 +1,9 @@
 {
  "actions": [],
- "autoname": "naming_series:",
  "creation": "2026-07-01 02:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "owner_user",
   "purpose",
   "status",
@@ -67,13 +65,6 @@
   "replaced_by_media"
  ],
  "fields": [
-  {
-   "default": "MEDIA-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "MEDIA-.YYYY.-.#####"
-  },
   {
    "fieldname": "owner_user",
    "fieldtype": "Link",

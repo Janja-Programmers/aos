@@ -38,5 +38,5 @@ class TestAuthDeleteRestoreAPI(AOSFeatureTestMixin, FrappeTestCase):
             self.assertEqual(response.get("message"), "Invalid or expired OTP.")
 
     def test_unknown_fields_are_rejected(self):
-        response = restore_account_impl(email="person@example.com", otp="123456", verification_code="legacy")
+        response = restore_account_impl(email="person@example.com", otp="123456", unexpected="x")
         self.assertEqual(response.get("error"), "AUTH_UNKNOWN_FIELD")

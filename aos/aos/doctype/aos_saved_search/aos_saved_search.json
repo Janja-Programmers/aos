@@ -1,11 +1,9 @@
 {
  "actions": [],
- "autoname": "naming_series:",
  "creation": "2026-02-15 15:12:31.824084",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "public_id",
   "title",
   "user",
@@ -72,13 +70,6 @@
    "options": "User",
    "reqd": 1,
    "read_only": 1
-  },
-  {
-   "default": "SEARCH-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "SEARCH-.YYYY.-.#####"
   }
  ],
  "grid_page_length": 50,
@@ -88,7 +79,6 @@
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Saved Search",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {

@@ -6,7 +6,6 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "service_type",
   "status",
   "aggregate_section",
@@ -74,13 +73,6 @@
   "work_replay_count"
  ],
  "fields": [
-  {
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Naming Series",
-   "options": "OUTBOX-.YYYY.-.#####",
-   "reqd": 1
-  },
   {
    "fieldname": "service_type",
    "fieldtype": "Select",
@@ -486,7 +478,6 @@
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Transactional Outbox",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {

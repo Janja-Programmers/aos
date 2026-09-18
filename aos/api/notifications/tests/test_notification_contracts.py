@@ -85,7 +85,7 @@ class TestNotificationContracts(unittest.TestCase):
         with self.assertRaises(NotificationContractError):
             validate_persistent_payload("message", {"conversation_id": "CONV-1"})
 
-    def test_historical_public_payload_sanitizer_fails_closed(self):
+    def test_public_payload_sanitizer_fails_closed_for_invalid_persisted_data(self):
         safe = sanitize_public_payload(
             "short_comment",
             {

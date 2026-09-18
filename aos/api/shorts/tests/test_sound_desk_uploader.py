@@ -127,7 +127,7 @@ class TestSoundMediaHooks(FrappeTestCase):
             patch("aos.api.shorts.sounds._is_staff", return_value=False),
         ):
             response = create_sound_impl(
-                sound_media="MEDIA-2026-00001",
+                sound_media="MEDIA-00000000000000000000000000000001",
                 title="Spoofed original",
                 artist="Creator",
                 source_type="original",

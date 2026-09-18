@@ -1,5 +1,36 @@
 # Accounts API
 
+## Overview
+Accounts owns the AOS user-facing account/profile model and authenticated preference presentation. It resolves account identity, public profile data, profile media, privacy-safe projections, and current-user preference reads/updates.
+
+## Responsibilities
+Accounts owns `AOS Profile`, public account IDs, profile projection, profile/media updates, account lookup rules, and Accounts-facing preference endpoints. It exposes a stable account resolution boundary to Social, Sellers, Ads and other domains.
+
+## Boundaries
+Authentication owns credentials/sessions, Localization owns country/currency/language/location validation, Media owns media lifecycle, and Verification owns verification workflow. Accounts reads their canonical projections/services instead of implementing parallel state machines.
+
+## Architecture
+```text
+Versioned Accounts API -> accounts service/serializers -> Accounts repository + Localization/Media/Verification boundaries -> AOS Profile / AOS User Preference
+```
+
+## Data Model
+- `AOS Profile`: one-to-one account/profile record keyed by random `ACC-*` identity and linked uniquely to a Frappe User.
+- `AOS User Preference`: one per user; persisted locale preferences validated by Localization and exposed through Accounts endpoints.
+
+## Fields
+| Model | Field | Required / constraint | Purpose |
+|---|---|---|---|
+| AOS Profile | `name` | random `ACC-*` PK | Stable public account identity. |
+| AOS Profile | `user` | unique Link | Canonical Frappe User relationship. |
+| AOS Profile | display/profile fields | bounded | Public account presentation. |
+| AOS Profile | profile/cover media | Media links | Canonical account images. |
+| AOS Profile | `is_verified` | maintained projection | Fast public verification eligibility/filter projection. |
+| AOS User Preference | user + locale fields | one per user | Current persisted localization preferences. |
+
+## API
+Accounts endpoints expose current/public profile reads, permitted profile updates, and authenticated preference reads/updates with strict inputs and privacy-aware serialization. Client-visible IDs are opaque account IDs; internal User names are not a replacement public identity.
+
 <!-- BEGIN CODE-DERIVED ENDPOINTS -->
 ## Endpoint inventory (code-derived)
 
@@ -16,7 +47,24 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
-## Overview
+## Cross-feature Dependencies
+Accounts consumes Localization validators, Media lifecycle/projection, and Verification summary state. Social, Sellers, Ads and Wishlist consume Accounts identity/profile resolution rather than independently mapping Frappe Users to AOS accounts.
+
+## Transaction / Concurrency Model
+Profile/preference writes use database uniqueness and row locking where mutation races matter, and rely on normal Frappe request transaction semantics. Verification is read through its repository boundary. No process-local correctness state is used.
+
+## Caching
+Profile/preference cache use is shared and invalidated from authoritative writes where applicable. Sensitive/private state is not exposed through public caches.
+
+## Performance / Scalability
+Random account identity allocation avoids a naming-series write and an unnecessary pre-insert existence query. List/profile projections select only needed fields where practical; shared DB/Redis make reads/writes independent of the serving application node.
+
+## Testing
+Tests under `aos/api/accounts/tests` and shared account/auth integration suites cover account resolution, privacy, media, preferences, schema indexes, and lifecycle behavior. Shared helpers track created users/profiles/preferences/media and restore modified reference/config state during teardown.
+
+## Detailed Reference
+
+### Overview
 
 Accounts owns the AOS product profile and the authenticated APIs that read or mutate it. It also exposes the authenticated user's persisted localization preference through a thin Accounts boundary. The canonical public account identifier is the immutable `AOS Profile.name` value in `ACC-*` form. The Frappe `User.name`/email remains an internal authentication identity and is never accepted as an Accounts public profile identifier.
 
@@ -24,7 +72,7 @@ Accounts does not own login, sessions, passwords, 2FA, email verification, passw
 
 All public Accounts responses use the standard AOS envelope: success is `{ok, message, data}` and failure is `{ok, message, error, data}`. Clients branch on the stable `error` code rather than message text.
 
-## Architecture
+### Architecture
 
 ```text
 Client
@@ -44,15 +92,15 @@ Client
 
 Every Accounts v1 wrapper delegates through the platform canonical `aos.api.shared.transport.execute_endpoint` boundary. It strips only Frappe-owned transport metadata such as `cmd`; domain request fields remain visible to Accounts so unknown client fields can be rejected. Endpoint functions are orchestration-only; profile rules, data access, serialization, identity resolution, and localization semantics live in reusable services.
 
-## Public identity
+### Public identity
 
 `AOS Profile.name` is the account's public immutable identifier. It has the form `ACC-` followed by a 20-character opaque Base32 token. Requests that identify another account accept only this identifier. Email addresses and Frappe `User.name` are not aliases for public account IDs.
 
 Internally, `AOS Profile.user` links the profile to the Frappe `User` authentication record. Backend-only serializers may carry that internal identity while joining other features, but public Accounts responses never expose it as an account identifier.
 
-## Data layer
+### Data layer
 
-### `AOS Profile`
+#### `AOS Profile`
 
 `AOS Profile` is the Accounts aggregate root for product-profile state. Cardinality is exactly one profile per managed AOS user. `name` is the immutable public account ID; `user` is a unique internal Link to Frappe `User`. Creation is part of Authentication account bootstrap. Read paths never create or repair a missing profile.
 
@@ -75,15 +123,15 @@ Internally, `AOS Profile.user` links the profile to the Frappe `User` authentica
 
 The primary key indexes `name`. `user` is unique, enforcing one profile per authentication identity and resolving concurrent bootstrap races at the database boundary. `profile_image_media`, `account_status`, `restore_deadline`, and `purge_status` have the indexes required by their current access paths. Accounts installs composite lifecycle indexes on `(account_status, restore_deadline)` and `(account_status, purge_status, restore_deadline)` for bounded lifecycle/purge scans.
 
-### `AOS User Preference` dependency
+#### `AOS User Preference` dependency
 
 `AOS User Preference` belongs to Localization, not Accounts. Accounts only exposes authenticated read/update APIs over Localization's service. There is exactly one row per user: `user` is required and unique and is also the document naming key. The relevant persisted fields are `country`, `currency`, `language`, and optional `location`.
 
 Localization owns validation against Country/Currency/Language/AOS Location master data, row locking for mutation, shared-cache invalidation, and the country/location consistency invariant. Accounts does not create preferences during reads and does not make seller/ad/storefront decisions when preferences change.
 
-## Endpoint contracts
+### Endpoint contracts
 
-### GET `/api/method/aos.api.v1.accounts.get_my_profile`
+#### GET `/api/method/aos.api.v1.accounts.get_my_profile`
 
 **Authentication:** required active/enabled account with required authenticated bootstrap state.
 
@@ -101,7 +149,7 @@ Localization owns validation against Country/Currency/Language/AOS Location mast
 
 **Important errors:** `UNAUTHORIZED`, canonical account-state Auth errors, `PREFERENCE_MISSING`, `INVALID_PROFILE_FIELD`, `PROFILE_NOT_FOUND`, rate-limit errors, and `INTERNAL_ERROR`.
 
-### GET `/api/method/aos.api.v1.accounts.get_profile`
+#### GET `/api/method/aos.api.v1.accounts.get_profile`
 
 **Authentication:** required active/enabled account.
 
@@ -121,7 +169,7 @@ Localization owns validation against Country/Currency/Language/AOS Location mast
 
 **Important errors:** `UNAUTHORIZED`, canonical account-state Auth errors, `ACCOUNT_ID_REQUIRED`, `INVALID_PROFILE_FIELD`, `INVALID_ACCOUNT_ID`, `ACCOUNT_NOT_FOUND`, `PROFILE_UNAVAILABLE`, rate-limit errors, and `INTERNAL_ERROR`.
 
-### POST `/api/method/aos.api.v1.accounts.update_my_profile`
+#### POST `/api/method/aos.api.v1.accounts.update_my_profile`
 
 **Authentication:** required active/enabled account with required preference state. Ownership is always derived from the authenticated session; no target account field exists.
 
@@ -150,7 +198,7 @@ At least one accepted field is required. Unknown and server-controlled fields ar
 
 **Important errors:** profile validation errors, Media authorization/lifecycle errors such as `MEDIA_ACCESS_DENIED`/`MEDIA_NOT_FOUND`, account-state Auth errors, rate-limit errors, and `INTERNAL_ERROR`.
 
-### GET `/api/method/aos.api.v1.accounts.get_my_preference`
+#### GET `/api/method/aos.api.v1.accounts.get_my_preference`
 
 **Authentication:** required active/enabled account.
 
@@ -175,7 +223,7 @@ At least one accepted field is required. Unknown and server-controlled fields ar
 
 **Side effects / transaction / retry:** read-only, private/no-store, no row creation or repair, retry-safe. Missing required state returns `PREFERENCE_MISSING`.
 
-### POST `/api/method/aos.api.v1.accounts.update_my_preference`
+#### POST `/api/method/aos.api.v1.accounts.update_my_preference`
 
 **Authentication:** required active/enabled account.
 
@@ -195,7 +243,7 @@ At least one accepted field is required. Unknown and server-controlled fields ar
 
 **Important errors:** `PREFERENCE_UNKNOWN_FIELD`, `VALIDATION_ERROR`, `PREFERENCE_MISSING`, `INVALID_COUNTRY`, `INVALID_CURRENCY`, `DISABLED_CURRENCY`, `INVALID_LANGUAGE`, `DISABLED_LANGUAGE`, `INVALID_LOCATION`, rate-limit errors, and `INTERNAL_ERROR`.
 
-## Business rules
+### Business rules
 
 A user's country preference is the current mutable browsing/buyer market. It is not the market ownership record for listings. A seller is also a buyer and may switch country at any time.
 
@@ -203,7 +251,7 @@ An Ad owns its persisted `country`, `location`, and `currency` after creation. N
 
 Currency and language preferences are independently mutable and are not automatically forced when country changes. Localization's current validation/master-data rules are authoritative.
 
-## Authorization, privacy, and security
+### Authorization, privacy, and security
 
 - Every Accounts endpoint is session-authenticated and runs the canonical account-state guard. Deleted, suspended, disabled, and Guest identities cannot use normal authenticated Accounts mutations.
 - Cross-user profile mutation is impossible by contract because update ownership comes only from the session.
@@ -215,7 +263,7 @@ Currency and language preferences are independently mutable and are not automati
 - Unexpected exceptions are logged server-side and become safe `INTERNAL_ERROR` responses; stack traces, SQL, filesystem paths, secrets, and raw internal identities are not returned.
 - Rate limits are shared across nodes through Redis/Frappe cache; no process-local counter or lock protects correctness.
 
-## Transactions and concurrency
+### Transactions and concurrency
 
 Profile mutations lock the unique Profile row with `SELECT ... FOR UPDATE`. Preference mutations lock the unique User Preference row similarly. These locks are database-scoped and work with multiple Frappe application nodes. The unique `AOS Profile.user` and `AOS User Preference.user` constraints are the final duplicate-creation barriers.
 
@@ -223,7 +271,7 @@ Authentication bootstrap treats duplicate profile/preference inserts as a normal
 
 Media/Profile/User changes participate in one request transaction. Preference validation computes the complete next country/currency/language/location state under lock before saving. Accounts mutation endpoints do not perform manual success commits.
 
-## Scalability and high availability
+### Scalability and high availability
 
 Accounts hot paths use bounded projections rather than loading arbitrary document graphs. Public/self Profile lookup resolves a single Profile+User row through indexed primary/unique keys. Seller, verification, Social relationship, and Media presentation data are bounded one-account projections. The internal identity serializer supports batch lookup to avoid N+1 identity queries in cross-feature lists.
 
@@ -233,33 +281,33 @@ Accounts exposes no list/search endpoint, so there is no unbounded profile enume
 
 Lifecycle/purge scans use dedicated composite indexes. The public account primary key and internal user link are indexed by primary/unique constraints. Additional speculative indexes are intentionally avoided unless a current query path requires them.
 
-## Cross-feature integrations
+### Cross-feature integrations
 
-### Authentication
+#### Authentication
 
 Authentication supplies session identity, account-state rules, bootstrap creation, canonical `/me`, login/logout, credentials, 2FA, email verification, and delete/restore authentication flows. Auth bootstrap preferences use the same four fields as Accounts: `country`, `currency`, `language`, `location`.
 
-### Localization
+#### Localization
 
 Localization owns master data, default selection, guest/authenticated context resolution, preference persistence semantics, country/location consistency, validation, row locking, and preference-cache invalidation. Accounts delegates rather than reproducing those rules.
 
-### Media
+#### Media
 
 Media owns upload, storage, purpose policy, ownership, lifecycle, attachment references, replacement/release semantics, and URL generation. Accounts attaches only Media authorized for the current Profile's `profile_image` field.
 
-### Ads
+#### Ads
 
 Ads owns the market context persisted on each Ad. Account/Localization preference updates have no side effect on Ads. Existing Ad location validation uses the Ad's persisted country.
 
-### Sellers and Verification
+#### Sellers and Verification
 
 Accounts reads bounded seller/verification display projections. Sellers and Verification remain authoritative for lifecycle/state changes. Accounts profile mutation cannot set either state.
 
-### Social
+#### Social
 
 Social owns follow/block relationships and friend counts. Accounts uses Social's relationship projection to decide whether a target public profile is available and to attach viewer-relative relationship fields; it does not duplicate Social mutation logic.
 
-## Frontend contract
+### Frontend contract
 
 Web/mobile clients should rely on these current contracts:
 

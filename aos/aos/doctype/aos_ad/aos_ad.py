@@ -7,15 +7,15 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import add_days, now_datetime, today
 
-from aos.services.ads.constants import STATUS_REVIEWING
-from aos.services.ads.errors import AdsError
-from aos.services.ads.lifecycle import normalize_status, validate_status_transition
 from aos.services.ads.constants import (
     MAX_DESCRIPTION_LENGTH,
     MAX_TITLE_LENGTH,
     MIN_DESCRIPTION_LENGTH,
     MIN_TITLE_LENGTH,
+    STATUS_REVIEWING,
 )
+from aos.services.ads.errors import AdsError
+from aos.services.ads.lifecycle import normalize_status, validate_status_transition
 from aos.services.ads.validation import (
     normalize_full_ad_payload,
     normalize_pricing,
@@ -23,11 +23,12 @@ from aos.services.ads.validation import (
     persisted_offer_value,
 )
 from aos.services.catalog.errors import CatalogError
+from aos.services.localization import validate_country, validate_currency, validate_location
+from aos.services.marketplace_discovery.ids import ensure_public_id
 from aos.services.media.media_service import MediaError, MediaService
-from aos.services.localization import validate_country, validate_currency
 from aos.utils.aos_settings import get_aos_settings_snapshot
 from aos.utils.doctype_permissions import has_doctype_permission
-from aos.services.marketplace_discovery.ids import ensure_public_id
+from aos.utils.identifiers import new_prefixed_name
 
 _SYSTEM_ACTIONS = frozenset({"moderation_allow", "moderation_reject", "moderation_review", "manual_review_allow", "manual_review_reject", "expire", "suspend"})
 
@@ -48,6 +49,9 @@ class AOSAd(Document):
     controller remains the fail-closed database boundary for ownership,
     lifecycle, market, Catalog, Media, and persisted-value integrity.
     """
+
+    def autoname(self):
+        self.name = new_prefixed_name("AD")
 
     def before_insert(self):
         ensure_public_id(self)
@@ -170,7 +174,7 @@ class AOSAd(Document):
                 if self.status != STATUS_REVIEWING:
                     frappe.throw("New ads must enter the Reviewing state.", exc=frappe.ValidationError)
                 return
-            if action in {"import", "migration"}:
+            if action == "import":
                 if not self._is_privileged():
                     frappe.throw("Only privileged system operations may import ads.", exc=frappe.PermissionError)
                 return
@@ -183,7 +187,7 @@ class AOSAd(Document):
         new_status = _clean(self.status)
         if old_status != new_status:
             validate_status_transition(old_status, new_status, action=action)
-        elif old_status in {"Deleted", "Suspended"} and action not in {"migration"}:
+        elif old_status in {"Deleted", "Suspended"} and action != "import":
             frappe.throw("This ad cannot be modified.", exc=frappe.ValidationError)
 
     def _validate_seller_state(self) -> None:
@@ -193,7 +197,7 @@ class AOSAd(Document):
         action = self._status_action()
         # Expiry/suspension/removal must still work after seller restriction;
         # all seller mutations and moderation activation fail closed.
-        if row.status != "Active" and action not in {"expire", "suspend", "delete", "migration"}:
+        if row.status != "Active" and action not in {"expire", "suspend", "delete", "import"}:
             frappe.throw("Seller account is not active.", exc=frappe.PermissionError)
 
     def _market_requires_validation(self) -> bool:
@@ -216,16 +220,10 @@ class AOSAd(Document):
         self.currency = currency
 
     def _validate_location(self) -> None:
-        location = frappe.db.get_value(
-            "AOS Location",
-            self.location,
-            ["country", "is_active"],
-            as_dict=True,
-        )
-        if not location or int(location.is_active or 0) != 1:
-            frappe.throw("Invalid location.", exc=frappe.ValidationError)
-        if _clean(location.country) != self.country:
-            frappe.throw("Location does not belong to the ad market.", exc=frappe.ValidationError)
+        location, error = validate_location(self.location, country=self.country, required=True)
+        if error:
+            frappe.throw(str(error.get("message") or "Invalid location."), exc=frappe.ValidationError)
+        self.location = location
 
     def _content_requires_full_validation(self) -> bool:
         if self.is_new():

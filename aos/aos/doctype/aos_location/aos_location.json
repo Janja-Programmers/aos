@@ -44,7 +44,8 @@
    "fieldname": "location",
    "fieldtype": "Data",
    "label": "Location",
-   "reqd": 1
+   "reqd": 1,
+   "in_list_view": 1
   }
  ],
  "grid_page_length": 50,
@@ -54,7 +55,7 @@
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Location",
- "naming_rule": "By fieldname",
+ "naming_rule": "Random",
  "owner": "Administrator",
  "permissions": [
   {

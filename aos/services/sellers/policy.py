@@ -9,6 +9,7 @@ from frappe.utils import now_datetime
 
 from aos.api.shared.db import is_duplicate_entry_error
 from aos.services.notifications.service import NotificationService
+from aos.services.verification.repository import lock_request_for_user
 
 from .constants import (
     SELLER_DOCTYPE,
@@ -23,7 +24,7 @@ from .constants import (
 )
 from .errors import SellerNotFoundError, SellerPermissionError, SellerStateError, SellerValidationError
 from .observability import seller_log
-from .repository import get_by_user, lock_by_name, lock_verification_for_user
+from .repository import get_by_user, lock_by_name
 from .validation import normalize_business_category
 
 _ALLOWED_TRANSITIONS = {
@@ -96,7 +97,7 @@ def get_or_create_seller(user: str):
     if not frappe.db.exists("User", clean_user) or not frappe.db.exists("AOS Profile", {"user": clean_user}):
         raise SellerValidationError("Account does not exist.", code="ACCOUNT_NOT_FOUND", http_status=404)
 
-    verification = lock_verification_for_user(clean_user)
+    verification = lock_request_for_user(clean_user)
     # Re-check after acquiring the Verification lock: a concurrent creator may
     # have completed while this transaction was waiting for the same account.
     existing = frappe.db.get_value(SELLER_DOCTYPE, {"user": clean_user}, "name")

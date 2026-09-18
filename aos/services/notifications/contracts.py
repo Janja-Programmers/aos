@@ -254,8 +254,8 @@ def validate_persistent_payload(notification_type: str, payload: Mapping[str, An
 def sanitize_public_payload(notification_type: str, payload: Any) -> dict[str, Any]:
     """Return only category-contracted public fields from a stored payload.
 
-    Historical rows can predate the current builders, so serialization is
-    deliberately fail-closed rather than raising and breaking the inbox.
+    Persisted rows are treated as untrusted at the public boundary, so
+    serialization fails closed rather than breaking the inbox.
     """
     try:
         if isinstance(payload, str):

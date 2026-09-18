@@ -5,7 +5,6 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "target_section",
   "target_doctype",
   "target_name",
@@ -38,13 +37,6 @@
   "completed_at"
  ],
  "fields": [
-  {
-   "default": "MOD-JOB-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "MOD-JOB-.YYYY.-.#####"
-  },
   {
    "fieldname": "target_section",
    "fieldtype": "Section Break",
@@ -248,7 +240,6 @@
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Moderation Job",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {

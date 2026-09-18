@@ -51,9 +51,9 @@ class TestAuthPasswordChangeAPI(AOSFeatureTestMixin, FrappeTestCase):
 
     def test_password_mismatch_and_unknown_field(self):
         mismatch = change_password_impl(current_password="x", new_password="NewStrongPass123!", confirm_password="DifferentStrong123!")
-        legacy = change_password_impl(current_password="x", new_password="NewStrongPass123!", confirm_password="NewStrongPass123!", logout_all=True)
+        response = change_password_impl(current_password="x", new_password="NewStrongPass123!", confirm_password="NewStrongPass123!", unexpected=True)
         self.assertEqual(mismatch.get("error"), "PASSWORD_MISMATCH")
-        self.assertEqual(legacy.get("error"), "AUTH_UNKNOWN_FIELD")
+        self.assertEqual(response.get("error"), "AUTH_UNKNOWN_FIELD")
 
     def test_reused_new_password_is_rejected(self):
         with patch("aos.api.auth.password_change.auth_rate_limit", return_value=None), patch("aos.api.auth.password_change.auth_ip_limit", return_value=None):

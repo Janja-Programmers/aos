@@ -77,12 +77,12 @@ class TestAuthSessionAPI(AOSFeatureTestMixin, FrappeTestCase):
         ver.save(ignore_permissions=True)
         frappe.db.commit()
 
-    def test_login_rejects_legacy_aliases_unknown_fields_and_username_shape(self):
+    def test_login_rejects_unknown_fields_and_invalid_identifier_shape(self):
         with patch("aos.api.auth.session._rate_limit_login", return_value=None):
-            alias = login_impl(email="person@example.com", password="StrongPass123!", client_type="mobile")
+            unknown = login_impl(email_address="person@example.com", password="StrongPass123!", client_type="mobile")
             extra = login_impl(identifier="person@example.com", password="StrongPass123!", client_type="mobile", remember_me=True)
             username = login_impl(identifier="plain_username", password="StrongPass123!", client_type="mobile")
-        self.assertEqual(alias.get("error"), "AUTH_UNKNOWN_FIELD")
+        self.assertEqual(unknown.get("error"), "AUTH_UNKNOWN_FIELD")
         self.assertEqual(extra.get("error"), "AUTH_UNKNOWN_FIELD")
         self.assertEqual(username.get("error"), "VALIDATION_ERROR")
 

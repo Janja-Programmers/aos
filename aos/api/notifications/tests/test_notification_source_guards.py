@@ -237,7 +237,7 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
         self.assertEqual(notification_adapter.args[5].value, "handle_delivery_callback_impl")
         self.assertIn("getattr(adapter.api_module, adapter.endpoint_impl_name)", source)
 
-    def test_terminal_delivery_jobs_use_historical_identifier_snapshots_with_strict_live_validation(self):
+    def test_terminal_delivery_jobs_use_identifier_snapshots_with_strict_live_validation(self):
         source = _source(
             "aos/aos/doctype/aos_notification_delivery_job/aos_notification_delivery_job.py"
         )

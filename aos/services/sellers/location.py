@@ -1,4 +1,4 @@
-"""Seller-owned location persistence using hardened Maps primitives."""
+"""Seller-owned location persistence using canonical Maps primitives."""
 
 from __future__ import annotations
 

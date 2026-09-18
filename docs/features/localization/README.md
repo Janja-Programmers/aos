@@ -1,5 +1,38 @@
 # Localization
 
+## Overview
+Localization is the canonical backend authority for AOS country, currency, language, and configured marketplace-location vocabulary. It resolves effective locale context for guest and authenticated traffic without coupling browsing country, display currency, and language into a single mutable value.
+
+## Responsibilities
+Localization validates and canonicalizes Country, Currency, Language, and `AOS Location` values; exposes locale bootstrap data; resolves effective locale context; provides active country-scoped locations; owns localization reference caches; and supplies shared validators/serializers to market-aware domains.
+
+## Boundaries
+Authentication creates the initial preference row, Accounts owns authenticated preference mutation, Maps owns coordinates/geocoding/routing, and foreign-exchange services own rates and monetary conversion. Localization does not duplicate those responsibilities.
+
+## Architecture
+```text
+Versioned API -> localization request layer -> aos.services.localization -> validators/repository/serializers -> Frappe DocTypes + shared cache
+```
+Authenticated preference writes are Accounts-owned and call Localization validators under the current request transaction.
+
+## Data Model
+- `Country`, `Currency`, and `Language`: Frappe reference records consumed as canonical identifiers.
+- `AOS Location`: configured human-readable marketplace location scoped to a country; hash-named reference data.
+- `AOS User Preference`: one per user, containing the persisted country/currency/language/location choices used by Accounts and Auth.
+
+## Fields
+| Model | Field | Required / constraint | Purpose |
+|---|---|---|---|
+| AOS Location | `location` | required; list-visible | Human-readable marketplace location label. |
+| AOS Location | `country` | required Link | Market/country ownership of the location. |
+| AOS Location | `is_active` | boolean | Public availability gate. |
+| AOS User Preference | `user` | unique relationship | Preference owner. |
+| AOS User Preference | `country`, `currency`, `language` | canonical references | Independent locale dimensions. |
+| AOS User Preference | `location` | optional; must belong to country | Optional marketplace location. |
+
+## API
+Localization exposes the versioned locale bundle, locale-context resolution, and paginated locations endpoints. Accounts exposes authenticated preference read/update. Inputs are strict, pagination is bounded, and unknown client fields are rejected at the request boundary.
+
 <!-- BEGIN CODE-DERIVED ENDPOINTS -->
 ## Endpoint inventory (code-derived)
 
@@ -14,9 +47,26 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
+## Cross-feature Dependencies
+Auth and Accounts consume Localization for canonical preferences; Ads and Sellers consume location/country validation; Maps remains authoritative for geographic coordinates and routing. The feature does not reach into those domains to recreate their rules.
+
+## Transaction / Concurrency Model
+Reference reads are side-effect free. Preference writes lock the current user's row when required, validate through Localization, and rely on the request transaction for atomic persistence. Database uniqueness and link integrity are the final correctness boundaries; no process-local lock or counter is used.
+
+## Caching
+Public reference data and location lookups use Frappe/shared cache facilities with explicit invalidation from the owning DocType hooks. Correctness does not rely on worker-local mutable state.
+
+## Performance / Scalability
+Hot reads use bounded queries and cacheable reference data. Location label resolution supports batch reads for list projections. High availability assumes shared MariaDB/Redis and stateless application workers; capacity still requires production load testing.
+
+## Testing
+Feature tests live under `aos/api/localization/tests` with cross-feature contract coverage under `aos/tests`. Tests validate strict inputs, locale resolution, cache invalidation, preference invariants, and location behavior. Shared test fixtures restore modified reference/configuration state and clean records they create.
+
+## Detailed Reference
+
 This is the single authoritative backend document for the AOS Localization feature. Other feature documents may mention Localization ownership, but request/response contracts, data invariants, caching, and operational behavior are defined here.
 
-## A. Feature overview
+### A. Feature overview
 
 Localization provides the canonical country, currency, language, and country-scoped location vocabulary used by AOS. It also resolves the effective locale context for guest/bootstrap traffic and exposes the current authenticated user's persisted localization preference through the Accounts API.
 
@@ -29,7 +79,7 @@ AOS intentionally treats country, currency, and language as independent dimensio
 
 Changing one dimension does not silently rewrite another. Country is the authenticated user's mutable browsing/buyer market. A country change may clear an existing location if that location does not belong to the new country; currency and language remain independently editable. Existing Ads keep their own persisted market independently.
 
-### Responsibilities owned by Localization
+#### Responsibilities owned by Localization
 
 - validate and canonicalize Country, Currency, Language, and AOS Location values;
 - expose the public locale bundle;
@@ -40,7 +90,7 @@ Changing one dimension does not silently rewrite another. Country is the authent
 - maintain shared reference-data cache invalidation hooks;
 - enforce Localization-owned database constraints and indexes.
 
-### Related responsibilities owned elsewhere
+#### Related responsibilities owned elsewhere
 
 - **Auth** owns creation of the initial `AOS User Preference` during registration/social-login/auth bootstrap. Localization/account reads do not create or repair missing rows.
 - **Accounts** owns the authenticated `get_my_preference` and `update_my_preference` API endpoints and authorization to mutate the current user's persisted preference.
@@ -48,7 +98,7 @@ Changing one dimension does not silently rewrite another. Country is the authent
 - **Translation** owns text/message translation and translation-service configuration. Selecting a Language is Localization; translating content is not.
 - **Maps/geocoding** owns coordinates, routing, and map search. `AOS Location` is a configured marketplace location vocabulary, not a geocoder.
 
-### Major flows
+#### Major flows
 
 1. **Application bootstrap:** client fetches `get_locale_bundle` and caches the returned reference vocabulary locally according to application policy.
 2. **Guest bootstrap:** client calls `resolve_locale_context`; explicit values win, then safe hints, then validated AOS defaults.
@@ -57,7 +107,7 @@ Changing one dimension does not silently rewrite another. Country is the authent
 5. **Account preference read/update:** authenticated client uses `aos.api.v1.accounts.get_my_preference` and `aos.api.v1.accounts.update_my_preference`.
 6. **Auth creation:** registration/social-login/auth bootstrap creates the one required preference row if it does not already exist.
 
-## B. Architecture
+### B. Architecture
 
 ```text
 Client / consuming AOS domain
@@ -91,7 +141,7 @@ AOS User Preference controller invariants
 database transaction + post-commit cache invalidation
 ```
 
-### Module responsibilities
+#### Module responsibilities
 
 | Module | Responsibility |
 |---|---|
@@ -111,15 +161,15 @@ database transaction + post-commit cache invalidation
 | `aos/aos/doctype/aos_user_preference/aos_user_preference.py` | Direct DocType invariant enforcement for preferences, including Link validation and country/location consistency. |
 | `aos/aos/doctype/aos_settings/aos_settings.py` | Validates Localization default settings and invalidates settings/reference cache on change. |
 
-### Stateless / multi-node design
+#### Stateless / multi-node design
 
 Correctness does not depend on module-level mutable state, process-local caches, in-memory locks, or sticky sessions. Authoritative state is in the database. Optional caches and rate-limit counters use Frappe's shared cache/Redis. Any application worker can serve the next request.
 
 Cache invalidation for mutable reference/settings/preference data is performed immediately and again in an `after_commit` callback. The second delete prevents a different node from repopulating pre-commit data and retaining that stale value after the writer commits.
 
-## C. Data model
+### C. Data model
 
-### Relationship diagram
+#### Relationship diagram
 
 ```text
 Frappe User
@@ -139,7 +189,7 @@ AOS Settings (Single)
 
 `AOS Exchange Rate` is deliberately outside this model; it belongs to the FX subsystem.
 
-### AOS Location
+#### AOS Location
 
 **Purpose:** configured country-scoped marketplace location vocabulary used by selectors and preference validation.
 
@@ -161,7 +211,7 @@ AOS Settings (Single)
 
 **Lifecycle/deletion:** direct System Manager CRUD follows Frappe lifecycle. The public list never returns inactive rows. Preference links are validated by controller/service logic and direct DocType validation; a location must exist, be active, and belong to the stored country.
 
-### AOS User Preference
+#### AOS User Preference
 
 **Purpose:** exactly one persisted localization preference per authenticated Frappe User.
 
@@ -188,7 +238,7 @@ AOS Settings (Single)
 
 **Deletion:** deleting a preference removes the persisted state and invalidates the per-user shared cache. Authenticated APIs that require it return `PREFERENCE_MISSING` until Auth creates the invariant row through an approved bootstrap flow.
 
-### AOS Settings (Localization fields)
+#### AOS Settings (Localization fields)
 
 **Purpose:** singleton administrative source for deterministic guest/bootstrap defaults.
 
@@ -204,7 +254,7 @@ Only the following fields belong to Localization:
 
 The controller canonicalizes and validates Localization defaults before saving. Settings cache and Localization reference cache are invalidated immediately and post-commit.
 
-### Frappe Country
+#### Frappe Country
 
 **Purpose:** authoritative country master used by AOS market IDs.
 
@@ -217,7 +267,7 @@ Localization reads these meaningful fields:
 
 Country names and two-letter codes may be accepted as input; the canonical stored/returned context ID is `Country.name`.
 
-### Frappe Currency
+#### Frappe Currency
 
 **Purpose:** authoritative selectable currency vocabulary. FX rates are separate.
 
@@ -232,7 +282,7 @@ Localization reads:
 
 Explicit currency input is trimmed and uppercased before validation. Canonical output is `Currency.name`.
 
-### Frappe Language
+#### Frappe Language
 
 **Purpose:** authoritative selectable language vocabulary.
 
@@ -248,9 +298,9 @@ Localization reads:
 
 `Accept-Language` is bounded to 512 characters and 20 header entries. Parsed exact tags and primary fallbacks are resolved in one bounded database query rather than one query per candidate.
 
-## D. Endpoint reference
+### D. Endpoint reference
 
-### Response envelope
+#### Response envelope
 
 AOS method implementations return one of:
 
@@ -266,7 +316,7 @@ or:
 
 When called through Frappe `/api/method/...`, Frappe returns that AOS object under its normal top-level `message` transport property. Clients branch on `error`, never message text.
 
-### 1. `aos.api.v1.localization.get_locale_bundle`
+#### 1. `aos.api.v1.localization.get_locale_bundle`
 
 **Purpose:** one bootstrap payload containing public country/currency/language reference metadata and validated system defaults.
 
@@ -326,7 +376,7 @@ Success `data`:
 - simultaneous cold misses may perform duplicate bounded rebuilds, but no lock is required for correctness and the rebuild contains no writes/long transactions;
 - safe to retry because it is read-only and deterministic for a given committed configuration.
 
-### 2. `aos.api.v1.localization.resolve_locale_context`
+#### 2. `aos.api.v1.localization.resolve_locale_context`
 
 **Purpose:** resolve one canonical country/currency/language context.
 
@@ -398,7 +448,7 @@ Possible source values are `request`, `geoip`, `accept_language`, `default`, and
 - read-only and safe to retry;
 - no process-local correctness state.
 
-### 3. `aos.api.v1.localization.get_locations`
+#### 3. `aos.api.v1.localization.get_locations`
 
 **Purpose:** return one bounded page of active AOS locations for the effective country.
 
@@ -458,11 +508,11 @@ Success `data`:
 - offset is capped at 10,000; current reference-data scale does not justify keyset pagination;
 - read-only and safe to retry.
 
-### Related authenticated preference endpoints
+#### Related authenticated preference endpoints
 
 These routes are owned by Accounts but are part of the current frontend Localization contract.
 
-#### `aos.api.v1.accounts.get_my_preference`
+##### `aos.api.v1.accounts.get_my_preference`
 
 - **HTTP:** GET only.
 - **Authentication:** authenticated, active account.
@@ -482,7 +532,7 @@ These routes are owned by Accounts but are part of the current frontend Localiza
 
 `location` is nullable. IDs are intentionally minimal; client display metadata comes from `get_locale_bundle` and `get_locations`.
 
-#### `aos.api.v1.accounts.update_my_preference`
+##### `aos.api.v1.accounts.update_my_preference`
 
 - **HTTP:** POST only.
 - **Authentication:** authenticated, active account.
@@ -497,11 +547,11 @@ These routes are owned by Accounts but are part of the current frontend Localiza
 - **Missing row:** returns `PREFERENCE_MISSING`; update does not create it.
 - **Success:** returns the same minimal preference shape as `get_my_preference`.
 
-## E. Frontend contract
+### E. Frontend contract
 
 Every Localization v1 wrapper delegates through the platform canonical `aos.api.shared.transport.execute_endpoint` boundary. Frappe transport metadata such as the framework-owned `cmd` routing field is stripped there before strict Localization validation. Clients must not send or depend on `cmd`; every other unknown client field remains rejected.
 
-### Canonical routes
+#### Canonical routes
 
 ```text
 GET  aos.api.v1.localization.get_locale_bundle
@@ -511,7 +561,7 @@ GET  aos.api.v1.accounts.get_my_preference
 POST aos.api.v1.accounts.update_my_preference
 ```
 
-### Canonical client behavior
+#### Canonical client behavior
 
 - Cache/map Country/Currency/Language display metadata from `get_locale_bundle` by each item's `id`.
 - Treat canonical `country`, `currency`, and `language` in context/preference payloads as strings, not nested objects.
@@ -526,7 +576,7 @@ POST aos.api.v1.accounts.update_my_preference
 - Branch on stable `error` codes and HTTP status, not English message text.
 - GET calls are retry-safe. Preference update is a deterministic partial update; ordinary transport retry is safe in the sense that setting the same values twice converges to the same state, but clients should still avoid uncontrolled retry storms.
 
-## F. Important invariants
+### F. Important invariants
 
 1. `Country.name`, `Currency.name`, and `Language.name` are the canonical stored IDs.
 2. Guest country, currency, and language resolve independently; no implicit coupling changes one because another changed.
@@ -544,9 +594,9 @@ POST aos.api.v1.accounts.update_my_preference
 14. Cache invalidation occurs after commit as well as immediately, preventing stale cross-node refill from surviving a committed update.
 15. No correctness path relies on Python process-local mutable state or in-memory locks.
 
-## G. Scalability and high availability
+### G. Scalability and high availability
 
-### Hot-path assessment
+#### Hot-path assessment
 
 | Area / endpoint | DB queries/request | Cacheability | Index coverage | Write contention | Payload/resource bound | Horizontal-scaling safety | Concurrency risk | Main bottleneck |
 |---|---|---|---|---|---|---|---|---|
@@ -557,7 +607,7 @@ POST aos.api.v1.accounts.update_my_preference
 | `get_my_preference` | Preference cache hit; preference miss adds 1 DB read | Per-user shared cache 300s | unique user | None | Tiny ID-only response | Stateless | None | Shared cache/database latency only. |
 | `update_my_preference` | Write-path dependent; bounded validators + one row lock + document save | Preference cache invalidated | unique user; location PK/constraints | Serialized per preference row only | Four allowed fields | Multi-node safe via DB row lock/unique constraints | Lost update prevented; duplicate row prevented | Normal database write/validation latency; intentionally not a read hot path. |
 
-### Shared cache strategy
+#### Shared cache strategy
 
 **Reference keys:** versioned defaults and bundle keys in shared Frappe Redis, TTL 900 seconds.
 
@@ -571,7 +621,7 @@ POST aos.api.v1.accounts.update_my_preference
 
 **Stampede behavior:** no cache lock is required for correctness. A simultaneous expiration/cold deploy can cause more than one worker to rebuild the same bundle, but each rebuild is bounded to small reference tables and performs no writes. If production telemetry shows burst amplification at the AOS scale target, configure CDN/reverse-proxy caching for the public bundle or add an infrastructure-supported single-flight policy; do not add process-local locks.
 
-### Failure behavior
+#### Failure behavior
 
 - invalid configuration fails closed with `CONFIG_ERROR`; it is never cached as valid data;
 - optional cache failures do not silently substitute incorrect data;
@@ -580,13 +630,13 @@ POST aos.api.v1.accounts.update_my_preference
 - preference/location invariant violations fail with stable validation/business codes rather than partial state;
 - transaction-caught unexpected preference write failures are rolled back before the API returns.
 
-### Application-level readiness
+#### Application-level readiness
 
 The code is designed for multiple web nodes/workers and does not require sticky sessions or process-local correctness state. Read hot paths are bounded, high-read/low-change reference data uses shared cache, user preference uniqueness/concurrency is database-enforced, and public client-controlled sizes are capped.
 
 This is an application-architecture statement, not a claim that one server or a particular deployment can serve one million simultaneous users.
 
-### Infrastructure-level capacity
+#### Infrastructure-level capacity
 
 Capacity must still be validated and sized using production-like load tests and observability. At minimum production planning must cover:
 
@@ -600,9 +650,9 @@ Capacity must still be validated and sized using production-like load tests and 
 - regional network/deployment strategy for global latency;
 - production data-volume and burst load tests before capacity claims.
 
-## H. Testing
+### H. Testing
 
-### Main Localization test modules
+#### Main Localization test modules
 
 - `aos/api/localization/tests/test_api.py` — exact schema-2.0 response shape, GET request contract, guest/auth resolution, strict request fields, pagination, rate limiting, and error safety.
 - `aos/api/localization/tests/test_service.py` — canonical validation, header bounds, independent resolution, cache fallback/hit, bounded bundle failure, ID-only serialization.
@@ -611,7 +661,7 @@ Capacity must still be validated and sized using production-like load tests and 
 - `aos/api/accounts/tests/test_preferences.py` — partial-update preservation, current-schema hot path, strict read fields, `FOR UPDATE`, no read/update auto-creation, localization observability fields, rollback on unexpected mid-operation failure.
 - `aos/tests/test_localization_database_contracts.py` — required indexes, uniqueness constraints, and database contract invariants.
 
-### Commands
+#### Commands
 
 From the Frappe bench containing this app:
 

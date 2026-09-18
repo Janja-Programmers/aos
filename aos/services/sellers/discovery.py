@@ -9,6 +9,7 @@ import frappe
 from aos.api.shared.sql_safety import safe_like_contains
 from aos.services.social.repository import SocialRepository
 from aos.services.social.serializers import relationship_map as social_relationship_map
+from aos.services.verification.repository import get_request_summaries_for_users
 
 from .constants import (
     LIST_ALLOWED_FIELDS,
@@ -53,7 +54,7 @@ _SORTS: dict[str, tuple[list[str], list[str], list[str]]] = {
 }
 
 _ALIAS_EXPR = {
-    "verified_sort": "CASE WHEN v.status = 'Approved' THEN 1 ELSE 0 END",
+    "verified_sort": "COALESCE(p.is_verified, 0)",
     "rating_sort": "COALESCE(s.rating, 0)",
     "followers_sort": "COALESCE(p.total_followers, 0)",
     "reviews_sort": "COALESCE(s.total_reviews, 0)",
@@ -130,7 +131,7 @@ class SellerDiscoveryService:
             )
             params.extend([viewer, viewer])
         if verified is not None:
-            conditions.append("CASE WHEN v.status = 'Approved' THEN 1 ELSE 0 END = %s")
+            conditions.append("COALESCE(p.is_verified, 0) = %s")
             params.append(verified)
         if has_location is not None:
             conditions.append("COALESCE(s.has_location, 0) = %s")
@@ -196,17 +197,15 @@ class SellerDiscoveryService:
                    s.latitude, s.longitude,
                    COALESCE(p.total_followers, 0) AS total_followers,
                    COALESCE(p.total_following, 0) AS total_following,
-                   CASE WHEN v.status = 'Approved' THEN 1 ELSE 0 END AS verified_sort,
+                   COALESCE(p.is_verified, 0) AS verified_sort,
                    COALESCE(s.rating, 0) AS rating_sort,
                    COALESCE(p.total_followers, 0) AS followers_sort,
                    COALESCE(s.total_reviews, 0) AS reviews_sort,
                    COALESCE(s.total_ads, 0) AS ads_sort,
-                   v.verification_type, v.status AS verification_status,
                    {distance_select}
             FROM `tabAOS Seller` s
             INNER JOIN `tabUser` u ON u.name = s.user
             INNER JOIN `tabAOS Profile` p ON p.user = s.user
-            LEFT JOIN `tabAOS Verification Request` v ON v.user = s.user
             WHERE {' AND '.join(conditions)}
             {having}
             ORDER BY {order_by}
@@ -218,6 +217,11 @@ class SellerDiscoveryService:
         has_more = len(rows) > limit
         rows = rows[:limit]
         users = [str(row.user) for row in rows if row.user]
+        verification = get_request_summaries_for_users(users)
+        for row in rows:
+            summary = verification.get(str(row.user))
+            row.verification_type = getattr(summary, "verification_type", None) if summary else None
+            row.verification_status = getattr(summary, "status", None) if summary else None
         displays = display_map(users)
         relationships = self._relationship_map(viewer=viewer if authenticated else None, targets=users, displays=displays)
         friend_counts = self._friend_counts(users)

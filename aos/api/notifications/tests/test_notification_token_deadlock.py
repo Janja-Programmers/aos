@@ -9,7 +9,7 @@ import frappe
 from aos.api.notifications import token as token_api
 
 
-class TestNotificationTokenDeadlockHardening(unittest.TestCase):
+class TestNotificationTokenDeadlockSafety(unittest.TestCase):
     def test_first_time_token_lookup_is_single_indexed_nonlocking_discovery(self):
         with patch.object(frappe.db, "sql", return_value=[]) as sql:
             result = token_api._find_existing_token(token_hash="a" * 64)

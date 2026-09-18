@@ -29,9 +29,21 @@ class AOSFeatureTestMixin:
     def make_prefix(self, namespace: str = "feature") -> str:
         return f"{namespace}-{uuid.uuid4().hex[:10]}"
 
+    def _track_created(self, bucket: str, value: Any) -> None:
+        clean = str(value or "").strip()
+        if not clean:
+            return
+        values = getattr(self, bucket, None)
+        if values is None:
+            values = []
+            setattr(self, bucket, values)
+        if clean not in values:
+            values.append(clean)
+
     def make_user(self, label: str, *, enabled: int = 1, with_preference: bool = True) -> str:
         email = f"{self.prefix}-{label}@example.com"
-        if not frappe.db.exists("User", email):
+        created_user = not frappe.db.exists("User", email)
+        if created_user:
             user = frappe.get_doc(
                 {
                     "doctype": "User",
@@ -59,7 +71,7 @@ class AOSFeatureTestMixin:
         if with_preference:
             self.ensure_user_preference(email)
 
-        if email not in self.created_users:
+        if created_user and email not in self.created_users:
             self.created_users.append(email)
 
         frappe.db.commit()
@@ -256,7 +268,8 @@ class AOSFeatureTestMixin:
 
     def make_category(self) -> str:
         category = f"{self.prefix} Category"
-        if not frappe.db.exists("AOS Category", category):
+        created = not frappe.db.exists("AOS Category", category)
+        if created:
             frappe.get_doc(
                 {
                     "doctype": "AOS Category",
@@ -264,6 +277,8 @@ class AOSFeatureTestMixin:
                     "is_active": 1,
                 }
             ).insert(ignore_permissions=True)
+        if created:
+            self._track_created("created_category_names", category)
         frappe.db.commit()
         return category
 
@@ -271,7 +286,8 @@ class AOSFeatureTestMixin:
         country = country or self.preference_defaults()[0]
         location = f"{self.prefix} Location"
         name = frappe.db.get_value("AOS Location", {"country": country, "location": location}, "name")
-        if not name:
+        created = not bool(name)
+        if created:
             doc = frappe.get_doc(
                 {
                     "doctype": "AOS Location",
@@ -281,6 +297,8 @@ class AOSFeatureTestMixin:
                 }
             ).insert(ignore_permissions=True)
             name = doc.name
+        if created:
+            self._track_created("created_location_names", name)
         frappe.db.commit()
         return str(name)
 
@@ -313,6 +331,7 @@ class AOSFeatureTestMixin:
             }
         )
         media.insert(ignore_permissions=True)
+        self._track_created("created_media_names", media.name)
         frappe.db.commit()
         return media
 
@@ -330,6 +349,7 @@ class AOSFeatureTestMixin:
             }
         )
         seller.insert(ignore_permissions=True)
+        self._track_created("created_seller_names", seller.name)
         frappe.db.commit()
         return seller
 
@@ -365,21 +385,15 @@ class AOSFeatureTestMixin:
         original_user = frappe.session.user
         try:
             frappe.set_user("Administrator")
-            ad.flags.aos_status_action = "migration"
+            ad.flags.aos_status_action = "import"
             ad.insert(ignore_permissions=True)
             frappe.db.commit()
         finally:
             frappe.set_user(original_user)
 
-        # Track the immutable Frappe document identity for teardown. Tests are
-        # free to mutate public/business fields such as title, category, status,
-        # or location; cleanup must never depend on those mutable values.
-        created_ad_names = getattr(self, "created_ad_names", None)
-        if created_ad_names is None:
-            created_ad_names = []
-            self.created_ad_names = created_ad_names
-        if ad.name not in created_ad_names:
-            created_ad_names.append(ad.name)
+        # Track immutable document identity so teardown remains correct even if
+        # the test mutates title, category, status, location, or other fields.
+        self._track_created("created_ad_names", ad.name)
         return ad
 
     def make_conversation(self, user_a: str, user_b: str, *, with_message: bool = False):
@@ -448,7 +462,8 @@ class AOSFeatureTestMixin:
 
     def make_report_reason(self) -> str:
         reason = f"{self.prefix} Abuse"
-        if not frappe.db.exists("AOS Report Reason", reason):
+        created = not frappe.db.exists("AOS Report Reason", reason)
+        if created:
             frappe.get_doc(
                 {
                     "doctype": "AOS Report Reason",
@@ -456,6 +471,8 @@ class AOSFeatureTestMixin:
                     "is_active": 1,
                 }
             ).insert(ignore_permissions=True)
+        if created:
+            self._track_created("created_report_reason_names", reason)
         frappe.db.commit()
         return reason
 
@@ -546,6 +563,32 @@ class AOSFeatureTestMixin:
 
         frappe.set_user("Administrator")
 
+        # Durable jobs and their outbox records must disappear before the domain
+        # rows they reference. These selectors are scoped to exact tracked Ads
+        # and test-owned users, not only mutable display fields.
+        tracked_ads = tuple(name for name in getattr(self, "created_ad_names", []) if name)
+        for job_doctype, table, user_field in (
+            ("AOS Notification Delivery Job", "tabAOS Notification Delivery Job", "user"),
+            ("AOS Search Index Job", "tabAOS Search Index Job", "target_owner"),
+            ("AOS Moderation Job", "tabAOS Moderation Job", "target_owner"),
+        ):
+            if not frappe.db.exists("DocType", job_doctype):
+                continue
+            job_names = set(
+                frappe.get_all(job_doctype, filters={user_field: ["like", email_like]}, pluck="name", limit=0)
+            )
+            if tracked_ads and frappe.get_meta(job_doctype).has_field("target_name"):
+                job_names.update(
+                    frappe.get_all(job_doctype, filters={"target_name": ["in", tracked_ads]}, pluck="name", limit=0)
+                )
+            for job_name in job_names:
+                if frappe.db.exists("DocType", "AOS Transactional Outbox"):
+                    frappe.db.sql(
+                        "DELETE FROM `tabAOS Transactional Outbox` WHERE job_doctype=%s AND job_name=%s",
+                        (job_doctype, job_name),
+                    )
+                frappe.db.sql(f"DELETE FROM `{table}` WHERE name=%s", (job_name,))
+
         # Feature/action rows first.
         frappe.db.sql("DELETE FROM `tabAOS Notification` WHERE user LIKE %s OR actor LIKE %s", (email_like, email_like))
         frappe.db.sql("DELETE FROM `tabAOS Push Token` WHERE user LIKE %s OR device_id LIKE %s OR token LIKE %s", (email_like, like, like))
@@ -589,7 +632,7 @@ class AOSFeatureTestMixin:
         frappe.db.sql("DELETE FROM `tabAOS Wishlist` WHERE user LIKE %s OR ad IN (SELECT name FROM `tabAOS Ad` WHERE title LIKE %s)", (email_like, like))
 
         # ``make_ad`` records exact immutable Ad names. Delete those fixtures by
-        # identity before the legacy prefix sweep so a test that deliberately
+        # identity before the prefix-scoped safety sweep so a test that deliberately
         # changes an Ad title cannot strand an Active Ad while its Seller/User,
         # Category, Location, or Media fixtures are removed below. Keep this
         # idempotent because tearDown may run after a partially failed test.
@@ -630,6 +673,10 @@ class AOSFeatureTestMixin:
             "(SELECT name FROM `tabAOS Seller` WHERE user LIKE %s)",
             (email_like,),
         )
+        for seller_name in list(getattr(self, "created_seller_names", [])):
+            frappe.db.sql("DELETE FROM `tabAOS Seller Operating Hours` WHERE parent=%s", (seller_name,))
+            frappe.db.sql("DELETE FROM `tabAOS Seller` WHERE name=%s", (seller_name,))
+        self.created_seller_names = []
         frappe.db.sql("DELETE FROM `tabAOS Seller` WHERE user LIKE %s", (email_like,))
 
         # Verification evidence must be removed before private Media/Profile rows.
@@ -641,8 +688,22 @@ class AOSFeatureTestMixin:
         frappe.db.sql("DELETE FROM `tabAOS Verification Request` WHERE user LIKE %s", (email_like,))
         if frappe.db.exists("DocType", "AOS Media Processing Job"):
             frappe.db.sql("DELETE FROM `tabAOS Media Processing Job` WHERE owner_user LIKE %s", (email_like,))
+        for media_name in list(getattr(self, "created_media_names", [])):
+            frappe.db.sql("DELETE FROM `tabAOS Media Object` WHERE name=%s", (media_name,))
+        self.created_media_names = []
         frappe.db.sql("DELETE FROM `tabAOS Media Object` WHERE owner_user LIKE %s OR object_key LIKE %s", (email_like, path_like))
 
+        for reason_name in list(getattr(self, "created_report_reason_names", [])):
+            frappe.db.sql("DELETE FROM `tabAOS Report Reason` WHERE name=%s", (reason_name,))
+        self.created_report_reason_names = []
+        for location_name in list(getattr(self, "created_location_names", [])):
+            frappe.db.sql("DELETE FROM `tabAOS Location` WHERE name=%s", (location_name,))
+        self.created_location_names = []
+        for category_name in list(getattr(self, "created_category_names", [])):
+            frappe.db.sql("DELETE FROM `tabAOS Category` WHERE name=%s", (category_name,))
+        self.created_category_names = []
+        # Prefix-scoped deletes remain as an idempotent safety net for records
+        # created directly by a test instead of through these builders.
         frappe.db.sql("DELETE FROM `tabAOS Report Reason` WHERE title LIKE %s", (like,))
         frappe.db.sql("DELETE FROM `tabAOS Location` WHERE location LIKE %s", (like,))
         frappe.db.sql("DELETE FROM `tabAOS Category` WHERE category_name LIKE %s", (like,))

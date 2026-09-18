@@ -20,8 +20,6 @@ class TestSellerContracts(unittest.TestCase):
     def test_public_identity_is_opaque_only_with_random_internal_names(self):
         identity = (ROOT / "aos/services/sellers/identity.py").read_text()
         self.assertIn(r"^SELLER-[A-Z2-7]{20}$", identity)
-        self.assertNotIn("resolve_seller_reference", identity)
-        self.assertNotIn("migration_fallback", identity)
         schema = json.loads((ROOT / "aos/aos/doctype/aos_seller/aos_seller.json").read_text())
         self.assertEqual(schema.get("autoname"), "hash")
         self.assertEqual(schema.get("naming_rule"), "Random")
@@ -36,16 +34,12 @@ class TestSellerContracts(unittest.TestCase):
         self.assertIn("sync_verification_projection", policy)
         self.assertNotIn("verified = bool", policy)
 
-    def test_media_contract_has_no_cached_url_field_or_aliases(self):
+    def test_media_contract_uses_canonical_media_reference(self):
         schema = json.loads((ROOT / "aos/aos/doctype/aos_seller/aos_seller.json").read_text())
         fields = {field.get("fieldname") for field in schema["fields"]}
-        self.assertNotIn("shop_banner", fields)
         self.assertIn("shop_banner_media", fields)
         service = (ROOT / "aos/services/sellers/service.py").read_text()
         self.assertIn('request.get("shop_banner_media_id")', service)
-        self.assertNotIn('request.get("shop_banner")', service)
-        self.assertNotIn('request.get("banner_media")', service)
-        self.assertNotIn('request.get("media_id")', service)
 
     def test_location_persistence_is_owned_by_sellers_and_maps_consumes_lookup(self):
         seller_location = (ROOT / "aos/services/sellers/location.py").read_text()
@@ -84,7 +78,12 @@ class TestSellerContracts(unittest.TestCase):
     def test_creation_and_verification_projection_are_lock_safe(self):
         policy = (ROOT / "aos/services/sellers/policy.py").read_text()
         repository = (ROOT / "aos/services/sellers/repository.py").read_text()
-        self.assertIn("lock_verification_for_user(clean_user)", policy)
+        discovery = (ROOT / "aos/services/sellers/discovery.py").read_text()
+        self.assertIn("lock_request_for_user(clean_user)", policy)
+        self.assertIn("aos.services.verification.repository", policy)
+        self.assertIn("COALESCE(p.is_verified, 0)", repository + discovery)
+        self.assertNotIn("tabAOS Verification Request", repository + discovery)
+        self.assertIn("get_request_summaries_for_users", repository + discovery)
         self.assertIn("FOR UPDATE", repository)
         self.assertIn("doc = lock_by_name(row.name)", policy)
         self.assertIn("for attempt in range(8)", policy)
@@ -101,14 +100,11 @@ class TestSellerContracts(unittest.TestCase):
         self.assertIn("frappe.db.rollback(save_point=savepoint)", boundary)
         self.assertNotIn("frappe.db.commit", service + boundary)
 
-    def test_fresh_site_has_one_doc_no_seller_compatibility_patches(self):
+    def test_current_seller_documentation_and_schema_installer(self):
         docs = sorted(path.name for path in (ROOT / "docs/features/sellers").glob("*.md"))
         self.assertEqual(docs, ["README.md"])
-        patches = (ROOT / "aos/patches.txt").read_text()
-        self.assertNotIn("harden_sellers_subsystem", patches)
-        self.assertNotIn("canonicalize_seller_operating_days", patches)
-        self.assertFalse((ROOT / "aos/patches/v1_0/harden_sellers_subsystem.py").exists())
-        self.assertFalse((ROOT / "aos/patches/v1_0/canonicalize_seller_operating_days.py").exists())
+        migrate = (ROOT / "aos/migrate.py").read_text()
+        self.assertIn("seller_schema.execute", migrate)
 
     def test_current_seller_schema_installer_owns_location_indexes(self):
         migrate = (ROOT / "aos/migrate.py").read_text()

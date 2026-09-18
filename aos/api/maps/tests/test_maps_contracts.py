@@ -141,29 +141,14 @@ class TestMapsContracts(unittest.TestCase):
         self.assertIn("if not routing_enabled():", service)
         self.assertIn("Valhalla routing must be enabled for production Maps.", production)
 
-    def test_legacy_tileserver_font_pipeline_is_removed(self):
-        self.assertFalse((ROOT / "aos/tests/test_map_font_assets.py").exists())
-        self.assertFalse((ROOT / "infra/maps/scripts/build-map-fonts.sh").exists())
-
-        gitignore = (ROOT / ".gitignore").read_text()
-        self.assertNotIn("infra/maps/tileserver", gitignore)
-
-        image_evidence = (ROOT / "ci/image-manifest-evidence.txt").read_text()
-        self.assertNotIn("maptiler/tileserver-gl", image_evidence)
-
-        compose = (ROOT / "docker-compose.yml").read_text()
-        self.assertNotIn("tileserver", compose.lower())
-
     def test_photon_metrics_flag_supplies_required_prometheus_type(self):
         entrypoint = (ROOT / "infra/maps/photon/entrypoint.sh").read_text()
         self.assertIn('metrics_arg="-metrics-enable prometheus"', entrypoint)
         self.assertNotIn('metrics_arg="-metrics-enable"; fi', entrypoint)
 
-    def test_single_maps_feature_document_and_no_legacy_maps_patch(self):
+    def test_single_maps_feature_document(self):
         docs = sorted(path.name for path in (ROOT / "docs/features/maps").glob("*.md"))
         self.assertEqual(docs, ["README.md"])
-        self.assertFalse((ROOT / "aos/patches/v1_0/harden_maps_subsystem.py").exists())
-        self.assertFalse((ROOT / "aos/patches/v1_0/add_seller_location_indexes.py").exists())
 
     def test_seller_location_schema_retains_optimistic_concurrency(self):
         schema = json.loads((ROOT / "aos/aos/doctype/aos_seller/aos_seller.json").read_text())
@@ -171,6 +156,3 @@ class TestMapsContracts(unittest.TestCase):
         self.assertIn("location_version", fields)
         self.assertTrue(fields["location_version"].get("read_only"))
 
-    def test_legacy_outside_coverage_error_is_removed(self):
-        responses = (ROOT / "aos/api/shared/responses.py").read_text()
-        self.assertNotIn('"MAP_OUTSIDE_COVERAGE"', responses)

@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from aos.patches.v1_0 import (
-    harden_media_subsystem,
+    install_media_indexes,
     install_accounts_indexes,
     install_activity_indexes,
     install_call_indexes,
@@ -36,7 +36,7 @@ from aos.services.sellers import schema as seller_schema
 _SCHEMA_INVARIANT_INSTALLERS: tuple[Callable[[], None], ...] = (
     install_localization_schema.execute,
     install_accounts_indexes.execute,
-    harden_media_subsystem.execute,
+    install_media_indexes.execute,
     install_verification_indexes.execute,
     seller_schema.execute,
     install_shorts_indexes.execute,

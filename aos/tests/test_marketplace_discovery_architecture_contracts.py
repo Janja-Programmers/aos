@@ -89,29 +89,22 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         assert 'OFFSET' not in service
         assert '{"public_id":public_id,"user":user,"is_active":1}' in service
 
-    def test_schema_installer_replaces_migration_compatibility_patches(self):
+    def test_marketplace_schema_installer_is_registered(self):
         patches=text('aos/patches.txt')
         assert 'install_marketplace_discovery_indexes' in patches
-        assert 'harden_ads_subsystem' not in patches
-        assert 'normalize_ads_offer_fields' not in patches
-        assert not (ROOT/'aos/patches/v1_0/harden_ads_subsystem.py').exists()
-        assert not (ROOT/'aos/patches/v1_0/normalize_ads_offer_fields.py').exists()
         migrate=text('aos/migrate.py')
         assert 'install_marketplace_discovery_indexes.execute' in migrate
 
     def test_canonical_docs_and_api_owners_are_current(self):
-        assert (ROOT/'docs/features/marketplace-discovery/README.md').exists()
+        for path in ('ads/README.md', 'search-ranking/README.md', 'saved-search/README.md'):
+            source = text('docs/features/' + path)
+            assert 'BEGIN CODE-DERIVED ENDPOINTS' in source
         for path in (
             'docs/features/ads/api.md',
             'docs/features/search-ranking/api.md',
             'docs/features/saved-search/api.md',
         ):
-            source = text(path)
-            assert 'Marketplace Discovery' in source
-            assert 'BEGIN CODE-DERIVED ENDPOINTS' in source
-        assert not (ROOT/'docs/features/ads/README.md').exists()
-        assert not (ROOT/'docs/features/search-ranking/README.md').exists()
-        assert not (ROOT/'docs/features/saved-search/README.md').exists()
+            assert not (ROOT / path).exists()
 
 
     def test_ads_media_input_is_canonical_media_id_only(self):
@@ -124,10 +117,13 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         assert '"image":' not in media
 
 
-    def test_ad_location_validation_uses_canonical_location_lookup(self):
-        source=text('aos/aos/doctype/aos_ad/aos_ad.py')
-        expected='frappe.db.get_value(\n            "AOS Location",\n            self.location,\n            ["country", "is_active"],\n            as_dict=True,\n        )'
-        assert expected in source
+    def test_ad_location_validation_uses_localization_boundary(self):
+        controller = text('aos/aos/doctype/aos_ad/aos_ad.py')
+        shared = text('aos/api/shared/validators.py')
+        localization = text('aos/services/localization/validators.py')
+        assert 'validate_location(self.location, country=self.country, required=True)' in controller
+        assert 'from aos.services.localization import validate_location' in shared
+        assert 'location_by_name(location)' in localization
 
 
     def test_changed_doctype_field_orders_cover_marketplace_fields(self):
@@ -243,7 +239,7 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         assert "RETRYABLE_STATUS_CODES" in source
         assert "_sleep_before_retry" in source
         assert "stream.seek(0)" in source
-    def test_ad_image_consumers_use_media_not_removed_image_column(self):
+    def test_ad_image_consumers_use_canonical_media_projection(self):
         activity=text('aos/api/ads/activity.py')
         wishlist=text('aos/api/wishlist/list.py')
         projection=text('aos/services/marketplace_discovery/projection.py')

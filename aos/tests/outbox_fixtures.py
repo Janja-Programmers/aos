@@ -148,7 +148,6 @@ def create_durable_job(
 		job = _insert(
 			{
 				"doctype": "AOS Moderation Job",
-				"naming_series": "MOD-JOB-.YYYY.-.#####",
 				"target_doctype": short.doctype,
 				"target_name": short.name,
 				"target_owner": "Administrator",
@@ -178,7 +177,6 @@ def create_durable_job(
 		job = _insert(
 			{
 				"doctype": "AOS Search Index Job",
-				"naming_series": "SRCH-JOB-.YYYY.-.#####",
 				"target_doctype": "User",
 				"target_name": "Administrator",
 				"target_owner": "Administrator",

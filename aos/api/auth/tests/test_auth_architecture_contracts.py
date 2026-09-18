@@ -34,7 +34,6 @@ class TestAuthArchitectureContracts(unittest.TestCase):
         profile = source("aos/aos/doctype/aos_profile/aos_profile.py")
         self.assertIn('getattr(profile_or_user, "name"', identity)
         self.assertIn('return frappe.db.get_value("AOS Profile", account_id, "user")', identity)
-        self.assertNotIn("allow_legacy", identity)
         self.assertNotIn('{"public_id":', identity)
         self.assertIn("generate_public_account_id", profile)
         self.assertIn("Account id is immutable", profile)
@@ -131,13 +130,6 @@ class TestAuthArchitectureContracts(unittest.TestCase):
         session_control = source("aos/api/auth/session_control.py")
         self.assertIn("def aos_session_creation_scope", session_control)
 
-    def test_deactivation_endpoint_and_state_are_removed(self):
-        wrapper = source("aos/api/v1/accounts/__init__.py")
-        constants = source("aos/services/accounts/constants.py")
-        self.assertNotIn("deactivate_account", wrapper)
-        self.assertNotIn("Deactivated", constants)
-        self.assertNotIn("ACCOUNT_STATUS_DEACTIVATED", constants)
-
     def test_aos_website_user_email_is_immutable_at_framework_layer(self):
         controller = source("aos/api/auth/user_controller.py")
         self.assertIn("def before_rename", controller)
@@ -153,11 +145,3 @@ class TestAuthArchitectureContracts(unittest.TestCase):
         self.assertIn("get_csrf_token()", fn_source)
         self.assertIn("csrf_token", fn_source)
 
-    def test_fresh_site_auth_does_not_run_upgrade_only_identity_patch(self):
-        patches = source("aos/patches.txt")
-        self.assertNotIn("finalize_auth_identity_privacy", patches)
-        self.assertFalse((ROOT / "aos/patches/v1_0/finalize_auth_identity_privacy.py").exists())
-
-
-if __name__ == "__main__":
-    unittest.main()

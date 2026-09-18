@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import frappe
-
 from aos.api.shared.responses import fail
 from aos.api.shared.auth import current_user
 
@@ -47,46 +45,16 @@ def resolve_currency(value: str | None):
 
 # LOCATION
 def resolve_location(location: str | None, *, country: str | None = None):
-    """Resolve a location input to AOS Location.name."""
+    """Resolve an active location through the Localization domain."""
 
-    location = (location or "").strip()
-    if not location:
-        return None, None
+    from aos.services.localization import validate_location
 
-    location_doc = frappe.db.get_value(
-        "AOS Location",
-        location,
-        ["country", "is_active"],
-        as_dict=True,
-    )
-
-    if not location_doc:
-        return None, fail(
-            "Invalid location.",
-            error="INVALID_LOCATION",
-            data={"field": "location"},
-        )
-
-    if not location_doc.is_active:
-        return None, fail(
-            "Selected location is inactive.",
-            error="INVALID_LOCATION",
-            data={"field": "location"},
-        )
-
+    country_name = None
     if country:
         country_name, error = resolve_country(country)
         if error:
             return None, error
-
-        if location_doc.country != country_name:
-            return None, fail(
-                "Location does not belong to the selected country.",
-                error="INVALID_LOCATION",
-                data={"field": "location"},
-            )
-
-    return location, None
+    return validate_location(location, country=country_name, required=False)
 
 
 # GENERIC VALIDATORS

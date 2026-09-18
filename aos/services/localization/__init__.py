@@ -14,6 +14,7 @@ from .serializers import (
 	serialize_context,
 	serialize_preference,
 )
+from .repository import location_label, location_labels
 from .service import get_default_preferences, get_locale_bundle_payload, get_locations_page, resolve_guest_context
 from .validators import (
 	accept_language_candidates,
@@ -21,6 +22,7 @@ from .validators import (
 	validate_country,
 	validate_currency,
 	validate_language,
+	validate_location,
 )
 
 __all__ = [
@@ -33,6 +35,8 @@ __all__ = [
 	"get_locale_bundle_payload",
 	"get_locations_page",
 	"localization_master_changed",
+	"location_labels",
+	"location_label",
 	"resolve_accept_language",
 	"resolve_guest_context",
 	"serialize_context",
@@ -40,6 +44,7 @@ __all__ = [
 	"validate_country",
 	"validate_currency",
 	"validate_language",
+	"validate_location",
 	"clear_user_preference_cache",
 	"get_user_preference",
 	"get_user_preference_for_update",

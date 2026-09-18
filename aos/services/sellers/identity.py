@@ -40,19 +40,16 @@ def generate_public_seller_id() -> str:
 def ensure_public_seller_id(seller) -> str:
     """Ensure a Seller document has an immutable random public identifier.
 
-    This is an insert-time invariant, not a migration fallback. The database
-    uniqueness constraint remains the final collision guard.
+    The database uniqueness constraint is the final collision guard; Seller
+    creation retries a duplicate-key race with a fresh random identifier.
     """
 
     existing = normalize_public_seller_id(getattr(seller, "public_id", ""))
     if existing:
         return existing
-    for _ in range(16):
-        candidate = generate_public_seller_id()
-        if not frappe.db.exists("AOS Seller", {"public_id": candidate}):
-            seller.public_id = candidate
-            return candidate
-    raise RuntimeError("Unable to allocate public Seller ID")
+    candidate = generate_public_seller_id()
+    seller.public_id = candidate
+    return candidate
 
 
 def resolve_public_seller_id(value: Any) -> str | None:

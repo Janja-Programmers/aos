@@ -39,7 +39,7 @@ The current backend has no completed Order or Booking model attached to Reviews.
 **Query:**
 
 ```text
-?ad_id=AD-2026-00001
+?ad_id=ad_replace_with_public_id_1
 ```
 
 **Success:**
@@ -84,11 +84,11 @@ Save the returned `MEDIA-...` ID. Create/update accepts at most five unique Medi
 
 ```json
 {
-  "ad_id": "AD-2026-00001",
+  "ad_id": "ad_replace_with_public_id_1",
   "rating": 5,
   "title": "Great seller",
   "comment": "Accurate listing and good communication.",
-  "images": ["MEDIA-2026-00001"]
+  "images": ["MEDIA-0123456789abcdef0123456789abcdef"]
 }
 ```
 
@@ -101,7 +101,7 @@ Save the returned `MEDIA-...` ID. Create/update accepts at most five unique Medi
   "images": [],
   "review": {
     "id": "RVW-2026-00001",
-    "ad_id": "AD-2026-00001",
+    "ad_id": "ad_replace_with_public_id_1",
     "rating": 5,
     "status": "Pending",
     "can_edit": true,
@@ -131,7 +131,7 @@ An Approved review is public. The author may also fetch their Pending, Rejected,
 **Query example:**
 
 ```text
-?ad_id=AD-2026-00001&sort=helpful&rating=5&limit=20&offset=0
+?ad_id=ad_replace_with_public_id_1&sort=helpful&rating=5&limit=20&offset=0
 ```
 
 **Supported sorts:** `newest`, `helpful`, `rating_high`, `rating_low`.  

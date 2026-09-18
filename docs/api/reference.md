@@ -32,7 +32,7 @@ Owner documentation: [docs/features/activity/api.md](../features/activity/api.md
 
 ## Ads (15)
 
-Owner documentation: [docs/features/ads/api.md](../features/ads/api.md)
+Owner documentation: [docs/features/ads/README.md](../features/ads/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
@@ -293,7 +293,7 @@ Owner documentation: [docs/features/reviews/api.md](../features/reviews/api.md)
 
 ## Saved Search (4)
 
-Owner documentation: [docs/features/saved-search/api.md](../features/saved-search/api.md)
+Owner documentation: [docs/features/saved-search/README.md](../features/saved-search/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
@@ -304,7 +304,7 @@ Owner documentation: [docs/features/saved-search/api.md](../features/saved-searc
 
 ## Search/Ranking (1)
 
-Owner documentation: [docs/features/search-ranking/api.md](../features/search-ranking/api.md)
+Owner documentation: [docs/features/search-ranking/README.md](../features/search-ranking/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|

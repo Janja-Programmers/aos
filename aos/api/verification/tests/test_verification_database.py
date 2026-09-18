@@ -13,7 +13,7 @@ from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
 class TestVerificationDatabase(AOSFeatureTestMixin, FrappeTestCase):
-    """Database-backed Verification behavior on a migrated Frappe test site."""
+    """Database-backed Verification behavior on a configured Frappe test site."""
 
     def setUp(self):
         self.prefix = self.make_prefix("verification")

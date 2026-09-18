@@ -84,14 +84,14 @@ class TestSocialAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertFalse(response["ok"])
         self.assertEqual(response["error"], "SOCIAL_SELF_ACTION")
 
-    def test_unknown_fields_and_legacy_target_alias_are_rejected(self):
+    def test_unknown_fields_are_rejected(self):
         unknown = self._follow(account_id=public_account_id_for_user(self.target), unexpected=1)
         self.assertFalse(unknown["ok"])
         self.assertEqual(unknown["error"], "SOCIAL_UNKNOWN_FIELD")
 
-        legacy = self._follow(target_user=self.target)
-        self.assertFalse(legacy["ok"])
-        self.assertEqual(legacy["error"], "SOCIAL_UNKNOWN_FIELD")
+        invalid = self._follow(unexpected_target=self.target)
+        self.assertFalse(invalid["ok"])
+        self.assertEqual(invalid["error"], "SOCIAL_UNKNOWN_FIELD")
 
     def test_self_follow_is_rejected(self):
         response = self._follow(account_id=public_account_id_for_user(self.actor))

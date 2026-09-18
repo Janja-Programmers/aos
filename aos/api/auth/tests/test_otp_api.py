@@ -74,7 +74,7 @@ class TestAuthOtpAPI(AOSFeatureTestMixin, FrappeTestCase):
         issue.assert_not_called()
 
     def test_unknown_fields_are_rejected(self):
-        response = verify_email_otp_impl(email="x@example.com", otp="123456", code="legacy")
+        response = verify_email_otp_impl(email="x@example.com", otp="123456", unexpected="x")
         self.assertEqual(response.get("error"), "AUTH_UNKNOWN_FIELD")
 
     def test_missing_otp_record_executes_dummy_slow_hash_work(self):

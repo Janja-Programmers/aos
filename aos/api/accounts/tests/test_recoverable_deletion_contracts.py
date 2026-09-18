@@ -68,7 +68,7 @@ class TestRecoverableDeletionContracts(unittest.TestCase):
         self.assertNotIn("frappe.db.commit", purge)
         self.assertNotIn("frappe.db.commit", task)
 
-    def test_profile_has_durable_purge_progress_and_old_seller_snapshot_is_removed(self):
+    def test_profile_has_durable_purge_progress_fields(self):
         profile = json.loads((ROOT / "aos/aos/doctype/aos_profile/aos_profile.json").read_text())
         profile_fields = {field.get("fieldname") for field in profile.get("fields", [])}
         self.assertTrue({"purge_status", "purge_started_at", "purge_completed_at"} <= profile_fields)

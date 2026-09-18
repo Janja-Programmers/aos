@@ -35,7 +35,7 @@ class TestOriginalSoundLifecycle(FrappeTestCase):
         short = SimpleNamespace(
             name="SHORT-2026-00001",
             owner="creator@example.test",
-            raw_video_media="MEDIA-2026-00001",
+            raw_video_media="MEDIA-00000000000000000000000000000001",
         )
         with (
             patch(
@@ -60,7 +60,7 @@ class TestOriginalSoundLifecycle(FrappeTestCase):
         short = SimpleNamespace(
             name="SHORT-2026-00001",
             owner="creator@example.test",
-            raw_video_media="MEDIA-2026-00001",
+            raw_video_media="MEDIA-00000000000000000000000000000001",
         )
         with (
             patch(
@@ -85,7 +85,7 @@ class TestOriginalSoundLifecycle(FrappeTestCase):
         short = SimpleNamespace(
             name="SHORT-2026-00001",
             owner="creator@example.test",
-            raw_video_media="MEDIA-2026-00001",
+            raw_video_media="MEDIA-00000000000000000000000000000001",
         )
         sound_doc = MagicMock()
         sound_doc.name = "SOUND-2026-00001"
@@ -107,7 +107,7 @@ class TestOriginalSoundLifecycle(FrappeTestCase):
             ),
             patch(
                 "aos.services.shorts.original_sounds._get_or_create_media",
-                return_value=SimpleNamespace(name="MEDIA-2026-00002"),
+                return_value=SimpleNamespace(name="MEDIA-00000000000000000000000000000002"),
             ),
             patch(
                 "aos.services.shorts.original_sounds._creator_display_name",
@@ -133,7 +133,7 @@ class TestOriginalSoundLifecycle(FrappeTestCase):
         self.assertEqual(created_payloads[0]["source_type"], "original")
         self.assertEqual(created_payloads[0]["created_from_short"], short.name)
         self.assertEqual(created_payloads[0]["title"], "original sound - Bobby")
-        self.assertEqual(created_payloads[0]["sound_media"], "MEDIA-2026-00002")
+        self.assertEqual(created_payloads[0]["sound_media"], "MEDIA-00000000000000000000000000000002")
         self.assertEqual(created_payloads[1]["sound"], "SOUND-2026-00001")
         self.assertEqual(created_payloads[1]["short"], short.name)
         self.assertEqual(created_payloads[1]["is_original_audio"], 1)

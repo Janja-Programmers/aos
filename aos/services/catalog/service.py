@@ -301,7 +301,7 @@ class CatalogService:
 
     @staticmethod
     def invalidate_cache() -> None:
-        """Compatibility-free public cache invalidation entry point for callers."""
+        """Canonical public cache invalidation entry point for callers."""
         clear_catalog_cache()
 
     @staticmethod

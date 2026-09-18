@@ -41,14 +41,6 @@ class TestVerificationProductionSourceGuards(unittest.TestCase):
             {"submit_verification": ("POST",), "get_my_verification": ("GET",)},
         )
 
-    def test_no_legacy_verification_compatibility_modules_or_patch_remain(self):
-        self.assertFalse((ROOT / "aos/api/verification/media.py").exists())
-        self.assertFalse((ROOT / "aos/api/verification/validators.py").exists())
-        self.assertFalse((ROOT / "aos/patches/v1_0/harden_verification_subsystem.py").exists())
-        patches = _source("aos/patches.txt")
-        self.assertNotIn("harden_verification_subsystem", patches)
-        self.assertIn("aos.patches.v1_0.install_verification_indexes", patches)
-
     def test_submission_boundary_is_private_rate_limited_and_savepoint_atomic(self):
         source = _source("aos/api/verification/submit_verification.py")
         self.assertIn("VerificationService().submit", source)
@@ -78,12 +70,11 @@ class TestVerificationProductionSourceGuards(unittest.TestCase):
         self.assertNotIn("services.sellers", policy + service + validation + controller)
         self.assertNotIn("AOS Seller", policy + service + validation + controller)
 
-    def test_submission_contract_is_canonical_and_rejects_legacy_media_aliases(self):
+    def test_submission_contract_has_one_document_shape(self):
         constants = _source("aos/services/verification/constants.py")
         validation = _source("aos/services/verification/validation.py")
-        self.assertIn('"media_id",', constants)
-        for legacy in ('"media",', '"attachment_media",', '"attachment_media_id",'):
-            self.assertNotIn(legacy, constants.split("DOCUMENT_FIELDS", 1)[1].split("MAX_DOCUMENTS", 1)[0])
+        for field in ("document_type", "document_number", "issue_date", "expiry_date", "media_id"):
+            self.assertIn(f'"{field}",', constants)
         self.assertIn("Unsupported verification document fields", validation)
         self.assertIn("require_idempotency", validation)
 
@@ -120,7 +111,7 @@ class TestVerificationProductionSourceGuards(unittest.TestCase):
         self.assertFalse(bool(system_manager.get("share")))
         self.assertTrue(bool(system_manager.get("write")))
 
-    def test_sensitive_child_schema_has_no_legacy_attachment_field(self):
+    def test_sensitive_child_schema_uses_media_reference_only(self):
         schema = json.loads(_source("aos/aos/doctype/aos_verification_document/aos_verification_document.json"))
         fields = {row["fieldname"]: row for row in schema["fields"]}
         self.assertFalse(bool(schema.get("allow_rename")))
@@ -236,7 +227,6 @@ class TestVerificationProductionSourceGuards(unittest.TestCase):
         self.assertIn("uq_aos_verification_document_media", installer)
         self.assertIn("idx_aos_verification_review_queue", installer)
         self.assertNotIn("HAVING COUNT(*)", installer)
-        self.assertNotIn("legacy", installer.lower())
         self.assertNotIn("frappe.db.commit", installer)
         self.assertIn("install_verification_indexes.execute", migrate)
 

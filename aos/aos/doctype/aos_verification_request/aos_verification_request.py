@@ -29,11 +29,15 @@ from aos.services.verification.lifecycle import (
 from aos.services.verification.policy import lock_eligible_profile, lock_profile
 from aos.services.verification.repository import lock_request_by_name
 from aos.services.verification.validation import normalize_submit_payload
+from aos.utils.identifiers import new_prefixed_name
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class AOSVerificationRequest(Document):
+    def autoname(self):
+        self.name = new_prefixed_name("VER")
+
     def validate(self):
         previous = self._lock_authoritative_previous()
         self._validate_request(previous)

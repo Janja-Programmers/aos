@@ -70,7 +70,7 @@ class TestCatalogValidation(TestCase):
     def test_request_fields_are_strict(self):
         reject_unknown_fields({"category": "Phones"}, allowed={"category"})
         with self.assertRaises(CatalogValidationError) as exc:
-            reject_unknown_fields({"category": "Phones", "legacy": 1}, allowed={"category"})
+            reject_unknown_fields({"category": "Phones", "unexpected": 1}, allowed={"category"})
         self.assertEqual(exc.exception.code, "INVALID_CATALOG_INPUT")
 
     @patch("aos.services.catalog.validation.frappe.db.get_value")

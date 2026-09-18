@@ -50,7 +50,7 @@ class TestVerificationValidation(unittest.TestCase):
             normalize_submit_payload(self._individual(status="Approved"))
         self.assertEqual(ctx.exception.code, "VERIFICATION_UNKNOWN_FIELD")
 
-    def test_legacy_document_media_alias_is_rejected(self):
+    def test_unknown_document_field_is_rejected(self):
         with self.assertRaises(VerificationValidationError) as ctx:
             normalize_submit_payload(
                 self._individual(

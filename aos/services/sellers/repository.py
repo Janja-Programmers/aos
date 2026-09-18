@@ -12,8 +12,9 @@ from typing import Any
 import frappe
 
 from aos.api.shared.blocking import is_blocked_between
+from aos.services.verification.repository import get_request_summaries_for_users
 
-from .constants import SELLER_DOCTYPE, STATUS_ACTIVE, VERIFICATION_DOCTYPE
+from .constants import SELLER_DOCTYPE, STATUS_ACTIVE
 from .identity import resolve_public_seller_id
 
 SELLER_LOCATION_FIELDS = [
@@ -123,44 +124,6 @@ def get_route_destination(public_id: str, *, viewer: str | None) -> dict[str, An
     }
 
 
-def get_verification_for_user(user: str) -> dict[str, Any] | None:
-    clean_user = str(user or "").strip()
-    if not clean_user:
-        return None
-    return frappe.db.get_value(
-        VERIFICATION_DOCTYPE,
-        {"user": clean_user},
-        ["name", "verification_type", "status", "business_category", "verified_on", "modified"],
-        as_dict=True,
-    )
-
-
-def lock_verification_for_user(user: str) -> dict[str, Any] | None:
-    """Return the canonical Verification row while holding its transaction lock.
-
-    Seller creation uses this to serialize against a concurrent Verification
-    decision. Without the lock, an approval could observe no Seller and finish
-    its projection while Seller creation was still using a stale pre-approval
-    snapshot.
-    """
-
-    clean_user = str(user or "").strip()
-    if not clean_user:
-        return None
-    rows = frappe.db.sql(
-        f"""
-        SELECT name, verification_type, status, business_category, verified_on, modified
-        FROM `tab{VERIFICATION_DOCTYPE}`
-        WHERE user = %s
-        LIMIT 1
-        FOR UPDATE
-        """,
-        (clean_user,),
-        as_dict=True,
-    )
-    return rows[0] if rows else None
-
-
 def list_map_rows(
     request: dict[str, Any],
     *,
@@ -205,24 +168,22 @@ def list_map_rows(
         conditions.append("s.business_category = %s")
         params.append(request["business_category"])
     if request.get("is_verified") is not None:
-        conditions.append("CASE WHEN v.status = 'Approved' THEN 1 ELSE 0 END = %s")
+        conditions.append("COALESCE(p.is_verified, 0) = %s")
         params.append(1 if request["is_verified"] else 0)
 
-    return frappe.db.sql(
+    rows = frappe.db.sql(
         f"""
         SELECT
             s.name, s.public_id, s.user, s.business_category, s.seller_type,
             s.location_name, s.locality, s.region, s.country_code,
             s.latitude, s.longitude,
-            CASE WHEN v.status = 'Approved' THEN 1 ELSE 0 END AS is_verified,
-            v.verification_type, v.status AS verification_status
+            COALESCE(p.is_verified, 0) AS is_verified
         FROM `tabAOS Seller` s
         INNER JOIN `tabUser` u ON u.name = s.user
         INNER JOIN `tabAOS Profile` p ON p.user = s.user
-        LEFT JOIN `tabAOS Verification Request` v ON v.user = s.user
         WHERE {' AND '.join(conditions)}
         ORDER BY
-            CASE WHEN v.status = 'Approved' THEN 1 ELSE 0 END DESC,
+            COALESCE(p.is_verified, 0) DESC,
             s.creation DESC,
             s.name ASC
         LIMIT %s
@@ -230,3 +191,9 @@ def list_map_rows(
         (*params, max(1, int(maximum_rows))),
         as_dict=True,
     )
+    verification = get_request_summaries_for_users([str(row.user) for row in rows if row.user])
+    for row in rows:
+        summary = verification.get(str(row.user))
+        row.verification_type = getattr(summary, "verification_type", None) if summary else None
+        row.verification_status = getattr(summary, "status", None) if summary else None
+    return rows

@@ -1,5 +1,39 @@
 # Media
 
+## Overview
+Media owns the provider-neutral lifecycle for AOS binary objects: authorization, upload initialization, multipart coordination, confirmation, metadata validation, attachment, derived processing state, signed/public delivery, deletion, and reconciliation.
+
+## Responsibilities
+Media owns object identity, purpose policy, MIME/magic-byte/dimension/size validation, storage keys, upload/finalization state, attachment limits, public/private delivery semantics, processing jobs, cleanup, and storage-provider abstraction.
+
+## Boundaries
+Accounts, Sellers, Catalog, Ads, Verification, Chat, Shorts, Reviews, and Live consume Media objects and URLs. They do not own provider credentials, bucket/key construction, upload confirmation, or duplicate media-validation logic.
+
+## Architecture
+```text
+Versioned Media API -> MediaService -> purpose policy + repository -> AOS Media Object / Processing Job
+                                      -> provider-neutral object storage adapter -> shared object store/CDN
+```
+Long-running processing and reconciliation run in workers outside the initiating request transaction.
+
+## Data Model
+- `AOS Media Object`: canonical durable media record; named `MEDIA-<uuid4hex>` without naming-series allocation.
+- `AOS Media Processing Job`: durable derived-processing/reconciliation job state.
+- Resource attachments are represented through canonical Media ownership/attachment fields and owning-domain links rather than provider-specific paths.
+
+## Fields
+| Model | Field | Required / constraint | Purpose |
+|---|---|---|---|
+| AOS Media Object | `name` | `MEDIA-<uuid4hex>` PK | Stable opaque media identifier generated independently on every node. |
+| AOS Media Object | purpose / visibility | policy constrained | Selects validation, delivery, and attachment policy. |
+| AOS Media Object | owner/resource linkage | canonical Links | Authorizes management and attachment. |
+| AOS Media Object | object key / provider metadata | internal | Provider-neutral storage identity; never a frontend contract. |
+| AOS Media Object | MIME/size/dimensions/state | validated | Canonical confirmed object metadata and lifecycle. |
+| AOS Media Processing Job | media/job/status | indexed durable state | Tracks asynchronous processing/reconciliation work. |
+
+## API
+The current Media endpoints initialize uploads, coordinate multipart parts/completion/abort, confirm objects, return read URLs, report processing status, and delete media. Required inputs are purpose-specific, strict, and ownership-authorized. Clients upload directly to storage only with server-issued authorization and then confirm through Media.
+
 <!-- BEGIN CODE-DERIVED ENDPOINTS -->
 ## Endpoint inventory (code-derived)
 
@@ -21,7 +55,24 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
-## Public transport boundary
+## Cross-feature Dependencies
+Media consumes authenticated identity/authorization context and is consumed by Accounts, Sellers, Catalog, Ads, Verification and other media-bearing domains. Owning features store Media links; Media owns validation/finalization/serialization of media delivery data.
+
+## Transaction / Concurrency Model
+Database state changes are atomic and object state transitions are validated under the relevant request/worker transaction. Multipart confirmation and asynchronous jobs are idempotent where retry is expected. Worker/batch code may commit bounded units deliberately; external object transfer is not held inside a long database lock.
+
+## Caching
+Resolved public/signed URL behavior follows visibility and provider policy; durable object state stays in MariaDB and shared infrastructure. No worker-local cache is required for correctness.
+
+## Performance / Scalability
+UUID-backed names remove centralized naming-series allocation from Media creation. Direct-to-object-storage upload avoids proxying large bodies through Frappe. Background processing uses durable jobs and bounded retries; production throughput still depends on DB, queues, object storage/CDN, and load tests.
+
+## Testing
+Tests under `aos/api/media/tests` plus shared integration/contract tests cover purpose policy, upload/finalization, multipart behavior, processing, cleanup, authorization, indexes, and retries. Fixture cleanup deletes Media/job/file state in dependency order when rollback alone is insufficient.
+
+## Detailed Reference
+
+### Public transport boundary
 
 Every Media v1 wrapper delegates through the platform canonical `aos.api.shared.transport.execute_endpoint` boundary before Media request validation. Frappe's framework-owned `cmd` routing field is removed there; all genuine client fields remain visible to Media so `reject_unknown_fields` can enforce the exact endpoint contract. Media does not implement a parallel transport filter.
 
@@ -30,15 +81,15 @@ This file is the authoritative documentation for the current AOS Media subsystem
 
 Media endpoints accept only the canonical field names documented below and reject unsupported request fields with `VALIDATION_ERROR`.
 
-## Overview
+### Overview
 
-Media owns the durable identity, authorization, upload lifecycle, storage identity, verification, attachment lifecycle, URL serialization, asynchronous background-removal processing, deletion and cleanup of AOS-managed binary objects. Feature domains store canonical Media IDs such as `MEDIA-2026-00001` and ask Media to validate or serialize them.
+Media owns the durable identity, authorization, upload lifecycle, storage identity, verification, attachment lifecycle, URL serialization, asynchronous background-removal processing, deletion and cleanup of AOS-managed binary objects. Feature domains store canonical Media IDs such as `MEDIA-<uuid4hex>` and ask Media to validate or serialize them.
 
 Media does not own Ads, Shorts, Accounts or other feature business rules. It owns only the shared media guarantees those features depend on. Accounts is a current consumer for profile images. Ads consumes `ad_image`/`ad_video`. Shorts consumes `short_video_raw` and generated `short_thumbnail` media.
 
 The application treats MinIO, Hetzner Object Storage and AWS S3 as deployment choices behind one S3-compatible storage contract. Provider names do not appear in Media API contracts or Media IDs.
 
-## Architecture
+### Architecture
 
 ```text
 Client
@@ -67,15 +118,15 @@ Private read
 
 No large client upload is proxied through a Frappe web request. Frappe remains the control plane; object storage receives upload bytes directly.
 
-## Supported environments
+### Supported environments
 
 Development and shared staging use MinIO. Production is configured for Hetzner Object Storage. AWS S3 can later replace Hetzner without changing Media IDs, public API contracts, Accounts/Ads/Shorts references or frontend Media identity.
 
 Storage-provider changes are an infrastructure/configuration/data-copy concern. Media records retain stable object keys and generate public URLs from the active delivery configuration.
 
-## Configuration ownership
+### Configuration ownership
 
-### AOS Settings
+#### AOS Settings
 
 Only safe administrator-controlled application policy belongs in the `AOS Settings` singleton. Current Media-related fields are:
 
@@ -87,7 +138,7 @@ Only safe administrator-controlled application policy belongs in the `AOS Settin
 
 The Media purpose registry in `aos/services/media/media_purposes.py` remains authoritative for purpose-specific MIME, extension, byte, dimension, duration, attachment and multipart policy.
 
-### Deployment environment / site configuration
+#### Deployment environment / site configuration
 
 Infrastructure identity and secrets must not be stored in Desk. Media uses the provider-neutral variables below:
 
@@ -126,7 +177,7 @@ Infrastructure identity and secrets must not be stored in Desk. Media uses the p
 
 The MinIO container uses `MINIO_*` deployment variables because MinIO itself is infrastructure. Media application code uses only the provider-neutral `AOS_OBJECT_STORAGE_*` contract.
 
-## Storage contract
+### Storage contract
 
 `MediaService` depends on `StorageAdapter`. Runtime Media storage is `S3CompatibleStorage`, implemented with S3-compatible operations and configuration. Current operations are:
 
@@ -142,13 +193,13 @@ The MinIO container uses `MINIO_*` deployment variables because MinIO itself is 
 
 The storage adapter contains no Media purpose, account, Ads or Shorts authorization rules. Business authorization remains in `MediaService`.
 
-### Bucket roles
+#### Bucket roles
 
 Public final objects use the configured public bucket. Private final objects and direct-upload staging use the configured private bucket. Clients never submit or choose a bucket.
 
 Production bucket creation/policies are infrastructure-managed. Development/staging may opt into application bucket creation by setting `AOS_OBJECT_STORAGE_MANAGE_BUCKETS=true`. Hetzner production should set `AOS_OBJECT_STORAGE_PATH_STYLE=false`; local MinIO normally uses `true`.
 
-### Object keys
+#### Object keys
 
 Canonical object keys are server generated:
 
@@ -164,7 +215,7 @@ incoming/<purpose>/<yyyy>/<mm>/<owner-sha256-prefix>/<random-uuid>.<extension>
 
 User filenames are display metadata only. They never become trusted bucket/key paths. Keys are immutable and randomized, which makes public CDN caching safe and avoids overwrite races during replacement.
 
-## CDN and public delivery
+### CDN and public delivery
 
 Media records persist stable object keys rather than provider or delivery URLs. Public identity is `(Media ID -> configured object key)`. `S3CompatibleStorage.build_public_url` appends the immutable object key to `AOS_MEDIA_PUBLIC_BASE_URL`.
 
@@ -185,7 +236,7 @@ A staging/production CDN or reverse proxy is expected to map that public deliver
 
 Immutable keys mean replacements receive new URLs and can use long public cache lifetimes at the CDN/origin layer without purge-driven correctness. Authorization is never delegated to a public CDN cache.
 
-## Public and private purposes
+### Public and private purposes
 
 Current purpose policy is centralized in `aos/services/media/media_purposes.py`.
 
@@ -207,13 +258,13 @@ Current purpose policy is centralized in `aos/services/media/media_purposes.py`.
 
 Private signed URLs are never stored in DocTypes or logs. Verification-document URLs are additionally capped to ten minutes.
 
-## Data layer
+### Data layer
 
-### `AOS Media Object`
+#### `AOS Media Object`
 
-Canonical public name uses the naming series `MEDIA-.YYYY.-.#####`. Consumers must store/use this opaque Media ID rather than storage keys or URLs.
+Canonical public names use `MEDIA-<uuid4hex>`, generated independently on each application node. Consumers store/use this opaque Media ID rather than storage keys or URLs.
 
-#### Identity and policy fields
+##### Identity and policy fields
 
 | Field | Meaning / invariant |
 |---|---|
@@ -223,7 +274,7 @@ Canonical public name uses the naming series `MEDIA-.YYYY.-.#####`. Consumers mu
 | `status` | Lifecycle state. |
 | `visibility` | `Public` or `Private`; must equal purpose policy. |
 
-#### Storage fields
+##### Storage fields
 
 | Field | Meaning / invariant |
 |---|---|
@@ -243,7 +294,7 @@ Canonical public name uses the naming series `MEDIA-.YYYY.-.#####`. Consumers mu
 
 Delivery URLs are generated from the canonical object key and deployment configuration; URL fields are not part of Media persistence.
 
-#### File metadata
+##### File metadata
 
 | Field | Meaning / invariant |
 |---|---|
@@ -257,15 +308,15 @@ Delivery URLs are generated from the canonical object key and deployment configu
 | `width` / `height` | Validated image dimensions when applicable. |
 | `duration_seconds` | Authoritative ISO-BMFF duration recorded at finalize for MP4/QuickTime uploads; server-bounded for purposes with duration limits. |
 
-#### Attachment/lifecycle fields
+##### Attachment/lifecycle fields
 
 `attached_doctype`, `attached_name`, `attached_field`, `attached_at`, `orphaned_at`, `replaced_at`, `deleted_at`, `delete_requested_at`, `failure_code`, `failure_reason`, `failed_at`, retry/storage-error fields and processing timestamps represent durable lifecycle/reconciliation state. `derived_from_media` links a derivative to its source. `processing_job` uniquely links a generated Media result to the durable processing job that produced it. `replaced_by_media` records replacement lineage.
 
-#### Query indexes / constraints
+##### Query indexes / constraints
 
 Canonical schema supplies unique constraints for `object_key` and `processing_job`. Runtime indexes installed through Frappe index APIs support owner/purpose/status lookup, attachments, cleanup scans, upload expiry, delete retry, idempotency lookup, derivative lookup, staging cleanup and active multipart sessions. Cleanup/list scans are bounded.
 
-### `AOS Media Processing Job`
+#### `AOS Media Processing Job`
 
 This DocType is the durable asynchronous processing/outbox record for Media-owned work.
 
@@ -285,11 +336,11 @@ This DocType is the durable asynchronous processing/outbox record for Media-owne
 
 Composite indexes support owner/status reads, source/operation/status lookups and bounded recovery scans.
 
-## Lifecycle and transaction model
+### Lifecycle and transaction model
 
 Database and object storage are separate consistency domains. Media deliberately uses state transitions plus reconciliation instead of pretending they are one ACID transaction.
 
-### Direct upload
+#### Direct upload
 
 ```text
 Initialized
@@ -303,7 +354,7 @@ Initialized
 
 If final storage write succeeds but the DB save fails, Media attempts compensating deletion of the final object. Staging cleanup remains retryable through durable fields and scheduled cleanup.
 
-### Processing
+#### Processing
 
 ```text
 AOS Media Processing Job: Queued
@@ -317,7 +368,7 @@ or
 
 The worker commits the `Processing` claim before external I/O so duplicate workers on separate nodes observe it. A result Media row contains a unique `processing_job` link. If derivative creation commits but the final job update is interrupted, retry/recovery finds that result and marks the job succeeded instead of creating a duplicate derivative.
 
-### Deletion
+#### Deletion
 
 ```text
 live/unattached Media
@@ -329,9 +380,9 @@ live/unattached Media
 
 A storage outage leaves `Delete Pending` and records a bounded storage-error category. Scheduled cleanup retries it. Missing objects are treated idempotently. A referenced/attached object is not deleted.
 
-## Upload authorization and initialization
+### Upload authorization and initialization
 
-### `POST /api/method/aos.api.v1.media.init_upload`
+#### `POST /api/method/aos.api.v1.media.init_upload`
 
 Authentication: required.
 
@@ -357,9 +408,9 @@ Direct response contains `media_id`, `upload_url`, exact `upload_headers`, expir
 
 Rate limit: `INIT_UPLOAD_LIMIT_PER_MINUTE_PER_USER` through shared Redis-backed rate limiting.
 
-## Finalization
+### Finalization
 
-### `POST /api/method/aos.api.v1.media.confirm_upload`
+#### `POST /api/method/aos.api.v1.media.confirm_upload`
 
 Authentication: required.
 
@@ -384,33 +435,33 @@ Public JPEG/PNG/WebP uploads are decoded, EXIF orientation is applied and the im
 
 Idempotency: repeated confirmation after success returns the same Media record and does not duplicate the final object.
 
-## Multipart upload
+### Multipart upload
 
 Multipart is currently enabled where the purpose registry requires it for large raw Shorts video. Frappe remains control-plane only.
 
-### `POST /api/method/aos.api.v1.media.multipart_part_urls`
+#### `POST /api/method/aos.api.v1.media.multipart_part_urls`
 
 Authentication: required. Inputs: `media_id`, optional `start_part`, optional `count`. Ownership and active-session state are checked. Returned batches are bounded and every URL is scoped to one expected object key, upload ID, part number and HTTP PUT operation.
 
-### `POST /api/method/aos.api.v1.media.multipart_status`
+#### `POST /api/method/aos.api.v1.media.multipart_status`
 
 Authentication: required. Input: `media_id`. Returns object-storage-authoritative part state (`uploaded_parts`, `missing_parts`, `invalid_parts`, `retry_parts`, byte progress and `complete_ready`). Clients resume from this server result, not locally remembered ETags.
 
-### `POST /api/method/aos.api.v1.media.complete_multipart_upload`
+#### `POST /api/method/aos.api.v1.media.complete_multipart_upload`
 
 Authentication: required. Input: `media_id`. Media row is locked; server lists authoritative object-store parts and verifies contiguous part numbers, non-empty ETags and exact expected part sizes before completion. The client does not submit a trusted ETag manifest. Completion verifies final assembled size then runs the normal Media confirmation path.
 
 If object storage completed but the response was ambiguous/lost, retry detects the assembled object and reconciles the Media state. Repeated completion after success is idempotent.
 
-### `POST /api/method/aos.api.v1.media.abort_multipart_upload`
+#### `POST /api/method/aos.api.v1.media.abort_multipart_upload`
 
 Authentication: required. Input: `media_id`. Aborts the server-owned object-store upload ID, removes staging bytes best-effort and records terminal `UPLOAD_ABORTED`. Repeated abort is idempotent. Scheduled cleanup also reclaims abandoned/expired sessions.
 
 Active multipart sessions per user, part counts, part URL batches and client concurrency hints are bounded server-side.
 
-## Read URLs
+### Read URLs
 
-### `GET /api/method/aos.api.v1.media.get_media_url`
+#### `GET /api/method/aos.api.v1.media.get_media_url`
 
 The endpoint is guest-decorated only so public Media can be resolved without a session. Input: `media_id`; private callers may optionally request `expiry_minutes`, which remains server-bounded.
 
@@ -420,7 +471,7 @@ Private Media: requires an authenticated active user authorized by owner/resourc
 
 A caller cannot obtain a private signed URL by changing a Media purpose or submitting a bucket/key; those fields are server authoritative.
 
-## Attachment and Accounts integration
+### Attachment and Accounts integration
 
 Feature services attach through `MediaService.attach_media`/`validate_media_for_use`, not raw DocType assignment. Attachment validates:
 
@@ -436,9 +487,9 @@ The attachment target database row is locked before the Media row. This serializ
 
 Accounts profile-image integration uses `profile_image`, requires Media ownership, and serializes its public URL from the Media ID. Profile replacement receives a new immutable object key and releases/replaces the prior Media through the Media lifecycle. Accounts public/private projections remain owned by Accounts; Media does not expose User email or storage identity as the public Media contract.
 
-## Background removal
+### Background removal
 
-### `POST /api/method/aos.api.v1.media.remove_background`
+#### `POST /api/method/aos.api.v1.media.remove_background`
 
 Authentication: required. Inputs: `media_id`; optional `result_purpose` (defaults to the source purpose). Source must be an owned readable JPEG/PNG/WebP Media object. Output purpose must be one of the currently allowed image purposes and accept PNG.
 
@@ -463,21 +514,21 @@ Response shape:
 }
 ```
 
-### `POST /api/method/aos.api.v1.media.processing_status`
+#### `POST /api/method/aos.api.v1.media.processing_status`
 
 Authentication: required. Input: `job_id`. Only the processing-job owner can read it. When status is `Succeeded`, `media` contains the normal serialized canonical result Media record and URL subject to Media access rules.
 
 Processing failures expose bounded stable error codes, not raw processor exceptions.
 
-### Processor trust boundary
+#### Processor trust boundary
 
 The Frappe worker downloads only the source object selected by the authoritative Media row, validates it again, then POSTs bytes to the configured private background-removal service. The processor requires `Authorization: Bearer <BACKGROUND_REMOVAL_SERVICE_SECRET>`, compares the secret in constant time, applies byte and decoded-pixel limits, and returns sanitized service errors. It should be reachable only on the internal deployment network/localhost path and is not a public media or storage API.
 
 Background-removal failure never mutates or corrupts the original. Transient service/storage failure enters `Retry Waiting` with exponential bounded backoff. Non-retryable malformed/unprocessable input becomes `Failed`. A periodic recovery job re-enqueues due jobs and reclaims stale `Processing` claims in bounded batches.
 
-## Delete endpoint
+### Delete endpoint
 
-### `POST /api/method/aos.api.v1.media.delete_media`
+#### `POST /api/method/aos.api.v1.media.delete_media`
 
 Authentication: required. Input: `media_id`. Client `force` deletion is rejected.
 
@@ -485,7 +536,7 @@ The caller must manage the Media, the purpose must permit deletion, and the Medi
 
 Duplicate delete calls against `Delete Pending` are safe. Worker/scheduled reconciliation performs idempotent storage deletion and eventually marks `Deleted`.
 
-## MIME/content security
+### MIME/content security
 
 Media does not trust extensions, browser MIME or client metadata in isolation. Initialization checks the declared contract and filename; confirmation checks authoritative object length plus byte signatures and decoded/streamed content.
 
@@ -493,7 +544,7 @@ Current accepted client content is deliberately narrow: JPEG, PNG, WebP, MP4/Qui
 
 Image decoding converts Pillow decompression-bomb warnings to hard failures, caps decoded pixels, rejects malformed/animated content and enforces purpose dimensions. Public images are re-encoded without EXIF/GPS metadata.
 
-## Concurrency and retry guarantees
+### Concurrency and retry guarantees
 
 All correctness locks are database/storage based; Media uses no Python process-local lock for business correctness.
 
@@ -510,7 +561,7 @@ Important concurrency boundaries are:
 
 Storage retry logic is bounded and only enabled for operations safe to retry. Multipart creation is intentionally not automatically retried after an ambiguous network failure because doing so could create an untracked second upload ID.
 
-## Cleanup and reconciliation
+### Cleanup and reconciliation
 
 The scheduled Media task performs bounded batches for:
 
@@ -523,19 +574,19 @@ A separate scheduled task recovers queued/retryable/stale Media processing jobs.
 
 Operational retention values are deployment configuration unless represented by existing safe AOS Settings policy. The system does not invent a public per-account storage quota; abuse is bounded today through purpose limits, endpoint rate limits, active multipart-session caps, bounded processing attempts and bounded recovery scans. Aggregate long-term storage quota remains a product/operations policy decision.
 
-## Rate limiting and abuse resistance
+### Rate limiting and abuse resistance
 
 Every public Media endpoint is registered in `ci/public-endpoint-rate-limits.json`. Authenticated endpoints use shared Redis-backed user keys; guest public-URL requests use IP keys. Rate-limit keys are structured through the common digest-safe helper instead of embedding raw sensitive values directly where normalization is required.
 
 Upload, confirmation, multipart URL/status/completion/abort, URL generation, deletion, background removal and processing-status polling each have explicit operation-specific limits. Resource-intensive work is moved to workers.
 
-## Observability
+### Observability
 
 Media emits structured bounded events for upload initialization/completion/rejection, multipart completion/abort, attachment, replacement, deletion request/completion/failure, processing queue/completion/failure/retry and storage failures. Storage health reports contain only categories, counts and latency—not credentials or object paths.
 
 Do not log presigned URLs, query signatures, service secrets, storage credentials, raw private media, verification contents, arbitrary filenames or processor stderr.
 
-## Error contract
+### Error contract
 
 All public endpoints use the standard AOS envelope:
 
@@ -553,7 +604,7 @@ Current Media errors include `INVALID_MEDIA_PURPOSE`, `UNSUPPORTED_MEDIA_TYPE`, 
 
 Raw S3/MinIO/Hetzner/AWS exceptions, bucket credentials, internal hosts, object keys for private media, SQL, paths and processor tracebacks are not public errors.
 
-## Docker / infrastructure
+### Docker / infrastructure
 
 The repository Compose keeps MinIO for development/staging. MinIO stores `/data` in the named `minio_data` volume so container recreation does not discard objects. Its API and console bind to `127.0.0.1` by default, both have explicit ports, health checks, restart policy and resource/pid limits. Browser upload CORS is explicit and must not be broad anonymous bucket write access; clients upload with presigned operations.
 
@@ -561,7 +612,7 @@ The background-removal container is an immutable, offline-capable inference appl
 
 Production should not expose the MinIO admin console, should set `AOS_OBJECT_STORAGE_MANAGE_BUCKETS=false`, should pre-provision object buckets/CORS/policy and should point `AOS_OBJECT_STORAGE_*` at Hetzner. `AOS_MEDIA_PUBLIC_BASE_URL` should point at the production CDN/media domain. The same application contract supports AWS S3 later.
 
-## Accounts integration contract
+### Accounts integration contract
 
 Accounts remains production-ready alongside Media. The Media integration boundary preserves:
 
@@ -572,16 +623,16 @@ Accounts remains production-ready alongside Media. The Media integration boundar
 - missing/deleted/non-ready new Media is rejected through existing Accounts error mapping; a missing previous avatar reference can be repaired by replacement/removal under the locked Profile transaction;
 - public avatar serialization derives a URL from the Media ID/configuration;
 
-## Ads and Shorts boundary
+### Ads and Shorts boundary
 
-This hardening does not change Ads or Shorts business rules. Media supplies their current requirements only:
+Media supplies the current Ads and Shorts storage/lifecycle requirements without owning either feature's business rules:
 
 - Ads: up to four `ad_image` objects and one bounded `ad_video`, immutable public delivery, attachment authorization/count enforcement.
 - Shorts: private raw video, direct multipart upload for large objects, processing state support and public generated thumbnails.
 
-Future feature hardening should consume these canonical Media contracts instead of adding provider-specific storage logic.
+Other features consume these canonical Media contracts instead of adding provider-specific storage logic.
 
-## Tests and verification
+### Tests and verification
 
 Pure Media validation/policy/runtime tests cover file signatures, malformed images, public-image re-encoding/metadata stripping, purpose rules and configuration bounds. Frappe Media service tests use an in-memory storage adapter and cover initialization idempotency, multipart behavior, authoritative confirmation, public-image canonicalization, ownership/IDOR, private signed access, attachment authorization, deletion retry and expired staging cleanup. DocType tests cover schema/storage/ownership invariants. Background-removal service tests cover internal authentication, input bounds, processor success/failure and safe exception/validation responses.
 

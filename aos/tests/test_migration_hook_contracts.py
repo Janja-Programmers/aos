@@ -24,7 +24,7 @@ class TestMigrationHookContracts(unittest.TestCase):
         required = {
             "install_localization_schema.execute",
             "install_accounts_indexes.execute",
-            "harden_media_subsystem.execute",
+            "install_media_indexes.execute",
             "install_shorts_indexes.execute",
             "install_live_indexes.execute",
             "install_report_indexes.execute",

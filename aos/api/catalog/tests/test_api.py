@@ -24,11 +24,11 @@ class TestCatalogAPI(TestCase):
             {
                 "cmd": "aos.api.v1.catalog.get_category_schema",
                 "category": "Laptops",
-                "legacy": 1,
+                "unexpected": 1,
             },
         )
         self.assertTrue(response["ok"])
-        self.assertEqual(captured, {"category": "Laptops", "legacy": 1})
+        self.assertEqual(captured, {"category": "Laptops", "unexpected": 1})
 
         wrapper = (
             Path(__file__).resolve().parents[2] / "v1" / "catalog" / "__init__.py"
@@ -106,7 +106,7 @@ class TestCatalogAPI(TestCase):
             "options": ["EliteBook", "ProBook"],
         }
         unknown = get_attribute_options_impl(
-            category="Laptops", attribute="model", parent_value="HP", legacy=1
+            category="Laptops", attribute="model", parent_value="HP", unexpected=1
         )
         self.assertEqual(unknown["error"], "INVALID_CATALOG_INPUT")
         service_factory.assert_not_called()

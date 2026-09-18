@@ -29,9 +29,9 @@ class TestAuthRegisterAPI(AOSFeatureTestMixin, FrappeTestCase):
     def test_registration_contract_rejects_structured_and_unknown_inputs(self):
         with patch("aos.api.auth.register.auth_rate_limit", return_value=None), patch("aos.api.auth.register.auth_ip_limit", return_value=None):
             structured = register_impl(email={"value": "x@example.com"}, full_name="Example", password="StrongPass123!")
-            legacy = register_impl(email="x@example.com", full_name="Example", password="StrongPass123!", username="old")
+            response = register_impl(email="x@example.com", full_name="Example", password="StrongPass123!", unexpected="x")
         self.assertEqual(structured.get("error"), "VALIDATION_ERROR")
-        self.assertEqual(legacy.get("error"), "AUTH_UNKNOWN_FIELD")
+        self.assertEqual(response.get("error"), "AUTH_UNKNOWN_FIELD")
 
     def test_success_creates_user_profile_localization_and_slow_otp_state(self):
         email = f"{self.prefix}-success@example.com"

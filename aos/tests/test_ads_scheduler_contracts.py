@@ -10,7 +10,7 @@ from aos.tasks.ads import expire_ads
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
-class TestAdsSchedulerHardening(AOSFeatureTestMixin, FrappeTestCase):
+class TestAdsSchedulerContracts(AOSFeatureTestMixin, FrappeTestCase):
     def setUp(self):
         self.prefix = self.make_prefix("ads-expiry")
         self.created_users: list[str] = []

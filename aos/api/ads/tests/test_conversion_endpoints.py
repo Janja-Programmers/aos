@@ -89,7 +89,7 @@ class TestConversionEndpoints(AOSFeatureTestMixin, FrappeTestCase):
         elif module == "aos.api.wishlist.list":
             # Wishlist deliberately delegates Ad pricing/projection to the
             # canonical Marketplace Discovery projection. Patch the owner of
-            # the FX settings rather than reintroducing an unused compatibility
+            # the FX settings rather than adding an unused alternate
             # import into Wishlist merely for this endpoint regression test.
             fx_boundary = patch(
                 "aos.services.marketplace_discovery.projection.get_aos_settings_snapshot",

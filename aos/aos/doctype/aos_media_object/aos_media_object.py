@@ -14,6 +14,7 @@ from aos.services.media.content_validation import (
     validate_filename_extension,
 )
 from aos.services.media.media_purposes import get_media_purpose
+from aos.utils.identifiers import new_prefixed_name
 
 VALID_STATUSES = {
     "Initialized", "Uploaded", "Processing", "Ready", "Attached",
@@ -26,6 +27,9 @@ HEX_64 = re.compile(r"^[0-9a-f]{64}$")
 
 class AOSMediaObject(Document):
     """Canonical metadata and lifecycle record for AOS-owned media bytes."""
+
+    def autoname(self):
+        self.name = new_prefixed_name("MEDIA")
 
     def validate(self):
         self._normalize_values()

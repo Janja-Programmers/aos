@@ -210,17 +210,17 @@ class TestSellerAPI(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(int(self.seller.storefront_version or 0), 0)
 
 
-    def test_legacy_public_identity_and_banner_aliases_are_rejected(self):
+    def test_public_identity_and_unknown_fields_are_strict(self):
         with self._without_rate_limit("aos.api.sellers.get_seller.rate_limit"):
-            legacy_lookup = get_seller_impl(seller_id=self.owner)
-        self.assertFalse(legacy_lookup.get("ok"), legacy_lookup)
-        self.assertEqual(legacy_lookup.get("error"), "SELLER_NOT_FOUND")
+            invalid_lookup = get_seller_impl(seller_id=self.owner)
+        self.assertFalse(invalid_lookup.get("ok"), invalid_lookup)
+        self.assertEqual(invalid_lookup.get("error"), "SELLER_NOT_FOUND")
 
         frappe.set_user(self.owner)
         with self._without_rate_limit("aos.api.sellers.update_my_seller.rate_limit"):
-            legacy_banner = update_my_seller_impl(shop_banner="https://example.invalid/banner.jpg")
-        self.assertFalse(legacy_banner.get("ok"), legacy_banner)
-        self.assertEqual(legacy_banner.get("error"), "INVALID_SELLER_REQUEST")
+            invalid_update = update_my_seller_impl(unexpected_banner="https://example.invalid/banner.jpg")
+        self.assertFalse(invalid_update.get("ok"), invalid_update)
+        self.assertEqual(invalid_update.get("error"), "INVALID_SELLER_REQUEST")
 
     def test_controller_blocks_direct_storefront_lifecycle_and_metric_mutation(self):
         frappe.set_user(self.owner)

@@ -1,7 +1,7 @@
 """Idempotent schema-only indexes for canonical Marketplace Discovery.
 
-Safe for fresh-site patching and after_migrate reassertion. This module does no
-historical data repair, alias migration, or compatibility backfill.
+Safe for fresh-site setup and after_migrate reassertion. The installer is
+schema-only and does not mutate domain records.
 """
 from __future__ import annotations
 

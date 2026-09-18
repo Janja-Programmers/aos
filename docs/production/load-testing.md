@@ -79,7 +79,7 @@ export USER_PASSWORD="replace-with-staging-test-password"
 Recommended seed values:
 
 ```bash
-export AD_IDS="AD-2026-00001,AD-2026-00002"
+export AD_IDS="ad_replace_with_public_id_1,ad_replace_with_public_id_2"
 export SHORT_IDS="SHORT-2026-00001,SHORT-2026-00002"
 export TEST_SHORT_ID="SHORT-2026-00001"
 export CHAT_CONVERSATION_ID="CONV-2026-00001"

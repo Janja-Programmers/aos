@@ -9,13 +9,12 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping
 
-import frappe
 
 from aos.services.ads.errors import AdsValidationError
 from aos.services.ads.validation import normalize_flag, normalize_identifier, normalize_text
 from aos.services.catalog.schema_resolver import resolve_attributes
 from aos.services.catalog.service import CatalogService
-from aos.services.localization import validate_country, validate_currency
+from aos.services.localization import validate_country, validate_currency, validate_location
 from aos.services.sellers.identity import resolve_public_seller_id
 
 _INTENT_FIELDS = frozenset({
@@ -145,11 +144,10 @@ def _validate_reference_filters(result: dict[str, Any]) -> None:
     if seller and not resolve_public_seller_id(seller):
         raise AdsValidationError("Invalid search seller.", code="SEARCH_INVALID_FILTERS")
     if location:
-        row=frappe.db.get_value("AOS Location", location, ["country","is_active"], as_dict=True)
-        if not row or int(row.is_active or 0) != 1:
+        resolved, error = validate_location(location, country=result.get("country") or None, required=True)
+        if error or not resolved:
             raise AdsValidationError("Invalid search location.", code="SEARCH_INVALID_FILTERS")
-        if country and str(row.country or "").strip() != str(result.get("country") or "").strip():
-            raise AdsValidationError("Search location does not belong to country.", code="SEARCH_INVALID_FILTERS")
+        result["location"] = resolved
 
 
 def canonicalize_search_intent(payload: Mapping[str, Any]) -> dict[str, Any]:
