@@ -196,6 +196,10 @@ All client endpoints are under `aos.api.v1.ads` and pass through `aos.api.shared
 | `abandon_ad_draft` | POST/session | `draft_id,version` | idempotent abandonment |
 | `submit_ad_draft` | POST/session | `draft_id,version` | resulting public Ad id |
 
+### Frappe Desk manual review
+
+The `AOS Ad` Desk form keeps `status` read-only and exposes lifecycle-safe review actions to users with `write` permission on `AOS Ad`. **Approve Ad** is shown for `Reviewing` and `Declined`; **Reject Ad** is shown for `Reviewing` and `Active` and requires a rejection reason. Both actions call the canonical `aos.api.v1.ads.review_ad` endpoint with the Ad `public_id` and current `modified` version, so authorization, optimistic concurrency, lifecycle validation, review metadata, Notifications, and discovery refresh remain server-owned. Terminal and suspended states expose no manual-review action.
+
 Errors use the shared AOS response envelope and Ads/Search error codes. Public reads always recheck current Ad/Seller/Account/expiry/block eligibility. Draft and owner endpoints never accept another user's records.
 
 ## Cross-feature Dependencies
