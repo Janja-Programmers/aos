@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import frappe
 
-from aos.api.shared.auth import require_login
+from aos.api.shared.auth import require_authenticated_user
 from aos.api.shared.rate_limit import rate_limit
 from aos.api.shared.responses import ok
 from aos.services.ads.api import run_ads_api
@@ -12,7 +12,7 @@ from aos.services.ads.validation import ensure_known_fields, normalize_identifie
 
 
 def review_ad_impl(**kwargs):
-    user, error = require_login()
+    user, error = require_authenticated_user()
     if error:
         return error
     limited = rate_limit(key=f"aos:ads:manual-review:{user}", ttl_seconds=60, limit=60, message="Too many requests.")

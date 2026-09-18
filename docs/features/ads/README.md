@@ -242,3 +242,5 @@ Run the full app suite before release:
 ```bash
 bench run-tests --app aos
 ```
+
+Administrative Desk review uses the canonical Ads review endpoint and requires an authenticated Frappe user with `AOS Ad` write permission. It does not require an `AOS User Preference`.

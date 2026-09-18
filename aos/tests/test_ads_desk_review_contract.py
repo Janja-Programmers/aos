@@ -16,6 +16,12 @@ class TestAdsDeskReviewContract(unittest.TestCase):
         status = next(field for field in data["fields"] if field.get("fieldname") == "status")
         self.assertEqual(status.get("read_only"), 1)
 
+    def test_review_endpoint_does_not_require_marketplace_preference(self):
+        review_api = (ROOT / "api" / "ads" / "review.py").read_text(encoding="utf-8")
+        self.assertIn("require_authenticated_user", review_api)
+        self.assertNotIn("require_login", review_api)
+        self.assertIn("reviewer=user", review_api)
+
     def test_desk_review_uses_canonical_review_endpoint(self):
         source = AD_JS.read_text(encoding="utf-8")
         self.assertIn('"aos.api.v1.ads.review_ad"', source)
