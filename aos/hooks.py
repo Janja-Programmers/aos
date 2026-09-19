@@ -213,7 +213,7 @@ scheduler_events = {
 # Testing
 # -------
 
-# before_tests = "aos.install.before_tests"
+before_tests = "aos.install.before_tests"
 
 # Extend DocType Class
 # ------------------------------

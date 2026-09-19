@@ -22,6 +22,21 @@ class SocialConcurrencyContracts(IntegrationTestCase):
         self.assertIn("ORDER BY NAME ASC FOR UPDATE", normalized)
         self.assertEqual(params["users"], ("a-user@example.test", "z-user@example.test"))
 
+    def test_existing_follow_is_idempotent_before_insert_attempt(self):
+        repository = SocialRepository()
+        with (
+            patch.object(repository, "lock_follow_pair", return_value={"name": "FOLLOW-EXISTING"}),
+            patch("aos.services.social.repository.frappe.get_doc") as get_doc,
+        ):
+            name, changed = repository.insert_follow(
+                follower="first@example.test",
+                target="second@example.test",
+            )
+
+        self.assertEqual(name, "FOLLOW-EXISTING")
+        self.assertFalse(changed)
+        get_doc.assert_not_called()
+
     def test_duplicate_follow_insert_race_returns_database_winner(self):
         repository = SocialRepository()
         candidate = MagicMock()

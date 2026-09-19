@@ -79,6 +79,14 @@ class SocialRepository:
         return dict(rows[0]) if rows else None
 
     def insert_follow(self, *, follower: str, target: str) -> tuple[str | None, bool]:
+        # The caller holds the deterministic account-pair row lock. Detect the
+        # common retry/idempotency case before attempting an insert so explicit
+        # follow remains idempotent even while schema invariants are being
+        # repaired. The database unique index remains the final race boundary.
+        existing = self.lock_follow_pair(follower=follower, target=target)
+        if existing:
+            return str(existing["name"]), False
+
         doc = frappe.get_doc({"doctype": FOLLOW_DOCTYPE, "follower_user": follower, "following_user": target})
         try:
             doc.insert(ignore_permissions=True)

@@ -15,6 +15,15 @@ class TestMigrationHookContracts(unittest.TestCase):
         hooks = (ROOT / "aos" / "hooks.py").read_text(encoding="utf-8")
         self.assertIn('after_migrate = "aos.migrate.after_migrate"', hooks)
 
+    def test_before_tests_reasserts_schema_invariants_after_test_site_sync(self):
+        hooks = (ROOT / "aos" / "hooks.py").read_text(encoding="utf-8")
+        install = (ROOT / "aos" / "install.py").read_text(encoding="utf-8")
+        self.assertIn('before_tests = "aos.install.before_tests"', hooks)
+        self.assertIn("def before_tests()", install)
+        self.assertIn("from aos.migrate import after_migrate", install)
+        self.assertIn("after_migrate()", install)
+        self.assertNotIn("frappe.db.commit", install[install.index("def before_tests()"):])
+
     def test_after_migrate_reasserts_current_manual_index_installers(self):
         path = ROOT / "aos" / "migrate.py"
         source = path.read_text(encoding="utf-8")
@@ -25,8 +34,11 @@ class TestMigrationHookContracts(unittest.TestCase):
             "install_localization_schema.execute",
             "install_accounts_indexes.execute",
             "install_media_indexes.execute",
+            "install_verification_indexes.execute",
             "install_shorts_indexes.execute",
             "install_live_indexes.execute",
+            "install_review_indexes.execute",
+            "install_social_indexes.execute",
             "install_report_indexes.execute",
             "install_activity_indexes.execute",
             "install_wishlist_indexes.execute",
