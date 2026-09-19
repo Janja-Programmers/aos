@@ -93,6 +93,21 @@ class TestFixtureTransactionSafety(unittest.TestCase):
             self.assertIn(f"self.{dependency}(", source)
         self.assertNotIn("frappe.db.commit", source)
 
+
+    def test_request_rollback_helper_uses_savepoint_without_committing(self):
+        helper = self.methods["request_rollback_savepoint"]
+        source = ast.get_source_segment(HELPERS.read_text(encoding="utf-8"), helper) or ""
+        self.assertIn("frappe.db.savepoint", source)
+        self.assertIn("save_point=save_point", source)
+        self.assertNotIn("frappe.db.commit", source)
+
+    def test_live_fixture_clears_external_hot_state_before_use(self):
+        make_live = self.methods["make_live"]
+        source = ast.get_source_segment(HELPERS.read_text(encoding="utf-8"), make_live) or ""
+        self.assertIn('self._track_created("created_live_names", live.name)', source)
+        self.assertIn("self._clear_live_ephemeral_state(live.name)", source)
+        self.assertNotIn("frappe.db.commit", source)
+
     def test_make_ad_callers_do_not_commit_their_fixture_transaction(self):
         offenders: dict[str, list[str]] = {}
         tests_root = HELPERS.parent.parent

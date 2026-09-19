@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import time
 import uuid
+from contextlib import contextmanager
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Iterator
 
 import frappe
+from unittest.mock import patch
 from frappe.utils import now_datetime
 
 from aos.api.auth.user_controller import mark_aos_managed_website_user_creation
@@ -42,6 +44,60 @@ class AOSFeatureTestMixin:
             setattr(self, bucket, values)
         if clean not in values:
             values.append(clean)
+
+    @contextmanager
+    def request_rollback_savepoint(self, label: str = "request") -> Iterator[str]:
+        """Isolate a direct API call that may issue ``frappe.db.rollback()``.
+
+        Frappe integration tests execute request handlers inside the same outer
+        database transaction as their fixtures. A production handler is correct
+        to roll back its whole *request* transaction on failure, but a literal
+        full rollback in a direct-call test would also erase the test baseline.
+        Model the real request boundary with a nested savepoint instead: no test
+        fixture is committed, request mutations are still rolled back, and the
+        outer test transaction remains available for assertions and teardown.
+        """
+        token = "".join(ch if ch.isalnum() else "_" for ch in str(label or "request"))
+        save_point = f"aos_test_{token}_{uuid.uuid4().hex[:12]}"
+        frappe.db.savepoint(save_point)
+        original_rollback = frappe.db.rollback
+
+        def rollback_to_request_boundary(*args, **kwargs):
+            # Respect an explicitly requested savepoint from the code under test;
+            # only redirect the production no-argument full-request rollback.
+            if args or kwargs.get("save_point"):
+                return original_rollback(*args, **kwargs)
+            return original_rollback(save_point=save_point)
+
+        with patch.object(frappe.db, "rollback", side_effect=rollback_to_request_boundary):
+            yield save_point
+
+    @staticmethod
+    def _clear_live_ephemeral_state(live_id: str) -> None:
+        """Remove Redis hot state for a synthetic Live id.
+
+        Transaction-local Live rows can roll back their naming-series increment,
+        so a later test may legitimately receive the same database name. Redis is
+        outside MariaDB transactions; clear all per-live hot counters before use
+        (and again during teardown) so a reused id never inherits stale state.
+        """
+        clean = str(live_id or "").strip()
+        if not clean:
+            return
+        try:
+            from aos.services.live.ephemeral import (
+                clear_comment_state,
+                clear_reaction_state,
+                clear_view_metrics,
+            )
+
+            clear_reaction_state(live_id=clean)
+            clear_view_metrics(live_id=clean)
+            clear_comment_state(live_id=clean)
+        except Exception:
+            # Redis is an optional hot-state dependency in many feature tests.
+            # A cleanup failure must not mask the database behavior under test.
+            pass
 
     def make_system_user(self, label: str, *, roles: tuple[str, ...] = ("System Manager",)) -> str:
         """Create a normal enabled System User with explicit role-derived permissions.
@@ -516,6 +572,11 @@ class AOSFeatureTestMixin:
             }
         )
         live.insert(ignore_permissions=True)
+        self._track_created("created_live_names", live.name)
+        # A rolled-back naming-series increment can make this id reusable while
+        # Redis still holds counters from an earlier failed/interrupted test.
+        # Start every synthetic Live fixture from clean hot state.
+        self._clear_live_ephemeral_state(live.name)
         return live
 
     def fake_media_doc(self, *, name: str = "MEDIA-00000000000000000000000000000001", purpose: str = "profile_image"):
@@ -585,6 +646,11 @@ class AOSFeatureTestMixin:
                 raise
 
     def cleanup_feature_rows(self):
+        # Redis is outside the MariaDB transaction. Clear hot state while the
+        # in-memory fixture ids are still available, then roll back DB fixtures.
+        for live_id in getattr(self, "created_live_names", []):
+            self._clear_live_ephemeral_state(live_id)
+
         # Primary isolation is transactional. Discard every uncommitted fixture
         # and mutation before doing any compensating cleanup. This is what makes
         # ordinary feature tests crash-safe: if tearDown is never reached, the

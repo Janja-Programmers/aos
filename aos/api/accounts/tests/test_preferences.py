@@ -216,7 +216,11 @@ class AccountPreferenceIntegrationTests(AOSFeatureTestMixin, IntegrationTestCase
             )
             raise RuntimeError("simulated mid-operation failure")
 
+        # Model the production request transaction with a nested savepoint. The
+        # API's full rollback is redirected to this boundary, proving the partial
+        # write is undone without committing the outer test fixtures.
         with (
+            self.request_rollback_savepoint("preference-update-failure"),
             patch("aos.api.accounts.update_my_preference.rate_limit", return_value=None),
             patch("aos.api.accounts.update_my_preference.update_user_preference", side_effect=mutate_then_fail),
             patch("aos.api.accounts.update_my_preference.frappe.log_error"),

@@ -85,17 +85,21 @@ class AccountsProfileIntegrationTests(AOSFeatureTestMixin, IntegrationTestCase):
     def test_my_profile_update_rejects_mass_assignment_and_immutable_fields(self):
         user = self.make_user("mass-assignment")
         frappe.set_user(user)
-        for field, value in (
-            ("account_id", "ACC-AAAAAAAAAAAAAAAAAAAA"),
-            ("email", "other@example.com"),
-            ("account_status", "Active"),
-            ("is_verified", 1),
-            ("roles", ["System Manager"]),
-            ("seller", {"status": "Active"}),
-        ):
-            with self.subTest(field=field), patch("aos.api.accounts.profile.rate_limit", return_value=None):
-                response = update_my_profile_impl(**{field: value})
-            self.assertEqual(response.get("error"), "INVALID_PROFILE_FIELD")
+        # The production endpoint rolls back its request on AccountError. Keep
+        # this direct-call integration test inside a nested request savepoint so
+        # expected failures do not erase the outer transaction-local fixture.
+        with self.request_rollback_savepoint("profile-mass-assignment"):
+            for field, value in (
+                ("account_id", "ACC-AAAAAAAAAAAAAAAAAAAA"),
+                ("email", "other@example.com"),
+                ("account_status", "Active"),
+                ("is_verified", 1),
+                ("roles", ["System Manager"]),
+                ("seller", {"status": "Active"}),
+            ):
+                with self.subTest(field=field), patch("aos.api.accounts.profile.rate_limit", return_value=None):
+                    response = update_my_profile_impl(**{field: value})
+                self.assertEqual(response.get("error"), "INVALID_PROFILE_FIELD")
 
     def test_my_profile_update_normalizes_allowed_fields(self):
         user = self.make_user("update")
@@ -112,6 +116,7 @@ class AccountsProfileIntegrationTests(AOSFeatureTestMixin, IntegrationTestCase):
         media = self.make_media(owner=other, purpose="profile_image")
         frappe.set_user(owner)
         with (
+            self.request_rollback_savepoint("profile-cross-user-media"),
             patch("aos.api.accounts.profile.rate_limit", return_value=None),
             patch(
                 "aos.services.media.media_service.has_doctype_permission",
@@ -126,7 +131,10 @@ class AccountsProfileIntegrationTests(AOSFeatureTestMixin, IntegrationTestCase):
         owner = self.make_user("purpose")
         media = self.make_media(owner=owner, purpose="ad_image")
         frappe.set_user(owner)
-        with patch("aos.api.accounts.profile.rate_limit", return_value=None):
+        with (
+            self.request_rollback_savepoint("profile-wrong-media-purpose"),
+            patch("aos.api.accounts.profile.rate_limit", return_value=None),
+        ):
             response = update_my_profile_impl(avatar_media_id=media.name)
         self.assertEqual(response.get("error"), "INVALID_MEDIA_PURPOSE")
         self.assertFalse(frappe.db.get_value("AOS Profile", {"user": owner}, "profile_image_media"))
