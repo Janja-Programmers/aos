@@ -17,9 +17,12 @@ _MISSING_LOGIN_MANAGER = object()
 class AOSFeatureTestMixin:
     """Small DB fixture helpers for feature-level API tests.
 
-    These helpers intentionally create only the minimum rows needed by the
-    public API implementations under test. They avoid external services and keep
-    cleanup scoped by a per-test prefix.
+    Ordinary fixture builders are deliberately transaction-local: they never
+    commit. This means a failed, interrupted, or killed test cannot strand Ads,
+    Categories, Sellers, Media, Users, or related rows in the site database.
+    ``cleanup_feature_rows`` begins with a rollback and keeps prefix-scoped
+    deletion only as defence-in-depth for the small number of tests that
+    intentionally exercise real commit boundaries.
     """
 
     prefix: str
@@ -109,7 +112,6 @@ class AOSFeatureTestMixin:
         if created_user and email not in self.created_users:
             self.created_users.append(email)
 
-        frappe.db.commit()
         return email
 
     def delete_test_user(self, user: str) -> None:
@@ -314,7 +316,6 @@ class AOSFeatureTestMixin:
             ).insert(ignore_permissions=True)
         if created:
             self._track_created("created_category_names", category)
-        frappe.db.commit()
         return category
 
     def make_location(self, *, country: str | None = None) -> str:
@@ -334,7 +335,6 @@ class AOSFeatureTestMixin:
             name = doc.name
         if created:
             self._track_created("created_location_names", name)
-        frappe.db.commit()
         return str(name)
 
     def make_media(
@@ -367,7 +367,6 @@ class AOSFeatureTestMixin:
         )
         media.insert(ignore_permissions=True)
         self._track_created("created_media_names", media.name)
-        frappe.db.commit()
         return media
 
     def make_seller(self, user: str):
@@ -385,7 +384,6 @@ class AOSFeatureTestMixin:
         )
         seller.insert(ignore_permissions=True)
         self._track_created("created_seller_names", seller.name)
-        frappe.db.commit()
         return seller
 
     def make_ad(self, *, seller_user: str, status: str = "Active"):
@@ -422,7 +420,6 @@ class AOSFeatureTestMixin:
             frappe.set_user("Administrator")
             ad.flags.aos_status_action = "import"
             ad.insert(ignore_permissions=True)
-            frappe.db.commit()
         finally:
             frappe.set_user(original_user)
 
@@ -463,7 +460,6 @@ class AOSFeatureTestMixin:
                 }
             ).insert(ignore_permissions=True)
 
-        frappe.db.commit()
         return conv
 
     def make_short(self, *, owner: str):
@@ -492,7 +488,6 @@ class AOSFeatureTestMixin:
             }
         )
         short.insert(ignore_permissions=True)
-        frappe.db.commit()
         return short
 
     def make_report_reason(self) -> str:
@@ -508,7 +503,6 @@ class AOSFeatureTestMixin:
             ).insert(ignore_permissions=True)
         if created:
             self._track_created("created_report_reason_names", reason)
-        frappe.db.commit()
         return reason
 
     def make_live(self, *, host: str):
@@ -522,7 +516,6 @@ class AOSFeatureTestMixin:
             }
         )
         live.insert(ignore_permissions=True)
-        frappe.db.commit()
         return live
 
     def fake_media_doc(self, *, name: str = "MEDIA-00000000000000000000000000000001", purpose: str = "profile_image"):
@@ -592,6 +585,12 @@ class AOSFeatureTestMixin:
                 raise
 
     def cleanup_feature_rows(self):
+        # Primary isolation is transactional. Discard every uncommitted fixture
+        # and mutation before doing any compensating cleanup. This is what makes
+        # ordinary feature tests crash-safe: if tearDown is never reached, the
+        # database connection is still holding only uncommitted test rows.
+        frappe.db.rollback()
+
         like = f"{self.prefix}%"
         email_like = f"{self.prefix}-%@example.com"
         path_like = f"tests/{self.prefix}/%"
