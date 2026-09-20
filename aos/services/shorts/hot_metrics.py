@@ -119,4 +119,8 @@ def daily_snapshot(short_id: str, day: str) -> dict[str, int]:
 def clear_short_hot_state(short_id: str) -> None:
     cache = frappe.cache()
     cache.delete_value(hot_key(short_id))
+    # Daily hot state is also external to MariaDB transactions. Clearing the
+    # current-day key prevents synthetic/test Short ids from surviving a rollback
+    # and being reconciled into a later row that reuses the same id.
+    cache.delete_value(daily_key(short_id))
     cache.srem(_DIRTY_KEY, short_id)

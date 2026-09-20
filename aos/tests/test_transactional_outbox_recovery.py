@@ -34,6 +34,9 @@ class TestTransactionalOutboxRecovery(FrappeTestCase):
     committed_names: ClassVar[list[tuple[str, str]]] = []
 
     def tearDown(self) -> None:
+        # Restore the last intentionally committed baseline before deleting it;
+        # otherwise teardown's commit could persist untracked recovery mutations.
+        frappe.db.rollback()
         for doctype, name in reversed(self.committed_names):
             with suppress(Exception):
                 frappe.db.delete(doctype, {"name": name})

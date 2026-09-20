@@ -108,6 +108,42 @@ class TestFixtureTransactionSafety(unittest.TestCase):
         self.assertIn("self._clear_live_ephemeral_state(live.name)", source)
         self.assertNotIn("frappe.db.commit", source)
 
+    def test_make_short_callers_do_not_commit_their_fixture_transaction(self):
+        offenders: dict[str, list[str]] = {}
+        tests_root = HELPERS.parent.parent
+
+        for path in sorted(tests_root.rglob("*.py")):
+            if path == HELPERS or path == Path(__file__):
+                continue
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                calls = [child for child in ast.walk(node) if isinstance(child, ast.Call)]
+                calls_make_short = any(
+                    _call_name(call) in {"self.make_short", "make_short"}
+                    for call in calls
+                )
+                commits = [
+                    call.lineno
+                    for call in calls
+                    if _call_name(call) == "frappe.db.commit"
+                ]
+                if calls_make_short and commits:
+                    relative = str(path.relative_to(tests_root.parent))
+                    offenders.setdefault(relative, []).append(
+                        f"{node.name}: commit lines {commits}"
+                    )
+
+        self.assertFalse(
+            offenders,
+            "Tests using ordinary make_short fixtures must not commit the fixture transaction. "
+            f"Offenders: {offenders}",
+        )
+
     def test_make_ad_callers_do_not_commit_their_fixture_transaction(self):
         offenders: dict[str, list[str]] = {}
         tests_root = HELPERS.parent.parent
@@ -151,6 +187,52 @@ class TestFixtureTransactionSafety(unittest.TestCase):
             "Use a dedicated explicitly committed fixture path only for genuine cross-transaction tests. "
             f"Offenders: {offenders}",
         )
+
+    def test_user_action_uniqueness_fixtures_do_not_commit(self):
+        source = Path(__file__).with_name("test_user_action_uniqueness.py").read_text(encoding="utf-8")
+        self.assertNotIn("frappe.db.commit()", source)
+        self.assertNotIn("file_key", source)
+
+    def test_committed_fixture_cleanup_rolls_back_before_delete_commit(self):
+        source = Path(__file__).with_name("outbox_fixtures.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="outbox_fixtures.py")
+        fn = next(
+            node for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == "cleanup_committed_records"
+        )
+        calls = [
+            (node.lineno, _call_name(node))
+            for node in ast.walk(fn)
+            if isinstance(node, ast.Call)
+            and _call_name(node) in {"frappe.db.rollback", "frappe.db.delete", "frappe.db.commit"}
+        ]
+        calls.sort()
+        self.assertTrue(calls)
+        self.assertEqual(calls[0][1], "frappe.db.rollback")
+        self.assertIn("frappe.db.commit", [name for _, name in calls])
+
+    def test_shorts_compensating_cleanup_uses_current_schema_and_exact_ids(self):
+        source = HELPERS.read_text(encoding="utf-8")
+        self.assertNotIn("tabAOS Short` WHERE file_key", source)
+        self.assertIn('self._track_created("created_short_names", short.name)', source)
+        self.assertIn('"AOS Short Repost"', source)
+        self.assertIn('"AOS Short Feedback"', source)
+        self.assertIn('"AOS Short Moderation Decision"', source)
+        self.assertIn('"AOS Video Processing Job"', source)
+
+    def test_short_hot_state_cleanup_covers_daily_redis_key(self):
+        hot_metrics = Path(__file__).parents[1] / "services" / "shorts" / "hot_metrics.py"
+        source = hot_metrics.read_text(encoding="utf-8")
+        self.assertIn("cache.delete_value(daily_key(short_id))", source)
+
+
+    def test_leaked_fixture_cleanup_is_explicit_and_not_scheduled(self):
+        cleanup = Path(__file__).with_name("cleanup_leaked_test_artifacts.py").read_text(encoding="utf-8")
+        self.assertIn('DELETE_AOS_TEST_ARTIFACTS', cleanup)
+        self.assertIn('frappe.db.rollback()', cleanup)
+        self.assertNotIn('@frappe.whitelist', cleanup)
+
 
 
 if __name__ == "__main__":

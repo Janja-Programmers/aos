@@ -30,6 +30,7 @@ class AOSFeatureTestMixin:
     prefix: str
     created_users: list[str]
     created_ad_names: list[str]
+    created_short_names: list[str]
 
     def make_prefix(self, namespace: str = "feature") -> str:
         return f"{namespace}-{uuid.uuid4().hex[:10]}"
@@ -97,6 +98,27 @@ class AOSFeatureTestMixin:
         except Exception:
             # Redis is an optional hot-state dependency in many feature tests.
             # A cleanup failure must not mask the database behavior under test.
+            pass
+
+
+    @staticmethod
+    def _clear_short_ephemeral_state(short_id: str) -> None:
+        """Remove Redis hot state owned by one synthetic Short fixture.
+
+        Shorts metrics/session state lives outside MariaDB transactions.  Tests
+        that create Shorts must therefore clear it explicitly before an id can be
+        reused and again during teardown.  Keep this best-effort so Redis outages
+        do not hide database cleanup failures.
+        """
+        clean = str(short_id or "").strip()
+        if not clean:
+            return
+        try:
+            from aos.services.shorts.hot_metrics import clear_short_hot_state, daily_key
+
+            clear_short_hot_state(clean)
+            frappe.cache().delete_value(daily_key(clean))
+        except Exception:
             pass
 
     def make_system_user(self, label: str, *, roles: tuple[str, ...] = ("System Manager",)) -> str:
@@ -545,6 +567,8 @@ class AOSFeatureTestMixin:
             }
         )
         short.insert(ignore_permissions=True)
+        self._track_created("created_short_names", short.name)
+        self._clear_short_ephemeral_state(short.name)
         return short
 
     def make_report_reason(self) -> str:
@@ -600,41 +624,120 @@ class AOSFeatureTestMixin:
         *,
         email_like: str,
         like: str,
-        path_like: str,
+        short_names: tuple[str, ...],
         max_attempts: int = 5,
         base_delay_seconds: float = 0.05,
     ) -> None:
-        """Delete prefix-scoped Shorts fixtures with bounded deadlock retries."""
+        """Delete committed Shorts fixtures without relying on removed legacy fields.
+
+        Ordinary Shorts fixtures are transaction-local.  This compensating path is
+        only for tests that intentionally exercise a real commit boundary.  It
+        derives the target set from exact tracked Short ids plus synthetic owners,
+        then removes every current Shorts relation/job before deleting the Short.
+        """
         attempts = max(1, int(max_attempts or 1))
         for attempt in range(attempts):
             try:
+                targets = {str(value) for value in short_names if str(value or "").strip()}
+                targets.update(
+                    str(value)
+                    for value in frappe.get_all(
+                        "AOS Short", filters={"owner": ["like", email_like]}, pluck="name", limit=0
+                    )
+                )
+
+                # User-scoped rows may exist even when the Short itself rolled back.
                 frappe.db.sql("DELETE FROM `tabAOS Short Comment Like` WHERE user LIKE %s", (email_like,))
-                frappe.db.sql(
-                    "DELETE FROM `tabAOS Short Comment` WHERE user LIKE %s OR "
-                    "short IN (SELECT name FROM `tabAOS Short` WHERE file_key LIKE %s)",
-                    (email_like, path_like),
-                )
-                frappe.db.sql(
-                    "DELETE FROM `tabAOS Short Like` WHERE user LIKE %s OR "
-                    "short IN (SELECT name FROM `tabAOS Short` WHERE file_key LIKE %s)",
-                    (email_like, path_like),
-                )
-                frappe.db.sql(
-                    "DELETE FROM `tabAOS Short Save` WHERE user LIKE %s OR "
-                    "short IN (SELECT name FROM `tabAOS Short` WHERE file_key LIKE %s)",
-                    (email_like, path_like),
-                )
-                frappe.db.sql(
-                    "DELETE FROM `tabAOS Short Report` WHERE reported_by LIKE %s OR "
-                    "short IN (SELECT name FROM `tabAOS Short` WHERE file_key LIKE %s)",
-                    (email_like, path_like),
-                )
-                frappe.db.sql(
-                    "DELETE FROM `tabAOS Short View` WHERE user LIKE %s OR session_id LIKE %s OR "
-                    "short IN (SELECT name FROM `tabAOS Short` WHERE file_key LIKE %s)",
-                    (email_like, like, path_like),
-                )
-                frappe.db.sql("DELETE FROM `tabAOS Short` WHERE file_key LIKE %s", (path_like,))
+                frappe.db.sql("DELETE FROM `tabAOS Short Like` WHERE user LIKE %s", (email_like,))
+                frappe.db.sql("DELETE FROM `tabAOS Short Save` WHERE user LIKE %s", (email_like,))
+                frappe.db.sql("DELETE FROM `tabAOS Short Repost` WHERE user LIKE %s", (email_like,))
+                frappe.db.sql("DELETE FROM `tabAOS Short Feedback` WHERE user LIKE %s", (email_like,))
+                frappe.db.sql("DELETE FROM `tabAOS Short View` WHERE user LIKE %s OR session_id LIKE %s", (email_like, like))
+                frappe.db.sql("DELETE FROM `tabAOS Short Event` WHERE user LIKE %s OR session_id LIKE %s", (email_like, like))
+                frappe.db.sql("DELETE FROM `tabAOS Short Report` WHERE reported_by LIKE %s", (email_like,))
+                frappe.db.sql("DELETE FROM `tabAOS Short Mention` WHERE mentioned_by LIKE %s", (email_like,))
+                frappe.db.sql("DELETE FROM `tabAOS Short Comment` WHERE user LIKE %s", (email_like,))
+
+                if targets:
+                    names = tuple(sorted(targets))
+                    # Durable jobs/outbox records first so no committed worker row can
+                    # retain or recreate a synthetic Short after teardown.
+                    video_jobs = set(
+                        frappe.get_all(
+                            "AOS Video Processing Job",
+                            filters={"short": ["in", names]},
+                            pluck="name",
+                            limit=0,
+                        )
+                    ) if frappe.db.exists("DocType", "AOS Video Processing Job") else set()
+                    moderation_jobs = set(
+                        frappe.get_all(
+                            "AOS Moderation Job",
+                            filters={"target_doctype": "AOS Short", "target_name": ["in", names]},
+                            pluck="name",
+                            limit=0,
+                        )
+                    ) if frappe.db.exists("DocType", "AOS Moderation Job") else set()
+                    search_jobs = set(
+                        frappe.get_all(
+                            "AOS Search Index Job",
+                            filters={"target_doctype": "AOS Short", "target_name": ["in", names]},
+                            pluck="name",
+                            limit=0,
+                        )
+                    ) if frappe.db.exists("DocType", "AOS Search Index Job") else set()
+                    for doctype, job_names in (
+                        ("AOS Video Processing Job", video_jobs),
+                        ("AOS Moderation Job", moderation_jobs),
+                        ("AOS Search Index Job", search_jobs),
+                    ):
+                        if job_names and frappe.db.exists("DocType", "AOS Transactional Outbox"):
+                            frappe.db.sql(
+                                "DELETE FROM `tabAOS Transactional Outbox` WHERE job_doctype=%s AND job_name IN %s",
+                                (doctype, tuple(job_names)),
+                            )
+                        if job_names:
+                            frappe.db.sql(
+                                f"DELETE FROM `tab{doctype}` WHERE name IN %s",
+                                (tuple(job_names),),
+                            )
+                    if frappe.db.exists("DocType", "AOS Transactional Outbox"):
+                        frappe.db.sql(
+                            "DELETE FROM `tabAOS Transactional Outbox` WHERE aggregate_doctype='AOS Short' AND aggregate_name IN %s",
+                            (names,),
+                        )
+
+                    comments = tuple(
+                        frappe.get_all(
+                            "AOS Short Comment", filters={"short": ["in", names]}, pluck="name", limit=0
+                        )
+                    )
+                    if comments:
+                        frappe.db.sql("DELETE FROM `tabAOS Short Comment Like` WHERE comment IN %s", (comments,))
+                    sounds = tuple(
+                        frappe.get_all(
+                            "AOS Sound", filters={"created_from_short": ["in", names]}, pluck="name", limit=0
+                        )
+                    )
+
+                    for table in (
+                        "AOS Short Moderation Decision", "AOS Short Metrics Daily",
+                        "AOS Short Event", "AOS Short View", "AOS Short Feedback",
+                        "AOS Short Repost", "AOS Short Save", "AOS Short Like",
+                        "AOS Short Mention", "AOS Short Comment", "AOS Short Sound",
+                        "AOS Short Ad", "AOS Short Hashtag", "AOS Short Mode",
+                        "AOS Short Photo", "AOS Short Report",
+                    ):
+                        frappe.db.sql(f"DELETE FROM `tab{table}` WHERE short IN %s", (names,))
+                    if sounds:
+                        frappe.db.sql("DELETE FROM `tabAOS Sound Favorite` WHERE sound IN %s", (sounds,))
+                        frappe.db.sql("DELETE FROM `tabAOS Sound` WHERE name IN %s", (sounds,))
+                    frappe.db.sql(
+                        "DELETE FROM `tabAOS Media Object` WHERE attached_doctype='AOS Short' AND attached_name IN %s",
+                        (names,),
+                    )
+                    frappe.db.sql("DELETE FROM `tabAOS Short` WHERE name IN %s", (names,))
+
                 frappe.db.commit()
                 return
             except frappe.QueryDeadlockError:
@@ -651,6 +754,8 @@ class AOSFeatureTestMixin:
         # in-memory fixture ids are still available, then roll back DB fixtures.
         for live_id in getattr(self, "created_live_names", []):
             self._clear_live_ephemeral_state(live_id)
+        for short_id in getattr(self, "created_short_names", []):
+            self._clear_short_ephemeral_state(short_id)
 
         # Primary isolation is transactional. Discard every uncommitted fixture
         # and mutation before doing any compensating cleanup. This is what makes
@@ -661,6 +766,7 @@ class AOSFeatureTestMixin:
         like = f"{self.prefix}%"
         email_like = f"{self.prefix}-%@example.com"
         path_like = f"tests/{self.prefix}/%"
+        tracked_shorts = tuple(name for name in getattr(self, "created_short_names", []) if name)
 
         frappe.set_user("Administrator")
 
@@ -726,8 +832,9 @@ class AOSFeatureTestMixin:
         self._cleanup_short_rows_with_deadlock_retry(
             email_like=email_like,
             like=like,
-            path_like=path_like,
+            short_names=tracked_shorts,
         )
+        self.created_short_names = []
 
         frappe.db.sql("DELETE FROM `tabAOS Ad Report` WHERE reported_by LIKE %s OR ad IN (SELECT name FROM `tabAOS Ad` WHERE title LIKE %s)", (email_like, like))
         frappe.db.sql("DELETE FROM `tabAOS Wishlist` WHERE user LIKE %s OR ad IN (SELECT name FROM `tabAOS Ad` WHERE title LIKE %s)", (email_like, like))

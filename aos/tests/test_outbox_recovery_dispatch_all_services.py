@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from contextlib import suppress
 from typing import ClassVar
 from unittest.mock import patch
 
@@ -28,7 +27,7 @@ from aos.services.transactional_outbox import (
 	recover_overdue_published,
 	recover_stale_claims,
 )
-from aos.tests.outbox_fixtures import create_durable_job, create_outbox
+from aos.tests.outbox_fixtures import cleanup_committed_records, create_durable_job, create_outbox
 
 
 class _AcceptedResponse:
@@ -114,11 +113,11 @@ class TestOutboxRecoveryDispatchAllServices(FrappeTestCase):
 	committed_records: ClassVar[list[tuple[str, str]]] = []
 
 	def tearDown(self) -> None:
-		for doctype, name in reversed(self.committed_records):
-			with suppress(Exception):
-				frappe.db.delete(doctype, {"name": name})
 		if self.committed_records:
-			frappe.db.commit()
+			cleanup_committed_records(self.committed_records)
+		else:
+			# Never let an uncommitted recovery mutation bleed into the next test.
+			frappe.db.rollback()
 		self.committed_records.clear()
 		super().tearDown()
 

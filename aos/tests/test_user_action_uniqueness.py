@@ -5,61 +5,39 @@ import uuid
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.services.accounts.identity import ensure_public_account_id
-from aos.api.auth.user_controller import mark_aos_managed_website_user_creation
-
 from aos.api.live.tracking import track_join_impl
 from aos.api.notifications.token import register_push_token_impl
 from aos.api.social.block import block_user_impl
-from aos.patches.v1_0.add_unique_constraints import (
-    USER_ACTION_UNIQUE_CONSTRAINTS,
-    execute as apply_unique_constraints,
-)
+from aos.patches.v1_0.add_unique_constraints import USER_ACTION_UNIQUE_CONSTRAINTS
+from aos.services.accounts.identity import ensure_public_account_id
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
 class TestUserActionUniqueness(AOSFeatureTestMixin, FrappeTestCase):
-    """Tests for race-sensitive user-action duplicate protection."""
-
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        cls._ensure_unique_constraints()
-
-    @classmethod
-    def _ensure_unique_constraints(cls):
-        """Apply the merged uniqueness patch when a dev site already logged the old patch.
-
-        Fresh installs get these indexes through patches.txt during migrate. Existing
-        staging/dev sites may already have the generic patch in Patch Log from before
-        this migration was expanded, so this keeps the test suite deterministic without
-        introducing milestone-specific patch filenames.
-        """
-        missing = [
-            index
-            for index in USER_ACTION_UNIQUE_CONSTRAINTS
-            if not cls._unique_index_exists_static(
-                doctype=index["doctype"],
-                constraint_name=index["constraint_name"],
-            )
-        ]
-
-        if missing:
-            apply_unique_constraints()
-            frappe.db.commit()
+    """Race-sensitive uniqueness tests with transaction-local fixtures."""
 
     def setUp(self):
         self.prefix = f"unique-{uuid.uuid4().hex[:10]}"
         self.created_users: list[str] = []
+        self.created_live_names: list[str] = []
+        self.created_short_names: list[str] = []
         frappe.set_user("Administrator")
 
     def tearDown(self):
+        # MariaDB fixtures are deliberately never committed. FrappeTestCase rolls
+        # them back. Redis hot state is external to that transaction and must be
+        # removed explicitly before a generated id can be reused by another test.
+        for live_id in self.created_live_names:
+            self._clear_live_ephemeral_state(live_id)
+        for short_id in self.created_short_names:
+            self._clear_short_ephemeral_state(short_id)
         frappe.set_user("Administrator")
-        self._delete_test_rows()
         self.restore_localization_test_state()
-        frappe.db.commit()
+        super().tearDown()
 
     def test_unique_indexes_exist(self):
+        # Tests must verify migration-owned schema; they must not install/commit
+        # production indexes themselves as part of fixture setup.
         for index in USER_ACTION_UNIQUE_CONSTRAINTS:
             with self.subTest(index=index["constraint_name"]):
                 self.assertTrue(
@@ -71,8 +49,8 @@ class TestUserActionUniqueness(AOSFeatureTestMixin, FrappeTestCase):
                 )
 
     def test_block_user_double_request_keeps_one_active_block(self):
-        blocker = self._make_user("blocker")
-        blocked = self._make_user("blocked")
+        blocker = self.make_user("blocker")
+        blocked = self.make_user("blocked")
         frappe.set_user(blocker)
 
         first = block_user_impl(account_id=ensure_public_account_id(blocked), reason="spam")
@@ -83,19 +61,15 @@ class TestUserActionUniqueness(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(
             frappe.db.count(
                 "AOS User Block",
-                {
-                    "blocker_user": blocker,
-                    "blocked_user": blocked,
-                    "status": "Active",
-                },
+                {"blocker_user": blocker, "blocked_user": blocked, "status": "Active"},
             ),
             1,
         )
 
     def test_live_track_join_double_request_keeps_one_active_view(self):
-        host = self._make_user("host")
-        viewer = self._make_user("viewer")
-        live = self._make_live(host)
+        host = self.make_user("host")
+        viewer = self.make_user("viewer")
+        live = self.make_live(host=host)
         session_id = f"{self.prefix}-live-session"
         frappe.set_user(viewer)
 
@@ -107,20 +81,13 @@ class TestUserActionUniqueness(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(
             frappe.db.count(
                 "AOS Live Stream View",
-                {
-                    "live_stream": live.name,
-                    "session_id": session_id,
-                    "is_active": 1,
-                },
+                {"live_stream": live.name, "session_id": session_id, "is_active": 1},
             ),
             1,
         )
 
-
-
-
     def test_push_token_double_registration_keeps_one_active_device_token(self):
-        user = self._make_user("push")
+        user = self.make_user("push")
         frappe.set_user(user)
         device_id = f"{self.prefix}-device"
 
@@ -142,103 +109,37 @@ class TestUserActionUniqueness(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(
             frappe.db.count(
                 "AOS Push Token",
-                {
-                    "user": user,
-                    "device_id": device_id,
-                    "is_active": 1,
-                },
+                {"user": user, "device_id": device_id, "is_active": 1},
             ),
             1,
         )
 
     def test_comment_like_unique_constraint_blocks_duplicate_rows(self):
-        user = self._make_user("commenter")
+        user = self.make_user("commenter")
         short = self.make_short(owner=user)
         comment = self._make_comment(short.name, user)
         frappe.set_user(user)
 
         frappe.get_doc(
-            {
-                "doctype": "AOS Short Comment Like",
-                "comment": comment.name,
-                "user": user,
-            }
+            {"doctype": "AOS Short Comment Like", "comment": comment.name, "user": user}
         ).insert(ignore_permissions=True)
-        frappe.db.commit()
 
+        savepoint = f"duplicate_short_comment_like_{uuid.uuid4().hex[:12]}"
+        frappe.db.savepoint(savepoint)
         with self.assertRaises(Exception):
             frappe.get_doc(
-                {
-                    "doctype": "AOS Short Comment Like",
-                    "comment": comment.name,
-                    "user": user,
-                }
+                {"doctype": "AOS Short Comment Like", "comment": comment.name, "user": user}
             ).insert(ignore_permissions=True)
+        frappe.db.rollback(save_point=savepoint)
 
-        frappe.db.rollback()
         self.assertEqual(
-            frappe.db.count(
-                "AOS Short Comment Like",
-                {
-                    "comment": comment.name,
-                    "user": user,
-                },
-            ),
+            frappe.db.count("AOS Short Comment Like", {"comment": comment.name, "user": user}),
             1,
         )
 
-    # FIXTURE HELPERS
-    def _make_user(self, label: str) -> str:
-        email = f"{self.prefix}-{label}@example.com"
-        if not frappe.db.exists("User", email):
-            user = frappe.get_doc(
-                {
-                    "doctype": "User",
-                    "email": email,
-                    "first_name": "Unique",
-                    "last_name": label.title(),
-                    "enabled": 1,
-                    "user_type": "Website User",
-                    "send_welcome_email": 0,
-                }
-            )
-            mark_aos_managed_website_user_creation(user)
-            user.insert(ignore_permissions=True)
-
-        if not frappe.db.exists("AOS Profile", {"user": email}):
-            frappe.get_doc(
-                {
-                    "doctype": "AOS Profile",
-                    "user": email,
-                    "display_name": f"Unique {label.title()}",
-                    "account_status": "Active",
-                }
-            ).insert(ignore_permissions=True)
-
-        self._ensure_user_preference(email)
-
-        self.created_users.append(email)
-        frappe.db.commit()
-        return email
-
-    def _make_live(self, host: str):
-        live = frappe.get_doc(
-            {
-                "doctype": "AOS Live Stream",
-                "title": f"{self.prefix} live",
-                "host_user": host,
-                "status": "live",
-                "is_active": 1,
-            }
-        )
-        live.insert(ignore_permissions=True)
-        frappe.db.commit()
-        return live
-
-
     def _make_comment(self, short_id: str, user: str):
         frappe.set_user(user)
-        comment = frappe.get_doc(
+        return frappe.get_doc(
             {
                 "doctype": "AOS Short Comment",
                 "short": short_id,
@@ -246,10 +147,7 @@ class TestUserActionUniqueness(AOSFeatureTestMixin, FrappeTestCase):
                 "comment": "Duplicate protection test comment",
                 "status": "active",
             }
-        )
-        comment.insert(ignore_permissions=True)
-        frappe.db.commit()
-        return comment
+        ).insert(ignore_permissions=True)
 
     @staticmethod
     def _unique_index_exists_static(*, doctype: str, constraint_name: str) -> bool:
@@ -274,44 +172,3 @@ class TestUserActionUniqueness(AOSFeatureTestMixin, FrappeTestCase):
             doctype=doctype,
             constraint_name=constraint_name,
         )
-
-    def _ensure_user_preference(self, user: str):
-        if frappe.db.exists("AOS User Preference", {"user": user}):
-            return
-
-        country, language, currency = self._preference_defaults()
-
-        frappe.get_doc(
-            {
-                "doctype": "AOS User Preference",
-                "user": user,
-                "country": country,
-                "language": language,
-                "currency": currency,
-            }
-        ).insert(ignore_permissions=True)
-
-    def _preference_defaults(self) -> tuple[str, str, str]:
-        return self.preference_defaults()
-
-    def _delete_test_rows(self):
-        like = f"{self.prefix}%"
-        email_like = f"{self.prefix}-%@example.com"
-
-        # Delete feature rows before users/profiles to satisfy link constraints.
-        frappe.db.sql("DELETE FROM `tabAOS Short Comment Like` WHERE user LIKE %s", (email_like,))
-        frappe.db.sql("DELETE FROM `tabAOS Short Comment` WHERE user LIKE %s", (email_like,))
-        frappe.db.sql("DELETE FROM `tabAOS Short View` WHERE user LIKE %s OR session_id LIKE %s", (email_like, like))
-        frappe.db.sql("DELETE FROM `tabAOS Live Stream View` WHERE user LIKE %s OR session_id LIKE %s", (email_like, like))
-        frappe.db.sql("DELETE FROM `tabAOS User Block` WHERE blocker_user LIKE %s OR blocked_user LIKE %s", (email_like, email_like))
-        frappe.db.sql("DELETE FROM `tabAOS Push Token` WHERE user LIKE %s OR device_id LIKE %s", (email_like, like))
-        frappe.db.sql("DELETE FROM `tabAOS User Activity` WHERE user LIKE %s", (email_like,))
-        frappe.db.sql("DELETE FROM `tabAOS Live Stream` WHERE title LIKE %s", (like,))
-        frappe.db.sql("DELETE FROM `tabAOS Short` WHERE file_key LIKE %s", (f"tests/{self.prefix}/%",))
-        frappe.db.sql("DELETE FROM `tabAOS Media Object` WHERE owner_user LIKE %s", (email_like,))
-        frappe.db.sql("DELETE FROM `tabAOS User Preference` WHERE user LIKE %s", (email_like,))
-        frappe.db.sql("DELETE FROM `tabAOS Profile` WHERE user LIKE %s", (email_like,))
-
-        for user in self.created_users:
-            if frappe.db.exists("User", user):
-                self.delete_test_user(user)

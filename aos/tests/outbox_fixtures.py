@@ -38,6 +38,12 @@ def cleanup_committed_records(
 	base_delay_seconds: float = 0.1,
 ) -> None:
 	"""Delete committed test fixtures with bounded deadlock retries."""
+	# Discard every mutation made after the intentionally committed fixture
+	# baseline before performing compensating deletes. Without this rollback,
+	# cleanup's final commit could accidentally persist untracked retry jobs,
+	# outbox rows, notifications, or domain mutations created by the test.
+	frappe.db.rollback()
+
 	unique_records: list[tuple[str, str]] = []
 	seen: set[tuple[str, str]] = set()
 	for record in records:
