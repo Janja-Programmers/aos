@@ -10,7 +10,7 @@ from aos.api.shared.auth import require_login
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import fail, ok
-from aos.api.shorts.activity import record_short_report_activity
+from aos.services.shorts.activity import record_short_report_activity
 from aos.services.accounts.http import set_private_no_store
 from aos.services.reports.constants import REPORT_SHORT_LIMIT_PER_MINUTE_PER_USER
 from aos.services.reports.errors import ReportError

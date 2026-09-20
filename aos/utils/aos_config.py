@@ -270,10 +270,8 @@ class MinioConfig:
     secret_key: str = field(repr=False)
     secure: bool
     public_base_url: str
-    bucket: str
     public_bucket: str
     private_bucket: str
-    base_path: str
     connect_timeout_seconds: int
     read_timeout_seconds: int
     max_retries: int
@@ -294,8 +292,8 @@ def get_media_download_expiry_minutes() -> int:
 def get_minio_config() -> MinioConfig:
     """Resolve MinIO config from .env/env.
 
-    Generic media uses the public/private AOS media buckets. Processed Shorts
-    output uses the configured Shorts output bucket/base path.
+    Media and server-generated Shorts derivatives use the canonical public/private
+    AOS media buckets.
     """
     endpoint = clean_endpoint(
         get_first_env(
@@ -317,19 +315,12 @@ def get_minio_config() -> MinioConfig:
         )
     )
 
-    shorts_output_bucket = get_first_env(
-        "AOS_MINIO_BUCKET",
-        "MINIO_BUCKET",
-        default="shorts",
-    ) or "shorts"
-
     return MinioConfig(
         endpoint=endpoint,
         access_key=access_key,
         secret_key=secret_key,
         secure=get_env_bool("MINIO_SECURE", False),
         public_base_url=public_base_url,
-        bucket=shorts_output_bucket.strip().strip("/"),
         public_bucket=(
             get_first_env("AOS_PUBLIC_BUCKET", "MINIO_PUBLIC_BUCKET", default="aos-public")
             or "aos-public"
@@ -337,10 +328,6 @@ def get_minio_config() -> MinioConfig:
         private_bucket=(
             get_first_env("AOS_PRIVATE_BUCKET", "MINIO_PRIVATE_BUCKET", default="aos-private")
             or "aos-private"
-        ).strip().strip("/"),
-        base_path=(
-            get_first_env("AOS_MINIO_BASE_PATH", "MINIO_BASE_PATH", default="shorts")
-            or "shorts"
         ).strip().strip("/"),
         connect_timeout_seconds=get_env_int(
             "AOS_STORAGE_CONNECT_TIMEOUT_SECONDS",

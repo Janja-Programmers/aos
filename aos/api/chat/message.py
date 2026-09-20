@@ -308,18 +308,12 @@ def _fetch_shorts_bulk(
     *,
     viewer: str | None = None,
 ) -> Dict[str, Dict[str, Any]]:
-    """Fetch lightweight short previews in bulk for chat messages.
+    """Fetch privacy-safe Short previews in one bounded batch.
 
-    Privacy rule:
-    - A chat short preview is returned only when the current viewer can still
-      view the referenced short.
-    - If a short was hidden/deleted/private after it was shared, serializers
-      keep the short id but return short_preview=None and short_unavailable=True.
+    Chat stores only the Short reference.  Availability and creator identity are
+    resolved from the canonical Shorts/Accounts/Media contracts at read time.
     """
-    if not short_ids:
-        return {}
-
-    unique_short_ids = list({short_id for short_id in short_ids if short_id})
+    unique_short_ids = list(dict.fromkeys(str(value).strip() for value in short_ids if value))[:100]
     if not unique_short_ids:
         return {}
 
@@ -327,34 +321,31 @@ def _fetch_shorts_bulk(
         "AOS Short",
         filters={"name": ["in", unique_short_ids]},
         fields=[
-            "name",
-            "owner",
-            "caption",
-            "thumbnail_url",
-            "playback_url",
-            "duration_seconds",
-            "status",
-            "visibility_status",
-            "approval_status",
-            "audience",
-            "like_count",
-            "comment_count",
-            "share_count",
-            "repost_count",
+            "name", "owner", "caption", "content_type",
+            "poster_media", "cover_media", "playback_media",
+            "duration_seconds", "lifecycle_status", "processing_status",
+            "moderation_status", "audience", "like_count",
+            "comment_count", "share_count", "repost_count",
         ],
+        limit=len(unique_short_ids),
     )
 
-    # Use the canonical Shorts batch policy so chat-history serialization does
-    # not perform account/relationship queries once per referenced Short.
-    # Keep the import local to preserve the existing chat/shorts import boundary.
+    from aos.services.media.media_service import MediaService
     from aos.services.shorts.policy import filter_viewable_rows
 
-    raw_rows = [dict(row) for row in rows]
-    visible_rows = filter_viewable_rows(raw_rows, viewer=viewer)
+    visible_rows = filter_viewable_rows([dict(row) for row in rows], viewer=viewer)
     owner_map = _fetch_users(
         [row.get("owner") for row in visible_rows if row.get("owner")],
         viewer=viewer,
     )
+    media_ids = {
+        str(row.get(field))
+        for row in visible_rows
+        for field in ("poster_media", "cover_media", "playback_media")
+        if row.get(field)
+    }
+    media_urls = MediaService().get_public_url_map(media_ids)
+
     result: Dict[str, Dict[str, Any]] = {}
     for row in visible_rows:
         owner_id = row.get("owner")
@@ -366,11 +357,10 @@ def _fetch_shorts_bulk(
             "owner_display_name": owner.get("display_name"),
             "owner_avatar": owner.get("avatar"),
             "caption": row.get("caption") or "",
-            "thumbnail_url": row.get("thumbnail_url"),
-            "playback_url": row.get("playback_url"),
+            "content_type": row.get("content_type"),
+            "thumbnail_url": media_urls.get(str(row.get("cover_media") or row.get("poster_media") or "")),
+            "playback_url": media_urls.get(str(row.get("playback_media") or "")),
             "duration_seconds": row.get("duration_seconds"),
-            "status": row.get("status"),
-            "visibility_status": row.get("visibility_status"),
             "like_count": row.get("like_count") or 0,
             "comment_count": row.get("comment_count") or 0,
             "share_count": row.get("share_count") or 0,
@@ -380,32 +370,18 @@ def _fetch_shorts_bulk(
     return result
 
 
-
-
 def _can_view_short(short_row, *, current_user: str | None = None) -> bool:
-    """Lazily import Shorts visibility to avoid chat/shorts circular imports.
-
-    Importing aos.api.shorts.visibility at module import time loads the
-    shorts package __init__, which imports shorts.share. shorts.share imports
-    chat.message helpers, creating a circular import when Frappe resolves
-    aos.api.chat.send_message. Keep the dependency local so chat.message can
-    finish initializing first.
-    """
-
-    from aos.api.shorts.visibility import can_view_short
-
-    return can_view_short(short_row, current_user=current_user)
+    from aos.services.shorts.policy import can_view
+    return can_view(short_row, viewer=current_user)
 
 
 def _get_short_reference(short: str | None):
-    """Fetch the minimum short row needed for chat visibility checks."""
     if not short:
         return None
-
     return frappe.db.get_value(
         "AOS Short",
         short,
-        ["name", "owner", "status", "visibility_status", "audience"],
+        ["name", "owner", "lifecycle_status", "processing_status", "moderation_status", "audience"],
         as_dict=True,
     )
 
@@ -416,34 +392,18 @@ def _validate_short_reference(
     viewer: str | None = None,
     recipients: List[str] | None = None,
 ):
-    """Validate a short reference before it is attached to a chat message.
-
-    The sender/viewer must be able to view the short, and every recipient in
-    the target conversation must also be able to view it. This prevents
-    followers/friends/only_me shorts from leaking through chat shares or
-    forwarded messages.
-    """
+    """Ensure every conversation participant may still view the Short."""
     if not short:
         return None
-
     short_row = _get_short_reference(short)
-
-    if not short_row:
-        return fail("Invalid short reference.", error="VALIDATION_ERROR")
-
-    if short_row.status != "ready" or short_row.visibility_status != "visible":
+    if not short_row or not _can_view_short(short_row, current_user=viewer):
         return fail("Short is not available.", error="VALIDATION_ERROR")
-
-    if not _can_view_short(short_row, current_user=viewer):
-        return fail("Short is not available.", error="VALIDATION_ERROR")
-
     for recipient in recipients or []:
         if not _can_view_short(short_row, current_user=recipient):
             return fail(
                 "This short cannot be shared with one or more recipients.",
                 error="FORBIDDEN",
             )
-
     return None
 
 

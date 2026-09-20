@@ -179,7 +179,6 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
-
 All client endpoints are under `aos.api.v1.ads` and pass through `aos.api.shared.transport.execute_endpoint`. Unknown request fields fail closed.
 
 | Endpoint | HTTP/Auth | Inputs | Canonical output / behavior |

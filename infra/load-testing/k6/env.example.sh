@@ -16,8 +16,8 @@ export ADMIN_PASSWORD="replace-with-staging-admin-password"
 
 # Seed IDs from staging data. Comma-separated values are allowed where noted.
 export AD_IDS="ad_replace_with_public_id_1,ad_replace_with_public_id_2"
-export TEST_SHORT_ID="SHORT-2026-00001"
-export SHORT_IDS="SHORT-2026-00001,SHORT-2026-00002"
+export TEST_SHORT_ID="SHR-AAAAAAAAAAAAAAAAAAAA"
+export SHORT_IDS="SHR-AAAAAAAAAAAAAAAAAAAA,SHR-BBBBBBBBBBBBBBBBBBBB"
 export CHAT_CONVERSATION_ID="CONV-2026-00001"
 export CHAT_RECEIVER_USER="load-user-2@example.com"
 export LIVE_ID="LIVE-2026-00001"

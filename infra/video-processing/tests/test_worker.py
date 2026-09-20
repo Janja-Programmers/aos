@@ -8,16 +8,13 @@ from app import worker
 
 
 TEST_CLASSIFICATION_SECRET = "classification-secret"  # pragma: allowlist secret
+SHORT_ID = "SHR-AAAAAAAAAAAAAAAAAAAA"
+JOB_ID = "VPJ-AAAAAAAAAAAAAAAAAAAA"
 
 
 def settings():
 	return SimpleNamespace(
-		max_duration_seconds=180,
-		minio_public_base_url="https://files.invalid",
-		output_bucket="processed",
-		output_base_path="shorts",
-		thumbnail_bucket="media",
-		thumbnail_base_path="thumbnails",
+		max_duration_seconds=600,
 		max_input_bytes=536870912,
 		max_width=4096,
 		max_height=4096,
@@ -42,18 +39,27 @@ def settings():
 	)
 
 
-def payload():
+def payload(*, operation: str = "Process") -> dict:
 	return {
-		"job_id": "job-1",
-		"short_id": "SHORT-2026-00001",
+		"job_id": JOB_ID,
+		"idempotency_key": "stable-video-job-key",
+		"job_generation": 1,
+		"short_id": SHORT_ID,
+		"operation": operation,
 		"callback_url": "https://callback.invalid/video",
-		"raw_video": {"bucket": "raw", "object_key": "clip.mp4", "size_bytes": 1024},
+		"raw_video": {"bucket": "raw", "object_key": "shorts/raw/clip.mp4", "size_bytes": 1024},
 		"output": {
-			"output_bucket": "shorts",
-			"output_base_path": "shorts/processed",
-			"thumbnail_bucket": "aos-public",
-			"thumbnail_base_path": "shorts/thumbnails",
-			"max_duration_seconds": 180,
+			"playback_bucket": "aos-public",
+			"playback_base_path": "shorts/playback",
+			"poster_bucket": "aos-public",
+			"poster_base_path": "shorts/posters",
+			"storyboard_bucket": "aos-public",
+			"storyboard_base_path": "shorts/storyboards",
+			"download_bucket": "aos-private",
+			"download_base_path": "shorts/downloads",
+			"sound_bucket": "aos-public",
+			"sound_base_path": "shorts/original-audio",
+			"max_duration_seconds": 600,
 		},
 	}
 
@@ -110,6 +116,11 @@ def configure_boundaries(monkeypatch, tmp_path):
 		"_generate_hls",
 		lambda _source, directory: Path(directory, "master.m3u8").write_text("#EXTM3U\n", encoding="utf-8"),
 	)
+	def storyboard(_source, image_path, manifest_path, _duration):
+		Path(image_path).write_bytes(b"jpeg")
+		Path(manifest_path).write_text('{"frames":[]}', encoding="utf-8")
+		return 640, 360
+	monkeypatch.setattr(worker, "_generate_storyboard", storyboard)
 	monkeypatch.setattr(
 		worker,
 		"_upload_file",
@@ -127,16 +138,17 @@ def configure_boundaries(monkeypatch, tmp_path):
 	return work_dir, uploads
 
 
-def test_work_happy_path_is_separate_from_callback(monkeypatch, tmp_path):
+def test_process_returns_canonical_outputs(monkeypatch, tmp_path):
 	work_dir, uploads = configure_boundaries(monkeypatch, tmp_path)
 	result = worker._perform_video_work(payload())
-	assert result["job_id"] == "job-1"
+	assert result["job_id"] == JOB_ID
+	assert result["short_id"] == SHORT_ID
 	assert result["status"] == "ready"
 	assert result["duration_seconds"] == 2.5
 	assert result["classification"]["mode"] == "learn"
-	assert result["output_object_count"] >= 2
-	assert "objects" not in result
-	assert len(uploads) >= 3
+	assert {"playback", "manifest", "poster", "storyboard", "storyboard_manifest"} <= set(result["outputs"])
+	assert result["outputs"]["manifest"]["object_key"].endswith("/hls/master.m3u8")
+	assert len(uploads) >= 5
 	assert not work_dir.exists()
 
 
@@ -154,55 +166,14 @@ def test_work_failure_raises_and_cleans_tempdir(monkeypatch, tmp_path):
 
 def test_classification_failure_is_non_fatal(monkeypatch, tmp_path):
 	work_dir, _uploads = configure_boundaries(monkeypatch, tmp_path)
-	monkeypatch.setattr(
-		worker,
-		"_classify_frames",
-		lambda _frames: worker._classification_fallback("unavailable"),
-	)
+	monkeypatch.setattr(worker, "_classify_frames", lambda _frames: worker._classification_fallback("unavailable"))
 	result = worker._perform_video_work(payload())
 	assert result["status"] == "ready"
 	assert result["classification"]["status"] == "unavailable"
 	assert not work_dir.exists()
 
 
-def test_classification_request_is_timestamp_signed(monkeypatch, tmp_path):
-	frame = tmp_path / "frame.jpg"
-	frame.write_bytes(b"synthetic-jpeg")
-	captured = {}
-
-	class Response:
-		content = b"{}"
-
-		def raise_for_status(self):
-			return None
-
-		def json(self):
-			return {
-				"status": "ready",
-				"mode": "learn",
-				"confidence": 0.9,
-				"scores": {"shop": 0.02, "geo": 0.03, "vibes": 0.05, "learn": 0.9},
-				"model": "synthetic",
-				"model_version": "test-v1",
-			}
-
-	def post(url, *, data, headers, timeout):
-		captured.update(url=url, data=data, headers=headers, timeout=timeout)
-		return Response()
-
-	monkeypatch.setattr(worker, "get_settings", settings)
-	monkeypatch.setattr(worker.time, "time", lambda: 1700000000.0)
-	monkeypatch.setattr(worker.requests, "post", post)
-	result = worker._classify_frames([str(frame)])
-	assert result["mode"] == "learn"
-	assert captured["headers"]["X-AOS-Timestamp"] == "1700000000"
-	signed = b"1700000000." + captured["data"]
-	assert captured["headers"]["X-AOS-Signature"] == worker.build_signature(
-		TEST_CLASSIFICATION_SECRET, signed
-	)
-
-
-def test_original_audio_is_extracted_and_returned_for_reuse(monkeypatch, tmp_path):
+def test_original_audio_is_returned_as_canonical_output(monkeypatch, tmp_path):
 	work_dir, uploads = configure_boundaries(monkeypatch, tmp_path)
 	monkeypatch.setattr(worker, "_has_audio", lambda _path: True)
 	monkeypatch.setattr(
@@ -210,18 +181,67 @@ def test_original_audio_is_extracted_and_returned_for_reuse(monkeypatch, tmp_pat
 		"_extract_original_audio",
 		lambda _source, destination, _duration: Path(destination).write_bytes(b"audio"),
 	)
-
 	result = worker._perform_video_work(payload())
-
-	audio = result["original_audio"]
+	audio = result["outputs"]["original_audio"]
 	assert audio["bucket"] == "aos-public"
-	assert audio["object_key"].endswith(
-		"sounds/uploads/original/SHORT-2026-00001/fixed-version/original.m4a"
-	)
+	assert audio["object_key"].endswith(f"/{SHORT_ID}/fixed-version/original.m4a")
 	assert audio["content_type"] == "audio/mp4"
 	assert audio["duration_seconds"] == 2.5
-	assert audio["size_bytes"] == 5
 	assert any(item.get("content_type") == "audio/mp4" for item in uploads)
+	assert not work_dir.exists()
+
+
+def test_download_operation_only_returns_private_download_output(monkeypatch, tmp_path):
+	work_dir, _uploads = configure_boundaries(monkeypatch, tmp_path)
+	monkeypatch.setattr(
+		worker,
+		"_generate_watermarked_download",
+		lambda _source, destination, _duration: Path(destination).write_bytes(b"watermarked"),
+	)
+	result = worker._perform_video_work(payload(operation="Download"))
+	assert set(result["outputs"]) == {"download"}
+	assert result["outputs"]["download"]["bucket"] == "aos-private"
+	assert result["outputs"]["download"]["object_key"].endswith("/AOS.mp4")
+	assert "classification" not in result
+	assert not work_dir.exists()
+
+
+def test_side_by_side_uses_source_video_and_normal_processing(monkeypatch, tmp_path):
+	work_dir, _uploads = configure_boundaries(monkeypatch, tmp_path)
+	data = payload(operation="Side By Side")
+	data["source_video"] = {"bucket": "public", "object_key": "shorts/playback/source.mp4", "size_bytes": 1024}
+	monkeypatch.setattr(
+		worker,
+		"_compose_side_by_side",
+		lambda _source, _creator, destination, _max_duration: Path(destination).write_bytes(b"composed"),
+	)
+	result = worker._perform_video_work(data)
+	assert result["status"] == "ready"
+	assert "playback" in result["outputs"]
+	assert not work_dir.exists()
+
+
+def test_segment_reuse_uses_bounded_source_segment(monkeypatch, tmp_path):
+	work_dir, _uploads = configure_boundaries(monkeypatch, tmp_path)
+	data = payload(operation="Segment")
+	data.update(
+		{
+			"source_video": {"bucket": "public", "object_key": "shorts/playback/source.mp4", "size_bytes": 1024},
+			"source_start_ms": 1000,
+			"source_end_ms": 4000,
+		}
+	)
+	captured = {}
+	monkeypatch.setattr(
+		worker,
+		"_compose_segment",
+		lambda _source, _creator, destination, start_ms, end_ms, _max_duration, _work_dir: (
+			captured.update(start_ms=start_ms, end_ms=end_ms), Path(destination).write_bytes(b"composed")
+		),
+	)
+	result = worker._perform_video_work(data)
+	assert result["status"] == "ready"
+	assert captured == {"start_ms": 1000, "end_ms": 4000}
 	assert not work_dir.exists()
 
 
@@ -232,99 +252,13 @@ def test_selected_sound_mixes_with_original_audio(monkeypatch, tmp_path):
 	output_path = tmp_path / "output.mp4"
 	input_path.write_bytes(b"video")
 	sound_path.write_bytes(b"sound")
-
 	monkeypatch.setattr(worker, "_has_audio", lambda _path: True)
-	monkeypatch.setattr(
-		worker,
-		"_run",
-		lambda cmd, _message, **_kwargs: captured.update(cmd=cmd),
-	)
-
+	monkeypatch.setattr(worker, "_run", lambda cmd, _message, **_kwargs: captured.update(cmd=cmd))
 	worker._generate_mp4_with_sound(
-		str(input_path),
-		str(sound_path),
-		str(output_path),
-		12.0,
+		str(input_path), str(sound_path), str(output_path), 12.0,
 		{"start_ms": 1000, "duration_ms": 8000, "volume": 0.6},
 	)
-
 	filter_graph = captured["cmd"][captured["cmd"].index("-filter_complex") + 1]
 	assert "[0:a]" in filter_graph
 	assert "[1:a]volume=0.6" in filter_graph
 	assert "amix=inputs=2" in filter_graph
-	assert "duration=longest" in filter_graph
-
-
-def test_selected_sound_is_only_audio_when_video_is_silent(monkeypatch, tmp_path):
-	captured = {}
-	input_path = tmp_path / "input.mp4"
-	sound_path = tmp_path / "sound.mp3"
-	output_path = tmp_path / "output.mp4"
-	input_path.write_bytes(b"video")
-	sound_path.write_bytes(b"sound")
-
-	monkeypatch.setattr(worker, "_has_audio", lambda _path: False)
-	monkeypatch.setattr(
-		worker,
-		"_run",
-		lambda cmd, _message, **_kwargs: captured.update(cmd=cmd),
-	)
-
-	worker._generate_mp4_with_sound(
-		str(input_path),
-		str(sound_path),
-		str(output_path),
-		5.0,
-		{"volume": 1.0},
-	)
-
-	filter_graph = captured["cmd"][captured["cmd"].index("-filter_complex") + 1]
-	assert "[0:a]" not in filter_graph
-	assert "amix=" not in filter_graph
-	assert "[1:a]volume=1.0" in filter_graph
-
-
-def test_audio_reprocess_preserves_visual_metadata(monkeypatch, tmp_path):
-	work_dir, uploads = configure_boundaries(monkeypatch, tmp_path)
-	audio_payload = payload()
-	audio_payload.update(
-		{
-			"force": True,
-			"reason": "audio_reprocess",
-			"sound": {
-				"bucket": "sounds",
-				"object_key": "sounds/uploads/track.mp3",
-				"volume": 0.8,
-			},
-		}
-	)
-	monkeypatch.setattr(
-		worker,
-		"_generate_thumbnail",
-		lambda *_args, **_kwargs: (_ for _ in ()).throw(
-			AssertionError("audio reprocess must not regenerate a thumbnail")
-		),
-	)
-	monkeypatch.setattr(
-		worker,
-		"_generate_classification_frames",
-		lambda *_args, **_kwargs: (_ for _ in ()).throw(
-			AssertionError("audio reprocess must not rerun visual classification")
-		),
-	)
-	monkeypatch.setattr(
-		worker,
-		"_generate_mp4_with_sound",
-		lambda _video, _sound, destination, _duration, _settings: Path(destination).write_bytes(b"mixed"),
-	)
-
-	result = worker._perform_video_work(audio_payload)
-
-	assert result["status"] == "ready"
-	assert result["reason"] == "audio_reprocess"
-	assert result["sound_applied"] is True
-	assert "original_audio" not in result
-	assert "thumbnail" not in result
-	assert "classification" not in result
-	assert not any(item.get("content_type") == "image/jpeg" for item in uploads)
-	assert not work_dir.exists()

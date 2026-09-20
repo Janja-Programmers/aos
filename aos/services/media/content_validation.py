@@ -150,6 +150,14 @@ def sniff_content_type(head: bytes) -> str | None:
         return "audio/wav"
     if data.startswith(b"OggS"):
         return "audio/ogg"
+    # Server-generated Shorts manifests are registered as canonical Media too.
+    # These purposes are not client-uploadable, so a small deterministic text
+    # signature is sufficient at the Media registration boundary.
+    stripped = data.lstrip()
+    if stripped.startswith(b"#EXTM3U"):
+        return "application/vnd.apple.mpegurl"
+    if stripped.startswith((b"{", b"[")):
+        return "application/json"
     if data.startswith(b"#!") or data.startswith(b"MZ") or data.startswith(b"\x7fELF"):
         return "application/x-executable"
     return None

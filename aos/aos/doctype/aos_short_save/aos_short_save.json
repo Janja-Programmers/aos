@@ -6,37 +6,32 @@
  "engine": "InnoDB",
  "field_order": [
   "short",
-  "column_break_injm",
   "user"
  ],
  "fields": [
   {
    "fieldname": "short",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Short",
    "options": "AOS Short",
    "reqd": 1,
+   "in_list_view": 1,
    "search_index": 1
   },
   {
    "fieldname": "user",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "User",
    "options": "User",
    "reqd": 1,
+   "in_list_view": 1,
    "search_index": 1
-  },
-  {
-   "fieldname": "column_break_injm",
-   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-24 17:12:32.393485",
+ "modified": "2026-09-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Short Save",
@@ -59,5 +54,6 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "autoname": "hash"
 }

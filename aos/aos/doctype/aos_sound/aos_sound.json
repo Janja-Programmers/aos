@@ -1,108 +1,89 @@
 {
  "actions": [],
- "allow_rename": 1,
- "autoname": "naming_series:",
- "creation": "2026-06-25 16:35:07.873266",
+ "autoname": "prompt",
+ "creation": "2026-09-20 00:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "title",
   "artist",
+  "creator_account",
   "source_type",
   "status",
-  "audio_section",
+  "reuse_allowed",
   "sound_upload_preview",
-  "column_break_dxae",
-  "file_key",
   "sound_media",
-  "file_url",
   "duration_seconds",
-  "is_commercial_safe",
-  "section_break_lpnj",
+  "license_reference",
+  "available_from",
+  "available_until",
+  "territories",
   "usage_count",
   "favorite_count",
   "created_from_short"
  ],
  "fields": [
   {
-   "default": "SOUND-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "SOUND-.YYYY.-.#####"
-  },
-  {
    "fieldname": "title",
    "fieldtype": "Data",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
    "label": "Title",
    "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "search_index": 1
   },
   {
    "fieldname": "artist",
    "fieldtype": "Data",
-   "in_list_view": 1,
    "label": "Artist",
    "search_index": 1
   },
   {
-   "default": "uploaded",
+   "fieldname": "creator_account",
+   "fieldtype": "Link",
+   "label": "Creator Account",
+   "options": "AOS Profile",
+   "search_index": 1
+  },
+  {
    "fieldname": "source_type",
    "fieldtype": "Select",
+   "label": "Source Type",
+   "options": "library\nuploaded\noriginal",
+   "default": "uploaded",
+   "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Source Type",
-   "options": "library\nuploaded\noriginal\ncommercial",
-   "reqd": 1,
    "search_index": 1
   },
   {
-   "default": "active",
    "fieldname": "status",
    "fieldtype": "Select",
+   "label": "Status",
+   "options": "active\ndisabled\ntakedown",
+   "default": "active",
+   "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Status",
-   "options": "active\ninactive\nremoved",
-   "reqd": 1,
    "search_index": 1
   },
   {
-   "fieldname": "audio_section",
-   "fieldtype": "Section Break",
-   "label": "Audio"
+   "fieldname": "reuse_allowed",
+   "fieldtype": "Check",
+   "label": "Reuse Allowed",
+   "default": "1"
   },
   {
    "fieldname": "sound_upload_preview",
    "fieldtype": "HTML",
-   "label": "Sound Upload"
-  },
-  {
-   "fieldname": "file_key",
-   "fieldtype": "Data",
-   "label": "File Key",
-   "read_only": 1,
-   "search_index": 1
+   "label": "Sound Upload Preview"
   },
   {
    "fieldname": "sound_media",
    "fieldtype": "Link",
    "label": "Sound Media",
    "options": "AOS Media Object",
-   "read_only": 1,
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_dxae",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "file_url",
-   "fieldtype": "Data",
-   "label": "File URL",
+   "reqd": 1,
    "read_only": 1
   },
   {
@@ -111,27 +92,37 @@
    "label": "Duration Seconds"
   },
   {
-   "default": "0",
-   "fieldname": "is_commercial_safe",
-   "fieldtype": "Check",
-   "label": "Commercial Safe"
+   "fieldname": "license_reference",
+   "fieldtype": "Data",
+   "label": "License Reference"
   },
   {
-   "fieldname": "section_break_lpnj",
-   "fieldtype": "Section Break"
+   "fieldname": "available_from",
+   "fieldtype": "Datetime",
+   "label": "Available From"
   },
   {
-   "default": "0",
+   "fieldname": "available_until",
+   "fieldtype": "Datetime",
+   "label": "Available Until"
+  },
+  {
+   "fieldname": "territories",
+   "fieldtype": "JSON",
+   "label": "Territories"
+  },
+  {
    "fieldname": "usage_count",
    "fieldtype": "Int",
    "label": "Usage Count",
+   "default": "0",
    "read_only": 1
   },
   {
-   "default": "0",
    "fieldname": "favorite_count",
    "fieldtype": "Int",
    "label": "Favorite Count",
+   "default": "0",
    "read_only": 1
   },
   {
@@ -146,11 +137,10 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-05 01:45:00.000000",
+ "modified": "2026-09-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Sound",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {
@@ -170,18 +160,6 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": [
-  {
-   "color": "Green",
-   "title": "active"
-  },
-  {
-   "color": "Orange",
-   "title": "inactive"
-  },
-  {
-   "color": "Red",
-   "title": "removed"
-  }
- ]
+ "states": [],
+ "title_field": "title"
 }

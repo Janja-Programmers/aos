@@ -54,7 +54,7 @@ _EXTERNAL_WORKER_SERVICES: tuple[dict[str, Any], ...] = (
 		"service_secret_keys": ("VIDEO_SERVICE_SECRET",),
 		"callback_secret_keys": ("VIDEO_SERVICE_CALLBACK_SECRET",),
 		"callback_url_keys": ("VIDEO_CALLBACK_URL",),
-		"callback_method": "aos.api.v1.video_processing.handle_callback",
+		"callback_method": "aos.api.internal.video_processing.handle_callback",
 		"enabled_keys": (),
 		"enabled_default": True,
 	},
@@ -731,7 +731,6 @@ def _check_storage(issues: list[dict[str, Any]], env: Mapping[str, Any] | None) 
 	for key, label in (
 		("AOS_PUBLIC_BUCKET", "public media bucket"),
 		("AOS_PRIVATE_BUCKET", "private media bucket"),
-		("AOS_MINIO_BUCKET", "Shorts output bucket"),
 	):
 		value = _check_required_value(
 			issues,
@@ -747,7 +746,7 @@ def _check_storage(issues: list[dict[str, Any]], env: Mapping[str, Any] | None) 
 				category="storage",
 				key=key,
 				message=f"{label} must be a bucket name, not a path.",
-				remediation=f"Remove slashes from {key} and use AOS_MINIO_BASE_PATH for paths.",
+				remediation=f"Remove slashes from {key}; media object paths are purpose-owned.",
 			)
 
 	for key, default, minimum, maximum, label in (

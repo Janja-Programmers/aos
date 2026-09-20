@@ -27,7 +27,6 @@ from aos.patches.v1_0 import (
     install_report_indexes,
     install_social_indexes,
     install_shorts_indexes,
-    install_shorts_recommendation_indexes,
 )
 from aos.services.sellers import schema as seller_schema
 
@@ -41,7 +40,6 @@ _SCHEMA_INVARIANT_INSTALLERS: tuple[Callable[[], None], ...] = (
     install_verification_indexes.execute,
     seller_schema.execute,
     install_shorts_indexes.execute,
-    install_shorts_recommendation_indexes.execute,
     install_live_indexes.execute,
     install_chat_indexes.execute,
     install_call_indexes.execute,

@@ -15,7 +15,7 @@ from aos.api.analytics_pipeline import callback as analytics_api
 from aos.api.moderation import callback as moderation_api
 from aos.api.notifications import callback as notification_api
 from aos.api.search_ranking import callback as search_api
-from aos.api.video_processing import callback as video_api
+from aos.services import video_processing_callback as video_api
 from aos.services.transactional_outbox import (
 	OUTBOX_DOCTYPE,
 	_claim_one,
@@ -95,8 +95,6 @@ _ENV = {
 	"MINIO_ACCESS_KEY": "test-access-key",
 	"MINIO_SECRET_KEY": "test-secret-key",
 	"MINIO_PUBLIC_BASE_URL": "http://127.0.0.1:19100",
-	"AOS_MINIO_BUCKET": "shorts",
-	"AOS_MINIO_BASE_PATH": "shorts",
 	"MODERATION_SERVICE_URL": "http://127.0.0.1:18140",
 	"MODERATION_SERVICE_SECRET": _test_dispatch_secret("moderation"),
 	"MODERATION_SERVICE_CALLBACK_SECRET": _TEST_CALLBACK_SECRET,
@@ -151,14 +149,16 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 	def _success_payload(self, adapter: CallbackAdapter, fixture, outbox, token: str) -> dict[str, Any]:
 		base = self._base_payload(fixture, outbox, token)
 		if adapter.service_type == "video_processing":
-			prefix = f"shorts/processed/{fixture.job.short}/test-version"
 			return {
 				**base,
 				"status": "ready",
 				"job_generation": int(getattr(fixture.job, "generation", 1) or 1),
 				"duration_seconds": 4.0,
-				"processed_file_key": f"{prefix}/final.mp4",
-				"master_playlist_key": f"{prefix}/master.m3u8",
+				"outputs": {
+					"playback": {"bucket": "aos-public", "object_key": "shorts/playback/test/final.mp4", "content_type": "video/mp4"},
+					"manifest": {"bucket": "aos-public", "object_key": "shorts/playback/test/master.m3u8", "content_type": "application/vnd.apple.mpegurl"},
+					"poster": {"bucket": "aos-public", "object_key": "shorts/posters/test/poster.jpg", "content_type": "image/jpeg"},
+				},
 			}
 		if adapter.service_type == "moderation":
 			return {
@@ -198,7 +198,15 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 	def _invoke(self, adapter: CallbackAdapter, payload: dict[str, Any]) -> dict[str, Any]:
 		with patch.object(adapter.api_module, "read_signed_json_callback_payload", return_value=payload):
 			endpoint_impl = getattr(adapter.api_module, adapter.endpoint_impl_name)
-			return endpoint_impl()
+			if adapter.service_type != "video_processing" or str(payload.get("status") or "").lower() == "failed":
+				return endpoint_impl()
+			with (
+				patch("aos.services.video_processing_service._register_asset", side_effect=["MEDIA-PLAY", "MEDIA-MANIFEST", "MEDIA-POSTER", "MEDIA-STORY", "MEDIA-STORY-MANIFEST"]),
+				patch("aos.services.video_processing_service._ensure_original_sound"),
+				patch("aos.services.video_processing_service.reclassify_short"),
+				patch("aos.services.moderation_service.enqueue_short_moderation"),
+			):
+				return endpoint_impl()
 
 	def _snapshot(self, fixture, outbox) -> dict[str, Any]:
 		job = frappe.db.get_value(
@@ -225,7 +233,7 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 		if fixture.domain_doctype and fixture.domain_doctype != "User":
 			fields = ["status"]
 			meta = frappe.get_meta(fixture.domain_doctype)
-			for field in ("visibility_status", "approval_status", "processing_error", "hidden_reason"):
+			for field in ("lifecycle_status", "processing_status", "moderation_status", "processing_error", "moderation_reason"):
 				if meta.has_field(field):
 					fields.append(field)
 			domain = frappe.db.get_value(

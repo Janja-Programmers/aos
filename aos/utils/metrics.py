@@ -248,7 +248,7 @@ def _safe_catalog_metrics(lines: list[str]) -> None:
 _ALLOWED_MEDIA_PURPOSES = {
 	"ad_image", "ad_video", "review_image", "seller_banner", "live_cover",
 	"profile_image", "category_icon", "chat_attachment", "verification_document",
-	"background_removal_source", "short_video_raw", "short_thumbnail", "sound_upload", "unknown",
+	"background_removal_source", "short_video_raw", "short_photo", "short_video_manifest", "short_poster", "short_storyboard", "short_storyboard_manifest", "short_download", "short_thumbnail", "sound_upload", "unknown",
 }
 _ALLOWED_MEDIA_EVENTS = {
 	"upload_initiated", "upload_completed", "upload_rejected", "upload_failed",

@@ -20,7 +20,15 @@ EXPECTED_PURPOSES = {
 	"verification_document",
 	"background_removal_source",
 	"short_video_raw",
+	"short_download",
+	"short_storyboard_manifest",
+	"short_storyboard",
+	"short_poster",
+	"short_video_playback",
+	"short_video_manifest",
+	"short_photo",
 	"short_thumbnail",
+	"short_original_audio",
 	"sound_upload",
 }
 
@@ -50,6 +58,7 @@ class TestMediaPurposePolicies(TestCase):
 		self.assertFalse(MEDIA_PURPOSES["short_thumbnail"].client_upload_allowed)
 		self.assertNotIn(
 			"short_thumbnail",
+	"short_original_audio",
 			list_media_purposes(client_upload_only=True),
 		)
 

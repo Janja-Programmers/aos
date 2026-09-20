@@ -167,7 +167,7 @@ class TestOperationalMetrics(FrappeTestCase):
 		output = self._render()
 		self.assertNotIn(secret, output)
 		self.assertNotIn("user@example.com", output)
-		self.assertNotIn("SHORT-2026-00123", output)
+		self.assertNotIn("SHR-CCCCCCCCCCCCCCCCCCCC", output)
 		self.assertNotIn("/api/method/", output)
 		self.assertNotIn("Authorization", output)
 

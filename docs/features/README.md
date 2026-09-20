@@ -25,7 +25,7 @@ Feature documentation is the canonical human-readable description of AOS busines
 | [Saved Searches](saved-search/README.md) | User-scoped canonical Ads search intent | current Saved Search contract |
 | [Search Ranking](search-ranking/README.md) | Candidate generation, ranking policy and derived discovery indexes | current Search Ranking boundary |
 | [Sellers](sellers/README.md) | Seller profile/state, storefront, operating hours and location ownership | [API](sellers/README.md) |
-| [Shorts](shorts/README.md) | Short lifecycle, feeds, interactions, analytics, sounds and processing | [API](shorts/api.md) |
+| [Shorts](shorts/README.md) | Short lifecycle, feeds, interactions, analytics, sounds and private video processing | [Architecture/API](shorts/README.md) |
 | [Social](social/README.md) | Follow/friend/block relationships and privacy | [API](social/README.md) |
 | [Verification](verification/README.md) | Personal/business verification requests and private evidence | [API](verification/README.md) |
 | [Wishlist](wishlist/README.md) | Private user ↔ Ad saved relationship | API documented in feature README |

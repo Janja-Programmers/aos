@@ -89,13 +89,14 @@ def _media_and_short(suffix: str) -> tuple[Any, Any]:
 	short = _insert(
 		{
 			"doctype": "AOS Short",
-			"naming_series": "SHORT-.YYYY.-.#####",
-			"status": "processing",
-			"visibility_status": "hidden",
-			"file_key": f"tests/{suffix}/raw.mp4",
+			"content_type": "Video",
+			"lifecycle_status": "Processing",
+			"processing_status": "Processing",
+			"moderation_status": "Draft",
+			"processing_generation": 1,
 			"raw_video_media": media.name,
 			"caption": "",
-			"hashtags": "[]",
+			"audience": "everyone",
 		}
 	)
 	# The production upload flow attaches the ready raw video before dispatching
@@ -123,14 +124,15 @@ def create_durable_job(
 		job = _insert(
 			{
 				"doctype": "AOS Video Processing Job",
-				"naming_series": "VIDEO-JOB-.YYYY.-.#####",
 				"short": short.name,
+				"operation": "Process",
 				"raw_video_media": short.raw_video_media,
 				"status": status,
-				"reason": "short_upload",
+				"generation": 1,
 				"attempt_count": 0,
 				"max_attempts": 3,
 				"idempotency_key": idempotency_key,
+				"active_key": f"{short.name}:Process:1",
 				"request_payload": request_payload,
 			}
 		)

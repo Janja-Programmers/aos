@@ -1,170 +1,31 @@
-# Copyright (c) 2026, Africa Online Stores and contributors
-# For license information, please see license.txt
-
+from __future__ import annotations
 import frappe
-
-from aos.services.shorts.policy import can_comment
 from frappe.model.document import Document
-
+from aos.services.shorts.identity import generate_comment_id
+from aos.services.shorts.policy import can_comment
 
 class AOSShortComment(Document):
-    def validate(self):
-        self._set_user()
-        self._validate_short()
-        self._validate_body()
-        self._validate_parent()
-
+    def autoname(self): self.name=generate_comment_id()
     def before_insert(self):
-        self._set_seller()
-        self._set_thread_fields()
-
+        if not self.user: self.user=frappe.session.user
+        self.status=self.status or 'active'
+        if self.parent_comment:
+            parent=frappe.db.get_value('AOS Short Comment',self.parent_comment,['short','root_comment','status'],as_dict=True)
+            if not parent or parent.short!=self.short or parent.status!='active': frappe.throw('Invalid parent comment')
+            self.root_comment=parent.root_comment or self.parent_comment
+    def validate(self):
+        if not self.user or self.user=='Guest': frappe.throw('Login required to comment')
+        body=str(self.comment or '').strip()
+        if not body or len(body)>500: frappe.throw('Invalid comment')
+        self.comment=body
+        short=frappe.db.get_value('AOS Short',self.short,['name','owner','lifecycle_status','processing_status','moderation_status','audience','allow_comments'],as_dict=True)
+        if not short or not can_comment(short,viewer=self.user): frappe.throw('Commenting is not allowed')
     def after_insert(self):
-        # Fix root for top-level
-        if not self.parent_comment:
-            frappe.db.set_value(
-                self.doctype,
-                self.name,
-                "root_comment",
-                self.name,
-                update_modified=False,
-            )
-
-        self._increment_short_comment_count()
-        self._increment_reply_count_if_needed()
-
+        if not self.parent_comment: frappe.db.set_value(self.doctype,self.name,'root_comment',self.name,update_modified=False)
+        frappe.db.sql('UPDATE `tabAOS Short` SET comment_count=COALESCE(comment_count,0)+1,last_engagement_at=NOW() WHERE name=%s',(self.short,))
+        if self.parent_comment: frappe.db.sql('UPDATE `tabAOS Short Comment` SET reply_count=COALESCE(reply_count,0)+1 WHERE name=%s',(self.root_comment or self.parent_comment,))
     def soft_delete(self):
-        """Soft delete comment"""
-        if self.status == "deleted":
-            return
-
-        self.db_set("status", "deleted", update_modified=False)
-
-        self._decrement_short_comment_count()
-        self._decrement_reply_count_if_needed()
-
-    def _set_user(self):
-        if not self.user:
-            self.user = frappe.session.user
-
-        if self.user == "Guest":
-            frappe.throw("Login required to comment")
-
-    def _validate_short(self):
-        if not self.short:
-            frappe.throw("Short is required")
-
-        short = frappe.db.get_value(
-            "AOS Short",
-            self.short,
-            ["name", "owner", "status", "visibility_status", "approval_status", "audience", "allow_comments"],
-            as_dict=True,
-        )
-
-        if not short:
-            frappe.throw("Short not found")
-
-        if short.status != "ready":
-            frappe.throw("Short is not available")
-
-        if short.visibility_status != "visible":
-            frappe.throw("Short is not visible")
-        if not can_comment(short, viewer=self.user):
-            frappe.throw("Commenting is not allowed")
-
-    def _validate_body(self):
-        if not self.comment:
-            frappe.throw("Comment cannot be empty")
-
-        self.comment = self.comment.strip()
-
-        if not self.comment:
-            frappe.throw("Comment cannot be empty")
-
-        if len(self.comment) > 500:
-            frappe.throw("Comment cannot exceed 500 characters")
-
-    def _validate_parent(self):
-        if not self.parent_comment:
-            return
-
-        parent = frappe.db.get_value(
-            "AOS Short Comment",
-            self.parent_comment,
-            ["short", "root_comment", "status"],
-            as_dict=True,
-        )
-
-        if not parent:
-            frappe.throw("Parent comment not found")
-
-        if parent.short != self.short:
-            frappe.throw("Invalid parent comment")
-
-        if parent.status != "active":
-            frappe.throw("Cannot reply to this comment")
-
-    def _set_seller(self):
-        seller = frappe.db.get_value(
-            "AOS Seller",
-            {"user": self.user},
-            "name",
-        )
-        if seller:
-            self.seller = seller
-
-    def _set_thread_fields(self):
-        if not self.parent_comment:
-            self.root_comment = None
-        else:
-            parent = frappe.get_doc("AOS Short Comment", self.parent_comment)
-            self.root_comment = parent.root_comment or parent.name
-
-    def _increment_short_comment_count(self):
-        frappe.db.sql(
-            """
-            UPDATE `tabAOS Short`
-            SET comment_count = comment_count + 1
-            WHERE name = %s
-            """,
-            (self.short,),
-        )
-
-    def _increment_reply_count_if_needed(self):
-        if not self.parent_comment:
-            return
-
-        root = self.root_comment or self.parent_comment
-
-        frappe.db.sql(
-            """
-            UPDATE `tabAOS Short Comment`
-            SET reply_count = reply_count + 1
-            WHERE name = %s
-            """,
-            (root,),
-        )
-
-    def _decrement_short_comment_count(self):
-        frappe.db.sql(
-            """
-            UPDATE `tabAOS Short`
-            SET comment_count = GREATEST(comment_count - 1, 0)
-            WHERE name = %s
-            """,
-            (self.short,),
-        )
-
-    def _decrement_reply_count_if_needed(self):
-        if not self.parent_comment:
-            return
-
-        root = self.root_comment or self.parent_comment
-
-        frappe.db.sql(
-            """
-            UPDATE `tabAOS Short Comment`
-            SET reply_count = GREATEST(reply_count - 1, 0)
-            WHERE name = %s
-            """,
-            (root,),
-        )
+        if self.status=='deleted': return
+        self.db_set('status','deleted',update_modified=False)
+        frappe.db.sql('UPDATE `tabAOS Short` SET comment_count=GREATEST(COALESCE(comment_count,0)-1,0) WHERE name=%s',(self.short,))
+        if self.parent_comment: frappe.db.sql('UPDATE `tabAOS Short Comment` SET reply_count=GREATEST(COALESCE(reply_count,0)-1,0) WHERE name=%s',(self.root_comment or self.parent_comment,))

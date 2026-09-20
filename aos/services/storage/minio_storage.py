@@ -578,15 +578,14 @@ class MinioStorage:
         try:
             public_bucket = self.bucket_for_type("public")
             private_bucket = self.bucket_for_type("private")
-            output_bucket = self._clean_bucket(self.config.bucket)
             listed = self._execute("healthcheck", lambda: self.client.list_buckets(), retryable=True)
             existing = {str(getattr(item, "name", "") or "") for item in listed or []}
             missing_count = sum(
-                1 for name in {public_bucket, private_bucket, output_bucket} if name not in existing
+                1 for name in {public_bucket, private_bucket} if name not in existing
             )
             return {
                 "ok": missing_count == 0 and bool(self.public_base_url),
-                "configured_bucket_count": 3,
+                "configured_bucket_count": 2,
                 "missing_bucket_count": missing_count,
                 "public_base_url_configured": bool(self.public_base_url),
                 "latency_ms": int((time.perf_counter() - started) * 1000),

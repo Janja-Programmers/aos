@@ -103,7 +103,6 @@ _ENV = {
 	"MINIO_ACCESS_KEY": "test-access-key",
 	"MINIO_SECRET_KEY": "test-secret-key",
 	"MINIO_PUBLIC_BASE_URL": "http://127.0.0.1:19100",
-	"AOS_MINIO_BUCKET": "shorts",
 	"AOS_PUBLIC_BUCKET": "aos-public",
 	"AOS_PRIVATE_BUCKET": "aos-private",
 }
@@ -200,14 +199,16 @@ class TestOutboxRecoveryDispatchAllServices(FrappeTestCase):
 			"dispatch_token": outbox.current_dispatch_token,
 		}
 		if service_type == "video_processing":
-			prefix = f"shorts/processed/{fixture.job.short}/test-version"
 			return {
 				**base,
 				"status": "ready",
 				"job_generation": int(getattr(fixture.job, "generation", 1) or 1),
 				"duration_seconds": 3.5,
-				"processed_file_key": f"{prefix}/final.mp4",
-				"master_playlist_key": f"{prefix}/master.m3u8",
+				"outputs": {
+					"playback": {"bucket": "aos-public", "object_key": "shorts/playback/test/final.mp4", "content_type": "video/mp4"},
+					"manifest": {"bucket": "aos-public", "object_key": "shorts/playback/test/master.m3u8", "content_type": "application/vnd.apple.mpegurl"},
+					"poster": {"bucket": "aos-public", "object_key": "shorts/posters/test/poster.jpg", "content_type": "image/jpeg"},
+				},
 			}
 		if service_type == "moderation":
 			return {**base, "status": "completed", "decision": "review", "reasons": ["test"]}
@@ -232,10 +233,15 @@ class TestOutboxRecoveryDispatchAllServices(FrappeTestCase):
 			"notification_delivery": notification_delivery_service.handle_notification_delivery_callback,
 			"analytics_ingestion": analytics_pipeline_service.handle_analytics_ingest_callback,
 		}
-		return execute_callback_atomically(
-			service_type=service_type,
-			operation=lambda: handlers[service_type](payload),
-		)
+		if service_type == "video_processing":
+			with (
+				patch("aos.services.video_processing_service._register_asset", side_effect=["MEDIA-PLAY", "MEDIA-MANIFEST", "MEDIA-POSTER", "MEDIA-STORY", "MEDIA-STORY-MANIFEST"]),
+				patch("aos.services.video_processing_service._ensure_original_sound"),
+				patch("aos.services.video_processing_service.reclassify_short"),
+				patch("aos.services.moderation_service.enqueue_short_moderation"),
+			):
+				return execute_callback_atomically(service_type=service_type, operation=lambda: handlers[service_type](payload))
+		return execute_callback_atomically(service_type=service_type, operation=lambda: handlers[service_type](payload))
 
 	def test_callback_timeout_redispatches_all_five_services_and_replay_completes(self):
 		with patch.dict(os.environ, _ENV, clear=False):

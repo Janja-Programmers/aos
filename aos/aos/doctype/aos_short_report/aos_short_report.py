@@ -53,14 +53,16 @@ class AOSShortReport(Document):
         short = frappe.db.get_value(
             "AOS Short",
             self.short,
-            ["name", "owner", "status", "visibility_status"],
+            ["name", "owner", "lifecycle_status", "processing_status", "moderation_status", "audience"],
             as_dict=True,
         )
         if not short:
             frappe.throw("Short not found.", exc=frappe.DoesNotExistError)
-        if previous is None and (short.status != "ready" or short.visibility_status != "visible"):
-            frappe.throw("Short is not available.", exc=frappe.DoesNotExistError)
         if previous is None:
+            from aos.services.shorts.policy import can_view
+            viewer = str(getattr(frappe.session, "user", "") or "") or None
+            if not can_view(short, viewer=viewer):
+                frappe.throw("Short is not available.", exc=frappe.DoesNotExistError)
             self.short_owner = short.owner
 
     def _validate_reporter(self):

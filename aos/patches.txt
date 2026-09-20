@@ -20,10 +20,7 @@ aos.patches.v1_0.install_review_indexes
 
 aos.patches.v1_0.install_social_indexes
 
-aos.patches.v1_0.harden_shorts_subsystem
 aos.patches.v1_0.install_shorts_indexes
-aos.patches.v1_0.install_shorts_recommendation_indexes
-aos.patches.v1_0.initialize_short_classification_metadata
 
 # Live domain data reconciliation must run before its schema-only indexes.
 aos.patches.v1_0.harden_live_subsystem
@@ -48,11 +45,6 @@ aos.patches.v1_0.install_activity_indexes
 aos.patches.v1_0.install_notification_indexes
 
 
-# Hash naming resync can remove the manually-installed Shorts processing
 # uniqueness index on upgraded sites; reassert it after the naming change.
-aos.patches.v1_0.restore_short_processing_active_index
 
-# The Short Event unique index was added to an already-executed historical
 # patch. Reconcile any interim duplicate keys, then restore the schema invariant.
-aos.patches.v1_0.reconcile_short_event_key_uniqueness
-aos.patches.v1_0.restore_short_event_key_index

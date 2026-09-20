@@ -16,8 +16,6 @@ from aos.api.media.upload import init_upload_impl
 from aos.api.notifications.token import deactivate_push_token_impl, register_push_token_impl
 from aos.api.reports.report_user import report_user_impl
 from aos.api.reviews.create import create_review_impl
-from aos.api.shorts.comments import add_comment_impl
-from aos.api.shorts.engagement import toggle_like_impl
 from aos.api.social.block import block_user_impl
 
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
@@ -163,40 +161,6 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(frappe.db.exists("AOS Seller", {"user": user}))
         self.assertEqual(frappe.db.count("AOS Ad Image", {"parent": ad_name}), 1)
 
-    def test_shorts_like_and_comment_flow_updates_viewer_state_and_records_comment(self):
-        owner = self.make_user("short-owner")
-        viewer = self.make_user("short-viewer")
-        short = self.make_short(owner=owner)
-        frappe.set_user(viewer)
-
-        with (
-            patch("aos.api.shorts.engagement.rate_limit", return_value=None),
-            patch("aos.api.shorts.engagement.frappe.enqueue"),
-            patch("aos.api.shorts.engagement.NotificationService.notify_short_like"),
-            patch("aos.api.shorts.engagement.record_short_like_activity"),
-            patch("aos.api.shorts.engagement.hide_short_like_activity"),
-        ):
-            liked = toggle_like_impl(short_id=short.name)
-            unliked = toggle_like_impl(short_id=short.name)
-
-        self.assertTrue(liked.get("ok"), liked)
-        self.assertTrue(liked.get("data", {}).get("viewer_state", {}).get("is_liked"))
-        self.assertTrue(unliked.get("ok"), unliked)
-        self.assertFalse(unliked.get("data", {}).get("viewer_state", {}).get("is_liked"))
-        self.assertEqual(frappe.db.count("AOS Short Like", {"short": short.name, "user": viewer}), 0)
-
-        with (
-            patch("aos.api.shorts.comments.rate_limit", return_value=None),
-            patch("aos.api.shorts.comments.frappe.enqueue"),
-            patch("aos.api.shorts.comments.NotificationService.notify_short_comment"),
-            patch("aos.api.shorts.comments.record_short_comment_activity"),
-            patch("aos.api.shorts.comments.sync_comment_mentions"),
-        ):
-            comment_response = add_comment_impl(short_id=short.name, comment="Great product short")
-
-        self.assertTrue(comment_response.get("ok"), comment_response)
-        comment_id = comment_response.get("data", {}).get("comment_id")
-        self.assertTrue(frappe.db.exists("AOS Short Comment", comment_id))
 
     def test_report_user_with_block_option_creates_report_and_active_block(self):
         reporter = self.make_user("reporter")

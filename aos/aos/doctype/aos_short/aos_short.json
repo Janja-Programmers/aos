@@ -1,165 +1,184 @@
 {
  "actions": [],
- "autoname": "naming_series:",
- "creation": "2026-03-25 14:49:59.358523",
+ "autoname": "prompt",
+ "creation": "2026-09-20 00:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
-  "file_key",
+  "content_type",
+  "lifecycle_status",
+  "processing_status",
+  "moderation_status",
+  "revision",
+  "processing_generation",
+  "moderation_generation",
   "raw_video_media",
-  "playback_url",
-  "processed_file_key",
-  "processed_file_url",
-  "audio_mix_status",
-  "audio_mix_error",
-  "thumbnail_url",
-  "thumbnail_media",
+  "playback_media",
+  "playback_manifest_media",
+  "download_media",
+  "poster_media",
+  "cover_media",
+  "storyboard_media",
+  "storyboard_manifest_media",
   "duration_seconds",
-  "ad",
-  "seller",
-  "country",
-  "column_break_odah",
-  "status",
-  "content_mode",
-  "classification_status",
-  "classification_source",
-  "classification_confidence",
-  "classification_model",
-  "classification_model_version",
-  "classified_at",
-  "classification_visual_scores",
-  "classification_scores",
+  "caption",
   "audience",
-  "posted_on",
   "allow_comments",
   "allow_downloads",
-  "section_break_kdxw",
-  "caption",
-  "hashtags",
-  "metrics_tab",
+  "allow_reuse",
+  "allow_side_by_side",
+  "allow_segment_reuse",
+  "place",
+  "source_short",
+  "reuse_type",
+  "source_start_ms",
+  "source_end_ms",
+  "posted_on",
+  "deleted_at",
+  "processing_error",
+  "moderation_reason",
+  "automated_moderation_result",
+  "moderation_decided_by",
+  "moderation_decided_at",
   "view_count",
+  "unique_viewer_count",
+  "impression_count",
   "like_count",
   "comment_count",
   "share_count",
   "save_count",
-  "column_break_hqyq",
   "download_count",
   "repost_count",
-  "impression_count",
+  "watch_time_ms",
+  "completion_count",
+  "rewatch_count",
+  "early_skip_count",
   "ranking_score",
-  "last_engagement_at",
-  "review_tab",
-  "visibility_status",
-  "approval_status",
-  "hidden_reason",
-  "processing_error"
+  "last_engagement_at"
  ],
  "fields": [
   {
-   "default": "SHORT-.YYYY.-.#####",
-   "fieldname": "naming_series",
+   "fieldname": "content_type",
    "fieldtype": "Select",
-   "label": "Series",
-   "options": "SHORT-.YYYY.-.#####"
-  },
-  {
-   "default": "initialized",
-   "fieldname": "status",
-   "fieldtype": "Select",
+   "label": "Content Type",
+   "options": "Video\nPhoto",
+   "default": "Video",
+   "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Status",
-   "options": "initialized\nuploaded\nprocessing\nready\nfailed\ndeleted",
-   "reqd": 1
+   "search_index": 1
   },
   {
-   "fieldname": "thumbnail_url",
-   "fieldtype": "Data",
-   "label": "Thumbnail URL",
+   "fieldname": "lifecycle_status",
+   "fieldtype": "Select",
+   "label": "Lifecycle Status",
+   "options": "Draft\nProcessing\nPending Review\nPublished\nRejected\nHidden\nFailed\nDeleted",
+   "default": "Draft",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "processing_status",
+   "fieldtype": "Select",
+   "label": "Processing Status",
+   "options": "Not Required\nQueued\nProcessing\nRetry Waiting\nReady\nFailed\nCancelled",
+   "default": "Not Required",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "moderation_status",
+   "fieldtype": "Select",
+   "label": "Moderation Status",
+   "options": "Draft\nPending\nApproved\nRejected\nHidden",
+   "default": "Draft",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "revision",
+   "fieldtype": "Int",
+   "label": "Revision",
+   "default": "1",
+   "reqd": 1,
    "read_only": 1
   },
   {
-   "fieldname": "thumbnail_media",
-   "fieldtype": "Link",
-   "label": "Thumbnail Media",
-   "options": "AOS Media Object",
+   "fieldname": "processing_generation",
+   "fieldtype": "Int",
+   "label": "Processing Generation",
+   "default": "0",
+   "reqd": 1,
    "read_only": 1
   },
   {
-   "fieldname": "column_break_odah",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "file_key",
-   "fieldtype": "Data",
-   "label": "File Key",
-   "read_only": 1,
-   "reqd": 1
+   "fieldname": "moderation_generation",
+   "fieldtype": "Int",
+   "label": "Moderation Generation",
+   "default": "0",
+   "reqd": 1,
+   "read_only": 1
   },
   {
    "fieldname": "raw_video_media",
    "fieldtype": "Link",
    "label": "Raw Video Media",
    "options": "AOS Media Object",
-   "read_only": 1,
-   "reqd": 1
-  },
-  {
-   "fieldname": "playback_url",
-   "fieldtype": "Data",
-   "label": "Playback URL",
    "read_only": 1
   },
   {
-   "fieldname": "processed_file_key",
-   "fieldtype": "Data",
-   "label": "Processed File Key",
-   "read_only": 1
-  },
-  {
-   "fieldname": "processed_file_url",
-   "fieldtype": "Data",
-   "label": "Processed File URL",
-   "read_only": 1
-  },
-  {
-   "fieldname": "audio_mix_status",
-   "fieldtype": "Select",
-   "label": "Audio Mix Status",
-   "options": "none\npending\nprocessing\nready\nfailed",
-   "default": "none",
-   "read_only": 1
-  },
-  {
-   "fieldname": "audio_mix_error",
-   "fieldtype": "Small Text",
-   "label": "Audio Mix Error",
-   "read_only": 1
-  },
-  {
-   "fieldname": "seller",
+   "fieldname": "playback_media",
    "fieldtype": "Link",
-   "label": "Seller",
-   "options": "AOS Seller",
-   "read_only": 1,
-   "search_index": 1
+   "label": "Playback Media",
+   "options": "AOS Media Object",
+   "read_only": 1
   },
   {
-   "fieldname": "ad",
+   "fieldname": "playback_manifest_media",
    "fieldtype": "Link",
-   "label": "Ad",
-   "options": "AOS Ad",
-   "read_only": 1,
-   "search_index": 1
+   "label": "Playback Manifest Media",
+   "options": "AOS Media Object",
+   "read_only": 1
   },
   {
-   "fieldname": "country",
+   "fieldname": "download_media",
    "fieldtype": "Link",
-   "label": "Country",
-   "options": "Country",
-   "read_only": 1,
-   "search_index": 1
+   "label": "Download Media",
+   "options": "AOS Media Object",
+   "read_only": 1
+  },
+  {
+   "fieldname": "poster_media",
+   "fieldtype": "Link",
+   "label": "Poster Media",
+   "options": "AOS Media Object",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cover_media",
+   "fieldtype": "Link",
+   "label": "Cover Media",
+   "options": "AOS Media Object"
+  },
+  {
+   "fieldname": "storyboard_media",
+   "fieldtype": "Link",
+   "label": "Storyboard Media",
+   "options": "AOS Media Object",
+   "read_only": 1
+  },
+  {
+   "fieldname": "storyboard_manifest_media",
+   "fieldtype": "Link",
+   "label": "Storyboard Manifest Media",
+   "options": "AOS Media Object",
+   "read_only": 1
   },
   {
    "fieldname": "duration_seconds",
@@ -168,117 +187,81 @@
    "read_only": 1
   },
   {
-   "fieldname": "section_break_kdxw",
-   "fieldtype": "Section Break"
-  },
-  {
    "fieldname": "caption",
    "fieldtype": "Small Text",
    "label": "Caption"
   },
   {
-   "fieldname": "hashtags",
-   "fieldtype": "JSON",
-   "label": "Hashtags"
+   "fieldname": "audience",
+   "fieldtype": "Select",
+   "label": "Audience",
+   "options": "everyone\nfollowers\nfriends\nonly_me",
+   "default": "everyone",
+   "reqd": 1
   },
   {
-   "default": "hidden",
-   "fieldname": "visibility_status",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Visibility Status",
-   "options": "visible\nhidden\ndeleted",
+   "fieldname": "allow_comments",
+   "fieldtype": "Check",
+   "label": "Allow Comments",
+   "default": "1"
+  },
+  {
+   "fieldname": "allow_downloads",
+   "fieldtype": "Check",
+   "label": "Allow Downloads",
+   "default": "0"
+  },
+  {
+   "fieldname": "allow_reuse",
+   "fieldtype": "Check",
+   "label": "Allow Reuse",
+   "default": "1"
+  },
+  {
+   "fieldname": "allow_side_by_side",
+   "fieldtype": "Check",
+   "label": "Allow Side By Side",
+   "default": "1"
+  },
+  {
+   "fieldname": "allow_segment_reuse",
+   "fieldtype": "Check",
+   "label": "Allow Segment Reuse",
+   "default": "1"
+  },
+  {
+   "fieldname": "place",
+   "fieldtype": "Link",
+   "label": "Place",
+   "options": "AOS Location",
    "search_index": 1
   },
   {
-   "fieldname": "metrics_tab",
-   "fieldtype": "Tab Break",
-   "label": "Metrics"
-  },
-  {
-   "default": "0",
-   "fieldname": "view_count",
-   "fieldtype": "Int",
-   "label": "View Count",
-   "read_only": 1
-  },
-  {
-   "fieldname": "review_tab",
-   "fieldtype": "Tab Break",
-   "label": "Review"
-  },
-  {
-   "default": "auto_approved",
-   "fieldname": "approval_status",
-   "fieldtype": "Select",
-   "label": "Approval Status",
-   "options": "pending\nauto_approved\nflagged\nrejected"
-  },
-  {
-   "fieldname": "hidden_reason",
-   "fieldtype": "Small Text",
-   "label": "Hidden Reason"
-  },
-  {
-   "default": "0",
-   "fieldname": "like_count",
-   "fieldtype": "Int",
-   "label": "Like Count",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "impression_count",
-   "fieldtype": "Int",
-   "label": "Impression Count",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_hqyq",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "0",
-   "fieldname": "comment_count",
-   "fieldtype": "Int",
-   "label": "Comment Count",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "share_count",
-   "fieldtype": "Int",
-   "label": "Share Count",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "save_count",
-   "fieldtype": "Int",
-   "label": "Save Count",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "download_count",
-   "fieldtype": "Int",
-   "label": "Download Count",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "repost_count",
-   "fieldtype": "Int",
-   "label": "Repost Count",
-   "read_only": 1
-  },
-  {
-   "fieldname": "ranking_score",
-   "fieldtype": "Float",
-   "label": "Ranking Score",
+   "fieldname": "source_short",
+   "fieldtype": "Link",
+   "label": "Source Short",
+   "options": "AOS Short",
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "reuse_type",
+   "fieldtype": "Select",
+   "label": "Reuse Type",
+   "options": "\nSide by Side\nSegment",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_start_ms",
+   "fieldtype": "Int",
+   "label": "Source Start Ms",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_end_ms",
+   "fieldtype": "Int",
+   "label": "Source End Ms",
+   "read_only": 1
   },
   {
    "fieldname": "posted_on",
@@ -288,11 +271,10 @@
    "search_index": 1
   },
   {
-   "fieldname": "last_engagement_at",
+   "fieldname": "deleted_at",
    "fieldtype": "Datetime",
-   "label": "Last Engagement At",
-   "read_only": 1,
-   "search_index": 1
+   "label": "Deleted At",
+   "read_only": 1
   },
   {
    "fieldname": "processing_error",
@@ -301,100 +283,142 @@
    "read_only": 1
   },
   {
-   "fieldname": "content_mode",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Content Mode",
-   "options": "shop\ngeo\nvibes\nlearn",
-   "search_index": 1
-  },
-  {
-   "default": "pending",
-   "fieldname": "classification_status",
-   "fieldtype": "Select",
-   "in_standard_filter": 1,
-   "label": "Classification Status",
-   "options": "pending\nvisual_ready\nready\nfallback\nfailed\nlegacy",
-   "read_only": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "classification_source",
-   "fieldtype": "Select",
-   "label": "Classification Source",
-   "options": "automatic_visual\nautomatic_text\nautomatic_visual_text\ncommerce_context\nfallback\nlegacy\nadmin_override",
+   "fieldname": "moderation_reason",
+   "fieldtype": "Small Text",
+   "label": "Moderation Reason",
    "read_only": 1
   },
   {
-   "fieldname": "classification_confidence",
-   "fieldtype": "Float",
-   "label": "Classification Confidence",
-   "precision": "6",
+   "fieldname": "automated_moderation_result",
+   "fieldtype": "JSON",
+   "label": "Automated Moderation Result",
    "read_only": 1
   },
   {
-   "fieldname": "classification_model",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Classification Model",
+   "fieldname": "moderation_decided_by",
+   "fieldtype": "Link",
+   "label": "Moderation Decided By",
+   "options": "User",
    "read_only": 1
   },
   {
-   "fieldname": "classification_model_version",
-   "fieldtype": "Data",
-   "label": "Classification Model Version",
-   "read_only": 1
-  },
-  {
-   "fieldname": "classified_at",
+   "fieldname": "moderation_decided_at",
    "fieldtype": "Datetime",
-   "label": "Classified At",
+   "label": "Moderation Decided At",
    "read_only": 1
   },
   {
-   "fieldname": "classification_visual_scores",
-   "fieldtype": "JSON",
-   "hidden": 1,
-   "label": "Visual Classification Scores",
-   "read_only": 1
-  },
-  {
-   "fieldname": "classification_scores",
-   "fieldtype": "JSON",
-   "hidden": 1,
-   "label": "Classification Scores",
-   "read_only": 1
-  },
-  {
-   "default": "everyone",
-   "fieldname": "audience",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Audience",
-   "options": "everyone\nfollowers\nfriends\nonly_me",
-   "search_index": 1
-  },
-  {
-   "default": "1",
-   "fieldname": "allow_comments",
-   "fieldtype": "Check",
-   "label": "Allow Comments"
-  },
-  {
+   "fieldname": "view_count",
+   "fieldtype": "Int",
+   "label": "View Count",
    "default": "0",
-   "fieldname": "allow_downloads",
-   "fieldtype": "Check",
-   "label": "Allow Downloads"
+   "read_only": 1
+  },
+  {
+   "fieldname": "unique_viewer_count",
+   "fieldtype": "Int",
+   "label": "Unique Viewer Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "impression_count",
+   "fieldtype": "Int",
+   "label": "Impression Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "like_count",
+   "fieldtype": "Int",
+   "label": "Like Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "comment_count",
+   "fieldtype": "Int",
+   "label": "Comment Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "share_count",
+   "fieldtype": "Int",
+   "label": "Share Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "save_count",
+   "fieldtype": "Int",
+   "label": "Save Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "download_count",
+   "fieldtype": "Int",
+   "label": "Download Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "repost_count",
+   "fieldtype": "Int",
+   "label": "Repost Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "watch_time_ms",
+   "fieldtype": "Int",
+   "label": "Watch Time Ms",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completion_count",
+   "fieldtype": "Int",
+   "label": "Completion Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rewatch_count",
+   "fieldtype": "Int",
+   "label": "Rewatch Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "early_skip_count",
+   "fieldtype": "Int",
+   "label": "Early Skip Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ranking_score",
+   "fieldtype": "Float",
+   "label": "Ranking Score",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_engagement_at",
+   "fieldtype": "Datetime",
+   "label": "Last Engagement At",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-26 00:00:00.000000",
+ "modified": "2026-09-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Short",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {
@@ -417,27 +441,24 @@
  "states": [
   {
    "color": "Gray",
-   "title": "initialized"
-  },
-  {
-   "color": "Blue",
-   "title": "uploaded"
-  },
-  {
-   "color": "Purple",
-   "title": "processing"
-  },
-  {
-   "color": "Green",
-   "title": "ready"
+   "title": "Draft"
   },
   {
    "color": "Orange",
-   "title": "failed"
+   "title": "Pending Review"
+  },
+  {
+   "color": "Green",
+   "title": "Published"
   },
   {
    "color": "Red",
-   "title": "deleted"
+   "title": "Rejected"
+  },
+  {
+   "color": "Red",
+   "title": "Hidden"
   }
- ]
+ ],
+ "title_field": "caption"
 }

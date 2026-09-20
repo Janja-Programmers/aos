@@ -308,8 +308,8 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         with patch("aos.services.search_ranking_service.enqueue_short_search_index", return_value=None):
             doc.save(ignore_permissions=True)
         short = frappe.get_doc("AOS Short", self.short.name)
-        self.assertEqual(short.visibility_status, "hidden")
-        self.assertEqual(short.approval_status, "flagged")
+        self.assertEqual(short.lifecycle_status, "Hidden")
+        self.assertEqual(short.moderation_status, "Hidden")
 
     def test_suspend_ad_action_reuses_ad_lifecycle(self):
         submitted = self._report_ad()

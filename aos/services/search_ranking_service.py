@@ -557,30 +557,27 @@ def build_ad_index_document(ad_id: str) -> dict[str, Any]:
 
 
 def build_short_index_document(short_id: str) -> dict[str, Any]:
+	from aos.services.shorts.policy import creator_is_available, distribution_eligible
 	short = frappe.get_doc("AOS Short", short_id)
+	modes = [str(row.mode) for row in frappe.get_all("AOS Short Mode", filters={"short": short.name}, fields=["mode"], order_by="mode asc")]
+	hashtags = [str(row.hashtag) for row in frappe.get_all("AOS Short Hashtag", filters={"short": short.name}, fields=["hashtag"], order_by="hashtag asc")]
+	ad_ids = []
+	for row in frappe.db.sql("""SELECT a.public_id FROM `tabAOS Short Ad` sa INNER JOIN `tabAOS Ad` a ON a.name=sa.ad WHERE sa.short=%s AND a.status='Active' ORDER BY sa.position,sa.name""", (short.name,), as_dict=True):
+		if row.public_id:
+			ad_ids.append(str(row.public_id))
+	country = frappe.db.get_value("AOS Location", short.place, "country") if short.place else ""
+	eligible = distribution_eligible(short) and creator_is_available(str(short.owner or ""))
 	return {
-		"id": short.name,
-		"name": short.name,
-		"owner": getattr(short, "owner", "") or "",
-		"status": getattr(short, "status", "") or "",
-		"visibility_status": getattr(short, "visibility_status", "") or "",
-		"approval_status": getattr(short, "approval_status", "") or "",
-		"content_mode": getattr(short, "content_mode", "") or "",
-		"audience": getattr(short, "audience", "") or "",
-		"country": getattr(short, "country", "") or "",
-		"seller": getattr(short, "seller", "") or "",
-		"ad": getattr(short, "ad", "") or "",
-		"caption": getattr(short, "caption", "") or "",
-		"hashtags": getattr(short, "hashtags", "") or "",
-		"ranking_score": float(getattr(short, "ranking_score", 0) or 0),
-		"view_count": int(getattr(short, "view_count", 0) or 0),
-		"like_count": int(getattr(short, "like_count", 0) or 0),
-		"comment_count": int(getattr(short, "comment_count", 0) or 0),
-		"share_count": int(getattr(short, "share_count", 0) or 0),
-		"save_count": int(getattr(short, "save_count", 0) or 0),
-		"repost_count": int(getattr(short, "repost_count", 0) or 0),
-		"creation": str(getattr(short, "creation", "") or ""),
-		"modified": str(getattr(short, "modified", "") or ""),
+		"id": short.name, "name": short.name, "owner": str(short.owner or ""),
+		"eligible": bool(eligible), "lifecycle_status": str(short.lifecycle_status or ""),
+		"processing_status": str(short.processing_status or ""), "moderation_status": str(short.moderation_status or ""),
+		"audience": str(short.audience or ""), "modes": modes, "place": str(short.place or ""),
+		"country": str(country or ""), "ad_ids": ad_ids, "caption": str(short.caption or ""),
+		"hashtags": hashtags, "ranking_score": float(short.ranking_score or 0),
+		"view_count": int(short.view_count or 0), "like_count": int(short.like_count or 0),
+		"comment_count": int(short.comment_count or 0), "share_count": int(short.share_count or 0),
+		"save_count": int(short.save_count or 0), "repost_count": int(short.repost_count or 0),
+		"creation": str(short.creation or ""), "modified": str(short.modified or ""),
 	}
 
 
@@ -652,7 +649,7 @@ def enqueue_short_search_index(
 	if frappe.db.exists("AOS Short", short_id):
 		document = build_short_index_document(short_id)
 		target_owner = document.get("owner")
-		if document.get("status") != "ready" or document.get("visibility_status") != "visible":
+		if not document.get("eligible"):
 			action = "delete"
 	else:
 		action = "delete"
@@ -703,7 +700,7 @@ def search_ad_candidates(
 def short_feed_candidates(
 	*,
 	viewer: str | None = None,
-	content_mode: str | None = None,
+	mode: str | None = None,
 	country: str | None = None,
 	limit: int = 20,
 	offset: int = 0,
@@ -715,7 +712,7 @@ def short_feed_candidates(
 		"/shorts/feed",
 		{
 			"viewer": viewer,
-			"content_mode": content_mode,
+			"mode": mode,
 			"country": country,
 			"limit": limit,
 			"offset": offset,
@@ -756,7 +753,7 @@ def reindex_active_ads(limit: int = 1000, enqueue: bool = True) -> dict[str, Any
 def reindex_visible_shorts(limit: int = 1000, enqueue: bool = True) -> dict[str, Any]:
 	rows = frappe.get_all(
 		"AOS Short",
-		filters={"status": "ready", "visibility_status": "visible"},
+		filters={"lifecycle_status": "Published", "moderation_status": "Approved", "processing_status": ["in", ["Ready", "Not Required"]]},
 		fields=["name"],
 		limit=max(1, int(limit)),
 		order_by="modified desc",

@@ -54,7 +54,7 @@ export default function () {
     const shortId = TEST_SHORT_ID;
     if (sid && shortId) {
       group('shorts authenticated writes', () => {
-        record(postMethod('aos.api.v1.shorts.toggle_like', { short_id: shortId }, sid), 'shorts.toggle_like', {
+        record(postMethod('aos.api.v1.shorts.like_short', { short_id: shortId }, sid), 'shorts.like_short', {
           allowStatuses: [404, 422, 429],
           allowCodes: ['NOT_FOUND', 'VALIDATION_ERROR', 'RATE_LIMITED'],
         });

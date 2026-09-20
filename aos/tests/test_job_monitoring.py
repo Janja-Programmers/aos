@@ -103,7 +103,7 @@ class TestJobMonitoring(FrappeTestCase):
                     stale_active_count=1,
                     long_running_count=1,
                     counts_by_status={"Processing": 2},
-                    sample_stale_jobs=["VIDEO-JOB-2026-00001"],
+                    sample_stale_jobs=["VPJ-AAAAAAAAAAAAAAAAAAAA"],
                     last_error="AccessDenied secret=should-not-leak",
                 )
             ]
@@ -120,7 +120,7 @@ class TestJobMonitoring(FrappeTestCase):
         self.assertEqual(len(service_checks), 1)
         self.assertEqual(service_checks[0].get("status"), "unhealthy")
         serialized = str(report)
-        self.assertIn("VIDEO-JOB-2026-00001", serialized)
+        self.assertIn("VPJ-AAAAAAAAAAAAAAAAAAAA", serialized)
         self.assertNotIn("AccessDenied", serialized)
         self.assertNotIn("should-not-leak", serialized)
 

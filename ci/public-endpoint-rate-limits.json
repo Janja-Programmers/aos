@@ -1,5 +1,23 @@
 [
   {
+    "endpoint": "aos.api.internal.shorts.__init__.get_review_context",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Desk-only Shorts review endpoint with role and permission checks."
+  },
+  {
+    "endpoint": "aos.api.internal.shorts.__init__.review",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Desk-only Shorts review endpoint with role and permission checks."
+  },
+  {
+    "endpoint": "aos.api.internal.video_processing.__init__.handle_callback",
+    "access": "guest",
+    "policy": "signed_internal_exempt",
+    "rationale": "Private HMAC-signed Video Processing callback; not a browser/mobile client endpoint."
+  },
+  {
     "endpoint": "aos.api.metrics.background_jobs",
     "access": "guest",
     "policy": "private_metrics_exempt",
@@ -996,256 +1014,220 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
-    "endpoint": "aos.api.v1.shorts.__init__.add_comment",
+    "endpoint": "aos.api.v1.shorts.__init__.create_comment",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
-    "endpoint": "aos.api.v1.shorts.__init__.change_short_sound",
+    "endpoint": "aos.api.v1.shorts.__init__.create_segment_reuse_draft",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.shorts.__init__.create_short",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
-    "endpoint": "aos.api.v1.shorts.__init__.create_short_share_link",
-    "access": "guest",
-    "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
-  },
-  {
-    "endpoint": "aos.api.v1.shorts.__init__.create_sound",
+    "endpoint": "aos.api.v1.shorts.__init__.create_side_by_side_draft",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.shorts.__init__.delete_comment",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.shorts.__init__.delete_short",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.shorts.__init__.download_short",
-    "access": "guest",
-    "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.shorts.__init__.favorite_sound",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
-  },
-  {
-    "endpoint": "aos.api.v1.shorts.__init__.feed_by_ad",
-    "access": "guest",
-    "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.shorts.__init__.feed_following",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.shorts.__init__.feed_for_you",
     "access": "guest",
     "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
-  },
-  {
-    "endpoint": "aos.api.v1.shorts.__init__.general_short_analytics",
-    "access": "authenticated",
-    "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.shorts.__init__.get_short",
     "access": "guest",
     "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
-    "endpoint": "aos.api.v1.shorts.__init__.get_short_analytics",
+    "endpoint": "aos.api.v1.shorts.__init__.get_short_metrics",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.shorts.__init__.get_sound",
     "access": "guest",
     "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
-    "endpoint": "aos.api.v1.shorts.__init__.liked_shorts",
+    "endpoint": "aos.api.v1.shorts.__init__.hashtag_shorts",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.like_comment",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.like_short",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.shorts.__init__.list_comments",
     "access": "guest",
     "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
-  },
-  {
-    "endpoint": "aos.api.v1.shorts.__init__.list_replies",
-    "access": "guest",
-    "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.shorts.__init__.list_sounds",
     "access": "guest",
     "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.shorts.__init__.my_favorite_sounds",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.shorts.__init__.my_shorts",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
-    "endpoint": "aos.api.v1.shorts.__init__.my_shorts_analytics",
+    "endpoint": "aos.api.v1.shorts.__init__.not_interested",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
-    "endpoint": "aos.api.v1.shorts.__init__.recommendation_feedback",
+    "endpoint": "aos.api.v1.shorts.__init__.record_events",
     "access": "guest",
     "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
-    "endpoint": "aos.api.v1.shorts.__init__.remove_short_sound",
-    "access": "authenticated",
-    "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
-  },
-  {
-    "endpoint": "aos.api.v1.shorts.__init__.reply_comment",
-    "access": "authenticated",
-    "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
-  },
-  {
-    "endpoint": "aos.api.v1.shorts.__init__.reposted_shorts",
+    "endpoint": "aos.api.v1.shorts.__init__.record_share",
     "access": "guest",
     "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.repost_short",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.shorts.__init__.retry_processing",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
+  },
+  {
+    "endpoint": "aos.api.v1.shorts.__init__.save_short",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.shorts.__init__.saved_shorts",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.shorts.__init__.search_sounds",
     "access": "guest",
     "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
-  },
-  {
-    "endpoint": "aos.api.v1.shorts.__init__.share_short_to_chat",
-    "access": "authenticated",
-    "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.shorts.__init__.sound_shorts",
     "access": "guest",
     "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
-    "endpoint": "aos.api.v1.shorts.__init__.toggle_comment_like",
+    "endpoint": "aos.api.v1.shorts.__init__.submit_short",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
-    "endpoint": "aos.api.v1.shorts.__init__.toggle_like",
+    "endpoint": "aos.api.v1.shorts.__init__.undo_repost_short",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
-    "endpoint": "aos.api.v1.shorts.__init__.toggle_repost",
+    "endpoint": "aos.api.v1.shorts.__init__.unfavorite_sound",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
-    "endpoint": "aos.api.v1.shorts.__init__.toggle_save_short",
+    "endpoint": "aos.api.v1.shorts.__init__.unlike_comment",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
-    "endpoint": "aos.api.v1.shorts.__init__.track_impression",
-    "access": "guest",
-    "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
-  },
-  {
-    "endpoint": "aos.api.v1.shorts.__init__.track_share",
-    "access": "guest",
-    "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
-  },
-  {
-    "endpoint": "aos.api.v1.shorts.__init__.track_view",
-    "access": "guest",
-    "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
-  },
-  {
-    "endpoint": "aos.api.v1.shorts.__init__.update_short_metadata",
+    "endpoint": "aos.api.v1.shorts.__init__.unlike_short",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
-    "endpoint": "aos.api.v1.shorts.__init__.user_short_analytics",
+    "endpoint": "aos.api.v1.shorts.__init__.unsave_short",
     "access": "authenticated",
     "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
-    "endpoint": "aos.api.v1.shorts.__init__.user_shorts",
-    "access": "guest",
-    "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+    "endpoint": "aos.api.v1.shorts.__init__.update_short",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
     "endpoint": "aos.api.v1.social.__init__.block_user",
@@ -1324,12 +1306,6 @@
     "access": "authenticated",
     "policy": "baseline_authenticated",
     "rationale": "Nginx authenticated baseline plus Verification application limit: 5 submissions per account per hour."
-  },
-  {
-    "endpoint": "aos.api.v1.video_processing.__init__.handle_callback",
-    "access": "guest",
-    "policy": "signed_internal_exempt",
-    "rationale": "Signed worker callback; authenticated by HMAC and kept outside the public edge bucket."
   },
   {
     "endpoint": "aos.api.v1.wishlist.__init__.add_to_wishlist",

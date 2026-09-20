@@ -1,80 +1,17 @@
-# Copyright (c) 2026, Africa Online Stores and contributors
-# For license information, please see license.txt
-
+from __future__ import annotations
 import frappe
 from frappe.model.document import Document
-
+from aos.services.shorts.policy import can_view
 
 class AOSShortLike(Document):
-    def validate(self):
-        self._validate_short()
-        self._prevent_duplicate()
-
+    counter_field='like_count'
     def before_insert(self):
-        self._set_user()
-
+        if not self.user: self.user=frappe.session.user
+        if not self.user or self.user=='Guest': frappe.throw('Authentication required')
+    def validate(self):
+        short=frappe.db.get_value('AOS Short',self.short,['name','owner','lifecycle_status','processing_status','moderation_status','audience'],as_dict=True)
+        if not short or not can_view(short,viewer=self.user): frappe.throw('Short is unavailable')
     def after_insert(self):
-        self._increment_like_count()
-
+        frappe.db.sql(f'UPDATE `tabAOS Short` SET {self.counter_field}=COALESCE({self.counter_field},0)+1,last_engagement_at=NOW() WHERE name=%s',(self.short,))
     def on_trash(self):
-        self._decrement_like_count()
-
-    def _set_user(self):
-        """Ensure like is tied to logged-in user"""
-        if not self.user:
-            self.user = frappe.session.user
-
-        if self.user == "Guest":
-            frappe.throw("Login required to like a short")
-
-    def _validate_short(self):
-        """Ensure short exists and is valid"""
-        if not self.short:
-            frappe.throw("Short is required")
-
-        short = frappe.db.get_value(
-            "AOS Short",
-            self.short,
-            ["status", "visibility_status"],
-            as_dict=True,
-        )
-
-        if not short:
-            frappe.throw("Short not found")
-
-        if short.status != "ready":
-            frappe.throw("Short is not available")
-
-        if short.visibility_status != "visible":
-            frappe.throw("Short is not visible")
-
-    def _prevent_duplicate(self):
-        existing = frappe.db.exists(
-            "AOS Short Like",
-            {"short": self.short, "user": self.user},
-        )
-
-        if existing and existing != self.name:
-            frappe.throw("Short already liked")
-
-    def _increment_like_count(self):
-        """Atomic increment"""
-        frappe.db.sql(
-            """
-            UPDATE `tabAOS Short`
-            SET like_count = like_count + 1
-            WHERE name = %s
-            """,
-            (self.short,),
-        )
-
-    def _decrement_like_count(self):
-        """Atomic decrement (safe)"""
-        frappe.db.sql(
-            """
-            UPDATE `tabAOS Short`
-            SET like_count = GREATEST(like_count - 1, 0)
-            WHERE name = %s
-            """,
-            (self.short,),
-        )
+        frappe.db.sql(f'UPDATE `tabAOS Short` SET {self.counter_field}=GREATEST(COALESCE({self.counter_field},0)-1,0) WHERE name=%s',(self.short,))

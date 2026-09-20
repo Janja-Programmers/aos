@@ -157,19 +157,15 @@ def upsert_short(redis: Redis, doc: dict[str, Any]) -> None:
 	short_id = _clean(doc.get("id") or doc.get("name"))
 	if not short_id:
 		raise ValueError("short id is required")
-	if _clean(doc.get("status")) != "ready" or _clean(doc.get("visibility_status")) != "visible":
+	if not _bool(doc.get("eligible")):
 		delete_short(redis, short_id)
 		return
 	redis.hset(
 		short_key(short_id),
 		mapping={
-			"id": short_id,
-			"doc": _json(doc),
-			"status": _clean(doc.get("status")),
-			"visibility_status": _clean(doc.get("visibility_status")),
-			"content_mode": _clean(doc.get("content_mode")),
-			"country": _clean(doc.get("country")),
-			"owner": _clean(doc.get("owner")),
+			"id": short_id, "doc": _json(doc), "eligible": "1",
+			"modes": _json(doc.get("modes") if isinstance(doc.get("modes"), list) else []),
+			"country": _clean(doc.get("country")), "owner": _clean(doc.get("owner")),
 			"updated_at": _clean(doc.get("modified") or doc.get("creation")),
 		},
 	)
@@ -257,7 +253,7 @@ def feed_shorts(redis: Redis, payload: dict[str, Any]) -> dict[str, Any]:
 	settings = get_settings()
 	limit = max(1, min(int(payload.get("limit") or 20), 100))
 	offset = max(0, int(payload.get("offset") or 0))
-	content_mode = _clean(payload.get("content_mode") or payload.get("mode"))
+	mode = _clean(payload.get("mode"))
 	country = _clean(payload.get("country"))
 	scan_count = max(limit + offset + 100, settings.max_short_candidates)
 	ids = [
@@ -269,7 +265,7 @@ def feed_shorts(redis: Redis, payload: dict[str, Any]) -> dict[str, Any]:
 		doc = _load_short(redis, short_id)
 		if not doc:
 			continue
-		if content_mode and content_mode.lower() != "all" and _clean(doc.get("content_mode")) != content_mode:
+		if mode and mode.lower() != "all" and mode not in {str(item) for item in (doc.get("modes") or [])}:
 			continue
 		if country and _clean(doc.get("country")) and _clean(doc.get("country")) != country:
 			continue

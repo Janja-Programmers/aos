@@ -7,45 +7,31 @@
  "field_order": [
   "short",
   "user",
-  "comment",
-  "seller",
-  "column_break_ldrd",
   "parent_comment",
   "root_comment",
   "reply_count",
   "like_count",
-  "status"
+  "status",
+  "comment"
  ],
  "fields": [
   {
    "fieldname": "short",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Short",
    "options": "AOS Short",
    "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "search_index": 1
   },
   {
    "fieldname": "user",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "User",
    "options": "User",
    "reqd": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "seller",
-   "fieldtype": "Link",
-   "label": "Seller",
-   "options": "AOS Seller",
-   "read_only": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "column_break_ldrd",
-   "fieldtype": "Column Break"
+   "in_list_view": 1
   },
   {
    "fieldname": "parent_comment",
@@ -62,30 +48,32 @@
    "search_index": 1
   },
   {
-   "default": "0",
    "fieldname": "reply_count",
    "fieldtype": "Int",
    "label": "Reply Count",
+   "default": "0",
    "read_only": 1
   },
   {
-   "default": "0",
    "fieldname": "like_count",
    "fieldtype": "Int",
    "label": "Like Count",
+   "default": "0",
    "read_only": 1
   },
   {
-   "default": "active",
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "active\nhidden\ndeleted"
+   "options": "active\nhidden\ndeleted",
+   "default": "active",
+   "reqd": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
   },
   {
    "fieldname": "comment",
    "fieldtype": "Small Text",
-   "in_list_view": 1,
    "label": "Comment",
    "reqd": 1
   }
@@ -93,7 +81,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-28 13:54:58.366127",
+ "modified": "2026-09-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Short Comment",
@@ -116,5 +104,6 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "autoname": "prompt"
 }

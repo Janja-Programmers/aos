@@ -41,20 +41,6 @@ def _minio_client() -> Minio:
 	)
 
 
-def _public_url(bucket: str, object_key: str) -> str:
-	settings = get_settings()
-	base = settings.minio_public_base_url.rstrip("/")
-	return f"{base}/{bucket.strip('/')}/{object_key.strip('/')}" if base else ""
-
-
-def _output_object_name(file_key: str, output_base_prefix: str = "shorts") -> str:
-	key = str(file_key or "").strip().strip("/")
-	prefix = str(output_base_prefix or "").strip().strip("/")
-	if prefix and key.startswith(f"{prefix}/"):
-		return key[len(prefix) + 1 :]
-	return key
-
-
 def _download_object(client: Minio, *, bucket: str, object_key: str, destination: str, max_bytes: int) -> None:
 	response = None
 	try:
@@ -84,12 +70,8 @@ def _upload_file(
 	object_key: str,
 	file_path: str,
 	content_type: str,
-	strip_output_prefix: bool = False,
 ) -> dict[str, Any]:
 	target_key = object_key.strip("/")
-	if strip_output_prefix:
-		target_key = _output_object_name(target_key)
-
 	client.fput_object(
 		bucket_name=bucket.strip("/"),
 		object_name=target_key,
@@ -104,7 +86,6 @@ def _upload_file(
 		"size_bytes": int(getattr(stat, "size", 0) or 0),
 		"etag": getattr(stat, "etag", "") or "",
 		"content_type": content_type,
-		"url": _public_url(bucket, target_key),
 	}
 
 
@@ -361,53 +342,96 @@ def _generate_mp4_with_sound(
 
 
 def _generate_hls(input_path: str, work_dir: str) -> None:
+	"""Generate three portrait-safe HLS variants plus a master playlist."""
 	cmd = [
-		"ffmpeg",
-		"-y",
-		"-i",
-		input_path,
+		"ffmpeg", "-y", "-i", input_path,
 		"-filter_complex",
-		"[0:v]split=3[v1][v2][v3];[v1]scale=1280:720[v1out];[v2]scale=854:480[v2out];[v3]scale=426:240[v3out]",
-		"-map",
-		"[v1out]",
-		"-map",
-		"0:a",
-		"-map",
-		"[v2out]",
-		"-map",
-		"0:a",
-		"-map",
-		"[v3out]",
-		"-map",
-		"0:a",
-		"-c:v",
-		"libx264",
-		"-c:a",
-		"aac",
-		"-preset",
-		"veryfast",
-		"-b:v:0",
-		"3000k",
-		"-b:v:1",
-		"1500k",
-		"-b:v:2",
-		"600k",
-		"-shortest",
-		"-f",
-		"hls",
-		"-hls_time",
-		"4",
-		"-hls_playlist_type",
-		"vod",
-		"-hls_segment_filename",
-		os.path.join(work_dir, "v%v_seg_%03d.ts"),
-		"-master_pl_name",
-		"master.m3u8",
-		"-var_stream_map",
-		"v:0,a:0 v:1,a:1 v:2,a:2",
+		"[0:v]split=3[v0][v1][v2];"
+		"[v0]scale=-2:1280:force_original_aspect_ratio=decrease[v0o];"
+		"[v1]scale=-2:854:force_original_aspect_ratio=decrease[v1o];"
+		"[v2]scale=-2:640:force_original_aspect_ratio=decrease[v2o]",
+		"-map", "[v0o]", "-map", "0:a:0",
+		"-map", "[v1o]", "-map", "0:a:0",
+		"-map", "[v2o]", "-map", "0:a:0",
+		"-c:v", "libx264", "-c:a", "aac", "-preset", "veryfast",
+		"-b:v:0", "2800k", "-b:v:1", "1400k", "-b:v:2", "700k",
+		"-g", "48", "-keyint_min", "48", "-sc_threshold", "0",
+		"-f", "hls", "-hls_time", "4", "-hls_playlist_type", "vod",
+		"-hls_segment_filename", os.path.join(work_dir, "v%v_seg_%03d.ts"),
+		"-master_pl_name", "master.m3u8",
+		"-var_stream_map", "v:0,a:0 v:1,a:1 v:2,a:2",
 		os.path.join(work_dir, "v%v.m3u8"),
 	]
 	_run(cmd, "HLS generation failed")
+
+
+def _generate_storyboard(input_path: str, image_path: str, manifest_path: str, duration: float) -> tuple[int, int]:
+	frame_count = max(4, min(20, int(duration) if duration >= 4 else 4))
+	columns = 5
+	rows = (frame_count + columns - 1) // columns
+	fps = frame_count / max(duration, 0.1)
+	filter_graph = f"fps={fps:.6f},scale=180:-2:force_original_aspect_ratio=decrease,tile={columns}x{rows}:padding=0:margin=0"
+	_run(["ffmpeg", "-y", "-i", input_path, "-vf", filter_graph, "-frames:v", "1", "-q:v", "5", image_path], "Storyboard generation failed")
+	with Image.open(image_path) as image:
+		width, height = int(image.width), int(image.height)
+	cell_width = max(1, width // columns)
+	cell_height = max(1, height // rows)
+	manifest = {
+		"version": 1, "duration_seconds": round(float(duration), 3), "frame_count": frame_count,
+		"columns": columns, "rows": rows, "cell_width": cell_width, "cell_height": cell_height,
+		"interval_seconds": round(float(duration) / frame_count, 6),
+	}
+	Path(manifest_path).write_text(json.dumps(manifest, separators=(",", ":")), encoding="utf-8")
+	return width, height
+
+
+def _normalize_vertical(input_path: str, output_path: str, *, duration: float | None = None) -> None:
+	video_filter = "scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2:black"
+	if _has_audio(input_path):
+		cmd = ["ffmpeg", "-y", "-i", input_path, "-vf", video_filter, "-map", "0:v:0", "-map", "0:a:0", "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-movflags", "+faststart"]
+	else:
+		cmd = ["ffmpeg", "-y", "-i", input_path, "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100", "-vf", video_filter, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-shortest", "-movflags", "+faststart"]
+	if duration is not None:
+		cmd.extend(["-t", f"{float(duration):.3f}"])
+	cmd.append(output_path)
+	_run(cmd, "Video normalization failed")
+
+
+def _compose_side_by_side(source_path: str, creator_path: str, output_path: str, max_duration: float) -> None:
+	cmd = [
+		"ffmpeg", "-y", "-i", source_path, "-i", creator_path,
+		"-filter_complex",
+		"[0:v]scale=540:960:force_original_aspect_ratio=decrease,pad=540:960:(ow-iw)/2:(oh-ih)/2:black[left];"
+		"[1:v]scale=540:960:force_original_aspect_ratio=decrease,pad=540:960:(ow-iw)/2:(oh-ih)/2:black[right];"
+		"[left][right]hstack=inputs=2[v]",
+		"-map", "[v]", "-map", "1:a:0?", "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac",
+		"-shortest", "-t", f"{float(max_duration):.3f}", "-movflags", "+faststart", output_path,
+	]
+	_run(cmd, "Side-by-side composition failed")
+
+
+def _compose_segment(source_path: str, creator_path: str, output_path: str, start_ms: int, end_ms: int, max_duration: float, work_dir: str) -> None:
+	segment_seconds = (end_ms - start_ms) / 1000.0
+	if start_ms < 0 or segment_seconds <= 0 or segment_seconds > 60:
+		raise VideoProcessingError("Invalid reusable source segment")
+	trimmed = os.path.join(work_dir, "source_trimmed.mp4")
+	source_norm = os.path.join(work_dir, "source_segment.mp4")
+	creator_norm = os.path.join(work_dir, "creator_norm.mp4")
+	_run(["ffmpeg", "-y", "-ss", f"{start_ms / 1000.0:.3f}", "-i", source_path, "-t", f"{segment_seconds:.3f}", "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", trimmed], "Source segment extraction failed")
+	_normalize_vertical(trimmed, source_norm, duration=segment_seconds)
+	_normalize_vertical(creator_path, creator_norm)
+	concat_file = os.path.join(work_dir, "concat.txt")
+	Path(concat_file).write_text(f"file '{source_norm}'\nfile '{creator_norm}'\n", encoding="utf-8")
+	_run(["ffmpeg", "-y", "-f", "concat", "-safe", "1", "-i", concat_file, "-c", "copy", "-t", f"{float(max_duration):.3f}", output_path], "Segment composition failed")
+
+
+def _generate_watermarked_download(input_path: str, output_path: str, max_duration: float) -> None:
+	_run([
+		"ffmpeg", "-y", "-i", input_path,
+		"-vf", "drawtext=text=AOS:fontcolor=white@0.85:fontsize=32:box=1:boxcolor=black@0.35:boxborderw=10:x=w-tw-24:y=h-th-24",
+		"-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-movflags", "+faststart",
+		"-t", f"{float(max_duration):.3f}", output_path,
+	], "Watermarked download generation failed")
 
 
 def _generate_classification_frames(
@@ -576,204 +600,130 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 	try:
 		short_id = str(payload.get("short_id") or "").strip()
 		job_id = str(payload.get("job_id") or "").strip()
+		operation = str(payload.get("operation") or "Process").strip()
 		callback_url = str(payload.get("callback_url") or "").strip()
 		raw_video = dict(payload.get("raw_video") or {})
 		sound = payload.get("sound")
 		output = dict(payload.get("output") or {})
-		reason = str(payload.get("reason") or "short_upload").strip()
-		is_audio_reprocess = bool(payload.get("force")) and reason == "audio_reprocess"
-
-		if not short_id or not job_id or not callback_url:
+		if not short_id.startswith("SHR-") or not job_id or not callback_url or operation not in {"Process", "Download", "Side By Side", "Segment"}:
 			raise VideoProcessingError("Invalid video job payload")
 		_validate_callback_url(callback_url)
-		if not short_id.startswith("SHORT-") or ".." in str(raw_video.get("object_key") or "").split("/"):
+		if ".." in str(raw_video.get("object_key") or "").split("/") or "\\" in str(raw_video.get("object_key") or ""):
 			raise VideoProcessingError("Invalid video job payload")
-		expected_size = max(0, int(raw_video.get("size_bytes") or 0))
-		if expected_size > settings.max_input_bytes:
+		if max(0, int(raw_video.get("size_bytes") or 0)) > settings.max_input_bytes:
 			raise VideoProcessingError("Input video exceeds configured size limit")
 
 		input_ext = Path(str(raw_video.get("object_key") or "video.mp4")).suffix or ".mp4"
 		input_path = os.path.join(work_dir, f"input{input_ext}")
-		_download_object(
-			client,
-			bucket=str(raw_video.get("bucket") or ""),
-			object_key=str(raw_video.get("object_key") or ""),
-			destination=input_path,
-			max_bytes=settings.max_input_bytes,
-		)
-
-		metadata = _probe_video(input_path)
-		duration = float(metadata["duration"])
+		_download_object(client, bucket=str(raw_video.get("bucket") or ""), object_key=str(raw_video.get("object_key") or ""), destination=input_path, max_bytes=settings.max_input_bytes)
+		input_meta = _probe_video(input_path)
 		max_duration = int(output.get("max_duration_seconds") or settings.max_duration_seconds)
-		if duration > max_duration:
-			raise VideoProcessingError(f"Short must be <= {max_duration} seconds")
-
-		thumbnail_path = os.path.join(work_dir, "thumbnail.jpg")
-		width = height = 0
-		classification = None
-		if not is_audio_reprocess:
-			width, height = _generate_thumbnail(input_path, thumbnail_path)
-			classification_frames = _generate_classification_frames(
-				input_path, work_dir, duration, thumbnail_path
-			)
-			classification = _classify_frames(classification_frames)
-
-		sound_path = None
-		if isinstance(sound, dict) and sound.get("bucket") and sound.get("object_key"):
-			sound_ext = Path(str(sound.get("object_key") or "sound.mp3")).suffix or ".mp3"
-			sound_path = os.path.join(work_dir, f"sound{sound_ext}")
-			_download_object(
-				client,
-				bucket=str(sound.get("bucket")),
-				object_key=str(sound.get("object_key")),
-				destination=sound_path,
-				max_bytes=min(settings.max_input_bytes, 134217728),
-			)
-
-		original_audio_path = None
-		# Only a Short whose published sound is its own recording gets an
-		# auto-generated reusable original Sound. A selected catalog/user sound
-		# remains authoritative, and audio-only reprocessing never creates a new
-		# original Sound generation.
-		has_reusable_original_audio = (
-			not is_audio_reprocess and not sound_path and _has_audio(input_path)
-		)
-
-		final_path = os.path.join(work_dir, "final.mp4")
-		if sound_path:
-			_generate_mp4_with_sound(input_path, sound_path, final_path, duration, sound or {})
-		else:
-			_generate_mp4_original(input_path, final_path, duration)
-
-		if not os.path.exists(final_path) or os.path.getsize(final_path) <= 0:
-			raise VideoProcessingError("Final MP4 was not generated")
-
-		if has_reusable_original_audio:
-			original_audio_path = os.path.join(work_dir, "original_audio.m4a")
-			# Extract from the normalized final MP4 rather than the arbitrary upload
-			# codec/container. This gives every reusable Sound a consistent AAC/M4A
-			# representation and avoids a second compatibility surface.
-			_extract_original_audio(final_path, original_audio_path, duration)
-			if not os.path.exists(original_audio_path) or os.path.getsize(original_audio_path) <= 0:
-				raise VideoProcessingError("Original audio was not generated")
-
-		_generate_hls(final_path, work_dir)
-		master_path = os.path.join(work_dir, "master.m3u8")
-		if not os.path.exists(master_path):
-			raise VideoProcessingError("HLS master playlist was not generated")
 
 		version = uuid.uuid4().hex
-		output_bucket = str(output.get("output_bucket") or settings.output_bucket).strip("/")
-		output_base = str(output.get("output_base_path") or settings.output_base_path).strip("/")
-		if output_base.endswith("/"):
-			output_base = output_base[:-1]
-		processed_base_key = f"{output_base}/{short_id}/{version}".strip("/")
-		processed_file_key = f"{processed_base_key}/final.mp4"
-		master_playlist_key = f"{processed_base_key}/master.m3u8"
+		outputs: dict[str, Any] = {}
+		classification = None
 
-		uploaded_objects: list[dict[str, Any]] = []
-		for root, _, files in os.walk(work_dir):
-			for filename in files:
-				if (
-					filename.startswith("input")
-					or filename.startswith("sound")
-					or filename.startswith("classification_")
-					or filename == "thumbnail.jpg"
-					or filename == "original_audio.m4a"
-				):
+		if operation == "Download":
+			download_path = os.path.join(work_dir, "download.mp4")
+			_generate_watermarked_download(input_path, download_path, min(float(input_meta["duration"]), float(max_duration)))
+			key = f"{str(output['download_base_path']).strip('/')}/{short_id}/{version}/AOS.mp4"
+			meta = _upload_file(client, bucket=str(output["download_bucket"]), object_key=key, file_path=download_path, content_type="video/mp4")
+			meta.update({"filename": f"{short_id}_AOS.mp4"})
+			outputs["download"] = meta
+			duration = float(input_meta["duration"])
+		else:
+			working_source = input_path
+			if operation in {"Side By Side", "Segment"}:
+				source = dict(payload.get("source_video") or {})
+				if not source.get("bucket") or not source.get("object_key"):
+					raise VideoProcessingError("Reusable source video is missing")
+				source_path = os.path.join(work_dir, "source.mp4")
+				_download_object(client, bucket=str(source["bucket"]), object_key=str(source["object_key"]), destination=source_path, max_bytes=settings.max_input_bytes)
+				_probe_video(source_path)
+				composed = os.path.join(work_dir, "composed.mp4")
+				if operation == "Side By Side":
+					_compose_side_by_side(source_path, input_path, composed, max_duration)
+				else:
+					_compose_segment(source_path, input_path, composed, int(payload.get("source_start_ms") or 0), int(payload.get("source_end_ms") or 0), max_duration, work_dir)
+				working_source = composed
+
+			working_meta = _probe_video(working_source)
+			if float(working_meta["duration"]) > max_duration:
+				raise VideoProcessingError(f"Short must be <= {max_duration} seconds")
+			duration = min(float(working_meta["duration"]), float(max_duration))
+
+			poster_path = os.path.join(work_dir, "poster.jpg")
+			poster_width, poster_height = _generate_thumbnail(working_source, poster_path)
+			classification_frames = _generate_classification_frames(working_source, work_dir, duration, poster_path)
+			classification = _classify_frames(classification_frames)
+
+			sound_path = None
+			if isinstance(sound, dict) and sound.get("bucket") and sound.get("object_key"):
+				sound_ext = Path(str(sound.get("object_key") or "sound.m4a")).suffix or ".m4a"
+				sound_path = os.path.join(work_dir, f"sound{sound_ext}")
+				_download_object(client, bucket=str(sound["bucket"]), object_key=str(sound["object_key"]), destination=sound_path, max_bytes=min(settings.max_input_bytes, 134217728))
+
+			final_path = os.path.join(work_dir, "final.mp4")
+			if sound_path:
+				_generate_mp4_with_sound(working_source, sound_path, final_path, duration, sound or {})
+			else:
+				_generate_mp4_original(working_source, final_path, duration)
+			final_meta = _probe_video(final_path)
+			duration = float(final_meta["duration"])
+
+			playback_base = f"{str(output['playback_base_path']).strip('/')}/{short_id}/{version}"
+			playback_meta = _upload_file(client, bucket=str(output["playback_bucket"]), object_key=f"{playback_base}/playback.mp4", file_path=final_path, content_type="video/mp4")
+			playback_meta.update({"filename": f"{short_id}.mp4"})
+			outputs["playback"] = playback_meta
+
+			hls_dir = os.path.join(work_dir, "hls"); os.makedirs(hls_dir, exist_ok=True)
+			_generate_hls(final_path, hls_dir)
+			manifest_meta = None
+			for filename in sorted(os.listdir(hls_dir)):
+				local = os.path.join(hls_dir, filename)
+				if not os.path.isfile(local):
 					continue
-				local_path = os.path.join(root, filename)
-				relative = os.path.relpath(local_path, work_dir).replace("\\", "/")
-				remote_key = f"{processed_base_key}/{relative}"
-				content_type = (
-					"application/vnd.apple.mpegurl"
-					if relative.endswith(".m3u8")
-					else "video/mp2t"
-					if relative.endswith(".ts")
-					else "video/mp4"
-				)
-				uploaded_objects.append(
-					_upload_file(
-						client,
-						bucket=output_bucket,
-						object_key=remote_key,
-						file_path=local_path,
-						content_type=content_type,
-						strip_output_prefix=True,
-					)
-				)
+				ctype = "application/vnd.apple.mpegurl" if filename.endswith(".m3u8") else "video/mp2t"
+				item = _upload_file(client, bucket=str(output["playback_bucket"]), object_key=f"{playback_base}/hls/{filename}", file_path=local, content_type=ctype)
+				if filename == "master.m3u8":
+					manifest_meta = item; manifest_meta.update({"filename": "master.m3u8"})
+			if not manifest_meta:
+				raise VideoProcessingError("HLS master playlist was not generated")
+			outputs["manifest"] = manifest_meta
 
-		original_audio = None
-		if original_audio_path:
-			sound_bucket = str(
-				output.get("sound_bucket")
-				or output.get("thumbnail_bucket")
-				or settings.thumbnail_bucket
-			).strip("/")
-			sound_base = str(output.get("sound_base_path") or "sounds/uploads/original").strip("/")
-			sound_key = f"{sound_base}/{short_id}/{version}/original.m4a"
-			original_audio = _upload_file(
-				client,
-				bucket=sound_bucket,
-				object_key=sound_key,
-				file_path=original_audio_path,
-				content_type="audio/mp4",
-				strip_output_prefix=False,
-			)
-			original_audio.update(
-				{
-					"filename": f"{short_id}_original.m4a",
-					"duration_seconds": duration,
-				}
-			)
+			poster_key = f"{str(output['poster_base_path']).strip('/')}/{short_id}/{version}/poster.jpg"
+			poster_meta = _upload_file(client, bucket=str(output["poster_bucket"]), object_key=poster_key, file_path=poster_path, content_type="image/jpeg")
+			poster_meta.update({"filename": f"{short_id}_poster.jpg", "width": poster_width, "height": poster_height})
+			outputs["poster"] = poster_meta
 
-		thumbnail = None
-		if not is_audio_reprocess:
-			thumbnail_bucket = str(output.get("thumbnail_bucket") or settings.thumbnail_bucket).strip("/")
-			thumbnail_base = str(output.get("thumbnail_base_path") or settings.thumbnail_base_path).strip("/")
-			thumbnail_key = f"{thumbnail_base}/{short_id}/{version}/thumbnail.jpg"
-			thumbnail = _upload_file(
-				client,
-				bucket=thumbnail_bucket,
-				object_key=thumbnail_key,
-				file_path=thumbnail_path,
-				content_type="image/jpeg",
-				strip_output_prefix=False,
-			)
-			thumbnail.update({"width": width, "height": height, "filename": f"{short_id}_thumbnail.jpg"})
+			storyboard_path = os.path.join(work_dir, "storyboard.jpg")
+			storyboard_manifest_path = os.path.join(work_dir, "storyboard.json")
+			sb_width, sb_height = _generate_storyboard(final_path, storyboard_path, storyboard_manifest_path, duration)
+			story_base = f"{str(output['storyboard_base_path']).strip('/')}/{short_id}/{version}"
+			sb = _upload_file(client, bucket=str(output["storyboard_bucket"]), object_key=f"{story_base}/storyboard.jpg", file_path=storyboard_path, content_type="image/jpeg")
+			sb.update({"filename": f"{short_id}_storyboard.jpg", "width": sb_width, "height": sb_height})
+			outputs["storyboard"] = sb
+			sbm = _upload_file(client, bucket=str(output["storyboard_bucket"]), object_key=f"{story_base}/storyboard.json", file_path=storyboard_manifest_path, content_type="application/json")
+			sbm.update({"filename": f"{short_id}_storyboard.json"})
+			outputs["storyboard_manifest"] = sbm
 
-		callback_payload = {
-			"job_id": job_id,
-			"idempotency_key": payload.get("idempotency_key"),
-			"dispatch_id": payload.get("dispatch_id"),
-			"dispatch_generation": payload.get("dispatch_generation"),
-			"dispatch_token": payload.get("dispatch_token"),
-			"job_generation": payload.get("job_generation"),
-			"short_id": short_id,
-			"status": "ready",
-			"duration_seconds": duration,
-			"playback_url": _public_url(output_bucket, _output_object_name(master_playlist_key)),
-			"processed_file_url": _public_url(output_bucket, _output_object_name(processed_file_key)),
-			"processed_file_key": processed_file_key,
-			"master_playlist_key": master_playlist_key,
-			# Individual HLS object records are internal processing details and can
-			# make the durable callback JSON unnecessarily large. The backend only
-			# needs the validated final/manifest keys and thumbnail metadata.
-			"output_object_count": len(uploaded_objects),
-			"force": bool(payload.get("force")),
-			"reason": reason,
-			"sound_applied": bool(sound_path),
+			if not sound_path and _has_audio(working_source):
+				audio_path = os.path.join(work_dir, "original.m4a")
+				_extract_original_audio(final_path, audio_path, duration)
+				audio_key = f"{str(output['sound_base_path']).strip('/')}/{short_id}/{version}/original.m4a"
+				audio = _upload_file(client, bucket=str(output["sound_bucket"]), object_key=audio_key, file_path=audio_path, content_type="audio/mp4")
+				audio.update({"filename": f"{short_id}_original.m4a", "duration_seconds": duration})
+				outputs["original_audio"] = audio
+
+		result = {
+			"job_id": job_id, "idempotency_key": payload.get("idempotency_key"),
+			"dispatch_id": payload.get("dispatch_id"), "dispatch_generation": payload.get("dispatch_generation"),
+			"dispatch_token": payload.get("dispatch_token"), "job_generation": payload.get("job_generation"),
+			"short_id": short_id, "status": "ready", "duration_seconds": duration, "outputs": outputs,
 		}
-		if thumbnail is not None:
-			callback_payload["thumbnail"] = thumbnail
-		if original_audio is not None:
-			callback_payload["original_audio"] = original_audio
 		if classification is not None:
-			callback_payload["classification"] = classification
-		return callback_payload
-	except Exception as exc:
-		logger.error("Video processing job failed category=%s", exc.__class__.__name__)
-		raise
+			result["classification"] = classification
+		return result
 	finally:
 		shutil.rmtree(work_dir, ignore_errors=True)
 
@@ -807,9 +757,3 @@ def deliver_callback_job(stable_id: str) -> dict[str, Any]:
 		result_ttl_seconds=int(getattr(settings, "durable_result_ttl_seconds", 604800)),
 		callback_max_attempts=int(getattr(settings, "callback_max_attempts", 8)),
 	)
-
-
-def replay_callback(_callback_url: str, payload: dict[str, Any]) -> dict[str, Any]:
-	"""Compatibility entry point: replay from the durable result, never from RQ result data."""
-	stable_id = str(payload.get("idempotency_key") or payload.get("job_id") or "").strip()
-	return deliver_callback_job(stable_id)

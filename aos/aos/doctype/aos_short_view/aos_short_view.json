@@ -7,18 +7,17 @@
  "field_order": [
   "short",
   "view_date",
-  "watch_ms",
-  "last_seen_at",
-  "column_break_pscb",
   "user",
   "session_id",
-  "qualified"
+  "qualified",
+  "watch_ms",
+  "last_seen_at",
+  "identity_key"
  ],
  "fields": [
   {
    "fieldname": "short",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Short",
    "options": "AOS Short",
    "reqd": 1,
@@ -27,14 +26,9 @@
   {
    "fieldname": "view_date",
    "fieldtype": "Date",
-   "in_list_view": 1,
    "label": "View Date",
    "reqd": 1,
    "search_index": 1
-  },
-  {
-   "fieldname": "column_break_pscb",
-   "fieldtype": "Column Break"
   },
   {
    "fieldname": "user",
@@ -46,20 +40,20 @@
   {
    "fieldname": "session_id",
    "fieldtype": "Data",
-   "label": "Session ID",
+   "label": "Session Id",
    "search_index": 1
   },
   {
-   "default": "0",
    "fieldname": "qualified",
    "fieldtype": "Check",
-   "label": "Qualified View"
+   "label": "Qualified",
+   "default": "0"
   },
   {
-   "default": "0",
    "fieldname": "watch_ms",
    "fieldtype": "Int",
-   "label": "Max Watch Time (ms)"
+   "label": "Watch Ms",
+   "default": "0"
   },
   {
    "fieldname": "last_seen_at",
@@ -69,16 +63,15 @@
   {
    "fieldname": "identity_key",
    "fieldtype": "Data",
-   "hidden": 1,
-   "read_only": 1,
    "label": "Identity Key",
-   "no_copy": 1
+   "unique": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-26 14:47:02.679171",
+ "modified": "2026-09-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Short View",
@@ -101,5 +94,6 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "autoname": "hash"
 }

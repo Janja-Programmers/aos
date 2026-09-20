@@ -27,16 +27,24 @@ def settings(**overrides):
 
 def payload() -> dict:
 	return {
-		"job_id": "job-1",
-		"short_id": "SHORT-2026-00001",
+		"job_id": "VPJ-AAAAAAAAAAAAAAAAAAAA",
+		"idempotency_key": "stable-video-job-key",
+		"short_id": "SHR-AAAAAAAAAAAAAAAAAAAA",
 		"callback_url": "https://callback.invalid/video",
 		"raw_video": {"bucket": "synthetic", "object_key": "clip.mp4", "size_bytes": 1024},
+		"operation": "Process",
 		"output": {
-			"output_bucket": "shorts",
-			"output_base_path": "shorts/processed",
-			"thumbnail_bucket": "aos-public",
-			"thumbnail_base_path": "shorts/thumbnails",
-			"max_duration_seconds": 180,
+			"playback_bucket": "aos-public",
+			"playback_base_path": "shorts/playback",
+			"poster_bucket": "aos-public",
+			"poster_base_path": "shorts/posters",
+			"storyboard_bucket": "aos-public",
+			"storyboard_base_path": "shorts/storyboards",
+			"download_bucket": "aos-private",
+			"download_base_path": "shorts/downloads",
+			"sound_bucket": "aos-public",
+			"sound_base_path": "shorts/original-audio",
+			"max_duration_seconds": 600,
 		},
 	}
 
@@ -86,7 +94,7 @@ def test_job_accepts_original_sound_output_locations(monkeypatch):
 	data["output"].update(
 		{
 			"sound_bucket": "aos-public",
-			"sound_base_path": "sounds/uploads/original",
+			"sound_base_path": "shorts/original-audio",
 		}
 	)
 	body, headers = signed(data)
@@ -96,7 +104,7 @@ def test_job_accepts_original_sound_output_locations(monkeypatch):
 	assert response.json()["service_job_id"] == "rq-original-sound"
 	enqueued_payload = calls[0][0][1]
 	assert enqueued_payload["output"]["sound_bucket"] == "aos-public"
-	assert enqueued_payload["output"]["sound_base_path"] == "sounds/uploads/original"
+	assert enqueued_payload["output"]["sound_base_path"] == "shorts/original-audio"
 
 
 def test_valid_job_is_enqueued(monkeypatch):
@@ -116,7 +124,7 @@ def test_valid_job_is_enqueued(monkeypatch):
 	response = TestClient(main.app).post("/jobs", content=body, headers=headers)
 	assert response.status_code == 202
 	assert response.json()["service_job_id"] == "rq-1"
-	assert calls[0][1]["job_id"] == "job-1"
+	assert calls[0][1]["job_id"] == "stable-video-job-key"
 
 
 def test_queue_failure_returns_server_error(monkeypatch):
@@ -337,35 +345,22 @@ def test_internal_job_status_endpoint_is_signed_and_bounded(monkeypatch):
 	assert client.post("/internal/jobs/callback/replay", json=payload).status_code == 401
 
 
-def test_video_job_request_accepts_audio_reprocess_reason():
+def test_video_job_request_accepts_reuse_operations():
 	from app.main import VideoJobRequest
 
-	request = VideoJobRequest.model_validate(
-		{
-			"job_id": "VIDEO-JOB-2026-00001",
-			"idempotency_key": "abcdefgh",
-			"short_id": "SHORT-2026-00001",
-			"force": True,
-			"reason": "audio_reprocess",
-			"callback_url": "https://callback.invalid/video",
-			"raw_video": {
-				"bucket": "raw",
-				"object_key": "shorts/raw/clip.mp4",
-				"size_bytes": 1024,
-			},
-			"sound": {
-				"bucket": "public",
-				"object_key": "sounds/uploads/track.mp3",
-				"volume": 0.8,
-			},
-			"output": {
-				"output_bucket": "shorts",
-				"output_base_path": "shorts/processed",
-				"thumbnail_bucket": "public",
-				"thumbnail_base_path": "shorts/thumbnails",
-				"max_duration_seconds": 600,
-			},
-		}
-	)
-
-	assert request.reason == "audio_reprocess"
+	data = payload()
+	data.update({
+		"operation": "Segment",
+		"source_video": {
+			"bucket": "public",
+			"object_key": "shorts/playback/source.mp4",
+			"size_bytes": 1024,
+		},
+		"source_start_ms": 1000,
+		"source_end_ms": 5000,
+	})
+	request = VideoJobRequest.model_validate(data)
+	assert request.short_id == "SHR-AAAAAAAAAAAAAAAAAAAA"
+	assert request.operation == "Segment"
+	assert request.source_start_ms == 1000
+	assert request.source_end_ms == 5000

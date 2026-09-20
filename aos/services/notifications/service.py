@@ -788,6 +788,32 @@ class NotificationService:
         return None
 
     @classmethod
+    def notify_short_approved(cls, *, user: str, short_id: str, decision_token: str):
+        return cls.notify(
+            user=user, type="short_approved", title="Short Published",
+            body="Your Short was approved and is now visible.",
+            payload={"short_id": short_id}, event="aos_short_approved",
+            dedupe_key=f"short:approved:{short_id}:{decision_token}",
+        )
+
+    @classmethod
+    def notify_short_moderation_action(
+        cls, *, user: str, short_id: str, action: str, reason: str | None, decision_token: str
+    ):
+        clean_action = str(action or "updated").strip().lower()
+        clean_reason = " ".join(str(reason or "").replace("\x00", "").split())[:500]
+        title = "Short Hidden" if clean_action == "hide" else "Short Needs Changes"
+        body = "Your Short was hidden." if clean_action == "hide" else "Your Short was not approved."
+        if clean_reason:
+            body = f"{body} Reason: {clean_reason}"
+        return cls.notify(
+            user=user, type="short_moderation_action", title=title, body=body,
+            payload={"short_id": short_id, "action": clean_action, "reason": clean_reason},
+            event="aos_short_moderation_action",
+            dedupe_key=f"short:moderation:{short_id}:{clean_action}:{decision_token}",
+        )
+
+    @classmethod
     def notify_short_like(
         cls,
         *,

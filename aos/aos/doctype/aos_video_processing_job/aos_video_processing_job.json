@@ -1,167 +1,147 @@
 {
  "actions": [],
- "autoname": "hash",
- "creation": "2026-07-03 00:00:00.000000",
+ "autoname": "prompt",
+ "creation": "2026-09-20 00:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "short",
+  "operation",
+  "source_short",
   "raw_video_media",
   "status",
-  "reason",
-  "force_reprocess",
-  "service_section",
-  "service_job_id",
+  "generation",
   "idempotency_key",
+  "active_key",
+  "service_job_id",
   "attempt_count",
   "max_attempts",
+  "next_retry_at",
+  "lease_owner",
+  "lease_expires_at",
+  "last_error_code",
   "last_error",
-  "output_section",
-  "playback_url",
-  "processed_file_key",
-  "processed_file_url",
-  "thumbnail_media",
-  "duration_seconds",
-  "timing_section",
   "dispatched_at",
   "started_at",
   "callback_received_at",
   "completed_at",
-  "payload_section",
   "request_payload",
-  "response_payload",
-  "generation",
-  "active_key"
+  "response_payload"
  ],
  "fields": [
   {
-   "default": "VIDEO-JOB-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "VIDEO-JOB-.YYYY.-.#####"
-  },
-  {
    "fieldname": "short",
    "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
    "label": "Short",
    "options": "AOS Short",
    "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "operation",
+   "fieldtype": "Select",
+   "label": "Operation",
+   "options": "Process\nDownload\nSide By Side\nSegment",
+   "default": "Process",
+   "reqd": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "source_short",
+   "fieldtype": "Link",
+   "label": "Source Short",
+   "options": "AOS Short",
    "search_index": 1
   },
   {
    "fieldname": "raw_video_media",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Raw Video Media",
-   "options": "AOS Media Object",
-   "reqd": 1
+   "options": "AOS Media Object"
   },
   {
-   "default": "Queued",
    "fieldname": "status",
    "fieldtype": "Select",
+   "label": "Status",
+   "options": "Queued\nProcessing\nRetry Waiting\nReady\nFailed\nCancelled",
+   "default": "Queued",
+   "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Status",
-   "options": "Queued\nDispatching\nProcessing\nReady\nFailed\nCancelled",
-   "reqd": 1,
    "search_index": 1
   },
   {
-   "default": "short_upload",
-   "fieldname": "reason",
-   "fieldtype": "Select",
-   "in_standard_filter": 1,
-   "label": "Reason",
-   "options": "short_upload\naudio_reprocess\nretry",
-   "reqd": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "force_reprocess",
-   "fieldtype": "Check",
-   "label": "Force Reprocess"
-  },
-  {
-   "fieldname": "service_section",
-   "fieldtype": "Section Break",
-   "label": "Service"
-  },
-  {
-   "fieldname": "service_job_id",
-   "fieldtype": "Data",
-   "label": "Service Job ID",
+   "fieldname": "generation",
+   "fieldtype": "Int",
+   "label": "Generation",
+   "default": "1",
+   "reqd": 1,
    "read_only": 1
   },
   {
    "fieldname": "idempotency_key",
    "fieldtype": "Data",
    "label": "Idempotency Key",
+   "reqd": 1,
    "read_only": 1,
    "unique": 1
   },
   {
-   "default": "0",
-   "fieldname": "attempt_count",
-   "fieldtype": "Int",
-   "label": "Attempt Count"
+   "fieldname": "active_key",
+   "fieldtype": "Data",
+   "label": "Active Key",
+   "read_only": 1
   },
   {
-   "default": "3",
+   "fieldname": "service_job_id",
+   "fieldtype": "Data",
+   "label": "Service Job Id",
+   "read_only": 1
+  },
+  {
+   "fieldname": "attempt_count",
+   "fieldtype": "Int",
+   "label": "Attempt Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
    "fieldname": "max_attempts",
    "fieldtype": "Int",
-   "label": "Max Attempts"
+   "label": "Max Attempts",
+   "default": "5"
+  },
+  {
+   "fieldname": "next_retry_at",
+   "fieldtype": "Datetime",
+   "label": "Next Retry At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "lease_owner",
+   "fieldtype": "Data",
+   "label": "Lease Owner",
+   "read_only": 1
+  },
+  {
+   "fieldname": "lease_expires_at",
+   "fieldtype": "Datetime",
+   "label": "Lease Expires At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_error_code",
+   "fieldtype": "Data",
+   "label": "Last Error Code",
+   "read_only": 1
   },
   {
    "fieldname": "last_error",
    "fieldtype": "Small Text",
    "label": "Last Error",
    "read_only": 1
-  },
-  {
-   "fieldname": "output_section",
-   "fieldtype": "Section Break",
-   "label": "Output"
-  },
-  {
-   "fieldname": "playback_url",
-   "fieldtype": "Data",
-   "label": "Playback URL",
-   "read_only": 1
-  },
-  {
-   "fieldname": "processed_file_key",
-   "fieldtype": "Data",
-   "label": "Processed File Key",
-   "read_only": 1
-  },
-  {
-   "fieldname": "processed_file_url",
-   "fieldtype": "Data",
-   "label": "Processed File URL",
-   "read_only": 1
-  },
-  {
-   "fieldname": "thumbnail_media",
-   "fieldtype": "Link",
-   "label": "Thumbnail Media",
-   "options": "AOS Media Object",
-   "read_only": 1
-  },
-  {
-   "fieldname": "duration_seconds",
-   "fieldtype": "Float",
-   "label": "Duration Seconds",
-   "read_only": 1
-  },
-  {
-   "fieldname": "timing_section",
-   "fieldtype": "Section Break",
-   "label": "Timing"
   },
   {
    "fieldname": "dispatched_at",
@@ -188,11 +168,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "payload_section",
-   "fieldtype": "Section Break",
-   "label": "Payloads"
-  },
-  {
    "fieldname": "request_payload",
    "fieldtype": "Long Text",
    "label": "Request Payload",
@@ -203,29 +178,15 @@
    "fieldtype": "Long Text",
    "label": "Response Payload",
    "read_only": 1
-  },
-  {
-   "fieldname": "generation",
-   "fieldtype": "Int",
-   "default": "1",
-   "hidden": 1,
-   "read_only": 1
-  },
-  {
-   "fieldname": "active_key",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "read_only": 1,
-   "length": 64
   }
  ],
+ "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-03 00:00:00.000000",
+ "modified": "2026-09-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Video Processing Job",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {
@@ -242,7 +203,8 @@
   }
  ],
  "row_format": "Dynamic",
- "sort_field": "modified",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
  "sort_order": "DESC",
  "states": []
 }

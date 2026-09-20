@@ -6,50 +6,31 @@
  "engine": "InnoDB",
  "field_order": [
   "comment",
-  "short",
-  "column_break_qtzh",
   "user"
  ],
  "fields": [
   {
    "fieldname": "comment",
    "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
    "label": "Comment",
    "options": "AOS Short Comment",
    "reqd": 1,
+   "in_list_view": 1,
    "search_index": 1
   },
   {
    "fieldname": "user",
    "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
    "label": "User",
    "options": "User",
    "reqd": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "short",
-   "fieldtype": "Link",
    "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Short",
-   "options": "AOS Short",
-   "read_only": 1,
-   "reqd": 1,
    "search_index": 1
-  },
-  {
-   "fieldname": "column_break_qtzh",
-   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-05-12 12:25:12.573636",
+ "modified": "2026-09-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Short Comment Like",
@@ -72,5 +53,6 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "autoname": "hash"
 }

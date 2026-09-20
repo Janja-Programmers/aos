@@ -31,10 +31,11 @@ FEATURE_DOCS = {
 	"saved_search": "docs/features/saved-search/README.md",
 	"search_ranking": "docs/features/search-ranking/README.md",
 	"sellers": "docs/features/sellers/README.md",
-	"shorts": "docs/features/shorts/api.md",
+	"shorts": "docs/features/shorts/README.md",
 	"social": "docs/features/social/README.md",
 	"verification": "docs/features/verification/README.md",
 	"wishlist": "docs/features/wishlist/README.md",
+	"shorts": "docs/features/shorts/README.md",
 }
 
 REQUIRED_HARDENED_FEATURE_SECTIONS = (
@@ -68,12 +69,13 @@ SINGLE_FILE_FEATURE_DOCS = {
 	"social": "docs/features/social/README.md",
 	"verification": "docs/features/verification/README.md",
 	"wishlist": "docs/features/wishlist/README.md",
+	"shorts": "docs/features/shorts/README.md",
 }
 
 PLATFORM_DOCS = {
 	"livekit": "docs/features/live/livekit.md",
 	"moderation": "docs/production/content-moderation-service.md",
-	"video_processing": "docs/production/video-processing-service.md",
+	"video_processing": "docs/features/shorts/README.md",
 	"metrics": "docs/api/internal.md",
 }
 

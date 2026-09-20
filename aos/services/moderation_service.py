@@ -549,36 +549,68 @@ def _apply_review_decision(job, decision: str, reasons: list[Any]) -> None:
 
 
 def _apply_short_decision(job, decision: str, reasons: list[Any]) -> None:
+	"""Apply an automated decision only to the exact Short revision/generation reviewed."""
+	frappe.db.sql("SELECT name FROM `tabAOS Short` WHERE name=%s FOR UPDATE", (job.target_name,))
+	if not frappe.db.exists("AOS Short", job.target_name):
+		return
 	short = frappe.get_doc("AOS Short", job.target_name)
 	context = _json_loads(job.context_json, {})
-	was_visible = bool(context.get("was_visible"))
-
-	if short.status == "deleted" or short.visibility_status == "deleted":
+	if int(context.get("moderation_generation") or 0) != int(short.moderation_generation or 0):
+		return
+	if int(context.get("revision") or 0) != int(short.revision or 0):
+		return
+	if str(short.lifecycle_status) == "Deleted" or str(short.moderation_status) != "Pending":
 		return
 
+	was_visible = bool(context.get("was_visible"))
+	automated_result = {
+		"decision": decision,
+		"reasons": [str(item)[:200] for item in reasons[:20]],
+		"job_id": job.name,
+		"generation": int(short.moderation_generation or 0),
+		"revision": int(short.revision or 0),
+	}
+	short.automated_moderation_result = json.dumps(automated_result, separators=(",", ":"))
+	short.moderation_decided_by = None
+	short.moderation_decided_at = now_datetime()
+	audit_decision = "Approved" if decision == "allow" else "Rejected" if decision == "reject" else "Pending Review"
+	frappe.get_doc({
+		"doctype": "AOS Short Moderation Decision",
+		"short": short.name,
+		"revision": int(short.revision or 0),
+		"generation": int(short.moderation_generation or 0),
+		"decision": audit_decision,
+		"decision_source": "Automated",
+		"reason": _reason_text(reasons, "")[:1000],
+		"decided_by": None,
+		"decided_at": now_datetime(),
+		"automated_result": json.dumps(automated_result, separators=(",", ":")),
+	}).insert(ignore_permissions=True)
 	if decision == "allow":
-		short.approval_status = "auto_approved"
-		short.visibility_status = "visible"
-		short.hidden_reason = None
+		if str(short.processing_status) not in {"Ready", "Not Required"}:
+			return
+		short.moderation_status = "Approved"
+		short.lifecycle_status = "Published"
+		short.moderation_reason = None
+		short.posted_on = short.posted_on or now_datetime()
 		short.save(ignore_permissions=True)
 		_enqueue_short_search_index(short.name, source="short_moderation_allow")
 		if not was_visible:
 			try:
 				from aos.services.notifications.service import NotificationService
-
 				NotificationService.notify_new_short(actor=short.owner, short_id=short.name)
 			except Exception:
 				frappe.log_error(frappe.get_traceback(), "Short moderation notification failed")
 	elif decision == "reject":
-		short.approval_status = "rejected"
-		short.visibility_status = "hidden"
-		short.hidden_reason = _reason_text(reasons, "Rejected by content moderation.")
+		short.moderation_status = "Rejected"
+		short.lifecycle_status = "Rejected"
+		short.moderation_reason = _reason_text(reasons, "Rejected by content moderation.")
 		short.save(ignore_permissions=True)
 		_enqueue_short_search_index(short.name, source="short_moderation_reject")
 	else:
-		short.approval_status = "flagged"
-		short.visibility_status = "hidden"
-		short.hidden_reason = _reason_text(reasons, "Requires manual content review.")
+		short.moderation_status = "Pending"
+		short.lifecycle_status = "Pending Review"
+		short.moderation_reason = _reason_text(reasons, "Requires manual content review.")
 		short.save(ignore_permissions=True)
 		_enqueue_short_search_index(short.name, source="short_moderation_review")
 
@@ -599,12 +631,16 @@ def _hold_target_for_review(job, error_text: str) -> None:
 		return
 	elif job.target_doctype == "AOS Short":
 		if frappe.db.exists("AOS Short", job.target_name):
-			frappe.db.set_value(
-				"AOS Short",
-				job.target_name,
-				{"visibility_status": "hidden", "approval_status": "flagged", "hidden_reason": error_text},
-				update_modified=True,
-			)
+			context = _json_loads(job.context_json, {})
+			short = frappe.get_doc("AOS Short", job.target_name)
+			if (int(context.get("moderation_generation") or 0) == int(short.moderation_generation or 0)
+					and int(context.get("revision") or 0) == int(short.revision or 0)
+					and str(short.moderation_status) == "Pending"):
+				frappe.db.set_value(
+					"AOS Short", job.target_name,
+					{"lifecycle_status": "Pending Review", "moderation_status": "Pending", "moderation_reason": error_text[:1000]},
+					update_modified=True,
+				)
 
 
 def _enqueue_ad_index(ad) -> None:
@@ -715,27 +751,37 @@ def enqueue_short_moderation(
 	short_id: str, *, source: str = "short_publish", was_visible: bool = False
 ) -> object | None:
 	short = frappe.get_doc("AOS Short", short_id)
+	if str(short.lifecycle_status) == "Deleted":
+		return None
+	hashtags = [str(row.hashtag) for row in frappe.get_all("AOS Short Hashtag", filters={"short": short.name}, fields=["hashtag"], order_by="hashtag asc")]
 	text_items = [
 		build_text_item("caption", getattr(short, "caption", "")),
-		build_text_item("hashtags", getattr(short, "hashtags", ""), content_type="application/json"),
+		build_text_item("hashtags", json.dumps(hashtags, separators=(",", ":")), content_type="application/json"),
 	]
 	media_items: list[dict[str, Any]] = []
-	if getattr(short, "thumbnail_media", None):
-		item = build_media_item(short.thumbnail_media, field="thumbnail")
+	seen: set[str] = set()
+	def add_media(media_id: str | None, field_name: str) -> None:
+		media_id = str(media_id or "").strip()
+		if not media_id or media_id in seen:
+			return
+		item = build_media_item(media_id, field=field_name)
 		if item:
-			media_items.append(item)
-	if getattr(short, "raw_video_media", None):
-		item = build_media_item(short.raw_video_media, field="raw_video")
-		if item:
-			media_items.append(item)
+			seen.add(media_id); media_items.append(item)
+
+	if str(short.content_type) == "Video":
+		add_media(getattr(short, "raw_video_media", None), "raw_video")
+		add_media(getattr(short, "poster_media", None), "poster")
+	else:
+		for row in frappe.get_all("AOS Short Photo", filters={"short": short.name}, fields=["media"], order_by="position asc, name asc"):
+			add_media(row.media, "photo")
+	add_media(getattr(short, "cover_media", None), "cover")
+	modes = [str(row.mode) for row in frappe.get_all("AOS Short Mode", filters={"short": short.name}, fields=["mode"], order_by="mode asc")]
 	return create_moderation_job(
-		target_doctype="AOS Short",
-		target_name=short.name,
-		target_owner=short.owner,
-		content_kind="short",
-		source=source,
-		text_items=text_items,
-		media_items=media_items,
-		context={"was_visible": bool(was_visible), "content_mode": short.content_mode},
-		enqueue=True,
+		target_doctype="AOS Short", target_name=short.name, target_owner=short.owner,
+		content_kind="short", source=source, text_items=text_items, media_items=media_items,
+		context={
+			"was_visible": bool(was_visible), "modes": modes,
+			"moderation_generation": int(short.moderation_generation or 0),
+			"revision": int(short.revision or 0),
+		}, enqueue=True,
 	)

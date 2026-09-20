@@ -529,17 +529,18 @@ class AOSFeatureTestMixin:
         short = frappe.get_doc(
             {
                 "doctype": "AOS Short",
-                "file_key": f"tests/{self.prefix}/{uuid.uuid4().hex}.mp4",
+                "content_type": "Video",
                 "raw_video_media": media.name,
-                "status": "ready",
-                "visibility_status": "visible",
-                "content_mode": "vibes",
+                "lifecycle_status": "Published",
+                "processing_status": "Ready",
+                "moderation_status": "Approved",
                 "audience": "everyone",
                 "allow_comments": 1,
                 "allow_downloads": 0,
+                "allow_reuse": 1,
+                "allow_side_by_side": 1,
+                "allow_segment_reuse": 1,
                 "caption": "Feature test short",
-                "playback_url": f"https://cdn.example.test/{self.prefix}/short.m3u8",
-                "thumbnail_url": f"https://cdn.example.test/{self.prefix}/short.jpg",
                 "duration_seconds": 10,
             }
         )

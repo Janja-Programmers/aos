@@ -6,15 +6,11 @@
  "engine": "InnoDB",
  "field_order": [
   "short",
-  "event_type",
   "user",
-  "progress_ms",
-  "watch_ms",
-  "ad",
-  "seller",
-  "country",
-  "column_break_xftn",
   "session_id",
+  "event_type",
+  "watch_ms",
+  "progress_ms",
   "source",
   "metadata",
   "event_key"
@@ -23,7 +19,6 @@
   {
    "fieldname": "short",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Short",
    "options": "AOS Short",
    "reqd": 1,
@@ -37,33 +32,31 @@
    "search_index": 1
   },
   {
-   "fieldname": "progress_ms",
-   "fieldtype": "Int",
-   "label": "Progress (ms)"
-  },
-  {
-   "fieldname": "column_break_xftn",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "session_id",
    "fieldtype": "Data",
-   "label": "Session ID",
+   "label": "Session Id",
    "search_index": 1
   },
   {
    "fieldname": "event_type",
    "fieldtype": "Select",
-   "in_list_view": 1,
    "label": "Event Type",
-   "options": "impression\nplay\npause\nprogress\ncomplete\nlike\ncomment\nopen_ad\nopen_seller\nfollow_click\nshare\nsave\ndownload\nrepost\nnot_interested\nhide_creator\nhide_sound",
+   "options": "impression\nplayback_start\nqualified_view\nwatch\ncomplete\nrewatch\nearly_skip\nshare\nfollow_from_content\nnot_interested\ndownload",
    "reqd": 1,
+   "in_standard_filter": 1,
    "search_index": 1
   },
   {
    "fieldname": "watch_ms",
    "fieldtype": "Int",
-   "label": "Watch Time (ms)"
+   "label": "Watch Ms",
+   "default": "0"
+  },
+  {
+   "fieldname": "progress_ms",
+   "fieldtype": "Int",
+   "label": "Progress Ms",
+   "default": "0"
   },
   {
    "fieldname": "source",
@@ -76,35 +69,17 @@
    "label": "Metadata"
   },
   {
-   "fieldname": "ad",
-   "fieldtype": "Link",
-   "label": "Ad",
-   "options": "AOS Ad"
-  },
-  {
-   "fieldname": "seller",
-   "fieldtype": "Link",
-   "label": "Seller",
-   "options": "AOS Seller"
-  },
-  {
-   "fieldname": "country",
-   "fieldtype": "Link",
-   "label": "Country",
-   "options": "Country"
-  },
-  {
    "fieldname": "event_key",
    "fieldtype": "Data",
-   "hidden": 1,
-   "read_only": 1,
-   "length": 64
+   "label": "Event Key",
+   "unique": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-26 15:40:03.692843",
+ "modified": "2026-09-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Short Event",
@@ -127,5 +102,6 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "autoname": "hash"
 }

@@ -1,94 +1,80 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "naming_series:",
+ "autoname": "hash",
  "creation": "2026-06-24 19:10:09.666767",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "short",
-  "mentioned_user",
-  "mentioned_by",
-  "column_break_blqm",
-  "source_type",
   "comment",
-  "token"
+  "mentioned_account",
+  "mentioned_by",
+  "source_type",
+  "token",
+  "unique_key"
  ],
  "fields": [
   {
-   "default": "SH-MEN-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "SH-MEN-.YYYY.-.#####"
-  },
-  {
    "fieldname": "short",
    "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
    "label": "Short",
    "options": "AOS Short",
    "reqd": 1,
+   "in_list_view": 1,
    "search_index": 1
   },
   {
    "fieldname": "comment",
    "fieldtype": "Link",
-   "in_standard_filter": 1,
    "label": "Comment",
    "options": "AOS Short Comment",
    "search_index": 1
   },
   {
-   "fieldname": "mentioned_user",
+   "fieldname": "mentioned_account",
    "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Mentioned User",
-   "options": "User",
+   "label": "Mentioned Account",
+   "options": "AOS Profile",
    "reqd": 1,
+   "in_list_view": 1,
    "search_index": 1
-  },
-  {
-   "fieldname": "column_break_blqm",
-   "fieldtype": "Column Break"
   },
   {
    "fieldname": "mentioned_by",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Mentioned By",
    "options": "User",
-   "reqd": 1,
-   "search_index": 1
+   "reqd": 1
   },
   {
    "fieldname": "source_type",
    "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
    "label": "Source Type",
    "options": "caption\ncomment\nreply",
    "reqd": 1,
-   "search_index": 1
+   "in_standard_filter": 1
   },
   {
    "fieldname": "token",
    "fieldtype": "Data",
-   "in_list_view": 1,
    "label": "Token"
+  },
+  {
+   "fieldname": "unique_key",
+   "fieldtype": "Data",
+   "label": "Unique Key",
+   "read_only": 1,
+   "unique": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-24 19:16:38.258922",
+ "modified": "2026-09-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Short Mention",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {

@@ -93,13 +93,14 @@ def _apply_short_action(doc, action: str) -> None:
         if not rows:
             return
         short = frappe.get_doc("AOS Short", doc.short)
-        if str(short.status or "") == "deleted" or str(short.visibility_status or "") == "deleted":
+        if str(short.lifecycle_status or "") == "Deleted":
             return
-        short.visibility_status = "hidden"
-        if hasattr(short, "approval_status"):
-            short.approval_status = "flagged"
-        if hasattr(short, "hidden_reason"):
-            short.hidden_reason = "Hidden after report review."
+        short.lifecycle_status = "Hidden"
+        short.moderation_status = "Hidden"
+        short.moderation_generation = int(short.moderation_generation or 0) + 1
+        short.moderation_reason = "Hidden after report review."
+        short.moderation_decided_by = str(getattr(frappe.session, "user", "") or "") or None
+        short.moderation_decided_at = frappe.utils.now_datetime()
         short.save(ignore_permissions=True)
         try:
             from aos.services.search_ranking_service import enqueue_short_search_index

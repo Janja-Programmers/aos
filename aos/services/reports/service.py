@@ -10,8 +10,8 @@ from frappe.utils import getdate, nowdate
 
 from aos.api.ads.activity import record_ad_report_activity
 from aos.api.shared.db import is_duplicate_entry_error
-from aos.api.shorts.activity import record_short_report_activity
-from aos.api.shorts.visibility import can_view_short
+from aos.services.shorts.activity import record_short_report_activity
+from aos.services.shorts.policy import can_view as can_view_short
 from aos.api.social.activity import record_block_user_activity, record_report_user_activity
 from aos.services.accounts.identity import resolve_account_reference
 from aos.services.social.service import SocialService
@@ -142,10 +142,10 @@ class ReportService:
         short = frappe.db.get_value(
             "AOS Short",
             short_id,
-            ["name", "owner", "status", "visibility_status", "audience"],
+            ["name", "owner", "lifecycle_status", "processing_status", "moderation_status", "audience"],
             as_dict=True,
         )
-        if not short or short.status != "ready" or short.visibility_status != "visible" or not can_view_short(short, current_user=user):
+        if not short or not can_view_short(short, viewer=user):
             raise ReportNotFoundError("Short not found.")
         if short.owner == user:
             raise ReportPermissionError("You cannot report your own short.", code="VALIDATION_ERROR", http_status=422)

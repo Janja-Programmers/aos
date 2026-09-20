@@ -80,7 +80,6 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
-
 Search Ranking has no frontend/Postman candidate-search API. Candidate generation is consumed internally by Ads services.
 
 `aos.api.v1.search_ranking.handle_callback` is `POST`, guest-routable only because the private companion authenticates with the signed callback contract. It accepts the signed JSON body defined by callback security, validates `X-AOS-Search-Callback-Signature`, locks/updates the referenced `AOS Search Index Job` atomically, and returns `{job_id,target_doctype,target_name,status,action}`. Signature failures fail closed; stale/duplicate callback conflicts return stable callback conflict errors.

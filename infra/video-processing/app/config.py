@@ -69,12 +69,6 @@ class Settings:
     minio_access_key: str = field(default=_clean(os.getenv("MINIO_ACCESS_KEY") or os.getenv("MINIO_ROOT_USER"), ""), repr=False)
     minio_secret_key: str = field(default=_clean(os.getenv("MINIO_SECRET_KEY") or os.getenv("MINIO_ROOT_PASSWORD"), ""), repr=False)
     minio_secure: bool = _bool("MINIO_SECURE", False)
-    minio_public_base_url: str = _clean(os.getenv("MINIO_PUBLIC_BASE_URL"), "") .rstrip("/")
-
-    output_bucket: str = _clean(os.getenv("VIDEO_OUTPUT_BUCKET"), "shorts").strip("/")
-    output_base_path: str = _clean(os.getenv("VIDEO_OUTPUT_BASE_PATH"), "shorts/processed").strip("/")
-    thumbnail_bucket: str = _clean(os.getenv("VIDEO_THUMBNAIL_BUCKET"), "aos-public").strip("/")
-    thumbnail_base_path: str = _clean(os.getenv("VIDEO_THUMBNAIL_BASE_PATH"), "shorts/thumbnails").strip("/")
 
     max_duration_seconds: int = _int("VIDEO_MAX_DURATION_SECONDS", 600, min_value=1, max_value=3600)
     max_input_bytes: int = _int("VIDEO_MAX_INPUT_BYTES", 536870912, min_value=1048576, max_value=2147483648)

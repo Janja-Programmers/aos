@@ -9,7 +9,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from aos.api.shared import callback_security
 from aos.api.shared.callback_security import CallbackSecurityError, read_signed_json_callback_payload
-from aos.api.video_processing import callback as video_callback
+from aos.services import video_processing_callback as video_callback
 from aos.services import (
     analytics_pipeline_service,
     moderation_service,

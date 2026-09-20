@@ -165,7 +165,7 @@ class RankingService:
         try:
             shorts = frappe.get_all(
                 "AOS Short",
-                filters={"status": "ready"},
+                filters={"lifecycle_status": "Published", "moderation_status": "Approved", "processing_status": ["in", ["Ready", "Not Required"]]},
                 fields=["name"],
                 limit=limit,
                 order_by="modified desc",

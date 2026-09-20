@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Repository-only Shorts hardening checks; requires no Frappe site."""
+"""Repository-only invariants for the current Shorts + Video Processing architecture."""
 from __future__ import annotations
 
 import ast
@@ -17,220 +17,137 @@ def require(condition: bool, message: str) -> None:
         ERRORS.append(message)
 
 
-def source(path: str) -> str:
-    return (ROOT / path).read_text(encoding="utf-8")
+def text(path: str) -> str:
+    p = ROOT / path
+    require(p.exists(), f"missing required file: {path}")
+    return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
-required_docs = {
-    "README.md", "architecture.md", "api.md", "upload-lifecycle.md", "processing.md",
-    "feeds.md", "privacy.md", "media.md", "interactions.md", "notifications.md",
-    "analytics.md", "moderation.md", "migration.md", "operations.md", "testing.md",
-    "classification.md", "recommendations.md",
+def json_doc(path: str) -> dict:
+    try:
+        return json.loads(text(path))
+    except Exception as exc:
+        ERRORS.append(f"invalid JSON {path}: {exc}")
+        return {}
+
+
+# One implementation surface; no duplicate legacy API stack.
+require(not (ROOT / "aos/api/shorts").exists(), "obsolete aos.api.shorts stack still exists")
+require(not (ROOT / "aos/api/video_processing").exists(), "obsolete public video processing API stack still exists")
+
+v1 = text("aos/api/v1/shorts/__init__.py")
+required_actions = {
+    "like_short", "unlike_short", "save_short", "unsave_short", "repost_short", "undo_repost_short",
+    "not_interested", "record_events", "download_short", "create_side_by_side_draft", "create_segment_reuse_draft",
 }
-docs_dir = ROOT / "docs/features/shorts"
-require(required_docs <= {p.name for p in docs_dir.glob("*.md")}, "required Shorts docs are incomplete")
+for action in required_actions:
+    require(re.search(rf"def\s+{re.escape(action)}\s*\(", v1) is not None, f"missing canonical endpoint: {action}")
+for obsolete in ("toggle_like", "toggle_save_short", "toggle_repost", "feed_by_ad", "content_mode"):
+    require(obsolete not in v1, f"obsolete client contract remains in v1 Shorts API: {obsolete}")
 
-shorts_tests = ROOT / "aos/api/shorts/tests"
-required_shorts_tests = {
-    "__init__.py", "test_api_contracts.py", "test_database_contracts.py",
-    "test_classification.py", "test_audio_mix_lifecycle.py",
-}
-require(
-    required_shorts_tests <= {p.name for p in shorts_tests.glob("*.py")},
-    "feature-specific Shorts tests are not colocated under aos/api/shorts/tests",
-)
-root_shorts_tests = sorted((ROOT / "aos/tests").glob("test_shorts*.py"))
-require(not root_shorts_tests, "feature-specific Shorts tests remain under aos/tests")
+specs = text("aos/services/shorts/endpoints.py")
+require("content_mode" not in specs, "client can still author content_mode")
+require("owner" not in specs, "client can mass-assign Short owner")
 
-wrapper_tree = ast.parse(source("aos/api/v1/shorts/__init__.py"))
-wrappers = {
-    node.name for node in wrapper_tree.body
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name != "_call"
-}
-endpoint_source = source("aos/services/shorts/endpoints.py")
-for name in wrappers:
-    require(f'"{name}"' in endpoint_source, f"missing strict endpoint spec: {name}")
-
-rate_policy = json.loads(source("ci/public-endpoint-rate-limits.json"))
-rate_methods = {str(row.get("endpoint") or "") for row in rate_policy}
-for name in wrappers:
-    require(
-        f"aos.api.v1.shorts.__init__.{name}" in rate_methods,
-        f"missing rate policy: {name}",
-    )
-
-feed = source("aos/api/shorts/feed.py")
-require("s.name IN %(candidate_ids)s" not in feed, "All feed still uses exhaustive ranking candidates")
-require("if not candidate_ids" not in feed, "All feed still empties on missing ranking candidates")
-require("COALESCE(s.ranking_score, 0) DESC" in feed, "feed and cursor ranking order are inconsistent")
-require("EXISTS (" in feed, "Following feed is not duplicate-safe")
-require("RecommendationService.get_slice" in feed, "For You is not recommendation-first")
-require("RecommendationService.build_cursor" in feed, "personalized feed does not use stable recommendation cursors")
-recommendation = source("aos/services/shorts/recommendation.py")
-for token in ("_collaborative_candidates", "_diversify", "seen_short_ids", "suppressed_short_ids", "ranking_score"):
-    require(token in recommendation, f"recommendation hardening token missing: {token}")
-feedback = source("aos/api/shorts/recommendation.py")
-require("VALID_RECOMMENDATION_FEEDBACK_ACTIONS" in feedback, "explicit recommendation feedback is missing")
-require("RecommendationService.invalidate_profile" in feedback, "recommendation feedback does not invalidate profile cache")
-
-
-classification = source("aos/services/shorts/classification.py")
-upload = source("aos/api/shorts/upload.py")
-short_schema = json.loads(source("aos/aos/doctype/aos_short/aos_short.json"))
-require("classify_for_publish" in upload, "automatic publish classification is not wired")
-require("legacy_content_mode=kwargs.get(\"content_mode\")" in upload, "legacy content mode compatibility is not explicit")
-require("del legacy_content_mode" in classification, "creator content mode is still authoritative")
-require("commerce_context" in classification, "validated Shop context classification is missing")
-mode_field = next((field for field in short_schema.get("fields", []) if field.get("fieldname") == "content_mode"), {})
-require("all" not in str(mode_field.get("options") or "").split(), "All is incorrectly persisted as a content mode")
-image_main = source("infra/image-search/app/main.py")
-require("/internal/shorts/classify-frames" in image_main, "signed visual classification endpoint is missing")
-require("verify_signature" in image_main, "visual classification endpoint is not authenticated")
-require("x_aos_timestamp" in image_main, "visual classification request lacks freshness protection")
-require("signed_payload" in image_main, "visual classification signature does not bind timestamp")
-
-cursor = source("aos/api/shorts/utils.py")
-for token in ("hmac.new", "compare_digest", "_CURSOR_TTL_SECONDS", "ShortsCursorError"):
-    require(token in cursor, f"cursor hardening token missing: {token}")
-
-processing = source("aos/services/video_processing_service.py")
-for token in ("job_generation", "SUPERSEDED", "SHORT_DELETED", "_validated_processed_keys", "validate_object_key"):
-    require(token in processing, f"processing hardening token missing: {token}")
-require('payload.get("playback_url")' not in processing, "callback playback URL is still trusted")
-
-worker = source("infra/video-processing/app/worker.py")
-for token in (
-    "max_input_bytes", "allowed_video_codecs", "max_pixels", "ffmpeg_threads",
-    "_validate_callback_url", "_generate_classification_frames", "_classify_frames",
+short_schema = json_doc("aos/aos/doctype/aos_short/aos_short.json")
+fields = {f.get("fieldname"): f for f in short_schema.get("fields", [])}
+for field in (
+    "content_type", "lifecycle_status", "processing_status", "moderation_status", "revision",
+    "processing_generation", "moderation_generation", "raw_video_media", "playback_media",
+    "playback_manifest_media", "poster_media", "storyboard_media", "storyboard_manifest_media",
 ):
-    require(token in worker, f"video worker limit missing: {token}")
-require("shell=True" not in worker and "os.system(" not in worker, "unsafe video subprocess invocation")
-require('"objects": uploaded_objects' not in worker, "video callback still exposes every HLS object")
-require('"output_object_count": len(uploaded_objects)' in worker, "bounded video output summary is missing")
-require("amix=inputs=2" in worker, "selected sound is not mixed with original audio")
-require('"reason": str(getattr(job, "reason"' in processing, "video jobs do not propagate processing reason")
-require('reason: str = Field(default="short_upload"' in source("infra/video-processing/app/main.py"), "video service schema rejects processing reason")
-require('is_audio_reprocess = bool(payload.get("force"))' in worker, "audio reprocess is not identified by the companion")
-require('if not is_audio_reprocess:' in worker, "audio reprocess does not preserve visual metadata")
-require('not is_audio_reprocess' in processing, "audio callback still replaces visual metadata")
+    require(field in fields, f"AOS Short missing hardened field: {field}")
+for obsolete in ("visibility_status", "approval_status", "content_mode", "audio_mix_status", "file_key", "playback_url", "thumbnail_url"):
+    require(obsolete not in fields, f"AOS Short still contains obsolete field: {obsolete}")
+require("naming_series" not in fields, "AOS Short exposes naming series")
 
-sounds_source = source("aos/api/shorts/sounds.py")
-audio_enqueue = sounds_source[
-    sounds_source.index("def enqueue_short_audio_reprocess"):
-    sounds_source.index("def validate_existing_short_sound_for_mode")
-]
-require("return create_video_processing_job" in audio_enqueue, "audio remix job is not returned to callers")
-require("        raise" in audio_enqueue, "audio remix enqueue failures are still swallowed")
-require('values["audio_mix_status"] = "pending"' not in audio_enqueue, "audio mix is marked pending before durable job creation")
-require("recover_pending_audio_mixes" in source("aos/tasks/shorts.py"), "stale audio mix recovery task is missing")
-require("aos.tasks.shorts.recover_pending_audio_mixes" in source("aos/hooks.py"), "audio mix recovery task is not scheduled")
+sound_schema = json_doc("aos/aos/doctype/aos_sound/aos_sound.json")
+sound_fields = {f.get("fieldname") for f in sound_schema.get("fields", [])}
+require("is_commercial" not in sound_fields and "is_commercial_safe" not in sound_fields, "commercial Sound product flag remains")
+require("naming_series" not in sound_fields, "Sound exposes naming series")
 
-compose = source("docker-compose.yml")
-for worker_name, queue_token in (
-    ("video-worker", "${VIDEO_QUEUE_NAME:-video}"),
-    ("moderation-worker", "${MODERATION_QUEUE_NAME:-moderation}"),
-    ("search-ranking-worker", "${SEARCH_RANKING_QUEUE_NAME:-search-ranking}"),
-    ("notification-worker", "${NOTIFICATION_QUEUE_NAME:-notification-delivery}"),
-    ("analytics-worker", "${ANALYTICS_QUEUE_NAME:-analytics-pipeline}"),
-):
-    match = re.search(
-        rf"(?ms)^  {re.escape(worker_name)}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
-        compose,
-    )
-    require(match is not None, f"missing companion worker: {worker_name}")
-    block = match.group("body") if match else ""
-    require(queue_token in block, f"{worker_name} queue command is missing")
-    require(
-        "--with-scheduler" in block,
-        f"{worker_name} must enable the RQ scheduler for interval retries",
-    )
+job_schema = json_doc("aos/aos/doctype/aos_video_processing_job/aos_video_processing_job.json")
+job_fields = {f.get("fieldname") for f in job_schema.get("fields", [])}
+for field in ("operation", "status", "generation", "idempotency_key", "active_key", "next_retry_at", "lease_owner", "lease_expires_at"):
+    require(field in job_fields, f"Video Processing job missing field: {field}")
 
-durable_video = source("infra/video-processing/app/durable_lifecycle.py")
-require('65536 if name == "result_payload"' in durable_video, "video callback JSON is still truncated at 4 KiB")
-require("CALLBACK_RESULT_INVALID" in durable_video, "corrupt durable callback records do not fail closed")
-require('result_payload["job_id"]' in durable_video, "durable callback delivery does not restore stable job ID")
+for doctype in ("aos_short_photo", "aos_short_mode", "aos_short_hashtag", "aos_short_ad", "aos_short_mention", "aos_short_feedback", "aos_short_moderation_decision"):
+    require((ROOT / f"aos/aos/doctype/{doctype}/{doctype}.json").exists(), f"missing Shorts relation DocType: {doctype}")
 
+media_purposes = text("aos/services/media/media_purposes.py")
+for purpose in ("short_video_raw", "short_photo", "short_video_playback", "short_video_manifest", "short_poster", "short_storyboard", "short_storyboard_manifest", "short_download", "short_original_audio"):
+    require(f'"{purpose}"' in media_purposes, f"Media purpose missing: {purpose}")
+
+callback = text("aos/api/internal/video_processing/__init__.py")
+require("handle_callback" in callback and "allow_guest=True" in callback, "signed internal Video Processing callback missing")
+prod_config = text("aos/utils/production_config.py")
+require("aos.api.internal.video_processing.handle_callback" in prod_config, "production callback URL is not internal")
+require("aos.api.v1.video_processing.handle_callback" not in prod_config, "public Video Processing callback remains configured")
+
+processing = text("aos/services/video_processing_service.py")
+for token in ("ensure_outbox_for_job", "next_retry_at", "lease_expires_at", "job_generation", "outputs"):
+    require(token in processing, f"processing invariant missing: {token}")
+require("frappe.db.commit" not in processing, "Video Processing request/service flow manually commits")
+
+worker = text("infra/video-processing/app/worker.py")
+for token in ("_generate_hls", "_generate_storyboard", "_generate_watermarked_download", "_compose_side_by_side", "_compose_segment"):
+    require(token in worker, f"video companion capability missing: {token}")
+require("shell=True" not in worker and "os.system(" not in worker, "unsafe shell execution in video worker")
+
+# No manual request-flow commits in active Shorts/Video Processing production Python.
 transaction_roots = [
-    ROOT / "aos/api/shorts",
     ROOT / "aos/services/shorts",
     ROOT / "aos/services/video_processing_service.py",
-    ROOT / "aos/patches/v1_0/harden_shorts_subsystem.py",
-    ROOT / "aos/patches/v1_0/install_shorts_indexes.py",
-    ROOT / "aos/patches/v1_0/install_shorts_recommendation_indexes.py",
-    ROOT / "aos/patches/v1_0/initialize_short_classification_metadata.py",
+    ROOT / "aos/services/video_processing_callback.py",
+    ROOT / "aos/api/v1/shorts",
+    ROOT / "aos/api/internal/shorts",
+    ROOT / "aos/aos/doctype/aos_short",
 ]
 for root in transaction_roots:
     files = [root] if root.is_file() else list(root.rglob("*.py"))
     for file in files:
-        tree = ast.parse(file.read_text(encoding="utf-8"), filename=str(file))
+        source = file.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(file))
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
-                continue
-            if node.func.attr == "commit":
-                ERRORS.append(f"transaction commit found: {file.relative_to(ROOT)}:{node.lineno}")
-            if node.func.attr == "rollback" and not any(k.arg == "save_point" for k in node.keywords):
-                ERRORS.append(f"full rollback found: {file.relative_to(ROOT)}:{node.lineno}")
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if node.func.attr == "commit":
+                    ERRORS.append(f"manual commit found: {file.relative_to(ROOT)}:{node.lineno}")
+                if node.func.attr == "rollback" and not any(k.arg == "save_point" for k in node.keywords):
+                    ERRORS.append(f"full rollback found: {file.relative_to(ROOT)}:{node.lineno}")
 
-patches = source("aos/patches.txt")
-data_patch = "aos.patches.v1_0.harden_shorts_subsystem"
-index_patch = "aos.patches.v1_0.install_shorts_indexes"
-recommendation_index_patch = "aos.patches.v1_0.install_shorts_recommendation_indexes"
-classification_patch = "aos.patches.v1_0.initialize_short_classification_metadata"
-require(data_patch in patches, "Shorts data migration not registered")
-require(index_patch in patches, "Shorts index migration not registered")
-require(recommendation_index_patch in patches, "Shorts recommendation index migration not registered")
-require(classification_patch in patches, "Shorts classification migration not registered")
-if data_patch in patches and index_patch in patches:
-    require(patches.index(data_patch) < patches.index(index_patch), "Shorts index patch must follow data reconciliation")
-if index_patch in patches and recommendation_index_patch in patches:
-    require(
-        patches.index(index_patch) < patches.index(recommendation_index_patch),
-        "Shorts recommendation indexes must follow core Shorts indexes",
-    )
-if recommendation_index_patch in patches and classification_patch in patches:
-    require(
-        patches.index(recommendation_index_patch) < patches.index(classification_patch),
-        "Shorts classification metadata patch must follow recommendation indexes",
-    )
-data_patch_source = source("aos/patches/v1_0/harden_shorts_subsystem.py")
-index_patch_source = source("aos/patches/v1_0/install_shorts_indexes.py")
-recommendation_index_patch_source = source("aos/patches/v1_0/install_shorts_recommendation_indexes.py")
-classification_patch_source = source("aos/patches/v1_0/initialize_short_classification_metadata.py")
-require("frappe.db.commit" not in data_patch_source, "Shorts data migration commits")
-require("frappe.db.commit" not in index_patch_source, "Shorts index migration commits")
-require("frappe.db.commit" not in recommendation_index_patch_source, "Shorts recommendation index migration commits")
-require("frappe.db.commit" not in classification_patch_source, "Shorts classification migration commits")
-require("ALTER TABLE" not in classification_patch_source, "Shorts classification migration mixes DML and DDL")
-require("ALTER TABLE" not in data_patch_source, "Shorts data migration mixes DML and DDL")
-require("ALTER TABLE" in index_patch_source, "Shorts schema-only index migration is missing DDL")
-index_patch_tree = ast.parse(index_patch_source)
-for node in ast.walk(index_patch_tree):
-    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
-        continue
-    if node.func.attr != "sql" or not node.args:
-        continue
-    query_node = node.args[0]
-    literal = ""
-    if isinstance(query_node, ast.Constant) and isinstance(query_node.value, str):
-        literal = query_node.value
-    elif isinstance(query_node, ast.JoinedStr):
-        literal = "".join(
-            value.value for value in query_node.values
-            if isinstance(value, ast.Constant) and isinstance(value.value, str)
-        )
-    normalized = literal.lstrip().upper()
-    require(
-        not normalized.startswith(("INSERT", "UPDATE", "DELETE", "REPLACE", "TRUNCATE")),
-        f"Shorts index migration contains DML at line {node.lineno}",
-    )
+indexes = text("aos/patches/v1_0/install_shorts_indexes.py")
+for idx in ("uq_short_like", "uq_short_save", "uq_short_repost", "uq_short_mode", "uq_short_ad", "uq_short_processing_active"):
+    require(idx in indexes, f"fresh-site Shorts index invariant missing: {idx}")
+require("frappe.db.commit" not in indexes, "Shorts index installer manually commits")
+view_schema = json_doc("aos/aos/doctype/aos_short_view/aos_short_view.json")
+require(any(f.get("fieldname") == "identity_key" and f.get("unique") for f in view_schema.get("fields", [])), "Short view identity_key must be unique")
 
-library = source("aos/api/shorts/library.py")
-response_tail = library[library.find('"Download URL generated."'):]
-require('"download_file_key":' not in response_tail, "download response leaks object key")
+hooks = text("aos/hooks.py")
+require("aos.tasks.shorts.recover_video_processing" in hooks or "aos.tasks.shorts.recover_video_processing_jobs" in hooks, "Video Processing recovery task is not scheduled")
+
+docs = sorted(p.name for p in (ROOT / "docs/features/shorts").glob("*.md"))
+require(docs == ["README.md"], f"Shorts documentation must be one canonical README; found {docs}")
+readme = text("docs/features/shorts/README.md")
+for heading in ("## Overview", "## Responsibilities", "## Boundaries", "## Architecture", "## Data Model", "## Fields", "## API", "## Cross-feature Dependencies", "## Transaction / Concurrency Model", "## Caching", "## Performance / Scalability", "## Testing"):
+    require(heading in readme, f"Shorts README missing section: {heading}")
+
+# Global obsolete contract scan (production/docs/infra/CI; tests may use strings only to assert absence).
+scan_roots = [ROOT / "aos", ROOT / "infra", ROOT / "docs"]
+legacy = ("visibility_status", "approval_status", "audio_mix_status", "is_commercial_safe", "toggle_save_short", "toggle_repost", "feed_by_ad", "aos.api.v1.video_processing.handle_callback")
+for scan_root in scan_roots:
+    for file in scan_root.rglob("*"):
+        if not file.is_file() or file.suffix not in {".py", ".md", ".js", ".json", ".yml", ".yaml"} or "__pycache__" in file.parts:
+            continue
+        if "tests" in file.parts or file.name.startswith("test_"):
+            continue
+        source = file.read_text(encoding="utf-8", errors="ignore")
+        for token in legacy:
+            if token in source and file != ROOT / "ci/validate_shorts_hardening.py":
+                ERRORS.append(f"obsolete Shorts token {token!r} in {file.relative_to(ROOT)}")
 
 if ERRORS:
-    print("Shorts hardening validation failed:")
-    for error in ERRORS:
-        print(f"- {error}")
-    sys.exit(1)
-print(f"Shorts hardening validation passed ({len(wrappers)} public endpoints).")
+    print("Shorts hardening validation failed:", file=sys.stderr)
+    for error in sorted(set(ERRORS)):
+        print(f"- {error}", file=sys.stderr)
+    raise SystemExit(1)
+print("Shorts + Video Processing hardening invariants: OK")

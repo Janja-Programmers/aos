@@ -9,25 +9,23 @@
   "date",
   "impressions",
   "views",
+  "unique_viewers",
+  "watch_time_ms",
+  "avg_watch_time_ms",
+  "completion_rate",
+  "rewatches",
+  "early_skips",
   "likes",
   "comments",
   "shares",
   "saves",
   "downloads",
-  "reposts",
-  "column_break_ttxd",
-  "watch_time_ms",
-  "avg_watch_time_ms",
-  "completion_rate",
-  "ad",
-  "seller",
-  "country"
+  "reposts"
  ],
  "fields": [
   {
    "fieldname": "short",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Short",
    "options": "AOS Short",
    "reqd": 1,
@@ -36,120 +34,99 @@
   {
    "fieldname": "date",
    "fieldtype": "Date",
-   "in_list_view": 1,
    "label": "Date",
    "reqd": 1,
    "search_index": 1
   },
   {
-   "default": "0",
    "fieldname": "impressions",
    "fieldtype": "Int",
    "label": "Impressions",
-   "read_only": 1
+   "default": "0"
   },
   {
-   "default": "0",
    "fieldname": "views",
    "fieldtype": "Int",
    "label": "Views",
-   "read_only": 1
+   "default": "0"
   },
   {
-   "default": "0",
+   "fieldname": "unique_viewers",
+   "fieldtype": "Int",
+   "label": "Unique Viewers",
+   "default": "0"
+  },
+  {
    "fieldname": "watch_time_ms",
    "fieldtype": "Int",
-   "label": "Total Watch Time (ms)",
-   "read_only": 1
+   "label": "Watch Time Ms",
+   "default": "0"
   },
   {
-   "default": "0",
    "fieldname": "avg_watch_time_ms",
    "fieldtype": "Int",
-   "label": "Avg Watch Time (ms)",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "likes",
-   "fieldtype": "Int",
-   "label": "Likes",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "comments",
-   "fieldtype": "Int",
-   "label": "Comments",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "shares",
-   "fieldtype": "Int",
-   "label": "Shares",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "saves",
-   "fieldtype": "Int",
-   "label": "Saves",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "downloads",
-   "fieldtype": "Int",
-   "label": "Downloads",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "reposts",
-   "fieldtype": "Int",
-   "label": "Reposts",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_ttxd",
-   "fieldtype": "Column Break"
+   "label": "Avg Watch Time Ms",
+   "default": "0"
   },
   {
    "fieldname": "completion_rate",
    "fieldtype": "Float",
    "label": "Completion Rate",
-   "read_only": 1
+   "default": "0"
   },
   {
-   "fieldname": "ad",
-   "fieldtype": "Link",
-   "label": "Ad",
-   "options": "AOS Ad",
-   "read_only": 1,
-   "search_index": 1
+   "fieldname": "rewatches",
+   "fieldtype": "Int",
+   "label": "Rewatches",
+   "default": "0"
   },
   {
-   "fieldname": "seller",
-   "fieldtype": "Link",
-   "label": "Seller",
-   "options": "AOS Seller",
-   "read_only": 1,
-   "search_index": 1
+   "fieldname": "early_skips",
+   "fieldtype": "Int",
+   "label": "Early Skips",
+   "default": "0"
   },
   {
-   "fieldname": "country",
-   "fieldtype": "Link",
-   "label": "Country",
-   "options": "Country",
-   "read_only": 1,
-   "search_index": 1
+   "fieldname": "likes",
+   "fieldtype": "Int",
+   "label": "Likes",
+   "default": "0"
+  },
+  {
+   "fieldname": "comments",
+   "fieldtype": "Int",
+   "label": "Comments",
+   "default": "0"
+  },
+  {
+   "fieldname": "shares",
+   "fieldtype": "Int",
+   "label": "Shares",
+   "default": "0"
+  },
+  {
+   "fieldname": "saves",
+   "fieldtype": "Int",
+   "label": "Saves",
+   "default": "0"
+  },
+  {
+   "fieldname": "downloads",
+   "fieldtype": "Int",
+   "label": "Downloads",
+   "default": "0"
+  },
+  {
+   "fieldname": "reposts",
+   "fieldtype": "Int",
+   "label": "Reposts",
+   "default": "0"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-26 15:53:44.161418",
+ "modified": "2026-09-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Short Metrics Daily",
@@ -172,5 +149,6 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "autoname": "hash"
 }
