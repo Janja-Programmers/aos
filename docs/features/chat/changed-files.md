@@ -62,7 +62,7 @@
 - `aos/api/live/constants.py`
 - `aos/api/live/tests/test_live_source_guards.py`
 - `aos/api/shared/responses.py`
-- `aos/api/shorts/share.py`
+- `aos/services/chat/service.py` (Short reference capability; no Shorts client share-to-Chat endpoint in this phase)
 - `aos/api/v1/chat/__init__.py`
 - `aos/api/v1/live/__init__.py`
 - `aos/patches.txt`

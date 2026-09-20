@@ -188,7 +188,7 @@ def _replace_photos(short,user,media_ids:list[str]):
     for mid in media_ids:
         mid=str(mid or '').strip()
         if mid and mid not in unique: unique.append(mid)
-    if not unique or len(unique)>MAX_PHOTOS: raise ShortsError('Photo Short requires 1-20 photos.',code='SHORTS_INVALID_REQUEST')
+    if not unique or len(unique)>MAX_PHOTOS: raise ShortsError('Photo Short requires 1-10 photos.',code='SHORTS_INVALID_REQUEST')
     current=frappe.get_all('AOS Short Photo',filters={'short':short.name},fields=['name','media','position'])
     current_by_media={str(r.media):r for r in current}
     for mid in unique: media.validate_media_for_use(media_id=mid,user=user,purpose='short_photo',attached_doctype='AOS Short',attached_name=short.name)

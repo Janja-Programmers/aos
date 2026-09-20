@@ -313,7 +313,7 @@ class TestNotificationProductionSourceGuards(unittest.TestCase):
     def test_category_registry_matches_real_producers_including_short_mentions(self):
         contracts = _source("aos/services/notifications/contracts.py")
         notification_api = _source("aos/api/notifications/notification.py")
-        mention_producer = _source("aos/api/shorts/mentions.py")
+        mention_producer = _source("aos/services/shorts/service.py")
         self.assertIn('"short_mention": NotificationTypeContract', contracts)
         self.assertIn('event="aos_short_mention"', contracts)
         self.assertIn("from aos.services.notifications.contracts import", notification_api)

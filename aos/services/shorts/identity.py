@@ -8,7 +8,6 @@ from typing import Any
 
 SHORT_ID_RE = re.compile(r"^SHR-[A-Z2-7]{20}$")
 SOUND_ID_RE = re.compile(r"^SND-[A-Z2-7]{20}$")
-PROCESSING_JOB_ID_RE = re.compile(r"^VPJ-[A-Z2-7]{20}$")
 COMMENT_ID_RE = re.compile(r"^SHC-[A-Z2-7]{20}$")
 
 
@@ -22,10 +21,6 @@ def generate_short_id() -> str:
 
 def generate_sound_id() -> str:
     return f"SND-{_token()}"
-
-
-def generate_processing_job_id() -> str:
-    return f"VPJ-{_token()}"
 
 
 def generate_comment_id() -> str:

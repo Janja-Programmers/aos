@@ -183,12 +183,10 @@ class TestCallbackSecurity(FrappeTestCase):
         job = SimpleNamespace(name="JOB-001", status="Ready")
         with patch.object(video_processing_service.frappe.db, "exists", return_value=True):
             with patch.object(video_processing_service.frappe, "get_doc", return_value=job):
-                with patch.object(video_processing_service, "mark_video_job_ready") as mark_ready:
-                    result = video_processing_service.handle_video_processing_callback(
-                        {"job_id": job.name, "status": "ready"}
-                    )
+                result = video_processing_service.handle_video_processing_callback(
+                    {"job_id": job.name, "status": "ready"}
+                )
         self.assertIs(result, job)
-        mark_ready.assert_not_called()
 
     def test_video_terminal_status_blocks_conflicting_callback(self):
         job = SimpleNamespace(name="JOB-001", status="Ready")

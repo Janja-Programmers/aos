@@ -1,6 +1,6 @@
 {
  "actions": [],
- "autoname": "prompt",
+ "autoname": "hash",
  "creation": "2026-09-20 00:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",

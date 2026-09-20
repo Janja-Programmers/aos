@@ -31,9 +31,14 @@ def json_doc(path: str) -> dict:
         return {}
 
 
-# One implementation surface; no duplicate legacy API stack.
-require(not (ROOT / "aos/api/shorts").exists(), "obsolete aos.api.shorts stack still exists")
-require(not (ROOT / "aos/api/video_processing").exists(), "obsolete public video processing API stack still exists")
+# One implementation surface; overlay deployments may leave empty directories,
+# but no executable legacy Python module may survive.
+def _has_python(path: Path) -> bool:
+    return path.exists() and any(path.rglob("*.py"))
+
+require(not _has_python(ROOT / "aos/api/shorts"), "obsolete aos.api.shorts stack still contains Python code")
+require(not _has_python(ROOT / "aos/api/video_processing"), "obsolete public video processing API stack still contains Python code")
+require(not _has_python(ROOT / "aos/api/v1/video_processing"), "obsolete v1 video processing client namespace still contains Python code")
 
 v1 = text("aos/api/v1/shorts/__init__.py")
 required_actions = {
@@ -67,6 +72,7 @@ require("is_commercial" not in sound_fields and "is_commercial_safe" not in soun
 require("naming_series" not in sound_fields, "Sound exposes naming series")
 
 job_schema = json_doc("aos/aos/doctype/aos_video_processing_job/aos_video_processing_job.json")
+require(job_schema.get("autoname") == "hash", "Video Processing jobs must use hash autoname")
 job_fields = {f.get("fieldname") for f in job_schema.get("fields", [])}
 for field in ("operation", "status", "generation", "idempotency_key", "active_key", "next_retry_at", "lease_owner", "lease_expires_at"):
     require(field in job_fields, f"Video Processing job missing field: {field}")

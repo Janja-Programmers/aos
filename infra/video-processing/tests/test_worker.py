@@ -9,7 +9,7 @@ from app import worker
 
 TEST_CLASSIFICATION_SECRET = "classification-secret"  # pragma: allowlist secret
 SHORT_ID = "SHR-AAAAAAAAAAAAAAAAAAAA"
-JOB_ID = "VPJ-AAAAAAAAAAAAAAAAAAAA"
+JOB_ID = "a1b2c3d4e5"
 
 
 def settings():

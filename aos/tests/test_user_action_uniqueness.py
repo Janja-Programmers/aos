@@ -153,7 +153,7 @@ class TestUserActionUniqueness(AOSFeatureTestMixin, FrappeTestCase):
 
     def test_comment_like_unique_constraint_blocks_duplicate_rows(self):
         user = self._make_user("commenter")
-        short = self._make_short(user)
+        short = self.make_short(owner=user)
         comment = self._make_comment(short.name, user)
         frappe.set_user(user)
 

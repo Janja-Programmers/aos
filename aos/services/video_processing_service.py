@@ -31,7 +31,6 @@ from aos.services.shorts.constants import (
     SOUND_ACTIVE,
     SOUND_SOURCE_ORIGINAL,
 )
-from aos.services.shorts.identity import generate_processing_job_id
 from aos.services.transactional_outbox import (
     OutboxConflictError,
     current_outbox_dispatch_context,
@@ -164,7 +163,17 @@ def _operation(short: Any, requested: str) -> str:
     return requested
 
 
-def _ensure_outbox(job: Any) -> Any:
+def enqueue_video_processing_dispatch(video_processing_job_id: str | Any) -> Any:
+    """Persist Video Processing dispatch intent in the caller transaction.
+
+    This helper is internal-only. It deliberately never commits; the shared
+    transactional outbox publishes after the surrounding transaction is durable.
+    """
+    job = (
+        video_processing_job_id
+        if getattr(video_processing_job_id, "doctype", None) == "AOS Video Processing Job"
+        else frappe.get_doc("AOS Video Processing Job", str(video_processing_job_id or "").strip())
+    )
     config = get_video_processing_config()
     return ensure_outbox_for_job(
         service_type="video_processing",
@@ -248,7 +257,6 @@ def create_video_processing_job(
     job = frappe.get_doc(
         {
             "doctype": "AOS Video Processing Job",
-            "name": generate_processing_job_id(),
             "short": short.name,
             "raw_video_media": source_media,
             "source_short": str(short.source_short or "") or None,
@@ -265,7 +273,7 @@ def create_video_processing_job(
     )
     job.insert(ignore_permissions=True)
     if enqueue:
-        _ensure_outbox(job)
+        enqueue_video_processing_dispatch(job)
     return job
 
 
@@ -571,7 +579,6 @@ def _schedule_retry(job: Any, short: Any, error: str) -> Any | None:
     retry = frappe.get_doc(
         {
             "doctype": "AOS Video Processing Job",
-            "name": generate_processing_job_id(),
             "short": short.name,
             "raw_video_media": source_media,
             "source_short": str(short.source_short or "") or None,
@@ -600,8 +607,24 @@ def handle_video_processing_callback(payload: dict[str, Any]):
     if validation.duplicate:
         return job
 
+    # A terminal durable job may still be invoked directly by internal recovery
+    # or focused tests without a correlated outbox row. Preserve idempotency for
+    # the same terminal result and reject a conflicting late result before any
+    # Short/domain lookup or mutation. Correlated callbacks are still validated
+    # above against dispatch generation/token first.
+    terminal = str(job.status or "")
+    same_terminal = (
+        (terminal == "Ready" and incoming in {"ready", "completed"})
+        or (terminal == "Failed" and incoming == "failed")
+        or (terminal == "Cancelled" and incoming == "cancelled")
+    )
+    if terminal in {"Ready", "Failed", "Cancelled"}:
+        if same_terminal:
+            return job
+        raise VideoProcessingError(f"Video processing job is already {terminal}")
+
     short = frappe.get_doc("AOS Short", job.short, for_update=True)
-    supplied_generation = int(payload.get("job_generation") or 0)
+    supplied_generation = int(payload.get("job_generation") or job.generation or 0)
     if supplied_generation != int(job.generation or 0) or (
         str(job.operation) != "Download"
         and int(short.processing_generation or 0) != int(job.generation or 0)
@@ -634,12 +657,12 @@ def handle_video_processing_callback(payload: dict[str, Any]):
 
     if incoming == "failed":
         error = str(payload.get("error") or "Video processing failed")
-        retry = _schedule_retry(job, short, error)
+        _schedule_retry(job, short, error)
         mark_outbox_callback(
             job_doctype="AOS Video Processing Job", job_name=job.name,
             callback_status="failed", success=False, error=error,
         )
-        return retry or job
+        return job
     if incoming not in {"ready", "completed"}:
         raise VideoProcessingError("Invalid video processing callback status")
 
@@ -760,7 +783,7 @@ def recover_video_processing_jobs(*, limit: int = 100) -> int:
             job.status = "Queued"
             job.next_retry_at = None
             job.save(ignore_permissions=True)
-            _ensure_outbox(job)
+            enqueue_video_processing_dispatch(job)
             count += 1
         except Exception:
             frappe.log_error(frappe.get_traceback(), f"Video processing retry activation failed: {row.name}")

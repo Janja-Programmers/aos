@@ -9,7 +9,7 @@ from pathlib import Path
 
 API_ROOT = Path(__file__).resolve().parents[1] / "api"
 V1_ROOT = API_ROOT / "v1"
-INTERNAL_FEATURES_TO_SKIP = {"shared", "v1", "__pycache__"}
+INTERNAL_FEATURES_TO_SKIP = {"internal", "shared", "v1", "__pycache__"}
 
 
 def _feature_init_paths() -> list[Path]:

@@ -5,13 +5,9 @@ import frappe
 from frappe.model.document import Document
 
 from aos.services.shorts.constants import VIDEO_OPERATIONS
-from aos.services.shorts.identity import generate_processing_job_id
 
 
 class AOSVideoProcessingJob(Document):
-    def autoname(self):
-        self.name = generate_processing_job_id()
-
     def validate(self):
         if self.operation not in set(VIDEO_OPERATIONS):
             frappe.throw("Invalid video processing operation")

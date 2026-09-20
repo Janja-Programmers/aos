@@ -92,7 +92,7 @@ Video Processing has no client API. The signed processing callback is `/api/meth
 
 ### Video and Photo media
 
-Video creation starts from attached `short_video_raw` Media and asynchronously produces `short_video_playback`, `short_video_manifest`, `short_poster`, `short_storyboard`, `short_storyboard_manifest`, optional `short_original_audio`, and private `short_download` Media. HLS renditions and scrub storyboard assets are immutable/cache-friendly. Photo Shorts reference one to twenty ordered `short_photo` Media objects directly; photos are never encoded as fake videos.
+Video creation starts from attached `short_video_raw` Media and asynchronously produces `short_video_playback`, `short_video_manifest`, `short_poster`, `short_storyboard`, `short_storyboard_manifest`, optional `short_original_audio`, and private `short_download` Media. HLS renditions and scrub storyboard assets are immutable/cache-friendly. Photo Shorts reference one to ten ordered `short_photo` Media objects directly; photos are never encoded as fake videos.
 
 ### Downloads and reuse
 

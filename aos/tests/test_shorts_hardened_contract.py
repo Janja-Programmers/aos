@@ -60,7 +60,9 @@ class TestShortsHardenedContract(TestCase):
         self.assertNotIn("is_commercial_safe", fields)
 
     def test_video_processing_is_not_a_v1_client_namespace(self):
-        self.assertFalse((ROOT / "aos/api/v1/video_processing").exists())
+        legacy = ROOT / "aos/api/v1/video_processing"
+        self.assertFalse((legacy / "__init__.py").exists())
+        self.assertFalse(any(legacy.glob("*.py")) if legacy.exists() else False)
         internal = ROOT / "aos/api/internal/video_processing/__init__.py"
         self.assertTrue(internal.exists())
         self.assertIn("handle_callback", internal.read_text())

@@ -50,6 +50,8 @@ INDEXES: tuple[tuple[str, str, tuple[str, ...], bool], ...] = (
     ("AOS Short Event", "idx_short_event_user_recent", ("user", "creation", "event_type", "short"), False),
     ("AOS Short Event", "idx_short_event_session_recent", ("session_id", "creation", "event_type", "short"), False),
     ("AOS Short Moderation Decision", "idx_short_moderation_history", ("short", "revision", "generation", "creation"), False),
+    ("AOS Short Report", "idx_short_report_review", ("status", "creation", "name"), False),
+    ("AOS Short Report", "uq_short_report_active", ("active_key",), True),
     ("AOS Video Processing Job", "uq_short_processing_active", ("active_key",), True),
     ("AOS Video Processing Job", "idx_short_job_lifecycle", ("short", "operation", "status", "generation", "creation"), False),
     ("AOS Video Processing Job", "idx_short_job_retry", ("status", "next_retry_at", "name"), False),

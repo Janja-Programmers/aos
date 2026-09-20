@@ -147,6 +147,20 @@ def create_durable_job(
 
 	if service_type == "moderation":
 		media, short = _media_and_short(suffix)
+		# Moderation callbacks mutate only the exact pending Short revision and
+		# generation. Build the durable fixture in that real production state so
+		# rollback tests exercise the domain save rather than a stale-callback no-op.
+		short.lifecycle_status = "Pending Review"
+		short.processing_status = "Ready"
+		short.moderation_status = "Pending"
+		short.moderation_generation = max(1, int(short.moderation_generation or 0))
+		short.revision = max(1, int(short.revision or 0))
+		short.save(ignore_permissions=True)
+		moderation_context = json.dumps({
+			"moderation_generation": int(short.moderation_generation),
+			"revision": int(short.revision),
+			"was_visible": False,
+		})
 		job = _insert(
 			{
 				"doctype": "AOS Moderation Job",
@@ -163,7 +177,7 @@ def create_durable_job(
 				"request_payload": request_payload,
 				"text_items_json": "[]",
 				"media_items_json": "[]",
-				"context_json": "{}",
+				"context_json": moderation_context,
 			}
 		)
 		return DurableJobFixture(

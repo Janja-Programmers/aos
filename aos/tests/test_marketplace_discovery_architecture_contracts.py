@@ -262,19 +262,21 @@ class TestMarketplaceDiscoveryArchitectureContracts(unittest.TestCase):
         wishlist=text('aos/api/wishlist/list.py')
         projection=text('aos/services/marketplace_discovery/projection.py')
         chat=text('aos/services/chat/shared_objects.py')
-        shorts_feed=text('aos/api/shorts/feed.py')
-        shorts_management=text('aos/api/shorts/management.py')
+        shorts_serializer=text('aos/services/shorts/serializers.py')
         media=text('aos/api/ads/media.py')
 
-        for source in (activity, wishlist, chat, shorts_feed, shorts_management):
+        for source in (activity, wishlist, chat, shorts_serializer):
             assert 'SELECT adi.image' not in source
             assert '"media", "image"' not in source
         assert 'project_ad_image_urls(rows)' in activity
         assert 'load_public_ad_items' in wishlist
         assert 'get_public_attachment_url_map' in projection
         assert 'get_public_attachment_url_map' in chat
-        assert 'project_ad_thumbnail_urls(visible_rows)' in shorts_feed
-        assert 'project_ad_thumbnail_urls(rows)' in shorts_management
+        # Shorts stores only canonical Ad relationships/public ids; it does not
+        # copy listing image authority into the Shorts domain.
+        assert '`tabAOS Short Ad`' in shorts_serializer
+        assert 'a.public_id' in shorts_serializer
+        assert 'adi.image' not in shorts_serializer
         assert 'def project_ad_thumbnail_urls(' in media
 
     def test_ad_activity_is_best_effort_for_primary_mutations(self):

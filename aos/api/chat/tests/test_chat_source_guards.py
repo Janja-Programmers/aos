@@ -72,11 +72,12 @@ class TestChatSourceGuards(unittest.TestCase):
         live_v1 = _source("aos/api/v1/live/__init__.py")
         self.assertIn("def share_live_to_chat", live_v1)
 
-    def test_shorts_share_uses_canonical_chat_service(self):
-        source = _source("aos/api/shorts/share.py")
-        self.assertIn("ChatService", source)
-        self.assertIn("send_short_reference", source)
-        self.assertNotIn('frappe.get_doc({\n            "doctype": "AOS Message"', source)
+    def test_shorts_share_boundary_is_chat_ready_without_a_client_shortcut(self):
+        chat_service = _source("aos/services/chat/service.py")
+        shorts_v1 = _source("aos/api/v1/shorts/__init__.py")
+        self.assertIn("def send_short_reference", chat_service)
+        self.assertNotIn("share_short_to_chat", shorts_v1)
+        self.assertNotIn("ChatService", shorts_v1)
 
     def test_persistent_chat_realtime_is_after_commit(self):
         for relative in (

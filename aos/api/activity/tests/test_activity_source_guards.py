@@ -100,11 +100,11 @@ class TestActivityProductionSourceGuards(unittest.TestCase):
 
     def test_feature_hooks_store_public_identity_and_short_hooks_are_best_effort(self):
         ads = _source("aos/api/ads/activity.py")
-        shorts = _source("aos/api/shorts/activity.py")
+        shorts = _source("aos/services/shorts/activity.py")
         social = _source("aos/api/social/activity.py")
         live = _source("aos/api/live/activity.py")
         self.assertIn("public_seller_id_for_name", ads)
-        self.assertIn("public_account_id_for_user(short.owner)", shorts)
+        self.assertIn("public_account_id_for_user(row.owner)", shorts)
         self.assertIn('"target_name": public_user', social)
         self.assertIn("def _safe_record", shorts)
         self.assertNotIn('metadata["session_id"]', live)

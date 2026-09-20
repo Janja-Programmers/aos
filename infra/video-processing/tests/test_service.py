@@ -27,7 +27,7 @@ def settings(**overrides):
 
 def payload() -> dict:
 	return {
-		"job_id": "VPJ-AAAAAAAAAAAAAAAAAAAA",
+		"job_id": "a1b2c3d4e5",
 		"idempotency_key": "stable-video-job-key",
 		"short_id": "SHR-AAAAAAAAAAAAAAAAAAAA",
 		"callback_url": "https://callback.invalid/video",

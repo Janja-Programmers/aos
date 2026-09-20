@@ -45,6 +45,7 @@ class TestMediaPurposePolicies(TestCase):
 			"verification_document",
 			"background_removal_source",
 			"short_video_raw",
+			"short_download",
 		}
 		actual_private = {
 			key for key, policy in MEDIA_PURPOSES.items() if policy.is_private

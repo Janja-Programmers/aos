@@ -102,7 +102,7 @@ def _load_short_target(short_id: str | None) -> dict[str, Any] | None:
     }
 
 
-def _safe(label: str, fn, *args, **kwargs):
+def _safe_record(label: str, fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except Exception:
@@ -116,7 +116,7 @@ def record_short_watch_activity(*, user: str | None, short_id: str, watch_ms: in
         return None
     metadata = dict(target.pop("metadata", {}) or {})
     metadata["watch_ms"] = max(0, int(watch_ms or 0))
-    return _safe(
+    return _safe_record(
         "watch", ActivityService.record_or_update_activity,
         user=user, activity_group=SHORT_ACTIVITY_GROUP, activity_type=SHORT_WATCH_ACTIVITY,
         metadata=metadata, unique_key=short_watch_unique_key(short_id), **target,
@@ -127,7 +127,7 @@ def record_short_like_activity(*, user: str | None, short_id: str):
     target = _load_short_target(short_id) if user else None
     if not target:
         return None
-    return _safe(
+    return _safe_record(
         "like", ActivityService.record_or_update_activity,
         user=user, activity_group=SHORT_ACTIVITY_GROUP, activity_type=SHORT_LIKE_ACTIVITY,
         metadata=target.pop("metadata", None), unique_key=short_like_unique_key(short_id), **target,
@@ -135,7 +135,7 @@ def record_short_like_activity(*, user: str | None, short_id: str):
 
 
 def hide_short_like_activity(*, user: str | None, short_id: str) -> bool:
-    return bool(user and _safe("unlike", ActivityService.hide_activity_by_unique_key, user=user, unique_key=short_like_unique_key(short_id)))
+    return bool(user and _safe_record("unlike", ActivityService.hide_activity_by_unique_key, user=user, unique_key=short_like_unique_key(short_id)))
 
 
 def record_short_comment_activity(*, user: str | None, short_id: str, comment_id: str, comment_text: str | None = None, parent_comment_id: str | None = None):
@@ -147,7 +147,7 @@ def record_short_comment_activity(*, user: str | None, short_id: str, comment_id
     if comment_text is not None:
         metadata["comment_preview"] = _compact(comment_text, 160)
     target["target_subtitle"] = _compact(comment_text, 160) or "Commented on a short"
-    return _safe(
+    return _safe_record(
         "comment", ActivityService.record_activity,
         user=user, activity_group=SHORT_ACTIVITY_GROUP, activity_type=SHORT_COMMENT_ACTIVITY,
         metadata=metadata, unique_key=short_comment_unique_key(comment_id), **target,
@@ -155,7 +155,7 @@ def record_short_comment_activity(*, user: str | None, short_id: str, comment_id
 
 
 def hide_short_comment_activity(*, user: str | None, comment_id: str) -> bool:
-    return bool(user and comment_id and _safe("comment_delete", ActivityService.hide_activity_by_unique_key, user=user, unique_key=short_comment_unique_key(comment_id)))
+    return bool(user and comment_id and _safe_record("comment_delete", ActivityService.hide_activity_by_unique_key, user=user, unique_key=short_comment_unique_key(comment_id)))
 
 
 def record_short_report_activity(*, user: str | None, short_id: str, report_id: str, reason: str | None = None):
@@ -165,7 +165,7 @@ def record_short_report_activity(*, user: str | None, short_id: str, report_id: 
     metadata = dict(target.pop("metadata", {}) or {})
     metadata.update({"report_id": report_id, "reason": reason})
     target["target_subtitle"] = "Reported a short"
-    return _safe(
+    return _safe_record(
         "report", ActivityService.record_activity,
         user=user, activity_group=SHORT_ACTIVITY_GROUP, activity_type=SHORT_REPORT_ACTIVITY,
         metadata=metadata, unique_key=short_report_unique_key(report_id), **target,
@@ -177,7 +177,7 @@ def record_short_repost_activity(*, user: str | None, short_id: str):
     if not target:
         return None
     target["target_subtitle"] = "Reposted a short"
-    return _safe(
+    return _safe_record(
         "repost", ActivityService.record_or_update_activity,
         user=user, activity_group=SHORT_ACTIVITY_GROUP, activity_type=SHORT_REPOST_ACTIVITY,
         metadata=target.pop("metadata", None), unique_key=short_repost_unique_key(short_id), **target,
@@ -185,4 +185,4 @@ def record_short_repost_activity(*, user: str | None, short_id: str):
 
 
 def hide_short_repost_activity(*, user: str | None, short_id: str) -> bool:
-    return bool(user and _safe("undo_repost", ActivityService.hide_activity_by_unique_key, user=user, unique_key=short_repost_unique_key(short_id)))
+    return bool(user and _safe_record("undo_repost", ActivityService.hide_activity_by_unique_key, user=user, unique_key=short_repost_unique_key(short_id)))

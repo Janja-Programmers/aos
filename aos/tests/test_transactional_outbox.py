@@ -134,7 +134,7 @@ class TestTransactionalOutbox(FrappeTestCase):
 
 	def test_shared_enqueue_helpers_do_not_force_commit(self):
 		service_files = {
-			"video_processing_service.py": "enqueue_dispatch",
+			"video_processing_service.py": "enqueue_video_processing_dispatch",
 			"moderation_service.py": "enqueue_moderation_dispatch",
 			"search_ranking_service.py": "enqueue_search_index_dispatch",
 			"notifications/delivery.py": "enqueue_notification_delivery_dispatch",
