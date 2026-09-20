@@ -72,7 +72,19 @@ for field in ("operation", "status", "generation", "idempotency_key", "active_ke
     require(field in job_fields, f"Video Processing job missing field: {field}")
 
 for doctype in ("aos_short_photo", "aos_short_mode", "aos_short_hashtag", "aos_short_ad", "aos_short_mention", "aos_short_feedback", "aos_short_moderation_decision"):
-    require((ROOT / f"aos/aos/doctype/{doctype}/{doctype}.json").exists(), f"missing Shorts relation DocType: {doctype}")
+    json_path = ROOT / f"aos/aos/doctype/{doctype}/{doctype}.json"
+    controller_path = ROOT / f"aos/aos/doctype/{doctype}/{doctype}.py"
+    require(json_path.exists(), f"missing Shorts relation DocType: {doctype}")
+    require(controller_path.exists(), f"missing Shorts relation controller: {doctype}")
+    if json_path.exists() and controller_path.exists():
+        doctype_name = json.loads(json_path.read_text(encoding="utf-8")).get("name", "")
+        expected_class = doctype_name.replace(" ", "").replace("-", "")
+        try:
+            controller_tree = ast.parse(controller_path.read_text(encoding="utf-8"), filename=str(controller_path))
+            controller_classes = {node.name for node in controller_tree.body if isinstance(node, ast.ClassDef)}
+            require(expected_class in controller_classes, f"controller class mismatch for {doctype}: expected {expected_class}")
+        except SyntaxError as exc:
+            ERRORS.append(f"invalid controller Python {controller_path.relative_to(ROOT)}: {exc}")
 
 media_purposes = text("aos/services/media/media_purposes.py")
 for purpose in ("short_video_raw", "short_photo", "short_video_playback", "short_video_manifest", "short_poster", "short_storyboard", "short_storyboard_manifest", "short_download", "short_original_audio"):
