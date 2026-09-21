@@ -565,14 +565,13 @@ def build_short_index_document(short_id: str) -> dict[str, Any]:
 	for row in frappe.db.sql("""SELECT a.public_id FROM `tabAOS Short Ad` sa INNER JOIN `tabAOS Ad` a ON a.name=sa.ad WHERE sa.short=%s AND a.status='Active' ORDER BY sa.position,sa.name""", (short.name,), as_dict=True):
 		if row.public_id:
 			ad_ids.append(str(row.public_id))
-	country = frappe.db.get_value("AOS Location", short.place, "country") if short.place else ""
 	eligible = distribution_eligible(short) and creator_is_available(str(short.owner or ""))
 	return {
 		"id": short.name, "name": short.name, "owner": str(short.owner or ""),
 		"eligible": bool(eligible), "lifecycle_status": str(short.lifecycle_status or ""),
 		"processing_status": str(short.processing_status or ""), "moderation_status": str(short.moderation_status or ""),
-		"audience": str(short.audience or ""), "modes": modes, "place": str(short.place or ""),
-		"country": str(country or ""), "ad_ids": ad_ids, "caption": str(short.caption or ""),
+		"audience": str(short.audience or ""), "modes": modes,
+		"ad_ids": ad_ids, "caption": str(short.caption or ""),
 		"hashtags": hashtags, "ranking_score": float(short.ranking_score or 0),
 		"view_count": int(short.view_count or 0), "like_count": int(short.like_count or 0),
 		"comment_count": int(short.comment_count or 0), "share_count": int(short.share_count or 0),

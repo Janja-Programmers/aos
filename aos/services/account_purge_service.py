@@ -346,20 +346,13 @@ def _activity_snapshot_conditions(user: str) -> tuple[str, tuple[Any, ...]]:
         )
         params.extend(sellers)
     if _doctype_exists("AOS Short"):
-        if sellers:
-            placeholders = ",".join(["%s"] * len(sellers))
-            clauses.append(
-                "(route_type = 'short' AND route_id IN "
-                f"(SELECT name FROM `tabAOS Short` WHERE owner = %s OR seller IN ({placeholders})))"
-            )
-            params.append(user)
-            params.extend(sellers)
-        else:
-            clauses.append(
-                "(route_type = 'short' AND route_id IN "
-                "(SELECT name FROM `tabAOS Short` WHERE owner = %s))"
-            )
-            params.append(user)
+        # Shorts are creator-owned. Shop relationships are normalized through
+        # AOS Short Ad and must never reintroduce a denormalized seller field.
+        clauses.append(
+            "(route_type = 'short' AND route_id IN "
+            "(SELECT name FROM `tabAOS Short` WHERE owner = %s))"
+        )
+        params.append(user)
     if _doctype_exists("AOS Live Stream"):
         clauses.append(
             "(route_type = 'live' AND route_id IN "

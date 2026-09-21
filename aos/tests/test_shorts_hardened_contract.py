@@ -44,6 +44,8 @@ class TestShortsHardenedContract(TestCase):
             self.assertIn(purpose, MEDIA_PURPOSES)
         self.assertTrue(MEDIA_PURPOSES["short_download"].is_private)
         self.assertFalse(MEDIA_PURPOSES["short_video_playback"].client_upload_allowed)
+        self.assertIn("video/webm", MEDIA_PURPOSES["short_video_raw"].allowed_content_types)
+        self.assertIn(".webm", MEDIA_PURPOSES["short_video_raw"].allowed_extensions)
 
     def test_short_schema_has_independent_state_machines(self):
         schema = json.loads((ROOT / "aos/aos/doctype/aos_short/aos_short.json").read_text())
@@ -125,6 +127,52 @@ class TestShortsHardenedContract(TestCase):
         source = (ROOT / "aos/patches/v1_0/install_shorts_indexes.py").read_text()
         self.assertIn("idx_short_comment_replies", source)
         self.assertIn('("root_comment", "status", "creation", "name")', source)
+
+
+    def test_content_modes_are_content_derived_not_location_or_ad_gates(self):
+        create = ENDPOINT_SPECS["create_short"].fields
+        update = ENDPOINT_SPECS["update_short"].fields
+        self.assertNotIn("place_id", create)
+        self.assertNotIn("place_id", update)
+        schema = json.loads((ROOT / "aos/aos/doctype/aos_short/aos_short.json").read_text())
+        fields = {f["fieldname"] for f in schema["fields"]}
+        self.assertNotIn("place", fields)
+        classifier = (ROOT / "aos/services/shorts/classification.py").read_text()
+        self.assertIn("scores.get('geo',0)>=0.50", classifier)
+        self.assertIn("scores.get('shop',0)>=0.50", classifier)
+        self.assertNotIn("AOS Location", classifier)
+        serializer = (ROOT / "aos/services/shorts/serializers.py").read_text()
+        self.assertNotIn("location_id", serializer)
+        service = (ROOT / "aos/services/shorts/service.py").read_text()
+        self.assertNotIn("s.place", service)
+        self.assertNotIn("AOS Location", service)
+
+    def test_retry_recovery_handles_orphaned_links_without_document_save(self):
+        source = (ROOT / "aos/services/video_processing_service.py").read_text()
+        body = source.split("def recover_video_processing_jobs", 1)[1]
+        self.assertIn("SOURCE_DELETED", body)
+        self.assertIn("SOURCE_UNAVAILABLE", body)
+        self.assertIn("UPDATE `tabAOS Video Processing Job`", body)
+        self.assertIn("raw_exists", body)
+        self.assertIn("source_exists", body)
+
+    def test_video_companion_callback_allowlist_always_includes_site_host(self):
+        config = (ROOT / "infra/video-processing/app/config.py").read_text()
+        compose = (ROOT / "docker-compose.yml").read_text()
+        self.assertIn('urlparse(_clean(os.getenv("VIDEO_CALLBACK_URL"))).hostname', config)
+        self.assertIn('(*configured, *_csv("FRAPPE_SITE_NAME"), *_csv("VIDEO_CALLBACK_ALLOWED_HOSTS"))', config)
+        self.assertIn('field(default_factory=_callback_allowed_hosts)', config)
+        self.assertGreaterEqual(compose.count("VIDEO_CALLBACK_URL: ${VIDEO_CALLBACK_URL:?VIDEO_CALLBACK_URL is required}"), 3)
+
+    def test_cross_feature_consumers_do_not_reintroduce_short_location_or_seller_fields(self):
+        ranking = (ROOT / "aos/services/search_ranking_service.py").read_text()
+        purge = (ROOT / "aos/services/account_purge_service.py").read_text()
+        self.assertNotIn("short.place", ranking)
+        self.assertNotIn('"place": str(short.place', ranking)
+        self.assertNotIn("AOS Location", ranking.split("def build_short_index_document", 1)[1].split("def enqueue_ad_search_delete", 1)[0])
+        short_purge = purge.split('if _doctype_exists("AOS Short"):', 1)[1].split('if _doctype_exists("AOS Live Stream"):', 1)[0]
+        self.assertNotIn("seller IN", short_purge)
+        self.assertIn("WHERE owner = %s", short_purge)
 
     def test_only_four_content_modes_exist(self):
         source = (ROOT / "aos/services/shorts/constants.py").read_text()

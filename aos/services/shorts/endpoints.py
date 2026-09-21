@@ -4,8 +4,8 @@ from .identity import SHORT_ID_RE,SOUND_ID_RE,COMMENT_ID_RE
 
 def S(fields,*ids): return EndpointSpec(frozenset(fields),tuple(ids))
 ENDPOINT_SPECS={
-"create_short":S({"content_type","raw_video_media","photo_media_ids","caption","hashtags","mention_account_ids","ad_ids","place_id","sound_id","audience","allow_comments","allow_downloads","allow_reuse","allow_side_by_side","allow_segment_reuse"}),
-"update_short":S({"short_id","version","caption","hashtags","mention_account_ids","ad_ids","place_id","sound_id","audience","allow_comments","allow_downloads","allow_reuse","allow_side_by_side","allow_segment_reuse","photo_media_ids","cover_media_id"},("short_id",SHORT_ID_RE)),
+"create_short":S({"content_type","raw_video_media","photo_media_ids","caption","hashtags","mention_account_ids","ad_ids","sound_id","audience","allow_comments","allow_downloads","allow_reuse","allow_side_by_side","allow_segment_reuse"}),
+"update_short":S({"short_id","version","caption","hashtags","mention_account_ids","ad_ids","sound_id","audience","allow_comments","allow_downloads","allow_reuse","allow_side_by_side","allow_segment_reuse","photo_media_ids","cover_media_id"},("short_id",SHORT_ID_RE)),
 "submit_short":S({"short_id","version","idempotency_key"},("short_id",SHORT_ID_RE)),
 "get_short":S({"short_id"},("short_id",SHORT_ID_RE)),
 "my_shorts":S({"status","limit","cursor"}),

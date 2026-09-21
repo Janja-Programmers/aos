@@ -408,6 +408,18 @@ def dispatch_video_processing_job(job_id: str):
             },
             timeout=config.request_timeout_seconds,
         )
+        if response.status_code == 422:
+            fields: list[str] = []
+            try:
+                rejected = response.json()
+                rows = ((rejected.get("data") or {}).get("fields") or []) if isinstance(rejected, dict) else []
+                fields = [str(row.get("field") or "")[:80] for row in rows if isinstance(row, dict) and row.get("field")][:20]
+            except Exception:
+                fields = []
+            frappe.log_error(
+                "Video processing companion rejected request validation fields: " + (", ".join(fields) if fields else "unknown"),
+                "Video processing request validation rejected",
+            )
         response.raise_for_status()
         data = response.json() if response.content else {}
         action = record_companion_dispatch_outcome(str(data.get("dispatch_action") or ""), data)
@@ -774,11 +786,42 @@ def recover_video_processing_jobs(*, limit: int = 100) -> int:
             if str(job.status) != "Retry Waiting" or not job.next_retry_at or job.next_retry_at > now:
                 continue
             lifecycle = frappe.db.get_value("AOS Short", job.short, "lifecycle_status")
+            raw_exists = bool(job.raw_video_media and frappe.db.exists("AOS Media Object", job.raw_video_media))
+            source_exists = not job.source_short or bool(frappe.db.exists("AOS Short", job.source_short))
             if not lifecycle or lifecycle == "Deleted":
-                job.status = "Cancelled"
-                job.active_key = None
-                job.completed_at = now_datetime()
-                job.save(ignore_permissions=True)
+                # Retry rows can legitimately outlive a deleted Short/Media during
+                # cleanup. Do not call Document.save() here because Frappe would
+                # revalidate already-orphaned Link fields and turn cleanup into a
+                # recurring scheduler error. This is an operational terminal-state
+                # update, not a new domain mutation.
+                frappe.db.sql(
+                    """UPDATE `tabAOS Video Processing Job`
+                          SET status='Cancelled', active_key=NULL, next_retry_at=NULL,
+                              lease_owner=NULL, lease_expires_at=NULL, completed_at=%s,
+                              last_error_code='SOURCE_DELETED', last_error='SOURCE_DELETED'
+                        WHERE name=%s AND status='Retry Waiting'""",
+                    (now_datetime(), job.name),
+                )
+                continue
+            if not raw_exists or not source_exists:
+                frappe.db.sql(
+                    """UPDATE `tabAOS Video Processing Job`
+                          SET status='Failed', active_key=NULL, next_retry_at=NULL,
+                              lease_owner=NULL, lease_expires_at=NULL, completed_at=%s,
+                              last_error_code='SOURCE_UNAVAILABLE', last_error='SOURCE_UNAVAILABLE'
+                        WHERE name=%s AND status='Retry Waiting'""",
+                    (now_datetime(), job.name),
+                )
+                if str(job.operation) != "Download":
+                    frappe.db.set_value(
+                        "AOS Short", job.short,
+                        {
+                            "processing_status": PROCESSING_FAILED,
+                            "lifecycle_status": LIFECYCLE_FAILED,
+                            "processing_error": "Source media is no longer available.",
+                        },
+                        update_modified=True,
+                    )
                 continue
             job.status = "Queued"
             job.next_retry_at = None

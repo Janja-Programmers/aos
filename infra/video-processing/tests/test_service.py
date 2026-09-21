@@ -61,6 +61,14 @@ def test_configuration_bounds(monkeypatch):
 	assert config._int("VIDEO_MAX_DURATION_SECONDS", 180, min_value=1) == 1
 
 
+def test_callback_allowlist_always_includes_deployed_frappe_site(monkeypatch):
+	monkeypatch.setenv("VIDEO_CALLBACK_URL", "https://aos-staging.duckdns.org/api/method/aos.api.internal.video_processing.handle_callback")
+	monkeypatch.setenv("FRAPPE_SITE_NAME", "aos-staging.duckdns.org")
+	monkeypatch.setenv("VIDEO_CALLBACK_ALLOWED_HOSTS", "legacy.example.com,aos-extra.example.com")
+	hosts = config.Settings().callback_allowed_hosts
+	assert hosts == ("aos-staging.duckdns.org", "legacy.example.com", "aos-extra.example.com")
+
+
 def test_signature_checks():
 	body = b"payload"
 	signature = build_signature(SECRET, body)

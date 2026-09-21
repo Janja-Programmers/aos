@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
+from urllib.parse import urlparse
 
 
 def _clean(value: object | None, default: str = "") -> str:
@@ -18,6 +20,38 @@ def _bool(name: str, default: bool = False) -> bool:
 
 def _csv(name: str, default: str = "") -> tuple[str, ...]:
     return tuple(part.strip().lower() for part in os.getenv(name, default).split(",") if part.strip())
+
+
+def _callback_allowed_hosts() -> tuple[str, ...]:
+    """Resolve the trusted callback host from explicit or canonical service config.
+
+    An explicit allowlist wins. Otherwise the companion derives the single host
+    from the same VIDEO_CALLBACK_URL used by the Frappe dispatcher, which avoids
+    staging/production rejecting its own canonical HTTPS callback. FRAPPE_SITE_NAME
+    remains a final compatibility-free deployment hint, not a client-controlled
+    value.
+    """
+    explicit = _csv("VIDEO_CALLBACK_ALLOWED_HOSTS")
+    if explicit:
+        return explicit
+    callback_url = _clean(os.getenv("VIDEO_CALLBACK_URL"))
+    if callback_url:
+        parsed = urlparse(callback_url)
+        if parsed.hostname:
+            return (parsed.hostname.lower(),)
+    return _csv("FRAPPE_SITE_NAME")
+
+
+def _callback_allowed_hosts() -> tuple[str, ...]:
+    """Return additive callback hosts anchored to the configured AOS callback URL.
+
+    VIDEO_CALLBACK_ALLOWED_HOSTS is an operator extension, never a replacement for
+    the callback host AOS itself is configured to use. This prevents a stale sample
+    value from making otherwise valid signed jobs fail FastAPI validation with 422.
+    """
+    callback_host = (urlparse(_clean(os.getenv("VIDEO_CALLBACK_URL"))).hostname or "").lower()
+    configured = (callback_host,) if callback_host else ()
+    return tuple(dict.fromkeys((*configured, *_csv("FRAPPE_SITE_NAME"), *_csv("VIDEO_CALLBACK_ALLOWED_HOSTS"))))
 
 
 def _float(name: str, default: float, *, min_value: float | None = None, max_value: float | None = None) -> float:
@@ -82,7 +116,7 @@ class Settings:
     ffmpeg_threads: int = _int("VIDEO_FFMPEG_THREADS", 2, min_value=1, max_value=16)
     callback_timeout_seconds: int = _int("VIDEO_CALLBACK_TIMEOUT_SECONDS", 60, min_value=5, max_value=300)
     allowed_video_codecs: tuple[str, ...] = _csv("VIDEO_ALLOWED_CODECS", "h264,hevc,vp8,vp9,av1,mpeg4")
-    callback_allowed_hosts: tuple[str, ...] = _csv("VIDEO_CALLBACK_ALLOWED_HOSTS", "")
+    callback_allowed_hosts: tuple[str, ...] = field(default_factory=_callback_allowed_hosts)
 
     classification_enabled: bool = _bool("VIDEO_CLASSIFICATION_ENABLED", True)
     classification_url: str = _clean(

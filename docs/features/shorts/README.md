@@ -10,7 +10,7 @@ Shorts owns drafts, publication lifecycle, post permissions, captions, ordered P
 
 ## Boundaries
 
-Raw and derived objects are owned by hardened Media. Creator identity comes from Accounts and Verification. Follow/block/relationship policy comes from Social. Shop links point to canonical Ads. Geo context points to hardened Locations/Maps and Localization. Notifications use the Notifications service. Search Ranking receives projection events but does not own Shorts lifecycle. Reports and Moderation are consumed through their existing integration boundaries; their domains are not redesigned here. Live, Calls, Chat, and Activity remain separate domains. Video Processing callbacks and Desk review actions are internal and are not client APIs.
+Raw and derived objects are owned by hardened Media. Creator identity comes from Accounts and Verification. Follow/block/relationship policy comes from Social. Linked Shop Ads point to canonical Ads, but Content Modes themselves are semantic classifier output. Geo means geography-related content such as mountains, travel, landmarks, streets, maps, scenery, and places; it has no Localization/Maps/location relationship. Notifications use the Notifications service. Search Ranking receives projection events but does not own Shorts lifecycle. Reports and Moderation are consumed through their existing integration boundaries; their domains are not redesigned here. Live, Calls, Chat, and Activity remain separate domains. Video Processing callbacks and Desk review actions are internal and are not client APIs.
 
 ## Architecture
 
@@ -30,7 +30,7 @@ Sounds use opaque `SND-*` IDs. `AOS Short Sound` links a post to one canonical S
 
 ## Fields
 
-Client-owned mutable Short fields are limited to caption, canonical hashtag/mention/Ad/place/Sound relationships, audience, Photo ordering/cover, and post permissions. Server-owned fields include owner, IDs, lifecycle, processing/moderation state and generations, classification, counters, processing errors, moderation decisions, derived Media, timestamps, and ranking metadata. `content_type` is `Video` or `Photo`; Content Modes are relation rows and are never trusted from client input.
+Client-owned mutable Short fields are limited to caption, canonical hashtag/mention/Ad/Sound relationships, audience, Photo ordering/cover, and post permissions. Server-owned fields include owner, IDs, lifecycle, processing/moderation state and generations, classification, counters, processing errors, moderation decisions, derived Media, timestamps, and ranking metadata. `content_type` is `Video` or `Photo`; Content Modes are relation rows and are never trusted from client input.
 
 ## API
 
@@ -88,7 +88,7 @@ Video Processing has no client API. The signed processing callback is `/api/meth
 
 ### Feeds and Content Modes
 
-`feed_for_you` uses an internal recommendation candidate/session pipeline with stable cursor order, creator diversity, block/visibility/moderation/readiness filtering, Not Interested suppression, cold-start quality/freshness ranking, and bounded hydration. `feed_following` is recency ordered and derives membership only from hardened Social. Mode filters use the same feed infrastructure. Shop eligibility additionally requires a currently active canonical Ad; Geo requires a currently active canonical Location.
+`feed_for_you` uses an internal recommendation candidate/session pipeline with stable cursor order, creator diversity, block/visibility/moderation/readiness filtering, Not Interested suppression, cold-start quality/freshness ranking, and bounded hydration. `feed_following` is recency ordered and derives membership only from hardened Social. Mode filters use the same feed infrastructure. Shop/Geo/Vibes/Learn membership is classifier-owned and derived from the Short content; linked Ads do not force Shop and no location record forces Geo.
 
 ### Video and Photo media
 

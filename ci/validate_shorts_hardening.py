@@ -53,6 +53,7 @@ for obsolete in ("toggle_like", "toggle_save_short", "toggle_repost", "feed_by_a
 specs = text("aos/services/shorts/endpoints.py")
 require("content_mode" not in specs, "client can still author content_mode")
 require("owner" not in specs, "client can mass-assign Short owner")
+require("place_id" not in specs, "Shorts client contract still exposes location/place metadata")
 
 short_schema = json_doc("aos/aos/doctype/aos_short/aos_short.json")
 fields = {f.get("fieldname"): f for f in short_schema.get("fields", [])}
@@ -65,6 +66,23 @@ for field in (
 for obsolete in ("visibility_status", "approval_status", "content_mode", "audio_mix_status", "file_key", "playback_url", "thumbnail_url"):
     require(obsolete not in fields, f"AOS Short still contains obsolete field: {obsolete}")
 require("naming_series" not in fields, "AOS Short exposes naming series")
+require("place" not in fields, "AOS Short must not link Geo mode to Localization/Location")
+classifier = text("aos/services/shorts/classification.py")
+require("AOS Location" not in classifier, "Short classifier still depends on Location")
+require("scores.get('geo',0)>=0.50" in classifier, "Geo mode is not content-score driven")
+require("scores.get('shop',0)>=0.50" in classifier, "Shop mode is not content-score driven")
+serializer = text("aos/services/shorts/serializers.py")
+require("location_id" not in serializer, "Short projection still exposes location_id")
+
+ranking = text("aos/services/search_ranking_service.py")
+short_ranker = ranking.split("def build_short_index_document", 1)[1].split("def enqueue_ad_search_delete", 1)[0]
+require("short.place" not in short_ranker and "AOS Location" not in short_ranker, "Search Ranking still derives Shorts geography from Localization/location")
+purge = text("aos/services/account_purge_service.py")
+short_purge = purge.split('if _doctype_exists("AOS Short"):', 1)[1].split('if _doctype_exists("AOS Live Stream"):', 1)[0]
+require("seller IN" not in short_purge, "Account purge still assumes AOS Short has a seller field")
+video_config = text("infra/video-processing/app/config.py")
+require('urlparse(_clean(os.getenv("VIDEO_CALLBACK_URL"))).hostname' in video_config, "Video callback allowlist is not anchored to VIDEO_CALLBACK_URL")
+require('(*configured, *_csv("FRAPPE_SITE_NAME"), *_csv("VIDEO_CALLBACK_ALLOWED_HOSTS"))' in video_config, "Video callback allowlist can exclude the configured callback host")
 
 sound_schema = json_doc("aos/aos/doctype/aos_sound/aos_sound.json")
 sound_fields = {f.get("fieldname") for f in sound_schema.get("fields", [])}

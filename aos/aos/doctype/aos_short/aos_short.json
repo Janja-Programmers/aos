@@ -28,7 +28,6 @@
   "allow_reuse",
   "allow_side_by_side",
   "allow_segment_reuse",
-  "place",
   "source_short",
   "reuse_type",
   "source_start_ms",
@@ -228,13 +227,6 @@
    "fieldtype": "Check",
    "label": "Allow Segment Reuse",
    "default": "1"
-  },
-  {
-   "fieldname": "place",
-   "fieldtype": "Link",
-   "label": "Place",
-   "options": "AOS Location",
-   "search_index": 1
   },
   {
    "fieldname": "source_short",

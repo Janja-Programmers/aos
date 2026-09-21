@@ -23,7 +23,6 @@ from aos.services.media.media_service import MediaService
 from aos.services.notifications.service import NotificationService
 from aos.services.marketplace_discovery.ids import resolve_ad_name
 from aos.services.social.repository import SocialRepository
-from aos.services.localization import validate_location
 
 from .classification import classify_short
 from .constants import CAPTION_MAX_LENGTH, CONTENT_MODES, MAX_EVENT_BATCH, MAX_HASHTAGS, MAX_PHOTOS
@@ -143,12 +142,6 @@ def _public_ad_names(value,user:str)->list[tuple[str,str]]:
     return out
 
 
-def _validate_place(value)->str|None:
-    place,error=validate_location(value,required=False)
-    if error: raise ShortsError('Invalid location.',code='SHORTS_INVALID_REQUEST')
-    return place
-
-
 def _validate_sound(sound_id)->str|None:
     sid=str(sound_id or '').strip().upper()
     if not sid: return None
@@ -240,8 +233,8 @@ def create_short(**kwargs):
     user=_user(); _rate('create',user=user,limit=20)
     content_type=str(kwargs.get('content_type') or 'Video').strip().title()
     if content_type not in {'Video','Photo'}: raise ShortsError('Invalid content type.')
-    caption=_normalize_caption(kwargs.get('caption')); tags=_normalize_hashtags(kwargs.get('hashtags')); mentions=_account_ids(kwargs.get('mention_account_ids')); ads=_public_ad_names(kwargs.get('ad_ids'),user); place=_validate_place(kwargs.get('place_id')); sound=_validate_sound(kwargs.get('sound_id'))
-    doc=frappe.get_doc({'doctype':'AOS Short','content_type':content_type,'lifecycle_status':'Draft','processing_status':'Queued' if content_type=='Video' else 'Not Required','moderation_status':'Draft','caption':caption,'audience':str(kwargs.get('audience') or 'everyone').strip().lower(),'allow_comments':1 if parse_bool(kwargs.get('allow_comments'),True) else 0,'allow_downloads':1 if parse_bool(kwargs.get('allow_downloads'),False) else 0,'allow_reuse':1 if parse_bool(kwargs.get('allow_reuse'),True) else 0,'allow_side_by_side':1 if parse_bool(kwargs.get('allow_side_by_side'),True) else 0,'allow_segment_reuse':1 if parse_bool(kwargs.get('allow_segment_reuse'),True) else 0,'place':place})
+    caption=_normalize_caption(kwargs.get('caption')); tags=_normalize_hashtags(kwargs.get('hashtags')); mentions=_account_ids(kwargs.get('mention_account_ids')); ads=_public_ad_names(kwargs.get('ad_ids'),user); sound=_validate_sound(kwargs.get('sound_id'))
+    doc=frappe.get_doc({'doctype':'AOS Short','content_type':content_type,'lifecycle_status':'Draft','processing_status':'Queued' if content_type=='Video' else 'Not Required','moderation_status':'Draft','caption':caption,'audience':str(kwargs.get('audience') or 'everyone').strip().lower(),'allow_comments':1 if parse_bool(kwargs.get('allow_comments'),True) else 0,'allow_downloads':1 if parse_bool(kwargs.get('allow_downloads'),False) else 0,'allow_reuse':1 if parse_bool(kwargs.get('allow_reuse'),True) else 0,'allow_side_by_side':1 if parse_bool(kwargs.get('allow_side_by_side'),True) else 0,'allow_segment_reuse':1 if parse_bool(kwargs.get('allow_segment_reuse'),True) else 0})
     doc.insert(ignore_permissions=True)
     if content_type=='Video':
         raw=str(kwargs.get('raw_video_media') or '').strip()
@@ -257,12 +250,10 @@ def update_short(**kwargs):
     user=_user(); _rate('update',user=user,limit=40); doc=_owned_short(kwargs.get('short_id'),user,lock=True); _check_version(doc,kwargs.get('version'))
     if doc.lifecycle_status in {'Deleted','Rejected'}: raise ShortsConflictError('Short cannot be edited in its current state.',code='SHORTS_INVALID_STATE')
     changed=False; moderation_sensitive=False
-    for field,normalizer in [('caption',_normalize_caption),('place_id',_validate_place)]:
-        if field in kwargs:
-            attr='place' if field=='place_id' else field
-            value=normalizer(kwargs.get(field))
-            if getattr(doc,attr,None)!=value:
-                setattr(doc,attr,value); changed=True; moderation_sensitive=True
+    if 'caption' in kwargs:
+        value=_normalize_caption(kwargs.get('caption'))
+        if str(doc.caption or '')!=value:
+            doc.caption=value; changed=True; moderation_sensitive=True
     if 'audience' in kwargs:
         value=str(kwargs.get('audience') or '').strip().lower()
         if doc.audience!=value: doc.audience=value; changed=True
@@ -371,10 +362,6 @@ def _candidate_rows(*,mode:str|None,viewer:str|None,pool=360):
     params={'limit':pool}; mode_clause=''
     if mode:
         mode_clause='AND EXISTS (SELECT 1 FROM `tabAOS Short Mode` sm WHERE sm.short=s.name AND sm.mode=%(mode)s)'
-        if mode=='shop':
-            mode_clause += " AND EXISTS (SELECT 1 FROM `tabAOS Short Ad` sa INNER JOIN `tabAOS Ad` a ON a.name=sa.ad WHERE sa.short=s.name AND a.status='Active')"
-        elif mode=='geo':
-            mode_clause += " AND s.place IS NOT NULL AND EXISTS (SELECT 1 FROM `tabAOS Location` loc WHERE loc.name=s.place AND loc.is_active=1)"
         params['mode']=mode
     feedback=''
     if viewer:
@@ -426,10 +413,6 @@ def feed_following(**kwargs):
     cur=decode_cursor(kwargs.get('cursor')); params={'user':user,'limit':limit*4+1}; clauses=[]
     if mode:
         mode_clause='EXISTS (SELECT 1 FROM `tabAOS Short Mode` sm WHERE sm.short=s.name AND sm.mode=%(mode)s)'
-        if mode=='shop':
-            mode_clause += " AND EXISTS (SELECT 1 FROM `tabAOS Short Ad` sa INNER JOIN `tabAOS Ad` a ON a.name=sa.ad WHERE sa.short=s.name AND a.status='Active')"
-        elif mode=='geo':
-            mode_clause += " AND s.place IS NOT NULL AND EXISTS (SELECT 1 FROM `tabAOS Location` loc WHERE loc.name=s.place AND loc.is_active=1)"
         clauses.append(mode_clause); params['mode']=mode
     if cur.get('posted') and cur.get('id'): clauses.append('(s.posted_on < %(posted)s OR (s.posted_on=%(posted)s AND s.name < %(id)s))'); params.update({'posted':cur['posted'],'id':cur['id']})
     extra=' AND '.join(clauses); extra=(' AND '+extra) if extra else ''

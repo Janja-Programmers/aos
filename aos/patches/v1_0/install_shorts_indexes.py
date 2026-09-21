@@ -16,7 +16,6 @@ INDEXES: tuple[tuple[str, str, tuple[str, ...], bool], ...] = (
     ("AOS Short", "idx_short_feed", ("lifecycle_status", "moderation_status", "processing_status", "ranking_score", "posted_on", "name"), False),
     ("AOS Short", "idx_short_following", ("owner", "lifecycle_status", "moderation_status", "processing_status", "posted_on", "name"), False),
     ("AOS Short", "idx_short_creator", ("owner", "lifecycle_status", "creation", "name"), False),
-    ("AOS Short", "idx_short_place", ("place", "lifecycle_status", "moderation_status", "posted_on", "name"), False),
     ("AOS Short", "idx_short_moderation_queue", ("moderation_status", "lifecycle_status", "modified", "name"), False),
     ("AOS Short", "idx_short_reuse_source", ("source_short", "reuse_type", "creation", "name"), False),
     ("AOS Short Photo", "uq_short_photo_position", ("short", "position"), True),
