@@ -82,8 +82,22 @@ def _increment_counter(outbox_name: str | None, fieldname: str) -> None:
 	)
 
 
+def _is_mutable_callback_collection(value: Any) -> bool:
+	"""Return whether a Frappe callback collection can be snapshotted/restored.
+
+	Frappe has used both ``list`` and ``collections.deque`` for callback-manager
+	storage across supported versions.  The transaction wrapper must not depend on
+	the concrete container type: both expose ``clear``/``extend`` and are safely
+	iterable in registration order.
+	"""
+
+	return value is not None and all(
+		callable(getattr(value, method, None)) for method in ("clear", "extend")
+	)
+
+
 def _snapshot_transaction_callbacks() -> dict[str, list[Any]]:
-	"""Capture Frappe callback-manager lists so savepoint rollback is complete.
+	"""Capture Frappe callback-manager collections so savepoint rollback is complete.
 
 	Frappe's SQL savepoint cannot remove an in-memory after-commit callback that
 	was registered by a domain helper. On callback failure we restore the callback
@@ -95,7 +109,7 @@ def _snapshot_transaction_callbacks() -> dict[str, list[Any]]:
 	for name in _CALLBACK_MANAGER_NAMES:
 		manager = getattr(frappe.db, name, None)
 		functions = getattr(manager, "_functions", None)
-		if isinstance(functions, list):
+		if _is_mutable_callback_collection(functions):
 			snapshot[name] = list(functions)
 	return snapshot
 
@@ -104,8 +118,9 @@ def _restore_transaction_callbacks(snapshot: dict[str, list[Any]]) -> None:
 	for name, functions in snapshot.items():
 		manager = getattr(frappe.db, name, None)
 		current = getattr(manager, "_functions", None)
-		if isinstance(current, list):
-			current[:] = functions
+		if _is_mutable_callback_collection(current):
+			current.clear()
+			current.extend(functions)
 
 
 def _outbox_registration_flag() -> bool | None:

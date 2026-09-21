@@ -160,11 +160,14 @@ class TestShortsServiceRuntime(AOSFeatureTestMixin, FrappeTestCase):
 
         manager = frappe.db.after_commit
         functions = getattr(manager, "_functions", None)
-        self.assertIsInstance(functions, list)
+        self.assertIsNotNone(functions)
+        self.assertTrue(callable(getattr(functions, "clear", None)))
+        self.assertTrue(callable(getattr(functions, "extend", None)))
         before = list(functions)
         flush_hot_metrics(limit=5000)
-        callbacks = list(functions[len(before):])
-        functions[:] = before
+        callbacks = list(functions)[len(before):]
+        functions.clear()
+        functions.extend(before)
 
         dirty_before_commit = {str(x.decode() if isinstance(x, bytes) else x) for x in (frappe.cache().smembers(_DIRTY_KEY) or set())}
         self.assertIn(short.name, dirty_before_commit)

@@ -231,17 +231,25 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 		)
 		domain = None
 		if fixture.domain_doctype and fixture.domain_doctype != "User":
-			fields = ["status"]
 			meta = frappe.get_meta(fixture.domain_doctype)
-			for field in ("lifecycle_status", "processing_status", "moderation_status", "processing_error", "moderation_reason"):
+			fields = []
+			for field in (
+				"status",
+				"lifecycle_status",
+				"processing_status",
+				"moderation_status",
+				"processing_error",
+				"moderation_reason",
+			):
 				if meta.has_field(field):
 					fields.append(field)
-			domain = frappe.db.get_value(
-				fixture.domain_doctype,
-				fixture.domain_name,
-				fields,
-				as_dict=True,
-			)
+			if fields:
+				domain = frappe.db.get_value(
+					fixture.domain_doctype,
+					fixture.domain_name,
+					fields,
+					as_dict=True,
+				)
 		return {"job": dict(job or {}), "outbox": dict(outbox_state or {}), "domain": dict(domain or {})}
 
 	def _run_isolated(self, operation: Callable[[], None]) -> None:
@@ -588,8 +596,10 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 	def test_failed_callback_restores_in_memory_after_commit_callbacks(self):
 		manager = getattr(frappe.db, "after_commit", None)
 		functions = getattr(manager, "_functions", None)
-		if not isinstance(functions, list):
-			self.skipTest("Frappe callback manager does not expose a restorable function list")
+		if functions is None or not all(
+			callable(getattr(functions, method, None)) for method in ("clear", "extend")
+		):
+			self.skipTest("Frappe callback manager does not expose a restorable callback collection")
 		before = list(functions)
 		flags = getattr(frappe.local, "flags", None)
 		flag_before = bool(getattr(flags, "aos_outbox_after_commit_registered", False)) if flags else False
