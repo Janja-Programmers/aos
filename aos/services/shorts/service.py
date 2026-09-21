@@ -16,6 +16,7 @@ import frappe
 from frappe.utils import now_datetime
 
 from aos.api.shared.responses import ok
+from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.rate_limit import rate_limit, rate_limit_key, request_ip
 from aos.services.accounts.identity import resolve_account_reference
 from aos.services.accounts.serializers import serialize_internal_identity_map
@@ -24,7 +25,7 @@ from aos.services.notifications.service import NotificationService
 from aos.services.marketplace_discovery.ids import resolve_ad_name
 from aos.services.social.repository import SocialRepository
 
-from .analytics import qualifies_view
+from .analytics import qualifies_view, short_view_identity_key
 from .classification import classify_short
 from .constants import CAPTION_MAX_LENGTH, CONTENT_MODES, MAX_EVENT_BATCH, MAX_HASHTAGS, MAX_PHOTOS
 from .cursor import decode_cursor, encode_cursor
@@ -78,7 +79,9 @@ def _insert_once(doctype:str,payload:dict[str,Any],unique_filters:dict[str,Any])
         row=frappe.get_doc({'doctype':doctype,**payload})
         row.insert(ignore_permissions=True)
         return row,True
-    except Exception:
+    except Exception as exc:
+        if not is_duplicate_entry_error(exc):
+            raise
         existing=frappe.db.get_value(doctype,unique_filters,'name')
         if not existing:
             raise
@@ -597,7 +600,7 @@ def record_events(**kwargs):
                 created=_insert_short_event_once({'short':sid,'user':user,'session_id':session,'event_type':typ,'watch_ms':watch,'progress_ms':progress,'source':str(event.get('source') or '')[:120],'metadata':event.get('metadata') if isinstance(event.get('metadata'),dict) else None},dedupe)
                 if not created: continue
             if typ=='qualified_view':
-                identity=hashlib.sha256(f'{sid}|{actor_key}'.encode()).hexdigest()
+                identity=short_view_identity_key(sid,user=user,session_id=session if not user else None)
                 existing=frappe.db.get_value('AOS Short View',{'short':sid,'identity_key':identity},'name')
                 if not existing:
                     _,unique_new=_insert_once('AOS Short View',{'short':sid,'user':user,'session_id':session if not user else None,'view_date':now_datetime().date(),'qualified':1,'watch_ms':watch,'last_seen_at':now_datetime(),'identity_key':identity},{'short':sid,'identity_key':identity})

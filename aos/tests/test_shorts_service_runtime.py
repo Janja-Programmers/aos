@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from aos.services.shorts import service
+from aos.services.shorts.analytics import short_view_identity_key
 from aos.services.shorts.hot_metrics import (
     _DIRTY_KEY,
     _dirty_members,
@@ -157,6 +158,37 @@ class TestShortsServiceRuntime(AOSFeatureTestMixin, FrappeTestCase):
             1,
         )
 
+
+    def test_short_view_identity_matches_doctype_validation(self):
+        user, short = self._published_short()
+        expected = short_view_identity_key(short.name, user=user)
+        row = frappe.get_doc({
+            "doctype": "AOS Short View",
+            "short": short.name,
+            "user": user,
+            "qualified": 1,
+            "watch_ms": 2500,
+        })
+
+        row.validate()
+
+        self.assertEqual(row.identity_key, expected)
+
+    def test_insert_once_recovers_unique_validation_race(self):
+        candidate = MagicMock()
+        candidate.insert.side_effect = frappe.UniqueValidationError("duplicate")
+        existing = MagicMock()
+        with patch.object(service.frappe, "get_doc", side_effect=[candidate, existing]), patch.object(
+            service.frappe.db, "get_value", return_value="existing-row"
+        ):
+            row, created = service._insert_once(
+                "AOS Short View",
+                {"short": "SHR-AAAAAAAAAAAAAAAAAAAA", "identity_key": "abc"},
+                {"short": "SHR-AAAAAAAAAAAAAAAAAAAA", "identity_key": "abc"},
+            )
+
+        self.assertIs(row, existing)
+        self.assertFalse(created)
 
     def test_under_threshold_qualified_view_is_not_promoted(self):
         user, short = self._published_short()
