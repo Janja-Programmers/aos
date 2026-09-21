@@ -408,7 +408,11 @@ def dispatch_video_processing_job(job_id: str):
             },
             timeout=config.request_timeout_seconds,
         )
-        if response.status_code == 422:
+        # HTTP status inspection is diagnostic only. Durable-outbox tests and
+        # alternative request adapters may provide the normal response contract
+        # (raise_for_status/json/content) without exposing ``status_code``.
+        # Never make a successful dispatch depend on this optional attribute.
+        if getattr(response, "status_code", None) == 422:
             fields: list[str] = []
             try:
                 rejected = response.json()
