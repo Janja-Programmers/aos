@@ -6,15 +6,16 @@ from frappe.model.document import Document
 
 
 class AOSShortMetricsDaily(Document):
+    """Durable per-Short daily counters.
+
+    This DocType deliberately contains metric dimensions only. Marketplace Ads,
+    Sellers, countries, locations, and Content Mode classification are separate
+    domains and must not be denormalized onto the analytics row.
+    """
+
     def validate(self):
         self._validate_required_fields()
         self._normalize_metric_fields()
-
-    def before_insert(self):
-        self._enrich_from_short()
-
-    def before_save(self):
-        self._enrich_from_short()
 
     def _validate_required_fields(self):
         if not self.short:
@@ -28,8 +29,11 @@ class AOSShortMetricsDaily(Document):
         int_fields = (
             "impressions",
             "views",
+            "unique_viewers",
             "watch_time_ms",
             "avg_watch_time_ms",
+            "rewatches",
+            "early_skips",
             "likes",
             "comments",
             "shares",
@@ -50,19 +54,3 @@ class AOSShortMetricsDaily(Document):
             self.completion_rate = max(float(self.completion_rate or 0), 0)
         except Exception:
             self.completion_rate = 0
-
-    def _enrich_from_short(self):
-        """Denormalize fields from Short."""
-        short = frappe.db.get_value(
-            "AOS Short",
-            self.short,
-            ["ad", "seller", "country"],
-            as_dict=True,
-        )
-
-        if not short:
-            frappe.throw("Short not found")
-
-        self.ad = short.ad
-        self.seller = short.seller
-        self.country = short.country

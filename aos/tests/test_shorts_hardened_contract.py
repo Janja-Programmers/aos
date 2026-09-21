@@ -147,6 +147,16 @@ class TestShortsHardenedContract(TestCase):
         self.assertNotIn("s.place", service)
         self.assertNotIn("AOS Location", service)
 
+    def test_short_daily_metrics_have_no_legacy_marketplace_enrichment(self):
+        source = (ROOT / "aos/aos/doctype/aos_short_metrics_daily/aos_short_metrics_daily.py").read_text()
+        schema = json.loads((ROOT / "aos/aos/doctype/aos_short_metrics_daily/aos_short_metrics_daily.json").read_text())
+        fields = {f["fieldname"] for f in schema["fields"]}
+        for legacy in ("ad", "seller", "country", "location", "place"):
+            self.assertNotIn(legacy, fields)
+        self.assertNotIn("_enrich_from_short", source)
+        self.assertNotIn('["ad", "seller", "country"]', source)
+        self.assertNotIn("AOS Location", source)
+
     def test_retry_recovery_handles_orphaned_links_without_document_save(self):
         source = (ROOT / "aos/services/video_processing_service.py").read_text()
         body = source.split("def recover_video_processing_jobs", 1)[1]
