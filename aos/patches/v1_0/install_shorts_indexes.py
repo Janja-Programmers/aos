@@ -38,6 +38,7 @@ INDEXES: tuple[tuple[str, str, tuple[str, ...], bool], ...] = (
     ("AOS Short Feedback", "uq_short_feedback", ("short", "user", "feedback_type"), True),
     ("AOS Short Feedback", "idx_short_feedback_user_recent", ("user", "creation", "short"), False),
     ("AOS Short Comment", "idx_short_comment_page", ("short", "status", "parent_comment", "creation", "name"), False),
+    ("AOS Short Comment", "idx_short_comment_replies", ("root_comment", "status", "creation", "name"), False),
     ("AOS Short Comment", "idx_short_comment_author", ("user", "status", "creation", "short"), False),
     ("AOS Short Comment Like", "uq_short_comment_like", ("comment", "user"), True),
     ("AOS Short Sound", "uq_short_sound", ("short",), True),

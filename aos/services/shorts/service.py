@@ -72,6 +72,38 @@ def _check_version(doc,version):
         raise ShortsConflictError('Short changed since it was loaded.',code='SHORTS_VERSION_CONFLICT',data={'version':str(doc.modified or '')})
 
 
+def _insert_once(doctype:str,payload:dict[str,Any],unique_filters:dict[str,Any]):
+    """Insert a unique relation/event and treat a concurrent winner as success."""
+    try:
+        row=frappe.get_doc({'doctype':doctype,**payload})
+        row.insert(ignore_permissions=True)
+        return row,True
+    except Exception:
+        existing=frappe.db.get_value(doctype,unique_filters,'name')
+        if not existing:
+            raise
+        return frappe.get_doc(doctype,existing),False
+
+
+def _delete_once(doctype:str,unique_filters:dict[str,Any])->bool:
+    """Delete an idempotent unique relation without failing on a concurrent delete."""
+    existing=frappe.db.get_value(doctype,unique_filters,'name')
+    if not existing:
+        return False
+    try:
+        frappe.delete_doc(doctype,existing,ignore_permissions=True)
+        return True
+    except Exception:
+        if frappe.db.exists(doctype,unique_filters):
+            raise
+        return False
+
+
+def _insert_short_event_once(payload:dict[str,Any],event_key:str)->bool:
+    _,created=_insert_once('AOS Short Event',{**payload,'event_key':event_key},{'event_key':event_key})
+    return created
+
+
 def _normalize_caption(value)->str:
     text=str(value or '').strip()
     if len(text)>CAPTION_MAX_LENGTH: raise ShortsError('Caption is too long.',code='SHORTS_INVALID_REQUEST')
@@ -224,37 +256,55 @@ def create_short(**kwargs):
 def update_short(**kwargs):
     user=_user(); _rate('update',user=user,limit=40); doc=_owned_short(kwargs.get('short_id'),user,lock=True); _check_version(doc,kwargs.get('version'))
     if doc.lifecycle_status in {'Deleted','Rejected'}: raise ShortsConflictError('Short cannot be edited in its current state.',code='SHORTS_INVALID_STATE')
-    changed=False
+    changed=False; moderation_sensitive=False
     for field,normalizer in [('caption',_normalize_caption),('place_id',_validate_place)]:
         if field in kwargs:
-            attr='place' if field=='place_id' else field; setattr(doc,attr,normalizer(kwargs.get(field))); changed=True
-    if 'audience' in kwargs: doc.audience=str(kwargs.get('audience') or '').strip().lower(); changed=True
+            attr='place' if field=='place_id' else field
+            value=normalizer(kwargs.get(field))
+            if getattr(doc,attr,None)!=value:
+                setattr(doc,attr,value); changed=True; moderation_sensitive=True
+    if 'audience' in kwargs:
+        value=str(kwargs.get('audience') or '').strip().lower()
+        if doc.audience!=value: doc.audience=value; changed=True
     for arg,attr,default in [('allow_comments','allow_comments',True),('allow_downloads','allow_downloads',False),('allow_reuse','allow_reuse',True),('allow_side_by_side','allow_side_by_side',True),('allow_segment_reuse','allow_segment_reuse',True)]:
-        if arg in kwargs: setattr(doc,attr,1 if parse_bool(kwargs.get(arg),default) else 0); changed=True
-    if 'hashtags' in kwargs: _replace_hashtags(doc.name,_normalize_hashtags(kwargs.get('hashtags'))); changed=True
-    if 'mention_account_ids' in kwargs: _replace_mentions(doc.name,_account_ids(kwargs.get('mention_account_ids')),user); changed=True
-    if 'ad_ids' in kwargs: _replace_ads(doc.name,_public_ad_names(kwargs.get('ad_ids'),user)); changed=True
+        if arg in kwargs:
+            value=1 if parse_bool(kwargs.get(arg),default) else 0
+            if int(getattr(doc,attr,0) or 0)!=value: setattr(doc,attr,value); changed=True
+    if 'hashtags' in kwargs:
+        new_tags=_normalize_hashtags(kwargs.get('hashtags'))
+        old_tags=[str(r.hashtag) for r in frappe.get_all('AOS Short Hashtag',filters={'short':doc.name},fields=['hashtag'],order_by='hashtag asc')]
+        if sorted(old_tags)!=sorted(new_tags): _replace_hashtags(doc.name,new_tags); changed=True; moderation_sensitive=True
+    if 'mention_account_ids' in kwargs:
+        new_mentions=_account_ids(kwargs.get('mention_account_ids'))
+        old_mentions=[str(r.mentioned_account) for r in frappe.get_all('AOS Short Mention',filters={'short':doc.name,'source_type':'caption'},fields=['mentioned_account'])]
+        if sorted(old_mentions)!=sorted(new_mentions): _replace_mentions(doc.name,new_mentions,user); changed=True; moderation_sensitive=True
+    if 'ad_ids' in kwargs:
+        new_ads=_public_ad_names(kwargs.get('ad_ids'),user); new_ad_names=[name for name,_ in new_ads]
+        old_ads=[str(r.ad) for r in frappe.get_all('AOS Short Ad',filters={'short':doc.name},fields=['ad'],order_by='position asc,name asc')]
+        if old_ads!=new_ad_names: _replace_ads(doc.name,new_ads); changed=True; moderation_sensitive=True
     if 'sound_id' in kwargs:
         if doc.content_type=='Video' and doc.lifecycle_status not in {'Draft','Failed'}: raise ShortsConflictError('Sound can only change before resubmission.',code='SHORTS_INVALID_STATE')
         before=frappe.db.get_value('AOS Short Sound',{'short':doc.name},'sound')
         after=_validate_sound(kwargs.get('sound_id'))
-        _replace_sound(doc.name,after)
-        if doc.content_type=='Video' and before!=after and doc.processing_status=='Ready':
-            doc.processing_generation=int(doc.processing_generation or 0)+1
-            doc.processing_status='Queued'; doc.playback_media=None; doc.playback_manifest_media=None; doc.download_media=None; doc.storyboard_media=None; doc.storyboard_manifest_media=None
-        changed=True
+        if str(before or '')!=str(after or ''):
+            _replace_sound(doc.name,after)
+            if doc.content_type=='Video' and doc.processing_status=='Ready':
+                doc.processing_generation=int(doc.processing_generation or 0)+1
+                doc.processing_status='Queued'; doc.playback_media=None; doc.playback_manifest_media=None; doc.download_media=None; doc.storyboard_media=None; doc.storyboard_manifest_media=None
+            changed=True; moderation_sensitive=True
     if 'photo_media_ids' in kwargs:
         if doc.content_type!='Photo' or doc.lifecycle_status not in {'Draft','Failed'}: raise ShortsConflictError('Photos cannot change now.',code='SHORTS_INVALID_STATE')
-        _replace_photos(doc,user,[str(x) for x in parse_json_list(kwargs.get('photo_media_ids'),field='photo_media_ids',max_items=MAX_PHOTOS)]); changed=True
+        _replace_photos(doc,user,[str(x) for x in parse_json_list(kwargs.get('photo_media_ids'),field='photo_media_ids',max_items=MAX_PHOTOS)]); changed=True; moderation_sensitive=True
     if 'cover_media_id' in kwargs:
         cover=str(kwargs.get('cover_media_id') or '').strip()
         allowed={str(r.media) for r in frappe.get_all('AOS Short Photo',filters={'short':doc.name},fields=['media'])} if doc.content_type=='Photo' else {str(doc.poster_media or '')}
         if cover not in allowed: raise ShortsError('Invalid Short cover.',code='SHORTS_INVALID_REQUEST')
-        doc.cover_media=cover; changed=True
+        if str(doc.cover_media or '')!=cover: doc.cover_media=cover; changed=True; moderation_sensitive=True
     if changed:
         doc.revision=int(doc.revision or 0)+1
-        if doc.lifecycle_status in {'Pending Review','Hidden','Failed'}:
+        if doc.lifecycle_status in {'Pending Review','Hidden','Failed'} or (doc.lifecycle_status=='Published' and moderation_sensitive):
             doc.lifecycle_status='Draft'; doc.moderation_status='Draft'; doc.moderation_reason=None; doc.moderation_generation=int(doc.moderation_generation or 0)+1
+            doc.moderation_decided_by=None; doc.moderation_decided_at=None
         doc.save(ignore_permissions=True); classify_short(doc.name,source='combined')
     return ok('Short updated.',serialize_owner_short(doc,viewer=user))
 
@@ -398,7 +448,7 @@ def _reaction(doctype,counter,short_id,*,add:bool):
         except Exception:
             existing=frappe.db.get_value(doctype,{'short':short_id,'user':user},'name')
             if not existing: raise
-    elif not add and existing: frappe.delete_doc(doctype,existing,ignore_permissions=True); changed=True
+    elif not add and existing: changed=_delete_once(doctype,{'short':short_id,'user':user})
     if doctype=='AOS Short Like' and add and changed and user!=short.owner:
         try: NotificationService.notify_short_like(user=short.owner,actor=user,short_id=short_id,event_identity=str(existing))
         except Exception: frappe.log_error(frappe.get_traceback(),'Short like notification failed')
@@ -427,8 +477,7 @@ def saved_shorts(**kwargs):
 def not_interested(**kwargs):
     user=_user(); _rate('not_interested',user=user,limit=120); sid=kwargs.get('short_id'); short=frappe.db.get_value('AOS Short',sid,['name','owner','lifecycle_status','processing_status','moderation_status','audience'],as_dict=True)
     if not short or not can_view(short,viewer=user): raise ShortsNotFoundError()
-    existing=frappe.db.get_value('AOS Short Feedback',{'short':sid,'user':user,'feedback_type':'not_interested'},'name')
-    if not existing: frappe.get_doc({'doctype':'AOS Short Feedback','short':sid,'user':user,'feedback_type':'not_interested'}).insert(ignore_permissions=True)
+    _insert_once('AOS Short Feedback',{'short':sid,'user':user,'feedback_type':'not_interested'},{'short':sid,'user':user,'feedback_type':'not_interested'})
     return ok('Feedback recorded.',{'short_id':sid,'feedback':'not_interested'})
 
 
@@ -460,12 +509,26 @@ def delete_comment(**kwargs):
 
 
 def list_comments(**kwargs):
-    viewer=_user(required=False); sid=kwargs.get('short_id'); short=frappe.db.get_value('AOS Short',sid,['name','owner','lifecycle_status','processing_status','moderation_status','audience'],as_dict=True)
-    if not short or not can_view(short,viewer=None if viewer=='Guest' else viewer): raise ShortsNotFoundError()
+    viewer=_user(required=False); user=None if viewer=='Guest' else viewer; _rate('comment_list',user=user,limit=180); sid=kwargs.get('short_id'); short=frappe.db.get_value('AOS Short',sid,['name','owner','lifecycle_status','processing_status','moderation_status','audience'],as_dict=True)
+    if not short or not can_view(short,viewer=user): raise ShortsNotFoundError()
     limit=_limit(kwargs.get('limit')); cur=decode_cursor(kwargs.get('cursor')); params={'short':sid,'limit':limit+1}; clause=''
     if cur.get('created') and cur.get('id'): clause='AND (creation < %(created)s OR (creation=%(created)s AND name < %(id)s))'; params.update({'created':cur['created'],'id':cur['id']})
     rows=frappe.db.sql(f'''SELECT * FROM `tabAOS Short Comment` WHERE short=%(short)s AND status='active' AND parent_comment IS NULL {clause} ORDER BY creation DESC,name DESC LIMIT %(limit)s''',params,as_dict=True); more=len(rows)>limit; page=rows[:limit]; nxt=encode_cursor({'created':str(page[-1].creation),'id':page[-1].name}) if more and page else None
-    return ok('Comments loaded.',{'items':_serialize_comments(page,None if viewer=='Guest' else viewer),'next_cursor':nxt})
+    return ok('Comments loaded.',{'items':_serialize_comments(page,user),'next_cursor':nxt})
+
+
+def list_comment_replies(**kwargs):
+    viewer=_user(required=False); user=None if viewer=='Guest' else viewer; _rate('comment_list',user=user,limit=180); cid=str(kwargs.get('comment_id') or '').strip(); root=frappe.db.get_value('AOS Short Comment',cid,['name','short','root_comment','status'],as_dict=True)
+    if not root or root.status!='active': raise ShortsNotFoundError('Comment unavailable.')
+    root_id=str(root.root_comment or root.name)
+    root_row=frappe.db.get_value('AOS Short Comment',root_id,['name','short','status'],as_dict=True)
+    if not root_row or root_row.status!='active': raise ShortsNotFoundError('Comment unavailable.')
+    short=frappe.db.get_value('AOS Short',root_row.short,['name','owner','lifecycle_status','processing_status','moderation_status','audience'],as_dict=True)
+    if not short or not can_view(short,viewer=user): raise ShortsNotFoundError()
+    limit=_limit(kwargs.get('limit')); cur=decode_cursor(kwargs.get('cursor')); params={'short':root_row.short,'root':root_id,'limit':limit+1}; clause=''
+    if cur.get('created') and cur.get('id'): clause='AND (creation > %(created)s OR (creation=%(created)s AND name > %(id)s))'; params.update({'created':cur['created'],'id':cur['id']})
+    rows=frappe.db.sql(f'''SELECT * FROM `tabAOS Short Comment` WHERE short=%(short)s AND root_comment=%(root)s AND name<>%(root)s AND status='active' {clause} ORDER BY creation ASC,name ASC LIMIT %(limit)s''',params,as_dict=True); more=len(rows)>limit; page=rows[:limit]; nxt=encode_cursor({'created':str(page[-1].creation),'id':page[-1].name}) if more and page else None
+    return ok('Comment replies loaded.',{'root_comment_id':root_id,'items':_serialize_comments(page,user),'next_cursor':nxt})
 
 
 def _comment_like(comment_id,add):
@@ -474,7 +537,7 @@ def _comment_like(comment_id,add):
         try: row=frappe.get_doc({'doctype':'AOS Short Comment Like','comment':comment_id,'user':user}); row.insert(ignore_permissions=True); changed=True
         except Exception:
             if not frappe.db.exists('AOS Short Comment Like',{'comment':comment_id,'user':user}): raise
-    elif not add and existing: frappe.delete_doc('AOS Short Comment Like',existing,ignore_permissions=True); changed=True
+    elif not add and existing: changed=_delete_once('AOS Short Comment Like',{'comment':comment_id,'user':user})
     count=int(frappe.db.get_value('AOS Short Comment',comment_id,'like_count') or 0)
     return ok('Comment reaction updated.',{'comment_id':comment_id,'liked':add,'changed':changed,'like_count':count})
 def like_comment(**kw): return _comment_like(str(kw.get('comment_id') or ''),True)
@@ -500,30 +563,24 @@ def record_events(**kwargs):
     durable={'qualified_view','complete','rewatch','early_skip','follow_from_content'}
     for sid,typ,event_id,event in prepared:
         if sid not in visible: continue
-        dedupe=hashlib.sha256(f'{sid}|{actor_key}|{typ}|{event_id}'.encode()).hexdigest()
-        dedupe_key=f'aos:shorts:event:{dedupe}'
-        if cache.get_value(dedupe_key): continue
-        cache.set_value(dedupe_key,1,expires_in_sec=7*86400)
-        watch=max(0,min(int(event.get('watch_ms') or 0),600000))
-        unique_new=False
-        if typ=='qualified_view':
-            identity=hashlib.sha256(f'{sid}|{actor_key}'.encode()).hexdigest()
-            existing=frappe.db.get_value('AOS Short View',{'short':sid,'identity_key':identity},'name')
-            if not existing:
-                try:
-                    frappe.get_doc({'doctype':'AOS Short View','short':sid,'user':user,'session_id':session if not user else None,'view_date':now_datetime().date(),'qualified':1,'watch_ms':0,'last_seen_at':now_datetime(),'identity_key':identity}).insert(ignore_permissions=True)
-                    unique_new=True
-                except Exception:
-                    unique_new=not bool(frappe.db.exists('AOS Short View',{'short':sid,'identity_key':identity}))
-            elif existing:
-                frappe.db.set_value('AOS Short View',existing,'last_seen_at',now_datetime(),update_modified=False)
-        record_signal(sid,typ,watch_ms=watch,unique_new=unique_new)
-        if typ in durable:
-            try:
-                frappe.get_doc({'doctype':'AOS Short Event','short':sid,'user':user,'session_id':session,'event_type':typ,'watch_ms':watch,'progress_ms':max(0,min(int(event.get('progress_ms') or 0),600000)),'source':str(event.get('source') or '')[:120],'metadata':event.get('metadata') if isinstance(event.get('metadata'),dict) else None,'event_key':dedupe}).insert(ignore_permissions=True)
-            except Exception:
-                if not frappe.db.exists('AOS Short Event',{'event_key':dedupe}): raise
-        accepted+=1
+        dedupe=hashlib.sha256(f'{sid}|{actor_key}|{typ}|{event_id}'.encode()).hexdigest(); dedupe_key=f'aos:shorts:event:{dedupe}'
+        if not cache.set(dedupe_key,'1',ex=7*86400,nx=True): continue
+        try:
+            watch=max(0,min(int(event.get('watch_ms') or 0),600000)); unique_new=False
+            if typ in durable:
+                created=_insert_short_event_once({'short':sid,'user':user,'session_id':session,'event_type':typ,'watch_ms':watch,'progress_ms':max(0,min(int(event.get('progress_ms') or 0),600000)),'source':str(event.get('source') or '')[:120],'metadata':event.get('metadata') if isinstance(event.get('metadata'),dict) else None},dedupe)
+                if not created: continue
+            if typ=='qualified_view':
+                identity=hashlib.sha256(f'{sid}|{actor_key}'.encode()).hexdigest()
+                existing=frappe.db.get_value('AOS Short View',{'short':sid,'identity_key':identity},'name')
+                if not existing:
+                    _,unique_new=_insert_once('AOS Short View',{'short':sid,'user':user,'session_id':session if not user else None,'view_date':now_datetime().date(),'qualified':1,'watch_ms':0,'last_seen_at':now_datetime(),'identity_key':identity},{'short':sid,'identity_key':identity})
+                else:
+                    frappe.db.set_value('AOS Short View',existing,'last_seen_at',now_datetime(),update_modified=False)
+            record_signal(sid,typ,watch_ms=watch,unique_new=unique_new); accepted+=1
+        except Exception:
+            cache.delete_value(dedupe_key)
+            raise
     return ok('Events accepted.',{'accepted':accepted})
 
 
@@ -532,10 +589,10 @@ def record_share(**kwargs):
     if not event_id: raise ShortsError('event_id is required.',code='SHORTS_INVALID_REQUEST')
     short=frappe.db.get_value('AOS Short',sid,['name','owner','lifecycle_status','processing_status','moderation_status','audience'],as_dict=True)
     if not short or not can_view(short,viewer=user): raise ShortsNotFoundError()
-    key=hashlib.sha256(f'share|{sid}|{user or request_ip()}|{event_id}'.encode()).hexdigest()
-    if not frappe.db.exists('AOS Short Event',{'event_key':key}):
-        frappe.get_doc({'doctype':'AOS Short Event','short':sid,'user':user,'session_id':'','event_type':'share','source':str(kwargs.get('channel') or '')[:120],'event_key':key}).insert(ignore_permissions=True)
-        frappe.db.sql('UPDATE `tabAOS Short` SET share_count=COALESCE(share_count,0)+1,last_engagement_at=NOW() WHERE name=%s',(sid,))
+    actor=user or f'guest:{hashlib.sha256(request_ip().encode()).hexdigest()[:32]}'
+    key=hashlib.sha256(f'share|{sid}|{actor}|{event_id}'.encode()).hexdigest()
+    created=_insert_short_event_once({'short':sid,'user':user,'session_id':'' if user else actor,'event_type':'share','source':str(kwargs.get('channel') or '')[:120]},key)
+    if created: frappe.db.sql('UPDATE `tabAOS Short` SET share_count=COALESCE(share_count,0)+1,last_engagement_at=NOW() WHERE name=%s',(sid,))
     return ok('Share recorded.',{'short_id':sid})
 
 
@@ -554,8 +611,13 @@ def list_sounds(**kwargs):
     return ok('Sounds loaded.',{'items':_sound_payload(page,user),'next_cursor':nxt})
 
 def search_sounds(**kwargs):
-    viewer=_user(required=False); user=None if viewer=='Guest' else viewer; _rate('sound_search',user=user,limit=120); q=str(kwargs.get('q') or '').strip()[:100]; limit=_limit(kwargs.get('limit')); rows=frappe.db.sql(f'''SELECT * FROM `tabAOS Sound` s WHERE {_sound_available_clause()} AND (title LIKE %(q)s OR artist LIKE %(q)s) ORDER BY usage_count DESC,creation DESC LIMIT %(limit)s''',{'q':f'%{q}%','limit':limit},as_dict=True) if q else []
-    return ok('Sound search complete.',{'items':_sound_payload(rows,user),'next_cursor':None})
+    viewer=_user(required=False); user=None if viewer=='Guest' else viewer; _rate('sound_search',user=user,limit=120); q=str(kwargs.get('q') or '').strip()[:100]; limit=_limit(kwargs.get('limit')); cur=decode_cursor(kwargs.get('cursor'))
+    if not q: return ok('Sound search complete.',{'items':[],'next_cursor':None})
+    params={'q':f'%{q}%','limit':limit+1}; clause=''
+    if cur.get('usage') is not None and cur.get('created') and cur.get('id'):
+        clause='AND (COALESCE(usage_count,0) < %(usage)s OR (COALESCE(usage_count,0)=%(usage)s AND (creation < %(created)s OR (creation=%(created)s AND name < %(id)s))))'; params.update({'usage':int(cur['usage']),'created':cur['created'],'id':cur['id']})
+    rows=frappe.db.sql(f'''SELECT * FROM `tabAOS Sound` s WHERE {_sound_available_clause()} AND (title LIKE %(q)s OR artist LIKE %(q)s) {clause} ORDER BY COALESCE(usage_count,0) DESC,creation DESC,name DESC LIMIT %(limit)s''',params,as_dict=True); more=len(rows)>limit; page=rows[:limit]; nxt=encode_cursor({'usage':int(page[-1].usage_count or 0),'created':str(page[-1].creation),'id':page[-1].name}) if more and page else None
+    return ok('Sound search complete.',{'items':_sound_payload(page,user),'next_cursor':nxt})
 
 def get_sound(**kwargs):
     viewer=_user(required=False); sid=kwargs.get('sound_id'); row=frappe.db.sql(f'''SELECT * FROM `tabAOS Sound` s WHERE s.name=%s AND {_sound_available_clause()} LIMIT 1''',(sid,),as_dict=True)
@@ -570,13 +632,16 @@ def _sound_fav(sid,add):
         try: frappe.get_doc({'doctype':'AOS Sound Favorite','sound':sid,'user':user}).insert(ignore_permissions=True); changed=True
         except Exception:
             if not frappe.db.exists('AOS Sound Favorite',{'sound':sid,'user':user}): raise
-    elif not add and existing: frappe.delete_doc('AOS Sound Favorite',existing,ignore_permissions=True); changed=True
+    elif not add and existing: changed=_delete_once('AOS Sound Favorite',{'sound':sid,'user':user})
     return ok('Sound favorite updated.',{'sound_id':sid,'favorited':add,'changed':changed})
 def favorite_sound(**kw): return _sound_fav(kw.get('sound_id'),True)
 def unfavorite_sound(**kw): return _sound_fav(kw.get('sound_id'),False)
 
 def my_favorite_sounds(**kwargs):
-    user=_user(); limit=_limit(kwargs.get('limit')); rows=frappe.db.sql(f'''SELECT s.* FROM `tabAOS Sound Favorite` f INNER JOIN `tabAOS Sound` s ON s.name=f.sound WHERE f.user=%s AND {_sound_available_clause('s')} ORDER BY f.creation DESC LIMIT %s''',(user,limit),as_dict=True); return ok('Favorite sounds loaded.',{'items':_sound_payload(rows,user),'next_cursor':None})
+    user=_user(); limit=_limit(kwargs.get('limit')); cur=decode_cursor(kwargs.get('cursor')); params={'user':user,'limit':limit+1}; clause=''
+    if cur.get('created') and cur.get('id'): clause='AND (f.creation < %(created)s OR (f.creation=%(created)s AND f.name < %(id)s))'; params.update({'created':cur['created'],'id':cur['id']})
+    rows=frappe.db.sql(f'''SELECT s.*,f.creation AS favorite_at,f.name AS favorite_row FROM `tabAOS Sound Favorite` f INNER JOIN `tabAOS Sound` s ON s.name=f.sound WHERE f.user=%(user)s AND {_sound_available_clause('s')} {clause} ORDER BY f.creation DESC,f.name DESC LIMIT %(limit)s''',params,as_dict=True); more=len(rows)>limit; page=rows[:limit]; nxt=encode_cursor({'created':str(page[-1].favorite_at),'id':page[-1].favorite_row}) if more and page else None
+    return ok('Favorite sounds loaded.',{'items':_sound_payload(page,user),'next_cursor':nxt})
 
 def sound_shorts(**kwargs): return _relation_feed('sound',kwargs.get('sound_id'),kwargs)
 def hashtag_shorts(**kwargs):
@@ -598,9 +663,8 @@ def download_short(**kwargs):
     doc=frappe.get_doc('AOS Short',sid) if frappe.db.exists('AOS Short',sid) else None
     if not doc or not can_download(doc,viewer=user): raise ShortsPermissionError('Download is not allowed.')
     key=hashlib.sha256(f'download|{sid}|{user}|{event_id}'.encode()).hexdigest()
-    if not frappe.db.exists('AOS Short Event',{'event_key':key}):
-        frappe.get_doc({'doctype':'AOS Short Event','short':sid,'user':user,'session_id':'','event_type':'download','source':'download','event_key':key}).insert(ignore_permissions=True)
-        frappe.db.sql('UPDATE `tabAOS Short` SET download_count=COALESCE(download_count,0)+1,last_engagement_at=NOW() WHERE name=%s',(sid,))
+    created=_insert_short_event_once({'short':sid,'user':user,'session_id':'','event_type':'download','source':'download'},key)
+    if created: frappe.db.sql('UPDATE `tabAOS Short` SET download_count=COALESCE(download_count,0)+1,last_engagement_at=NOW() WHERE name=%s',(sid,))
     if doc.content_type=='Photo':
         photos=frappe.get_all('AOS Short Photo',filters={'short':sid},fields=['media'],order_by='position asc'); service=MediaService(); urls=[service.get_url(media_id=r.media,user=user,expiry_minutes=10) for r in photos]; return ok('Photo download ready.',{'type':'photo','urls':urls})
     if doc.download_media:

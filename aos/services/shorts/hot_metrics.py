@@ -79,6 +79,7 @@ def record_signal(short_id: str, event_type: str, *, watch_ms: int = 0, unique_n
         cache.hincrby(daily, "watch_time_ms", bounded_watch)
     cache.expire(key, 30 * 86400)
     cache.expire(daily, 8 * 86400)
+    cache.hincrby(key, "__dirty_version", 1)
     cache.sadd(_DIRTY_KEY, short_id)
 
 
@@ -91,14 +92,18 @@ def flush_hot_metrics(*, limit: int = 1000) -> int:
     if isinstance(members, (str, bytes)):
         members = [members]
     flushed = 0
+    cleanups: list[tuple[str, str, int]] = []
     for raw_id in members:
         short_id = _text(raw_id)
         if not frappe.db.exists("AOS Short", short_id):
             clear_short_hot_state(short_id)
             continue
-        values = _decode_hash(cache.hgetall(hot_key(short_id)) or {})
+        key = hot_key(short_id)
+        values = _decode_hash(cache.hgetall(key) or {})
         if not values:
+            cache.srem(_DIRTY_KEY, short_id)
             continue
+        version = int(values.get("__dirty_version") or 0)
         assignments = []
         params: list[Any] = []
         for field in _COUNTER_FIELDS:
@@ -109,8 +114,31 @@ def flush_hot_metrics(*, limit: int = 1000) -> int:
             params.append(short_id)
             frappe.db.sql(f"UPDATE `tabAOS Short` SET {','.join(assignments)} WHERE name=%s", tuple(params))
             flushed += 1
+            cleanups.append((key, short_id, version))
+    if cleanups:
+        pending = tuple(cleanups)
+        frappe.db.after_commit.add(lambda: _clear_dirty_batch(pending))
     return flushed
 
+
+
+def _clear_dirty_batch(items: tuple[tuple[str, str, int], ...]) -> None:
+    cache = frappe.cache()
+    for key, short_id, version in items:
+        _clear_dirty_if_unchanged(cache, key=key, short_id=short_id, version=version)
+
+
+def _clear_dirty_if_unchanged(cache, *, key: str, short_id: str, version: int) -> None:
+    """Remove a flushed Short from the dirty set only if no writer raced the flush."""
+    script = """
+local current = redis.call('HGET', KEYS[1], ARGV[1])
+if current and tostring(current) == tostring(ARGV[2]) then
+  return redis.call('SREM', KEYS[2], ARGV[3])
+end
+return 0
+"""
+    client = getattr(cache, "redis_server", None) or getattr(cache, "_redis", None) or cache
+    client.eval(script, 2, key, _DIRTY_KEY, "__dirty_version", str(int(version)), short_id)
 
 def daily_snapshot(short_id: str, day: str) -> dict[str, int]:
     return _decode_hash(frappe.cache().hgetall(daily_key(short_id, day)) or {})

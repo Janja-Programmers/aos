@@ -67,6 +67,19 @@ class TestShortsHardenedContract(TestCase):
         self.assertTrue(internal.exists())
         self.assertIn("handle_callback", internal.read_text())
 
+    def test_shorts_tests_do_not_commit_transaction_local_fixtures(self):
+        offenders = []
+        for file in sorted((ROOT / "aos/tests").glob("test_shorts*.py")):
+            tree = ast.parse(file.read_text(), filename=str(file))
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "commit"
+                ):
+                    offenders.append(f"{file.relative_to(ROOT)}:{node.lineno}")
+        self.assertEqual(offenders, [])
+
     def test_short_request_flow_has_no_manual_commit(self):
         roots = [ROOT / "aos/services/shorts", ROOT / "aos/services/video_processing_service.py", ROOT / "aos/api/v1/shorts"]
         offenders = []
@@ -83,6 +96,34 @@ class TestShortsHardenedContract(TestCase):
         source = (ROOT / "aos/aos/doctype/aos_short_view/aos_short_view.py").read_text()
         self.assertIn('f"{self.short}|{actor_key}"', source)
         self.assertIn("sha256", source)
+
+
+    def test_comment_replies_have_client_read_contract(self):
+        self.assertIn("list_comment_replies", ENDPOINT_SPECS)
+        self.assertEqual(ENDPOINT_SPECS["list_comment_replies"].fields, frozenset({"comment_id", "limit", "cursor"}))
+
+    def test_event_dedupe_and_hot_dirty_cleanup_are_atomic(self):
+        service = (ROOT / "aos/services/shorts/service.py").read_text()
+        hot = (ROOT / "aos/services/shorts/hot_metrics.py").read_text()
+        self.assertIn("cache.set(dedupe_key,'1',ex=7*86400,nx=True)", service)
+        self.assertIn("__dirty_version", hot)
+        self.assertIn("frappe.db.after_commit.add", hot)
+        self.assertIn("client.eval", hot)
+        self.assertIn("SREM", hot)
+
+    def test_sound_cursor_parameters_are_implemented(self):
+        service = (ROOT / "aos/services/shorts/service.py").read_text()
+        search_body = service.split("def search_sounds(**kwargs):", 1)[1].split("def get_sound", 1)[0]
+        favorites_body = service.split("def my_favorite_sounds(**kwargs):", 1)[1].split("def sound_shorts", 1)[0]
+        self.assertIn("decode_cursor", search_body)
+        self.assertIn("next_cursor", search_body)
+        self.assertIn("decode_cursor", favorites_body)
+        self.assertIn("next_cursor", favorites_body)
+
+    def test_reply_pagination_index_is_declared(self):
+        source = (ROOT / "aos/patches/v1_0/install_shorts_indexes.py").read_text()
+        self.assertIn("idx_short_comment_replies", source)
+        self.assertIn('("root_comment", "status", "creation", "name")', source)
 
     def test_only_four_content_modes_exist(self):
         source = (ROOT / "aos/services/shorts/constants.py").read_text()

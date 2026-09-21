@@ -1110,6 +1110,12 @@
     "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
   },
   {
+    "endpoint": "aos.api.v1.shorts.__init__.list_comment_replies",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Canonical Shorts client endpoint; domain-specific rate limits are also enforced by the Shorts service."
+  },
+  {
     "endpoint": "aos.api.v1.shorts.__init__.list_comments",
     "access": "guest",
     "policy": "baseline_guest",

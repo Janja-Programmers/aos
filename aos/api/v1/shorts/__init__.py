@@ -121,6 +121,11 @@ def list_comments(**kwargs):
     """Execute the canonical Shorts `list_comments` client operation."""
     return _call("list_comments", kwargs)
 
+@frappe.whitelist(allow_guest=True, methods=['GET'])
+def list_comment_replies(**kwargs):
+    """Execute the canonical Shorts `list_comment_replies` client operation."""
+    return _call("list_comment_replies", kwargs)
+
 @frappe.whitelist(methods=['POST'])
 def like_comment(**kwargs):
     """Execute the canonical Shorts `like_comment` client operation."""

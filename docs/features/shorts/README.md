@@ -57,6 +57,7 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 | `hashtag_shorts` | GET | Guest allowed | Client |
 | `like_comment` | POST | Session required | Client |
 | `like_short` | POST | Session required | Client |
+| `list_comment_replies` | GET | Guest allowed | Client |
 | `list_comments` | GET | Guest allowed | Client |
 | `list_sounds` | GET | Guest allowed | Client |
 | `my_favorite_sounds` | GET | Session required | Client |
@@ -81,8 +82,7 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
-
-The only client namespace is `/api/method/aos.api.v1.shorts.*`. Reads use GET where appropriate and mutations use POST. Large lists use signed keyset/cursor pagination. Explicit actions are used for like/unlike, save/unsave, repost/undo, comment like/unlike, Sound favorite/unfavorite, and Not Interested. The client never submits ranking weights or a trusted Content Mode.
+The only client namespace is `/api/method/aos.api.v1.shorts.*`. Reads use GET where appropriate and mutations use POST. Large lists use signed keyset/cursor pagination. Explicit actions are used for like/unlike, save/unsave, repost/undo, comment like/unlike, Sound favorite/unfavorite, and Not Interested. Top-level comments and reply threads are independently cursor-paginated. The client never submits ranking weights or a trusted Content Mode.
 
 Video Processing has no client API. The signed processing callback is `/api/method/aos.api.internal.video_processing.handle_callback`. Desk review actions live under `aos.api.internal.shorts` and require authenticated Desk permission.
 
@@ -112,11 +112,11 @@ Shorts consumes hardened Media, Accounts, Verification, Social, Maps/Localizatio
 
 ## Transaction / Concurrency Model
 
-Request services do not commit caller transactions. Mutations execute behind operation savepoints, row locks or optimistic `modified` versions as appropriate. Unique database indexes enforce one reaction per user/post, one mode/hashtag/Ad relation, one comment like, one Sound favorite, processing active-key/idempotency invariants, and viewer identity per Short. Processing and moderation callbacks validate revision/generation; stale callbacks safely no-op/cancel. External jobs are registered through the transactional outbox rather than dispatched before commit.
+Request services do not commit caller transactions. Mutations execute behind operation savepoints, row locks or optimistic `modified` versions as appropriate. Unique database indexes enforce one reaction per user/post, one mode/hashtag/Ad relation, one comment like, one Sound favorite, processing active-key/idempotency invariants, and viewer identity per Short. Retry-sensitive event/feedback mutations treat concurrent unique-index winners as successful no-ops. Content-affecting edits to an approved published Short advance its revision/moderation generation and return it to Draft so stale approval cannot keep altered content distributed; permission-only edits do not require a new moderation pass. Processing and moderation callbacks validate revision/generation; stale callbacks safely no-op/cancel. External jobs are registered through the transactional outbox rather than dispatched before commit.
 
 ## Caching
 
-Redis stores bounded For You feed sessions, recommendation-event dedupe keys, shared rate-limit state, and hot watch/counter aggregates. Keys are namespaced, expiring, and test code must clear any state it creates. Durable SQL state remains authoritative for lifecycle, permissions and unique actions.
+Redis stores bounded For You feed sessions, atomic recommendation-event dedupe keys, shared rate-limit state, and hot watch/counter aggregates. Hot-counter dirty membership is versioned and removed after successful reconciliation only when no concurrent writer raced the flush. Keys are namespaced, expiring, and test code must clear any state it creates. Durable SQL state remains authoritative for lifecycle, permissions and unique actions.
 
 ## Performance / Scalability
 
