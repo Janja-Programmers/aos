@@ -120,5 +120,5 @@ def run_shorts_api(
         if savepoint:
             _rollback(savepoint, callbacks, outbox_flag)
         shorts_log(operation_name, outcome="failure", reason="internal")
-        frappe.log_error("Shorts API operation failed.", f"Shorts {operation_name}")
+        frappe.log_error(frappe.get_traceback(), f"Shorts {operation_name} failed")
         return fail("Shorts request failed.", error="SHORTS_INTERNAL_ERROR", http_status=500)

@@ -107,12 +107,19 @@ class TestShortsHardenedContract(TestCase):
     def test_event_dedupe_and_hot_dirty_cleanup_are_atomic(self):
         service = (ROOT / "aos/services/shorts/service.py").read_text()
         hot = (ROOT / "aos/services/shorts/hot_metrics.py").read_text()
-        self.assertIn("cache.set(dedupe_key,'1',ex=7*86400,nx=True)", service)
+        self.assertIn("_claim_event_dedupe(cache,dedupe_key)", service)
         self.assertIn("__dirty_version", hot)
         self.assertIn("frappe.db.after_commit.add", hot)
         self.assertIn("cache.eval", hot)
         self.assertIn("_redis_key(cache, _DIRTY_KEY)", hot)
         self.assertIn("SREM", hot)
+        self.assertIn("qualifies_view(watch,duration_seconds=short.get('duration_seconds'))", service)
+        self.assertIn("_record_hot_signal_best_effort", service)
+
+    def test_internal_api_logging_keeps_traceback(self):
+        source = (ROOT / "aos/services/shorts/api.py").read_text()
+        self.assertIn("frappe.get_traceback()", source)
+        self.assertIn('f"Shorts {operation_name} failed"', source)
 
     def test_sound_cursor_parameters_are_implemented(self):
         service = (ROOT / "aos/services/shorts/service.py").read_text()

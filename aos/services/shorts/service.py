@@ -24,6 +24,7 @@ from aos.services.notifications.service import NotificationService
 from aos.services.marketplace_discovery.ids import resolve_ad_name
 from aos.services.social.repository import SocialRepository
 
+from .analytics import qualifies_view
 from .classification import classify_short
 from .constants import CAPTION_MAX_LENGTH, CONTENT_MODES, MAX_EVENT_BATCH, MAX_HASHTAGS, MAX_PHOTOS
 from .cursor import decode_cursor, encode_cursor
@@ -527,6 +528,39 @@ def like_comment(**kw): return _comment_like(str(kw.get('comment_id') or ''),Tru
 def unlike_comment(**kw): return _comment_like(str(kw.get('comment_id') or ''),False)
 
 
+def _claim_event_dedupe(cache, dedupe_key: str) -> bool:
+    """Atomically claim an event id when Redis is healthy.
+
+    Redis is an acceleration/dedupe layer for playback telemetry, not the
+    durable source of truth.  Durable event rows still carry their own unique
+    event_key, so a transient Redis failure must not turn playback into a 500.
+    """
+    try:
+        return bool(cache.set(dedupe_key, '1', ex=7 * 86400, nx=True))
+    except Exception:
+        frappe.logger('aos.shorts').warning('Shorts event dedupe cache unavailable', exc_info=True)
+        return True
+
+
+def _release_event_dedupe(cache, dedupe_key: str) -> None:
+    try:
+        cache.delete_value(dedupe_key)
+    except Exception:
+        frappe.logger('aos.shorts').warning('Shorts event dedupe cleanup failed', exc_info=True)
+
+
+def _record_hot_signal_best_effort(short_id: str, event_type: str, *, watch_ms: int, unique_new: bool) -> None:
+    """Update derived Redis counters without failing durable event ingestion."""
+    try:
+        from .hot_metrics import record_signal
+        record_signal(short_id, event_type, watch_ms=watch_ms, unique_new=unique_new)
+    except Exception:
+        # Durable semantic events remain available for reconciliation.  For
+        # high-frequency ephemeral signals it is preferable to lose a cache
+        # sample than to surface a Shorts API 500 to the viewer.
+        frappe.logger('aos.shorts').warning('Shorts hot metric update failed', exc_info=True)
+
+
 def record_events(**kwargs):
     viewer=_user(required=False); user=None if viewer=='Guest' else viewer; _rate('events',user=user,limit=240)
     events=parse_json_list(kwargs.get('events'),field='events',max_items=MAX_EVENT_BATCH); session=str(kwargs.get('session_id') or '').strip()[:128]
@@ -539,30 +573,39 @@ def record_events(**kwargs):
         if not sid or typ not in allowed_types or not event_id: continue
         ids.add(sid); prepared.append((sid,typ,event_id,event))
     if not prepared: return ok('Events accepted.',{'accepted':0})
-    rows=frappe.get_all('AOS Short',filters={'name':['in',sorted(ids)]},fields=['name','owner','lifecycle_status','processing_status','moderation_status','audience'],limit=max(1,len(ids)))
-    visible={str(row['name']) for row in filter_viewable_rows([dict(r) for r in rows],viewer=user)}
+    rows=frappe.get_all('AOS Short',filters={'name':['in',sorted(ids)]},fields=['name','owner','lifecycle_status','processing_status','moderation_status','audience','duration_seconds'],limit=max(1,len(ids)))
+    visible_rows={str(row['name']):dict(row) for row in filter_viewable_rows([dict(r) for r in rows],viewer=user)}
     cache=frappe.cache(); accepted=0; actor_key=user or f'guest:{session}'
-    from .hot_metrics import record_signal
     durable={'qualified_view','complete','rewatch','early_skip','follow_from_content'}
     for sid,typ,event_id,event in prepared:
-        if sid not in visible: continue
-        dedupe=hashlib.sha256(f'{sid}|{actor_key}|{typ}|{event_id}'.encode()).hexdigest(); dedupe_key=f'aos:shorts:event:{dedupe}'
-        if not cache.set(dedupe_key,'1',ex=7*86400,nx=True): continue
+        short=visible_rows.get(sid)
+        if not short: continue
         try:
-            watch=max(0,min(int(event.get('watch_ms') or 0),600000)); unique_new=False
+            watch=max(0,min(int(event.get('watch_ms') or 0),600000))
+            progress=max(0,min(int(event.get('progress_ms') or 0),600000))
+        except (TypeError,ValueError):
+            continue
+        # Never trust the browser to promote an under-threshold playback into
+        # a qualified view.  The threshold is derived from canonical duration.
+        if typ=='qualified_view' and not qualifies_view(watch,duration_seconds=short.get('duration_seconds')):
+            continue
+        dedupe=hashlib.sha256(f'{sid}|{actor_key}|{typ}|{event_id}'.encode()).hexdigest(); dedupe_key=f'aos:shorts:event:{dedupe}'
+        if not _claim_event_dedupe(cache,dedupe_key): continue
+        try:
+            unique_new=False
             if typ in durable:
-                created=_insert_short_event_once({'short':sid,'user':user,'session_id':session,'event_type':typ,'watch_ms':watch,'progress_ms':max(0,min(int(event.get('progress_ms') or 0),600000)),'source':str(event.get('source') or '')[:120],'metadata':event.get('metadata') if isinstance(event.get('metadata'),dict) else None},dedupe)
+                created=_insert_short_event_once({'short':sid,'user':user,'session_id':session,'event_type':typ,'watch_ms':watch,'progress_ms':progress,'source':str(event.get('source') or '')[:120],'metadata':event.get('metadata') if isinstance(event.get('metadata'),dict) else None},dedupe)
                 if not created: continue
             if typ=='qualified_view':
                 identity=hashlib.sha256(f'{sid}|{actor_key}'.encode()).hexdigest()
                 existing=frappe.db.get_value('AOS Short View',{'short':sid,'identity_key':identity},'name')
                 if not existing:
-                    _,unique_new=_insert_once('AOS Short View',{'short':sid,'user':user,'session_id':session if not user else None,'view_date':now_datetime().date(),'qualified':1,'watch_ms':0,'last_seen_at':now_datetime(),'identity_key':identity},{'short':sid,'identity_key':identity})
+                    _,unique_new=_insert_once('AOS Short View',{'short':sid,'user':user,'session_id':session if not user else None,'view_date':now_datetime().date(),'qualified':1,'watch_ms':watch,'last_seen_at':now_datetime(),'identity_key':identity},{'short':sid,'identity_key':identity})
                 else:
-                    frappe.db.set_value('AOS Short View',existing,'last_seen_at',now_datetime(),update_modified=False)
-            record_signal(sid,typ,watch_ms=watch,unique_new=unique_new); accepted+=1
+                    frappe.db.set_value('AOS Short View',existing,{'last_seen_at':now_datetime(),'watch_ms':max(int(frappe.db.get_value('AOS Short View',existing,'watch_ms') or 0),watch)},update_modified=False)
+            _record_hot_signal_best_effort(sid,typ,watch_ms=watch,unique_new=unique_new); accepted+=1
         except Exception:
-            cache.delete_value(dedupe_key)
+            _release_event_dedupe(cache,dedupe_key)
             raise
     return ok('Events accepted.',{'accepted':accepted})
 

@@ -157,6 +157,59 @@ class TestShortsServiceRuntime(AOSFeatureTestMixin, FrappeTestCase):
             1,
         )
 
+
+    def test_under_threshold_qualified_view_is_not_promoted(self):
+        user, short = self._published_short()
+        event = {
+            "short_id": short.name,
+            "type": "qualified_view",
+            "event_id": "too-early-qualified-view",
+            "watch_ms": 324,
+            "progress_ms": 324,
+            "source": "web_feed",
+        }
+        with patch("aos.services.shorts.service._rate"):
+            response = service.record_events(events=[event], session_id="")
+
+        self.assertTrue(response.get("ok"), response)
+        self.assertEqual(response["data"]["accepted"], 0)
+        self.assertEqual(
+            frappe.db.count(
+                "AOS Short Event",
+                {"short": short.name, "user": user, "event_type": "qualified_view"},
+            ),
+            0,
+        )
+        self.assertEqual(
+            frappe.db.count("AOS Short View", {"short": short.name, "user": user}),
+            0,
+        )
+
+    def test_hot_metric_failure_does_not_fail_durable_event_ingestion(self):
+        user, short = self._published_short()
+        event = {
+            "short_id": short.name,
+            "type": "qualified_view",
+            "event_id": "durable-event-hot-cache-failure",
+            "watch_ms": 2500,
+            "progress_ms": 2500,
+        }
+        with patch("aos.services.shorts.service._rate"), patch(
+            "aos.services.shorts.hot_metrics.record_signal",
+            side_effect=RuntimeError("redis hot counter unavailable"),
+        ):
+            response = service.record_events(events=[event], session_id="")
+
+        self.assertTrue(response.get("ok"), response)
+        self.assertEqual(response["data"]["accepted"], 1)
+        self.assertEqual(
+            frappe.db.count(
+                "AOS Short Event",
+                {"short": short.name, "user": user, "event_type": "qualified_view"},
+            ),
+            1,
+        )
+
     def test_hot_metric_flush_removes_clean_dirty_membership(self):
         _user, short = self._published_short()
         self._clear_short_ephemeral_state(short.name)

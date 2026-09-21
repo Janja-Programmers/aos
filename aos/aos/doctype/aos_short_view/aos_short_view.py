@@ -3,11 +3,9 @@ import hashlib
 import frappe
 from frappe.model.document import Document
 from frappe.utils import getdate, now_datetime
-from aos.services.shorts.analytics import bounded_watch_ms
+from aos.services.shorts.analytics import bounded_watch_ms, qualifies_view
 from aos.services.shorts.policy import can_view
 
-_MIN_VIEW_MS = 2_000
-_MIN_VIEW_PERCENT = 0.5
 
 
 class AOSShortView(Document):
@@ -31,10 +29,7 @@ class AOSShortView(Document):
     def on_update(self):
         if self.qualified or not self.watch_ms:
             return
-        qualifies = self.watch_ms >= _MIN_VIEW_MS or (
-            self._short_duration and self.watch_ms >= self._short_duration * 1000 * _MIN_VIEW_PERCENT
-        )
-        if not qualifies:
+        if not qualifies_view(self.watch_ms, duration_seconds=self._short_duration):
             return
         frappe.db.set_value(self.doctype, self.name, "qualified", 1, update_modified=False)
         frappe.db.sql("UPDATE `tabAOS Short` SET view_count=COALESCE(view_count,0)+1,last_engagement_at=%s WHERE name=%s", (now_datetime(), self.short))
