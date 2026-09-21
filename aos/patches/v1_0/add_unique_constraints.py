@@ -294,6 +294,123 @@ def _dedupe_short_views_by_computed_identity() -> set[str]:
     return affected_shorts
 
 
+def _delete_duplicate_docs(*, doctype: str, fields: list[str], order_by: str) -> set[str]:
+    if not _doctype_exists(doctype):
+        return set()
+
+    field_sql = ", ".join(f"`{field}`" for field in fields)
+    not_empty_sql = " AND ".join(
+        f"`{field}` IS NOT NULL AND `{field}` != ''" for field in fields
+    )
+
+    rows = frappe.db.sql(
+        f"""
+        SELECT {field_sql}, GROUP_CONCAT(name ORDER BY {order_by}) AS names
+        FROM `tab{doctype}`
+        WHERE {not_empty_sql}
+        GROUP BY {field_sql}
+        HAVING COUNT(*) > 1
+        """,
+        as_dict=True,
+    )
+
+    affected_primary_values: set[str] = set()
+
+    for row in rows:
+        names = _split_names(row.names)
+        stale_names = names[1:]
+        if not stale_names:
+            continue
+
+        primary_value = row.get(fields[0])
+        if primary_value:
+            affected_primary_values.add(primary_value)
+
+        for name in stale_names:
+            frappe.delete_doc(
+                doctype,
+                name,
+                ignore_permissions=True,
+                force=True,
+            )
+
+    return affected_primary_values
+
+
+def _add_unique_index(*, doctype: str, fields: list[str], constraint_name: str):
+    if not _doctype_exists(doctype):
+        frappe.log_error(
+            title="Unique Constraint Patch Skipped",
+            message=f"DocType {doctype} does not exist. Skipping {constraint_name}.",
+        )
+        return
+
+    _validate_columns(doctype, fields)
+
+    if _unique_index_exists(doctype, constraint_name):
+        return
+
+    frappe.db.add_unique(
+        doctype,
+        fields,
+        constraint_name=constraint_name,
+    )
+
+
+def _validate_columns(doctype: str, fields: list[str]):
+    missing = [field for field in fields if not _column_exists(doctype, field)]
+    if missing:
+        frappe.throw(
+            f"Cannot add unique constraint on {doctype}. Missing columns: {', '.join(missing)}"
+        )
+
+
+def _doctype_exists(doctype: str) -> bool:
+    return bool(frappe.db.exists("DocType", doctype))
+
+
+def _column_exists(doctype: str, fieldname: str) -> bool:
+    return bool(frappe.db.has_column(doctype, fieldname))
+
+
+def _unique_index_exists(doctype: str, constraint_name: str) -> bool:
+    return bool(
+        frappe.db.sql(
+            """
+            SELECT INDEX_NAME
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = %s
+              AND INDEX_NAME = %s
+              AND NON_UNIQUE = 0
+            LIMIT 1
+            """,
+            (f"tab{doctype}", constraint_name),
+            as_dict=True,
+        )
+    )
+
+
+def _split_names(value: str | None) -> list[str]:
+    return [name for name in str(value or "").split(",") if name]
+
+
+def _sync_short_comment_like_counts(comment_ids: Iterable[str]):
+    for comment_id in set(comment_ids):
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Short Comment` c
+            SET like_count = (
+                SELECT COUNT(*)
+                FROM `tabAOS Short Comment Like` l
+                WHERE l.comment = c.name
+            )
+            WHERE c.name = %s
+            """,
+            (comment_id,),
+        )
+
+
 def _sync_short_view_counts(short_ids: Iterable[str]):
     for short_id in set(short_ids):
         frappe.db.sql(
