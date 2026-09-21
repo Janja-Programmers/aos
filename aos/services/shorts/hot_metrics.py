@@ -117,9 +117,13 @@ def flush_hot_metrics(*, limit: int = 1000) -> int:
             cleanups.append((key, short_id, version))
     if cleanups:
         pending = tuple(cleanups)
-        frappe.db.after_commit.add(lambda: _clear_dirty_batch(pending))
+        _register_after_commit(lambda: _clear_dirty_batch(pending))
     return flushed
 
+
+def _register_after_commit(callback) -> None:
+    """Register a Redis cleanup only after the surrounding DB transaction commits."""
+    frappe.db.after_commit.add(callback)
 
 
 def _clear_dirty_batch(items: tuple[tuple[str, str, int], ...]) -> None:
