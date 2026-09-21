@@ -162,8 +162,10 @@ def _normalize_short_view_identity_keys():
         """
         UPDATE `tabAOS Short View`
         SET identity_key = CASE
-            WHEN user IS NOT NULL AND user != '' THEN CONCAT('user:', user)
-            WHEN session_id IS NOT NULL AND session_id != '' THEN CONCAT('session:', session_id)
+            WHEN user IS NOT NULL AND user != ''
+                THEN SHA2(CONCAT(short, '|user:', user), 256)
+            WHEN session_id IS NOT NULL AND session_id != ''
+                THEN SHA2(CONCAT(short, '|session:', session_id), 256)
             ELSE NULL
         END
         """
@@ -176,39 +178,47 @@ def _normalize_short_view_identity_keys():
 def _dedupe_short_views_by_computed_identity() -> set[str]:
     """Dedupe legacy short views before writing identity_key.
 
-    Existing sites may already have the unique index while older rows still
-    carry NULL identity_key values. MariaDB allows duplicate NULL values in a
-    unique index, so the migration must collapse duplicates by the *computed*
-    identity before it updates identity_key. Updating first could violate the
-    unique index on partially migrated sites.
+    Existing sites may already have the globally unique ``identity_key`` field
+    while older rows still carry NULL identity keys. Runtime writes hash the
+    Short id together with the actor identity, so migration must use that exact
+    algorithm too. Legacy duplicate rows for the same Short/actor are collapsed
+    before the bulk UPDATE; otherwise assigning the canonical hash can violate
+    the existing unique key on partially migrated sites.
+
+    Do not use ``GROUP_CONCAT`` for document names here: its server-side length
+    limit can silently truncate a large legacy duplicate set and leave rows that
+    would still collide during normalization.
     """
 
-    rows = frappe.db.sql(
+    groups = frappe.db.sql(
         """
         SELECT
             short,
-            view_date,
             CASE
-                WHEN user IS NOT NULL AND user != '' THEN CONCAT('user:', user)
-                WHEN session_id IS NOT NULL AND session_id != '' THEN CONCAT('session:', session_id)
-                ELSE NULL
-            END AS computed_identity_key,
-            GROUP_CONCAT(name ORDER BY watch_ms DESC, modified DESC, creation DESC, name DESC) AS names
+                WHEN user IS NOT NULL AND user != '' THEN 'user'
+                ELSE 'session'
+            END AS actor_kind,
+            CASE
+                WHEN user IS NOT NULL AND user != '' THEN user
+                ELSE session_id
+            END AS actor_value,
+            COUNT(*) AS row_count
         FROM `tabAOS Short View`
         WHERE short IS NOT NULL
           AND short != ''
-          AND view_date IS NOT NULL
           AND (
               (user IS NOT NULL AND user != '')
               OR (session_id IS NOT NULL AND session_id != '')
           )
         GROUP BY
             short,
-            view_date,
             CASE
-                WHEN user IS NOT NULL AND user != '' THEN CONCAT('user:', user)
-                WHEN session_id IS NOT NULL AND session_id != '' THEN CONCAT('session:', session_id)
-                ELSE NULL
+                WHEN user IS NOT NULL AND user != '' THEN 'user'
+                ELSE 'session'
+            END,
+            CASE
+                WHEN user IS NOT NULL AND user != '' THEN user
+                ELSE session_id
             END
         HAVING COUNT(*) > 1
         """,
@@ -217,8 +227,33 @@ def _dedupe_short_views_by_computed_identity() -> set[str]:
 
     affected_shorts: set[str] = set()
 
-    for row in rows:
-        names = _split_names(row.names)
+    for group in groups:
+        if group.actor_kind == "user":
+            names = frappe.db.sql(
+                """
+                SELECT name
+                FROM `tabAOS Short View`
+                WHERE short = %(short)s
+                  AND user = %(actor_value)s
+                ORDER BY qualified DESC, watch_ms DESC, modified DESC, creation DESC, name DESC
+                """,
+                {"short": group.short, "actor_value": group.actor_value},
+                pluck=True,
+            )
+        else:
+            names = frappe.db.sql(
+                """
+                SELECT name
+                FROM `tabAOS Short View`
+                WHERE short = %(short)s
+                  AND (user IS NULL OR user = '')
+                  AND session_id = %(actor_value)s
+                ORDER BY qualified DESC, watch_ms DESC, modified DESC, creation DESC, name DESC
+                """,
+                {"short": group.short, "actor_value": group.actor_value},
+                pluck=True,
+            )
+
         keeper = names[0] if names else None
         stale_names = names[1:]
         if not keeper or not stale_names:
@@ -253,127 +288,10 @@ def _dedupe_short_views_by_computed_identity() -> set[str]:
             {"names": tuple(stale_names)},
         )
 
-        if row.short:
-            affected_shorts.add(row.short)
+        if group.short:
+            affected_shorts.add(group.short)
 
     return affected_shorts
-
-
-def _delete_duplicate_docs(*, doctype: str, fields: list[str], order_by: str) -> set[str]:
-    if not _doctype_exists(doctype):
-        return set()
-
-    field_sql = ", ".join(f"`{field}`" for field in fields)
-    not_empty_sql = " AND ".join(
-        f"`{field}` IS NOT NULL AND `{field}` != ''" for field in fields
-    )
-
-    rows = frappe.db.sql(
-        f"""
-        SELECT {field_sql}, GROUP_CONCAT(name ORDER BY {order_by}) AS names
-        FROM `tab{doctype}`
-        WHERE {not_empty_sql}
-        GROUP BY {field_sql}
-        HAVING COUNT(*) > 1
-        """,
-        as_dict=True,
-    )
-
-    affected_primary_values: set[str] = set()
-
-    for row in rows:
-        names = _split_names(row.names)
-        stale_names = names[1:]
-        if not stale_names:
-            continue
-
-        primary_value = row.get(fields[0])
-        if primary_value:
-            affected_primary_values.add(primary_value)
-
-        for name in stale_names:
-            frappe.delete_doc(
-                doctype,
-                name,
-                ignore_permissions=True,
-                force=True,
-            )
-
-    return affected_primary_values
-
-
-def _add_unique_index(*, doctype: str, fields: list[str], constraint_name: str):
-    if not _doctype_exists(doctype):
-        frappe.log_error(
-            title="Unique Constraint Patch Skipped",
-            message=f"DocType {doctype} does not exist. Skipping {constraint_name}.",
-        )
-        return
-
-    _validate_columns(doctype, fields)
-
-    if _unique_index_exists(doctype, constraint_name):
-        return
-
-    frappe.db.add_unique(
-        doctype,
-        fields,
-        constraint_name=constraint_name,
-    )
-
-
-def _validate_columns(doctype: str, fields: list[str]):
-    missing = [field for field in fields if not _column_exists(doctype, field)]
-    if missing:
-        frappe.throw(
-            f"Cannot add unique constraint on {doctype}. Missing columns: {', '.join(missing)}"
-        )
-
-
-def _doctype_exists(doctype: str) -> bool:
-    return bool(frappe.db.exists("DocType", doctype))
-
-
-def _column_exists(doctype: str, fieldname: str) -> bool:
-    return bool(frappe.db.has_column(doctype, fieldname))
-
-
-def _unique_index_exists(doctype: str, constraint_name: str) -> bool:
-    return bool(
-        frappe.db.sql(
-            """
-            SELECT INDEX_NAME
-            FROM information_schema.STATISTICS
-            WHERE TABLE_SCHEMA = DATABASE()
-              AND TABLE_NAME = %s
-              AND INDEX_NAME = %s
-              AND NON_UNIQUE = 0
-            LIMIT 1
-            """,
-            (f"tab{doctype}", constraint_name),
-            as_dict=True,
-        )
-    )
-
-
-def _split_names(value: str | None) -> list[str]:
-    return [name for name in str(value or "").split(",") if name]
-
-
-def _sync_short_comment_like_counts(comment_ids: Iterable[str]):
-    for comment_id in set(comment_ids):
-        frappe.db.sql(
-            """
-            UPDATE `tabAOS Short Comment` c
-            SET like_count = (
-                SELECT COUNT(*)
-                FROM `tabAOS Short Comment Like` l
-                WHERE l.comment = c.name
-            )
-            WHERE c.name = %s
-            """,
-            (comment_id,),
-        )
 
 
 def _sync_short_view_counts(short_ids: Iterable[str]):

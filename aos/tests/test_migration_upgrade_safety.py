@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 from pathlib import Path
 
@@ -168,13 +169,62 @@ class TestMigrationUpgradeSafety(FrappeTestCase, AOSFeatureTestMixin):
         )
 
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0].identity_key, f"user:{viewer}")
+        self.assertEqual(
+            rows[0].identity_key,
+            hashlib.sha256(f"{short.name}|user:{viewer}".encode()).hexdigest(),
+        )
         self.assertEqual(int(rows[0].watch_ms or 0), 8000)
         self.assertEqual(int(rows[0].qualified or 0), 1)
         self.assertEqual(
             int(frappe.db.get_value("AOS Short", short.name, "view_count") or 0),
             1,
         )
+
+
+    def test_short_view_identity_is_scoped_to_short_during_legacy_normalization(self):
+        viewer = self.make_user("short-cross-content-viewer")
+        first_short = self.make_short(owner=viewer)
+        second_short = self.make_short(owner=viewer)
+        view_date = getdate()
+
+        self._insert_legacy_short_view(
+            "cross-first",
+            first_short.name,
+            viewer,
+            view_date,
+            watch_ms=2500,
+            qualified=1,
+        )
+        self._insert_legacy_short_view(
+            "cross-second",
+            second_short.name,
+            viewer,
+            view_date,
+            watch_ms=3000,
+            qualified=1,
+        )
+
+        apply_unique_constraints()
+        apply_unique_constraints()
+
+        rows = frappe.get_all(
+            "AOS Short View",
+            filters={"short": ["in", [first_short.name, second_short.name]], "user": viewer},
+            fields=["short", "identity_key"],
+            order_by="short asc",
+        )
+
+        self.assertEqual(len(rows), 2)
+        identities = {row.short: row.identity_key for row in rows}
+        self.assertEqual(
+            identities[first_short.name],
+            hashlib.sha256(f"{first_short.name}|user:{viewer}".encode()).hexdigest(),
+        )
+        self.assertEqual(
+            identities[second_short.name],
+            hashlib.sha256(f"{second_short.name}|user:{viewer}".encode()).hexdigest(),
+        )
+        self.assertNotEqual(identities[first_short.name], identities[second_short.name])
 
     # RAW LEGACY FIXTURES
 
