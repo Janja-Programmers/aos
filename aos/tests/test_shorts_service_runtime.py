@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 import hashlib
 import uuid
 from unittest.mock import patch
@@ -158,18 +159,24 @@ class TestShortsServiceRuntime(AOSFeatureTestMixin, FrappeTestCase):
         dirty_before = {str(x.decode() if isinstance(x, bytes) else x) for x in (frappe.cache().smembers(_DIRTY_KEY) or set())}
         self.assertIn(short.name, dirty_before)
 
-        # Capture the registered after-commit cleanup directly instead of
-        # depending on Frappe's internal CallbackManager container/transaction
-        # behavior, which differs across supported Frappe versions. The
-        # production invariant is that SQL reconciliation happens now while the
-        # Redis dirty membership is removed only by the registered after-commit
-        # callback.
+        # Frappe 17's CallbackManager is slotted, so its bound ``add`` method
+        # is read-only on the manager instance (notably under Python 3.14).
+        # Replace only the hot-metrics module's Frappe dependency with a small
+        # proxy that delegates DB work to the real database while capturing the
+        # registered after-commit callback. This verifies the production
+        # invariant without depending on CallbackManager internals.
         callbacks = []
-        with patch.object(frappe.db.after_commit, "add", side_effect=callbacks.append) as add_callback:
+        real_db = frappe.db
+        fake_db = SimpleNamespace(
+            exists=real_db.exists,
+            sql=real_db.sql,
+            after_commit=SimpleNamespace(add=callbacks.append),
+        )
+        fake_frappe = SimpleNamespace(cache=frappe.cache, db=fake_db)
+        with patch("aos.services.shorts.hot_metrics.frappe", fake_frappe):
             flushed = flush_hot_metrics(limit=5000)
 
         self.assertGreaterEqual(flushed, 1)
-        add_callback.assert_called_once()
         dirty_before_commit = {str(x.decode() if isinstance(x, bytes) else x) for x in (frappe.cache().smembers(_DIRTY_KEY) or set())}
         self.assertIn(short.name, dirty_before_commit)
         self.assertEqual(len(callbacks), 1)
