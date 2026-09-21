@@ -262,3 +262,34 @@ def test_selected_sound_mixes_with_original_audio(monkeypatch, tmp_path):
 	assert "[0:a]" in filter_graph
 	assert "[1:a]volume=0.6" in filter_graph
 	assert "amix=inputs=2" in filter_graph
+
+
+def test_hls_renditions_force_even_dimensions(monkeypatch, tmp_path):
+	captured = {}
+
+	def capture_run(cmd, error_message, **_kwargs):
+		captured["cmd"] = cmd
+		captured["error_message"] = error_message
+		return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+	monkeypatch.setattr(worker, "_run", capture_run)
+	worker._generate_hls(str(tmp_path / "final.mp4"), str(tmp_path))
+
+	cmd = captured["cmd"]
+	filter_graph = cmd[cmd.index("-filter_complex") + 1]
+	assert "scale=-2:1280:force_original_aspect_ratio=decrease:force_divisible_by=2" in filter_graph
+	assert "scale=-2:854:force_original_aspect_ratio=decrease:force_divisible_by=2" in filter_graph
+	assert "scale=-2:640:force_original_aspect_ratio=decrease:force_divisible_by=2" in filter_graph
+	assert captured["error_message"] == "HLS generation failed"
+
+
+def test_hls_854p_filter_keeps_portrait_dimensions_even():
+	# Regression guard for 9:16 inputs: without force_divisible_by=2, FFmpeg's
+	# aspect-ratio rounding can produce 480x853 and libx264 rejects the odd height.
+	width, height = 720, 1280
+	target_height = 854
+	raw_width = width * target_height / height
+	even_width = int(raw_width) - (int(raw_width) % 2)
+	assert (even_width, target_height) == (480, 854)
+	assert even_width % 2 == 0
+	assert target_height % 2 == 0

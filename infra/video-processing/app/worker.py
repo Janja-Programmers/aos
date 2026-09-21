@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -101,7 +102,14 @@ def _run(cmd: list[str], error_message: str, *, timeout: int | None = None) -> s
 		timeout=timeout or settings.ffmpeg_timeout_seconds,
 	)
 	if result.returncode != 0:
-		# Keep companion errors bounded and avoid propagating media metadata or paths.
+		# Keep caller-facing errors generic, but retain a bounded diagnostic in the
+		# companion log so operational failures can be diagnosed without replaying
+		# the workload. Local temporary paths are redacted.
+		diagnostic = (result.stderr or result.stdout or "").strip()
+		diagnostic = re.sub(r"/tmp/aos_video_[^\s'\"]+", "<video-workdir>", diagnostic)
+		if len(diagnostic) > 2000:
+			diagnostic = diagnostic[-2000:]
+		logger.error("%s exit_code=%s diagnostic=%s", error_message, result.returncode, diagnostic or "unavailable")
 		raise VideoProcessingError(error_message)
 	return result
 
@@ -347,9 +355,9 @@ def _generate_hls(input_path: str, work_dir: str) -> None:
 		"ffmpeg", "-y", "-i", input_path,
 		"-filter_complex",
 		"[0:v]split=3[v0][v1][v2];"
-		"[v0]scale=-2:1280:force_original_aspect_ratio=decrease[v0o];"
-		"[v1]scale=-2:854:force_original_aspect_ratio=decrease[v1o];"
-		"[v2]scale=-2:640:force_original_aspect_ratio=decrease[v2o]",
+		"[v0]scale=-2:1280:force_original_aspect_ratio=decrease:force_divisible_by=2[v0o];"
+		"[v1]scale=-2:854:force_original_aspect_ratio=decrease:force_divisible_by=2[v1o];"
+		"[v2]scale=-2:640:force_original_aspect_ratio=decrease:force_divisible_by=2[v2o]",
 		"-map", "[v0o]", "-map", "0:a:0",
 		"-map", "[v1o]", "-map", "0:a:0",
 		"-map", "[v2o]", "-map", "0:a:0",
