@@ -973,17 +973,16 @@ def _cleanup_activity_account_data(
         content_params.extend(sellers)
 
     if _doctype_exists("AOS Short"):
-        short_owner_parts = ["owner = %s"]
-        short_params: list[Any] = [user]
-        if sellers:
-            placeholders = _placeholders(sellers)
-            short_owner_parts.append(f"seller IN ({placeholders})")
-            short_params.extend(sellers)
+        # Shorts have creator ownership only. Shop/listing authority remains in
+        # hardened Ads through AOS Short Ad links; do not duplicate or infer a
+        # seller column on the Short itself. A seller account deletion may make
+        # its linked Ad unavailable, but a Short authored by another account is
+        # still that creator's content and must not be redacted wholesale.
         content_clauses.append(
             "(route_type = 'short' AND route_id IN "
-            f"(SELECT name FROM `tabAOS Short` WHERE {' OR '.join(short_owner_parts)}))"
+            "(SELECT name FROM `tabAOS Short` WHERE owner = %s))"
         )
-        content_params.extend(short_params)
+        content_params.append(user)
 
     if _doctype_exists("AOS Live Stream"):
         content_clauses.append(

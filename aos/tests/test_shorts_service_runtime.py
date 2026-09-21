@@ -158,22 +158,22 @@ class TestShortsServiceRuntime(AOSFeatureTestMixin, FrappeTestCase):
         dirty_before = {str(x.decode() if isinstance(x, bytes) else x) for x in (frappe.cache().smembers(_DIRTY_KEY) or set())}
         self.assertIn(short.name, dirty_before)
 
-        manager = frappe.db.after_commit
-        functions = getattr(manager, "_functions", None)
-        self.assertIsNotNone(functions)
-        self.assertTrue(callable(getattr(functions, "clear", None)))
-        self.assertTrue(callable(getattr(functions, "extend", None)))
-        before = list(functions)
-        flush_hot_metrics(limit=5000)
-        callbacks = list(functions)[len(before):]
-        functions.clear()
-        functions.extend(before)
+        # Capture the registered after-commit cleanup directly instead of
+        # depending on Frappe's internal CallbackManager container/transaction
+        # behavior, which differs across supported Frappe versions. The
+        # production invariant is that SQL reconciliation happens now while the
+        # Redis dirty membership is removed only by the registered after-commit
+        # callback.
+        callbacks = []
+        with patch.object(frappe.db.after_commit, "add", side_effect=callbacks.append) as add_callback:
+            flushed = flush_hot_metrics(limit=5000)
 
+        self.assertGreaterEqual(flushed, 1)
+        add_callback.assert_called_once()
         dirty_before_commit = {str(x.decode() if isinstance(x, bytes) else x) for x in (frappe.cache().smembers(_DIRTY_KEY) or set())}
         self.assertIn(short.name, dirty_before_commit)
-        self.assertTrue(callbacks)
-        for callback in callbacks:
-            callback()
+        self.assertEqual(len(callbacks), 1)
+        callbacks[0]()
 
         dirty_after = {str(x.decode() if isinstance(x, bytes) else x) for x in (frappe.cache().smembers(_DIRTY_KEY) or set())}
         self.assertNotIn(short.name, dirty_after)
