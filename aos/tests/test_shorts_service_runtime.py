@@ -8,7 +8,13 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from aos.services.shorts import service
-from aos.services.shorts.hot_metrics import _DIRTY_KEY, flush_hot_metrics, record_signal
+from aos.services.shorts.hot_metrics import (
+    _DIRTY_KEY,
+    _dirty_members,
+    flush_hot_metrics,
+    hot_key,
+    record_signal,
+)
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
@@ -155,8 +161,18 @@ class TestShortsServiceRuntime(AOSFeatureTestMixin, FrappeTestCase):
         _user, short = self._published_short()
         self._clear_short_ephemeral_state(short.name)
         record_signal(short.name, "impression")
-        dirty_before = {str(x.decode() if isinstance(x, bytes) else x) for x in (frappe.cache().smembers(_DIRTY_KEY) or set())}
+        cache = frappe.cache()
+        dirty_before = {str(x.decode() if isinstance(x, bytes) else x) for x in (cache.smembers(_DIRTY_KEY) or set())}
         self.assertIn(short.name, dirty_before)
+
+        # Hot hashes intentionally use raw numeric Redis values (not Frappe's
+        # pickled hash helper) so HINCRBY is atomic. Verify that the write and
+        # bounded scan paths see the same site-prefixed state before flushing.
+        raw_hot = cache.execute_command("HGETALL", cache.make_key(hot_key(short.name))) or {}
+        impression = raw_hot.get(b"impression_count", raw_hot.get("impression_count", 0))
+        self.assertGreaterEqual(int(impression or 0), 1)
+        selected = {str(x.decode() if isinstance(x, bytes) else x) for x in _dirty_members(cache, 5000)}
+        self.assertIn(short.name, selected)
 
         # Capture our module-local registration seam rather than patching
         # Frappe's slotted CallbackManager. The flush still uses the real DB

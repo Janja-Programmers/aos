@@ -107,6 +107,18 @@ for token in ("ensure_outbox_for_job", "next_retry_at", "lease_expires_at", "job
     require(token in processing, f"processing invariant missing: {token}")
 require("frappe.db.commit" not in processing, "Video Processing request/service flow manually commits")
 
+hot_metrics = text("aos/services/shorts/hot_metrics.py")
+for unsafe_call in ("cache.hsetnx(", "cache.hincrby(", "cache.hgetall("):
+    require(unsafe_call not in hot_metrics, f"Shorts hot metrics uses unprefixed/serialized Redis hash call: {unsafe_call}")
+for required_call in (
+    'cache.execute_command("HSETNX"',
+    'cache.execute_command("HINCRBY"',
+    'cache.execute_command("HGETALL"',
+    '"SSCAN",',
+    '_redis_key(cache, _DIRTY_KEY)',
+):
+    require(required_call in hot_metrics, f"Shorts hot metrics missing site-prefixed raw Redis invariant: {required_call}")
+
 worker = text("infra/video-processing/app/worker.py")
 for token in ("_generate_hls", "_generate_storyboard", "_generate_watermarked_download", "_compose_side_by_side", "_compose_segment"):
     require(token in worker, f"video companion capability missing: {token}")

@@ -108,7 +108,8 @@ class TestShortsHardenedContract(TestCase):
         self.assertIn("cache.set(dedupe_key,'1',ex=7*86400,nx=True)", service)
         self.assertIn("__dirty_version", hot)
         self.assertIn("frappe.db.after_commit.add", hot)
-        self.assertIn("client.eval", hot)
+        self.assertIn("cache.eval", hot)
+        self.assertIn("_redis_key(cache, _DIRTY_KEY)", hot)
         self.assertIn("SREM", hot)
 
     def test_sound_cursor_parameters_are_implemented(self):
