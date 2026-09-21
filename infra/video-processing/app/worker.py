@@ -588,6 +588,7 @@ def _failure_payload(payload: dict[str, Any], error: str) -> dict[str, Any]:
 		"dispatch_token": payload.get("dispatch_token"),
 		"job_generation": payload.get("job_generation"),
 		"short_id": payload.get("short_id"),
+		"operation": payload.get("operation"),
 		"status": "failed",
 		"error": "VIDEO_PROCESSING_FAILED",
 	}
@@ -719,7 +720,7 @@ def _perform_video_work(payload: dict[str, Any]) -> dict[str, Any]:
 			"job_id": job_id, "idempotency_key": payload.get("idempotency_key"),
 			"dispatch_id": payload.get("dispatch_id"), "dispatch_generation": payload.get("dispatch_generation"),
 			"dispatch_token": payload.get("dispatch_token"), "job_generation": payload.get("job_generation"),
-			"short_id": short_id, "status": "ready", "duration_seconds": duration, "outputs": outputs,
+			"short_id": short_id, "operation": operation, "status": "ready", "duration_seconds": duration, "outputs": outputs,
 		}
 		if classification is not None:
 			result["classification"] = classification

@@ -184,6 +184,22 @@ class TestShortsHardenedContract(TestCase):
         self.assertNotIn("seller IN", short_purge)
         self.assertIn("WHERE owner = %s", short_purge)
 
+    def test_missing_video_callback_converges_via_durable_outbox(self):
+        service = (ROOT / "aos/services/video_processing_service.py").read_text()
+        worker = (ROOT / "infra/video-processing/app/worker.py").read_text()
+        self.assertIn("def _handle_missing_video_processing_job_callback", service)
+        self.assertIn("validate_callback_idempotency", service)
+        self.assertIn('callback_status="cancelled"', service)
+        self.assertIn('"processing_error": "PROCESSING_JOB_MISSING"', service)
+        self.assertIn('"operation": payload.get("operation")', worker)
+        self.assertIn('"operation": operation', worker)
+
+    def test_video_callback_allowlist_has_one_additive_resolver(self):
+        config = (ROOT / "infra/video-processing/app/config.py").read_text()
+        self.assertEqual(config.count("def _callback_allowed_hosts()"), 1)
+        self.assertEqual(config.count("from urllib.parse import urlparse"), 1)
+
+
     def test_only_four_content_modes_exist(self):
         source = (ROOT / "aos/services/shorts/constants.py").read_text()
         match = re.search(r"CONTENT_MODES\s*=\s*([^\n]+)", source)

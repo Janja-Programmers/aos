@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
-from urllib.parse import urlparse
 
 
 def _clean(value: object | None, default: str = "") -> str:
@@ -20,26 +19,6 @@ def _bool(name: str, default: bool = False) -> bool:
 
 def _csv(name: str, default: str = "") -> tuple[str, ...]:
     return tuple(part.strip().lower() for part in os.getenv(name, default).split(",") if part.strip())
-
-
-def _callback_allowed_hosts() -> tuple[str, ...]:
-    """Resolve the trusted callback host from explicit or canonical service config.
-
-    An explicit allowlist wins. Otherwise the companion derives the single host
-    from the same VIDEO_CALLBACK_URL used by the Frappe dispatcher, which avoids
-    staging/production rejecting its own canonical HTTPS callback. FRAPPE_SITE_NAME
-    remains a final compatibility-free deployment hint, not a client-controlled
-    value.
-    """
-    explicit = _csv("VIDEO_CALLBACK_ALLOWED_HOSTS")
-    if explicit:
-        return explicit
-    callback_url = _clean(os.getenv("VIDEO_CALLBACK_URL"))
-    if callback_url:
-        parsed = urlparse(callback_url)
-        if parsed.hostname:
-            return (parsed.hostname.lower(),)
-    return _csv("FRAPPE_SITE_NAME")
 
 
 def _callback_allowed_hosts() -> tuple[str, ...]:

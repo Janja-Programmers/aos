@@ -60,6 +60,20 @@ class VideoProcessingConfig:
     dispatcher_timeout_seconds: int
 
 
+@dataclass(frozen=True)
+class _CallbackCorrelationJob:
+    doctype: str
+    name: str
+    idempotency_key: str
+
+
+@dataclass(frozen=True)
+class MissingVideoProcessingCallbackResult:
+    name: str
+    short: str
+    status: str
+
+
 def get_max_short_duration_seconds() -> int:
     return get_env_int("VIDEO_MAX_DURATION_SECONDS", 600, min_value=1, max_value=3600)
 
@@ -612,12 +626,140 @@ def _schedule_retry(job: Any, short: Any, error: str) -> Any | None:
     return retry
 
 
+def _missing_job_callback_status(outbox: Any) -> str:
+    callback = str(getattr(outbox, "callback_status", None) or "").strip().lower()
+    if callback == "cancelled":
+        return "Cancelled"
+    if str(getattr(outbox, "status", None) or "") == "Completed With Failure" or callback == "failed":
+        return "Failed"
+    return "Ready"
+
+
+def _handle_missing_video_processing_job_callback(
+    payload: dict[str, Any], *, callback_status: str
+) -> MissingVideoProcessingCallbackResult:
+    """Converge a signed late callback after its durable job row disappeared.
+
+    The transactional outbox is the durable dispatch correlation record.  We only
+    acknowledge a missing-job callback after the outbox validates its stable
+    dispatch id, generation and token.  Deleted/obsolete Short generations become
+    harmless cancellations.  A missing job for the current processing generation
+    is an infrastructure inconsistency, so the Short is failed deterministically
+    and can be retried through the normal creator retry flow instead of generating
+    an endless 502 callback loop.
+    """
+    job_id = str(payload.get("job_id") or "").strip()
+    short_id = str(payload.get("short_id") or "").strip()
+    correlation_job = _CallbackCorrelationJob(
+        doctype="AOS Video Processing Job",
+        name=job_id,
+        idempotency_key=str(payload.get("idempotency_key") or "").strip(),
+    )
+    validation = validate_callback_idempotency(
+        correlation_job, payload, callback_status=callback_status
+    )
+    if not validation.outbox_name:
+        raise VideoProcessingError("Video processing job not found")
+
+    outbox = frappe.get_doc("AOS Transactional Outbox", validation.outbox_name, for_update=True)
+    if (
+        str(outbox.aggregate_doctype or "") != "AOS Short"
+        or not short_id
+        or str(outbox.aggregate_name or "") != short_id
+    ):
+        raise OutboxConflictError(
+            "Callback Short does not match the durable outbox aggregate.",
+            error_code="STABLE_DISPATCH_MISMATCH",
+            outbox_name=outbox.name,
+        )
+
+    if validation.duplicate:
+        return MissingVideoProcessingCallbackResult(
+            name=job_id, short=short_id, status=_missing_job_callback_status(outbox)
+        )
+
+    dispatch_generation = int(payload.get("dispatch_generation") or 0)
+    dispatch_token = str(payload.get("dispatch_token") or "").strip()
+    short_exists = bool(frappe.db.exists("AOS Short", short_id))
+    if not short_exists:
+        mark_outbox_callback(
+            job_doctype="AOS Video Processing Job",
+            job_name=job_id,
+            callback_status="cancelled",
+            success=True,
+            dispatch_token=dispatch_token,
+            dispatch_generation=dispatch_generation,
+        )
+        return MissingVideoProcessingCallbackResult(name=job_id, short=short_id, status="Cancelled")
+
+    short = frappe.get_doc("AOS Short", short_id, for_update=True)
+    try:
+        supplied_generation = int(payload.get("job_generation") or 0)
+    except (TypeError, ValueError):
+        supplied_generation = 0
+    current_generation = int(short.processing_generation or 0)
+    if str(short.lifecycle_status or "") == "Deleted" or (
+        supplied_generation > 0 and current_generation > supplied_generation
+    ):
+        mark_outbox_callback(
+            job_doctype="AOS Video Processing Job",
+            job_name=job_id,
+            callback_status="cancelled",
+            success=True,
+            dispatch_token=dispatch_token,
+            dispatch_generation=dispatch_generation,
+        )
+        return MissingVideoProcessingCallbackResult(name=job_id, short=short_id, status="Cancelled")
+
+    operation = str(payload.get("operation") or "").strip()
+    looks_like_publish_processing = operation in {"Process", "Side By Side", "Segment"}
+    if not operation:
+        looks_like_publish_processing = (
+            str(short.lifecycle_status or "") == LIFECYCLE_PROCESSING
+            or str(short.processing_status or "") in {"Queued", "Processing", "Retry Waiting"}
+        )
+
+    error = str(payload.get("error") or "PROCESSING_JOB_MISSING").strip()[:500]
+    if looks_like_publish_processing and (
+        supplied_generation <= 0 or supplied_generation == current_generation
+    ):
+        frappe.db.set_value(
+            "AOS Short",
+            short.name,
+            {
+                "processing_status": PROCESSING_FAILED,
+                "lifecycle_status": LIFECYCLE_FAILED,
+                "processing_error": "PROCESSING_JOB_MISSING",
+            },
+            update_modified=True,
+        )
+
+    mark_outbox_callback(
+        job_doctype="AOS Video Processing Job",
+        job_name=job_id,
+        callback_status=callback_status or "failed",
+        success=False,
+        error=error or "PROCESSING_JOB_MISSING",
+        dispatch_token=dispatch_token,
+        dispatch_generation=dispatch_generation,
+    )
+    frappe.logger("aos.callbacks", allow_site=True).warning(
+        "Signed video processing callback converged without durable job: job=%s short=%s operation=%s",
+        job_id,
+        short_id,
+        operation or "unknown",
+    )
+    return MissingVideoProcessingCallbackResult(name=job_id, short=short_id, status="Failed")
+
+
 def handle_video_processing_callback(payload: dict[str, Any]):
     job_id = str(payload.get("job_id") or "").strip()
-    if not job_id or not frappe.db.exists("AOS Video Processing Job", job_id):
+    if not job_id:
         raise VideoProcessingError("Video processing job not found")
     incoming = str(payload.get("status") or "").strip().lower()
     callback_status = "completed" if incoming in {"ready", "completed"} else incoming
+    if not frappe.db.exists("AOS Video Processing Job", job_id):
+        return _handle_missing_video_processing_job_callback(payload, callback_status=callback_status)
     job = frappe.get_doc("AOS Video Processing Job", job_id, for_update=True)
     validation = validate_callback_idempotency(job, payload, callback_status=callback_status)
     if validation.duplicate:
