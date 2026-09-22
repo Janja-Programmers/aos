@@ -83,7 +83,7 @@ class AOSShortSound(Document):
         frappe.db.sql(
             """
             UPDATE `tabAOS Sound`
-            SET usage_count = usage_count + 1
+            SET usage_count = COALESCE(usage_count, 0) + 1
             WHERE name = %s
             """,
             (sound,),
@@ -97,7 +97,7 @@ class AOSShortSound(Document):
         frappe.db.sql(
             """
             UPDATE `tabAOS Sound`
-            SET usage_count = GREATEST(usage_count - 1, 0)
+            SET usage_count = GREATEST(COALESCE(usage_count, 0) - 1, 0)
             WHERE name = %s
             """,
             (sound,),

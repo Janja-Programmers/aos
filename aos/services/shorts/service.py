@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import uuid
+from collections import defaultdict
 from typing import Any
 
 import frappe
@@ -26,10 +28,24 @@ from aos.services.social.repository import SocialRepository
 
 from .analytics import qualifies_view
 from .classification import classify_short
-from .constants import CAPTION_MAX_LENGTH, CONTENT_MODES, MAX_EVENT_BATCH, MAX_HASHTAGS, MAX_PHOTOS
+from .constants import (
+    CAPTION_MAX_LENGTH,
+    CONTENT_MODES,
+    MAX_EVENT_BATCH,
+    MAX_HASHTAGS,
+    MAX_PHOTOS,
+    REUSE_SEGMENT,
+    REUSE_SIDE_BY_SIDE,
+)
 from .cursor import decode_cursor, encode_cursor
 from .errors import ShortsConflictError, ShortsError, ShortsNotFoundError, ShortsPermissionError
-from .policy import can_download, can_reuse, can_view, filter_viewable_rows
+from .policy import (
+    can_download,
+    can_reuse,
+    can_view,
+    filter_distributable_rows,
+    filter_viewable_rows,
+)
 from .serializers import PUBLIC_FIELDS, serialize_owner_short, serialize_short_rows
 from .validation import parse_bool, parse_json_list
 
@@ -193,20 +209,49 @@ def _replace_sound(short_id:str,sound_id:str|None):
     if existing and str(existing.sound)==str(sound_id or ''):
         return
     if existing:
-        old_sound=str(existing.sound or '')
         frappe.delete_doc('AOS Short Sound',existing.name,ignore_permissions=True)
-        if old_sound:
-            frappe.db.sql("UPDATE `tabAOS Sound` SET usage_count=GREATEST(COALESCE(usage_count,0)-1,0) WHERE name=%s",(old_sound,))
     if not sound_id:
         return
     frappe.get_doc({'doctype':'AOS Short Sound','short':short_id,'sound':sound_id,'start_ms':0,'duration_ms':0,'volume':1,'is_original_audio':0}).insert(ignore_permissions=True)
-    frappe.db.sql("UPDATE `tabAOS Sound` SET usage_count=COALESCE(usage_count,0)+1 WHERE name=%s",(sound_id,))
 
 
 def _attach_video(short,user,media_id):
     media=MediaService(); media.validate_media_for_use(media_id=media_id,user=user,purpose='short_video_raw')
     attached=media.attach_media(media_id=media_id,user=user,purpose='short_video_raw',attached_doctype='AOS Short',attached_name=short.name,attached_field='raw_video_media')
     short.raw_video_media=attached.name
+
+
+def _release_derived_video_media(short, user: str) -> None:
+    """Release generated Short assets through the hardened Media lifecycle.
+
+    Reprocessing must not merely clear Link fields: Media enforces one derived
+    asset per purpose/resource, so stale attachments would otherwise block the
+    next generation and leave inaccessible public objects attached forever.
+    """
+    fields = (
+        "playback_media",
+        "playback_manifest_media",
+        "download_media",
+        "poster_media",
+        "storyboard_media",
+        "storyboard_manifest_media",
+    )
+    service = MediaService()
+    released: set[str] = set()
+    for fieldname in fields:
+        media_id = str(getattr(short, fieldname, "") or "").strip()
+        if media_id and media_id not in released:
+            service.release_media(
+                media_id=media_id,
+                user=user,
+                attached_doctype="AOS Short",
+                attached_name=short.name,
+                system=True,
+            )
+            released.add(media_id)
+        setattr(short, fieldname, None)
+    if str(getattr(short, "cover_media", "") or "").strip() in released:
+        short.cover_media = None
 
 
 def _replace_photos(short,user,media_ids:list[str]):
@@ -281,8 +326,9 @@ def update_short(**kwargs):
         if str(before or '')!=str(after or ''):
             _replace_sound(doc.name,after)
             if doc.content_type=='Video' and doc.processing_status=='Ready':
+                _release_derived_video_media(doc,user)
                 doc.processing_generation=int(doc.processing_generation or 0)+1
-                doc.processing_status='Queued'; doc.playback_media=None; doc.playback_manifest_media=None; doc.download_media=None; doc.storyboard_media=None; doc.storyboard_manifest_media=None
+                doc.processing_status='Queued'
             changed=True; moderation_sensitive=True
     if 'photo_media_ids' in kwargs:
         if doc.content_type!='Photo' or doc.lifecycle_status not in {'Draft','Failed'}: raise ShortsConflictError('Photos cannot change now.',code='SHORTS_INVALID_STATE')
@@ -370,43 +416,381 @@ def _candidate_rows(*,mode:str|None,viewer:str|None,pool=360):
     return frappe.db.sql(f'''SELECT s.* FROM `tabAOS Short` s WHERE s.lifecycle_status='Published' AND s.moderation_status='Approved' AND s.processing_status IN ('Ready','Not Required') {mode_clause} {feedback} ORDER BY s.ranking_score DESC,s.posted_on DESC,s.name DESC LIMIT %(limit)s''',params,as_dict=True)
 
 
-def _personalize(rows,user):
-    if not user: return rows
-    affinity=frappe.db.sql('''SELECT s.owner,COUNT(*) n FROM `tabAOS Short Like` l INNER JOIN `tabAOS Short` s ON s.name=l.short WHERE l.user=%s GROUP BY s.owner ORDER BY n DESC LIMIT 40''',(user,),as_dict=True)
-    creator_boost={str(r.owner):min(int(r.n or 0),5)*0.12 for r in affinity}
-    scored=[]
-    for r in rows:
-        base=float(r.ranking_score or 0); rec=creator_boost.get(str(r.owner),0); scored.append((base+rec,r))
-    scored.sort(key=lambda x:(x[0],str(x[1].posted_on or ''),str(x[1].name)),reverse=True)
-    # bounded creator diversity: at most two consecutive items per creator.
-    pending=[r for _,r in scored]; out=[]; last=None; streak=0
+def _bounded_affinity(user: str) -> dict[str, Any]:
+    """Build a bounded viewer-interest projection from durable Shorts signals."""
+    source_scores: dict[str, float] = defaultdict(float)
+    view_watch: dict[str, int] = {}
+
+    for row in frappe.get_all(
+        "AOS Short View",
+        filters={"user": user},
+        fields=["short", "watch_ms"],
+        order_by="last_seen_at desc",
+        limit=400,
+    ):
+        sid = str(row.short)
+        view_watch[sid] = max(view_watch.get(sid, 0), int(row.watch_ms or 0))
+
+    relation_weights = (
+        ("AOS Short Like", 2.0),
+        ("AOS Short Save", 3.0),
+        ("AOS Short Repost", 3.2),
+    )
+    for doctype, weight in relation_weights:
+        for row in frappe.get_all(
+            doctype,
+            filters={"user": user},
+            fields=["short"],
+            order_by="creation desc",
+            limit=300,
+        ):
+            source_scores[str(row.short)] += weight
+
+    comment_rows = frappe.db.sql(
+        """SELECT short, COUNT(*) AS n
+             FROM `tabAOS Short Comment`
+            WHERE user=%s AND status='active'
+            GROUP BY short
+            ORDER BY MAX(creation) DESC
+            LIMIT 250""",
+        (user,),
+        as_dict=True,
+    )
+    for row in comment_rows:
+        source_scores[str(row.short)] += min(3, int(row.n or 0)) * 1.2
+
+    event_weights = {
+        "qualified_view": 0.4,
+        "complete": 2.4,
+        "rewatch": 3.0,
+        "early_skip": -2.8,
+        "share": 2.8,
+        "follow_from_content": 4.0,
+    }
+    events = frappe.get_all(
+        "AOS Short Event",
+        filters={"user": user, "event_type": ["in", list(event_weights)]},
+        fields=["short", "event_type"],
+        order_by="creation desc",
+        limit=700,
+    )
+    seen_events: set[tuple[str, str]] = set()
+    for row in events:
+        key = (str(row.short), str(row.event_type))
+        if key in seen_events:
+            continue
+        seen_events.add(key)
+        source_scores[key[0]] += event_weights.get(key[1], 0.0)
+
+    for row in frappe.get_all(
+        "AOS Short Feedback",
+        filters={"user": user, "feedback_type": "not_interested"},
+        fields=["short"],
+        order_by="creation desc",
+        limit=300,
+    ):
+        source_scores[str(row.short)] -= 6.0
+
+    touched = sorted(set(source_scores) | set(view_watch))
+    if not touched:
+        return {"creator": {}, "mode": {}, "hashtag": {}, "sound": {}}
+    short_rows = frappe.get_all(
+        "AOS Short",
+        filters={"name": ["in", touched]},
+        fields=["name", "owner", "duration_seconds"],
+        limit=len(touched),
+    )
+    short_map = {str(row.name): row for row in short_rows}
+    for sid, watch_ms in view_watch.items():
+        row = short_map.get(sid)
+        if not row:
+            continue
+        duration_ms = max(1.0, float(row.duration_seconds or 0) * 1000.0)
+        ratio = min(1.5, float(watch_ms) / duration_ms)
+        source_scores[sid] += -0.8 if ratio < 0.15 else min(1.8, ratio * 1.5)
+
+    creator: dict[str, float] = defaultdict(float)
+    for sid, score in source_scores.items():
+        row = short_map.get(sid)
+        if row and row.owner:
+            creator[str(row.owner)] += max(-6.0, min(10.0, float(score)))
+
+    def metadata_scores(table: str, value_field: str) -> dict[str, float]:
+        result: dict[str, float] = defaultdict(float)
+        rows = frappe.db.sql(
+            f"SELECT short, {value_field} AS value FROM `tab{table}` WHERE short IN %(ids)s",
+            {"ids": tuple(touched)},
+            as_dict=True,
+        )
+        for row in rows:
+            value = str(row.value or "").strip()
+            if value:
+                result[value] += max(
+                    -6.0,
+                    min(10.0, float(source_scores.get(str(row.short), 0.0))),
+                )
+        return dict(result)
+
+    return {
+        "creator": dict(creator),
+        "mode": metadata_scores("AOS Short Mode", "mode"),
+        "hashtag": metadata_scores("AOS Short Hashtag", "hashtag"),
+        "sound": metadata_scores("AOS Short Sound", "sound"),
+    }
+
+
+def _candidate_metadata(
+    rows,
+) -> tuple[dict[str, list[str]], dict[str, list[str]], dict[str, str]]:
+    ids = [str(row.name) for row in rows]
+    if not ids:
+        return {}, {}, {}
+    modes: dict[str, list[str]] = defaultdict(list)
+    hashtags: dict[str, list[str]] = defaultdict(list)
+    sounds: dict[str, str] = {}
+    for row in frappe.db.sql(
+        "SELECT short, mode FROM `tabAOS Short Mode` WHERE short IN %(ids)s",
+        {"ids": tuple(ids)},
+        as_dict=True,
+    ):
+        modes[str(row.short)].append(str(row.mode))
+    for row in frappe.db.sql(
+        "SELECT short, hashtag FROM `tabAOS Short Hashtag` WHERE short IN %(ids)s",
+        {"ids": tuple(ids)},
+        as_dict=True,
+    ):
+        hashtags[str(row.short)].append(str(row.hashtag))
+    for row in frappe.db.sql(
+        "SELECT short, sound FROM `tabAOS Short Sound` WHERE short IN %(ids)s",
+        {"ids": tuple(ids)},
+        as_dict=True,
+    ):
+        sounds[str(row.short)] = str(row.sound)
+    return dict(modes), dict(hashtags), sounds
+
+
+def _personalize(rows, user):
+    if not rows:
+        return []
+    modes, hashtags, sounds = _candidate_metadata(rows)
+    affinity = (
+        _bounded_affinity(user)
+        if user
+        else {"creator": {}, "mode": {}, "hashtag": {}, "sound": {}}
+    )
+    followed: set[str] = set()
+    if user:
+        followed, _, _ = SocialRepository().relationship_sets(
+            viewer=user,
+            targets=[str(row.owner) for row in rows if row.owner],
+        )
+    now = now_datetime()
+    scored = []
+    for row in rows:
+        sid = str(row.name)
+        views = max(1.0, float(row.view_count or 0))
+        impressions = max(views, float(row.impression_count or 0), 1.0)
+        quality = (
+            min(1.0, float(row.completion_count or 0) / views) * 1.3
+            + min(1.0, float(row.rewatch_count or 0) / views) * 0.9
+            - min(1.0, float(row.early_skip_count or 0) / impressions) * 1.2
+            + min(1.0, float(row.like_count or 0) / views) * 0.7
+            + min(1.0, float(row.comment_count or 0) / views) * 0.5
+            + min(1.0, float(row.save_count or 0) / views) * 0.8
+            + min(1.0, float(row.repost_count or 0) / views) * 0.7
+            + min(1.0, float(row.share_count or 0) / views) * 0.7
+        )
+        try:
+            age_hours = (
+                max(0.0, (now - row.posted_on).total_seconds() / 3600.0)
+                if row.posted_on
+                else 0.0
+            )
+        except (TypeError, AttributeError):
+            age_hours = 0.0
+        freshness = 1.2 * math.exp(-age_hours / (24.0 * 7.0))
+        base = (
+            math.log1p(max(0.0, float(row.ranking_score or 0))) * 0.45
+            + quality
+            + freshness
+        )
+        personal = 0.0
+        if user:
+            creator_score = float(affinity["creator"].get(str(row.owner), 0.0))
+            mode_score = sum(
+                float(affinity["mode"].get(value, 0.0))
+                for value in modes.get(sid, [])
+            )
+            tag_score = sum(
+                float(affinity["hashtag"].get(value, 0.0))
+                for value in hashtags.get(sid, [])
+            )
+            sound_score = float(affinity["sound"].get(sounds.get(sid, ""), 0.0))
+            personal += math.tanh(creator_score / 8.0) * 1.8
+            personal += math.tanh(mode_score / 12.0) * 0.8
+            personal += math.tanh(tag_score / 12.0) * 0.7
+            personal += math.tanh(sound_score / 8.0) * 0.8
+            if str(row.owner) in followed:
+                personal += 0.7
+        scored.append((base + personal, row))
+
+    scored.sort(
+        key=lambda item: (
+            item[0],
+            str(item[1].posted_on or ""),
+            str(item[1].name),
+        ),
+        reverse=True,
+    )
+    # Bounded creator diversity: at most two consecutive items per creator.
+    pending = [row for _, row in scored]
+    result = []
+    last = None
+    streak = 0
     while pending:
-        pick=0
-        if last and streak>=2:
-            alt=next((i for i,r in enumerate(pending) if str(r.owner)!=last),None)
-            if alt is not None: pick=alt
-        r=pending.pop(pick); owner=str(r.owner); streak=streak+1 if owner==last else 1; last=owner; out.append(r)
-    return out
+        pick = 0
+        if last and streak >= 2:
+            alternative = next(
+                (index for index, row in enumerate(pending) if str(row.owner) != last),
+                None,
+            )
+            if alternative is not None:
+                pick = alternative
+        row = pending.pop(pick)
+        owner = str(row.owner)
+        streak = streak + 1 if owner == last else 1
+        last = owner
+        result.append(row)
+    return result
+
+
+def _cached_fyp_page(
+    ordered: list[str],
+    *,
+    start: int,
+    limit: int,
+    viewer: str | None,
+    mode: str | None,
+):
+    """Hydrate cached order while rechecking current distribution/feed policy."""
+    visible = []
+    scan = start
+    chunk_size = max(30, limit * 3)
+    while scan < len(ordered) and len(visible) <= limit:
+        chunk = ordered[scan : scan + chunk_size]
+        rows = frappe.get_all(
+            "AOS Short",
+            filters={"name": ["in", chunk]},
+            fields=["*"],
+            limit=len(chunk),
+        )
+        by_id = {str(row.name): row for row in rows}
+        excluded: set[str] = set()
+        if viewer:
+            excluded.update(
+                str(row.short)
+                for row in frappe.get_all(
+                    "AOS Short Feedback",
+                    filters={
+                        "user": viewer,
+                        "feedback_type": "not_interested",
+                        "short": ["in", chunk],
+                    },
+                    fields=["short"],
+                    limit=len(chunk),
+                )
+            )
+        if mode:
+            current_mode_ids = {
+                str(row.short)
+                for row in frappe.get_all(
+                    "AOS Short Mode",
+                    filters={"mode": mode, "short": ["in", chunk]},
+                    fields=["short"],
+                    limit=len(chunk),
+                )
+            }
+            excluded.update(sid for sid in chunk if sid not in current_mode_ids)
+        hydrated = [
+            by_id[sid]
+            for sid in chunk
+            if sid in by_id and sid not in excluded
+        ]
+        allowed = filter_distributable_rows(hydrated, viewer=viewer)
+        allowed_ids = {str(row.name) for row in allowed}
+        for sid in chunk:
+            if sid in allowed_ids:
+                visible.append(by_id[sid])
+                if len(visible) > limit:
+                    break
+        scan += len(chunk)
+    return visible[:limit], len(visible) > limit
 
 
 def feed_for_you(**kwargs):
-    viewer=_user(required=False); user=None if viewer=='Guest' else viewer; _rate('feed_foryou',user=user,limit=180)
-    limit=_limit(kwargs.get('limit'),10,30); mode=str(kwargs.get('mode') or '').strip().lower() or None
-    if mode and mode not in CONTENT_MODES: raise ShortsError('Invalid Content Mode.',code='SHORTS_INVALID_REQUEST')
-    cursor=decode_cursor(kwargs.get('cursor')); cache=frappe.cache(); session=str(cursor.get('session') or kwargs.get('session_id') or uuid.uuid4().hex[:24]); key=f'aos:shorts:feed:{user or request_ip()}:{session}'
-    ordered=cache.get_value(key)
-    if not isinstance(ordered,list):
-        candidates=filter_viewable_rows(_candidate_rows(mode=mode,viewer=user),viewer=user)
-        ordered=[str(r.name) for r in _personalize(candidates,user)][:180]
-        cache.set_value(key,ordered,expires_in_sec=20*60)
-    after=str(cursor.get('after') or '')
-    start=(ordered.index(after)+1) if after in ordered else 0
-    ids=ordered[start:start+limit+1]; page_ids=ids[:limit]
-    if not page_ids: return ok('For You feed loaded.',{'items':[],'next_cursor':None,'session_id':session})
-    rows=frappe.get_all('AOS Short',filters={'name':['in',page_ids]},fields=['*'],limit=len(page_ids)); by={r.name:r for r in rows}; page=[by[x] for x in page_ids if x in by]
-    nxt=encode_cursor({'kind':'fyp','session':session,'after':page[-1].name}) if len(ids)>limit and page else None
-    return ok('For You feed loaded.',{'items':serialize_short_rows(page,viewer=user),'next_cursor':nxt,'session_id':session})
-
+    viewer = _user(required=False)
+    user = None if viewer == "Guest" else viewer
+    _rate("feed_foryou", user=user, limit=180)
+    limit = _limit(kwargs.get("limit"), 10, 30)
+    mode = str(kwargs.get("mode") or "").strip().lower() or None
+    if mode and mode not in CONTENT_MODES:
+        raise ShortsError("Invalid Content Mode.", code="SHORTS_INVALID_REQUEST")
+    cursor = decode_cursor(kwargs.get("cursor"))
+    cursor_mode = str(cursor.get("mode") or "").strip().lower() or None
+    if cursor and cursor_mode != mode:
+        raise ShortsError(
+            "Feed cursor does not match Content Mode.",
+            code="SHORTS_INVALID_CURSOR",
+        )
+    cache = frappe.cache()
+    requested_session = str(cursor.get("session") or kwargs.get("session_id") or "").strip()
+    if requested_session and not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", requested_session):
+        raise ShortsError("Invalid feed session.", code="SHORTS_INVALID_REQUEST")
+    session = requested_session or uuid.uuid4().hex[:24]
+    key = f'aos:shorts:feed:{user or request_ip()}:{mode or "all"}:{session}'
+    ordered = cache.get_value(key)
+    if not isinstance(ordered, list):
+        _rate("feed_foryou_session", user=user, limit=30)
+        candidates = filter_distributable_rows(
+            _candidate_rows(mode=mode, viewer=user),
+            viewer=user,
+        )
+        ordered = [str(row.name) for row in _personalize(candidates, user)][:180]
+        cache.set_value(key, ordered, expires_in_sec=20 * 60)
+    after = str(cursor.get("after") or "")
+    start = ordered.index(after) + 1 if after in ordered else 0
+    page, more = _cached_fyp_page(
+        ordered,
+        start=start,
+        limit=limit,
+        viewer=user,
+        mode=mode,
+    )
+    if not page:
+        return ok(
+            "For You feed loaded.",
+            {"items": [], "next_cursor": None, "session_id": session},
+        )
+    next_cursor = (
+        encode_cursor(
+            {
+                "kind": "fyp",
+                "session": session,
+                "mode": mode or "",
+                "after": page[-1].name,
+            }
+        )
+        if more
+        else None
+    )
+    return ok(
+        "For You feed loaded.",
+        {
+            "items": serialize_short_rows(page, viewer=user),
+            "next_cursor": next_cursor,
+            "session_id": session,
+        },
+    )
 
 def feed_following(**kwargs):
     user=_user(); _rate('feed_following',user=user,limit=180); limit=_limit(kwargs.get('limit'),10,30); mode=str(kwargs.get('mode') or '').strip().lower() or None
@@ -418,7 +802,7 @@ def feed_following(**kwargs):
     if cur.get('posted') and cur.get('id'): clauses.append('(s.posted_on < %(posted)s OR (s.posted_on=%(posted)s AND s.name < %(id)s))'); params.update({'posted':cur['posted'],'id':cur['id']})
     extra=' AND '.join(clauses); extra=(' AND '+extra) if extra else ''
     rows=frappe.db.sql(f'''SELECT s.* FROM `tabAOS Short` s INNER JOIN `tabAOS Follow` f ON f.following_user=s.owner AND f.follower_user=%(user)s WHERE s.lifecycle_status='Published' AND s.moderation_status='Approved' AND s.processing_status IN ('Ready','Not Required'){extra} ORDER BY s.posted_on DESC,s.name DESC LIMIT %(limit)s''',params,as_dict=True)
-    visible=filter_viewable_rows(rows,viewer=user,limit=limit+1); more=len(visible)>limit; page=visible[:limit]; nxt=encode_cursor({'posted':str(page[-1].posted_on),'id':page[-1].name}) if more and page else None
+    visible=filter_distributable_rows(rows,viewer=user,limit=limit+1); more=len(visible)>limit; page=visible[:limit]; nxt=encode_cursor({'posted':str(page[-1].posted_on),'id':page[-1].name}) if more and page else None
     return ok('Following feed loaded.',{'items':serialize_short_rows(page,viewer=user),'next_cursor':nxt})
 
 
@@ -679,7 +1063,7 @@ def _relation_feed(kind,value,kwargs):
     viewer=_user(required=False); user=None if viewer=='Guest' else viewer; limit=_limit(kwargs.get('limit')); cur=decode_cursor(kwargs.get('cursor')); params={'value':value,'limit':limit*4+1}; clause=''
     if cur.get('posted') and cur.get('id'): clause='AND (s.posted_on < %(posted)s OR (s.posted_on=%(posted)s AND s.name < %(id)s))'; params.update({'posted':cur['posted'],'id':cur['id']})
     join='INNER JOIN `tabAOS Short Sound` x ON x.short=s.name' if kind=='sound' else 'INNER JOIN `tabAOS Short Hashtag` x ON x.short=s.name'; field='x.sound' if kind=='sound' else 'x.hashtag'
-    rows=frappe.db.sql(f'''SELECT s.* FROM `tabAOS Short` s {join} WHERE {field}=%(value)s AND s.lifecycle_status='Published' AND s.moderation_status='Approved' AND s.processing_status IN ('Ready','Not Required') {clause} ORDER BY s.posted_on DESC,s.name DESC LIMIT %(limit)s''',params,as_dict=True); visible=filter_viewable_rows(rows,viewer=user,limit=limit+1); more=len(visible)>limit; page=visible[:limit]; nxt=encode_cursor({'posted':str(page[-1].posted_on),'id':page[-1].name}) if more and page else None
+    rows=frappe.db.sql(f'''SELECT s.* FROM `tabAOS Short` s {join} WHERE {field}=%(value)s AND s.lifecycle_status='Published' AND s.moderation_status='Approved' AND s.processing_status IN ('Ready','Not Required') {clause} ORDER BY s.posted_on DESC,s.name DESC LIMIT %(limit)s''',params,as_dict=True); visible=filter_distributable_rows(rows,viewer=user,limit=limit+1); more=len(visible)>limit; page=visible[:limit]; nxt=encode_cursor({'posted':str(page[-1].posted_on),'id':page[-1].name}) if more and page else None
     return ok('Shorts loaded.',{'items':serialize_short_rows(page,viewer=user),'next_cursor':nxt})
 
 
@@ -703,14 +1087,14 @@ def download_short(**kwargs):
 def _reuse_draft(source_id,raw_media,caption,reuse_type,start=0,end=0):
     user=_user(); source=frappe.get_doc('AOS Short',source_id) if frappe.db.exists('AOS Short',source_id) else None
     if not source or not can_reuse(source,viewer=user,reuse_type=reuse_type): raise ShortsPermissionError('Source Short cannot be reused.')
-    if reuse_type=='Segment':
+    if reuse_type==REUSE_SEGMENT:
         try: start=int(start or 0); end=int(end or 0)
         except Exception: raise ShortsError('Invalid source segment.')
         if start<0 or end<=start or end-start>60000 or (source.duration_seconds and end>int(float(source.duration_seconds)*1000)): raise ShortsError('Invalid source segment.')
     doc=frappe.get_doc({'doctype':'AOS Short','content_type':'Video','lifecycle_status':'Draft','processing_status':'Queued','moderation_status':'Draft','caption':_normalize_caption(caption),'audience':'everyone','allow_comments':1,'allow_downloads':0,'allow_reuse':1,'allow_side_by_side':1,'allow_segment_reuse':1,'source_short':source.name,'reuse_type':reuse_type,'source_start_ms':start,'source_end_ms':end}); doc.insert(ignore_permissions=True); _attach_video(doc,user,str(raw_media or '').strip()); doc.save(ignore_permissions=True)
     return ok('Reuse draft created.',serialize_owner_short(doc,viewer=user))
-def create_side_by_side_draft(**kw): return _reuse_draft(kw.get('source_short_id'),kw.get('raw_video_media'),kw.get('caption'),'Side by Side')
-def create_segment_reuse_draft(**kw): return _reuse_draft(kw.get('source_short_id'),kw.get('raw_video_media'),kw.get('caption'),'Segment',kw.get('source_start_ms'),kw.get('source_end_ms'))
+def create_side_by_side_draft(**kw): return _reuse_draft(kw.get('source_short_id'),kw.get('raw_video_media'),kw.get('caption'),REUSE_SIDE_BY_SIDE)
+def create_segment_reuse_draft(**kw): return _reuse_draft(kw.get('source_short_id'),kw.get('raw_video_media'),kw.get('caption'),REUSE_SEGMENT,kw.get('source_start_ms'),kw.get('source_end_ms'))
 
 
 def get_short_metrics(**kwargs):

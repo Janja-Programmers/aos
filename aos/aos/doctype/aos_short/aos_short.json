@@ -240,7 +240,7 @@
    "fieldname": "reuse_type",
    "fieldtype": "Select",
    "label": "Reuse Type",
-   "options": "\nSide by Side\nSegment",
+   "options": "\nSide By Side\nSegment",
    "read_only": 1
   },
   {

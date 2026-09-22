@@ -28,6 +28,8 @@ from aos.services.shorts.constants import (
     PROCESSING_FAILED,
     PROCESSING_READY,
     PROCESSING_RETRY_WAITING,
+    REUSE_SEGMENT,
+    REUSE_SIDE_BY_SIDE,
     SOUND_ACTIVE,
     SOUND_SOURCE_ORIGINAL,
 )
@@ -170,10 +172,10 @@ def _purpose_output(purpose: str) -> tuple[str, str]:
 def _operation(short: Any, requested: str) -> str:
     if requested == "Process":
         reuse = str(short.reuse_type or "")
-        if reuse == "Side By Side":
-            return "Side By Side"
-        if reuse == "Segment":
-            return "Segment"
+        if reuse == REUSE_SIDE_BY_SIDE:
+            return REUSE_SIDE_BY_SIDE
+        if reuse == REUSE_SEGMENT:
+            return REUSE_SEGMENT
     return requested
 
 
@@ -479,6 +481,9 @@ def _register_asset(
     if not bucket or not key or not content_type:
         return None
     service = MediaService()
+    previous_media_id = str(
+        frappe.db.get_value("AOS Short", short.name, fieldname) or ""
+    ).strip()
     doc = service.create_uploaded_from_existing_object(
         user=str(short.owner),
         purpose=purpose,
@@ -500,15 +505,53 @@ def _register_asset(
         attached_doctype="AOS Short",
         attached_name=short.name,
         attached_field=fieldname,
+        replacing_media_id=previous_media_id or None,
         system=True,
     )
-    frappe.db.set_value("AOS Short", short.name, fieldname, doc.name, update_modified=False)
+    if previous_media_id and previous_media_id != str(doc.name):
+        service.release_media(
+            media_id=previous_media_id,
+            user=str(short.owner),
+            attached_doctype="AOS Short",
+            attached_name=short.name,
+            replacement_media_id=str(doc.name),
+            system=True,
+        )
+    values: dict[str, Any] = {fieldname: doc.name}
+    if fieldname == "poster_media":
+        current_cover = str(
+            frappe.db.get_value("AOS Short", short.name, "cover_media") or ""
+        ).strip()
+        if not current_cover or current_cover == previous_media_id:
+            values["cover_media"] = doc.name
+    frappe.db.set_value("AOS Short", short.name, values, update_modified=False)
     return str(doc.name)
 
 
 def _ensure_original_sound(short: Any, metadata: dict[str, Any], duration: float) -> None:
-    if not isinstance(metadata, dict) or not metadata or frappe.db.exists("AOS Short Sound", {"short": short.name}):
+    if not isinstance(metadata, dict) or not metadata:
         return
+    current_relation = frappe.db.get_value(
+        "AOS Short Sound",
+        {"short": short.name},
+        ["name", "sound", "is_original_audio"],
+        as_dict=True,
+    )
+    if current_relation and not int(current_relation.is_original_audio or 0):
+        return
+
+    existing_sound_id = (
+        str(current_relation.sound)
+        if current_relation and current_relation.sound
+        else str(
+            frappe.db.get_value(
+                "AOS Sound",
+                {"created_from_short": short.name, "source_type": SOUND_SOURCE_ORIGINAL},
+                "name",
+            )
+            or ""
+        )
+    )
     service = MediaService()
     media = service.create_uploaded_from_existing_object(
         user=str(short.owner),
@@ -523,43 +566,76 @@ def _ensure_original_sound(short: Any, metadata: dict[str, Any], duration: float
         derived_from_media=str(short.raw_video_media),
     )
     account = frappe.db.get_value("AOS Profile", {"user": short.owner}, "name")
-    creator = frappe.db.get_value("AOS Profile", account, "display_name") if account else None
-    sound = frappe.get_doc(
-        {
-            "doctype": "AOS Sound",
-            "title": f"Original sound - {creator or 'Creator'}"[:140],
-            "artist": "",
-            "source_type": SOUND_SOURCE_ORIGINAL,
-            "status": SOUND_ACTIVE,
-            "sound_media": media.name,
-            "duration_seconds": duration,
-            "creator_account": account,
-            "created_from_short": short.name,
-            "reuse_allowed": 1,
-        }
-    )
-    sound.insert(ignore_permissions=True)
-    service.attach_media(
-        media_id=media.name,
-        user=str(short.owner),
-        purpose="short_original_audio",
-        attached_doctype="AOS Sound",
-        attached_name=sound.name,
-        attached_field="sound_media",
-        system=True,
-    )
-    frappe.get_doc(
-        {
-            "doctype": "AOS Short Sound",
-            "short": short.name,
-            "sound": sound.name,
-            "start_ms": 0,
-            "duration_ms": int(duration * 1000),
-            "volume": 1.0,
-            "is_original_audio": 1,
-        }
-    ).insert(ignore_permissions=True)
-    frappe.db.set_value("AOS Sound", sound.name, "usage_count", 1, update_modified=False)
+    if existing_sound_id:
+        old_media_id = str(
+            frappe.db.get_value("AOS Sound", existing_sound_id, "sound_media") or ""
+        ).strip()
+        service.attach_media(
+            media_id=media.name,
+            user=str(short.owner),
+            purpose="short_original_audio",
+            attached_doctype="AOS Sound",
+            attached_name=existing_sound_id,
+            attached_field="sound_media",
+            replacing_media_id=old_media_id or None,
+            system=True,
+        )
+        if old_media_id and old_media_id != str(media.name):
+            service.release_media(
+                media_id=old_media_id,
+                user=str(short.owner),
+                attached_doctype="AOS Sound",
+                attached_name=existing_sound_id,
+                replacement_media_id=str(media.name),
+                system=True,
+            )
+        frappe.db.set_value(
+            "AOS Sound",
+            existing_sound_id,
+            {"sound_media": media.name, "duration_seconds": duration},
+            update_modified=False,
+        )
+        sound_id = existing_sound_id
+    else:
+        creator = frappe.db.get_value("AOS Profile", account, "display_name") if account else None
+        sound = frappe.get_doc(
+            {
+                "doctype": "AOS Sound",
+                "title": f"Original sound - {creator or 'Creator'}"[:140],
+                "artist": "",
+                "source_type": SOUND_SOURCE_ORIGINAL,
+                "status": SOUND_ACTIVE,
+                "sound_media": media.name,
+                "duration_seconds": duration,
+                "creator_account": account,
+                "created_from_short": short.name,
+                "reuse_allowed": 1,
+            }
+        )
+        sound.insert(ignore_permissions=True)
+        sound_id = str(sound.name)
+        service.attach_media(
+            media_id=media.name,
+            user=str(short.owner),
+            purpose="short_original_audio",
+            attached_doctype="AOS Sound",
+            attached_name=sound_id,
+            attached_field="sound_media",
+            system=True,
+        )
+
+    if not current_relation:
+        frappe.get_doc(
+            {
+                "doctype": "AOS Short Sound",
+                "short": short.name,
+                "sound": sound_id,
+                "start_ms": 0,
+                "duration_ms": int(duration * 1000),
+                "volume": 1.0,
+                "is_original_audio": 1,
+            }
+        ).insert(ignore_permissions=True)
 
 
 def _schedule_retry(job: Any, short: Any, error: str) -> Any | None:

@@ -223,3 +223,56 @@ class TestShortsHardenedContract(TestCase):
             self.assertIn(value, match.group(1))
         for value in ("community", "talent", "friends", "trending", "nearby"):
             self.assertNotIn(value, match.group(1))
+    def test_reuse_type_is_canonical_across_schema_and_processing(self):
+        schema = json.loads((ROOT / "aos/aos/doctype/aos_short/aos_short.json").read_text())
+        fields = {field["fieldname"]: field for field in schema["fields"]}
+        options = fields["reuse_type"].get("options") or ""
+        self.assertIn("Side By Side", options)
+        self.assertNotIn("Side by Side", options)
+        processing = (ROOT / "aos/services/shorts/processing.py").read_text()
+        for obsolete in ("Process Video", "Generate Download", "Side by Side", "Segment Reuse"):
+            self.assertNotIn(obsolete, processing)
+
+    def test_cached_for_you_hydration_rechecks_distribution_policy(self):
+        source = (ROOT / "aos/services/shorts/service.py").read_text()
+        body = source.split("def _cached_fyp_page", 1)[1].split("def feed_for_you", 1)[0]
+        self.assertIn("filter_distributable_rows", body)
+        feed = source.split("def feed_for_you", 1)[1].split("def feed_following", 1)[0]
+        self.assertIn('mode or "all"', feed)
+        self.assertIn('"mode": mode or ""', feed)
+
+    def test_generated_video_assets_replace_through_media_lifecycle(self):
+        source = (ROOT / "aos/services/video_processing_service.py").read_text()
+        body = source.split("def _register_asset", 1)[1].split("def _ensure_original_sound", 1)[0]
+        self.assertIn("replacing_media_id=previous_media_id or None", body)
+        self.assertIn("replacement_media_id=str(doc.name)", body)
+        self.assertIn('values["cover_media"] = doc.name', body)
+
+    def test_sound_usage_has_single_relation_owner_and_original_source_uniqueness(self):
+        service = (ROOT / "aos/services/shorts/service.py").read_text()
+        replace_body = service.split("def _replace_sound", 1)[1].split("def _attach_video", 1)[0]
+        self.assertNotIn("usage_count", replace_body)
+        controller = (ROOT / "aos/aos/doctype/aos_short_sound/aos_short_sound.py").read_text()
+        self.assertIn("def after_insert", controller)
+        self.assertIn("def on_trash", controller)
+
+    def test_for_you_uses_full_bounded_signal_families(self):
+        source = (ROOT / "aos/services/shorts/service.py").read_text()
+        body = source.split("def _bounded_affinity", 1)[1].split("def _cached_fyp_page", 1)[0]
+        for token in (
+            "watch_ms",
+            "completion_count",
+            "rewatch_count",
+            "early_skip_count",
+            "like_count",
+            "comment_count",
+            "save_count",
+            "repost_count",
+            "share_count",
+            "not_interested",
+            "follow_from_content",
+            "AOS Short Mode",
+            "AOS Short Hashtag",
+            "AOS Short Sound",
+        ):
+            self.assertIn(token, body)

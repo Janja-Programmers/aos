@@ -12,6 +12,8 @@ import frappe
 from aos.services.social.repository import SocialRepository
 from aos.services.social.serializers import relationship_map
 
+from .constants import REUSE_SEGMENT, REUSE_SIDE_BY_SIDE
+
 _PUBLIC_LIFECYCLE = "Published"
 _PUBLIC_MODERATION = "Approved"
 _READY_PROCESSING = {"Ready", "Not Required"}
@@ -87,9 +89,9 @@ def can_reuse(short: Any, *, viewer: str | None, reuse_type: str | None = None) 
         return False
     if not int(_get(short, "allow_reuse", 0) or 0):
         return False
-    if reuse_type == "Side By Side":
+    if reuse_type == REUSE_SIDE_BY_SIDE:
         return bool(int(_get(short, "allow_side_by_side", 0) or 0))
-    if reuse_type == "Segment":
+    if reuse_type == REUSE_SEGMENT:
         return bool(int(_get(short, "allow_segment_reuse", 0) or 0))
     return True
 
@@ -124,3 +126,60 @@ def filter_viewable_rows(rows: list[dict[str, Any]], *, viewer: str | None, limi
             if limit and len(result) >= limit:
                 break
     return result
+
+def filter_distributable_rows(
+    rows: list[dict[str, Any]],
+    *,
+    viewer: str | None,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    """Batch-filter rows for a public/discovery feed.
+
+    Unlike ``filter_viewable_rows`` this intentionally has no owner bypass:
+    drafts, hidden/rejected content, unavailable creators, blocked relations,
+    and audience-ineligible rows must never leak from a stale feed cache even
+    when the viewer owns the Short.
+    """
+    from aos.services.accounts.serializers import serialize_internal_identity_map
+
+    viewer = normalize_user(viewer)
+    owners = sorted({str(row.get("owner") or "") for row in rows if row.get("owner")})
+    identities = serialize_internal_identity_map(owners)
+    relationships = (
+        relationship_map(
+            repository=SocialRepository(),
+            viewer=viewer,
+            targets=owners,
+            identities=identities,
+        )
+        if viewer
+        else {}
+    )
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        owner = str(row.get("owner") or "")
+        identity = identities.get(owner) or {}
+        if (
+            not distribution_eligible(row)
+            or not identity.get("enabled")
+            or identity.get("is_deleted")
+            or identity.get("account_status") != "Active"
+        ):
+            continue
+        relation = relationships.get(owner) or {}
+        if relation.get("is_blocked"):
+            continue
+        audience = str(row.get("audience") or "everyone")
+        allowed = audience == "everyone"
+        if viewer and audience == "followers":
+            allowed = bool(relation.get("is_following"))
+        if viewer and audience == "friends":
+            allowed = bool(relation.get("is_friend"))
+        if audience == "only_me":
+            allowed = False
+        if allowed:
+            result.append(row)
+            if limit and len(result) >= limit:
+                break
+    return result
+

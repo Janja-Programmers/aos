@@ -26,7 +26,7 @@ Video Processing jobs use `Queued`, `Processing`, `Retry Waiting`, `Ready`, `Fai
 
 `AOS Short` is the canonical post record and uses opaque `SHR-*` IDs. Video Shorts reference raw and derived Media; Photo Shorts use ordered `AOS Short Photo` rows. `AOS Short Mode`, `AOS Short Hashtag`, `AOS Short Ad`, and `AOS Short Mention` normalize distribution metadata. Engagement uses unique relation rows for likes, saves, reposts and comment likes. `AOS Short Feedback` stores private recommendation feedback. `AOS Short View`/`AOS Short Event` store bounded durable signals while Redis holds hot counters. `AOS Short Moderation Decision` is immutable audit history.
 
-Sounds use opaque `SND-*` IDs. `AOS Short Sound` links a post to one canonical Sound without duplicating audio binaries. Original Sounds retain source-Short/creator attribution and historical playback even when future reuse is disabled.
+Sounds use opaque `SND-*` IDs. `AOS Short Sound` links a post to one canonical Sound without duplicating audio binaries and owns usage-count accounting. One canonical Original Sound is associated with each source Short; reprocessing replaces its derived audio Media through Media while preserving the Sound identity, source-Short attribution, creator attribution, and reuse history.
 
 ## Fields
 
@@ -88,11 +88,11 @@ Video Processing has no client API. The signed processing callback is `/api/meth
 
 ### Feeds and Content Modes
 
-`feed_for_you` uses an internal recommendation candidate/session pipeline with stable cursor order, creator diversity, block/visibility/moderation/readiness filtering, Not Interested suppression, cold-start quality/freshness ranking, and bounded hydration. `feed_following` is recency ordered and derives membership only from hardened Social. Mode filters use the same feed infrastructure. Shop/Geo/Vibes/Learn membership is classifier-owned and derived from the Short content; linked Ads do not force Shop and no location record forces Geo.
+`feed_for_you` uses an internal recommendation candidate/session pipeline with stable cursor order and bounded creator diversity. Ranking combines watch ratio, completion, rewatches, early skips, likes, comments, saves, reposts, shares, follow-from-content, Not Interested feedback, creator/mode/hashtag/Sound affinity, current Social-follow state, freshness, and content-quality rates. Candidate sessions are Content-Mode scoped; every cached page is re-hydrated through current lifecycle, processing, moderation, creator-account, Social-block, and audience policy before serialization. `feed_following` is recency ordered and derives membership only from hardened Social. Mode filters use the same feed infrastructure. Shop/Geo/Vibes/Learn membership is classifier-owned and derived from the Short content; linked Ads do not force Shop and no location record forces Geo.
 
 ### Video and Photo media
 
-Video creation starts from attached `short_video_raw` Media and asynchronously produces `short_video_playback`, `short_video_manifest`, `short_poster`, `short_storyboard`, `short_storyboard_manifest`, optional `short_original_audio`, and private `short_download` Media. HLS renditions and scrub storyboard assets are immutable/cache-friendly. Photo Shorts reference one to ten ordered `short_photo` Media objects directly; photos are never encoded as fake videos.
+Video creation starts from attached `short_video_raw` Media and asynchronously produces `short_video_playback`, `short_video_manifest`, `short_poster`, `short_storyboard`, `short_storyboard_manifest`, optional `short_original_audio`, and private `short_download` Media. HLS renditions and scrub storyboard assets are immutable/cache-friendly. A processing generation replaces prior derived Media through Media's canonical replacement lifecycle, and the processed poster is the default Video cover. Photo Shorts reference one to ten ordered `short_photo` Media objects directly; photos are never encoded as fake videos.
 
 ### Downloads and reuse
 
@@ -116,7 +116,7 @@ Request services do not commit caller transactions. Mutations execute behind ope
 
 ## Caching
 
-Redis stores bounded For You feed sessions, atomic recommendation-event dedupe keys, shared rate-limit state, and hot watch/counter aggregates. Hot-counter dirty membership is versioned and removed after successful reconciliation only when no concurrent writer raced the flush. Keys are namespaced, expiring, and test code must clear any state it creates. Durable SQL state remains authoritative for lifecycle, permissions and unique actions.
+Redis stores bounded, Content-Mode-scoped For You feed sessions, atomic recommendation-event dedupe keys, shared rate-limit state, and hot watch/counter aggregates. Cached feed order is only a ranking snapshot: current SQL/Social/account distribution policy is rechecked during hydration, so privacy, moderation, blocking, or account changes take effect without waiting for cache expiry. Hot-counter dirty membership is versioned and removed after successful reconciliation only when no concurrent writer raced the flush. Keys are namespaced, expiring, and test code must clear any state it creates. Durable SQL state remains authoritative for lifecycle, permissions and unique actions.
 
 ## Performance / Scalability
 

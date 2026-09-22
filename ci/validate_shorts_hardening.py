@@ -124,6 +124,25 @@ processing = text("aos/services/video_processing_service.py")
 for token in ("ensure_outbox_for_job", "next_retry_at", "lease_expires_at", "job_generation", "outputs"):
     require(token in processing, f"processing invariant missing: {token}")
 require("frappe.db.commit" not in processing, "Video Processing request/service flow manually commits")
+require("replacing_media_id=previous_media_id or None" in processing, "derived Short Media is not replacement-safe")
+require("replacement_media_id=str(doc.name)" in processing, "replaced derived Short Media is not released through Media")
+require('values["cover_media"] = doc.name' in processing, "processed Video poster is not promoted to default cover")
+
+shorts_service = text("aos/services/shorts/service.py")
+require("filter_distributable_rows" in shorts_service, "feed cache hydration does not re-check distribution eligibility")
+require('mode or "all"' in shorts_service, "For You cache sessions are not Content-Mode scoped")
+for signal in ("watch_ms", "completion_count", "rewatch_count", "early_skip_count", "like_count", "comment_count", "save_count", "repost_count", "share_count", "not_interested", "follow_from_content"):
+    require(signal in shorts_service, f"For You recommendation signal missing: {signal}")
+require("usage_count" not in shorts_service.split("def _replace_sound", 1)[1].split("def _attach_video", 1)[0], "Short Sound usage is double-accounted outside relation hooks")
+
+short_sound = text("aos/aos/doctype/aos_short_sound/aos_short_sound.py")
+require("def after_insert" in short_sound and "def on_trash" in short_sound, "Short Sound relation does not own usage accounting")
+
+short_processing = text("aos/services/shorts/processing.py")
+for obsolete_operation in ("Process Video", "Generate Download", "Side by Side", "Segment Reuse"):
+    require(obsolete_operation not in short_processing, f"legacy Video Processing operation alias remains: {obsolete_operation}")
+reuse_options = str(fields.get("reuse_type", {}).get("options") or "")
+require("Side By Side" in reuse_options and "Side by Side" not in reuse_options, "Side By Side reuse value is not canonical")
 
 hot_metrics = text("aos/services/shorts/hot_metrics.py")
 for unsafe_call in ("cache.hsetnx(", "cache.hincrby(", "cache.hgetall("):

@@ -8,12 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .constants import (
-    VIDEO_OPERATION_DOWNLOAD,
-    VIDEO_OPERATION_PROCESS,
-    VIDEO_OPERATION_SEGMENT,
-    VIDEO_OPERATION_SIDE_BY_SIDE,
-)
+from .constants import VIDEO_OPERATION_PROCESS, VIDEO_OPERATIONS
 from .errors import ShortsConflictError
 
 _ALLOWED_TRANSITIONS = {
@@ -24,17 +19,6 @@ _ALLOWED_TRANSITIONS = {
     "Ready": {"Queued", "Cancelled"},
     "Failed": {"Queued", "Retry Waiting", "Cancelled"},
     "Cancelled": set(),
-}
-
-_OPERATION_ALIASES = {
-    "Process Video": VIDEO_OPERATION_PROCESS,
-    "Process": VIDEO_OPERATION_PROCESS,
-    "Generate Download": VIDEO_OPERATION_DOWNLOAD,
-    "Download": VIDEO_OPERATION_DOWNLOAD,
-    "Side by Side": VIDEO_OPERATION_SIDE_BY_SIDE,
-    "Side By Side": VIDEO_OPERATION_SIDE_BY_SIDE,
-    "Segment Reuse": VIDEO_OPERATION_SEGMENT,
-    "Segment": VIDEO_OPERATION_SEGMENT,
 }
 
 
@@ -66,8 +50,8 @@ def enqueue_processing_job(
     """
     from aos.services.video_processing_service import create_video_processing_job
 
-    normalized = _OPERATION_ALIASES.get(str(operation or "").strip())
-    if not normalized:
+    normalized = str(operation or "").strip()
+    if normalized not in VIDEO_OPERATIONS:
         raise ShortsConflictError(
             "Invalid video processing operation.",
             code="SHORTS_INVALID_PROCESSING_OPERATION",

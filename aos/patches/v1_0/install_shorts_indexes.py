@@ -59,10 +59,6 @@ INDEXES: tuple[tuple[str, str, tuple[str, ...], bool], ...] = (
     ("AOS Short Metrics Daily", "uq_short_metrics_day", ("short", "date"), True),
 )
 
-# Backward-compatible constant name for schema tests only; this is not a client
-# or runtime compatibility surface.
-INDEX_DEFINITIONS = INDEXES
-
 
 def execute() -> None:
     for doctype, index_name, columns, unique in INDEXES:
