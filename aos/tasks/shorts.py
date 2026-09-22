@@ -16,7 +16,7 @@ def aggregate_short_metrics():
 
 def update_single_short_ranking(short_id: str):
     if frappe.db.exists("AOS Short", short_id):
-        RankingService.update_short(short_id)
+        RankingService.update_short_score(short_id)
 
 
 def update_short_ranking():
