@@ -1056,7 +1056,7 @@ def get_live_cohost_state(
         },
         fields=live_cohost_fields(),
         order_by="started_at asc, accepted_at asc, creation asc, name asc",
-        limit_page_length=LIVE_COHOST_MAX_ACTIVE_SLOTS + 1,
+        limit=LIVE_COHOST_MAX_ACTIVE_SLOTS + 1,
     )
 
     active_rows = [
@@ -1086,7 +1086,7 @@ def preload_live_cohost_state(
         },
         fields=live_cohost_fields(),
         order_by="live_stream asc, started_at asc, accepted_at asc, creation asc, name asc",
-        limit_page_length=max(1, len(live_ids) * LIVE_COHOST_MAX_ACTIVE_SLOTS),
+        limit=max(1, len(live_ids) * LIVE_COHOST_MAX_ACTIVE_SLOTS),
     )
 
     reserved: dict[str, int] = {}
