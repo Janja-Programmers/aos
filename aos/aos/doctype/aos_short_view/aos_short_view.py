@@ -1,9 +1,9 @@
 from __future__ import annotations
-import hashlib
 import frappe
 from frappe.model.document import Document
 from frappe.utils import getdate, now_datetime
 from aos.services.shorts.analytics import bounded_watch_ms, qualifies_view
+from aos.services.shorts.identity import short_view_identity_key
 from aos.services.shorts.policy import can_view
 
 
@@ -13,8 +13,7 @@ class AOSShortView(Document):
         self.view_date = self.view_date or getdate()
         if not self.user and not self.session_id:
             frappe.throw("User or session_id is required")
-        actor_key = f"user:{self.user}" if self.user else f"session:{self.session_id}"
-        self.identity_key = hashlib.sha256(f"{self.short}|{actor_key}".encode()).hexdigest()
+        self.identity_key = short_view_identity_key(short_id=self.short, user=self.user, session_id=self.session_id)
         short = frappe.db.get_value(
             "AOS Short", self.short,
             ["name", "owner", "lifecycle_status", "processing_status", "moderation_status", "audience", "duration_seconds"],

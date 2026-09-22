@@ -39,6 +39,7 @@ from .constants import (
 )
 from .cursor import decode_cursor, encode_cursor
 from .errors import ShortsConflictError, ShortsError, ShortsNotFoundError, ShortsPermissionError
+from .identity import short_view_identity_key
 from .policy import (
     can_download,
     can_reuse,
@@ -981,11 +982,13 @@ def record_events(**kwargs):
                 created=_insert_short_event_once({'short':sid,'user':user,'session_id':session,'event_type':typ,'watch_ms':watch,'progress_ms':progress,'source':str(event.get('source') or '')[:120],'metadata':event.get('metadata') if isinstance(event.get('metadata'),dict) else None},dedupe)
                 if not created: continue
             if typ=='qualified_view':
-                identity=hashlib.sha256(f'{sid}|{actor_key}'.encode()).hexdigest()
-                existing=frappe.db.get_value('AOS Short View',{'short':sid,'identity_key':identity},'name')
+                identity=short_view_identity_key(short_id=sid,user=user,session_id=session if not user else None)
+                view_filters={'short':sid,'identity_key':identity}
+                existing=frappe.db.get_value('AOS Short View',view_filters,'name')
                 if not existing:
-                    _,unique_new=_insert_once('AOS Short View',{'short':sid,'user':user,'session_id':session if not user else None,'view_date':now_datetime().date(),'qualified':1,'watch_ms':watch,'last_seen_at':now_datetime(),'identity_key':identity},{'short':sid,'identity_key':identity})
-                else:
+                    view,unique_new=_insert_once('AOS Short View',{'short':sid,'user':user,'session_id':session if not user else None,'view_date':now_datetime().date(),'qualified':1,'watch_ms':watch,'last_seen_at':now_datetime(),'identity_key':identity},view_filters)
+                    existing=view.name
+                if not unique_new and existing:
                     frappe.db.set_value('AOS Short View',existing,{'last_seen_at':now_datetime(),'watch_ms':max(int(frappe.db.get_value('AOS Short View',existing,'watch_ms') or 0),watch)},update_modified=False)
             _record_hot_signal_best_effort(sid,typ,watch_ms=watch,unique_new=unique_new); accepted+=1
         except Exception:

@@ -8,6 +8,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from aos.services.shorts import service
+from aos.services.shorts.identity import short_view_identity_key
 from aos.services.shorts.hot_metrics import (
     _DIRTY_KEY,
     _dirty_members,
@@ -157,6 +158,46 @@ class TestShortsServiceRuntime(AOSFeatureTestMixin, FrappeTestCase):
             1,
         )
 
+
+    def test_distinct_qualified_view_events_reuse_canonical_view_identity(self):
+        user, short = self._published_short()
+        first_event = {
+            "short_id": short.name,
+            "type": "qualified_view",
+            "event_id": "qualified-view-first",
+            "watch_ms": 2500,
+            "progress_ms": 2500,
+            "source": "web_feed",
+        }
+        second_event = {
+            **first_event,
+            "event_id": "qualified-view-second",
+            "watch_ms": 3200,
+            "progress_ms": 3200,
+        }
+        for event in (first_event, second_event):
+            dedupe = hashlib.sha256(
+                f"{short.name}|{user}|qualified_view|{event['event_id']}".encode()
+            ).hexdigest()
+            self.created_redis_keys.append(f"aos:shorts:event:{dedupe}")
+
+        with patch("aos.services.shorts.service._rate"):
+            first = service.record_events(events=[first_event], session_id="")
+            second = service.record_events(events=[second_event], session_id="")
+
+        self.assertEqual(first["data"]["accepted"], 1)
+        self.assertEqual(second["data"]["accepted"], 1)
+        views = frappe.get_all(
+            "AOS Short View",
+            filters={"short": short.name, "user": user},
+            fields=["name", "identity_key", "watch_ms"],
+        )
+        self.assertEqual(len(views), 1)
+        self.assertEqual(int(views[0].watch_ms or 0), 3200)
+        self.assertEqual(
+            views[0].identity_key,
+            short_view_identity_key(short_id=short.name, user=user),
+        )
 
     def test_under_threshold_qualified_view_is_not_promoted(self):
         user, short = self._published_short()

@@ -95,9 +95,15 @@ class TestShortsHardenedContract(TestCase):
         self.assertEqual(offenders, [])
 
     def test_view_identity_is_scoped_to_short(self):
-        source = (ROOT / "aos/aos/doctype/aos_short_view/aos_short_view.py").read_text()
-        self.assertIn('f"{self.short}|{actor_key}"', source)
-        self.assertIn("sha256", source)
+        identity = (ROOT / "aos/services/shorts/identity.py").read_text()
+        view_doc = (ROOT / "aos/aos/doctype/aos_short_view/aos_short_view.py").read_text()
+        service = (ROOT / "aos/services/shorts/service.py").read_text()
+        self.assertIn('f"{sid}|{actor_key}"', identity)
+        self.assertIn("user:", identity)
+        self.assertIn("session:", identity)
+        self.assertIn("short_view_identity_key(short_id=self.short", view_doc)
+        self.assertIn("short_view_identity_key(short_id=sid", service)
+        self.assertIn("sha256", identity)
 
 
     def test_comment_replies_have_client_read_contract(self):
