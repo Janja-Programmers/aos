@@ -16,12 +16,17 @@ from aos.services.live_analytics_service import LiveAnalyticsService
 from aos.services.livekit_service import LiveKitService
 
 from .api import _outbox_flag, _rollback, _snapshot_callbacks
-from .constants import LIVE_WEBHOOK_EVENT_DOCTYPE
+from .constants import (
+    LIVE_WEBHOOK_EVENT_DOCTYPE,
+    STATUS_ENDED,
+    STATUS_FAILED,
+    STATUS_LIVE,
+    STATUS_STARTING,
+)
 from .errors import LiveError
 from .participants import enqueue_view_removal
 from .policy import LivePolicy
 from .observability import live_log
-from .repository import LiveRepository
 
 MAX_WEBHOOK_BYTES = 131_072
 SUPPORTED_EVENTS = frozenset(
@@ -76,10 +81,32 @@ def _live_for_room(room_name: str, *, lock: bool = False):
     return frappe.get_doc("AOS Live Stream", live_id) if live_id else None
 
 
-def _is_stale_for_live(live, event_created_at) -> bool:
-    if not event_created_at or not live.started_at:
+def _is_stale_timestamp(event_created_at, previous_created_at) -> bool:
+    if not event_created_at or not previous_created_at:
         return False
-    return get_datetime(event_created_at) < get_datetime(live.started_at)
+    return get_datetime(event_created_at) <= get_datetime(previous_created_at)
+
+
+def _is_stale_for_live(live, event_created_at) -> bool:
+    if _is_stale_timestamp(event_created_at, getattr(live, "last_livekit_room_event_at", None)):
+        return True
+    if event_created_at and live.started_at:
+        return get_datetime(event_created_at) < get_datetime(live.started_at).replace(microsecond=0)
+    return False
+
+
+def _observe_room_started(room_name: str, event_created_at) -> str:
+    live = _live_for_room(room_name, lock=True)
+    if not live:
+        return "unknown_room"
+    if _is_stale_for_live(live, event_created_at):
+        return "stale_event"
+    if event_created_at:
+        live.last_livekit_room_event_at = event_created_at
+        live.save(ignore_permissions=True)
+    # Room callbacks are observations only. Application activation is owned by
+    # the provisioning worker and a callback can never resurrect state.
+    return "room_observed"
 
 
 def _finish_room(room_name: str, event_created_at) -> str:
@@ -88,16 +115,27 @@ def _finish_room(room_name: str, event_created_at) -> str:
         return "unknown_room"
     if _is_stale_for_live(live, event_created_at):
         return "stale_event"
-    if live.status == "ended" or not bool(live.is_active):
+
+    if event_created_at:
+        live.last_livekit_room_event_at = event_created_at
+
+    if live.status in {STATUS_ENDED, STATUS_FAILED}:
         if bool(getattr(live, "room_cleanup_pending", 0)):
-            frappe.db.set_value(
-                "AOS Live Stream",
-                live.name,
-                "room_cleanup_pending",
-                0,
-                update_modified=False,
-            )
-        return "already_ended"
+            live.room_cleanup_pending = 0
+        live.save(ignore_permissions=True)
+        return "already_terminal"
+
+    if live.status == STATUS_STARTING:
+        # The external room disappeared before application activation. Never
+        # promote a later callback back to Live.
+        live.status = STATUS_FAILED
+        live.room_cleanup_pending = 0
+        live.last_room_error = "room_finished_before_activation"
+        live.save(ignore_permissions=True)
+        return "start_failed"
+
+    if live.status != STATUS_LIVE or not bool(live.is_active):
+        return "inactive_room"
 
     # Import lazily to avoid a service/API module cycle during app startup.
     from aos.api.live.live import (
@@ -107,7 +145,7 @@ def _finish_room(room_name: str, event_created_at) -> str:
     from aos.api.live.realtime import publish_live_ended
 
     _close_cohost_workflows_for_live(live=live, host_user=live.host_user)
-    live.status = "ended"
+    live.status = STATUS_ENDED
     live.room_cleanup_pending = 0
     live.save(ignore_permissions=True)
     live.reload()
@@ -116,7 +154,7 @@ def _finish_room(room_name: str, event_created_at) -> str:
     return "live_ended"
 
 
-def _touch_participant(room_name: str, identity: str) -> str:
+def _touch_participant(room_name: str, identity: str, event_created_at) -> str:
     if not room_name or not identity:
         return "missing_participant"
     live = _live_for_room(room_name)
@@ -124,7 +162,7 @@ def _touch_participant(room_name: str, identity: str) -> str:
         return "inactive_room"
     rows = frappe.db.sql(
         """
-        SELECT name, `user`
+        SELECT name, `user`, joined_at, last_livekit_event_at
         FROM `tabAOS Live Stream View`
         WHERE live_stream = %s AND livekit_identity = %s AND is_active = 1
         ORDER BY creation DESC, name DESC
@@ -136,6 +174,12 @@ def _touch_participant(room_name: str, identity: str) -> str:
     if not rows:
         return "untracked_participant"
     row = rows[0]
+    event_at = event_created_at or now_datetime()
+    joined_floor = get_datetime(row.joined_at).replace(microsecond=0) if row.joined_at else None
+    if (joined_floor and get_datetime(event_at) <= joined_floor) or _is_stale_timestamp(
+        event_at, row.last_livekit_event_at
+    ):
+        return "stale_participant_event"
     try:
         policy = LivePolicy()
         viewer = str(row.user) if row.user else None
@@ -146,6 +190,7 @@ def _touch_participant(room_name: str, identity: str) -> str:
         )
     except LiveError:
         view = frappe.get_doc("AOS Live Stream View", row.name)
+        view.last_livekit_event_at = event_at
         view.left_at = now_datetime()
         view.is_active = 0
         view.save(ignore_permissions=True)
@@ -158,14 +203,13 @@ def _touch_participant(room_name: str, identity: str) -> str:
     frappe.db.set_value(
         "AOS Live Stream View",
         row.name,
-        "last_seen_at",
-        now_datetime(),
+        {"last_seen_at": now_datetime(), "last_livekit_event_at": event_at},
         update_modified=False,
     )
     return "participant_seen"
 
 
-def _leave_participant(room_name: str, identity: str) -> str:
+def _leave_participant(room_name: str, identity: str, event_created_at) -> str:
     if not room_name or not identity:
         return "missing_participant"
     live = _live_for_room(room_name)
@@ -173,7 +217,7 @@ def _leave_participant(room_name: str, identity: str) -> str:
         return "unknown_room"
     rows = frappe.db.sql(
         """
-        SELECT name
+        SELECT name, joined_at, last_livekit_event_at
         FROM `tabAOS Live Stream View`
         WHERE live_stream = %s AND livekit_identity = %s AND is_active = 1
         ORDER BY creation DESC, name DESC
@@ -184,7 +228,15 @@ def _leave_participant(room_name: str, identity: str) -> str:
     )
     if not rows:
         return "already_left"
-    view = frappe.get_doc("AOS Live Stream View", rows[0].name)
+    row = rows[0]
+    event_at = event_created_at or now_datetime()
+    joined_floor = get_datetime(row.joined_at).replace(microsecond=0) if row.joined_at else None
+    if (joined_floor and get_datetime(event_at) <= joined_floor) or _is_stale_timestamp(
+        event_at, row.last_livekit_event_at
+    ):
+        return "stale_participant_event"
+    view = frappe.get_doc("AOS Live Stream View", row.name)
+    view.last_livekit_event_at = event_at
     view.left_at = now_datetime()
     view.is_active = 0
     view.save(ignore_permissions=True)
@@ -210,11 +262,10 @@ def _process(event) -> tuple[str, str]:
     if event_type == "room_finished":
         return "processed", _finish_room(room_name, event_created_at)
     if event_type == "participant_joined":
-        return "processed", _touch_participant(room_name, identity)
+        return "processed", _touch_participant(room_name, identity, event_created_at)
     if event_type in {"participant_left", "participant_connection_aborted"}:
-        return "processed", _leave_participant(room_name, identity)
-    # room_started is informational only. It must never revive application state.
-    return "processed", "room_observed"
+        return "processed", _leave_participant(room_name, identity, event_created_at)
+    return "processed", _observe_room_started(room_name, event_created_at)
 
 
 def handle_verified_webhook(raw_body: str, authorization: str) -> dict[str, Any]:

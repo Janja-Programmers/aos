@@ -123,17 +123,14 @@ class LiveAnalyticsService:
         if not live_id:
             return None
         try:
-            # New reactions are Redis-aggregated to avoid one MariaDB insert
-            # per tap. Legacy rows remain a durable fallback for streams that
-            # have no active accumulator.
+            # Reaction taps are Redis-aggregated to avoid one MariaDB insert
+            # per tap. The materialized Live aggregate is the durable fallback
+            # after cache loss or expiry.
             from aos.services.live.ephemeral import current_reaction_total
 
             count = current_reaction_total(live_id=live_id)
             if count is None:
-                # Never let cache loss/expiry regress an already materialized
-                # Redis-era total back to the legacy event-row count. Legacy
-                # rows remain useful as a floor for pre-aggregation streams.
-                materialized = max(
+                count = max(
                     0,
                     int(
                         frappe.db.get_value(
@@ -142,17 +139,6 @@ class LiveAnalyticsService:
                         or 0
                     ),
                 )
-                rows = frappe.db.sql(
-                    """
-                    SELECT COUNT(*) AS count
-                    FROM `tabAOS Live Stream Reaction`
-                    WHERE live_stream = %s
-                    """,
-                    (live_id,),
-                    as_dict=True,
-                )
-                legacy = max(0, int((rows[0] if rows else {}).get("count") or 0))
-                count = max(materialized, legacy)
             frappe.db.set_value(
                 LIVE_STREAM_DOCTYPE,
                 live_id,
@@ -215,28 +201,18 @@ class LiveAnalyticsService:
         if metrics is not None:
             return metrics
 
-        # Redis degradation: derive current presence without writing the shared-
-        # locked Live row. Full materialization is recovered by reconciliation.
-        try:
-            fallback = dict(base)
-            fallback["viewer_count"] = max(
-                0,
-                int(
-                    frappe.db.count(
-                        "AOS Live Stream View",
-                        {"live_stream": live_id, "is_active": 1},
-                    )
-                    or 0
-                ),
-            )
-            fallback["peak_viewers"] = max(
-                int(fallback.get("peak_viewers") or 0),
-                int(fallback["viewer_count"]),
-            )
-            return fallback
-        except Exception:
-            cls._log_failure("viewer_increment")
-            return base or None
+        # Redis degradation must stay O(1): do not convert a connection storm
+        # into one COUNT(*) query per join. Return a local approximation from
+        # the last materialized snapshot; reconciliation restores authority.
+        fallback = dict(base)
+        fallback["viewer_count"] = max(0, int(fallback.get("viewer_count") or 0) + 1)
+        fallback["total_views"] = max(0, int(fallback.get("total_views") or 0) + 1)
+        fallback["total_joins"] = max(0, int(fallback.get("total_joins") or 0) + 1)
+        fallback["peak_viewers"] = max(
+            int(fallback.get("peak_viewers") or 0),
+            int(fallback["viewer_count"]),
+        )
+        return fallback
 
     @classmethod
     def handle_view_left(cls, *, live_id: str, watch_duration_seconds: int = 0):
@@ -267,22 +243,15 @@ class LiveAnalyticsService:
         )
         if metrics is not None:
             return metrics
-        try:
-            fallback = dict(base)
-            fallback["viewer_count"] = max(
-                0,
-                int(
-                    frappe.db.count(
-                        "AOS Live Stream View",
-                        {"live_stream": live_id, "is_active": 1},
-                    )
-                    or 0
-                ),
-            )
-            return fallback
-        except Exception:
-            cls._log_failure("viewer_decrement")
-            return base or None
+        # Same bounded degradation rule as joins: avoid a database COUNT(*)
+        # per disconnect while Redis is impaired. Durable reconciliation fixes
+        # the approximation and persists watch-time totals later.
+        fallback = dict(base)
+        fallback["viewer_count"] = max(
+            0,
+            int(fallback.get("viewer_count") or 0) - max(0, int(count or 0)),
+        )
+        return fallback
 
     @classmethod
     def materialize_view_metrics(cls, *, live_id: str):

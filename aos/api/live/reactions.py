@@ -46,7 +46,6 @@ from .validators import (
 )
 
 
-LIVE_REACTION_DOCTYPE = "AOS Live Stream Reaction"
 
 VALID_REACTION_TYPES = {
     "like",
@@ -168,15 +167,15 @@ def send_reaction_impl(**kwargs):
             reaction_type=reaction_type,
         )
         if increment is None:
-            # Degraded mode when Redis is unavailable: preserve correctness by
-            # falling back to the legacy durable event row.
-            reaction = frappe.new_doc(LIVE_REACTION_DOCTYPE)
-            reaction.live_stream = live_id
-            reaction.user = user
-            reaction.reaction_type = reaction_type
-            reaction.insert(ignore_permissions=True)
-            schedule_hot_counter_materialization(live_id=live_id)
-        elif increment.should_flush:
+            # Reactions are intentionally ephemeral. Failing fast during a Redis
+            # outage prevents a hot room from converting into unbounded MariaDB
+            # write amplification. Durable lifecycle/messages remain available.
+            return fail(
+                "Live reactions are temporarily unavailable.",
+                error="SERVICE_UNAVAILABLE",
+                http_status=503,
+            )
+        if increment.should_flush:
             schedule_hot_counter_materialization(live_id=live_id)
         # Never update the Live parent while this request holds a shared
         # lifecycle lock. Redis is authoritative during the active burst; the

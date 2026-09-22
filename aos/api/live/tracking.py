@@ -93,15 +93,31 @@ def _is_live_host(
     )
 
 
-def _rate_limit_identity(
+def _apply_tracking_rate_limits(
     *,
+    scope: str,
     viewer: str | None,
     session_id: str | None,
-) -> str:
-    return (
-        viewer
-        or session_id
-        or request_ip()
+    limit: int,
+):
+    ip_limit = rate_limit(
+        key=rate_limit_key("live", scope, "ip", request_ip()),
+        ttl_seconds=60,
+        limit=limit,
+        message="Too many requests.",
+    )
+    if ip_limit:
+        return ip_limit
+    identity_value = viewer or session_id
+    if not identity_value:
+        return None
+    return rate_limit(
+        key=rate_limit_key(
+            "live", scope, "user" if viewer else "session", identity_value
+        ),
+        ttl_seconds=60,
+        limit=limit,
+        message="Too many requests.",
     )
 
 
@@ -347,15 +363,11 @@ def track_join_impl(**kwargs):
     if err:
         return err
 
-    rl = rate_limit(
-        key=rate_limit_key(
-            "live",
-            "track_join",
-            _rate_limit_identity(viewer=viewer, session_id=session_id),
-        ),
-        ttl_seconds=60,
+    rl = _apply_tracking_rate_limits(
+        scope="track_join",
+        viewer=viewer,
+        session_id=session_id,
         limit=TRACK_JOIN_LIMIT_PER_MINUTE_PER_IP,
-        message="Too many requests.",
     )
     if rl:
         return rl
@@ -534,15 +546,11 @@ def track_leave_impl(**kwargs):
     if err:
         return err
 
-    rl = rate_limit(
-        key=rate_limit_key(
-            "live",
-            "track_leave",
-            _rate_limit_identity(viewer=viewer, session_id=session_id),
-        ),
-        ttl_seconds=60,
+    rl = _apply_tracking_rate_limits(
+        scope="track_leave",
+        viewer=viewer,
+        session_id=session_id,
         limit=TRACK_LEAVE_LIMIT_PER_MINUTE_PER_IP,
-        message="Too many requests.",
     )
     if rl:
         return rl

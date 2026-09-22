@@ -18,7 +18,9 @@ _ALLOWED_REASONS = {
     "invalid_participant", "live_ended", "already_ended", "stale_event", "unknown_room",
     "participant_seen", "participant_denied", "participant_left", "already_left",
     "untracked_participant", "missing_participant", "inactive_room", "room_observed",
-    "unsupported_event", "already_processed", "ended_during_create",
+    "unsupported_event", "already_processed", "ended_during_create", "host_unavailable",
+    "room_finished_before_activation", "state_changed", "starting", "live", "ended", "failed",
+    "activate", "cleanup", "active",
 }
 
 

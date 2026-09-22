@@ -24,7 +24,9 @@ aos.patches.v1_0.install_shorts_indexes
 
 # Live domain data reconciliation must run before its schema-only indexes.
 aos.patches.v1_0.harden_live_subsystem
+aos.patches.v1_0.canonicalize_live_runtime
 aos.patches.v1_0.install_live_indexes
+aos.patches.v1_0.install_live_runtime_indexes
 
 # Chat data reconciliation must run before Chat uniqueness/query indexes.
 aos.patches.v1_0.harden_chat_subsystem

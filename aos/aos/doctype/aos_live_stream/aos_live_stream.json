@@ -1,11 +1,9 @@
 {
  "actions": [],
- "autoname": "naming_series:",
  "creation": "2026-03-30 14:44:50.073104",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "title",
   "host_user",
   "started_at",
@@ -30,16 +28,12 @@
   "unique_viewers",
   "total_joins",
   "room_cleanup_pending",
-  "last_reconciled_at"
+  "last_reconciled_at",
+  "last_livekit_room_event_at",
+  "room_provision_attempts",
+  "last_room_error"
  ],
  "fields": [
-  {
-   "default": "LIVE-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "LIVE-.YYYY.-.#####"
-  },
   {
    "fieldname": "title",
    "fieldtype": "Data",
@@ -63,13 +57,13 @@
    "description": "Cached public URL for the live cover image. New uploads should use live_cover_media."
   },
   {
-   "default": "live",
+   "default": "starting",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "scheduled\nlive\nended",
+   "options": "starting\nlive\nended\nfailed",
    "reqd": 1,
    "search_index": 1
   },
@@ -141,7 +135,7 @@
    "read_only": 1
   },
   {
-   "default": "1",
+   "default": "0",
    "fieldname": "is_active",
    "fieldtype": "Check",
    "label": "Is Active",
@@ -206,6 +200,29 @@
    "fieldtype": "Datetime",
    "label": "Last Reconciled At",
    "read_only": 1
+  },
+  {
+   "fieldname": "last_livekit_room_event_at",
+   "fieldtype": "Datetime",
+   "label": "Last LiveKit Room Event At",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "room_provision_attempts",
+   "fieldtype": "Int",
+   "label": "Room Provision Attempts",
+   "default": "0",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "last_room_error",
+   "fieldtype": "Data",
+   "label": "Last Room Error",
+   "read_only": 1,
+   "hidden": 1,
+   "length": 140
   }
  ],
  "grid_page_length": 50,
@@ -236,8 +253,8 @@
  "sort_order": "DESC",
  "states": [
   {
-   "color": "Gray",
-   "title": "scheduled"
+   "color": "Orange",
+   "title": "starting"
   },
   {
    "color": "Green",
@@ -246,6 +263,10 @@
   {
    "color": "Red",
    "title": "ended"
+  },
+  {
+   "color": "Red",
+   "title": "failed"
   }
  ]
 }

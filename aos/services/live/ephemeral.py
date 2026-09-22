@@ -110,15 +110,16 @@ class ReactionIncrement:
 
 
 def _initial_reaction_base(live_id: str) -> int:
+    """Return the durable materialized total used to seed Redis.
+
+    Reaction taps are no longer persisted as one SQL row per event. The Live
+    row is the sole durable aggregate, so Redis recovery never scans an event
+    table on a hot-room request path.
+    """
     materialized = _as_int(
         frappe.db.get_value("AOS Live Stream", live_id, "reaction_count")
     )
-    # Legacy releases persisted one row per reaction. Count those only when a
-    # Redis accumulator is first created, never on the hot path afterward.
-    legacy = _as_int(
-        frappe.db.count("AOS Live Stream Reaction", {"live_stream": live_id})
-    )
-    return max(materialized, legacy, 0)
+    return max(materialized, 0)
 
 
 def increment_reaction(*, live_id: str, reaction_type: str) -> ReactionIncrement | None:

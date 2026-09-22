@@ -18,7 +18,6 @@ INDEXES: tuple[tuple[str, str, tuple[str, ...], bool], ...] = (
     ("AOS Live CoHost", "idx_live_cohost_user", ("user", "status", "modified", "name"), False),
     ("AOS Live Message", "idx_live_message_page", ("live_stream", "status", "creation", "name"), False),
     ("AOS Live Message", "idx_live_reply_page", ("parent_message", "status", "creation", "name"), False),
-    ("AOS Live Stream Reaction", "idx_live_reaction_stream", ("live_stream", "creation", "name"), False),
     ("AOS LiveKit Webhook Event", "idx_live_webhook_cleanup", ("status", "creation", "name"), False),
 )
 

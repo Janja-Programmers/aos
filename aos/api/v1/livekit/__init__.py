@@ -20,7 +20,21 @@ def handle_webhook():
             error="LIVE_WEBHOOK_INVALID",
             http_status=413,
         )
-    raw_body = request.get_data(cache=True, as_text=True)
+    raw_bytes = request.stream.read(MAX_WEBHOOK_BYTES + 1)
+    if len(raw_bytes) > MAX_WEBHOOK_BYTES:
+        return fail(
+            "LiveKit webhook rejected.",
+            error="LIVE_WEBHOOK_INVALID",
+            http_status=413,
+        )
+    try:
+        raw_body = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return fail(
+            "LiveKit webhook rejected.",
+            error="LIVE_WEBHOOK_INVALID",
+            http_status=400,
+        )
     authorization = str(request.headers.get("Authorization") or "")
     result = handle_verified_webhook(raw_body, authorization)
     if not result.get("ok"):

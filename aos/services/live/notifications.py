@@ -33,24 +33,13 @@ def enqueue_live_started_fanout(live_id: str) -> None:
         live_log("notification_fanout_enqueue", outcome="failure", reason="dependency")
 
 
-def _already_notified(*, user: str, host_user: str, live_id: str) -> bool:
-    rows = frappe.db.sql(
-        """
-        SELECT name
-        FROM `tabAOS Notification`
-        WHERE dedupe_key=%(dedupe_key)s
-           OR (user=%(user)s AND actor=%(host_user)s AND type='live_started'
-               AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.live_id'))=%(live_id)s)
-        LIMIT 1
-        """,
-        {
-            "dedupe_key": _dedupe_key(user=user, live_id=live_id),
-            "user": user,
-            "host_user": host_user,
-            "live_id": live_id,
-        },
+def _already_notified(*, user: str, live_id: str) -> bool:
+    return bool(
+        frappe.db.exists(
+            "AOS Notification",
+            {"dedupe_key": _dedupe_key(user=user, live_id=live_id)},
+        )
     )
-    return bool(rows)
 
 
 def deliver_live_started_fanout(
@@ -85,7 +74,7 @@ def deliver_live_started_fanout(
     created = 0
     for row in page:
         try:
-            if _already_notified(user=row["user"], host_user=live.host_user, live_id=live_id):
+            if _already_notified(user=row["user"], live_id=live_id):
                 continue
             NotificationService.notify_live_started(
                 user=row["user"],

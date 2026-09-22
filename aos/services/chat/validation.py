@@ -14,7 +14,7 @@ from .errors import ChatError
 
 CONVERSATION_ID_RE = re.compile(r"^CONV-\d{4}-\d{5}$")
 MESSAGE_ID_RE = re.compile(r"^MSG-\d{4}-\d{5}$")
-LIVE_ID_RE = re.compile(r"^LIVE-\d{4}-\d{5}$")
+LIVE_ID_RE = re.compile(r"^LIVE-[0-9a-f]{32}$")
 SHORT_ID_RE = re.compile(r"^SHORT-\d{4}-\d{5}$")
 AD_ID_RE = re.compile(r"^AD-\d{4}-\d{5}$")
 PUBLIC_ACCOUNT_ID_RE = re.compile(r"^ACC-[A-Z2-7]{20}$")

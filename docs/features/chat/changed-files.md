@@ -73,7 +73,6 @@
 - `aos/services/notification_service.py`
 - `ci/public-endpoint-rate-limits.json`
 - `docs/features/live/README.md`
-- `docs/features/live/api.md`
 - `docs/features/shorts/api.md`
 
 ## Deleted

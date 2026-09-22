@@ -77,7 +77,7 @@ Clients must branch on `error`, not the human message.
 
 - Conversation: `CONV-YYYY-NNNNN`
 - Message: `MSG-YYYY-NNNNN`
-- Live: `LIVE-YYYY-NNNNN`
+- Live: `LIVE-<32 lowercase hex>`
 - Short: `SHORT-YYYY-NNNNN`
 - Ad: `AD-YYYY-NNNNN`
 - Media: `MEDIA-YYYY-NNNNN`
@@ -114,7 +114,7 @@ Shared authentication/account/media/translation codes remain backward-compatible
 ```json
 {
   "conversation_id":"CONV-2026-00001",
-  "live":"LIVE-2026-00015",
+  "live":"LIVE-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "content":"Come watch"
 }
 ```

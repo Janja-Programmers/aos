@@ -17,7 +17,7 @@ from frappe.utils import add_to_date, get_datetime, now_datetime
 
 from aos.api.calls.realtime import publish_call_ended
 from aos.api.calls.utils import upsert_call_system_message
-from aos.services.live.livekit_admin import list_participants
+from aos.services.livekit.admin import list_participants
 
 from .livekit import enqueue_room_cleanup
 from .observability import call_log

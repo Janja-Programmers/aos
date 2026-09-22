@@ -10,7 +10,7 @@ Preferred endpoint:
 
 ```json
 {
-  "live_id":"LIVE-2026-00015",
+  "live_id":"LIVE-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "conversation_id":"CONV-2026-00001",
   "message":"Come watch this",
   "idempotency_key":"device-operation-id"

@@ -15,7 +15,8 @@
   "qualified",
   "is_active",
   "active_identity_key",
-  "livekit_identity"
+  "livekit_identity",
+  "last_livekit_event_at"
  ],
  "fields": [
   {
@@ -106,6 +107,13 @@
    "no_copy": 1,
    "search_index": 1,
    "length": 96
+  },
+  {
+   "fieldname": "last_livekit_event_at",
+   "fieldtype": "Datetime",
+   "label": "Last LiveKit Event At",
+   "read_only": 1,
+   "hidden": 1
   }
  ],
  "grid_page_length": 50,

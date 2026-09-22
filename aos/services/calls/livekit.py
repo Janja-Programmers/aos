@@ -7,7 +7,7 @@ import time
 import frappe
 
 from aos.services.accounts.identity import public_account_id_for_user
-from aos.services.live.livekit_admin import delete_room
+from aos.services.livekit.admin import delete_room
 from aos.services.livekit_service import LiveKitService
 
 from .errors import CallError

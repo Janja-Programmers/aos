@@ -1,4 +1,4 @@
-"""Bounded LiveKit room administration used only from background jobs."""
+"""Bounded server-only LiveKit room administration shared by Live and Calls."""
 
 from __future__ import annotations
 
@@ -7,8 +7,13 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
 from aos.services.livekit_service import LiveKitService
-
-from .constants import LIVEKIT_ADMIN_RETRY_ATTEMPTS, LIVEKIT_ADMIN_TIMEOUT_SECONDS
+from .constants import (
+    ADMIN_RETRY_ATTEMPTS,
+    ADMIN_TIMEOUT_SECONDS,
+    MAX_ADMIN_PARTICIPANTS,
+    MAX_ADMIN_ROOM_NAME_LENGTH,
+    MAX_PARTICIPANT_IDENTITY_LENGTH,
+)
 
 
 @dataclass(frozen=True)
@@ -51,8 +56,8 @@ async def _with_client(operation):
 
 
 async def _retry(operation) -> RoomAdminResult:
-    attempts = max(1, min(int(LIVEKIT_ADMIN_RETRY_ATTEMPTS), 5))
-    timeout = max(1, min(int(LIVEKIT_ADMIN_TIMEOUT_SECONDS), 30))
+    attempts = max(1, min(int(ADMIN_RETRY_ATTEMPTS), 5))
+    timeout = max(1, min(int(ADMIN_TIMEOUT_SECONDS), 30))
     last_category = "unavailable"
     for attempt in range(attempts):
         try:
@@ -70,7 +75,7 @@ def _run(operation) -> RoomAdminResult:
 
 def ensure_room(room_name: str) -> RoomAdminResult:
     room = str(room_name or "").strip()
-    if not room:
+    if not room or len(room) > MAX_ADMIN_ROOM_NAME_LENGTH:
         return RoomAdminResult(False, "invalid_room")
 
     async def operation(client, api):
@@ -87,7 +92,7 @@ def ensure_room(room_name: str) -> RoomAdminResult:
 
 def delete_room(room_name: str) -> RoomAdminResult:
     room = str(room_name or "").strip()
-    if not room:
+    if not room or len(room) > MAX_ADMIN_ROOM_NAME_LENGTH:
         return RoomAdminResult(False, "invalid_room")
 
     async def operation(client, api):
@@ -104,7 +109,7 @@ def delete_room(room_name: str) -> RoomAdminResult:
 
 def list_participants(room_name: str) -> RoomAdminResult:
     room = str(room_name or "").strip()
-    if not room:
+    if not room or len(room) > MAX_ADMIN_ROOM_NAME_LENGTH:
         return RoomAdminResult(False, "invalid_room")
 
     async def operation(client, api):
@@ -119,7 +124,7 @@ def list_participants(room_name: str) -> RoomAdminResult:
                     }
                 )
             )
-            return RoomAdminResult(True, "listed", identities[:2000])
+            return RoomAdminResult(True, "listed", identities[:MAX_ADMIN_PARTICIPANTS])
         except Exception as exc:
             if _category(exc) == "not_found":
                 return RoomAdminResult(True, "not_found", ())
@@ -131,7 +136,12 @@ def list_participants(room_name: str) -> RoomAdminResult:
 def remove_participant(room_name: str, identity: str) -> RoomAdminResult:
     room = str(room_name or "").strip()
     participant_identity = str(identity or "").strip()
-    if not room or not participant_identity:
+    if (
+        not room
+        or len(room) > MAX_ADMIN_ROOM_NAME_LENGTH
+        or not participant_identity
+        or len(participant_identity) > MAX_PARTICIPANT_IDENTITY_LENGTH
+    ):
         return RoomAdminResult(False, "invalid_participant")
 
     async def operation(client, api):

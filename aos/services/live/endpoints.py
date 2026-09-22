@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from .validation import (
-    ACCOUNT_REFERENCE_RE,
     CONVERSATION_ID_RE,
     LIVE_ID_RE,
     LIVEKIT_PARTICIPANT_ID_RE,
@@ -17,10 +16,7 @@ def _spec(fields: set[str], *, aliases=(), ids=()) -> EndpointSpec:
 
 
 ENDPOINT_SPECS: dict[str, EndpointSpec] = {
-    "start_live": _spec(
-        {"title", "cover_image", "live_cover_media", "cover_image_media", "media_id"},
-        aliases=(("live_cover_media", "cover_image_media", "media_id"),),
-    ),
+    "start_live": _spec({"title", "live_cover_media"}),
     "share_live_to_chat": _spec(
         {"live_id", "conversation_id", "message", "content", "idempotency_key"},
         aliases=(("message", "content"),),
@@ -29,7 +25,7 @@ ENDPOINT_SPECS: dict[str, EndpointSpec] = {
     "join_live": _spec({"live_id", "session_id"}, ids=(("live_id", LIVE_ID_RE),)),
     "end_live": _spec({"live_id"}, ids=(("live_id", LIVE_ID_RE),)),
     "get_live": _spec({"live_id", "session_id"}, ids=(("live_id", LIVE_ID_RE),)),
-    "list_live_streams": _spec({"session_id", "limit", "start", "cursor"}),
+    "list_live_streams": _spec({"session_id", "limit", "cursor"}),
     "get_live_token": _spec({"live_id", "session_id"}, ids=(("live_id", LIVE_ID_RE),)),
     "get_live_cohost_token": _spec({"cohost_id", "session_id"}, ids=(("cohost_id", SAFE_ROW_ID_RE),)),
     "track_join": _spec({"live_id", "session_id"}, ids=(("live_id", LIVE_ID_RE),)),
@@ -39,17 +35,13 @@ ENDPOINT_SPECS: dict[str, EndpointSpec] = {
         {"live_id", "parent_message", "session_id", "content", "idempotency_key"},
         ids=(("live_id", LIVE_ID_RE), ("parent_message", SAFE_ROW_ID_RE)),
     ),
-    "list_live_messages": _spec({"live_id", "limit", "start", "cursor", "include_replies"}, ids=(("live_id", LIVE_ID_RE),)),
-    "list_live_replies": _spec({"parent_message", "limit", "start", "cursor"}, ids=(("parent_message", SAFE_ROW_ID_RE),)),
+    "list_live_messages": _spec({"live_id", "limit", "cursor", "include_replies"}, ids=(("live_id", LIVE_ID_RE),)),
+    "list_live_replies": _spec({"parent_message", "limit", "cursor"}, ids=(("parent_message", SAFE_ROW_ID_RE),)),
     "delete_live_message": _spec({"message_id"}, ids=(("message_id", SAFE_ROW_ID_RE),)),
     "send_reaction": _spec({"live_id", "reaction_type", "session_id"}, ids=(("live_id", LIVE_ID_RE),)),
     "invite_live_cohost": _spec(
-        {"live_id", "livekit_identity", "target_user", "session_id"},
-        ids=(
-            ("live_id", LIVE_ID_RE),
-            ("livekit_identity", LIVEKIT_PARTICIPANT_ID_RE),
-            ("target_user", ACCOUNT_REFERENCE_RE),
-        ),
+        {"live_id", "livekit_identity"},
+        ids=(("live_id", LIVE_ID_RE), ("livekit_identity", LIVEKIT_PARTICIPANT_ID_RE)),
     ),
     "request_live_cohost": _spec({"live_id", "session_id"}, ids=(("live_id", LIVE_ID_RE),)),
     "respond_live_cohost": _spec({"cohost_id", "action", "reason"}, ids=(("cohost_id", SAFE_ROW_ID_RE),)),
@@ -57,7 +49,7 @@ ENDPOINT_SPECS: dict[str, EndpointSpec] = {
     "activate_live_cohost": _spec({"cohost_id", "session_id"}, ids=(("cohost_id", SAFE_ROW_ID_RE),)),
     "end_live_cohost": _spec({"cohost_id", "reason"}, ids=(("cohost_id", SAFE_ROW_ID_RE),)),
     "get_live_cohost": _spec({"cohost_id"}, ids=(("cohost_id", SAFE_ROW_ID_RE),)),
-    "list_live_cohosts": _spec({"live_id", "status", "limit", "start", "cursor"}, ids=(("live_id", LIVE_ID_RE),)),
+    "list_live_cohosts": _spec({"live_id", "status", "limit", "cursor"}, ids=(("live_id", LIVE_ID_RE),)),
 }
 
 TRANSACTIONAL_ENDPOINTS = frozenset(

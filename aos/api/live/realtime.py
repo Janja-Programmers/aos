@@ -181,21 +181,10 @@ def _build_live_payload(
     return {
         "live_id": live.name,
         "id": live.name,
-        "host_user": host["user"],
-        "host_display_name": host[
-            "display_name"
-        ],
-        "host_avatar": host["avatar"],
-        "host_is_deleted": bool(host.get("is_deleted")),
-        "host_is_live": bool(host.get("is_live")) if not bool(host.get("is_deleted")) else False,
-        "host_live_id": host.get("live_id") if not bool(host.get("is_deleted")) else None,
-        "host_live_status": host.get("live_status") if not bool(host.get("is_deleted")) else None,
+        "host": host,
         "title": live.title,
         "cover_image": live.cover_image,
-        "cover_image_media": getattr(live, "live_cover_media", None),
-        "cover_image_media_id": getattr(live, "live_cover_media", None),
         "live_cover_media": getattr(live, "live_cover_media", None),
-        "live_cover_media_id": getattr(live, "live_cover_media", None),
         "thumbnail": live.cover_image,
         "viewer_count": max(
             int(

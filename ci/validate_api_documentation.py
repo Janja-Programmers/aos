@@ -21,7 +21,7 @@ FEATURE_DOCS = {
 	"catalog": "docs/features/catalog/README.md",
 	"chat": "docs/features/chat/api.md",
 	"diagnostics": "docs/features/diagnostics/api.md",
-	"live": "docs/features/live/api.md",
+	"live": "docs/features/live/README.md",
 	"localization": "docs/features/localization/README.md",
 	"maps": "docs/features/maps/README.md",
 	"media": "docs/features/media/README.md",
@@ -73,7 +73,7 @@ SINGLE_FILE_FEATURE_DOCS = {
 }
 
 PLATFORM_DOCS = {
-	"livekit": "docs/features/live/livekit.md",
+	"livekit": "docs/features/live/README.md",
 	"moderation": "docs/production/content-moderation-service.md",
 	"video_processing": "docs/features/shorts/README.md",
 	"metrics": "docs/api/internal.md",

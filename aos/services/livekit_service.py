@@ -28,6 +28,11 @@ from livekit import api
 
 from aos.utils.aos_config import get_livekit_config
 from aos.utils.aos_settings import get_aos_settings_snapshot
+from aos.services.livekit.constants import (
+    MAX_ADMIN_ROOM_NAME_LENGTH,
+    MAX_PARTICIPANT_IDENTITY_LENGTH,
+    MAX_TOKEN_METADATA_BYTES,
+)
 
 
 LIVE_ROLE_HOST = "host"
@@ -201,9 +206,9 @@ class LiveKitService:
         Build the JSON metadata stored on the LiveKit participant.
 
         Identity rules:
-        - `user` should match the stable LiveKit participant identity.
-        - Authenticated live users normally use their AOS user ID.
-        - Guest viewers use a generated session-scoped identity.
+        - `user` is a server-controlled LiveKit participant identity.
+        - Live supplies an opaque HMAC-derived participant identity.
+        - Calls supplies its own server-controlled shared-infrastructure identity.
         - Display fields are metadata only and must never be treated as
           authentication or participant identity.
         """
@@ -377,6 +382,12 @@ class LiveKitService:
             frappe.throw(
                 _("LiveKit room name is required.")
             )
+        if len(normalized_identity) > MAX_PARTICIPANT_IDENTITY_LENGTH:
+            frappe.throw(_("LiveKit identity is too long."))
+        if len(normalized_room_name) > MAX_ADMIN_ROOM_NAME_LENGTH:
+            frappe.throw(_("LiveKit room name is too long."))
+        if metadata and len(str(metadata).encode("utf-8")) > MAX_TOKEN_METADATA_BYTES:
+            frappe.throw(_("LiveKit participant metadata is too large."))
 
         api_key, api_secret = (
             cls._get_credentials()
@@ -394,6 +405,8 @@ class LiveKitService:
         ).strip()
 
         if normalized_participant_name:
+            if len(normalized_participant_name) > 128:
+                frappe.throw(_("LiveKit participant name is too long."))
             token = token.with_name(
                 normalized_participant_name
             )

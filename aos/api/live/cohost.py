@@ -49,7 +49,6 @@ from aos.api.shared.responses import fail, ok
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.validators import require_id
 from aos.api.shared.db import is_duplicate_entry_error
-from aos.services.accounts.identity import resolve_account_reference
 from aos.services.live.cursor import decode_cursor, encode_cursor
 from aos.services.live.errors import LiveError
 from aos.services.live.participants import enqueue_cohost_removal
@@ -177,33 +176,9 @@ def _normalize_response_action(
     ).strip().lower()
 
 
-def _parse_pagination(
-    kwargs,
-) -> tuple[int, int]:
-    limit = int(
-        kwargs.get("limit")
-        or DEFAULT_LIST_LIMIT
-    )
-
-    limit = max(
-        1,
-        min(
-            limit,
-            MAX_LIST_LIMIT,
-        ),
-    )
-
-    start = int(
-        kwargs.get("start")
-        or 0
-    )
-
-    start = max(
-        0,
-        start,
-    )
-
-    return start, limit
+def _parse_pagination(kwargs) -> int:
+    limit = int(kwargs.get("limit") or DEFAULT_LIST_LIMIT)
+    return max(1, min(limit, MAX_LIST_LIMIT))
 
 
 def _workflow_users(
@@ -460,107 +435,49 @@ def _resolve_host_invite_candidate(
     *,
     live,
     livekit_identity: str | None,
-    target_user_reference: str | None,
-    legacy_session_id: str | None,
 ):
-    """Resolve a host-selected co-host candidate without leaking session IDs.
-
-    Preferred contract:
-        livekit_identity
-
-    Backward-compatible contract:
-        target_user + session_id
-
-    `target_user` may accompany `livekit_identity` as a public-account
-    cross-check, but `session_id` may not be combined with the opaque identity
-    selector because the two modes have different trust boundaries.
-    """
+    """Resolve an active authenticated viewer from a server-issued RTC identity."""
     livekit_identity = _normalize_text(livekit_identity)
-    legacy_session_id = normalize_session_id(legacy_session_id)
-    target_user_reference = _normalize_text(target_user_reference)
-
-    if livekit_identity and legacy_session_id:
-        return None, None, fail(
-            "Choose one co-host candidate selector.",
-            error="VALIDATION_ERROR",
-        )
-
-    if livekit_identity:
-        view, err = _get_active_invite_candidate_by_identity(
-            live_id=live.name,
-            livekit_identity=livekit_identity,
-        )
-        if err:
-            return None, None, err
-
-        target_user = str(view.user or "").strip()
-        session_id = normalize_session_id(view.session_id)
-        if not target_user or not session_id:
-            return None, None, fail(
-                "Co-host candidate is unavailable.",
-                error="INVALID_STATE",
-            )
-
-        if target_user_reference:
-            expected_user = resolve_account_reference(
-                target_user_reference,
-            )
-            if not expected_user or expected_user != target_user:
-                return None, None, fail(
-                    "Co-host candidate is unavailable.",
-                    error="INVALID_STATE",
-                )
-
-        _, err = validate_user_is_cohost_candidate(
-            live=live,
-            user=target_user,
-            session_id=session_id,
-        )
-        if err:
-            return None, None, err
-
-        err = _lock_and_revalidate_invite_candidate_view(
-            view_id=str(view.name),
-            live_id=live.name,
-            user=target_user,
-            session_id=session_id,
-            livekit_identity=livekit_identity,
-        )
-        if err:
-            return None, None, err
-
-        return target_user, session_id, None
-
-    if not target_user_reference:
+    if not livekit_identity:
         return None, None, fail(
             "livekit_identity is required for host invitations.",
             error="VALIDATION_ERROR",
         )
 
-    target_user = resolve_account_reference(
-        target_user_reference,
+    view, err = _get_active_invite_candidate_by_identity(
+        live_id=live.name,
+        livekit_identity=livekit_identity,
     )
-    if not target_user:
+    if err:
+        return None, None, err
+
+    target_user = str(view.user or "").strip()
+    session_id = normalize_session_id(view.session_id)
+    if not target_user or not session_id:
         return None, None, fail(
             "Co-host candidate is unavailable.",
-            error="NOT_FOUND",
-        )
-
-    if not legacy_session_id:
-        return None, None, fail(
-            "session_id is required for legacy co-host invitations.",
-            error="VALIDATION_ERROR",
+            error="INVALID_STATE",
         )
 
     _, err = validate_user_is_cohost_candidate(
         live=live,
         user=target_user,
-        session_id=legacy_session_id,
+        session_id=session_id,
     )
     if err:
         return None, None, err
 
-    return target_user, legacy_session_id, None
+    err = _lock_and_revalidate_invite_candidate_view(
+        view_id=str(view.name),
+        live_id=live.name,
+        user=target_user,
+        session_id=session_id,
+        livekit_identity=livekit_identity,
+    )
+    if err:
+        return None, None, err
+
+    return target_user, session_id, None
 
 
 # RECORD CREATION
@@ -626,13 +543,6 @@ def invite_live_cohost_impl(**kwargs):
     livekit_identity = _normalize_text(
         kwargs.get("livekit_identity")
     )
-    target_user_reference = _normalize_text(
-        kwargs.get("target_user")
-    )
-    legacy_session_id = normalize_session_id(
-        kwargs.get("session_id")
-    )
-
     try:
         live, err = validate_live_exists(
             live_id
@@ -654,8 +564,8 @@ def invite_live_cohost_impl(**kwargs):
             return err
 
         # Serialize host invite selection with Live termination and viewer
-        # leave/reconnect. The host supplies only an opaque LiveKit identity in
-        # the preferred path; the private AOS viewer session is resolved here.
+        # leave/reconnect. The host supplies only an opaque server-issued
+        # LiveKit identity; the private viewer session is resolved server-side.
         _lock_live_row(
             live_id
         )
@@ -671,8 +581,6 @@ def invite_live_cohost_impl(**kwargs):
         target_user, session_id, err = _resolve_host_invite_candidate(
             live=live,
             livekit_identity=livekit_identity,
-            target_user_reference=target_user_reference,
-            legacy_session_id=legacy_session_id,
         )
         if err:
             return err
@@ -1852,7 +1760,7 @@ def list_live_cohosts_impl(**kwargs):
         live, err = validate_live_exists(live_id)
         if err:
             return err
-        start_offset, limit = _parse_pagination(kwargs)
+        limit = _parse_pagination(kwargs)
         is_host = _is_live_host(live=live, user=user)
         if not is_host:
             access_err = validate_live_social_access(live=live, user=user)
@@ -1867,7 +1775,6 @@ def list_live_cohosts_impl(**kwargs):
         params: dict[str, Any] = {
             "live_id": live_id,
             "limit": limit + 1,
-            "offset": 0 if cursor else start_offset,
         }
         conditions = ["live_stream=%(live_id)s"]
         if not is_host:
@@ -1894,7 +1801,7 @@ def list_live_cohosts_impl(**kwargs):
             FROM `tabAOS Live CoHost`
             WHERE {' AND '.join(conditions)}
             ORDER BY creation DESC, name DESC
-            LIMIT %(limit)s OFFSET %(offset)s
+            LIMIT %(limit)s
             """,
             params,
             as_dict=True,
@@ -1915,7 +1822,6 @@ def list_live_cohosts_impl(**kwargs):
             data={
                 "items": serialize_live_cohosts(page, include_internal=True),
                 "pagination": {
-                    "start": start_offset,
                     "limit": limit,
                     "count": len(page),
                     "has_more": has_more,

@@ -8,13 +8,13 @@ import frappe
 from frappe.utils import add_days, add_to_date, now_datetime
 
 from aos.api.live.realtime import publish_viewer_count
-from aos.services.live.livekit_admin import delete_room, ensure_room, list_participants, remove_participant
-from aos.services.live.notifications import deliver_live_started_fanout
+from aos.services.livekit.admin import delete_room, ensure_room, list_participants, remove_participant
+from aos.services.live.notifications import deliver_live_started_fanout, enqueue_live_started_fanout
 from aos.services.live.participants import enqueue_view_removal
-from aos.services.live.api import _outbox_flag, _rollback, _snapshot_callbacks
 from aos.services.live.errors import LiveError
 from aos.services.live.policy import LivePolicy
 from aos.services.live.observability import live_log
+from aos.services.live.constants import STATUS_ENDED, STATUS_FAILED, STATUS_LIVE, STATUS_STARTING
 from aos.services.live_analytics_service import LiveAnalyticsService
 
 BATCH_SIZE = 100
@@ -62,6 +62,148 @@ def publish_coalesced_viewer_count(*, live_id: str, delay_seconds: float = 0.35)
 
     _publish_viewer_count_now(live_id, count)
     return {"ok": True, "outcome": "published", "viewer_count": count}
+
+
+def _enqueue_live_room_cleanup(live_id: str) -> None:
+    try:
+        frappe.enqueue(
+            "aos.tasks.live.cleanup_live_room",
+            queue="short",
+            enqueue_after_commit=True,
+            live_id=live_id,
+        )
+    except Exception:
+        live_log("room_cleanup_enqueue", outcome="failure", reason="dependency")
+
+
+def _mark_start_failed(*, live_id: str, reason: str) -> dict[str, object]:
+    rows = frappe.db.sql(
+        """
+        SELECT name
+        FROM `tabAOS Live Stream`
+        WHERE name = %s
+        LIMIT 1 FOR UPDATE
+        """,
+        (live_id,),
+        as_dict=True,
+    )
+    if not rows:
+        return {"ok": False, "outcome": "not_found"}
+    live = frappe.get_doc("AOS Live Stream", live_id)
+    if live.status != STATUS_STARTING:
+        return {"ok": live.status == STATUS_LIVE, "outcome": str(live.status or "state_changed")}
+
+    live.status = STATUS_FAILED
+    # A timeout can be ambiguous: LiveKit may have created the room before the
+    # response was lost. Always reconcile/delete the reserved room after a
+    # failed provisioning attempt.
+    live.room_cleanup_pending = 1
+    live.room_provision_attempts = int(live.room_provision_attempts or 0) + 1
+    live.last_room_error = str(reason or "unavailable")[:140]
+    live.last_reconciled_at = now_datetime()
+    live.save(ignore_permissions=True)
+    _enqueue_live_room_cleanup(live.name)
+    return {"ok": False, "outcome": str(reason or "unavailable")}
+
+
+def activate_live_room(*, live_id: str) -> dict[str, object]:
+    """Provision the external room before making a Live joinable.
+
+    Room creation is intentionally outside the row lock. The second, locked
+    state check prevents a concurrent end/cancel from being overwritten. If
+    application state changed while provisioning, cleanup is scheduled rather
+    than reviving the Live.
+    """
+    row = frappe.db.get_value(
+        "AOS Live Stream",
+        live_id,
+        ["status", "host_user", "room_name"],
+        as_dict=True,
+    )
+    if not row:
+        return {"ok": False, "outcome": "not_found"}
+    if row.status == STATUS_LIVE:
+        return {"ok": True, "outcome": "already_live"}
+    if row.status != STATUS_STARTING or not row.room_name:
+        return {"ok": False, "outcome": "not_starting"}
+
+    try:
+        LivePolicy().require_account_available(row.host_user)
+    except LiveError:
+        live_log("room_provision", outcome="rejected", reason="host_unavailable")
+        return _mark_start_failed(live_id=live_id, reason="host_unavailable")
+
+    started = time.monotonic()
+    result = ensure_room(row.room_name)
+    latency_ms = int((time.monotonic() - started) * 1000)
+    if not result.ok:
+        live_log(
+            "room_provision",
+            outcome="failure",
+            reason=result.category,
+            latency_ms=latency_ms,
+        )
+        return _mark_start_failed(live_id=live_id, reason=result.category)
+
+    rows = frappe.db.sql(
+        """
+        SELECT name
+        FROM `tabAOS Live Stream`
+        WHERE name = %s
+        LIMIT 1 FOR UPDATE
+        """,
+        (live_id,),
+        as_dict=True,
+    )
+    if not rows:
+        # The row disappeared after room creation. There is no canonical owner,
+        # so remove the orphan directly.
+        delete_room(row.room_name)
+        return {"ok": False, "outcome": "deleted_during_create"}
+
+    live = frappe.get_doc("AOS Live Stream", live_id)
+    if live.status != STATUS_STARTING or live.room_name != row.room_name:
+        if live.status in {STATUS_ENDED, STATUS_FAILED}:
+            live.room_cleanup_pending = 1
+            live.last_reconciled_at = now_datetime()
+            live.save(ignore_permissions=True)
+            _enqueue_live_room_cleanup(live.name)
+        live_log(
+            "room_provision_race",
+            outcome="ignored",
+            reason=str(live.status or "state_changed"),
+            latency_ms=latency_ms,
+        )
+        return {"ok": False, "outcome": "state_changed"}
+
+    live.status = STATUS_LIVE
+    live.room_cleanup_pending = 0
+    live.room_provision_attempts = int(live.room_provision_attempts or 0) + 1
+    live.last_room_error = ""
+    live.last_reconciled_at = now_datetime()
+    live.save(ignore_permissions=True)
+    live.reload()
+
+    # Import lazily to keep background infrastructure independent from the
+    # public API module during worker startup. These operations share the job
+    # transaction; a DB failure rolls state back to `starting`, while the next
+    # activation observes the already-created room idempotently.
+    from aos.api.live.activity import record_live_host_activity
+    from aos.api.live.live import _create_startup_messages
+    from aos.api.live.realtime import publish_live_started
+
+    record_live_host_activity(user=live.host_user, live_id=live.name)
+    _create_startup_messages(live=live, host_user=live.host_user)
+    publish_live_started(live)
+    enqueue_live_started_fanout(live.name)
+
+    live_log(
+        "room_provision",
+        outcome="success",
+        reason=result.category,
+        latency_ms=latency_ms,
+    )
+    return {"ok": True, "outcome": "live"}
 
 
 def ensure_live_room(*, live_id: str) -> dict[str, object]:
@@ -126,8 +268,8 @@ def cleanup_live_room(*, live_id: str) -> dict[str, object]:
         ["status", "is_active", "room_name", "room_cleanup_pending"],
         as_dict=True,
     )
-    if not row or row.status != "ended" or bool(row.is_active):
-        return {"ok": True, "outcome": "not_ended"}
+    if not row or row.status not in {STATUS_ENDED, STATUS_FAILED} or bool(row.is_active):
+        return {"ok": True, "outcome": "not_terminal"}
     if not row.room_name:
         frappe.db.set_value(
             "AOS Live Stream", live_id, "room_cleanup_pending", 0, update_modified=False
@@ -374,12 +516,43 @@ def _expire_pending_cohosts() -> int:
     return count
 
 
-def _end_unavailable_host_live(live_id: str) -> bool:
+def _enqueue_reconcile_job(*, method: str, live_id: str, kind: str) -> bool:
+    """Schedule one idempotent recovery unit with its own DB transaction."""
+    try:
+        frappe.enqueue(
+            method,
+            queue="short",
+            enqueue_after_commit=True,
+            live_id=live_id,
+            job_id=f"aos:live:{kind}:{live_id}",
+            deduplicate=True,
+        )
+        return True
+    except Exception:
+        live_log("reconciliation_enqueue", outcome="failure", reason=kind)
+        return False
+
+
+def _end_unavailable_host_live(live_id: str, *, host_user: str | None = None) -> bool:
+    candidate_host = str(
+        host_user or frappe.db.get_value("AOS Live Stream", live_id, "host_user") or ""
+    ).strip()
+    if not candidate_host:
+        return False
+
+    # The healthy path performs no row lock. Only an unavailable host enters
+    # the mutation path, where the account policy is rechecked after locking.
+    try:
+        LivePolicy().require_account_available(candidate_host)
+        return False
+    except LiveError:
+        pass
+
     rows = frappe.db.sql(
         """
         SELECT name
         FROM `tabAOS Live Stream`
-        WHERE name=%s AND status='live' AND is_active=1
+        WHERE name=%s AND status IN ('starting', 'live')
         LIMIT 1 FOR UPDATE
         """,
         (live_id,),
@@ -397,13 +570,17 @@ def _end_unavailable_host_live(live_id: str) -> bool:
     from aos.api.live.live import _close_cohost_workflows_for_live, _create_live_ended_message
     from aos.api.live.realtime import publish_live_ended
 
-    _close_cohost_workflows_for_live(live=live, host_user=live.host_user)
-    live.status = "ended"
+    was_live = live.status == STATUS_LIVE
+    if was_live:
+        _close_cohost_workflows_for_live(live=live, host_user=live.host_user)
+    live.status = STATUS_ENDED if was_live else STATUS_FAILED
     live.room_cleanup_pending = 1
+    live.last_room_error = "host_unavailable"
     live.save(ignore_permissions=True)
     live.reload()
-    _create_live_ended_message(live=live, host_user=live.host_user)
-    publish_live_ended(live)
+    if was_live:
+        _create_live_ended_message(live=live, host_user=live.host_user)
+        publish_live_ended(live)
     try:
         frappe.enqueue(
             "aos.tasks.live.cleanup_live_room",
@@ -416,16 +593,83 @@ def _end_unavailable_host_live(live_id: str) -> bool:
     return True
 
 
+def reconcile_active_live(*, live_id: str) -> dict[str, object]:
+    """Reconcile one active room without holding DB locks across LiveKit I/O."""
+    row = frappe.db.get_value(
+        "AOS Live Stream",
+        live_id,
+        ["status", "is_active", "room_name", "host_user"],
+        as_dict=True,
+    )
+    if (
+        not row
+        or row.status != STATUS_LIVE
+        or not bool(row.is_active)
+        or not row.room_name
+    ):
+        return {"ok": True, "outcome": "not_active", "viewers_closed": 0}
+
+    if _end_unavailable_host_live(live_id, host_user=str(row.host_user or "")):
+        return {"ok": True, "outcome": "host_ended", "viewers_closed": 0}
+
+    participants = list_participants(row.room_name)
+    if not participants.ok:
+        live_log(
+            "room_participant_reconcile",
+            outcome="failure",
+            reason=participants.category,
+        )
+        return {"ok": False, "outcome": participants.category, "viewers_closed": 0}
+
+    # External I/O finished. Re-read canonical application state before any
+    # mutation so an end that raced the participant listing always wins.
+    current = frappe.db.get_value(
+        "AOS Live Stream",
+        live_id,
+        ["status", "is_active", "room_name"],
+        as_dict=True,
+    )
+    if (
+        not current
+        or current.status != STATUS_LIVE
+        or not bool(current.is_active)
+        or current.room_name != row.room_name
+    ):
+        return {"ok": True, "outcome": "state_changed", "viewers_closed": 0}
+
+    if participants.category == "not_found":
+        ensured = ensure_live_room(live_id=live_id)
+        return {
+            "ok": bool(ensured.get("ok")),
+            "outcome": str(ensured.get("outcome") or "room_missing"),
+            "viewers_closed": 0,
+            "room_recreated": int(bool(ensured.get("ok"))),
+        }
+
+    closed = _close_missing_viewers(live_id, participants.participants)
+    LiveAnalyticsService.materialize_view_metrics(live_id=live_id)
+    LiveAnalyticsService.materialize_comment_count(live_id=live_id)
+    LiveAnalyticsService.sync_reaction_count(live_id=live_id)
+    frappe.db.set_value(
+        "AOS Live Stream",
+        live_id,
+        "last_reconciled_at",
+        now_datetime(),
+        update_modified=False,
+    )
+    return {"ok": True, "outcome": "reconciled", "viewers_closed": closed}
+
+
 def reconcile_live_state() -> dict[str, int]:
-    """Bounded recovery pass; each item uses its own savepoint."""
+    """Dispatch bounded per-Live recovery jobs without external I/O in this transaction."""
     result = {
+        "starting_checked": 0,
+        "starting_scheduled": 0,
         "active_checked": 0,
+        "active_scheduled": 0,
         "ended_checked": 0,
-        "viewers_closed": 0,
-        "rooms_recreated": 0,
-        "rooms_cleaned": 0,
+        "cleanup_scheduled": 0,
         "cohosts_expired": 0,
-        "hosts_ended": 0,
         "ended_views_finalized": 0,
         "failed": 0,
     }
@@ -449,24 +693,40 @@ def reconcile_live_state() -> dict[str, int]:
         except Exception:
             result["failed"] += 1
 
+    starting = frappe.get_all(
+        "AOS Live Stream",
+        filters={"status": STATUS_STARTING},
+        fields=["name"],
+        order_by="modified asc, name asc",
+        limit=min(BATCH_SIZE, 25),
+    )
+    for row in starting:
+        result["starting_checked"] += 1
+        if _enqueue_reconcile_job(
+            method="aos.tasks.live.activate_live_room",
+            live_id=row.name,
+            kind="activate",
+        ):
+            result["starting_scheduled"] += 1
+        else:
+            result["failed"] += 1
+
     ended = frappe.get_all(
         "AOS Live Stream",
-        filters={"status": "ended", "room_cleanup_pending": 1},
+        filters={"status": ["in", [STATUS_ENDED, STATUS_FAILED]], "room_cleanup_pending": 1},
         fields=["name"],
         order_by="modified asc, name asc",
         limit=BATCH_SIZE,
     )
-    for index, row in enumerate(ended):
-        savepoint = f"aos_live_cleanup_{index}"
-        callbacks = _snapshot_callbacks()
-        outbox_flag = _outbox_flag()
-        frappe.db.savepoint(savepoint)
-        try:
-            result["ended_checked"] += 1
-            outcome = cleanup_live_room(live_id=row.name)
-            result["rooms_cleaned"] += int(bool(outcome.get("ok")))
-        except Exception:
-            _rollback(savepoint, callbacks, outbox_flag)
+    for row in ended:
+        result["ended_checked"] += 1
+        if _enqueue_reconcile_job(
+            method="aos.tasks.live.cleanup_live_room",
+            live_id=row.name,
+            kind="cleanup",
+        ):
+            result["cleanup_scheduled"] += 1
+        else:
             result["failed"] += 1
 
     active = frappe.get_all(
@@ -476,39 +736,15 @@ def reconcile_live_state() -> dict[str, int]:
         order_by="last_reconciled_at asc, modified asc, name asc",
         limit=min(BATCH_SIZE, 25),
     )
-    for index, row in enumerate(active):
-        savepoint = f"aos_live_reconcile_{index}"
-        callbacks = _snapshot_callbacks()
-        outbox_flag = _outbox_flag()
-        frappe.db.savepoint(savepoint)
-        try:
-            result["active_checked"] += 1
-            if _end_unavailable_host_live(row.name):
-                result["hosts_ended"] += 1
-                continue
-            participants = list_participants(row.room_name)
-            if participants.ok and participants.category == "not_found":
-                ensured = ensure_live_room(live_id=row.name)
-                result["rooms_recreated"] += int(bool(ensured.get("ok")))
-            elif participants.ok:
-                result["viewers_closed"] += _close_missing_viewers(
-                    row.name, participants.participants
-                )
-                # Hot counters are maintained incrementally. Materialize their
-                # O(1) Redis state here; full historical reconciliation is
-                # reserved for terminal/recovery paths.
-                LiveAnalyticsService.materialize_view_metrics(live_id=row.name)
-                LiveAnalyticsService.materialize_comment_count(live_id=row.name)
-                LiveAnalyticsService.sync_reaction_count(live_id=row.name)
-                frappe.db.set_value(
-                    "AOS Live Stream",
-                    row.name,
-                    "last_reconciled_at",
-                    now_datetime(),
-                    update_modified=False,
-                )
-        except Exception:
-            _rollback(savepoint, callbacks, outbox_flag)
+    for row in active:
+        result["active_checked"] += 1
+        if _enqueue_reconcile_job(
+            method="aos.tasks.live.reconcile_active_live",
+            live_id=row.name,
+            kind="active",
+        ):
+            result["active_scheduled"] += 1
+        else:
             result["failed"] += 1
 
     live_log(

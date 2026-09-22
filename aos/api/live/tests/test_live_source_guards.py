@@ -35,7 +35,11 @@ class TestLiveSourceGuards(unittest.TestCase):
             [
                 ROOT / "aos/tasks/live.py",
                 ROOT / "aos/patches/v1_0/harden_live_subsystem.py",
+                ROOT / "aos/patches/v1_0/canonicalize_live_runtime.py",
                 ROOT / "aos/patches/v1_0/install_live_indexes.py",
+                ROOT / "aos/patches/v1_0/install_live_runtime_indexes.py",
+                ROOT / "aos/services/livekit/admin.py",
+                ROOT / "aos/services/livekit_service.py",
             ]
         )
         for path in paths:
@@ -45,16 +49,45 @@ class TestLiveSourceGuards(unittest.TestCase):
                 violations.append(str(path.relative_to(ROOT)))
         self.assertEqual(violations, [])
 
-    def test_external_room_calls_are_background_isolated(self):
-        admin = _source("aos/services/live/livekit_admin.py")
+    def test_external_room_calls_are_shared_and_background_isolated(self):
+        admin = _source("aos/services/livekit/admin.py")
         tasks = _source("aos/tasks/live.py")
         live_api = _source("aos/api/live/live.py")
+        calls = _source("aos/services/calls/livekit.py")
+        reconciliation = _source("aos/services/calls/reconciliation.py")
         self.assertIn("asyncio.wait_for", admin)
-        self.assertIn("LIVEKIT_ADMIN_RETRY_ATTEMPTS", admin)
+        self.assertIn("ADMIN_RETRY_ATTEMPTS", admin)
         self.assertIn("remove_participant", admin)
+        self.assertIn("from aos.services.livekit.admin import", tasks)
+        self.assertIn("from aos.services.livekit.admin import delete_room", calls)
+        self.assertIn("from aos.services.livekit.admin import list_participants", reconciliation)
         self.assertIn("enqueue_after_commit=True", live_api)
         self.assertIn("cleanup_live_room", tasks)
         self.assertIn("reconcile_live_state", tasks)
+
+    def test_live_activation_requires_confirmed_room_and_issues_no_starting_token(self):
+        live_api = _source("aos/api/live/live.py")
+        tasks = _source("aos/tasks/live.py")
+        stream = _source("aos/aos/doctype/aos_live_stream/aos_live_stream.py")
+        start = live_api.split("def start_live_impl", 1)[1].split("# JOIN LIVE", 1)[0]
+        self.assertIn("live.status = STARTING_STATUS", start)
+        self.assertIn('"session": None', start)
+        self.assertIn('aos.tasks.live.activate_live_room', start)
+        activate = tasks.split("def activate_live_room", 1)[1].split("def ensure_live_room", 1)[0]
+        self.assertLess(activate.index("ensure_room(row.room_name)"), activate.index("live.status = STATUS_LIVE"))
+        self.assertIn("_mark_start_failed", activate)
+        self.assertIn("STARTING_STATUS", stream)
+        self.assertIn("FAILED_STATUS", stream)
+        self.assertIn("self.status != STARTING_STATUS", stream)
+
+    def test_live_ids_are_opaque_and_multi_node_safe(self):
+        schema = json.loads(_source("aos/aos/doctype/aos_live_stream/aos_live_stream.json"))
+        controller = _source("aos/aos/doctype/aos_live_stream/aos_live_stream.py")
+        validation = _source("aos/services/live/validation.py")
+        self.assertFalse(schema.get("autoname"))
+        self.assertNotIn("naming_series", schema.get("field_order", []))
+        self.assertIn('new_prefixed_name("LIVE")', controller)
+        self.assertIn(r'^LIVE-[0-9a-f]{32}$', validation)
 
     def test_livekit_identity_and_grants_do_not_embed_private_user_values(self):
         identity = _source("aos/services/live/livekit.py")
@@ -88,6 +121,16 @@ class TestLiveSourceGuards(unittest.TestCase):
         self.assertIn("event_id", source)
         self.assertIn("is_duplicate_entry_error", source)
         self.assertNotIn("raw_body=", source)
+
+    def test_webhook_watermarks_are_monotonic_and_cannot_resurrect_state(self):
+        source = _source("aos/services/live/webhooks.py")
+        self.assertIn("get_datetime(event_created_at) <= get_datetime(previous_created_at)", source)
+        self.assertIn("get_datetime(event_at) <= joined_floor", source)
+        self.assertIn("STATUS_FAILED", source)
+        room_finished = source.split("def _finish_room", 1)[1].split("def ", 1)[0]
+        self.assertIn("STATUS_STARTING", room_finished)
+        self.assertIn("STATUS_FAILED", room_finished)
+        self.assertNotIn("live.status = STATUS_LIVE", room_finished)
 
     def test_realtime_publications_are_after_commit(self):
         source = _source("aos/api/live/realtime.py")
@@ -172,7 +215,8 @@ class TestLiveSourceGuards(unittest.TestCase):
         self.assertIn("_rollback(savepoint", service)
         self.assertIn("LIVE_WEBHOOK_RETRY", service)
         self.assertIn("MAX_WEBHOOK_BYTES", endpoint)
-        self.assertLess(endpoint.index("content_length"), endpoint.index("get_data("))
+        self.assertIn("request.stream.read(MAX_WEBHOOK_BYTES + 1)", endpoint)
+        self.assertNotIn("request.get_data(", endpoint)
 
     def test_reconciliation_removes_blocked_or_unavailable_connected_viewers(self):
         source = _source("aos/tasks/live.py")
@@ -237,6 +281,7 @@ class TestLiveSourceGuards(unittest.TestCase):
         hot_view = analytics.split("def handle_view_joined", 1)[1].split("def materialize_view_metrics", 1)[0]
         self.assertNotIn("UPDATE `tabAOS Live Stream`", hot_view)
         self.assertNotIn("sync_view_metrics", hot_view)
+        self.assertNotIn("frappe.db.count(", hot_view)
 
     def test_hot_live_state_is_redis_backed_and_fanout_is_coalesced(self):
         ephemeral = _source("aos/services/live/ephemeral.py")
@@ -261,7 +306,27 @@ class TestLiveSourceGuards(unittest.TestCase):
         self.assertIn("cache.make_key(_viewer_count_gate_key(live_id))", realtime)
         self.assertIn("publish_coalesced_viewer_count", realtime)
         self.assertIn("materialize_view_metrics", tasks)
+        analytics = _source("aos/services/live_analytics_service.py")
+        self.assertNotIn("AOS Live Stream Reaction", ephemeral)
+        self.assertNotIn("AOS Live Stream Reaction", analytics)
+        self.assertFalse(
+            (ROOT / "aos/aos/doctype/aos_live_stream_reaction").exists(),
+            "obsolete per-reaction DocType must not return",
+        )
         self.assertNotIn("frappe.new_doc(\n        LIVE_MESSAGE_DOCTYPE", tracking.split("def _create_viewer_joined_message", 1)[1].split("# TRACK JOIN", 1)[0])
+
+    def test_scheduler_does_not_hold_transactions_across_livekit_io(self):
+        tasks = _source("aos/tasks/live.py")
+        scheduler = tasks.split("def reconcile_live_state", 1)[1].split(
+            "def cleanup_live_webhook_events", 1
+        )[0]
+        self.assertIn("aos.tasks.live.reconcile_active_live", scheduler)
+        self.assertIn("aos.tasks.live.activate_live_room", scheduler)
+        self.assertIn("aos.tasks.live.cleanup_live_room", scheduler)
+        self.assertNotIn("list_participants(", scheduler)
+        self.assertNotIn("ensure_room(", scheduler)
+        self.assertNotIn("delete_room(", scheduler)
+        self.assertNotIn(" FOR UPDATE", scheduler)
 
     def test_live_end_cleanup_is_bounded_and_recoverable(self):
         live_doc = _source("aos/aos/doctype/aos_live_stream/aos_live_stream.py")
@@ -273,16 +338,29 @@ class TestLiveSourceGuards(unittest.TestCase):
         self.assertIn("enqueue_after_commit=True", finalizer)
         self.assertIn("pending_terminal_views", tasks)
 
-    def test_livekit_production_config_uses_udp_mux_and_redis(self):
-        livekit = _source("infra/livekit/livekit.yaml")
+    def test_livekit_production_config_is_distributed_bounded_and_turn_ready(self):
         compose = _source("docker-compose.yml")
+        env = _source(".env.example")
+        livekit = compose.split("  livekit:\n", 1)[1].split("  translation:\n", 1)[0]
+        self.assertIn("livekit/livekit-server:v1.13.7", livekit)
+        self.assertNotIn("container_name: aos-livekit", livekit)
         self.assertIn("redis:", livekit)
-        self.assertIn("address: livekit-redis:6379", livekit)
-        self.assertIn("udp_port: 7882", livekit)
+        self.assertIn("LIVEKIT_REDIS_ADDRESS", livekit)
+        self.assertIn("tls:\n            enabled: ${LIVEKIT_REDIS_TLS_ENABLED", livekit)
+        self.assertIn("udp_port: ${LIVEKIT_UDP_PORT:-7882}", livekit)
+        self.assertNotIn("LIVEKIT_UDP_PORT_RANGE", livekit)
         self.assertNotIn("port_range_start", livekit)
         self.assertNotIn("port_range_end", livekit)
-        self.assertIn("livekit-redis:", compose)
-        self.assertIn("LIVEKIT_UDP_PORT:-7882", compose)
+        self.assertIn("auto_create: false", livekit)
+        self.assertIn("algorithm: twochoice", livekit)
+        self.assertIn("LIVEKIT_TURN_DOMAIN", livekit)
+        self.assertIn("LIVEKIT_TURN_TLS_PORT:-5349", livekit)
+        self.assertIn("per_user_relay_allocation_limit", livekit)
+        self.assertIn("LIVEKIT_TURN_CERT_DIR", livekit)
+        self.assertIn("LIVEKIT_REDIS_TLS_ENABLED=false", env)
+        self.assertIn("LIVEKIT_UDP_PORT=7882", env)
+        self.assertIn("LIVEKIT_TURN_DOMAIN=turn.example.com", env)
+        self.assertIn("LIVEKIT_TURN_TLS_PORT=5349", env)
 
     def test_notification_deduplication_is_database_enforced(self):
         payload = json.loads(_source("aos/aos/doctype/aos_notification/aos_notification.json"))
@@ -291,29 +369,36 @@ class TestLiveSourceGuards(unittest.TestCase):
         self.assertTrue(field.get("hidden"))
         source = _source("aos/services/live/notifications.py")
         self.assertIn("sha256", source)
-        self.assertIn("dedupe_key=", source)
+        self.assertIn("dedupe_key", source)
+        self.assertIn("frappe.db.exists", source)
+        self.assertNotIn("JSON_EXTRACT", source)
 
-    def test_all_requested_live_documents_exist(self):
-        names = (
-            "README.md",
-            "architecture.md",
-            "api.md",
-            "lifecycle.md",
-            "livekit.md",
-            "participants.md",
-            "cohosts.md",
-            "comments.md",
-            "reactions.md",
-            "privacy.md",
-            "notifications.md",
-            "moderation.md",
-            "recording.md",
-            "migration.md",
-            "operations.md",
-            "testing.md",
-        )
-        for name in names:
-            self.assertTrue((ROOT / "docs/features/live" / name).is_file(), name)
+    def test_live_cover_accepts_only_canonical_media_identity(self):
+        endpoints = _source("aos/services/live/endpoints.py")
+        start_spec = endpoints.split('"start_live":', 1)[1].split('"share_live_to_chat"', 1)[0]
+        self.assertIn('"live_cover_media"', start_spec)
+        self.assertNotIn('"cover_image"', start_spec)
+        self.assertNotIn('"media_id"', start_spec)
+        media = _source("aos/api/live/media.py")
+        self.assertIn('LIVE_COVER_PURPOSE = "live_cover"', media)
+        self.assertIn("MediaService().validate_media_for_use", media)
+        self.assertIn("service.attach_media", media)
+
+    def test_live_has_one_canonical_current_state_document(self):
+        live_docs = sorted((ROOT / "docs/features/live").glob("*.md"))
+        self.assertEqual([item.name for item in live_docs], ["README.md"])
+        readme = live_docs[0].read_text(encoding="utf-8")
+        for heading in (
+            "Domain boundaries",
+            "Lifecycle",
+            "Tokens and permissions",
+            "Verified webhooks",
+            "Scaling and counters",
+            "Infrastructure and networking",
+            "Operations and reconciliation",
+            "Tests",
+        ):
+            self.assertIn(heading, readme)
 
 
     def test_live_message_delete_helpers_and_scoped_read_limits_are_present(self):

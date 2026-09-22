@@ -19,6 +19,7 @@ START_LIVE_LIMIT_PER_MINUTE_PER_USER = 5
 
 # Joining a live and generating the initial participant session.
 JOIN_LIVE_LIMIT_PER_MINUTE_PER_USER = 30
+JOIN_LIVE_LIMIT_PER_MINUTE_PER_IP = 240
 
 # Ending a live.
 END_LIVE_LIMIT_PER_MINUTE_PER_USER = 20

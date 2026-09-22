@@ -77,10 +77,10 @@ class AOSFeatureTestMixin:
     def _clear_live_ephemeral_state(live_id: str) -> None:
         """Remove Redis hot state for a synthetic Live id.
 
-        Transaction-local Live rows can roll back their naming-series increment,
-        so a later test may legitimately receive the same database name. Redis is
-        outside MariaDB transactions; clear all per-live hot counters before use
-        (and again during teardown) so a reused id never inherits stale state.
+        Redis is outside MariaDB transactions, so synthetic Live fixtures clear
+        all per-live hot counters before use (and again during teardown). Opaque
+        Live ids are collision-resistant, but deterministic cleanup still protects
+        interrupted/retried test runs from stale external cache state.
         """
         clean = str(live_id or "").strip()
         if not clean:
@@ -592,15 +592,16 @@ class AOSFeatureTestMixin:
                 "doctype": "AOS Live Stream",
                 "title": f"{self.prefix} Live",
                 "host_user": host,
-                "status": "live",
-                "is_active": 1,
+                "status": "starting",
+                "is_active": 0,
             }
         )
         live.insert(ignore_permissions=True)
+        live.status = "live"
+        live.save(ignore_permissions=True)
         self._track_created("created_live_names", live.name)
-        # A rolled-back naming-series increment can make this id reusable while
-        # Redis still holds counters from an earlier failed/interrupted test.
-        # Start every synthetic Live fixture from clean hot state.
+        # Redis is outside the test transaction. Start every synthetic Live
+        # fixture from clean hot state even though its public id is opaque.
         self._clear_live_ephemeral_state(live.name)
         return live
 

@@ -33,18 +33,16 @@ from aos.api.shared.db import is_duplicate_entry_error
 from aos.api.shared.validators import require_id
 from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.livekit_service import LiveKitService
-from aos.services.notifications.service import NotificationService  # noqa: F401
 from aos.services.live.livekit import participant_identity, participant_metadata
 from aos.services.live.cursor import decode_cursor, encode_cursor
 from aos.services.live.errors import LiveError
 from aos.services.live.repository import LiveRepository
-from aos.services.live.notifications import enqueue_live_started_fanout
 from aos.services.live.participants import enqueue_cohost_removal
 
-from .activity import record_live_host_activity
 from .constants import (
     END_LIVE_LIMIT_PER_MINUTE_PER_USER,
     GET_LIVE_LIMIT_PER_MINUTE_PER_IP,
+    JOIN_LIVE_LIMIT_PER_MINUTE_PER_IP,
     JOIN_LIVE_LIMIT_PER_MINUTE_PER_USER,
     LIST_LIVE_STREAMS_LIMIT_PER_MINUTE_PER_IP,
     START_LIVE_LIMIT_PER_MINUTE_PER_USER,
@@ -55,7 +53,6 @@ from .messages import (
 )
 from .media import (
     attach_live_cover_media,
-    looks_like_media_id,
     normalize_media_id,
     validate_live_cover_media_for_use,
 )
@@ -64,7 +61,6 @@ from .realtime import (
     publish_cohost_ended,
     publish_live_ended,
     publish_live_message_to_user,
-    publish_live_started,
 )
 from .serializers import (
     get_user_display,
@@ -85,8 +81,10 @@ from .validators import (
 LIVE_STREAM_DOCTYPE = "AOS Live Stream"
 LIVE_COHOST_DOCTYPE = "AOS Live CoHost"
 
+STARTING_STATUS = "starting"
 LIVE_STATUS = "live"
 ENDED_STATUS = "ended"
+FAILED_STATUS = "failed"
 
 HOST_ROLE = "host"
 VIEWER_ROLE = "viewer"
@@ -173,16 +171,11 @@ def _live_fields() -> list[str]:
     ]
 
 
-def _get_active_live_for_host(
-    host_user: str,
-):
+def _get_host_live_reservation(host_user: str):
+    """Return the host's DB-enforced starting/live reservation, if any."""
     return frappe.db.get_value(
         LIVE_STREAM_DOCTYPE,
-        {
-            "host_user": host_user,
-            "status": LIVE_STATUS,
-            "is_active": 1,
-        },
+        {"host_user": host_user, "active_host_key": host_user},
         _live_fields(),
         as_dict=True,
     )
@@ -587,158 +580,102 @@ def start_live_impl(**kwargs):
     if rl:
         return rl
 
-    title = str(
-        kwargs.get("title") or ""
-    ).strip()
-
-    cover_image = str(
-        kwargs.get("cover_image") or ""
-    ).strip()
-
-    cover_media_id = (
-        normalize_media_id(kwargs.get("live_cover_media"))
-        or normalize_media_id(kwargs.get("cover_image_media"))
-        or normalize_media_id(kwargs.get("media_id"))
-    )
-
-    if not cover_media_id and looks_like_media_id(cover_image):
-        cover_media_id = normalize_media_id(cover_image)
+    title = str(kwargs.get("title") or "").strip()
+    cover_media_id = normalize_media_id(kwargs.get("live_cover_media"))
 
     if not title:
-        return fail(
-            "title is required.",
-            error="VALIDATION_ERROR",
-        )
+        return fail("title is required.", error="VALIDATION_ERROR")
 
-    _, err = validate_user_can_go_live(
-        user
-    )
+    _, err = validate_user_can_go_live(user)
     if err:
         return err
 
-    cover_url = cover_image
-
+    cover_url = ""
     if cover_media_id:
         _media_doc, media_cover_url, err = validate_live_cover_media_for_use(
-            media_id=cover_media_id,
-            user=user,
+            media_id=cover_media_id, user=user
         )
         if err:
             return err
-
         cover_url = media_cover_url or ""
 
     try:
-        # Serialize starts for the same account before checking/creating the
-        # DB-enforced active_host_key. The unique field remains the final race
-        # boundary across workers.
+        # Serialize competing start requests for one account. active_host_key is
+        # the DB uniqueness boundary across workers and reserves both `starting`
+        # and `live` states.
         frappe.db.sql(
             "SELECT name FROM `tabUser` WHERE name = %s FOR UPDATE",
             (user,),
         )
-        existing_live = _get_active_live_for_host(
-            user
-        )
-
+        existing_live = _get_host_live_reservation(user)
         if existing_live:
-            live_doc = frappe.get_doc(
-                LIVE_STREAM_DOCTYPE,
-                existing_live.name,
-            )
-
+            live_doc = frappe.get_doc(LIVE_STREAM_DOCTYPE, existing_live.name)
+            is_live = live_doc.status == LIVE_STATUS and bool(live_doc.is_active)
             return ok(
-                "You already have an active live stream.",
+                "You already have a Live session in progress.",
                 data={
-                    "live": serialize_live(
-                        live_doc,
-                        viewer=user,
-                    ),
-                    "session": _build_livekit_payload(
-                        live=live_doc,
-                        viewer=user,
-                        session_id=None,
-                        role=HOST_ROLE,
+                    "live": serialize_live(live_doc, viewer=user),
+                    "session": (
+                        _build_livekit_payload(
+                            live=live_doc, viewer=user, session_id=None, role=HOST_ROLE
+                        )
+                        if is_live
+                        else None
                     ),
                     "startup_messages": [],
                 },
             )
 
-        live = frappe.new_doc(
-            LIVE_STREAM_DOCTYPE
-        )
-
+        live = frappe.new_doc(LIVE_STREAM_DOCTYPE)
         live.host_user = user
         live.title = title
         live.cover_image = cover_url
         if hasattr(live, "live_cover_media"):
             live.live_cover_media = cover_media_id or ""
-        live.status = LIVE_STATUS
+        live.status = STARTING_STATUS
         live.room_cleanup_pending = 0
-
-        live.insert(
-            ignore_permissions=True
-        )
+        live.insert(ignore_permissions=True)
 
         if cover_media_id:
             _attached_media, attached_cover_url, err = attach_live_cover_media(
-                media_id=cover_media_id,
-                user=user,
-                live_id=live.name,
+                media_id=cover_media_id, user=user, live_id=live.name
             )
             if err:
                 return err
-
             if attached_cover_url and attached_cover_url != live.cover_image:
                 live.cover_image = attached_cover_url
                 live.save(ignore_permissions=True)
 
         live.reload()
-        _enqueue_room_job("aos.tasks.live.ensure_live_room", live.name)
+        _enqueue_room_job("aos.tasks.live.activate_live_room", live.name)
 
-        record_live_host_activity(
-            user=user,
-            live_id=live.name,
-        )
-
-        startup_messages = _create_startup_messages(
-            live=live,
-            host_user=user,
-        )
-
-        publish_live_started(
-            live
-        )
-
-        enqueue_live_started_fanout(live.name)
-
+        # No RTC credentials are issued while `starting`. The background worker
+        # first confirms room creation and only then promotes the row to `live`.
         return ok(
-            "Live started.",
+            "Live is starting.",
             data={
-                "live": serialize_live(
-                    live,
-                    viewer=user,
-                ),
-                "session": _build_livekit_payload(
-                    live=live,
-                    viewer=user,
-                    session_id=None,
-                    role=HOST_ROLE,
-                ),
-                "startup_messages": startup_messages,
+                "live": serialize_live(live, viewer=user),
+                "session": None,
+                "startup_messages": [],
             },
         )
 
     except Exception as ex:
         if is_duplicate_entry_error(ex):
-            existing_live = _get_active_live_for_host(user)
+            existing_live = _get_host_live_reservation(user)
             if existing_live:
                 live_doc = frappe.get_doc(LIVE_STREAM_DOCTYPE, existing_live.name)
+                is_live = live_doc.status == LIVE_STATUS and bool(live_doc.is_active)
                 return ok(
-                    "You already have an active live stream.",
+                    "You already have a Live session in progress.",
                     data={
                         "live": serialize_live(live_doc, viewer=user),
-                        "session": _build_livekit_payload(
-                            live=live_doc, viewer=user, session_id=None, role=HOST_ROLE
+                        "session": (
+                            _build_livekit_payload(
+                                live=live_doc, viewer=user, session_id=None, role=HOST_ROLE
+                            )
+                            if is_live
+                            else None
                         ),
                         "startup_messages": [],
                     },
@@ -747,14 +684,8 @@ def start_live_impl(**kwargs):
             return safe_fail_from_exception(
                 ex, fallback="Invalid request.", error="VALIDATION_ERROR"
             )
-        frappe.log_error(
-            "Live start failed.",
-            "Start Live Failed",
-        )
-        return fail(
-            "Failed to start live.",
-            error="INTERNAL_ERROR",
-        )
+        frappe.log_error(frappe.get_traceback(), "Start Live Failed")
+        return fail("Failed to start live.", error="INTERNAL_ERROR")
 
 
 # JOIN LIVE / WATCH LIVE
@@ -765,20 +696,28 @@ def join_live_impl(**kwargs):
         kwargs.get("session_id")
     )
 
-    rate_limit_identity = (
-        viewer
-        or session_id
-        or request_ip()
+    # Guest-provided session IDs are not an abuse boundary: callers can rotate
+    # them. Always apply an IP budget, plus a per-user/per-session budget for
+    # fair isolation.
+    ip = request_ip()
+    ip_limit = rate_limit(
+        key=rate_limit_key("live", "join", "ip", ip),
+        ttl_seconds=60,
+        limit=JOIN_LIVE_LIMIT_PER_MINUTE_PER_IP,
+        message="Too many requests.",
     )
-
-    rl = rate_limit(
-        key=rate_limit_key("live", "join", rate_limit_identity),
+    if ip_limit:
+        return ip_limit
+    identity_kind = "user" if viewer else "session"
+    identity_value = viewer or session_id or "missing"
+    identity_limit = rate_limit(
+        key=rate_limit_key("live", "join", identity_kind, identity_value),
         ttl_seconds=60,
         limit=JOIN_LIVE_LIMIT_PER_MINUTE_PER_USER,
         message="Too many requests.",
     )
-    if rl:
-        return rl
+    if identity_limit:
+        return identity_limit
 
     live_id, err = require_id(
         kwargs.get("live_id"),
@@ -892,9 +831,9 @@ def end_live_impl(**kwargs):
         if err:
             return err
 
-        if live.status == ENDED_STATUS:
+        if live.status in {ENDED_STATUS, FAILED_STATUS}:
             return ok(
-                "Live already ended.",
+                "Live is already terminal.",
                 data={
                     "live": serialize_live(
                         live,
@@ -908,35 +847,28 @@ def end_live_impl(**kwargs):
                 },
             )
 
-        # Close co-host workflows while the live is still active.
+        was_live = live.status == LIVE_STATUS and bool(live.is_active)
         cohost_cleanup = (
-            _close_cohost_workflows_for_live(
-                live=live,
-                host_user=user,
-            )
+            _close_cohost_workflows_for_live(live=live, host_user=user)
+            if was_live
+            else {"ended": [], "cancelled": []}
         )
 
         live.status = ENDED_STATUS
+        # Cleanup is required even from `starting`: room creation may already
+        # have succeeded while the application end won the lifecycle lock.
         live.room_cleanup_pending = 1
-
-        live.save(
-            ignore_permissions=True
-        )
-
+        live.save(ignore_permissions=True)
         live.reload()
         _enqueue_room_job("aos.tasks.live.cleanup_live_room", live.name)
 
-        ended_message = _create_live_ended_message(
-            live=live,
-            host_user=user,
-        )
-
-        publish_live_ended(
-            live
-        )
+        ended_message = None
+        if was_live:
+            ended_message = _create_live_ended_message(live=live, host_user=user)
+            publish_live_ended(live)
 
         return ok(
-            "Live ended.",
+            "Live ended." if was_live else "Live start cancelled.",
             data={
                 "live": serialize_live(
                     live,
@@ -1046,13 +978,9 @@ def list_live_streams_impl(**kwargs):
 
     try:
         limit = max(1, min(int(kwargs.get("limit") or DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE))
-        start_offset = max(0, int(kwargs.get("start") or 0))
         cursor_value = str(kwargs.get("cursor") or "").strip()
-        if cursor_value and start_offset:
-            return fail("cursor and start cannot be combined.", error="VALIDATION_ERROR")
-
         cursor = decode_cursor(cursor_value) if cursor_value else None
-        params: dict[str, object] = {"status": LIVE_STATUS, "limit": limit + 1, "offset": start_offset}
+        params: dict[str, object] = {"status": LIVE_STATUS, "limit": limit + 1}
         cursor_sql = ""
         if cursor:
             started_at = str(cursor.get("started_at") or "")
@@ -1096,7 +1024,7 @@ def list_live_streams_impl(**kwargs):
               {block_sql}
               {cursor_sql}
             ORDER BY l.started_at DESC, l.creation DESC, l.name DESC
-            LIMIT %(limit)s OFFSET %(offset)s
+            LIMIT %(limit)s
             """,
             params,
             as_dict=True,
@@ -1121,7 +1049,6 @@ def list_live_streams_impl(**kwargs):
             data={
                 "items": items,
                 "pagination": {
-                    "start": start_offset,
                     "limit": limit,
                     "count": len(items),
                     "has_more": has_more,

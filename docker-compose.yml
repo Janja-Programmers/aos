@@ -308,33 +308,95 @@ services:
       - aos_net
 
   livekit:
-    image: livekit/livekit-server:v1.9.12@sha256:2c13cbf2edcbf13ea7b20d05c10b394d04d8fb3fe358269cff845a90b4de9576
-    container_name: aos-livekit
+    # Exact multi-arch release pin for v1.13.7.
+    image: livekit/livekit-server:v1.13.7@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3
     restart: unless-stopped
 
-    command:
-      - --config
-      - /etc/livekit/livekit.yaml
-
+    # LiveKit reads the complete production config from LIVEKIT_CONFIG. This
+    # avoids committing secrets while keeping one runtime configuration source.
     environment:
       LIVEKIT_KEYS: ${LIVEKIT_KEYS:?LIVEKIT_KEYS is required}
+      LIVEKIT_CONFIG: |
+        port: 7880
+        prometheus_port: 6789
+        logging:
+          level: info
+          json: true
+          sample: true
+        redis:
+          address: ${LIVEKIT_REDIS_ADDRESS:-livekit-redis:6379}
+          db: ${LIVEKIT_REDIS_DB:-0}
+          username: "${LIVEKIT_REDIS_USERNAME:-}"
+          password: "${LIVEKIT_REDIS_PASSWORD:-}"
+          tls:
+            enabled: ${LIVEKIT_REDIS_TLS_ENABLED:-false}
+            insecure: ${LIVEKIT_REDIS_TLS_INSECURE:-false}
+            server_name: "${LIVEKIT_REDIS_TLS_SERVER_NAME:-}"
+        rtc:
+          tcp_port: 7881
+          # LiveKit udp_port is one UDP mux socket. Multi-node production
+          # scales by adding nodes (normally with host networking), not by
+          # passing a range into this scalar setting.
+          udp_port: ${LIVEKIT_UDP_PORT:-7882}
+          use_external_ip: ${LIVEKIT_USE_EXTERNAL_IP:-true}
+          allow_tcp_fallback: true
+        room:
+          auto_create: false
+          empty_timeout: ${LIVEKIT_ROOM_EMPTY_TIMEOUT_SECONDS:-300}
+          departure_timeout: ${LIVEKIT_ROOM_DEPARTURE_TIMEOUT_SECONDS:-20}
+          max_participants: ${LIVEKIT_ROOM_MAX_PARTICIPANTS:-2000}
+        webhook:
+          api_key: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}
+          urls:
+            - ${LIVEKIT_WEBHOOK_URL:?LIVEKIT_WEBHOOK_URL is required}
+        turn:
+          enabled: ${LIVEKIT_TURN_ENABLED:-true}
+          udp_port: ${LIVEKIT_TURN_UDP_PORT:-3478}
+          # Keep the single-host baseline conflict-free with Nginx signaling
+          # TLS on TCP 443. A dedicated TURN IP/L4 listener may intentionally
+          # expose TURN/TLS on 443 in larger deployments.
+          tls_port: ${LIVEKIT_TURN_TLS_PORT:-5349}
+          domain: ${LIVEKIT_TURN_DOMAIN:?LIVEKIT_TURN_DOMAIN is required}
+          cert_file: /etc/livekit/tls/fullchain.pem
+          key_file: /etc/livekit/tls/privkey.pem
+          ttl_seconds: 300
+          per_user_relay_allocation_limit: ${LIVEKIT_TURN_PER_USER_ALLOCATION_LIMIT:-12}
+        node_selector:
+          kind: sysload
+          sort_by: sysload
+          algorithm: twochoice
+          sysload_limit: ${LIVEKIT_NODE_SYSLOAD_LIMIT:-0.75}
+        limit:
+          max_metadata_size: 4096
+          max_attributes_size: 4096
+          max_room_name_length: 128
+          max_participant_identity_length: 128
+          signal_message_size_limit: 1048576
+          agent_signal_message_size_limit: 1048576
+          max_api_request_body_size: 1048576
 
     ports:
       # Signaling is private and proxied by Nginx.
       - "${LIVEKIT_BIND_ADDRESS:-127.0.0.1}:${LIVEKIT_PORT:-7880}:7880"
 
-      # RTC TCP fallback is accessed directly.
+      # ICE/TCP fallback and UDP mux are accessed directly by clients.
       - "${LIVEKIT_TCP_BIND_ADDRESS:-0.0.0.0}:${LIVEKIT_TCP_PORT:-7881}:7881/tcp"
+      - "${LIVEKIT_UDP_BIND_ADDRESS:-0.0.0.0}:${LIVEKIT_UDP_PORT:-7882}:${LIVEKIT_UDP_PORT:-7882}/udp"
 
-      # WebRTC UDP mux is accessed directly. One host port serves all participants.
-      - "${LIVEKIT_UDP_BIND_ADDRESS:-0.0.0.0}:${LIVEKIT_UDP_PORT:-7882}:7882/udp"
+      # Embedded TURN gives restricted mobile networks UDP and TLS relay paths.
+      - "${LIVEKIT_TURN_UDP_BIND_ADDRESS:-0.0.0.0}:${LIVEKIT_TURN_UDP_PORT:-3478}:${LIVEKIT_TURN_UDP_PORT:-3478}/udp"
+      - "${LIVEKIT_TURN_TLS_BIND_ADDRESS:-0.0.0.0}:${LIVEKIT_TURN_TLS_PORT:-5349}:${LIVEKIT_TURN_TLS_PORT:-5349}/tcp"
+
+      # Prometheus is host-local; scrape or proxy it from the observability stack.
+      - "${LIVEKIT_METRICS_BIND_ADDRESS:-127.0.0.1}:${LIVEKIT_METRICS_PORT:-6789}:6789"
 
     depends_on:
       livekit-redis:
         condition: service_healthy
 
     volumes:
-      - ./infra/livekit/livekit.yaml:/etc/livekit/livekit.yaml:ro
+      # Mount only the TURN certificate directory, not the host's whole ACME tree.
+      - "${LIVEKIT_TURN_CERT_DIR:?LIVEKIT_TURN_CERT_DIR is required}:/etc/livekit/tls:ro"
 
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:7880"]
@@ -347,7 +409,7 @@ services:
     cpus: "${LIVEKIT_CPU_LIMIT:-2.00}"
     pids_limit: "${LIVEKIT_PIDS_LIMIT:-1024}"
 
-    stop_grace_period: 60s
+    stop_grace_period: ${LIVEKIT_STOP_GRACE_PERIOD:-300s}
     logging: *common-logging
     <<: *common-security
 

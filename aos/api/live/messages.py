@@ -168,31 +168,9 @@ def _parse_pagination(
     *,
     default_limit: int,
     max_limit: int,
-) -> tuple[int, int]:
-    limit = int(
-        kwargs.get("limit")
-        or default_limit
-    )
-
-    limit = max(
-        1,
-        min(
-            limit,
-            max_limit,
-        ),
-    )
-
-    start = int(
-        kwargs.get("start")
-        or 0
-    )
-
-    start = max(
-        0,
-        start,
-    )
-
-    return start, limit
+) -> int:
+    limit = int(kwargs.get("limit") or default_limit)
+    return max(1, min(limit, max_limit))
 
 
 def _parse_bool(value) -> bool:
@@ -531,9 +509,8 @@ _MESSAGE_SELECT = """
 def _serialize_messages_with_reply_context(messages: list) -> list[dict]:
     """Serialize a message page and batch-attach immediate parent context.
 
-    LIVE chat clients can render replies inline (TikTok-style) without issuing a
-    second request per thread.  The legacy root-only list and list_live_replies
-    APIs remain supported.
+    Live chat clients can render replies inline without issuing a second request
+    per thread. Root-only pages and explicit reply pagination remain supported.
     """
     items = serialize_live_messages(messages)
     parent_ids = {
@@ -1038,7 +1015,7 @@ def list_live_messages_impl(**kwargs):
         if access_err:
             return access_err
 
-        start, limit = _parse_pagination(
+        limit = _parse_pagination(
             kwargs,
             default_limit=DEFAULT_MESSAGES_LIMIT,
             max_limit=MAX_MESSAGES_LIMIT,
@@ -1052,7 +1029,6 @@ def list_live_messages_impl(**kwargs):
         params: dict[str, Any] = {
             "live_id": live_id,
             "limit": limit + 1,
-            "offset": 0 if cursor else start,
         }
         cursor_sql = ""
         if cursor:
@@ -1071,7 +1047,7 @@ def list_live_messages_impl(**kwargs):
               AND status='active' AND {visibility}=1
               {cursor_sql}
             ORDER BY creation DESC, name DESC
-            LIMIT %(limit)s OFFSET %(offset)s
+            LIMIT %(limit)s
             """,
             params,
             as_dict=True,
@@ -1092,7 +1068,6 @@ def list_live_messages_impl(**kwargs):
             data={
                 "items": _serialize_messages_with_reply_context(page),
                 "pagination": {
-                    "start": start,
                     "limit": limit,
                     "count": len(page),
                     "has_more": has_more,
@@ -1154,7 +1129,7 @@ def list_live_replies_impl(**kwargs):
         if access_err:
             return access_err
 
-        start, limit = _parse_pagination(
+        limit = _parse_pagination(
             kwargs,
             default_limit=DEFAULT_REPLIES_LIMIT,
             max_limit=MAX_REPLIES_LIMIT,
@@ -1166,7 +1141,6 @@ def list_live_replies_impl(**kwargs):
         params: dict[str, Any] = {
             "parent_id": parent_id,
             "limit": limit + 1,
-            "offset": 0 if cursor else start,
         }
         cursor_sql = ""
         if cursor:
@@ -1184,7 +1158,7 @@ def list_live_replies_impl(**kwargs):
               AND status='active' AND {visibility}=1
               {cursor_sql}
             ORDER BY creation ASC, name ASC
-            LIMIT %(limit)s OFFSET %(offset)s
+            LIMIT %(limit)s
             """,
             params,
             as_dict=True,
@@ -1205,7 +1179,6 @@ def list_live_replies_impl(**kwargs):
             data={
                 "items": _serialize_messages_with_reply_context(page),
                 "pagination": {
-                    "start": start,
                     "limit": limit,
                     "count": len(page),
                     "has_more": has_more,

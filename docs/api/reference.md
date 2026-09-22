@@ -153,7 +153,7 @@ Owner documentation: [docs/features/diagnostics/api.md](../features/diagnostics/
 
 ## Live (24)
 
-Owner documentation: [docs/features/live/api.md](../features/live/api.md)
+Owner documentation: [docs/features/live/README.md](../features/live/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
@@ -184,7 +184,7 @@ Owner documentation: [docs/features/live/api.md](../features/live/api.md)
 
 ## LiveKit (1)
 
-Owner documentation: [docs/features/live/livekit.md](../features/live/livekit.md)
+Owner documentation: [docs/features/live/README.md](../features/live/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|

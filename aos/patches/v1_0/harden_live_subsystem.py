@@ -62,7 +62,7 @@ def _normalize_streams() -> None:
         rows = frappe.db.sql(
             """
             SELECT name FROM `tabAOS Live Stream`
-            WHERE status IS NULL OR status = '' OR status NOT IN ('scheduled', 'live', 'ended')
+            WHERE status IS NULL OR status = '' OR status NOT IN ('starting', 'live', 'ended', 'failed')
             ORDER BY name LIMIT %s
             """,
             (BATCH,),
@@ -73,7 +73,7 @@ def _normalize_streams() -> None:
         frappe.db.sql(
             """
             UPDATE `tabAOS Live Stream`
-            SET status='ended', is_active=0, active_host_key=NULL,
+            SET status='failed', is_active=0, active_host_key=NULL,
                 ended_at=COALESCE(ended_at, modified, creation), room_cleanup_pending=1
             WHERE name IN %(names)s
             """,
@@ -94,16 +94,16 @@ def _normalize_streams() -> None:
     _bounded_update(
         "AOS Live Stream",
         where_sql=(
-            "status IN ('scheduled','ended') AND (COALESCE(is_active,0)!=0 "
+            "status IN ('starting','ended','failed') AND (COALESCE(is_active,0)!=0 "
             "OR active_host_key IS NOT NULL "
-            "OR (status='ended' AND ended_at IS NULL) "
-            "OR (status='ended' AND room_name IS NOT NULL AND room_name!='' "
+            "OR (status IN ('ended','failed') AND ended_at IS NULL) "
+            "OR (status IN ('ended','failed') AND room_name IS NOT NULL AND room_name!='' "
             "AND COALESCE(room_cleanup_pending,0)!=1))"
         ),
         set_sql=(
             "is_active=0, active_host_key=NULL, "
-            "ended_at=CASE WHEN status='ended' THEN COALESCE(ended_at,modified,creation) ELSE ended_at END, "
-            "room_cleanup_pending=CASE WHEN status='ended' AND room_name IS NOT NULL "
+            "ended_at=CASE WHEN status IN ('ended','failed') THEN COALESCE(ended_at,modified,creation) ELSE ended_at END, "
+            "room_cleanup_pending=CASE WHEN status IN ('ended','failed') AND room_name IS NOT NULL "
             "AND room_name!='' THEN 1 ELSE room_cleanup_pending END"
         ),
     )
@@ -174,7 +174,7 @@ def _normalize_streams() -> None:
 
     _bounded_update(
         "AOS Live Stream",
-        where_sql="active_host_key IS NOT NULL AND NOT (status='live' AND is_active=1)",
+        where_sql="active_host_key IS NOT NULL AND status NOT IN ('starting','live')",
         set_sql="active_host_key=NULL",
     )
     _bounded_update(

@@ -42,11 +42,11 @@ class TestChatPublicValidation(unittest.TestCase):
             {
                 "conversation_id": "CONV-2026-00001",
                 "reply_to_message": "MSG-2026-00002",
-                "live": "LIVE-2026-00003",
+                "live": "LIVE-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             },
             ENDPOINT_SPECS["send_message"],
         )
-        self.assertEqual(clean["live"], "LIVE-2026-00003")
+        self.assertEqual(clean["live"], "LIVE-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         for field, value in (
             ("conversation_id", "conversation-1"),
             ("reply_to_message", "message-1"),

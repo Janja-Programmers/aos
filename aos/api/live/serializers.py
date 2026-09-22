@@ -1588,10 +1588,7 @@ def serialize_live(
             )
         ),
         "cover_image": cover_image,
-        "cover_image_media": cover_media_id,
-        "cover_image_media_id": cover_media_id,
         "live_cover_media": cover_media_id,
-        "live_cover_media_id": cover_media_id,
         "thumbnail": cover_image,
         "started_at": _value(
             live,
@@ -1614,28 +1611,6 @@ def serialize_live(
             )
         ),
 
-        # Compatibility flat host fields.
-        "host_user": host["user"],
-        "host_display_name": host[
-            "display_name"
-        ],
-        "host_avatar": host[
-            "avatar"
-        ],
-        "host_total_followers": _as_int(
-            host.get(
-                "total_followers"
-            )
-        ),
-        "host_total_followers_display": host.get(
-            "total_followers_display"
-        ) or humanize_count(
-            host.get(
-                "total_followers"
-            )
-        ),
-
-        # Preferred structured host payload.
         "host": host,
 
         # Public active co-host state.

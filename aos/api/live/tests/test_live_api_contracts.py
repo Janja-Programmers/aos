@@ -24,13 +24,13 @@ class TestLiveApiContracts(FrappeTestCase):
         payload = client_kwargs(
             {
                 "cmd": "aos.api.v1.live.get_live",
-                "live_id": "LIVE-2026-00001",
+                "live_id": "LIVE-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             }
         )
-        self.assertEqual(payload, {"live_id": "LIVE-2026-00001"})
+        self.assertEqual(payload, {"live_id": "LIVE-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})
         with self.assertRaises(LiveError) as ctx:
             validate_public_kwargs(
-                {"live_id": "LIVE-2026-00001", "role": "host"},
+                {"live_id": "LIVE-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "role": "host"},
                 ENDPOINT_SPECS["get_live"],
             )
         self.assertEqual(ctx.exception.code, "LIVE_UNKNOWN_FIELD")
@@ -41,7 +41,7 @@ class TestLiveApiContracts(FrappeTestCase):
                 {
                     "kind": "live_feed",
                     "started_at": "2026-08-01 00:00:00",
-                    "name": "LIVE-2026-00001",
+                    "name": "LIVE-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 }
             )
             self.assertEqual(decode_cursor(cursor)["kind"], "live_feed")

@@ -10,17 +10,31 @@ from frappe.tests.utils import FrappeTestCase
 
 from aos.api.live.reactions import send_reaction_impl
 from aos.api.live.messages import add_live_message_impl, delete_live_message_impl, list_live_messages_impl
-from aos.patches.v1_0 import harden_live_subsystem, install_live_indexes
+from aos.patches.v1_0 import (
+    canonicalize_live_runtime,
+    harden_live_subsystem,
+    install_live_indexes,
+    install_live_runtime_indexes,
+)
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
 class TestLiveDatabaseContracts(FrappeTestCase):
-    def test_live_data_patch_is_idempotent(self):
-        harden_live_subsystem.execute()
-        harden_live_subsystem.execute()
+    def test_live_data_patches_are_idempotent(self):
+        for patch_module in (harden_live_subsystem, canonicalize_live_runtime):
+            patch_module.execute()
+            patch_module.execute()
 
     def test_live_indexes_exist_after_migrate(self):
-        for doctype, name, _columns, _unique in install_live_indexes.INDEXES:
+        expected = [
+            (doctype, name)
+            for doctype, name, _columns, _unique in install_live_indexes.INDEXES
+        ]
+        expected.extend(
+            (doctype, name)
+            for doctype, name, _columns in install_live_runtime_indexes.INDEXES
+        )
+        for doctype, name in expected:
             rows = frappe.db.sql(
                 """
                 SELECT INDEX_NAME
@@ -34,40 +48,46 @@ class TestLiveDatabaseContracts(FrappeTestCase):
 
     def test_data_patch_precedes_schema_patch_and_does_not_call_livekit(self):
         patches = Path(frappe.get_app_path("aos", "patches.txt")).read_text(encoding="utf-8")
-        data_patch = "aos.patches.v1_0.harden_live_subsystem"
+        harden_patch = "aos.patches.v1_0.harden_live_subsystem"
+        canonical_patch = "aos.patches.v1_0.canonicalize_live_runtime"
         index_patch = "aos.patches.v1_0.install_live_indexes"
-        self.assertIn(data_patch, patches)
-        self.assertIn(index_patch, patches)
-        self.assertLess(patches.index(data_patch), patches.index(index_patch))
+        runtime_index_patch = "aos.patches.v1_0.install_live_runtime_indexes"
+        for item in (harden_patch, canonical_patch, index_patch, runtime_index_patch):
+            self.assertIn(item, patches)
+        self.assertLess(patches.index(harden_patch), patches.index(canonical_patch))
+        self.assertLess(patches.index(canonical_patch), patches.index(index_patch))
+        self.assertLess(patches.index(index_patch), patches.index(runtime_index_patch))
 
-        source = Path(harden_live_subsystem.__file__).read_text(encoding="utf-8")
-        self.assertNotIn("LiveKitAPI", source)
-        self.assertNotIn("frappe.enqueue", source)
-        self.assertNotIn("frappe.db.commit", source)
+        for patch_module in (harden_live_subsystem, canonicalize_live_runtime):
+            source = Path(patch_module.__file__).read_text(encoding="utf-8")
+            self.assertNotIn("LiveKitAPI", source)
+            self.assertNotIn("frappe.enqueue", source)
+            self.assertNotIn("frappe.db.commit", source)
 
-    def test_index_patch_is_schema_only(self):
-        tree = ast.parse(Path(install_live_indexes.__file__).read_text(encoding="utf-8"))
+    def test_index_patches_are_schema_only(self):
         forbidden: list[str] = []
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
-                continue
-            if node.func.attr in {"commit", "rollback", "insert", "save", "delete", "set_value"}:
-                forbidden.append(f"{node.func.attr}@{node.lineno}")
-            if node.func.attr == "sql" and node.args:
-                query = node.args[0]
-                literal = ""
-                if isinstance(query, ast.Constant) and isinstance(query.value, str):
-                    literal = query.value
-                elif isinstance(query, ast.JoinedStr):
-                    literal = "".join(
-                        value.value
-                        for value in query.values
-                        if isinstance(value, ast.Constant) and isinstance(value.value, str)
-                    )
-                if literal.lstrip().upper().startswith(
-                    ("INSERT", "UPDATE", "DELETE", "REPLACE", "TRUNCATE")
-                ):
-                    forbidden.append(f"sql-dml@{node.lineno}")
+        for patch_module in (install_live_indexes, install_live_runtime_indexes):
+            tree = ast.parse(Path(patch_module.__file__).read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                    continue
+                if node.func.attr in {"commit", "rollback", "insert", "save", "delete", "set_value"}:
+                    forbidden.append(f"{patch_module.__name__}:{node.func.attr}@{node.lineno}")
+                if node.func.attr == "sql" and node.args:
+                    query = node.args[0]
+                    literal = ""
+                    if isinstance(query, ast.Constant) and isinstance(query.value, str):
+                        literal = query.value
+                    elif isinstance(query, ast.JoinedStr):
+                        literal = "".join(
+                            value.value
+                            for value in query.values
+                            if isinstance(value, ast.Constant) and isinstance(value.value, str)
+                        )
+                    if literal.lstrip().upper().startswith(
+                        ("INSERT", "UPDATE", "DELETE", "REPLACE", "TRUNCATE")
+                    ):
+                        forbidden.append(f"{patch_module.__name__}:sql-dml@{node.lineno}")
         self.assertEqual(forbidden, [])
 
     def test_database_uniqueness_boundaries_are_present(self):
@@ -86,7 +106,11 @@ class TestLiveDatabaseContracts(FrappeTestCase):
     def test_private_consistency_fields_are_not_public_desk_inputs(self):
         expected = (
             ("AOS Live Stream", "active_host_key"),
+            ("AOS Live Stream", "last_livekit_room_event_at"),
+            ("AOS Live Stream", "room_provision_attempts"),
+            ("AOS Live Stream", "last_room_error"),
             ("AOS Live Stream View", "active_identity_key"),
+            ("AOS Live Stream View", "last_livekit_event_at"),
             ("AOS Live Stream View", "livekit_identity"),
             ("AOS Live CoHost", "active_workflow_key"),
             ("AOS Live CoHost", "livekit_identity"),
@@ -129,10 +153,6 @@ class TestLiveReactionDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         # one MariaDB row per tap. Reconciliation materializes the exact total.
         from aos.services.live_analytics_service import LiveAnalyticsService
 
-        self.assertEqual(
-            frappe.db.count("AOS Live Stream Reaction", {"live_stream": live.name, "user": host}),
-            0,
-        )
         self.assertEqual(LiveAnalyticsService.sync_reaction_count(live_id=live.name), 20)
         self.assertEqual(
             int(frappe.db.get_value("AOS Live Stream", live.name, "reaction_count") or 0),
@@ -236,7 +256,7 @@ class TestLiveInlineReplyDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(by_id[reply_id]["reply_to"]["message_id"], root_id)
         self.assertEqual(by_id[reply_id]["reply_to"]["display_name"], by_id[root_id]["display_name"])
 
-    def test_legacy_message_list_remains_root_only(self):
+    def test_root_message_list_excludes_replies_by_default(self):
         host = self.make_user("root-only-host")
         live = self.make_live(host=host)
         frappe.set_user(host)
@@ -246,13 +266,13 @@ class TestLiveInlineReplyDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
             root = add_live_message_impl(
                 live_id=live.name,
                 content="root only",
-                idempotency_key=f"{self.prefix}-legacy-root",
+                idempotency_key=f"{self.prefix}-root-only",
             )
             reply = reply_live_message_impl(
                 live_id=live.name,
                 parent_message=root["data"]["message"]["message_id"],
-                content="hidden from legacy list",
-                idempotency_key=f"{self.prefix}-legacy-reply",
+                content="hidden from root-only list",
+                idempotency_key=f"{self.prefix}-root-only-reply",
             )
             listed = list_live_messages_impl(live_id=live.name, limit=50)
 

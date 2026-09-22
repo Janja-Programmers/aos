@@ -11,7 +11,7 @@ from typing import Any
 
 import frappe
 
-from aos.api.v1._transport import client_kwargs as _client_kwargs
+from aos.api.shared.transport import client_kwargs as _client_kwargs
 from aos.services.live.api import run_live_api
 from aos.services.live.endpoints import ENDPOINT_SPECS, TRANSACTIONAL_ENDPOINTS
 

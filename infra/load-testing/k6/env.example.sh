@@ -20,7 +20,7 @@ export TEST_SHORT_ID="SHR-AAAAAAAAAAAAAAAAAAAA"
 export SHORT_IDS="SHR-AAAAAAAAAAAAAAAAAAAA,SHR-BBBBBBBBBBBBBBBBBBBB"
 export CHAT_CONVERSATION_ID="CONV-2026-00001"
 export CHAT_RECEIVER_USER="load-user-2@example.com"
-export LIVE_ID="LIVE-2026-00001"
+export LIVE_ID="LIVE-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 # Safe defaults: write-heavy flows are disabled until explicitly enabled.
 export RUN_WRITES="false"

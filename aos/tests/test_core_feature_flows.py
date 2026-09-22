@@ -12,6 +12,9 @@ from aos.api.auth.register import register_impl
 from aos.api.auth.session import me_impl
 from aos.api.chat.message import send_message_impl
 from aos.api.live.live import join_live_impl, start_live_impl
+from aos.api.live.token import get_live_token_impl
+from aos.services.livekit.admin import RoomAdminResult
+from aos.tasks.live import activate_live_room
 from aos.api.media.upload import init_upload_impl
 from aos.api.notifications.token import deactivate_push_token_impl, register_push_token_impl
 from aos.api.reports.report_user import report_user_impl
@@ -243,27 +246,45 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(response.get("error"), "USER_BLOCKED")
         self.assertEqual(frappe.db.count("AOS Message", {"conversation": conv.name, "sender": sender}), 0)
 
-    def test_live_start_and_join_return_livekit_session_payloads(self):
+    def test_live_start_activation_and_join_return_livekit_session_payloads(self):
         host = self.make_user("live-host")
         viewer = self.make_user("live-viewer")
         frappe.set_user(host)
 
         with (
             patch("aos.api.live.live.rate_limit", return_value=None),
-            patch("aos.api.live.live.LiveKitService.generate_live_token", return_value="live-token"),
-            patch("aos.api.live.live.LiveKitService.get_ws_url", return_value="wss://live.example.test"),
-            patch("aos.api.live.live.publish_live_started"),
-            patch("aos.api.live.live.publish_live_message_to_user"),
-            patch("aos.api.live.messages.publish_live_message"),
-            patch("aos.api.live.live.NotificationService.notify_live_started"),
-            patch("aos.api.live.live.record_live_host_activity"),
+            patch("aos.api.live.live._enqueue_room_job"),
         ):
             start_response = start_live_impl(title=f"{self.prefix} Live Title")
 
         self.assertTrue(start_response.get("ok"), start_response)
         live_id = start_response.get("data", {}).get("live", {}).get("id")
         self.assertTrue(live_id)
-        self.assertEqual(start_response.get("data", {}).get("session", {}).get("token"), "live-token")
+        self.assertEqual(start_response.get("data", {}).get("live", {}).get("status"), "starting")
+        self.assertIsNone(start_response.get("data", {}).get("session"))
+
+        with (
+            patch("aos.tasks.live.ensure_room", return_value=RoomAdminResult(True, "created")),
+            patch("aos.api.live.activity.record_live_host_activity"),
+            patch("aos.api.live.live._create_startup_messages"),
+            patch("aos.api.live.realtime.publish_live_started"),
+            patch("aos.tasks.live.enqueue_live_started_fanout"),
+        ):
+            activation = activate_live_room(live_id=live_id)
+
+        self.assertTrue(activation.get("ok"), activation)
+        self.assertEqual(frappe.db.get_value("AOS Live Stream", live_id, "status"), "live")
+        self.assertEqual(int(frappe.db.get_value("AOS Live Stream", live_id, "is_active") or 0), 1)
+
+        with (
+            patch("aos.api.live.token.rate_limit", return_value=None),
+            patch("aos.api.live.token.LiveKitService.generate_live_token", return_value="host-token"),
+            patch("aos.api.live.token.LiveKitService.get_ws_url", return_value="wss://live.example.test"),
+        ):
+            host_token = get_live_token_impl(live_id=live_id)
+
+        self.assertTrue(host_token.get("ok"), host_token)
+        self.assertEqual(host_token.get("data", {}).get("session", {}).get("token"), "host-token")
 
         frappe.set_user(viewer)
         with (
@@ -276,6 +297,46 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(join_response.get("ok"), join_response)
         self.assertEqual(join_response.get("data", {}).get("session", {}).get("role"), "viewer")
         self.assertEqual(join_response.get("data", {}).get("session", {}).get("token"), "viewer-token")
+
+    def test_live_room_failure_never_becomes_joinable_or_issues_token(self):
+        host = self.make_user("live-room-failure-host")
+        frappe.set_user(host)
+
+        with (
+            patch("aos.api.live.live.rate_limit", return_value=None),
+            patch("aos.api.live.live._enqueue_room_job"),
+        ):
+            start_response = start_live_impl(title=f"{self.prefix} Failed Live")
+
+        self.assertTrue(start_response.get("ok"), start_response)
+        live_id = start_response["data"]["live"]["id"]
+        self.assertIsNone(start_response["data"]["session"])
+
+        with (
+            patch("aos.tasks.live.ensure_room", return_value=RoomAdminResult(False, "unavailable")),
+            patch("aos.tasks.live._enqueue_live_room_cleanup"),
+        ):
+            activation = activate_live_room(live_id=live_id)
+
+        self.assertFalse(activation.get("ok"), activation)
+        row = frappe.db.get_value(
+            "AOS Live Stream",
+            live_id,
+            ["status", "is_active", "active_host_key"],
+            as_dict=True,
+        )
+        self.assertEqual(row.status, "failed")
+        self.assertEqual(int(row.is_active or 0), 0)
+        self.assertFalse(row.active_host_key)
+
+        with (
+            patch("aos.api.live.token.rate_limit", return_value=None),
+            patch("aos.api.live.token.LiveKitService.generate_live_token") as generate_token,
+        ):
+            token_response = get_live_token_impl(live_id=live_id)
+
+        self.assertFalse(token_response.get("ok"), token_response)
+        generate_token.assert_not_called()
 
     def test_notifications_register_and_deactivate_push_token_flow(self):
         user = self.make_user("push-flow")

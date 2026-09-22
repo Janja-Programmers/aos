@@ -10,10 +10,9 @@ from typing import Any, Mapping, Pattern
 from .constants import MAX_CURSOR_LENGTH, MAX_REASON_LENGTH, MAX_SESSION_ID_LENGTH, MAX_TITLE_LENGTH
 from .errors import LiveError
 
-LIVE_ID_RE = re.compile(r"^LIVE-\d{4}-\d{5}$")
+LIVE_ID_RE = re.compile(r"^LIVE-[0-9a-f]{32}$")
 CONVERSATION_ID_RE = re.compile(r"^CONV-\d{4}-\d{5}$")
 SAFE_ROW_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,139}$")
-ACCOUNT_REFERENCE_RE = re.compile(r"^(?:ACC-[A-Z2-7]{20}|[^\s]{1,140})$")
 LIVEKIT_PARTICIPANT_ID_RE = re.compile(r"^aos:participant:[A-Za-z0-9_-]{20,64}$")
 
 
@@ -70,10 +69,7 @@ def validate_public_kwargs(kwargs: Mapping[str, Any], spec: EndpointSpec) -> dic
             )
         clean[field] = value.strip()
     scalar_text_fields = {
-        "cover_image": (2048, False),
         "live_cover_media": (140, False),
-        "cover_image_media": (140, False),
-        "media_id": (140, False),
         "content": (500, True),
         "idempotency_key": (128, False),
         "reaction_type": (24, True),
@@ -96,13 +92,7 @@ def validate_public_kwargs(kwargs: Mapping[str, Any], spec: EndpointSpec) -> dic
         clean["reason"] = normalize_text(clean["reason"], field="reason", max_length=MAX_REASON_LENGTH)
     if "cursor" in clean and clean.get("cursor") not in (None, ""):
         clean["cursor"] = normalize_text(clean["cursor"], field="cursor", max_length=MAX_CURSOR_LENGTH, required=True)
-    if clean.get("cursor") and clean.get("start") not in (None, "", 0, "0"):
-        raise LiveError(
-            "cursor and start cannot be combined.",
-            code="LIVE_PAGINATION_CONFLICT",
-            http_status=422,
-        )
-    for field, minimum, maximum in (("limit", 1, 100), ("start", 0, 10000)):
+    for field, minimum, maximum in (("limit", 1, 100),):
         if field not in clean or clean.get(field) in (None, ""):
             continue
         value = clean[field]
