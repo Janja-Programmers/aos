@@ -40,6 +40,7 @@ from aos.services.social.capabilities import SocialCapabilityService
 from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.social.repository import SocialRepository
 from aos.services.social.serializers import relationship_map as social_relationship_map
+from aos.api.live.constants import LIVE_COHOST_MAX_ACTIVE_SLOTS
 
 
 LIVE_STATUS = "live"
@@ -1035,28 +1036,80 @@ def serialize_live_cohosts(
 
 
 # LIVE CO-HOST LOOKUPS
-def get_active_live_cohost(
+def get_live_cohost_state(
     live_id: str,
-):
-    """
-    Return the currently active co-host row for a live stream.
+) -> tuple[list[dict], int]:
+    """Return public active co-hosts and the number of reserved slots.
 
-    Public Live payloads must serialize this row with include_internal=False.
+    Accepted workflows reserve capacity before a participant starts publishing.
+    Reading both states in one bounded query keeps single-Live serialization
+    consistent and avoids one query per active co-host.
     """
     if not live_id:
-        return None
+        return [], 0
 
-    return frappe.db.get_value(
+    rows = frappe.get_all(
         LIVE_COHOST_DOCTYPE,
-        {
+        filters={
             "live_stream": live_id,
-            "status": COHOST_STATUS_ACTIVE,
-            "is_active": 1,
+            "status": ["in", [COHOST_STATUS_ACCEPTED, COHOST_STATUS_ACTIVE]],
         },
-        live_cohost_fields(),
-        as_dict=True,
+        fields=live_cohost_fields(),
+        order_by="started_at asc, accepted_at asc, creation asc, name asc",
+        limit_page_length=LIVE_COHOST_MAX_ACTIVE_SLOTS + 1,
     )
 
+    active_rows = [
+        row
+        for row in rows
+        if _value(row, "status") == COHOST_STATUS_ACTIVE
+        and _as_bool(_value(row, "is_active"))
+    ]
+    return serialize_live_cohosts(active_rows, include_internal=False), len(rows)
+
+
+def preload_live_cohost_state(
+    live_ids: list[str],
+) -> tuple[dict[str, list[dict]], dict[str, int]]:
+    """Batch active co-host payloads and reserved-slot counts for Live feeds."""
+    live_ids = sorted({live_id for live_id in live_ids if live_id})
+    if not live_ids:
+        return {}, {}
+
+    # Feed pages are bounded; each Live can reserve at most five slots. Fetching
+    # accepted+active rows is therefore bounded by page_size * slot_limit.
+    rows = frappe.get_all(
+        LIVE_COHOST_DOCTYPE,
+        filters={
+            "live_stream": ["in", live_ids],
+            "status": ["in", [COHOST_STATUS_ACCEPTED, COHOST_STATUS_ACTIVE]],
+        },
+        fields=live_cohost_fields(),
+        order_by="live_stream asc, started_at asc, accepted_at asc, creation asc, name asc",
+        limit_page_length=max(1, len(live_ids) * LIVE_COHOST_MAX_ACTIVE_SLOTS),
+    )
+
+    reserved: dict[str, int] = {}
+    active_rows: list = []
+    active_live_ids: list[str] = []
+    for row in rows:
+        live_id = _value(row, "live_stream")
+        if not live_id:
+            continue
+        reserved[live_id] = int(reserved.get(live_id, 0)) + 1
+        if (
+            _value(row, "status") == COHOST_STATUS_ACTIVE
+            and _as_bool(_value(row, "is_active"))
+        ):
+            active_rows.append(row)
+            active_live_ids.append(live_id)
+
+    serialized = serialize_live_cohosts(active_rows, include_internal=False)
+    active: dict[str, list[dict]] = {}
+    for live_id, payload in zip(active_live_ids, serialized, strict=True):
+        active.setdefault(live_id, []).append(payload)
+
+    return active, reserved
 
 def get_viewer_live_cohost_workflow(
     *,
@@ -1087,58 +1140,6 @@ def get_viewer_live_cohost_workflow(
         live_cohost_fields(),
         as_dict=True,
     )
-
-
-def preload_active_live_cohosts(
-    live_ids: list[str],
-) -> dict[str, dict]:
-    """
-    Batch preload active co-hosts for Live list serialization.
-
-    Returned payloads are always public and exclude session/LiveKit fields.
-    """
-    live_ids = sorted(
-        {
-            live_id
-            for live_id in live_ids
-            if live_id
-        }
-    )
-
-    if not live_ids:
-        return {}
-
-    rows = frappe.get_all(
-        LIVE_COHOST_DOCTYPE,
-        filters={
-            "live_stream": [
-                "in",
-                live_ids,
-            ],
-            "status": COHOST_STATUS_ACTIVE,
-            "is_active": 1,
-        },
-        fields=live_cohost_fields(),
-        order_by="started_at desc, creation desc",
-    )
-
-    result: dict[str, dict] = {}
-
-    for row in rows:
-        live_id = _value(
-            row,
-            "live_stream",
-        )
-
-        if live_id in result:
-            continue
-
-        result[live_id] = serialize_live_cohost(
-            row,
-            include_internal=False,
-        )
-
-    return result
 
 
 # VIEW SESSION HELPERS
@@ -1221,6 +1222,7 @@ def build_live_viewer_state(
     preloaded_relationship: dict | None = None,
     preloaded_has_joined: bool | None = None,
     preloaded_cohost_workflow: dict | None = None,
+    reserved_cohost_slots: int = 0,
 ) -> dict:
     """
     Build viewer-specific Live state.
@@ -1349,6 +1351,11 @@ def build_live_viewer_state(
         )
     )
 
+    cohost_slots_available = max(
+        0,
+        LIVE_COHOST_MAX_ACTIVE_SLOTS - max(0, int(reserved_cohost_slots or 0)),
+    )
+
     relationship.update(
         {
             "is_owner": is_host,
@@ -1383,10 +1390,12 @@ def build_live_viewer_state(
                 can_interact
                 and not is_host
                 and not has_pending_cohost_workflow
+                and cohost_slots_available > 0
             ),
             "can_invite_cohost": bool(
                 is_host
                 and can_watch
+                and cohost_slots_available > 0
             ),
         }
     )
@@ -1416,7 +1425,8 @@ def serialize_live(
     preloaded_viewer_state: dict | None = None,
     preloaded_relationship: dict | None = None,
     preloaded_has_joined: bool | None = None,
-    preloaded_active_cohost: dict | None = None,
+    preloaded_active_cohosts: list[dict] | None = None,
+    preloaded_reserved_cohost_slots: int | None = None,
     preloaded_cohost_workflow: dict | None = None,
 ) -> dict:
     """
@@ -1463,21 +1473,14 @@ def serialize_live(
         )
     )
 
-    if preloaded_active_cohost is not None:
-        active_cohost = preloaded_active_cohost
+    if (
+        preloaded_active_cohosts is not None
+        and preloaded_reserved_cohost_slots is not None
+    ):
+        active_cohosts = list(preloaded_active_cohosts)
+        reserved_cohost_slots = max(0, int(preloaded_reserved_cohost_slots or 0))
     else:
-        active_cohost_row = get_active_live_cohost(
-            live_id
-        )
-
-        active_cohost = (
-            serialize_live_cohost(
-                active_cohost_row,
-                include_internal=False,
-            )
-            if active_cohost_row
-            else None
-        )
+        active_cohosts, reserved_cohost_slots = get_live_cohost_state(live_id)
 
     payload = {
         "id": live_id,
@@ -1613,11 +1616,19 @@ def serialize_live(
 
         "host": host,
 
-        # Public active co-host state.
-        "active_cohost": active_cohost,
-        "has_active_cohost": bool(
-            active_cohost
-        ),
+        # Public multi-guest state. Accepted workflows reserve capacity, while
+        # only active publishers are exposed in active_cohosts.
+        "active_cohosts": active_cohosts,
+        "active_cohost_count": len(active_cohosts),
+        "has_active_cohosts": bool(active_cohosts),
+        "cohost_slots": {
+            "limit": LIVE_COHOST_MAX_ACTIVE_SLOTS,
+            "reserved": reserved_cohost_slots,
+            "available": max(
+                0,
+                LIVE_COHOST_MAX_ACTIVE_SLOTS - reserved_cohost_slots,
+            ),
+        },
     }
 
     payload["viewer_state"] = (
@@ -1635,6 +1646,7 @@ def serialize_live(
             preloaded_cohost_workflow=(
                 preloaded_cohost_workflow
             ),
+            reserved_cohost_slots=reserved_cohost_slots,
         )
     )
 
@@ -1863,7 +1875,7 @@ def serialize_live_list(
         )
     )
 
-    active_cohosts = preload_active_live_cohosts(
+    active_cohosts, reserved_cohost_slots = preload_live_cohost_state(
         live_ids
     )
 
@@ -1897,10 +1909,11 @@ def serialize_live_list(
                     live_id
                     in joined_live_ids
                 ),
-                preloaded_active_cohost=(
-                    active_cohosts.get(
-                        live_id
-                    )
+                preloaded_active_cohosts=(
+                    active_cohosts.get(live_id, [])
+                ),
+                preloaded_reserved_cohost_slots=(
+                    reserved_cohost_slots.get(live_id, 0)
                 ),
             )
         )

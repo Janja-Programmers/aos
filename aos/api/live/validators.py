@@ -775,8 +775,8 @@ def validate_available_cohost_slot(
     """
     Validate that the live has room for another accepted or active co-host.
 
-    The initial implementation supports one slot. This uses the configured
-    slot constant so the policy can be expanded later.
+    Accepted and active workflows reserve one of the bounded co-host slots.
+    Pending workflows do not reserve capacity.
     """
     filters = {
         "live_stream": live_id,
@@ -804,7 +804,7 @@ def validate_available_cohost_slot(
         >= LIVE_COHOST_MAX_ACTIVE_SLOTS
     ):
         return fail(
-            "This live stream already has an accepted or active co-host.",
+            "This live stream has reached its co-host capacity.",
             error="COHOST_SLOT_UNAVAILABLE",
         )
 

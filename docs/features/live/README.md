@@ -101,6 +101,8 @@ Secrets are read from runtime configuration. Full tokens and LiveKit secrets mus
 
 Host authority comes from `AOS Live Stream.host_user`, never client metadata. Host/co-host token issuance checks canonical server state while holding lifecycle-safe locks.
 
+A Live supports **one host plus up to five simultaneous co-hosts/guests**. Accepted co-host workflows reserve one of the five slots before activation, so concurrent accepts cannot overbook the room. Public Live payloads expose `active_cohosts[]`, `active_cohost_count`, `has_active_cohosts`, and `cohost_slots` (`limit`, `reserved`, `available`). The singular `active_cohost` compatibility shape is not part of the current contract. Feed serialization batches these projections across the page to avoid per-cohost profile queries.
+
 Host invitations identify the candidate using the server-issued opaque LiveKit identity of an active viewer. The backend resolves and re-locks that view session; raw target User IDs or viewer session IDs are not accepted as an escalation path.
 
 Viewer access consumes hardened Accounts and Social policy. Authenticated disabled/deleted/unavailable accounts are rejected, and bidirectional block relationships are enforced. Guest viewers receive only viewer grants and are protected by both IP and session-oriented rate budgets.

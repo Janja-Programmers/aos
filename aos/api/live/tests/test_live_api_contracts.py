@@ -10,6 +10,8 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from aos.api.shared.transport import client_kwargs
+from aos.api.live.constants import LIVE_COHOST_MAX_ACTIVE_SLOTS
+from aos.api.live.validators import validate_available_cohost_slot
 from aos.services.live.cursor import decode_cursor, encode_cursor
 from aos.services.live.endpoints import ENDPOINT_SPECS, TRANSACTIONAL_ENDPOINTS
 from aos.services.live.errors import LiveError
@@ -122,6 +124,15 @@ class TestLiveApiContracts(FrappeTestCase):
         self.assertNotIn('"user"', source)
         self.assertIn('"account_id"', source)
         self.assertIn("hmac.new", source)
+
+    def test_cohost_capacity_allows_five_reserved_slots_and_rejects_the_sixth(self):
+        self.assertEqual(LIVE_COHOST_MAX_ACTIVE_SLOTS, 5)
+        with patch("frappe.db.count", return_value=4):
+            self.assertIsNone(validate_available_cohost_slot(live_id="LIVE-test"))
+        with patch("frappe.db.count", return_value=5):
+            result = validate_available_cohost_slot(live_id="LIVE-test")
+        self.assertFalse(result.get("ok"), result)
+        self.assertEqual(result.get("error"), "COHOST_SLOT_UNAVAILABLE")
 
     def test_host_invite_contract_uses_opaque_identity_without_session_disclosure(self):
         spec = ENDPOINT_SPECS["invite_live_cohost"]

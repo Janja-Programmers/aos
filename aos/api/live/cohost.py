@@ -210,8 +210,8 @@ def _lock_live_row(
     """
     Lock the live stream for the current transaction.
 
-    This protects the single co-host slot from simultaneous acceptance or
-    activation requests.
+    This serializes co-host slot reservation so simultaneous acceptance or
+    activation requests cannot exceed the configured room capacity.
     """
     frappe.db.sql(
         """

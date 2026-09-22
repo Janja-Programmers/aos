@@ -113,5 +113,7 @@ LIVE_VIEW_QUALIFICATION_SECONDS = 5
 # Pending host invitations and viewer requests expire after this duration.
 LIVE_COHOST_REQUEST_EXPIRY_SECONDS = 60
 
-# Initial implementation supports one accepted or active co-host per live.
-LIVE_COHOST_MAX_ACTIVE_SLOTS = 1
+# A Live supports up to five simultaneously reserved co-host slots.
+# Accepted workflows reserve a slot before activation so concurrent responses
+# cannot overbook the room.
+LIVE_COHOST_MAX_ACTIVE_SLOTS = 5

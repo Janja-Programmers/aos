@@ -99,6 +99,24 @@ class TestLiveSourceGuards(unittest.TestCase):
         self.assertIn('"can_publish": False', viewer_block)
         self.assertIn('"can_publish_data": False', viewer_block)
 
+
+    def test_live_supports_five_simultaneous_cohosts_with_multi_guest_payload(self):
+        constants = _source("aos/api/live/constants.py")
+        serializers = _source("aos/api/live/serializers.py")
+        cohost = _source("aos/api/live/cohost.py")
+        controller = _source("aos/aos/doctype/aos_live_cohost/aos_live_cohost.py")
+
+        self.assertIn("LIVE_COHOST_MAX_ACTIVE_SLOTS = 5", constants)
+        self.assertIn('"active_cohosts": active_cohosts', serializers)
+        self.assertIn('"active_cohost_count": len(active_cohosts)', serializers)
+        self.assertIn('"has_active_cohosts": bool(active_cohosts)', serializers)
+        self.assertIn('"cohost_slots": {', serializers)
+        self.assertIn("preload_live_cohost_state", serializers)
+        self.assertIn("serialize_live_cohosts(active_rows", serializers)
+        self.assertNotIn('"active_cohost": active_cohost', serializers)
+        self.assertIn("FOR UPDATE", cohost)
+        self.assertIn("LIVE_COHOST_MAX_ACTIVE_SLOTS", controller)
+
     def test_host_cohost_invite_resolves_opaque_identity_server_side(self):
         endpoints = _source("aos/services/live/endpoints.py")
         cohost = _source("aos/api/live/cohost.py")
