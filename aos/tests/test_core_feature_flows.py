@@ -284,7 +284,7 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
             host_token = get_live_token_impl(live_id=live_id)
 
         self.assertTrue(host_token.get("ok"), host_token)
-        self.assertEqual(host_token.get("data", {}).get("session", {}).get("token"), "host-token")
+        self.assertEqual(host_token.get("data", {}).get("token"), "host-token")
 
         frappe.set_user(viewer)
         with (

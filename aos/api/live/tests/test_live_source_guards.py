@@ -309,9 +309,16 @@ class TestLiveSourceGuards(unittest.TestCase):
         analytics = _source("aos/services/live_analytics_service.py")
         self.assertNotIn("AOS Live Stream Reaction", ephemeral)
         self.assertNotIn("AOS Live Stream Reaction", analytics)
+        obsolete_reaction_dir = ROOT / "aos/aos/doctype/aos_live_stream_reaction"
+        obsolete_reaction_sources = (
+            "__init__.py",
+            "aos_live_stream_reaction.py",
+            "aos_live_stream_reaction.json",
+            "test_aos_live_stream_reaction.py",
+        )
         self.assertFalse(
-            (ROOT / "aos/aos/doctype/aos_live_stream_reaction").exists(),
-            "obsolete per-reaction DocType must not return",
+            any((obsolete_reaction_dir / name).exists() for name in obsolete_reaction_sources),
+            "obsolete per-reaction DocType source/schema must not return",
         )
         self.assertNotIn("frappe.new_doc(\n        LIVE_MESSAGE_DOCTYPE", tracking.split("def _create_viewer_joined_message", 1)[1].split("# TRACK JOIN", 1)[0])
 
