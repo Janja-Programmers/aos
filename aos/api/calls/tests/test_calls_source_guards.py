@@ -146,6 +146,10 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
         public_indexes = _source("aos/patches/v1_0/install_call_public_indexes.py")
         self.assertIn("uq_call_public_id", public_indexes)
         self.assertIn("rtc_provisioned_at", public_indexes)
+        self.assertIn("_quote_identifier", indexes)
+        self.assertIn("sql_ddl", indexes)
+        self.assertNotIn("frappe.db.add_unique", indexes)
+        self.assertNotIn("frappe.db.add_index", indexes)
 
     def test_account_deletion_does_not_make_group_initiator_room_owner(self):
         source = _source("aos/services/account_deletion_service.py")

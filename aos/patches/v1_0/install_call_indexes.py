@@ -52,15 +52,30 @@ def _assert_unique_ready(doctype: str, columns: Sequence[str], name: str) -> Non
         frappe.throw(f"Cannot install Calls unique index {name}; duplicate data remains in {doctype}")
 
 
+def _quote_identifier(value: str) -> str:
+    # Frappe's MariaDB add_index/add_unique helpers do not quote field names.
+    # Calls intentionally uses Link fields named `call` and `user`, both of
+    # which can collide with SQL keywords/functions. All identifiers in this
+    # installer are static application schema identifiers; quote them here so
+    # the migration is valid and repeatable on MariaDB.
+    return "`" + value.replace("`", "``") + "`"
+
+
+def _add_index_ddl(doctype: str, name: str, columns: Sequence[str], *, unique: bool) -> None:
+    table = _quote_identifier(_table(doctype))
+    index = _quote_identifier(name)
+    fields = ", ".join(_quote_identifier(column) for column in columns)
+    kind = "UNIQUE INDEX" if unique else "INDEX"
+    frappe.db.sql_ddl(f"ALTER TABLE {table} ADD {kind} {index} ({fields})")
+
+
 def _ensure_index(doctype: str, name: str, columns: tuple[str, ...], *, unique: bool) -> None:
     _ensure_columns(doctype, columns)
     if _exists(doctype, name):
         return
     if unique:
         _assert_unique_ready(doctype, columns, name)
-        frappe.db.add_unique(doctype, list(columns), constraint_name=name)
-    else:
-        frappe.db.add_index(doctype, list(columns), index_name=name)
+    _add_index_ddl(doctype, name, columns, unique=unique)
 
 
 def _drop_legacy_indexes() -> None:
