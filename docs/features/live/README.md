@@ -177,10 +177,10 @@ Required secrets/identity:
 - `LIVEKIT_ENDPOINT` — public browser signaling origin, normally `wss://live.<domain>`
 - `LIVEKIT_ADMIN_ENDPOINT` — private server-to-server room administration origin; single-host default `http://127.0.0.1:7880`
 - `LIVEKIT_WEBHOOK_URL`
-- `LIVEKIT_TURN_DOMAIN`
-- `LIVEKIT_TURN_CERT_DIR`
 
-Operational tuning is exposed through the documented `.env.example` variables for Redis address/auth/TLS, room limits/timeouts, UDP mux port, node load threshold, TURN ports/allocation cap, metrics bind, graceful-stop window, and container CPU/memory/PID limits.
+Operational tuning is exposed through the documented `.env.example` variables for Redis address/auth/TLS, room limits/timeouts, UDP mux port, node load threshold, TURN/UDP port/allocation cap, metrics bind, graceful-stop window, and container CPU/memory/PID limits.
+
+The single-host baseline enables embedded TURN/UDP only. TURN/TLS is optional and must not be configured with placeholder domains or missing certificate files: LiveKit intentionally refuses to start when its configured TURN/TLS certificate is unavailable. Deployments that require TURN/TLS should provision a real TURN hostname and trusted certificate, or terminate TURN/TLS on a dedicated L4 endpoint, then add that deployment-specific configuration explicitly.
 
 API key/secret pairs used by Frappe token generation/webhook verification must correspond to the key pair supplied to LiveKit. Never commit real credentials. Redis certificate verification must remain enabled in production (`LIVEKIT_REDIS_TLS_INSECURE=false`).
 

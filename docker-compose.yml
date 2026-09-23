@@ -350,15 +350,12 @@ services:
           urls:
             - ${LIVEKIT_WEBHOOK_URL:?LIVEKIT_WEBHOOK_URL is required}
         turn:
+          # Baseline embedded TURN is UDP-only. TURN/TLS is intentionally not
+          # declared here because enabling it without a real TURN hostname and
+          # certificate makes LiveKit fail closed at startup. Deploy TURN/TLS
+          # separately with a real certificate/L4 listener when required.
           enabled: ${LIVEKIT_TURN_ENABLED:-true}
           udp_port: ${LIVEKIT_TURN_UDP_PORT:-3478}
-          # Keep the single-host baseline conflict-free with Nginx signaling
-          # TLS on TCP 443. A dedicated TURN IP/L4 listener may intentionally
-          # expose TURN/TLS on 443 in larger deployments.
-          tls_port: ${LIVEKIT_TURN_TLS_PORT:-5349}
-          domain: ${LIVEKIT_TURN_DOMAIN:?LIVEKIT_TURN_DOMAIN is required}
-          cert_file: /etc/livekit/tls/fullchain.pem
-          key_file: /etc/livekit/tls/privkey.pem
           ttl_seconds: 300
           per_user_relay_allocation_limit: ${LIVEKIT_TURN_PER_USER_ALLOCATION_LIMIT:-12}
         node_selector:
@@ -383,9 +380,9 @@ services:
       - "${LIVEKIT_TCP_BIND_ADDRESS:-0.0.0.0}:${LIVEKIT_TCP_PORT:-7881}:7881/tcp"
       - "${LIVEKIT_UDP_BIND_ADDRESS:-0.0.0.0}:${LIVEKIT_UDP_PORT:-7882}:${LIVEKIT_UDP_PORT:-7882}/udp"
 
-      # Embedded TURN gives restricted mobile networks UDP and TLS relay paths.
+      # Embedded TURN/UDP fallback. TURN/TLS requires a real hostname and
+      # certificate and is intentionally not enabled by the single-host baseline.
       - "${LIVEKIT_TURN_UDP_BIND_ADDRESS:-0.0.0.0}:${LIVEKIT_TURN_UDP_PORT:-3478}:${LIVEKIT_TURN_UDP_PORT:-3478}/udp"
-      - "${LIVEKIT_TURN_TLS_BIND_ADDRESS:-0.0.0.0}:${LIVEKIT_TURN_TLS_PORT:-5349}:${LIVEKIT_TURN_TLS_PORT:-5349}/tcp"
 
       # Prometheus is host-local; scrape or proxy it from the observability stack.
       - "${LIVEKIT_METRICS_BIND_ADDRESS:-127.0.0.1}:${LIVEKIT_METRICS_PORT:-6789}:6789"
@@ -393,10 +390,6 @@ services:
     depends_on:
       livekit-redis:
         condition: service_healthy
-
-    volumes:
-      # Mount only the TURN certificate directory, not the host's whole ACME tree.
-      - "${LIVEKIT_TURN_CERT_DIR:?LIVEKIT_TURN_CERT_DIR is required}:/etc/livekit/tls:ro"
 
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:7880"]
