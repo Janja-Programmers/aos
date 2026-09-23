@@ -260,23 +260,17 @@ class TestCallsDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(incoming.call_count, 1)
         self.assertEqual(notify.call_count, 1)
 
-    def test_last_joined_group_participant_ends_call_and_cancels_pending_invites(self):
-        initiator, joined, pending = self._users(3, "last-leave")
+    def test_group_ends_when_a_leave_would_leave_only_one_joined_participant(self):
+        initiator, joined, pending = self._users(3, "min-two")
         initiated, _ = self._initiate(initiator, [joined, pending])
         call_id = initiated["data"]["call_id"]
         name = self._internal(call_id)
         self.assertTrue(self._accept(joined, call_id).get("ok"))
 
         frappe.set_user(initiator)
-        with patch("aos.api.calls.call.rate_limit", return_value=None), patch("aos.api.calls.call.publish_participant_left"):
-            initiator_left = end_call_impl(call_id=call_id)
-        self.assertTrue(initiator_left.get("ok"), initiator_left)
-        self.assertEqual(frappe.db.get_value("AOS Call", name, "status"), "ongoing")
-
-        frappe.set_user(joined)
         with (
             patch("aos.api.calls.call.rate_limit", return_value=None),
-            patch("aos.api.calls.call.publish_call_ended"),
+            patch("aos.api.calls.call.publish_call_ended") as ended_event,
             patch("aos.api.calls.call.enqueue_room_cleanup"),
         ):
             ended = end_call_impl(call_id=call_id)
@@ -287,6 +281,50 @@ class TestCallsDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
             "cancelled",
         )
         self.assertFalse(frappe.db.exists("AOS Call Participant", {"call": name, "status": "joined"}))
+        ended_event.assert_called_once()
+
+    def test_rejected_group_participant_can_be_invited_again_without_duplicate_membership(self):
+        initiator, joined, rejected = self._users(3, "reinvite")
+        initiated, _ = self._initiate(initiator, [joined, rejected])
+        call_id = initiated["data"]["call_id"]
+        name = self._internal(call_id)
+        self.assertTrue(self._accept(joined, call_id).get("ok"))
+
+        frappe.set_user(rejected)
+        with patch("aos.api.calls.call.rate_limit", return_value=None), patch("aos.api.calls.call.publish_participant_declined"):
+            declined = reject_call_impl(call_id=call_id)
+        self.assertTrue(declined.get("ok"), declined)
+        self.assertEqual(
+            frappe.db.get_value("AOS Call Participant", {"call": name, "user": rejected}, "status"),
+            "declined",
+        )
+
+        frappe.set_user(initiator)
+        rejected_account = public_account_id_for_user(rejected)
+        with (
+            patch("aos.api.calls.call.rate_limit", return_value=None),
+            patch("aos.api.calls.call.publish_participants_invited") as invited_event,
+            patch("aos.api.calls.call.publish_incoming_call") as incoming_event,
+            patch("aos.api.calls.call.NotificationService.notify_incoming_call") as notify,
+        ):
+            reinvited = add_call_participants_impl(call_id=call_id, participant_ids=[rejected_account])
+        self.assertTrue(reinvited.get("ok"), reinvited)
+        row = frappe.db.get_value(
+            "AOS Call Participant",
+            {"call": name, "user": rejected},
+            ["status", "added_by", "ring_expires_at", "responded_at", "left_at"],
+            as_dict=True,
+        )
+        self.assertEqual(row.status, "invited")
+        self.assertEqual(row.added_by, initiator)
+        self.assertTrue(row.ring_expires_at)
+        self.assertFalse(row.responded_at)
+        self.assertFalse(row.left_at)
+        self.assertEqual(frappe.db.count("AOS Call Participant", {"call": name, "user": rejected}), 1)
+        self.assertEqual(int(frappe.db.get_value("AOS Call", name, "participant_count")), 3)
+        invited_event.assert_called_once()
+        incoming_event.assert_called_once()
+        notify.assert_called_once()
 
     def test_ongoing_direct_call_promotes_to_group_without_room_recreation(self):
         initiator, peer, added = self._users(3, "promote")

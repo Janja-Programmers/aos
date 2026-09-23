@@ -584,11 +584,22 @@ def end_call_impl(**kwargs):
         frappe.db.sql("UPDATE `tabAOS Call Participant` SET status='left', left_at=COALESCE(left_at,%s) WHERE name=%s AND status='joined'", (now, row.name))
         frappe.db.sql("UPDATE `tabAOS Call` SET state_version=state_version+1 WHERE name=%s AND status='ongoing'", (call.name,))
         remaining = joined_users(call.name)
-        if remaining:
+        if len(remaining) >= 2:
             call = _reload(call.name)
             publish_participant_left(call, current_user)
             return ok("You left the call.", data=_response(call, current_user))
+
+        # A conference is meaningful only while at least two participants are
+        # actually joined. Do not leave a one-person room marked ongoing merely
+        # because historical/declined/pending participant rows still exist.
+        # Terminalize every still-joined member and cancel outstanding invites
+        # atomically under the Call lock, then publish one terminal Call event.
         duration = _safe_duration_seconds(call.started_at, now)
+        frappe.db.sql(
+            "UPDATE `tabAOS Call Participant` SET status='left',left_at=COALESCE(left_at,%s) "
+            "WHERE `call`=%s AND status='joined'",
+            (now, call.name),
+        )
         frappe.db.sql(
             "UPDATE `tabAOS Call Participant` SET status='cancelled',responded_at=COALESCE(responded_at,%s) "
             "WHERE `call`=%s AND status IN ('invited','ringing')",
@@ -638,18 +649,33 @@ def add_call_participants_impl(**kwargs):
         requested_existing = frappe.get_all(
             "AOS Call Participant",
             filters={"call": call.name, "user": ["in", targets]},
-            fields=["user", "added_by"],
+            fields=["name", "user", "role", "status", "added_by"],
             limit=32,
         )
-        if requested_existing:
-            existing_by_user = {row.user: row for row in requested_existing}
+        existing_by_user = {row.user: row for row in requested_existing}
+        active_existing = [
+            row for row in requested_existing if row.status in {"invited", "ringing", "joined"}
+        ]
+        if active_existing:
+            # Exact retries of a successful invitation remain idempotent. Mixed
+            # requests containing an already-active member are rejected instead
+            # of silently changing the requested set.
             if (
-                len(existing_by_user) == len(targets)
-                and all(existing_by_user[target].added_by == current_user for target in targets)
+                len(active_existing) == len(targets)
+                and all(row.added_by == current_user for row in active_existing)
             ):
                 return ok("Participants are already invited.", data=_response(call, current_user))
             return fail("One or more accounts are already in this call.", error="VALIDATION_ERROR")
-        if len(existing) + len(targets) > 32:
+
+        terminal_existing = [
+            row for row in requested_existing
+            if row.status in {"declined", "missed", "left", "failed", "cancelled"}
+        ]
+        if any(row.role != "participant" for row in terminal_existing):
+            return fail("The original call initiator cannot be re-invited to the same call.", error="VALIDATION_ERROR")
+
+        new_targets = [target for target in targets if target not in existing_by_user]
+        if len(existing) + len(new_targets) > 32:
             return fail("A group call supports at most 32 participants.", error="VALIDATION_ERROR")
         if active_call_names_for_users(*targets):
             return fail("A participant is already in another call.", error="ACTIVE_CALL_EXISTS", http_status=409)
@@ -678,7 +704,26 @@ def add_call_participants_impl(**kwargs):
             if frappe.db._cursor.rowcount == 0:
                 return fail("Call cannot be promoted to a group call.", error="INVALID_STATE")
         for target in targets:
-            create_participant(call_name=call.name, user=target, role="participant", status="invited", added_by=current_user, invited_at=now)
+            previous = existing_by_user.get(target)
+            if previous:
+                # A terminal membership is historical state, not a permanent ban
+                # on rejoining the same conference. Reuse the unique participant
+                # row and reset every invitation/join terminal timestamp before
+                # dispatching a fresh bounded invite.
+                frappe.db.sql(
+                    """
+                    UPDATE `tabAOS Call Participant`
+                    SET status='invited', role='participant', added_by=%s, visible=1,
+                        invited_at=%s, incoming_dispatched_at=NULL, ring_expires_at=NULL,
+                        ringing_at=NULL, joined_at=NULL, responded_at=NULL, left_at=NULL
+                    WHERE name=%s AND status IN ('declined','missed','left','failed','cancelled')
+                    """,
+                    (current_user, now, previous.name),
+                )
+                if frappe.db._cursor.rowcount == 0:
+                    return fail("Participant state changed. Refresh the call and try again.", error="INVALID_STATE", http_status=409)
+            else:
+                create_participant(call_name=call.name, user=target, role="participant", status="invited", added_by=current_user, invited_at=now)
         set_participant_count(call.name)
         frappe.db.sql("UPDATE `tabAOS Call` SET state_version=state_version+1 WHERE name=%s", (call.name,))
         call = _reload(call.name)

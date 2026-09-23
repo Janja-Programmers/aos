@@ -82,9 +82,13 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
         self.assertIn("any_invitee_joined", call)
         self.assertIn("if call.call_mode == \"direct\"", call)
         self.assertIn("remaining = joined_users(call.name)", call)
+        self.assertIn("if len(remaining) >= 2", call)
+        self.assertIn("A conference is meaningful only while at least two participants are", call)
         self.assertIn("You left the call.", call)
         self.assertIn("add_call_participants_impl", call)
         self.assertIn("call_mode='group',max_participants=32", call)
+        self.assertIn("status='invited', role='participant', added_by=%s", call)
+        self.assertIn("incoming_dispatched_at=NULL, ring_expires_at=NULL", call)
         self.assertIn("publish_participants_invited", call)
         self.assertIn("A group call supports at most 32 participants.", call)
 
