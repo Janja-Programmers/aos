@@ -24,14 +24,17 @@ from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.user_display import get_user_display
 
 from aos.services.livekit_service import LiveKitService
-from aos.services.notifications.service import NotificationService
 from aos.services.calls.errors import CallError
 from aos.services.calls.livekit import (
+    call_rtc_ready,
     enqueue_room_cleanup,
+    enqueue_room_provisioning,
+    ensure_call_join_ready,
     get_call_ws_url,
     issue_call_token,
     participant_identity,
 )
+from aos.services.calls.identifiers import public_call_id
 from aos.services.calls.policy import (
     active_call_for_users,
     ensure_call_interaction_allowed,
@@ -51,10 +54,6 @@ from .constants import (
     END_CALL_LIMIT_PER_MINUTE_PER_USER,
     REQUEST_VIDEO_UPGRADE_LIMIT_PER_MINUTE_PER_USER,
     RESPOND_VIDEO_UPGRADE_LIMIT_PER_MINUTE_PER_USER,
-    CALL_TIMEOUT_SECONDS,
-    CALL_TIMEOUT_JOB_PATH,
-    CALL_TIMEOUT_JOB_QUEUE,
-    CALL_TIMEOUT_JOB_EXTRA_BUFFER_SECONDS,
 )
 
 from .validators import (
@@ -75,7 +74,6 @@ from .utils import upsert_call_system_message
 
 from .realtime import (
     serialize_call_for_realtime,
-    publish_incoming_call,
     publish_call_ringing,
     publish_call_accepted,
     publish_call_rejected,
@@ -168,33 +166,6 @@ def _build_call_response(
     return data
 
 
-def _build_incoming_call_push_payload(
-    *,
-    call,
-    receiver: str,
-) -> dict:
-    """
-    Build canonical incoming-call payload for FCM push reconstruction.
-    """
-
-    payload = serialize_call_for_realtime(
-        call,
-        current_user=receiver,
-        event_status="incoming",
-        actor=call.caller,
-    )
-
-    payload.update(
-        {
-            "event": "aos_incoming_call",
-            "type": "incoming_call",
-            "notification_type": "incoming_call",
-        }
-    )
-
-    return payload
-
-
 def _reload_call(call_id: str):
     return frappe.get_doc("AOS Call", call_id)
 
@@ -226,38 +197,6 @@ def _normalize_video_upgrade_action(action: str | None) -> str:
         return "declined"
 
     return action
-
-
-def _enqueue_call_timeout(call_id: str):
-    """
-    Enqueue a per-call timeout job.
-
-    The queued task sleeps for CALL_TIMEOUT_SECONDS inside the background
-    worker, then atomically checks whether the call is still initiated/ringing.
-    If yes, it marks the call as missed.
-
-    The API request is not blocked. The cron cleanup remains as fallback.
-    """
-    if not call_id:
-        return
-
-    try:
-        frappe.enqueue(
-            CALL_TIMEOUT_JOB_PATH,
-            queue=CALL_TIMEOUT_JOB_QUEUE,
-            timeout=CALL_TIMEOUT_SECONDS + CALL_TIMEOUT_JOB_EXTRA_BUFFER_SECONDS,
-            job_id=f"aos_call_timeout:{call_id}",
-            enqueue_after_commit=True,
-            call_id=call_id,
-            delay_seconds=CALL_TIMEOUT_SECONDS,
-        )
-    except Exception:
-        # Do not fail call initiation if timeout scheduling fails.
-        # The cron cleanup task remains as a fallback.
-        frappe.log_error(
-            "Calls operation failed.",
-            f"AOS Call Timeout Enqueue Failed: {call_id}",
-        )
 
 
 # INITIATE CALL
@@ -294,11 +233,7 @@ def initiate_call_impl(**kwargs):
         if err:
             return err
 
-        receiver = (
-            conv.participant_2
-            if conv.participant_1 == current_user
-            else conv.participant_1
-        )
+        receiver = conv.participant_2 if conv.participant_1 == current_user else conv.participant_1
 
         interaction_error = ensure_interaction_allowed(
             current_user=current_user,
@@ -317,11 +252,10 @@ def initiate_call_impl(**kwargs):
         if target_rl:
             return target_rl
 
-        # Serialize competing calls for either participant. Lock order is
-        # deterministic so A->B and B->A initiation cannot deadlock.
+        # Deterministic participant locks serialize A->B/B->A and cross-conversation
+        # attempts without relying on process-local state.
         lock_users_for_call(current_user, receiver)
 
-        # Re-check account/block policy after waiting for participant locks.
         interaction_error = ensure_interaction_allowed(
             current_user=current_user,
             peer_user=receiver,
@@ -338,30 +272,33 @@ def initiate_call_impl(**kwargs):
                 and existing.receiver == receiver
                 and existing.call_type == call_type
             ):
-                # Idempotent double tap/retry: no duplicate incoming event, push,
-                # system message or timeout work. Mint only a fresh caller token.
+                # Idempotent double tap/retry. Provisioning/delivery is owned by the
+                # durable worker, so the API never emits a second incoming signal.
                 lock_call_row(existing.name)
                 call = _reload_call(existing.name)
-                if call.status == "ongoing" and int(call.is_active or 0) == 1:
-                    clear_missing_room_marker(call.name)
-                token = issue_call_token(
-                    identity=participant_identity(current_user),
-                    room_name=call.room_name,
-                    metadata=_build_call_metadata(
-                        user=current_user,
-                        role="caller",
-                        conversation=conv_id,
-                        call_id=call.name,
-                        call_type=call.call_type,
-                    ),
+                token = None
+                ring_window_open = bool(
+                    call.ring_expires_at
+                    and get_datetime(call.ring_expires_at) > get_datetime(now_datetime())
                 )
+                if call_rtc_ready(call) and (call.status == "ongoing" or ring_window_open):
+                    if call.status == "ongoing" and int(call.is_active or 0) == 1:
+                        clear_missing_room_marker(call.name)
+                    token = issue_call_token(
+                        identity=participant_identity(current_user),
+                        room_name=call.room_name,
+                        call_type=call.call_type,
+                        metadata=_build_call_metadata(
+                            user=current_user,
+                            role="caller",
+                            conversation=conv_id,
+                            call_id=public_call_id(call),
+                            call_type=call.call_type,
+                        ),
+                    )
                 return ok(
                     "Call already active.",
-                    data=_build_call_response(
-                        call=call,
-                        current_user=current_user,
-                        token=token,
-                    ),
+                    data=_build_call_response(call=call, current_user=current_user, token=token),
                 )
 
             return fail(
@@ -370,7 +307,6 @@ def initiate_call_impl(**kwargs):
                 http_status=409,
             )
 
-        # Create call.
         call = frappe.new_doc("AOS Call")
         call.conversation = conv_id
         call.caller = current_user
@@ -380,66 +316,22 @@ def initiate_call_impl(**kwargs):
         call.video_upgrade_status = "none"
         call.insert(ignore_permissions=True)
 
-        # Schedule per-call missed timeout.
-        # This makes missed-call timing more predictable than relying only on cron.
-        _enqueue_call_timeout(call.name)
-
-        # System message.
-        upsert_call_system_message(
-            call_id=call.name,
-            conversation_id=conv_id,
-            content="📞 Calling...",
-        )
-
-        # Realtime incoming call event.
-        publish_incoming_call(call, receiver)
-
-        # Notification.
-        incoming_payload = _build_incoming_call_push_payload(
-            call=call,
-            receiver=receiver,
-        )
-
-        NotificationService.notify_incoming_call(
-            user=receiver,
-            caller=current_user,
-            call_id=call.name,
-            call_type=call.call_type,
-            payload=incoming_payload,
-        )
-
-        # Generate caller token.
-        token = issue_call_token(
-            identity=participant_identity(current_user),
-            room_name=call.room_name,
-            metadata=_build_call_metadata(
-                user=current_user,
-                role="caller",
-                conversation=conv_id,
-                call_id=call.name,
-                call_type=call.call_type,
-            ),
-        )
+        # The API transaction performs no LiveKit network I/O. Provisioning is
+        # queued after commit; that worker dispatches incoming realtime/push only
+        # after the shared LiveKit admin service confirms the room exists.
+        enqueue_room_provisioning(call.name)
 
         return ok(
             "Call initiated.",
-            data=_build_call_response(
-                call=call,
-                current_user=current_user,
-                token=token,
-            ),
+            data=_build_call_response(call=call, current_user=current_user),
         )
 
     except CallError:
         raise
     except frappe.ValidationError as ex:
         return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
-
     except Exception:
-        frappe.log_error(
-            "Calls operation failed.",
-            "AOS Initiate Call Failed",
-        )
+        frappe.log_error("Calls operation failed.", "AOS Initiate Call Failed")
         return fail("Failed to initiate call.", error="INTERNAL_ERROR")
 
 
@@ -479,6 +371,11 @@ def mark_call_ringing_impl(**kwargs):
         if interaction_error:
             return interaction_error
 
+        ensure_call_join_ready(call)
+        now = now_datetime()
+        if get_datetime(call.ring_expires_at) <= get_datetime(now):
+            return fail("Call is no longer ringing.", error="INVALID_STATE", http_status=409)
+
         # Idempotent success:
         # If the receiver app retries after the call is already ringing,
         # return success without rewriting ringing_at or publishing duplicate events.
@@ -495,25 +392,27 @@ def mark_call_ringing_impl(**kwargs):
         if err:
             return err
 
-        now = now_datetime()
-
         frappe.db.sql(
             """
             UPDATE `tabAOS Call`
             SET
                 status = 'ringing',
-                ringing_at = COALESCE(ringing_at, %s)
+                ringing_at = COALESCE(ringing_at, %s),
+                state_version = state_version + 1
             WHERE name = %s
               AND receiver = %s
               AND status = 'initiated'
+              AND rtc_provisioned_at IS NOT NULL
+              AND incoming_dispatched_at IS NOT NULL
+              AND ring_expires_at > %s
             """,
-            (now, call_id, current_user),
+            (now, call.name, current_user, now),
         )
 
         if frappe.db._cursor.rowcount == 0:
             return fail("Call cannot be marked as ringing.", error="INVALID_STATE")
 
-        call = _reload_call(call_id)
+        call = _reload_call(call.name)
 
         # Notify caller that receiver's device/app is now ringing.
         publish_call_ringing(call)
@@ -576,16 +475,19 @@ def accept_call_impl(**kwargs):
         if interaction_error:
             return interaction_error
 
+        ensure_call_join_ready(call)
+
         if call.status == "ongoing" and int(call.is_active or 0) == 1:
             clear_missing_room_marker(call.name)
             token = issue_call_token(
                 identity=participant_identity(current_user),
                 room_name=call.room_name,
+                call_type=call.call_type,
                 metadata=_build_call_metadata(
                     user=current_user,
                     role="receiver",
                     conversation=call.conversation,
-                    call_id=call.name,
+                    call_id=public_call_id(call),
                     call_type=call.call_type,
                 ),
             )
@@ -599,6 +501,8 @@ def accept_call_impl(**kwargs):
             return err
 
         now = now_datetime()
+        if get_datetime(call.ring_expires_at) <= get_datetime(now):
+            return fail("Call is no longer ringing.", error="INVALID_STATE", http_status=409)
 
         frappe.db.sql(
             """
@@ -609,18 +513,22 @@ def accept_call_impl(**kwargs):
                 ringing_at = COALESCE(ringing_at, %s),
                 is_active = 1,
                 room_cleanup_pending = 0,
-                rtc_missing_since = NULL
+                rtc_missing_since = NULL,
+                state_version = state_version + 1
             WHERE name = %s
               AND receiver = %s
               AND status IN ('initiated', 'ringing')
+              AND rtc_provisioned_at IS NOT NULL
+              AND incoming_dispatched_at IS NOT NULL
+              AND ring_expires_at > %s
             """,
-            (now, now, call_id, current_user),
+            (now, now, call.name, current_user, now),
         )
 
         if frappe.db._cursor.rowcount == 0:
             return fail("Call cannot be accepted.", error="INVALID_STATE")
 
-        call = _reload_call(call_id)
+        call = _reload_call(call.name)
 
         # System message.
         upsert_call_system_message(
@@ -636,11 +544,12 @@ def accept_call_impl(**kwargs):
         token = issue_call_token(
             identity=participant_identity(current_user),
             room_name=call.room_name,
+            call_type=call.call_type,
             metadata=_build_call_metadata(
                 user=current_user,
                 role="receiver",
                 conversation=call.conversation,
-                call_id=call.name,
+                call_id=public_call_id(call),
                 call_type=call.call_type,
             ),
         )
@@ -705,11 +614,15 @@ def reject_call_impl(**kwargs):
                 data=_build_call_response(call=call, current_user=current_user),
             )
 
+        ensure_call_join_ready(call)
+
         err = validate_can_reject(call)
         if err:
             return err
 
         now = now_datetime()
+        if get_datetime(call.ring_expires_at) <= get_datetime(now):
+            return fail("Call is no longer ringing.", error="INVALID_STATE", http_status=409)
 
         frappe.db.sql(
             """
@@ -720,18 +633,20 @@ def reject_call_impl(**kwargs):
                 ended_at = %s,
                 is_active = 0,
                 room_cleanup_pending = 1,
-                rtc_missing_since = NULL
+                rtc_missing_since = NULL,
+                state_version = state_version + 1
             WHERE name = %s
               AND receiver = %s
               AND status IN ('initiated', 'ringing')
+              AND ring_expires_at > %s
             """,
-            (current_user, now, call_id, current_user),
+            (current_user, now, call.name, current_user, now),
         )
 
         if frappe.db._cursor.rowcount == 0:
             return fail("Call cannot be rejected.", error="INVALID_STATE")
 
-        call = _reload_call(call_id)
+        call = _reload_call(call.name)
         enqueue_room_cleanup(call.name)
 
         # System message.
@@ -804,6 +719,11 @@ def cancel_call_impl(**kwargs):
             return err
 
         now = now_datetime()
+        if (
+            call.incoming_dispatched_at
+            and (not call.ring_expires_at or get_datetime(call.ring_expires_at) <= get_datetime(now))
+        ):
+            return fail("Call is no longer ringing.", error="INVALID_STATE", http_status=409)
 
         frappe.db.sql(
             """
@@ -814,18 +734,20 @@ def cancel_call_impl(**kwargs):
                 ended_at = %s,
                 is_active = 0,
                 room_cleanup_pending = 1,
-                rtc_missing_since = NULL
+                rtc_missing_since = NULL,
+                state_version = state_version + 1
             WHERE name = %s
               AND caller = %s
               AND status IN ('initiated', 'ringing')
+              AND (incoming_dispatched_at IS NULL OR ring_expires_at > %s)
             """,
-            (current_user, now, call_id, current_user),
+            (current_user, now, call.name, current_user, now),
         )
 
         if frappe.db._cursor.rowcount == 0:
             return fail("Call cannot be cancelled.", error="INVALID_STATE")
 
-        call = _reload_call(call_id)
+        call = _reload_call(call.name)
         enqueue_room_cleanup(call.name)
 
         upsert_call_system_message(
@@ -834,7 +756,8 @@ def cancel_call_impl(**kwargs):
             content="📞 Call cancelled",
         )
 
-        publish_call_cancelled(call)
+        if call.incoming_dispatched_at:
+            publish_call_cancelled(call)
 
         return ok(
             "Call cancelled.",
@@ -912,17 +835,18 @@ def end_call_impl(**kwargs):
                 duration = %s,
                 is_active = 0,
                 room_cleanup_pending = 1,
-                rtc_missing_since = NULL
+                rtc_missing_since = NULL,
+                state_version = state_version + 1
             WHERE name = %s
               AND status = 'ongoing'
             """,
-            (current_user, now, duration, call_id),
+            (current_user, now, duration, call.name),
         )
 
         if frappe.db._cursor.rowcount == 0:
             return fail("Call cannot be ended.", error="INVALID_STATE")
 
-        call = _reload_call(call_id)
+        call = _reload_call(call.name)
         enqueue_room_cleanup(call.name)
 
         # System message.
@@ -1021,14 +945,15 @@ def request_video_upgrade_impl(**kwargs):
                 video_upgrade_status = 'requested',
                 video_upgrade_requested_by = %s,
                 video_upgrade_requested_at = %s,
-                video_upgrade_responded_at = NULL
+                video_upgrade_responded_at = NULL,
+                state_version = state_version + 1
             WHERE name = %s
               AND status = 'ongoing'
               AND call_type = 'audio'
               AND (caller = %s OR receiver = %s)
               AND IFNULL(video_upgrade_status, 'none') != 'requested'
             """,
-            (current_user, now, call_id, current_user, current_user),
+            (current_user, now, call.name, current_user, current_user),
         )
 
         if frappe.db._cursor.rowcount == 0:
@@ -1037,7 +962,7 @@ def request_video_upgrade_impl(**kwargs):
                 error="INVALID_STATE",
             )
 
-        call = _reload_call(call_id)
+        call = _reload_call(call.name)
 
         publish_video_upgrade_requested(call)
 
@@ -1153,7 +1078,8 @@ def respond_video_upgrade_impl(**kwargs):
                 SET
                     call_type = 'video',
                     video_upgrade_status = 'accepted',
-                    video_upgrade_responded_at = %s
+                    video_upgrade_responded_at = %s,
+                    state_version = state_version + 1
                 WHERE name = %s
                   AND status = 'ongoing'
                   AND call_type = 'audio'
@@ -1161,7 +1087,7 @@ def respond_video_upgrade_impl(**kwargs):
                   AND video_upgrade_requested_by != %s
                   AND (caller = %s OR receiver = %s)
                 """,
-                (now, call_id, current_user, current_user, current_user),
+                (now, call.name, current_user, current_user, current_user),
             )
 
             if frappe.db._cursor.rowcount == 0:
@@ -1170,7 +1096,7 @@ def respond_video_upgrade_impl(**kwargs):
                     error="INVALID_STATE",
                 )
 
-            call = _reload_call(call_id)
+            call = _reload_call(call.name)
 
             publish_video_upgrade_accepted(call)
 
@@ -1187,7 +1113,8 @@ def respond_video_upgrade_impl(**kwargs):
             UPDATE `tabAOS Call`
             SET
                 video_upgrade_status = 'declined',
-                video_upgrade_responded_at = %s
+                video_upgrade_responded_at = %s,
+                state_version = state_version + 1
             WHERE name = %s
               AND status = 'ongoing'
               AND call_type = 'audio'
@@ -1195,7 +1122,7 @@ def respond_video_upgrade_impl(**kwargs):
               AND video_upgrade_requested_by != %s
               AND (caller = %s OR receiver = %s)
             """,
-            (now, call_id, current_user, current_user, current_user),
+            (now, call.name, current_user, current_user, current_user),
         )
 
         if frappe.db._cursor.rowcount == 0:
@@ -1204,7 +1131,7 @@ def respond_video_upgrade_impl(**kwargs):
                 error="INVALID_STATE",
             )
 
-        call = _reload_call(call_id)
+        call = _reload_call(call.name)
 
         publish_video_upgrade_declined(call)
 

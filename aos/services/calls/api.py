@@ -86,8 +86,6 @@ def _normalize_response(response: dict[str, Any]) -> dict[str, Any]:
 def _reason(code: str) -> str:
     if code == "CALL_UNKNOWN_FIELD":
         return "unknown_field"
-    if code == "CALL_ALIAS_CONFLICT":
-        return "alias_conflict"
     if code in {"CALL_INVALID_IDENTIFIER", "CALL_INVALID_CURSOR"}:
         return "identifier"
     if code in {"CALL_ACCESS_DENIED", "CALL_ACCOUNT_UNAVAILABLE", "AUTH_REQUIRED", "LOGIN_REQUIRED"}:

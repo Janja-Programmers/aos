@@ -14,10 +14,12 @@ Example use case:
 from __future__ import annotations
 
 import frappe
+from frappe.utils import get_datetime, now_datetime
 
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
+from aos.services.calls.livekit import call_rtc_ready
 from aos.services.calls.policy import ensure_call_interaction_allowed
 
 from .constants import GET_CALL_STATUS_LIMIT_PER_MINUTE_PER_USER
@@ -55,6 +57,9 @@ def _can_show_incoming_ui(*, call, current_user: str) -> bool:
         current_user == call.receiver
         and call.status in ("initiated", "ringing")
         and _is_truthy(call.is_active)
+        and call_rtc_ready(call)
+        and bool(getattr(call, "ring_expires_at", None))
+        and get_datetime(call.ring_expires_at) > get_datetime(now_datetime())
     )
 
 
@@ -79,6 +84,7 @@ def _can_join_call(*, call, current_user: str) -> bool:
         _is_call_participant(call=call, current_user=current_user)
         and call.status == "ongoing"
         and _is_truthy(call.is_active)
+        and call_rtc_ready(call)
     )
 
 
@@ -198,7 +204,7 @@ def get_call_status_impl(**kwargs):
     if rl:
         return rl
 
-    call_id = kwargs.get("call_id") or kwargs.get("id")
+    call_id = kwargs.get("call_id")
 
     if not call_id:
         return fail("call_id is required.", error="VALIDATION_ERROR")

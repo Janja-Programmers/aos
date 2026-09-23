@@ -87,7 +87,7 @@ def active_call_for_users(*users: str):
         return None
     rows = frappe.db.sql(
         """
-        SELECT name, conversation, caller, receiver, call_type, status, is_active, room_name
+        SELECT name, public_id, conversation, caller, receiver, call_type, status, is_active, room_name, state_version, rtc_provisioned_at, incoming_dispatched_at, ring_expires_at
         FROM `tabAOS Call`
         WHERE is_active = 1
           AND status IN ('initiated', 'ringing', 'ongoing')

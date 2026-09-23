@@ -13,6 +13,7 @@ from typing import Any
 
 import json
 import frappe
+from frappe.utils import get_datetime
 
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit, rate_limit_key
@@ -65,9 +66,9 @@ def _normalize_call_ids(value) -> list[str]:
     Normalize call_ids from JSON/list/string input.
 
     Accepts:
-    - ["CALL-1", "CALL-2"]
-    - '["CALL-1", "CALL-2"]'
-    - "CALL-1"
+    - ["call_<opaque>", "call_<opaque>"]
+    - '["call_<opaque>", "call_<opaque>"]'
+    - "call_<opaque>"
     """
 
     if value is None:
@@ -160,13 +161,17 @@ def _get_call_row(call_id: str):
         """
         SELECT
             name,
+            public_id,
             conversation,
-            room_name,
             caller,
             receiver,
             status,
             call_type,
             is_active,
+            state_version,
+            rtc_provisioned_at,
+            incoming_dispatched_at,
+            ring_expires_at,
             visible_to_caller,
             visible_to_receiver,
             ringing_at,
@@ -174,9 +179,13 @@ def _get_call_row(call_id: str):
             ended_at,
             ended_by,
             duration,
+            video_upgrade_status,
+            video_upgrade_requested_by,
+            video_upgrade_requested_at,
+            video_upgrade_responded_at,
             creation
         FROM `tabAOS Call`
-        WHERE name = %(call_id)s
+        WHERE public_id = %(call_id)s
         LIMIT 1
         """,
         {"call_id": call_id},
@@ -375,8 +384,8 @@ def _finalize_group(group: dict) -> dict:
     )
 
     group["cursor"] = {
-        "created_at": oldest_call.get("created_at") if oldest_call else None,
-        "name": oldest_call.get("call_id") if oldest_call else None,
+        "cursor_created_at": oldest_call.get("created_at") if oldest_call else None,
+        "cursor_call_id": oldest_call.get("call_id") if oldest_call else None,
     }
 
     return group
@@ -453,13 +462,17 @@ def _fetch_call_rows(
         f"""
         SELECT
             name,
+            public_id,
             conversation,
-            room_name,
             caller,
             receiver,
             status,
             call_type,
             is_active,
+            state_version,
+            rtc_provisioned_at,
+            incoming_dispatched_at,
+            ring_expires_at,
             visible_to_caller,
             visible_to_receiver,
             ringing_at,
@@ -467,6 +480,10 @@ def _fetch_call_rows(
             ended_at,
             ended_by,
             duration,
+            video_upgrade_status,
+            video_upgrade_requested_by,
+            video_upgrade_requested_at,
+            video_upgrade_responded_at,
             creation
         FROM `tabAOS Call`
         WHERE {where_clause}
@@ -611,13 +628,17 @@ def _fetch_calls_between_boundaries(
         f"""
         SELECT
             name,
+            public_id,
             conversation,
-            room_name,
             caller,
             receiver,
             status,
             call_type,
             is_active,
+            state_version,
+            rtc_provisioned_at,
+            incoming_dispatched_at,
+            ring_expires_at,
             visible_to_caller,
             visible_to_receiver,
             ringing_at,
@@ -625,6 +646,10 @@ def _fetch_calls_between_boundaries(
             ended_at,
             ended_by,
             duration,
+            video_upgrade_status,
+            video_upgrade_requested_by,
+            video_upgrade_requested_at,
+            video_upgrade_responded_at,
             creation
         FROM `tabAOS Call`
         WHERE
@@ -679,7 +704,7 @@ def _delete_selected_call_logs(*, current_user: str, call_ids: list[str]) -> int
         SET visible_to_caller = 0
         WHERE caller = %s
           AND IFNULL(visible_to_caller, 1) = 1
-          AND name IN ({placeholders})
+          AND public_id IN ({placeholders})
     """
 
     frappe.db.sql(
@@ -694,7 +719,7 @@ def _delete_selected_call_logs(*, current_user: str, call_ids: list[str]) -> int
         SET visible_to_receiver = 0
         WHERE receiver = %s
           AND IFNULL(visible_to_receiver, 1) = 1
-          AND name IN ({placeholders})
+          AND public_id IN ({placeholders})
     """
 
     frappe.db.sql(
@@ -751,6 +776,26 @@ def _clear_all_call_history(*, current_user: str) -> int:
     return deleted_count
 
 
+def _resolve_history_cursor(*, current_user: str, cursor_call_id: str, cursor_created_at: str):
+    call, err = _validate_group_boundary_call(
+        call_id=cursor_call_id,
+        current_user=current_user,
+        label="Cursor",
+    )
+    if err:
+        return None, None, err
+
+    # Parse the timestamp so malformed cursors fail predictably, but never trust
+    # a client-supplied sort key for pagination. The authorized opaque call ID
+    # resolves the canonical database creation/name boundary server-side.
+    try:
+        get_datetime(cursor_created_at)
+    except Exception:
+        return None, None, fail("Invalid call-history cursor.", error="VALIDATION_ERROR")
+
+    return call.creation, call.name, None
+
+
 # LIST CALLS
 def list_calls_impl(**kwargs):
     current_user, err = require_login()
@@ -777,15 +822,15 @@ def list_calls_impl(**kwargs):
     filter_type = (kwargs.get("type") or "all").strip().lower()
 
     cursor_created_at = _clean_str(kwargs.get("cursor_created_at"))
-    cursor_name = _clean_str(kwargs.get("cursor_name"))
+    cursor_call_id = _clean_str(kwargs.get("cursor_call_id"))
 
     # Validate filter type
     if filter_type not in ("all", "incoming", "outgoing", "missed"):
         return fail("Invalid type.", error="VALIDATION_ERROR")
 
-    if bool(cursor_created_at) != bool(cursor_name):
+    if bool(cursor_created_at) != bool(cursor_call_id):
         return fail(
-            "cursor_created_at and cursor_name must be provided together.",
+            "cursor_created_at and cursor_call_id must be provided together.",
             error="VALIDATION_ERROR",
         )
 
@@ -803,6 +848,16 @@ def list_calls_impl(**kwargs):
             conversation_id=conversation_id,
             filter_type=filter_type,
         )
+
+        cursor_name = None
+        if cursor_call_id:
+            cursor_created_at, cursor_name, cursor_error = _resolve_history_cursor(
+                current_user=current_user,
+                cursor_call_id=cursor_call_id,
+                cursor_created_at=cursor_created_at,
+            )
+            if cursor_error:
+                return cursor_error
 
         result = _build_grouped_history(
             current_user=current_user,
@@ -899,7 +954,7 @@ def get_call_group_details_impl(**kwargs):
 
             calls.append(serialized)
 
-            if row.name == oldest_call_id:
+            if row.name == oldest_call.name:
                 break
 
         if not calls:

@@ -35,6 +35,10 @@ aos.patches.v1_0.install_chat_indexes
 # Calls data reconciliation must run before Calls uniqueness/query indexes.
 aos.patches.v1_0.harden_calls_subsystem
 aos.patches.v1_0.install_call_indexes
+# Opaque public IDs/readiness migrate after the original Calls contract, then
+# install the new lookup/dispatch indexes and remove deprecated timeout index.
+aos.patches.v1_0.harden_calls_public_contract
+aos.patches.v1_0.install_call_public_indexes
 
 # Shared human-report moderation hardening.
 aos.patches.v1_0.harden_reports_subsystem

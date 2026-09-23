@@ -158,7 +158,8 @@ _ALLOWED_CALL_EVENTS = {
     "end_call", "request_video_upgrade", "respond_video_upgrade", "get_call_status",
     "get_call_token", "list_calls", "get_call_group_details", "delete_call_logs",
     "clear_call_history", "token_issue", "room_cleanup", "room_cleanup_enqueue",
-    "active_room_reconcile", "active_policy_reconcile", "missed", "timeout",
+    "room_provision", "room_provision_enqueue", "room_provision_finalize", "incoming_dispatch",
+    "active_room_reconcile", "active_policy_reconcile", "active_reconcile", "missed", "timeout",
 }
 _ALLOWED_CALL_OUTCOMES = {"success", "failure", "rejected", "conflict", "idempotent"}
 

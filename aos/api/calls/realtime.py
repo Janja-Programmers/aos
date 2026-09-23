@@ -9,6 +9,8 @@ import frappe
 
 from aos.api.shared.user_display import get_user_display, get_user_display_map
 from aos.services.accounts.identity import public_account_id_for_user
+from aos.services.calls.identifiers import public_call_id
+from aos.services.calls.livekit import call_rtc_ready
 
 # HELPERS
 def _get_user_summary(
@@ -77,14 +79,18 @@ def serialize_call_for_realtime(
     )
     ended_by = _get_user_summary(getattr(call, "ended_by", None), user_summaries)
 
+    call_id = public_call_id(call)
+
     return {
-        "id": call.name,
-        "call_id": call.name,
+        "call_id": call_id,
         "conversation_id": call.conversation,
-        "room_name": call.room_name,
-        "status": event_status or call.status,
+        "status": call.status,
+        "event_status": event_status or call.status,
+        "state_version": int(getattr(call, "state_version", 1) or 1),
+        "rtc_ready": call_rtc_ready(call),
+        "ring_expires_at": getattr(call, "ring_expires_at", None),
         "call_type": call.call_type,
-        "is_active": call.is_active,
+        "is_active": bool(call.is_active),
         "caller": caller.get("account_id") if caller else None,
         "caller_display_name": caller.get("display_name") if caller else "AOS User",
         "caller_avatar": caller.get("avatar") if caller else None,
@@ -142,6 +148,35 @@ def _publish(event: str, message: dict, users: list[str]):
 
 
 # EVENTS
+def publish_call_ready(call):
+    """Tell only the caller that fail-closed RTC provisioning completed."""
+    message = serialize_call_for_realtime(
+        call,
+        current_user=call.caller,
+    )
+    frappe.publish_realtime(
+        event="aos_call_ready",
+        message=message,
+        user=call.caller,
+        after_commit=True,
+    )
+
+
+def publish_call_failed_to_caller(call):
+    """Close caller UI when provisioning failed before receiver dispatch."""
+    message = serialize_call_for_realtime(
+        call,
+        current_user=call.caller,
+        event_status="failed",
+    )
+    frappe.publish_realtime(
+        event="aos_call_ended",
+        message=message,
+        user=call.caller,
+        after_commit=True,
+    )
+
+
 def publish_incoming_call(call, receiver: str):
     """
     Notify receiver that caller is calling.
@@ -189,72 +224,90 @@ def publish_call_ringing(call):
 
 
 def publish_call_accepted(call):
-    """
-    Notify caller that receiver accepted.
-
-    Sent to:
-    - caller only
-    """
-
-    message = serialize_call_for_realtime(
+    """Publish acceptance to every session of both participants."""
+    caller_message = serialize_call_for_realtime(
         call,
         current_user=call.caller,
         event_status="accepted",
         actor=call.receiver,
     )
-
+    receiver_message = serialize_call_for_realtime(
+        call,
+        current_user=call.receiver,
+        event_status="accepted",
+        actor=call.receiver,
+    )
     frappe.publish_realtime(
         event="aos_call_accepted",
-        message=message,
+        message=caller_message,
         user=call.caller,
         after_commit=True,
     )
+    if call.receiver != call.caller:
+        frappe.publish_realtime(
+            event="aos_call_accepted",
+            message=receiver_message,
+            user=call.receiver,
+            after_commit=True,
+        )
 
 
 def publish_call_rejected(call):
-    """
-    Notify caller that receiver rejected.
-
-    Sent to:
-    - caller only
-    """
-
-    message = serialize_call_for_realtime(
+    """Publish decline to every session of both participants."""
+    caller_message = serialize_call_for_realtime(
         call,
         current_user=call.caller,
         event_status="rejected",
         actor=call.receiver,
     )
-
+    receiver_message = serialize_call_for_realtime(
+        call,
+        current_user=call.receiver,
+        event_status="rejected",
+        actor=call.receiver,
+    )
     frappe.publish_realtime(
         event="aos_call_rejected",
-        message=message,
+        message=caller_message,
         user=call.caller,
         after_commit=True,
     )
+    if call.receiver != call.caller:
+        frappe.publish_realtime(
+            event="aos_call_rejected",
+            message=receiver_message,
+            user=call.receiver,
+            after_commit=True,
+        )
 
 
 def publish_call_cancelled(call):
-    """
-    Notify receiver that caller cancelled before answer.
-
-    Sent to:
-    - receiver only
-    """
-
-    message = serialize_call_for_realtime(
+    """Publish caller cancellation to every session of both participants."""
+    caller_message = serialize_call_for_realtime(
+        call,
+        current_user=call.caller,
+        event_status="cancelled",
+        actor=call.caller,
+    )
+    receiver_message = serialize_call_for_realtime(
         call,
         current_user=call.receiver,
         event_status="cancelled",
         actor=call.caller,
     )
-
     frappe.publish_realtime(
         event="aos_call_cancelled",
-        message=message,
-        user=call.receiver,
+        message=caller_message,
+        user=call.caller,
         after_commit=True,
     )
+    if call.receiver != call.caller:
+        frappe.publish_realtime(
+            event="aos_call_cancelled",
+            message=receiver_message,
+            user=call.receiver,
+            after_commit=True,
+        )
 
 
 def publish_call_ended(call, *, event_status: str = "ended"):

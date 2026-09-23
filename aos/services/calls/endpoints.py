@@ -5,8 +5,8 @@ from __future__ import annotations
 from .validation import CALL_ID_RE, CONVERSATION_ID_RE, EndpointSpec
 
 
-def _spec(fields: set[str], *, aliases=(), ids=()) -> EndpointSpec:
-    return EndpointSpec(frozenset(fields), tuple(tuple(group) for group in aliases), tuple(ids))
+def _spec(fields: set[str], *, ids=()) -> EndpointSpec:
+    return EndpointSpec(frozenset(fields), tuple(ids))
 
 
 ENDPOINT_SPECS: dict[str, EndpointSpec] = {
@@ -18,11 +18,11 @@ ENDPOINT_SPECS: dict[str, EndpointSpec] = {
     "end_call": _spec({"call_id"}, ids=(("call_id", CALL_ID_RE),)),
     "request_video_upgrade": _spec({"call_id"}, ids=(("call_id", CALL_ID_RE),)),
     "respond_video_upgrade": _spec({"call_id", "action"}, ids=(("call_id", CALL_ID_RE),)),
-    "get_call_status": _spec({"call_id", "id"}, aliases=(("call_id", "id"),), ids=(("call_id", CALL_ID_RE), ("id", CALL_ID_RE))),
+    "get_call_status": _spec({"call_id"}, ids=(("call_id", CALL_ID_RE),)),
     "get_call_token": _spec({"call_id"}, ids=(("call_id", CALL_ID_RE),)),
     "list_calls": _spec(
-        {"limit", "conversation_id", "type", "cursor_created_at", "cursor_name"},
-        ids=(("conversation_id", CONVERSATION_ID_RE), ("cursor_name", CALL_ID_RE)),
+        {"limit", "conversation_id", "type", "cursor_created_at", "cursor_call_id"},
+        ids=(("conversation_id", CONVERSATION_ID_RE), ("cursor_call_id", CALL_ID_RE)),
     ),
     "get_call_group_details": _spec(
         {"latest_call_id", "oldest_call_id"},

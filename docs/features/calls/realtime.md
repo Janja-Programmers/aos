@@ -1,29 +1,29 @@
-# Calls realtime and native incoming delivery
+# Calls realtime and incoming delivery
 
-Realtime accelerates synchronization; `AOS Call` persisted state is authoritative and recoverable through `get_call_status`.
+Realtime accelerates synchronization; the durable `AOS Call` row is authoritative. Every lifecycle publish uses `after_commit=True`, and client payloads include the opaque public call ID plus monotonic `state_version` so clients can ignore duplicate or older events.
 
-Existing event names are preserved:
+Existing events are preserved, with one readiness event added for fail-closed provisioning:
 
+- `aos_call_ready` — caller only, after room provisioning + durable incoming dispatch
 - `aos_incoming_call` — receiver only
 - `aos_call_ringing` — caller only
-- `aos_call_accepted` — caller only
-- `aos_call_rejected` — caller only
-- `aos_call_cancelled` — receiver only
+- `aos_call_accepted` — both participants, so every authenticated session converges
+- `aos_call_rejected` — both participants
+- `aos_call_cancelled` — both participants when an incoming call had actually been dispatched
 - `aos_call_ended` — both participants
-- `aos_call_not_answered` — both participants, with receiver-side missed semantics
-- `aos_call_video_upgrade_requested`
-- `aos_call_video_upgrade_accepted`
-- `aos_call_video_upgrade_declined`
-- `aos_call_video_upgrade_cancelled`
+- `aos_call_not_answered` — both participants with receiver-side missed semantics
+- video-upgrade requested/accepted/declined/cancelled events
 
-Every Calls realtime publish uses `after_commit=True`, so rolled-back state cannot produce ghost lifecycle events. Payloads use the shared public serializer and expose public call/conversation IDs, opaque `ACC-*` participant/actor IDs, safe display metadata, call type/state, and authoritative timestamps/duration. Internal User/email IDs, LiveKit JWTs, secrets, and push tokens are not emitted.
+Payloads use the shared public serializer: public call/conversation IDs, opaque Accounts identities, safe display metadata, call type/durable `status`, transport `event_status`, timestamps/duration, `rtc_ready`, `ring_expires_at`, and `state_version`. They do not expose Frappe Call names, User/email IDs, room names, LiveKit JWTs, provider secrets, or push tokens.
 
-## Background / terminated mobile
+## Multi-device and stale events
 
-Incoming delivery is a **transient** notification-delivery/outbox event with event/type `aos_incoming_call`, call ID, call type, public caller identity, and safe caller display metadata. It is intentionally separate from persistent notification-center entries.
+Durable lifecycle is account-scoped rather than device-scoped. Duplicate accepts/ends from multiple authenticated sessions converge through locked/idempotent mutations. Tokens use the same server-controlled public account identity; clients cannot choose a second RTC identity to bypass call membership.
 
-For **Android**, the notification-delivery companion sends this one event as high-priority **data-only FCM**, preserves the 30-second TTL, and applies a stable collapse key derived from the public Call ID. It deliberately omits the top-level FCM `notification` block and Android notification-channel options so a background message handler can receive the data and present native ConnectionService/CallKit-style UI. All non-call notifications retain the existing alert+data behavior.
+A reconnecting or background-restored client should call `get_call_status`. `can_show_incoming_ui`, `can_accept`, and `can_join` are derived from current durable status/policy/readiness, not from a cached realtime event. A stale native action therefore cannot revive a cancelled, missed, ended, blocked, or failed call.
 
-For **iOS/web**, the current push-token model keeps the existing alert+data FCM delivery. This repository does **not** model APNs PushKit/VoIP tokens or a Calls-specific APNs VoIP provider, so it must not claim guaranteed terminated-state iOS native CallKit wake-up. If iOS requires that guarantee, the device/push-token infrastructure must add the platform VoIP-token contract separately; it is not synthesized inside Calls.
+## Notifications
 
-A stale native action must first reconcile with `get_call_status`. `can_show_incoming_ui`/`can_accept` are true only for the intended receiver while the call remains active and `initiated`/`ringing`. `get_call_token` refuses a receiver before acceptance and refuses all terminal calls.
+`aos_incoming_call` remains transient delivery through the hardened Notifications outbox/fanout contract. `missed_call` remains the persistent notification-center semantic. Notification deduplication keys use the opaque public call ID; Calls does not implement a second push pipeline.
+
+The existing platform-specific notification-delivery behavior is unchanged by this backend pass.

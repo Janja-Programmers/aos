@@ -10,8 +10,9 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Pattern
 
 from .errors import CallError
+from .identifiers import PUBLIC_CALL_ID_RE
 
-CALL_ID_RE = re.compile(r"^CALL-\d{4}-\d{5}$")
+CALL_ID_RE = PUBLIC_CALL_ID_RE
 CONVERSATION_ID_RE = re.compile(r"^CONV-\d{4}-\d{5}$")
 MAX_REQUEST_BYTES = 32 * 1024
 MAX_TEXT_LENGTH = 128
@@ -22,7 +23,6 @@ TRANSPORT_FIELDS = frozenset({"cmd"})
 @dataclass(frozen=True)
 class EndpointSpec:
     allowed_fields: frozenset[str]
-    aliases: tuple[tuple[str, ...], ...] = ()
     id_fields: tuple[tuple[str, Pattern[str]], ...] = ()
 
 
@@ -89,16 +89,6 @@ def validate_public_kwargs(kwargs: Mapping[str, Any], spec: EndpointSpec) -> dic
             data={"fields": unknown[:10]},
         )
 
-    for group in spec.aliases:
-        supplied = [field for field in group if clean.get(field) not in (None, "")]
-        if len(supplied) > 1:
-            values = {str(clean[field]).strip() for field in supplied}
-            if len(values) > 1:
-                raise CallError(
-                    "Conflicting Calls request aliases.",
-                    code="CALL_ALIAS_CONFLICT",
-                    data={"fields": supplied},
-                )
 
     for field, pattern in spec.id_fields:
         value = clean.get(field)

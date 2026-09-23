@@ -73,14 +73,26 @@ def _run(operation) -> RoomAdminResult:
     return asyncio.run(_retry(operation))
 
 
-def ensure_room(room_name: str) -> RoomAdminResult:
+def ensure_room(room_name: str, *, max_participants: int | None = None) -> RoomAdminResult:
     room = str(room_name or "").strip()
     if not room or len(room) > MAX_ADMIN_ROOM_NAME_LENGTH:
         return RoomAdminResult(False, "invalid_room")
 
+    bounded_max = None
+    if max_participants is not None:
+        try:
+            bounded_max = int(max_participants)
+        except (TypeError, ValueError):
+            return RoomAdminResult(False, "invalid_room")
+        if bounded_max < 1 or bounded_max > MAX_ADMIN_PARTICIPANTS:
+            return RoomAdminResult(False, "invalid_room")
+
     async def operation(client, api):
         try:
-            await client.room.create_room(api.CreateRoomRequest(name=room, empty_timeout=300))
+            request = {"name": room, "empty_timeout": 300}
+            if bounded_max is not None:
+                request["max_participants"] = bounded_max
+            await client.room.create_room(api.CreateRoomRequest(**request))
             return RoomAdminResult(True, "created")
         except Exception as exc:
             if _category(exc) == "already_exists":

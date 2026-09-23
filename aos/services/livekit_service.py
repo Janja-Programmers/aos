@@ -109,15 +109,17 @@ class LiveKitService:
         room_name: str,
         participant_name: str | None = None,
         metadata: str | None = None,
+        call_type: str = "audio",
     ) -> str:
-        """
-        Generate a token for a call participant.
+        """Generate a least-privilege token for one call participant."""
+        normalized_call_type = str(call_type or "").strip().lower()
+        if normalized_call_type not in {"audio", "video"}:
+            frappe.throw(_("Invalid call type for LiveKit token."))
 
-        Call participants may:
-        - publish media
-        - subscribe to media
-        - publish data
-        """
+        publish_sources = ["microphone"]
+        if normalized_call_type == "video":
+            publish_sources.append("camera")
+
         return cls._generate_token(
             identity=user,
             room_name=room_name,
@@ -125,7 +127,9 @@ class LiveKitService:
             metadata=metadata,
             can_publish=True,
             can_subscribe=True,
-            can_publish_data=True,
+            can_publish_data=False,
+            can_publish_sources=publish_sources,
+            can_update_own_metadata=False,
             token_ttl=cls._get_token_ttl(),
         )
 
@@ -182,6 +186,8 @@ class LiveKitService:
             can_publish_data=grants[
                 "can_publish_data"
             ],
+            can_publish_sources=None,
+            can_update_own_metadata=None,
             token_ttl=cls._get_live_token_ttl(),
         )
 
@@ -378,6 +384,8 @@ class LiveKitService:
         can_publish: bool,
         can_subscribe: bool,
         can_publish_data: bool,
+        can_publish_sources: list[str] | None,
+        can_update_own_metadata: bool | None,
         token_ttl: timedelta,
     ) -> str:
         """
@@ -434,21 +442,19 @@ class LiveKitService:
                 metadata
             )
 
-        token = token.with_grants(
-            api.VideoGrants(
-                room_join=True,
-                room=normalized_room_name,
-                can_publish=bool(
-                    can_publish
-                ),
-                can_subscribe=bool(
-                    can_subscribe
-                ),
-                can_publish_data=bool(
-                    can_publish_data
-                ),
-            )
-        )
+        grant_kwargs: dict[str, Any] = {
+            "room_join": True,
+            "room": normalized_room_name,
+            "can_publish": bool(can_publish),
+            "can_subscribe": bool(can_subscribe),
+            "can_publish_data": bool(can_publish_data),
+        }
+        if can_publish_sources is not None:
+            grant_kwargs["can_publish_sources"] = list(can_publish_sources)
+        if can_update_own_metadata is not None:
+            grant_kwargs["can_update_own_metadata"] = bool(can_update_own_metadata)
+
+        token = token.with_grants(api.VideoGrants(**grant_kwargs))
 
         token = token.with_ttl(token_ttl)
 

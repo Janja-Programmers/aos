@@ -7,12 +7,14 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import now_datetime, get_datetime
 
+from aos.services.calls.identifiers import generate_public_call_id
+
 
 ACTIVE_STATUSES = {"initiated", "ringing", "ongoing"}
 TERMINAL_STATUSES = {"ended", "missed", "rejected", "failed", "cancelled"}
 
 VALID_STATUS_TRANSITIONS = {
-    "initiated": {"ringing", "missed", "failed", "cancelled"},
+    "initiated": {"ringing", "ongoing", "rejected", "missed", "failed", "cancelled"},
     "ringing": {"ongoing", "rejected", "missed", "failed", "cancelled"},
     "ongoing": {"ended", "failed"},
     "ended": set(),
@@ -32,6 +34,7 @@ VALID_VIDEO_UPGRADE_STATUSES = {
 
 
 IMMUTABLE_FIELDS_AFTER_INSERT = {
+    "public_id",
     "conversation",
     "caller",
     "receiver",
@@ -50,6 +53,7 @@ class AOSCall(Document):
         self._validate_single_active_call_per_conversation()
 
     def before_insert(self):
+        self._set_public_id()
         self._set_room_name()
         self._set_initial_state()
         self._set_visibility_defaults()
@@ -57,6 +61,7 @@ class AOSCall(Document):
 
     def before_save(self):
         self._prevent_identity_modification()
+        self._increment_state_version_on_document_mutation()
         self._handle_status_side_effects()
         self._compute_duration()
 
@@ -215,6 +220,7 @@ class AOSCall(Document):
             self.status = "initiated"
 
         self.is_active = 1 if self.status in ACTIVE_STATUSES else 0
+        self.state_version = max(1, int(self.state_version or 1))
 
     def _set_visibility_defaults(self):
         """
@@ -233,11 +239,42 @@ class AOSCall(Document):
         if not self.video_upgrade_status:
             self.video_upgrade_status = "none"
 
+    def _set_public_id(self):
+        if not self.public_id:
+            self.public_id = generate_public_call_id()
+
     def _set_room_name(self):
         if not self.room_name:
-            self.room_name = (
-                f"call:{self.conversation}:{frappe.generate_hash(length=12)}"
-            )
+            # RTC room names are server-owned opaque values and are independent
+            # from client-visible call IDs. Clients never choose or receive them.
+            self.room_name = f"call:{frappe.generate_hash(length=32)}"
+
+    def _increment_state_version_on_document_mutation(self):
+        if self.is_new():
+            return
+
+        original = frappe.db.get_value(
+            self.doctype,
+            self.name,
+            [
+                "status",
+                "call_type",
+                "video_upgrade_status",
+                "video_upgrade_requested_by",
+                "video_upgrade_requested_at",
+                "video_upgrade_responded_at",
+            ],
+            as_dict=True,
+        )
+        if not original:
+            return
+
+        changed = any(
+            self.get(fieldname) != original.get(fieldname)
+            for fieldname in original
+        )
+        if changed:
+            self.state_version = max(1, int(self.state_version or 1)) + 1
 
     def _handle_status_side_effects(self):
         now = now_datetime()

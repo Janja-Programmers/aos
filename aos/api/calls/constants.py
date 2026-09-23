@@ -5,7 +5,7 @@ Rate limit constants are per minute per user.
 
 Design notes:
 - initiate_call is lower because it creates calls, sends realtime events,
-  notifications, system messages, timeout jobs, and LiveKit tokens.
+  durable setup state, notifications, system messages, and shared LiveKit provisioning.
 - accept/reject/cancel/end are normal call actions.
 - mark_call_ringing can be called by the receiver UI when incoming call
   screen is shown, so it can be a little higher but still bounded.
@@ -22,12 +22,8 @@ Design notes:
 - clear_call_history hides all visible call logs for the current user only.
 - get_call_status is used by Flutter to validate call state before restoring
   incoming call UI from background/terminated push payloads.
-- CALL_TIMEOUT_SECONDS is used by initiate_call to pass the timeout delay
-  to the queued timeout job.
-- CALL_TIMEOUT_JOB_PATH is the dotted path to the background timeout task.
-- CALL_TIMEOUT_JOB_QUEUE controls which Frappe queue handles timeout jobs.
-- CALL_TIMEOUT_JOB_EXTRA_BUFFER_SECONDS gives the timeout job enough worker
-  time to sleep and still complete safely before the queue timeout.
+- CALL_RING_TIMEOUT_SECONDS is the durable unanswered-call window. The worker
+  writes ring_expires_at when incoming delivery becomes visible to the callee.
 """
 
 # Call lifecycle rate limits
@@ -62,8 +58,6 @@ CLEAR_CALL_HISTORY_LIMIT_PER_MINUTE_PER_USER = 20
 GET_CALL_STATUS_LIMIT_PER_MINUTE_PER_USER = 120
 
 
-# Missed call timeout enqueue constants
-CALL_TIMEOUT_SECONDS = 30
-CALL_TIMEOUT_JOB_PATH = "aos.tasks.calls.handle_call_timeout"
-CALL_TIMEOUT_JOB_QUEUE = "short"
-CALL_TIMEOUT_JOB_EXTRA_BUFFER_SECONDS = 60
+# Missed call timeout. The minute scheduler scans indexed durable state;
+# Calls do not consume one sleeping background worker per ring.
+CALL_RING_TIMEOUT_SECONDS = 30

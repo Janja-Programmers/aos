@@ -106,7 +106,8 @@ def _finalize_policy_failure(call_id: str, *, observed_at) -> bool:
         SET status = 'failed', ended_at = %s,
             duration = GREATEST(0, TIMESTAMPDIFF(SECOND, COALESCE(started_at, %s), %s)),
             is_active = 0, room_cleanup_pending = 1,
-            rtc_missing_since = NULL, rtc_last_checked_at = %s
+            rtc_missing_since = NULL, rtc_last_checked_at = %s,
+            state_version = state_version + 1
         WHERE name = %s AND status = 'ongoing' AND is_active = 1
         """,
         (observed_at, observed_at, observed_at, observed_at, call_id),
@@ -148,7 +149,8 @@ def _finalize_missing_room(call_id: str, *, observed_at, missing_cutoff) -> bool
         SET status = 'failed', ended_at = %s,
             duration = GREATEST(0, TIMESTAMPDIFF(SECOND, COALESCE(started_at, %s), %s)),
             is_active = 0, room_cleanup_pending = 0,
-            rtc_missing_since = NULL, rtc_last_checked_at = %s
+            rtc_missing_since = NULL, rtc_last_checked_at = %s,
+            state_version = state_version + 1
         WHERE name = %s AND status = 'ongoing' AND is_active = 1
           AND rtc_missing_since IS NOT NULL AND rtc_missing_since <= %s
         """,

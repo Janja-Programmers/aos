@@ -14,8 +14,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import frappe
+from frappe.utils import get_datetime, now_datetime
 import requests
-from frappe.utils import now_datetime
 
 from aos.api.shared.db import is_duplicate_entry_error
 from aos.services.accounts.identity import public_account_id_for_user
@@ -348,12 +348,26 @@ def _delivery_suppression_reason(job) -> str | None:
 		return "unsupported_transient_event"
 	data = _json_loads(job.payload_json, {})
 	call_id = _clean(data.get("call_id")) if isinstance(data, dict) else ""
-	if not call_id or not frappe.db.exists("AOS Call", call_id):
+	if not call_id:
 		return "call_missing"
-	call = frappe.db.get_value("AOS Call", call_id, ["caller", "receiver", "status"], as_dict=True) or {}
+	# Incoming-call payloads carry the opaque client-facing Calls public ID.
+	# Resolve it server-side; never require or expose the internal Frappe name.
+	call = frappe.db.get_value(
+		"AOS Call",
+		{"public_id": call_id},
+		["caller", "receiver", "status", "ring_expires_at"],
+		as_dict=True,
+	) or {}
+	if not call:
+		return "call_missing"
 	if _clean(call.get("receiver")) != _clean(job.user):
 		return "call_recipient_mismatch"
 	if _clean(call.get("status")).lower() not in {"initiated", "ringing"}:
+		return "call_not_ringing"
+	if (
+		not call.get("ring_expires_at")
+		or get_datetime(call.get("ring_expires_at")) <= now_datetime()
+	):
 		return "call_not_ringing"
 	caller = _clean(call.get("caller"))
 	if not caller:

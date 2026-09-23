@@ -1,22 +1,33 @@
-"""
-Call background tasks.
-
-Handles:
-- per-call missed call timeout
-- missed call cleanup detection
-"""
+"""Calls background tasks built on the shared LiveKit/Notifications infrastructure."""
 
 from __future__ import annotations
-import time
 
 import frappe
 from frappe.utils import add_to_date, now_datetime
 
-from aos.api.calls.realtime import publish_call_not_answered
+from aos.api.calls.constants import CALL_RING_TIMEOUT_SECONDS
+from aos.api.calls.realtime import (
+    publish_call_failed_to_caller,
+    publish_call_not_answered,
+    publish_call_ready,
+    publish_incoming_call,
+    serialize_call_for_realtime,
+)
 from aos.api.calls.utils import upsert_call_system_message
-from aos.services.calls.livekit import cleanup_room, enqueue_room_cleanup, pending_cleanup_call_ids
+from aos.services.calls.identifiers import public_call_id
+from aos.services.calls.livekit import (
+    cleanup_room,
+    enqueue_room_cleanup,
+    enqueue_room_provisioning,
+    pending_cleanup_call_ids,
+    provision_call_room as provision_livekit_room,
+)
 from aos.services.calls.observability import call_log
-from aos.services.calls.policy import ensure_call_interaction_allowed
+from aos.services.calls.policy import (
+    ensure_call_interaction_allowed,
+    lock_call_row,
+    lock_users_for_call,
+)
 from aos.services.calls.reconciliation import (
     active_room_candidates,
     reconcile_active_policy,
@@ -25,10 +36,12 @@ from aos.services.calls.reconciliation import (
 from aos.services.notifications.service import NotificationService
 
 
-# CONSTANTS
-CALL_TIMEOUT_SECONDS = 30
-CALL_CLEANUP_TIMEOUT_SECONDS = 90
-BATCH_SIZE = 100
+# Bounded scheduler work. Calls are keyset/index driven; there is no per-call
+# sleeping worker and no process-local state required for correctness.
+MISSED_CALL_BATCH_SIZE = 200
+MISSED_CALL_MAX_BATCHES_PER_RUN = 5
+PROVISION_RECOVERY_BATCH_SIZE = 100
+PROVISION_RECOVERY_AGE_SECONDS = 60
 
 
 def _log_error(title: str):
@@ -36,28 +49,211 @@ def _log_error(title: str):
     frappe.log_error("Unexpected Calls background-task failure.", title)
 
 
-def _safe_delay_seconds(delay_seconds=None) -> int:
-    """
-    Normalize timeout delay.
+def _reload_call(call_name: str):
+    return frappe.get_doc("AOS Call", call_name)
 
-    The timeout job receives delay_seconds from call.py.
-    If missing or invalid, fall back to CALL_TIMEOUT_SECONDS.
-    """
+
+def _terminalize_provision_failure(call_name: str, *, ended_at) -> bool:
+    """Fail a still-pending call without overwriting a concurrent user action."""
+    frappe.db.sql(
+        """
+        UPDATE `tabAOS Call`
+        SET
+            status = 'failed',
+            ended_at = %s,
+            is_active = 0,
+            room_cleanup_pending = 1,
+            rtc_missing_since = NULL,
+            state_version = state_version + 1
+        WHERE name = %s
+          AND status = 'initiated'
+          AND is_active = 1
+          AND incoming_dispatched_at IS NULL
+        """,
+        (ended_at, call_name),
+    )
+    return frappe.db._cursor.rowcount > 0
+
+
+def _run_provision_failure_side_effects(call) -> None:
     try:
-        value = int(delay_seconds if delay_seconds is not None else CALL_TIMEOUT_SECONDS)
+        upsert_call_system_message(
+            call_id=call.name,
+            conversation_id=call.conversation,
+            content="📞 Call failed",
+        )
     except Exception:
-        value = CALL_TIMEOUT_SECONDS
+        _log_error(f"AOS Call Provision Failure Message Failed: {call.name}")
 
-    return max(0, value)
+    enqueue_room_cleanup(call.name)
+
+    try:
+        publish_call_failed_to_caller(call)
+    except Exception:
+        _log_error(f"AOS Call Provision Failure Realtime Failed: {call.name}")
+
+
+def _incoming_push_payload(call) -> dict:
+    payload = serialize_call_for_realtime(
+        call,
+        current_user=call.receiver,
+        event_status="incoming",
+        actor=call.caller,
+    )
+    payload.update(
+        {
+            "event": "aos_incoming_call",
+            "type": "incoming_call",
+            "notification_type": "incoming_call",
+        }
+    )
+    return payload
+
+
+# TASK: PROVISION SHARED LIVEKIT ROOM + DISPATCH INCOMING CALL
+def provision_call_room(call_name: str):
+    """Provision a 1:1 room without holding DB locks across provider I/O.
+
+    The durable row remains ``initiated`` while the shared LiveKit admin layer
+    provisions the room. Incoming realtime/push and caller readiness are emitted
+    only after room existence is confirmed and policy/state are revalidated.
+    """
+    call_name = str(call_name or "").strip()
+    if not call_name:
+        return
+
+    try:
+        candidate = frappe.db.get_value(
+            "AOS Call",
+            call_name,
+            [
+                "name",
+                "room_name",
+                "caller",
+                "receiver",
+                "status",
+                "is_active",
+                "incoming_dispatched_at",
+            ],
+            as_dict=True,
+        )
+        if not candidate:
+            return
+        if candidate.status != "initiated" or not int(candidate.is_active or 0):
+            return
+        if candidate.incoming_dispatched_at:
+            return
+
+        # Release the read transaction before network I/O. No database row lock
+        # is held while calling the shared LiveKit admin service.
+        frappe.db.commit()
+        result = provision_livekit_room(candidate.room_name)
+
+        if not result.ok:
+            lock_users_for_call(candidate.caller, candidate.receiver)
+            lock_call_row(call_name)
+            if _terminalize_provision_failure(call_name, ended_at=now_datetime()):
+                call = _reload_call(call_name)
+                _run_provision_failure_side_effects(call)
+                call_log("room_provision_finalize", outcome="failure", reason=result.category)
+                frappe.db.commit()
+            else:
+                frappe.db.rollback()
+            return
+
+        # Revalidate canonical policy and durable state after provider I/O. This
+        # closes accept/cancel/block/account-state races without a long DB tx.
+        lock_users_for_call(candidate.caller, candidate.receiver)
+        lock_call_row(call_name)
+        call = _reload_call(call_name)
+
+        if call.status != "initiated" or not int(call.is_active or 0):
+            # The room may have been created after a concurrent cancellation.
+            # Re-arm cleanup even if an earlier not-found cleanup already ran.
+            frappe.db.sql(
+                """
+                UPDATE `tabAOS Call`
+                SET room_cleanup_pending = 1
+                WHERE name = %s
+                """,
+                (call.name,),
+            )
+            enqueue_room_cleanup(call.name)
+            frappe.db.commit()
+            return
+
+        if call.incoming_dispatched_at:
+            frappe.db.commit()
+            return
+
+        policy_error = ensure_call_interaction_allowed(
+            call,
+            call.caller,
+            action="call",
+        )
+        if policy_error:
+            if _terminalize_provision_failure(call.name, ended_at=now_datetime()):
+                call = _reload_call(call.name)
+                _run_provision_failure_side_effects(call)
+                call_log("room_provision_finalize", outcome="failure", reason="policy_revoked")
+                frappe.db.commit()
+            else:
+                frappe.db.rollback()
+            return
+
+        dispatched_at = now_datetime()
+        ring_expires_at = add_to_date(dispatched_at, seconds=CALL_RING_TIMEOUT_SECONDS)
+        frappe.db.sql(
+            """
+            UPDATE `tabAOS Call`
+            SET
+                rtc_provisioned_at = COALESCE(rtc_provisioned_at, %s),
+                incoming_dispatched_at = %s,
+                ring_expires_at = %s,
+                state_version = state_version + 1
+            WHERE name = %s
+              AND status = 'initiated'
+              AND is_active = 1
+              AND incoming_dispatched_at IS NULL
+            """,
+            (dispatched_at, dispatched_at, ring_expires_at, call.name),
+        )
+        if frappe.db._cursor.rowcount == 0:
+            frappe.db.rollback()
+            return
+
+        call = _reload_call(call.name)
+
+        # Do not surface a chat-level ringing state until the RTC room is
+        # proven ready. This stays in the same DB transaction as readiness.
+        upsert_call_system_message(
+            call_id=call.name,
+            conversation_id=call.conversation,
+            content="📞 Calling...",
+        )
+
+        # Realtime is after-commit and the Notifications service uses its
+        # hardened idempotency/outbox path. Public call IDs are opaque.
+        publish_call_ready(call)
+        publish_incoming_call(call, call.receiver)
+        NotificationService.notify_incoming_call(
+            user=call.receiver,
+            caller=call.caller,
+            call_id=public_call_id(call),
+            call_type=call.call_type,
+            payload=_incoming_push_payload(call),
+        )
+        call_log("incoming_dispatch", outcome="success")
+        frappe.db.commit()
+
+    except Exception:
+        frappe.db.rollback()
+        call_log("room_provision_finalize", outcome="failure", reason="unexpected")
+        _log_error(f"AOS Call Room Provision Failed: {call_name}")
 
 
 def _mark_call_as_missed(call_name: str, ended_at) -> bool:
-    """
-    Atomically mark call as missed.
-
-    Returns True only if this task actually changed the row.
-    Prevents race with accept/reject/cancel/end.
-    """
+    """Atomically mark one dispatched unanswered call as missed."""
     frappe.db.sql(
         """
         UPDATE `tabAOS Call`
@@ -66,29 +262,21 @@ def _mark_call_as_missed(call_name: str, ended_at) -> bool:
             ended_at = %s,
             is_active = 0,
             room_cleanup_pending = 1,
-            rtc_missing_since = NULL
+            rtc_missing_since = NULL,
+            state_version = state_version + 1
         WHERE name = %s
           AND status IN ('initiated', 'ringing')
           AND is_active = 1
+          AND incoming_dispatched_at IS NOT NULL
+          AND ring_expires_at IS NOT NULL
+          AND ring_expires_at <= %s
         """,
-        (ended_at, call_name),
+        (ended_at, call_name, ended_at),
     )
-
     return frappe.db._cursor.rowcount > 0
 
 
-def _reload_call(call_name: str):
-    return frappe.get_doc("AOS Call", call_name)
-
-
 def _handle_missed_call_side_effects(call):
-    """
-    Run missed-call side effects independently so one failure
-    does not block the others.
-
-    Expects a fresh call document after status has already been updated
-    to missed.
-    """
     try:
         upsert_call_system_message(
             call_id=call.name,
@@ -98,9 +286,6 @@ def _handle_missed_call_side_effects(call):
     except Exception:
         _log_error(f"AOS Missed Call System Message Failed: {call.name}")
 
-    # If the relationship/account became ineligible while ringing, persist the
-    # authoritative missed state/history but do not deliver a new communication
-    # event across the newly forbidden boundary.
     policy_error = ensure_call_interaction_allowed(
         call,
         call.receiver,
@@ -116,7 +301,7 @@ def _handle_missed_call_side_effects(call):
             NotificationService.notify_missed_call(
                 user=call.receiver,
                 caller=call.caller,
-                call_id=call.name,
+                call_id=public_call_id(call),
             )
         except Exception:
             _log_error(f"AOS Missed Call Notification Failed: {call.name}")
@@ -130,180 +315,74 @@ def _handle_missed_call_side_effects(call):
 
 
 def _mark_missed_and_run_side_effects(call_name: str, ended_at=None) -> bool:
-    """
-    Shared missed-call finalizer.
-
-    Used by:
-    - per-call timeout job
-    - cron cleanup job
-
-    Returns True only if the call was actually transitioned to missed.
-    Safe to run multiple times.
-    """
     ended_at = ended_at or now_datetime()
-
-    updated = _mark_call_as_missed(call_name, ended_at)
-
-    if not updated:
+    if not _mark_call_as_missed(call_name, ended_at):
         return False
-
-    fresh_call = _reload_call(call_name)
-
-    _handle_missed_call_side_effects(fresh_call)
-
+    _handle_missed_call_side_effects(_reload_call(call_name))
     return True
 
 
-def _get_expired_initiated_calls(cutoff):
-    """
-    Calls that were created but never reached ringing before cleanup timeout.
-    """
+def _get_expired_calls(now):
     return frappe.get_all(
+        "AOS Call",
+        filters={
+            "status": ["in", ["initiated", "ringing"]],
+            "is_active": 1,
+            "incoming_dispatched_at": ["is", "set"],
+            "ring_expires_at": ["<=", now],
+        },
+        fields=["name", "ring_expires_at"],
+        order_by="ring_expires_at asc, creation asc, name asc",
+        limit=MISSED_CALL_BATCH_SIZE,
+    )
+
+
+def _recover_pending_provisioning(now) -> None:
+    cutoff = add_to_date(now, seconds=-PROVISION_RECOVERY_AGE_SECONDS)
+    rows = frappe.get_all(
         "AOS Call",
         filters={
             "status": "initiated",
             "is_active": 1,
+            "incoming_dispatched_at": ["is", "not set"],
             "creation": ["<=", cutoff],
         },
-        fields=[
-            "name",
-            "creation",
-        ],
-        order_by="creation asc",
-        limit=BATCH_SIZE,
+        pluck="name",
+        order_by="creation asc, name asc",
+        limit=PROVISION_RECOVERY_BATCH_SIZE,
     )
+    for call_name in rows:
+        try:
+            enqueue_room_provisioning(call_name)
+        except Exception:
+            # One queue/Redis failure must not prevent timeout handling for the
+            # rest of this scheduler run. The next minute tick retries recovery.
+            _log_error(f"AOS Call Provision Recovery Enqueue Failed: {call_name}")
 
 
-def _get_expired_ringing_calls(cutoff):
-    """
-    Calls that reached ringing but were not answered/rejected/cancelled
-    before cleanup timeout.
-    """
-    return frappe.get_all(
-        "AOS Call",
-        filters={
-            "status": "ringing",
-            "is_active": 1,
-            "ringing_at": ["<=", cutoff],
-        },
-        fields=[
-            "name",
-            "ringing_at",
-        ],
-        order_by="ringing_at asc",
-        limit=BATCH_SIZE,
-    )
-
-
-def _get_expired_calls(cutoff):
-    """
-    Fetch expired initiated and ringing calls.
-
-    Dedupe by name defensively, even though the two statuses are mutually
-    exclusive.
-    """
-
-    rows = []
-    rows.extend(_get_expired_initiated_calls(cutoff))
-    rows.extend(_get_expired_ringing_calls(cutoff))
-
-    seen = set()
-    result = []
-
-    for row in rows:
-        if row.name in seen:
-            continue
-
-        seen.add(row.name)
-        result.append(row)
-
-    return result
-
-
-# TASK: HANDLE SINGLE CALL TIMEOUT
-def handle_call_timeout(call_id: str, delay_seconds: int | None = None):
-    """
-    Per-call timeout job.
-
-    This job is enqueued immediately when a call is initiated using
-    frappe.enqueue().
-
-    Behavior:
-    - Sleep for delay_seconds.
-    - If the call is still initiated/ringing, mark it as missed.
-    - If the call was accepted/rejected/cancelled/ended already, do nothing.
-    - Atomic DB update prevents race conditions.
-    - Side effects run only if this job actually changed the call state.
-
-    This is the primary missed-call mechanism for predictable call timeout.
-    The cron job remains as a fallback cleanup.
-    """
-    if not call_id:
-        return
-
-    try:
-        delay = _safe_delay_seconds(delay_seconds)
-
-        if delay > 0:
-            time.sleep(delay)
-
-        changed = _mark_missed_and_run_side_effects(
-            call_name=call_id,
-            ended_at=now_datetime(),
-        )
-
-        if changed:
-            frappe.db.commit()
-
-    except Exception:
-        frappe.db.rollback()
-        _log_error(f"AOS Call Timeout Failed: {call_id}")
-
-
-# TASK: HANDLE MISSED CALLS
+# TASK: HANDLE MISSED CALLS + RECOVER LOST PROVISIONING ENQUEUES
 def handle_missed_calls():
-    """
-    Cleanup fallback.
-
-    Mark calls as missed if not answered within cleanup timeout.
-
-    Guarantees:
-    - DB fetches only expired candidates.
-    - Avoids infinite scheduler loop.
-    - Uses creation for initiated calls.
-    - Uses ringing_at for ringing calls.
-    - Atomic DB transition prevents race conditions.
-    - Side effects only run if state actually changed.
-    - Side effects receive fresh call state after update.
-    - Side effects are isolated for resilience.
-    - Per-call commit for durability.
-
-    The per-call timeout job should handle normal missed calls.
-    This cron job catches abandoned/stuck calls if a timeout job fails,
-    is delayed, or is not enqueued.
-    """
+    """Bounded minute scheduler for durable unanswered-call expiry."""
     try:
         now = now_datetime()
-        cutoff = add_to_date(now, seconds=-CALL_CLEANUP_TIMEOUT_SECONDS)
+        _recover_pending_provisioning(now)
+        for _ in range(MISSED_CALL_MAX_BATCHES_PER_RUN):
+            calls = _get_expired_calls(now)
+            if not calls:
+                break
 
-        calls = _get_expired_calls(cutoff)
-
-        if not calls:
-            return
-
-        for call in calls:
-            try:
-                changed = _mark_missed_and_run_side_effects(
-                    call_name=call.name,
-                    ended_at=now,
-                )
-
-                if changed:
+            changed_in_batch = 0
+            for call in calls:
+                try:
+                    if _mark_missed_and_run_side_effects(call.name, ended_at=now):
+                        changed_in_batch += 1
                     frappe.db.commit()
+                except Exception:
+                    frappe.db.rollback()
+                    _log_error(f"AOS Missed Call Processing Failed: {call.name}")
 
-            except Exception:
-                frappe.db.rollback()
-                _log_error(f"AOS Missed Call Processing Failed: {call.name}")
+            if len(calls) < MISSED_CALL_BATCH_SIZE or changed_in_batch == 0:
+                break
 
     except Exception:
         frappe.db.rollback()

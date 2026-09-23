@@ -2,33 +2,20 @@
 
 Feature-owned tests live in `aos/api/calls/tests/`.
 
-## Pure tests
+## Pure/source-contract tests
 
-`test_calls_validation_unit.py` validates strict fields, canonical IDs, aliases, cursors, limits, bulk bounds, and the complete public endpoint specification.
+`test_calls_validation_unit.py` covers strict request fields, opaque public IDs, removed aliases, cursor pairs, bulk bounds, and the public endpoint specification.
 
-`test_calls_source_guards.py` validates the v1 surface, transaction boundary, after-commit realtime, public RTC identities, pre-accept token denial, canonical policy reuse, transient incoming/persistent missed semantics, rate-limit coverage, bounded history, cleanup/reconciliation, migrations/indexes, account-deletion integration, existing states/types, and documentation.
+`test_calls_source_guards.py` covers opaque-ID/no-room leakage, provisioning-before-incoming, token readiness, LiveKit call-source grants, preservation of Live grants, no sleeping timeout worker, bounded recovery/timeout work, migration/index ordering, after-commit realtime, policy reuse, history bounds, and account-deletion integration.
 
-These tests do not require a Frappe site.
+`test_calls_livekit_contracts.py` runs in the Frappe test runtime and verifies call-scoped media/data grants, invalid call-type rejection, the two-participant room request, and unchanged Live grants.
 
-## Database-backed tests
+The validation/source-guard tests do not require a Frappe site.
 
-`test_calls_database_contracts.py` is intended for a migrated Frappe staging/test site. It exercises lifecycle idempotency, participant busy rules, token authorization, block-after-ring behavior, timeout race safety, history privacy, realtime after-commit arguments, and account-deletion call cleanup while external LiveKit/notification effects are mocked.
+## Database-backed Calls tests
 
-Recommended staging commands are documented in the delivery summary. Run the complete AOS suite after the Calls module tests.
+`test_calls_database_contracts.py` is intended for a migrated Frappe test/staging site. It covers opaque initiation/idempotent provisioning enqueue, one-time incoming dispatch, provisioning failure, busy-user rules, receiver pre-accept token denial, block-after-ring behavior, accept/cancel races, stale ring-expiry rejection before the scheduler runs, accepted-never-missed behavior, cross-participant idempotent end/cleanup, public history privacy, after-commit realtime, state-version monotonicity, required indexes, and account-deletion cleanup while provider effects are mocked.
 
-## Notification-delivery companion
+Run the shared LiveKit/Live tests after Calls because Calls extends shared room provisioning and token generation without changing Live's contract. Then run the complete AOS app suite.
 
-The Android native incoming-call transport is implemented by the existing notification-delivery companion. Its feature test is:
-
-```bash
-PYTHONPATH=infra/notification-delivery pytest -q infra/notification-delivery/tests/test_worker_calls.py
-```
-
-The companion test environment needs the repository's notification-delivery test dependencies. After deploying a Calls release that changes `infra/notification-delivery/app/worker.py`, rebuild and restart only the existing notification services:
-
-```bash
-docker compose up -d --build notification-api notification-worker
-docker compose ps notification-api notification-worker
-```
-
-Run `scripts/aos_services_smoke_test.sh` after the services report healthy/ready.
+The exact migration/test commands are included in the backend delivery summary.

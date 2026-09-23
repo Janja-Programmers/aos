@@ -75,6 +75,67 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
         ttl = service.split("def _get_token_ttl", 1)[1].split("def _get_live_token_ttl", 1)[0]
         self.assertIn("min(ttl_minutes, 5)", ttl)
 
+    def test_calls_use_opaque_public_ids_and_do_not_expose_room_names(self):
+        identifiers = _source("aos/services/calls/identifiers.py")
+        validation = _source("aos/services/calls/validation.py")
+        self.assertIn(r'^call_[0-9a-f]{32}$', identifiers)
+        self.assertIn("CALL_ID_RE = PUBLIC_CALL_ID_RE", validation)
+        realtime = _source("aos/api/calls/realtime.py")
+        self.assertIn("public_call_id(call)", realtime)
+        serializer = realtime.split("def serialize_call_for_realtime", 1)[1].split("def _publish", 1)[0]
+        self.assertNotIn('"room_name"', serializer)
+        self.assertIn('"state_version"', serializer)
+        self.assertIn('"rtc_ready"', serializer)
+
+    def test_room_is_provisioned_before_incoming_delivery_and_token_join(self):
+        call = _source("aos/api/calls/call.py")
+        initiate = call.split("def initiate_call_impl", 1)[1].split("# MARK CALL RINGING", 1)[0]
+        self.assertIn("enqueue_room_provisioning(call.name)", initiate)
+        self.assertNotIn("notify_incoming_call", initiate)
+        self.assertNotIn("publish_incoming_call", initiate)
+        task = _source("aos/tasks/calls.py")
+        provision = task.split("def provision_call_room", 1)[1].split("def _mark_call_as_missed", 1)[0]
+        self.assertIn("frappe.db.commit()", provision)
+        self.assertLess(provision.index("frappe.db.commit()"), provision.index("provision_livekit_room"))
+        self.assertIn("incoming_dispatched_at", provision)
+        self.assertIn("ring_expires_at", provision)
+        self.assertIn('content="📞 Calling..."', provision)
+        self.assertNotIn('content="📞 Calling..."', initiate)
+        self.assertIn("notify_incoming_call", provision)
+        self.assertIn("publish_call_ready", provision)
+        token = _source("aos/api/calls/token.py")
+        self.assertIn("ensure_call_join_ready(call)", token)
+        self.assertIn("ring_expires_at", token)
+        status = _source("aos/api/calls/status.py")
+        self.assertIn("ring_expires_at", status)
+        delivery = _source("aos/services/notifications/delivery.py")
+        self.assertIn('"ring_expires_at"', delivery)
+
+    def test_call_tokens_are_source_scoped_without_changing_live_grants(self):
+        service = _source("aos/services/livekit_service.py")
+        call_block = service.split("def generate_call_token", 1)[1].split("# LIVE TOKENS", 1)[0]
+        self.assertIn('["microphone"]', call_block)
+        self.assertIn('publish_sources.append("camera")', call_block)
+        self.assertIn("can_publish_data=False", call_block)
+        self.assertIn("can_update_own_metadata=False", call_block)
+        live_block = service.split("def generate_live_token", 1)[1].split("def normalize_live_role", 1)[0]
+        self.assertIn("can_publish_sources=None", live_block)
+        self.assertIn("can_update_own_metadata=None", live_block)
+        admin = _source("aos/services/livekit/admin.py")
+        self.assertIn("max_participants: int | None = None", admin)
+        calls_livekit = _source("aos/services/calls/livekit.py")
+        self.assertIn("CALL_ROOM_MAX_PARTICIPANTS = 2", calls_livekit)
+        self.assertIn("deduplicate=True", calls_livekit)
+
+    def test_missed_calls_do_not_consume_sleeping_workers(self):
+        tasks = _source("aos/tasks/calls.py")
+        self.assertNotIn("time.sleep", tasks)
+        self.assertNotIn("def handle_call_timeout", tasks)
+        self.assertIn("incoming_dispatched_at", tasks)
+        self.assertIn("MISSED_CALL_BATCH_SIZE", tasks)
+        constants = _source("aos/api/calls/constants.py")
+        self.assertNotIn("CALL_TIMEOUT_JOB_PATH", constants)
+
     def test_initiation_is_participant_locked_globally_and_retry_idempotent(self):
         source = _source("aos/api/calls/call.py")
         block = source.split("def initiate_call_impl", 1)[1].split("# MARK CALL RINGING", 1)[0]
@@ -150,6 +211,8 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
         self.assertIn("CALL_INPUT_TOO_LARGE", source)
         self.assertIn("get_user_display_map", source)
         self.assertNotIn("frappe.db.commit(", source)
+        cursor = source.split("def _resolve_history_cursor", 1)[1].split("# LIST CALLS", 1)[0]
+        self.assertIn("return call.creation, call.name, None", cursor)
 
     def test_call_rate_limits_use_shared_safe_keys_and_registry_is_complete(self):
         for path in (ROOT / "aos/api/calls").glob("*.py"):
@@ -197,11 +260,29 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
         self.assertNotIn("frappe.db.commit", migration)
         self.assertNotIn("frappe.enqueue", migration)
         self.assertNotIn("delete_room", migration)
+        public_data = patches.index("aos.patches.v1_0.harden_calls_public_contract")
+        public_indexes = patches.index("aos.patches.v1_0.install_call_public_indexes")
+        self.assertLess(indexes, public_data)
+        self.assertLess(public_data, public_indexes)
+        public_migration = _source("aos/patches/v1_0/harden_calls_public_contract.py")
+        self.assertIn("_backfill_public_ids", public_migration)
+        self.assertIn("_fail_legacy_active_calls", public_migration)
+        self.assertNotIn("frappe.db.commit", public_migration)
+        self.assertNotIn("frappe.enqueue", public_migration)
+        public_installer = _source("aos/patches/v1_0/install_call_public_indexes.py")
+        self.assertIn("uq_call_public_id", public_installer)
+        self.assertIn("idx_call_ring_expiry", public_installer)
+        self.assertIn("ring_expires_at", public_installer)
+        self.assertIn("idx_call_provision_recovery", public_installer)
+        self.assertIn("DROP INDEX `idx_call_timeout`", public_installer)
         installer = _source("aos/patches/v1_0/install_call_indexes.py")
         self.assertIn("uq_call_room_name", installer)
         self.assertIn("idx_call_caller_active", installer)
         self.assertIn("idx_call_receiver_active", installer)
         self.assertIn("idx_call_room_cleanup", installer)
+        # The original already-recorded patch remains immutable; the new
+        # forward patch removes this legacy index on upgraded/fresh sites.
+        self.assertIn('"idx_call_timeout"', installer)
         self.assertNotIn("frappe.db.commit", installer)
 
     def test_account_deletion_ends_calls_and_defers_room_cleanup(self):

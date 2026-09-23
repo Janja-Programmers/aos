@@ -1,25 +1,32 @@
 # Calls operations
 
-## Scheduler
+## Scheduler and horizontal workers
 
-- Every minute: `aos.tasks.calls.handle_missed_calls` catches stale `initiated`/`ringing` calls if the per-call timeout job failed or was delayed.
-- Every five minutes: `aos.tasks.calls.reconcile_call_rooms` retries terminal room deletion in bounded batches.
-- Every five minutes: `aos.tasks.calls.reconcile_active_call_state` rechecks active call policy and conservatively reconciles missing LiveKit rooms.
+- Every minute: `aos.tasks.calls.handle_missed_calls` performs two bounded jobs: recover old `initiated` calls whose room-provision enqueue may have been lost, then finalize dispatched unanswered calls as `missed` after the configured timeout.
+- Every five minutes: `aos.tasks.calls.reconcile_call_rooms` retries durable terminal-room cleanup in bounded batches.
+- Every five minutes: `aos.tasks.calls.reconcile_active_call_state` rechecks active-call account/Social policy and conservatively reconciles missing LiveKit rooms.
 
-All scans are bounded. Provider-wide room failures stop the current cleanup/reconciliation batch to avoid outage amplification.
-
-## Account deletion
-
-Account cleanup atomically ends active/ringing calls with the existing `ended` state, computes duration server-side, marks room cleanup pending, and queues a bounded post-commit cleanup set. The scheduler drains remaining rooms. No LiveKit network request is made while the account-deletion transaction is holding DB work.
+There is no per-call sleeping timeout worker and no process-local state required for correctness. Provision enqueue uses a stable Frappe `job_id` with native deduplication. Scans are bounded/index-driven so multiple application workers and scheduler retries remain safe.
 
 ## Database migration
 
-`aos.patches.v1_0.harden_calls_subsystem` runs before `install_call_indexes`. It repairs only detectable legacy inconsistencies in 100-row batches: unknown states, self active calls, missing/duplicate room names, overlapping active calls, state/active-flag mismatch, and invalid terminal timestamps/durations. It performs no external calls, notifications, realtime, queueing, or commits.
+The Calls migration sequence is:
 
-`install_call_indexes` installs the unique room-name constraint plus participant-active, conversation-state, timeout, history, cleanup, and active-reconciliation indexes after data repair.
+1. `aos.patches.v1_0.harden_calls_subsystem`
+2. `aos.patches.v1_0.install_call_indexes`
+3. `aos.patches.v1_0.harden_calls_public_contract`
+4. `aos.patches.v1_0.install_call_public_indexes`
 
-## Observability
+The public-contract patch backfills random opaque `public_id` values and initializes `state_version`. Legacy active calls have no durable proof that the new provisioning/dispatch contract was satisfied, so they fail closed during migration rather than being treated as join-ready.
 
-Structured Calls logs record operation/outcome/reason/count/latency categories for endpoint operations, token issuance, timeout/missed handling, room cleanup, and reconciliation. They intentionally exclude passwords, sessions, JWTs, API secrets, push tokens, email/account identifiers, and request payloads.
+The public-index patch installs the unique public-ID index, a ring-expiry scheduler index, and a provisioning-recovery index, then removes the obsolete ringing-time timeout index. Patches perform no LiveKit/network calls, notifications, realtime publishing, queueing, or internal commits.
 
-Operational failures should be investigated using the public Call ID from application state plus provider logs; do not add token values to logs while debugging.
+## Account deletion
+
+Account cleanup atomically ends active/ringing Calls, increments `state_version`, computes duration server-side, marks room cleanup pending, and queues only bounded post-commit cleanup work. Shared reconciliation drains any remainder. No LiveKit network request is made inside the deletion transaction.
+
+## Observability and privacy
+
+Structured Calls logs record operation/outcome/reason/count/latency categories and intentionally exclude JWTs, secrets, sessions, push tokens, raw request payloads, and User/email identifiers. Public troubleshooting references should use the opaque `call_…` ID; internal Frappe names and provider room names remain server-side.
+
+No new infrastructure service, Redis deployment, LiveKit endpoint, webhook, or queue type is required by this hardening.

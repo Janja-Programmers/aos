@@ -203,6 +203,7 @@ def _end_active_calls(*, user: str, now) -> int:
             END,
             room_cleanup_pending = 1,
             rtc_missing_since = NULL,
+            state_version = COALESCE(state_version, 1) + 1,
             modified = %s
         """,
         where_sql="""

@@ -6,6 +6,9 @@ from aos.services.calls.endpoints import ENDPOINT_SPECS
 from aos.services.calls.errors import CallError
 from aos.services.calls.validation import MAX_CALL_IDS, validate_public_kwargs
 
+CALL_A = "call_" + ("a" * 32)
+CALL_B = "call_" + ("b" * 32)
+
 
 class TestCallsPublicValidation(unittest.TestCase):
     def test_unknown_fields_fail_closed_and_cmd_is_stripped(self):
@@ -31,28 +34,28 @@ class TestCallsPublicValidation(unittest.TestCase):
             ("initiate_call", "conversation_id", "conversation-1"),
             ("accept_call", "call_id", "call-1"),
             ("get_call_group_details", "latest_call_id", "CALL-1"),
-            ("list_calls", "cursor_name", "CALL-2026-1"),
+            ("list_calls", "cursor_call_id", "CALL-2026-1"),
         ):
             with self.subTest(endpoint=endpoint, field=field), self.assertRaises(CallError) as raised:
                 validate_public_kwargs({field: value}, ENDPOINT_SPECS[endpoint])
             self.assertEqual(raised.exception.code, "CALL_INVALID_IDENTIFIER")
 
-    def test_status_aliases_allow_same_value_but_reject_conflicts(self):
-        same = validate_public_kwargs(
-            {"call_id": "CALL-2026-00001", "id": "CALL-2026-00001"},
+    def test_legacy_status_alias_is_rejected(self):
+        clean = validate_public_kwargs(
+            {"call_id": CALL_A},
             ENDPOINT_SPECS["get_call_status"],
         )
-        self.assertEqual(same["call_id"], same["id"])
+        self.assertEqual(clean["call_id"], CALL_A)
         with self.assertRaises(CallError) as raised:
             validate_public_kwargs(
-                {"call_id": "CALL-2026-00001", "id": "CALL-2026-00002"},
+                {"call_id": CALL_A, "id": CALL_A},
                 ENDPOINT_SPECS["get_call_status"],
             )
-        self.assertEqual(raised.exception.code, "CALL_ALIAS_CONFLICT")
+        self.assertEqual(raised.exception.code, "CALL_UNKNOWN_FIELD")
 
     def test_history_cursor_and_limit_are_strict(self):
         clean = validate_public_kwargs(
-            {"limit": "50", "cursor_created_at": "2026-08-10T10:30:00+03:00", "cursor_name": "CALL-2026-00001"},
+            {"limit": "50", "cursor_created_at": "2026-08-10T10:30:00+03:00", "cursor_call_id": CALL_A},
             ENDPOINT_SPECS["list_calls"],
         )
         self.assertEqual(clean["limit"], 50)
@@ -65,16 +68,16 @@ class TestCallsPublicValidation(unittest.TestCase):
 
     def test_call_id_lists_are_canonical_deduplicated_and_bounded(self):
         clean = validate_public_kwargs(
-            {"call_ids": '["CALL-2026-00001","CALL-2026-00001","CALL-2026-00002"]'},
+            {"call_ids": f'["{CALL_A}","{CALL_A}","{CALL_B}"]'},
             ENDPOINT_SPECS["delete_call_logs"],
         )
-        self.assertEqual(clean["call_ids"], ["CALL-2026-00001", "CALL-2026-00002"])
+        self.assertEqual(clean["call_ids"], [CALL_A, CALL_B])
         with self.assertRaises(CallError) as raised:
             validate_public_kwargs({"call_ids": ["internal-name"]}, ENDPOINT_SPECS["delete_call_logs"])
         self.assertEqual(raised.exception.code, "CALL_INVALID_IDENTIFIER")
         with self.assertRaises(CallError) as raised:
             validate_public_kwargs(
-                {"call_ids": [f"CALL-2026-{index:05d}" for index in range(MAX_CALL_IDS + 1)]},
+                {"call_ids": ["call_" + f"{index:032x}" for index in range(MAX_CALL_IDS + 1)]},
                 ENDPOINT_SPECS["delete_call_logs"],
             )
         self.assertEqual(raised.exception.code, "CALL_INPUT_TOO_LARGE")

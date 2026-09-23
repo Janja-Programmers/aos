@@ -60,7 +60,7 @@ def test_android_incoming_call_is_data_only_and_collapsible(monkeypatch):
 			"body": "AOS User is calling you",
 			"data": {
 				"event": "aos_incoming_call",
-				"call_id": "CALL-2026-00001",
+				"call_id": "call_0123456789abcdef0123456789abcdef",
 				"caller": "ACC-2026-00001",
 				"call_type": "audio",
 			},
@@ -84,10 +84,10 @@ def test_android_incoming_call_is_data_only_and_collapsible(monkeypatch):
 	android_message, ios_message = fake_messaging.sent
 	assert android_message.tokens == ["android-token"]
 	assert android_message.notification is None
-	assert android_message.data["call_id"] == "CALL-2026-00001"
+	assert android_message.data["call_id"] == "call_0123456789abcdef0123456789abcdef"
 	assert android_message.android.priority == "high"
 	assert android_message.android.ttl.total_seconds() == 30
-	assert android_message.android.collapse_key == "aos-call:CALL-2026-00001"
+	assert android_message.android.collapse_key == "aos-call:call_0123456789abcdef0123456789abcdef"
 	assert android_message.android.notification is None
 
 	assert ios_message.tokens == ["ios-token"]

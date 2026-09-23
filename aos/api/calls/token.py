@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import frappe
+from frappe.utils import get_datetime, now_datetime
 
 from aos.api.shared.auth import require_login
 from aos.api.shared.rate_limit import rate_limit, rate_limit_key
@@ -10,7 +11,13 @@ from aos.api.shared.responses import ok, fail
 from aos.api.shared.user_display import get_user_display
 from aos.services.livekit_service import LiveKitService
 from aos.services.calls.errors import CallError
-from aos.services.calls.livekit import get_call_ws_url, issue_call_token, participant_identity
+from aos.services.calls.livekit import (
+    ensure_call_join_ready,
+    get_call_ws_url,
+    issue_call_token,
+    participant_identity,
+)
+from aos.services.calls.identifiers import public_call_id
 from aos.services.calls.policy import (
     ensure_call_interaction_allowed,
     lock_call_row,
@@ -81,7 +88,7 @@ def get_call_token_impl(**kwargs):
         # Serialize with Social/Accounts policy changes and terminal state
         # transitions. Both participant and call locks are deterministic.
         lock_users_for_call(call.caller, call.receiver)
-        lock_call_row(call_id)
+        lock_call_row(call.name)
         call, err = validate_call_exists(call_id)
         if err:
             return err
@@ -91,6 +98,19 @@ def get_call_token_impl(**kwargs):
         err = validate_call_active(call)
         if err:
             return err
+
+        ensure_call_join_ready(call)
+
+        if call.status in ("initiated", "ringing"):
+            if (
+                not getattr(call, "ring_expires_at", None)
+                or get_datetime(call.ring_expires_at) <= get_datetime(now_datetime())
+            ):
+                return fail(
+                    "Call is no longer ringing.",
+                    error="INVALID_STATE",
+                    http_status=409,
+                )
 
         interaction_error = ensure_call_interaction_allowed(
             call, current_user, action="join a call with"
@@ -116,11 +136,12 @@ def get_call_token_impl(**kwargs):
         token = issue_call_token(
             identity=participant_identity(current_user),
             room_name=call.room_name,
+            call_type=call.call_type,
             metadata=_build_call_metadata(
                 user=current_user,
                 role=role,
                 conversation=call.conversation,
-                call_id=call.name,
+                call_id=public_call_id(call),
                 call_type=call.call_type,
             ),
         )

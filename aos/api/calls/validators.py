@@ -9,6 +9,7 @@ from __future__ import annotations
 import frappe
 
 from aos.api.shared.responses import fail
+from aos.services.calls.identifiers import internal_call_name
 
 
 # Constants
@@ -21,8 +22,12 @@ def get_call_row(call_id: str):
     if not call_id:
         return None
 
+    call_name = internal_call_name(call_id)
+    if not call_name:
+        return None
+
     try:
-        return frappe.get_doc("AOS Call", call_id)
+        return frappe.get_doc("AOS Call", call_name)
     except frappe.DoesNotExistError:
         return None
 
@@ -61,7 +66,7 @@ def validate_conversation_exists(conv_id: str):
 # USER VALIDATION
 def validate_user_in_call(call, user: str):
     # Outsiders receive the same not-found response as an unknown public ID so
-    # valid CALL-* identifiers cannot be enumerated. Participant role checks
+    # valid opaque call identifiers cannot be enumerated. Participant role checks
     # remain explicit only after membership is established.
     if not call or user not in (call.caller, call.receiver):
         return fail("Call not found.", error="NOT_FOUND", http_status=404)
