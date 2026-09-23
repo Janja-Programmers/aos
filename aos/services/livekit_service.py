@@ -82,6 +82,24 @@ class LiveKitService:
 
         return endpoint
 
+    @classmethod
+    def get_admin_url(cls) -> str:
+        """Return the private server-to-server LiveKit administration endpoint.
+
+        Browser clients must never receive this URL. On the single-host AOS
+        deployment it should resolve directly to LiveKit on localhost, avoiding
+        public DNS, TLS proxying, and NAT hairpin dependencies for room control.
+        """
+        config = get_livekit_config()
+        endpoint = str(config.admin_endpoint or "").strip()
+
+        if not endpoint:
+            frappe.throw(
+                _("LiveKit admin endpoint is not configured in environment variables.")
+            )
+
+        return endpoint
+
     # CALL TOKENS
     @classmethod
     def generate_call_token(

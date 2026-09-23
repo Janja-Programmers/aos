@@ -157,6 +157,8 @@ Follower `live_started` Notifications are bounded background fanout through the 
 
 The Compose deployment pins `livekit/livekit-server:v1.13.7`. Signaling/API port 7880 is bound to localhost and is expected to be TLS-proxied by Nginx. RTC TCP and UDP mux ports are exposed directly because ICE traffic cannot be treated as ordinary HTTP reverse-proxy traffic.
 
+AOS intentionally separates the LiveKit data-plane URL exposed to browsers from the control-plane URL used by Frappe workers. `LIVEKIT_ENDPOINT` remains the public `wss://` signaling origin returned with RTC credentials. `LIVEKIT_ADMIN_ENDPOINT` is used only for server-side create/delete/list/remove room operations. On the single-host deployment it should be `http://127.0.0.1:7880`; this prevents room activation from depending on public DNS, Nginx TLS, firewall hairpin routing, or external network availability. If Frappe itself runs inside the Compose network, set it to `http://livekit:7880` instead.
+
 LiveKit is configured with Redis so multiple LiveKit nodes share distributed routing state. The bundled Redis service is suitable for local/staging/single-host operation; production multi-node deployment should use a managed or independently highly available Redis topology and configure `LIVEKIT_REDIS_*` accordingly. Redis TLS uses the nested `redis.tls` configuration expected by LiveKit v1.13.x.
 
 RTC uses LiveKit's single UDP mux port on `7882` in the Compose baseline; `rtc.udp_port` is a scalar mux port, not a range. TCP fallback defaults to 7881. For horizontally scaled nodes, give each node direct RTC reachability (prefer host networking/orchestrator-native deployment); deployments that deliberately use a UDP allocation range must use LiveKit's `rtc.port_range_start`/`rtc.port_range_end` settings instead. Embedded TURN defaults to UDP 3478 and TURN/TLS 5349 so it does not collide with the repository's Nginx TCP 443 listener. A dedicated TURN public IP/domain or L4 load-balancer may intentionally expose TURN/TLS on 443 for restrictive networks. TURN uses a dedicated directory containing real `fullchain.pem`/`privkey.pem` files and a per-participant relay-allocation cap.
@@ -172,7 +174,8 @@ Required secrets/identity:
 - `LIVEKIT_KEYS`
 - `LIVEKIT_API_KEY`
 - `LIVEKIT_API_SECRET`
-- `LIVEKIT_ENDPOINT`
+- `LIVEKIT_ENDPOINT` — public browser signaling origin, normally `wss://live.<domain>`
+- `LIVEKIT_ADMIN_ENDPOINT` — private server-to-server room administration origin; single-host default `http://127.0.0.1:7880`
 - `LIVEKIT_WEBHOOK_URL`
 - `LIVEKIT_TURN_DOMAIN`
 - `LIVEKIT_TURN_CERT_DIR`

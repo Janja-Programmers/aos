@@ -55,6 +55,7 @@ class TestProductionConfigValidation(FrappeTestCase):
 			"AOS_PUBLIC_BUCKET": "aos-public",
 			"AOS_PRIVATE_BUCKET": "aos-private",
 			"LIVEKIT_ENDPOINT": "wss://live.africaonlinestores.example-prod.com",
+			"LIVEKIT_ADMIN_ENDPOINT": "http://127.0.0.1:7880",
 			"LIVEKIT_API_KEY": "aos_livekit_prod_key",
 			"LIVEKIT_API_SECRET": "livekit-prod-secret-value-0123456789abcdef",
 			"VIDEO_SERVICE_URL": "http://127.0.0.1:8130",
@@ -118,6 +119,20 @@ class TestProductionConfigValidation(FrappeTestCase):
 		)
 		self.assertFalse(report["ready"])
 		self.assertIn("AOS_ENVIRONMENT", {issue["key"] for issue in report["errors"]})
+
+	def test_livekit_admin_endpoint_is_separate_from_public_signaling(self):
+		env = self._valid_env()
+		env["LIVEKIT_ADMIN_ENDPOINT"] = "https://live.africaonlinestores.example-prod.com"
+		report = validate_production_config(env=env, site_config=self._valid_site_config())
+		self.assertFalse(report["ready"])
+		self.assertIn("LIVEKIT_ADMIN_ENDPOINT", {issue["key"] for issue in report["errors"]})
+
+	def test_livekit_admin_endpoint_rejects_websocket_scheme(self):
+		env = self._valid_env()
+		env["LIVEKIT_ADMIN_ENDPOINT"] = "ws://127.0.0.1:7880"
+		report = validate_production_config(env=env, site_config=self._valid_site_config())
+		self.assertFalse(report["ready"])
+		self.assertIn("LIVEKIT_ADMIN_ENDPOINT", {issue["key"] for issue in report["errors"]})
 
 	def test_maps_production_config_requires_global_routing(self):
 		site_config = self._valid_site_config()

@@ -332,15 +332,9 @@ def _map_endpoints(
 
 
 def _livekit_http_url(env: Mapping[str, Any] | None) -> str:
-	endpoint = _env(env, "LIVEKIT_ENDPOINT", "")
-	if not endpoint:
-		domain = _env(env, "AOS_LIVEKIT_DOMAIN", "")
-		endpoint = f"wss://{domain}" if domain else ""
-	if endpoint.startswith("wss://"):
-		return "https://" + endpoint.removeprefix("wss://")
-	if endpoint.startswith("ws://"):
-		return "http://" + endpoint.removeprefix("ws://")
-	return endpoint
+	# Operational health must test the same private control-plane endpoint used
+	# by room administration, not the public browser signaling origin.
+	return _env(env, "LIVEKIT_ADMIN_ENDPOINT", "http://127.0.0.1:7880")
 
 
 def _check_storage(

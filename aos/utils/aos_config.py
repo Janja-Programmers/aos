@@ -360,6 +360,7 @@ def get_minio_config() -> MinioConfig:
 @dataclass(frozen=True)
 class LiveKitConfig:
     endpoint: str
+    admin_endpoint: str
     api_key: str = field(repr=False)
     api_secret: str = field(repr=False)
 
@@ -380,8 +381,15 @@ def get_livekit_config() -> LiveKitConfig:
         domain = get_env("AOS_LIVEKIT_DOMAIN")
         endpoint = f"wss://{domain}" if domain else None
 
+    admin_endpoint = get_first_env(
+        "LIVEKIT_ADMIN_ENDPOINT",
+        "AOS_LIVEKIT_ADMIN_ENDPOINT",
+        default="http://127.0.0.1:7880",
+    )
+
     return LiveKitConfig(
         endpoint=clean_url(endpoint),
+        admin_endpoint=clean_url(admin_endpoint),
         api_key=get_first_env("LIVEKIT_API_KEY", default=keys_api_key) or "",
         api_secret=get_first_env("LIVEKIT_API_SECRET", default=keys_api_secret) or "",
     )

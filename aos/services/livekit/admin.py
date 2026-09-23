@@ -48,7 +48,7 @@ async def _with_client(operation):
     from livekit import api
 
     api_key, api_secret = LiveKitService._get_credentials()
-    client = api.LiveKitAPI(_http_url(LiveKitService.get_ws_url()), api_key, api_secret)
+    client = api.LiveKitAPI(_http_url(LiveKitService.get_admin_url()), api_key, api_secret)
     try:
         return await operation(client, api)
     finally:

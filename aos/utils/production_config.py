@@ -797,6 +797,32 @@ def _check_livekit(issues: list[dict[str, Any]], env: Mapping[str, Any] | None) 
 			remediation="Set LIVEKIT_ENDPOINT to wss://<production-livekit-domain>.",
 		)
 
+	admin_endpoint, admin_endpoint_key = _env_value(
+		env, "LIVEKIT_ADMIN_ENDPOINT", "AOS_LIVEKIT_ADMIN_ENDPOINT"
+	)
+	if not admin_endpoint:
+		admin_endpoint = "http://127.0.0.1:7880"
+		admin_endpoint_key = "LIVEKIT_ADMIN_ENDPOINT"
+	parsed_admin = urlparse(admin_endpoint)
+	if parsed_admin.scheme not in {"http", "https"} or not parsed_admin.netloc:
+		_redacted_issue(
+			issues,
+			severity="error",
+			category="livekit",
+			key=admin_endpoint_key or "LIVEKIT_ADMIN_ENDPOINT",
+			message="LiveKit admin endpoint must be an HTTP(S) server-to-server URL.",
+			remediation="Set LIVEKIT_ADMIN_ENDPOINT to the private LiveKit API origin, for example http://127.0.0.1:7880 on the single-host deployment.",
+		)
+	elif endpoint and parsed_admin.netloc == urlparse(endpoint).netloc:
+		_redacted_issue(
+			issues,
+			severity="error",
+			category="livekit",
+			key=admin_endpoint_key or "LIVEKIT_ADMIN_ENDPOINT",
+			message="LiveKit admin and public endpoints must be separate deployment origins.",
+			remediation="Keep LIVEKIT_ENDPOINT as public wss:// signaling and set LIVEKIT_ADMIN_ENDPOINT to the private HTTP control-plane origin.",
+		)
+
 	livekit_keys, _ = _env_value(env, "LIVEKIT_KEYS")
 	api_key, _ = _env_value(env, "LIVEKIT_API_KEY")
 	api_secret, _ = _env_value(env, "LIVEKIT_API_SECRET")

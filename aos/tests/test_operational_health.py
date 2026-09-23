@@ -106,6 +106,7 @@ class TestOperationalHealth(FrappeTestCase):
             "AOS_PUBLIC_BUCKET": "aos-public",
             "AOS_PRIVATE_BUCKET": "aos-private",
             "LIVEKIT_ENDPOINT": "wss://live.africaonlinestores.example-prod.com",
+            "LIVEKIT_ADMIN_ENDPOINT": "http://127.0.0.1:7880",
             "LIVEKIT_API_KEY": "aos_livekit_prod_key",
             "LIVEKIT_API_SECRET": "livekit-prod-secret-value-0123456789abcdef",
             "VIDEO_SERVICE_URL": "http://127.0.0.1:8130",
@@ -160,6 +161,28 @@ class TestOperationalHealth(FrappeTestCase):
 
     def _report_text(self, report: dict) -> str:
         return str(report)
+
+    def test_operational_health_probes_private_livekit_admin_endpoint(self):
+        env = self._valid_env()
+        requested: list[str] = []
+
+        def capture_get(url: str, timeout: int = 3):
+            requested.append(url)
+            return self._healthy_get(url, timeout)
+
+        with (
+            patch("aos.utils.operational_health.frappe.cache", return_value=_FakeCache()),
+            patch("aos.utils.operational_health.os.path.exists", return_value=True),
+        ):
+            validate_operational_health(
+                env=env,
+                site_config=self._valid_site_config(),
+                http_get=capture_get,
+                storage_factory=lambda: _FakeStorage(),
+            )
+
+        self.assertIn("http://127.0.0.1:7880/", requested)
+        self.assertNotIn("https://live.africaonlinestores.example-prod.com/", requested)
 
     def test_operational_health_all_services_ready_and_redacted(self):
         env = self._valid_env()

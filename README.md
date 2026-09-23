@@ -352,9 +352,10 @@ secure: 0
 ## LiveKit
 
 ```text
-endpoint: ws://127.0.0.1:7880
-api_key: from .env
-api_secret: from .env
+LIVEKIT_ENDPOINT=wss://live.example.com             # browser signaling
+LIVEKIT_ADMIN_ENDPOINT=http://127.0.0.1:7880       # private Frappe room admin
+LIVEKIT_API_KEY=from .env
+LIVEKIT_API_SECRET=from .env
 ```
 
 ---

@@ -57,6 +57,8 @@ class TestLiveSourceGuards(unittest.TestCase):
         reconciliation = _source("aos/services/calls/reconciliation.py")
         self.assertIn("asyncio.wait_for", admin)
         self.assertIn("ADMIN_RETRY_ATTEMPTS", admin)
+        self.assertIn("LiveKitService.get_admin_url()", admin)
+        self.assertNotIn("LiveKitService.get_ws_url()", admin)
         self.assertIn("remove_participant", admin)
         self.assertIn("from aos.services.livekit.admin import", tasks)
         self.assertIn("from aos.services.livekit.admin import delete_room", calls)
@@ -64,6 +66,23 @@ class TestLiveSourceGuards(unittest.TestCase):
         self.assertIn("enqueue_after_commit=True", live_api)
         self.assertIn("cleanup_live_room", tasks)
         self.assertIn("reconcile_live_state", tasks)
+
+    def test_livekit_public_and_admin_endpoints_are_separated(self):
+        config = _source("aos/utils/aos_config.py")
+        service = _source("aos/services/livekit_service.py")
+        admin = _source("aos/services/livekit/admin.py")
+        env_example = _source(".env.example")
+        production = _source("aos/utils/production_config.py")
+        health = _source("aos/utils/operational_health.py")
+
+        self.assertIn("admin_endpoint: str", config)
+        self.assertIn('"LIVEKIT_ADMIN_ENDPOINT"', config)
+        self.assertIn('default="http://127.0.0.1:7880"', config)
+        self.assertIn("def get_admin_url", service)
+        self.assertIn("LiveKitService.get_admin_url()", admin)
+        self.assertIn("LIVEKIT_ADMIN_ENDPOINT=http://127.0.0.1:7880", env_example)
+        self.assertIn("LiveKit admin and public endpoints must be separate", production)
+        self.assertIn('"LIVEKIT_ADMIN_ENDPOINT", "http://127.0.0.1:7880"', health)
 
     def test_live_activation_requires_confirmed_room_and_issues_no_starting_token(self):
         live_api = _source("aos/api/live/live.py")
