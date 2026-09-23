@@ -429,13 +429,23 @@ def cancel_call_impl(**kwargs):
             return ok("Call is already cancelled.", data=_response(call, current_user))
         if call.status not in {"initiated", "ringing"} or any_invitee_joined(call.name):
             return fail("Call cannot be cancelled.", error="INVALID_STATE")
+        recipients = users_for_call(call.name)
         now = now_datetime()
-        frappe.db.sql("UPDATE `tabAOS Call Participant` SET status=CASE WHEN role='initiator' THEN 'left' ELSE 'cancelled' END, left_at=CASE WHEN role='initiator' THEN %s ELSE left_at END, responded_at=CASE WHEN role='participant' THEN %s ELSE responded_at END WHERE `call`=%s AND status IN ('invited','ringing','joined')", (now, now, call.name))
+        # Transition the parent Call first while the Call row is locked. Accept
+        # uses the same Call-row lock, so exactly one of accept/cancel can win.
+        # Never return a successful cancellation if the conditional transition
+        # did not actually change the durable Call state.
         frappe.db.sql("UPDATE `tabAOS Call` SET status='cancelled', ended_by=%s, ended_at=%s, is_active=0, room_cleanup_pending=1, state_version=state_version+1 WHERE name=%s AND status IN ('initiated','ringing')", (current_user, now, call.name))
+        if frappe.db._cursor.rowcount == 0:
+            call = _reload(call.name)
+            if call.status == "cancelled":
+                return ok("Call is already cancelled.", data=_response(call, current_user))
+            return fail("Call cannot be cancelled.", error="INVALID_STATE")
+        frappe.db.sql("UPDATE `tabAOS Call Participant` SET status=CASE WHEN role='initiator' THEN 'left' ELSE 'cancelled' END, left_at=CASE WHEN role='initiator' THEN %s ELSE left_at END, responded_at=CASE WHEN role='participant' THEN %s ELSE responded_at END WHERE `call`=%s AND status IN ('invited','ringing','joined')", (now, now, call.name))
         call = _reload(call.name)
         enqueue_room_cleanup(call.name)
         _maybe_system_message(call, "📞 Call cancelled")
-        publish_call_cancelled(call)
+        publish_call_cancelled(call, users=recipients)
         return ok("Call cancelled.", data=_response(call, current_user))
     except Exception:
         frappe.log_error("Calls operation failed.", "AOS Cancel Call Failed")

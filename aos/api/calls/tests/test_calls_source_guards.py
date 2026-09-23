@@ -166,6 +166,16 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
         self.assertIn("publish_participant_declined(call, current_user)", block)
         self.assertIn("publish_call_ended(call, event_status=call.status)", block)
 
+    def test_cancel_is_durable_before_participant_terminalization_and_delivery(self):
+        source = _source("aos/api/calls/call.py")
+        block = source.split("def cancel_call_impl", 1)[1].split("def end_call_impl", 1)[0]
+        call_update = block.index("SET status='cancelled'")
+        participant_update = block.index("SET status=CASE WHEN role='initiator'")
+        self.assertLess(call_update, participant_update)
+        self.assertIn("frappe.db._cursor.rowcount == 0", block)
+        self.assertIn("recipients = users_for_call(call.name)", block)
+        self.assertIn("publish_call_cancelled(call, users=recipients)", block)
+
     def test_rate_limit_registry_matches_public_surface(self):
         entries = json.loads(_source("ci/public-endpoint-rate-limits.json"))
         registry = {e["endpoint"] for e in entries}

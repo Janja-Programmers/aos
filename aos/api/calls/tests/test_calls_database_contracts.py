@@ -13,6 +13,7 @@ from aos.api.calls.call import (
     cancel_call_impl,
     end_call_impl,
     initiate_call_impl,
+    mark_call_ringing_impl,
     reject_call_impl,
 )
 from aos.api.calls.history import list_calls_impl
@@ -110,6 +111,36 @@ class TestCallsDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual({row.user for row in rows}, {initiator, target})
         self.assertEqual(queue.call_count, 1)
         self.assertNotIn("room_name", result["data"])
+
+    def test_direct_ringing_call_cancellation_is_durable_and_notifies_both_members(self):
+        initiator, target = self._users(2, "direct-cancel")
+        initiated, _ = self._initiate(initiator, [target])
+        self.assertTrue(initiated.get("ok"), initiated)
+        call_id = initiated["data"]["call_id"]
+        name = self._internal(call_id)
+
+        frappe.set_user(target)
+        with patch("aos.api.calls.call.rate_limit", return_value=None), patch("aos.api.calls.call.publish_participant_ringing"):
+            ringing = mark_call_ringing_impl(call_id=call_id)
+        self.assertTrue(ringing.get("ok"), ringing)
+        self.assertEqual(frappe.db.get_value("AOS Call", name, "status"), "ringing")
+
+        frappe.set_user(initiator)
+        with (
+            patch("aos.api.calls.call.rate_limit", return_value=None),
+            patch("aos.api.calls.call.enqueue_room_cleanup"),
+            patch("aos.api.calls.call.publish_call_cancelled") as published,
+        ):
+            cancelled = cancel_call_impl(call_id=call_id)
+        self.assertTrue(cancelled.get("ok"), cancelled)
+        self.assertEqual(cancelled["data"]["status"], "cancelled")
+        self.assertEqual(frappe.db.get_value("AOS Call", name, "status"), "cancelled")
+        rows = frappe.get_all("AOS Call Participant", filters={"call": name}, fields=["user", "role", "status"])
+        by_user = {row.user: row for row in rows}
+        self.assertEqual(by_user[initiator].status, "left")
+        self.assertEqual(by_user[target].status, "cancelled")
+        published.assert_called_once()
+        self.assertEqual(set(published.call_args.kwargs["users"]), {initiator, target})
 
     def test_group_call_supports_up_to_32_total_participants(self):
         users = self._users(32, "cap")

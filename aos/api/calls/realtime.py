@@ -159,8 +159,14 @@ def publish_participant_missed(call, user: str):
     )
 
 
-def publish_call_cancelled(call):
-    _publish_for_users("aos_call_cancelled", call, users_for_call(call.name), event_status="cancelled", actor=call.initiator)
+def publish_call_cancelled(call, *, users: list[str] | None = None):
+    _publish_for_users(
+        "aos_call_cancelled",
+        call,
+        users if users is not None else users_for_call(call.name),
+        event_status="cancelled",
+        actor=call.initiator,
+    )
 
 
 def publish_call_ended(call, *, event_status: str = "ended"):
