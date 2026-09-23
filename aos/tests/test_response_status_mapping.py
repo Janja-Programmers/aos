@@ -38,6 +38,9 @@ class TestResponseStatusMapping(FrappeTestCase):
         self.assertEqual(http_status_for_code("CATEGORY_NOT_FOUND"), 404)
         self.assertEqual(http_status_for_code("CATALOG_DATA_ERROR"), 500)
 
+    def test_calls_invalid_cursor_uses_unprocessable_entity(self):
+        self.assertEqual(http_status_for_code("CALL_INVALID_CURSOR"), 422)
+
     def test_auth_codes_use_unauthorized(self):
         for code in (
             "AUTH_REQUIRED",
