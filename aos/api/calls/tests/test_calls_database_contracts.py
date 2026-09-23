@@ -324,6 +324,21 @@ class TestCallsDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(frappe.db.get_value("AOS Call", name, "status"), "ended")
         self.assertFalse(frappe.db.exists("AOS Call Participant", {"call": name, "status": "joined"}))
 
+    def test_direct_receiver_can_end_after_accept(self):
+        initiator, target = self._users(2, "direct-receiver-end")
+        initiated, _ = self._initiate(initiator, [target])
+        call_id = initiated["data"]["call_id"]
+        name = self._internal(call_id)
+        self.assertTrue(self._accept(target, call_id).get("ok"))
+        # _accept leaves the request user as the receiver. Ending from this side
+        # must terminalize the same direct Call, not only disconnect local RTC.
+        with patch("aos.api.calls.call.rate_limit", return_value=None), patch("aos.api.calls.call.publish_call_ended"), patch("aos.api.calls.call.enqueue_room_cleanup"):
+            result = end_call_impl(call_id=call_id)
+        self.assertTrue(result.get("ok"), result)
+        self.assertEqual(frappe.db.get_value("AOS Call", name, "status"), "ended")
+        self.assertEqual(int(frappe.db.get_value("AOS Call", name, "is_active") or 0), 0)
+        self.assertFalse(frappe.db.exists("AOS Call Participant", {"call": name, "status": "joined"}))
+
     def test_invited_participant_cannot_mint_token_until_joined(self):
         initiator, target = self._users(2, "token")
         initiated, _ = self._initiate(initiator, [target])

@@ -385,11 +385,11 @@ def reject_call_impl(**kwargs):
         call = _reload(call.name)
         row = participant_for_user(call.name, current_user, for_update=True)
         if not row or row.role == "initiator":
-            return fail("Only invited participants can decline.", error="PERMISSION_DENIED")
+            return fail("Only invited participants can reject.", error="PERMISSION_DENIED")
         if row.status == "declined":
-            return ok("Call is already declined.", data=_response(call, current_user))
+            return ok("Call is already rejected.", data=_response(call, current_user))
         if row.status not in {"invited", "ringing"} or not row.ring_expires_at or get_datetime(row.ring_expires_at) <= get_datetime(now_datetime()):
-            return fail("Call cannot be declined.", error="INVALID_STATE")
+            return fail("Call cannot be rejected.", error="INVALID_STATE")
         now = now_datetime()
         frappe.db.sql("UPDATE `tabAOS Call Participant` SET status='declined', responded_at=%s WHERE name=%s AND status IN ('invited','ringing')", (now, row.name))
         frappe.db.sql("UPDATE `tabAOS Call` SET state_version=state_version+1 WHERE name=%s", (call.name,))
@@ -401,11 +401,11 @@ def reject_call_impl(**kwargs):
             # Publish the terminal Call event as well so every member, including
             # the caller, immediately converges on the durable rejected state.
             publish_call_ended(call, event_status=call.status)
-            _maybe_system_message(call, "📞 Call declined")
-        return ok("Call declined.", data=_response(call, current_user))
+            _maybe_system_message(call, "📞 Call rejected")
+        return ok("Call rejected.", data=_response(call, current_user))
     except Exception:
         frappe.log_error("Calls operation failed.", "AOS Reject Call Failed")
-        return fail("Failed to decline call.", error="INTERNAL_ERROR")
+        return fail("Failed to reject call.", error="INTERNAL_ERROR")
 
 
 def cancel_call_impl(**kwargs):

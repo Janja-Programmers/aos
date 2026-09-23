@@ -186,5 +186,12 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
             self.assertTrue((ROOT / "docs/features/calls" / name).is_file(), name)
 
 
+    def test_feature_cleanup_removes_committed_call_participant_rows(self):
+        cleanup = _source("aos/tests/feature_test_helpers.py")
+        self.assertIn('DELETE FROM `tabAOS Call Participant` WHERE `call` IN %s', cleanup)
+        self.assertIn('DELETE FROM `tabAOS Call` WHERE name IN %s', cleanup)
+        self.assertIn('LEFT JOIN `tabAOS Call Participant` p ON p.`call`=c.name', cleanup)
+
 if __name__ == "__main__":
     unittest.main()
+

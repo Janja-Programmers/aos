@@ -805,6 +805,27 @@ class AOSFeatureTestMixin:
         frappe.db.sql("DELETE FROM `tabAOS User Block` WHERE blocker_user LIKE %s OR blocked_user LIKE %s", (email_like, email_like))
         frappe.db.sql("DELETE FROM `tabAOS User Report` WHERE reported_user LIKE %s OR reported_by LIKE %s", (email_like, email_like))
 
+        # Calls endpoints/tasks intentionally exercise real commit boundaries. A rollback
+        # therefore cannot clean every synthetic Call. Resolve test-owned Calls through
+        # either the initiator or participant ledger, then remove the ledger before the
+        # parent Call so repeated/full-suite runs never strand Call Participant rows.
+        if frappe.db.exists("DocType", "AOS Call") and frappe.db.exists("DocType", "AOS Call Participant"):
+            call_names = tuple(
+                frappe.db.sql(
+                    """
+                    SELECT DISTINCT c.name
+                    FROM `tabAOS Call` c
+                    LEFT JOIN `tabAOS Call Participant` p ON p.`call`=c.name
+                    WHERE c.initiator LIKE %s OR p.user LIKE %s
+                    """,
+                    (email_like, email_like),
+                    pluck=True,
+                )
+            )
+            if call_names:
+                frappe.db.sql("DELETE FROM `tabAOS Call Participant` WHERE `call` IN %s", (call_names,))
+                frappe.db.sql("DELETE FROM `tabAOS Call` WHERE name IN %s", (call_names,))
+
         frappe.db.sql("DELETE FROM `tabAOS Live Message` WHERE user LIKE %s OR content LIKE %s", (email_like, like))
         frappe.db.sql("DELETE FROM `tabAOS Live Stream View` WHERE user LIKE %s OR session_id LIKE %s", (email_like, like))
         frappe.db.sql("DELETE FROM `tabAOS Live Stream` WHERE host_user LIKE %s OR title LIKE %s", (email_like, like))
