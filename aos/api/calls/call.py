@@ -475,9 +475,8 @@ def accept_call_impl(**kwargs):
         if interaction_error:
             return interaction_error
 
-        ensure_call_join_ready(call)
-
         if call.status == "ongoing" and int(call.is_active or 0) == 1:
+            ensure_call_join_ready(call)
             clear_missing_room_marker(call.name)
             token = issue_call_token(
                 identity=participant_identity(current_user),
@@ -499,6 +498,11 @@ def accept_call_impl(**kwargs):
         err = validate_can_accept(call)
         if err:
             return err
+
+        # Lifecycle validation deliberately precedes RTC readiness. A late accept
+        # against a terminal call must deterministically return INVALID_STATE, not
+        # leak a transport/readiness error, and can never resurrect the call.
+        ensure_call_join_ready(call)
 
         now = now_datetime()
         if get_datetime(call.ring_expires_at) <= get_datetime(now):

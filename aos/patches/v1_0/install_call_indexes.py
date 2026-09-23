@@ -11,7 +11,6 @@ INDEXES: tuple[tuple[str, str, tuple[str, ...], bool], ...] = (
     ("AOS Call", "idx_call_caller_active", ("caller", "is_active", "status", "creation", "name"), False),
     ("AOS Call", "idx_call_receiver_active", ("receiver", "is_active", "status", "creation", "name"), False),
     ("AOS Call", "idx_call_conversation_state", ("conversation", "is_active", "status", "creation", "name"), False),
-    ("AOS Call", "idx_call_timeout", ("status", "is_active", "ringing_at", "creation", "name"), False),
     ("AOS Call", "idx_call_caller_history", ("caller", "visible_to_caller", "creation", "name"), False),
     ("AOS Call", "idx_call_receiver_history", ("receiver", "visible_to_receiver", "creation", "name"), False),
     ("AOS Call", "idx_call_room_cleanup", ("room_cleanup_pending", "status", "modified", "name"), False),

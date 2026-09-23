@@ -111,6 +111,13 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
         delivery = _source("aos/services/notifications/delivery.py")
         self.assertIn('"ring_expires_at"', delivery)
 
+        # Terminal lifecycle state wins over RTC readiness. A late accept after
+        # cancel/reject/miss must return INVALID_STATE rather than CALL_NOT_READY.
+        accept = call.split("def accept_call_impl", 1)[1].split("# REJECT CALL", 1)[0]
+        state_check = accept.index("validate_can_accept(call)")
+        readiness_check = accept.index("ensure_call_join_ready(call)", state_check)
+        self.assertLess(state_check, readiness_check)
+
     def test_call_tokens_are_source_scoped_without_changing_live_grants(self):
         service = _source("aos/services/livekit_service.py")
         call_block = service.split("def generate_call_token", 1)[1].split("# LIVE TOKENS", 1)[0]
@@ -262,8 +269,10 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
         self.assertNotIn("delete_room", migration)
         public_data = patches.index("aos.patches.v1_0.harden_calls_public_contract")
         public_indexes = patches.index("aos.patches.v1_0.install_call_public_indexes")
+        timeout_cleanup = patches.index("aos.patches.v1_0.remove_legacy_call_timeout_index")
         self.assertLess(indexes, public_data)
         self.assertLess(public_data, public_indexes)
+        self.assertLess(public_indexes, timeout_cleanup)
         public_migration = _source("aos/patches/v1_0/harden_calls_public_contract.py")
         self.assertIn("_backfill_public_ids", public_migration)
         self.assertIn("_fail_legacy_active_calls", public_migration)
@@ -280,10 +289,23 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
         self.assertIn("idx_call_caller_active", installer)
         self.assertIn("idx_call_receiver_active", installer)
         self.assertIn("idx_call_room_cleanup", installer)
-        # The original already-recorded patch remains immutable; the new
-        # forward patch removes this legacy index on upgraded/fresh sites.
-        self.assertIn('"idx_call_timeout"', installer)
+        # The post-migrate invariant is canonical and must never recreate the
+        # deprecated ringing_at timeout index. The forward cleanup patch handles
+        # sites where an earlier migration already recorded the first cleanup.
+        self.assertNotIn('"idx_call_timeout"', installer)
+        cleanup = _source("aos/patches/v1_0/remove_legacy_call_timeout_index.py")
+        self.assertIn("DROP INDEX `idx_call_timeout`", cleanup)
+        self.assertNotIn("frappe.db.commit", cleanup)
+        self.assertNotIn("frappe.enqueue", cleanup)
+        self.assertNotIn("delete_room", cleanup)
         self.assertNotIn("frappe.db.commit", installer)
+        after_migrate = _source("aos/migrate.py")
+        self.assertIn("install_call_indexes.execute", after_migrate)
+        self.assertIn("install_call_public_indexes.execute", after_migrate)
+        self.assertLess(
+            after_migrate.index("install_call_indexes.execute"),
+            after_migrate.index("install_call_public_indexes.execute"),
+        )
 
     def test_account_deletion_ends_calls_and_defers_room_cleanup(self):
         source = _source("aos/services/account_deletion_service.py")

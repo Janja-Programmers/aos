@@ -39,6 +39,7 @@ aos.patches.v1_0.install_call_indexes
 # install the new lookup/dispatch indexes and remove deprecated timeout index.
 aos.patches.v1_0.harden_calls_public_contract
 aos.patches.v1_0.install_call_public_indexes
+aos.patches.v1_0.remove_legacy_call_timeout_index
 
 # Shared human-report moderation hardening.
 aos.patches.v1_0.harden_reports_subsystem
