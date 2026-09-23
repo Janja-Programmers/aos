@@ -159,6 +159,13 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
         self.assertIn("joined > 0", block)
         self.assertIn("initiator is not the conference lifetime owner", block)
 
+    def test_terminal_decline_notifies_all_call_members(self):
+        source = _source("aos/api/calls/call.py")
+        block = source.split("def reject_call_impl", 1)[1].split("def cancel_call_impl", 1)[0]
+        self.assertIn("call = _finalize_unanswered_if_done", block)
+        self.assertIn("publish_participant_declined(call, current_user)", block)
+        self.assertIn("publish_call_ended(call, event_status=call.status)", block)
+
     def test_rate_limit_registry_matches_public_surface(self):
         entries = json.loads(_source("ci/public-endpoint-rate-limits.json"))
         registry = {e["endpoint"] for e in entries}

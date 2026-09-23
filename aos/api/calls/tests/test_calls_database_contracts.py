@@ -291,6 +291,26 @@ class TestCallsDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(call.video_upgrade_status, "none")
         invited_event.assert_called_once()
 
+    def test_direct_decline_publishes_terminal_state_to_caller(self):
+        initiator, target = self._users(2, "direct-decline-event")
+        initiated, _ = self._initiate(initiator, [target])
+        call_id = initiated["data"]["call_id"]
+        name = self._internal(call_id)
+        frappe.set_user(target)
+        with (
+            patch("aos.api.calls.call.rate_limit", return_value=None),
+            patch("aos.api.calls.call.publish_participant_declined") as participant_event,
+            patch("aos.api.calls.call.publish_call_ended") as terminal_event,
+            patch("aos.api.calls.call.enqueue_room_cleanup"),
+        ):
+            result = reject_call_impl(call_id=call_id)
+        self.assertTrue(result.get("ok"), result)
+        self.assertEqual(frappe.db.get_value("AOS Call", name, "status"), "rejected")
+        self.assertEqual(int(frappe.db.get_value("AOS Call", name, "is_active") or 0), 0)
+        participant_event.assert_called_once()
+        terminal_event.assert_called_once()
+        self.assertEqual(terminal_event.call_args.kwargs.get("event_status"), "rejected")
+
     def test_direct_end_terminates_both_participants(self):
         initiator, target = self._users(2, "direct-end")
         initiated, _ = self._initiate(initiator, [target])

@@ -396,6 +396,11 @@ def reject_call_impl(**kwargs):
         call = _finalize_unanswered_if_done(call.name, ended_by=current_user)
         publish_participant_declined(call, current_user)
         if not int(call.is_active or 0):
+            # Finalizing an unanswered direct call moves the initiator participant
+            # to ``left`` before the participant-scoped decline event is built.
+            # Publish the terminal Call event as well so every member, including
+            # the caller, immediately converges on the durable rejected state.
+            publish_call_ended(call, event_status=call.status)
             _maybe_system_message(call, "📞 Call declined")
         return ok("Call declined.", data=_response(call, current_user))
     except Exception:
