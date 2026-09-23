@@ -156,7 +156,7 @@ def _safe_account_metrics(lines: list[str]) -> None:
 _ALLOWED_CALL_EVENTS = {
     "initiate_call", "mark_call_ringing", "accept_call", "reject_call", "cancel_call",
     "end_call", "request_video_upgrade", "respond_video_upgrade", "get_call_status",
-    "get_call_token", "list_calls", "get_call_group_details", "delete_call_logs",
+    "get_call_token", "list_calls", "add_call_participants", "delete_call_logs",
     "clear_call_history", "token_issue", "room_cleanup", "room_cleanup_enqueue",
     "room_provision", "room_provision_enqueue", "room_provision_finalize", "incoming_dispatch",
     "active_room_reconcile", "active_policy_reconcile", "active_reconcile", "missed", "timeout",

@@ -294,6 +294,12 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
+    "endpoint": "aos.api.v1.calls.__init__.add_call_participants",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
     "endpoint": "aos.api.v1.calls.__init__.cancel_call",
     "access": "authenticated",
     "policy": "baseline_authenticated",
@@ -313,12 +319,6 @@
   },
   {
     "endpoint": "aos.api.v1.calls.__init__.end_call",
-    "access": "authenticated",
-    "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
-  },
-  {
-    "endpoint": "aos.api.v1.calls.__init__.get_call_group_details",
     "access": "authenticated",
     "policy": "baseline_authenticated",
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."

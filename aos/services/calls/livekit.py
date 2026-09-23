@@ -16,7 +16,9 @@ from .observability import call_log
 
 TERMINAL_STATUSES = ("ended", "missed", "rejected", "failed", "cancelled")
 ROOM_CLEANUP_BATCH_SIZE = 20
-CALL_ROOM_MAX_PARTICIPANTS = 2
+DIRECT_CALL_MAX_PARTICIPANTS = 2
+GROUP_CALL_MAX_PARTICIPANTS = 32
+CALL_ROOM_MAX_PARTICIPANTS = GROUP_CALL_MAX_PARTICIPANTS
 
 
 def participant_identity(user: str) -> str:
@@ -32,15 +34,12 @@ def participant_identity(user: str) -> str:
 
 
 def call_rtc_ready(call) -> bool:
-    """Return whether the durable call row is safe for client RTC joining."""
+    """Return whether the shared RTC room is durably provisioned and active."""
     return bool(
         getattr(call, "rtc_provisioned_at", None)
-        and getattr(call, "incoming_dispatched_at", None)
-        and getattr(call, "ring_expires_at", None)
         and int(getattr(call, "is_active", 0) or 0) == 1
         and str(getattr(call, "status", "") or "") in {"initiated", "ringing", "ongoing"}
     )
-
 
 def ensure_call_join_ready(call) -> None:
     if call_rtc_ready(call):
@@ -90,10 +89,23 @@ def issue_call_token(
         ) from exc
 
 
-def provision_call_room(room_name: str) -> RoomAdminResult:
-    """Provision a bounded one-to-one room through the shared LiveKit admin layer."""
+
+def room_capacity_for_call(call_mode: str) -> int:
+    mode = str(call_mode or "").strip().lower()
+    if mode not in {"direct", "group"}:
+        raise CallError("Invalid call mode.", code="CALL_INVALID_STATE", http_status=409)
+    # A direct call is application-limited to two durable members, but the
+    # provider room is created with conference capacity so an ongoing direct
+    # call can be promoted to a group without deleting/recreating the RTC room.
+    return CALL_ROOM_MAX_PARTICIPANTS
+
+def provision_call_room(room_name: str, *, max_participants: int) -> RoomAdminResult:
+    """Provision a bounded Calls room through the shared LiveKit admin layer."""
+    bounded = int(max_participants or 0)
+    if bounded not in {DIRECT_CALL_MAX_PARTICIPANTS, GROUP_CALL_MAX_PARTICIPANTS}:
+        raise CallError("Invalid call capacity.", code="CALL_INVALID_STATE", http_status=409)
     started = time.monotonic()
-    result = ensure_room(room_name, max_participants=CALL_ROOM_MAX_PARTICIPANTS)
+    result = ensure_room(room_name, max_participants=bounded)
     call_log(
         "room_provision",
         outcome="success" if result.ok else "failure",

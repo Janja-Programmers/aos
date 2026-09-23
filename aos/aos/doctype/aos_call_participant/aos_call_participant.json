@@ -1,0 +1,38 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-09-23 15:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "call", "user", "role", "status", "added_by", "visible",
+  "invited_at", "incoming_dispatched_at", "ring_expires_at", "ringing_at",
+  "joined_at", "responded_at", "left_at"
+ ],
+ "fields": [
+  {"fieldname":"call","fieldtype":"Link","label":"Call","options":"AOS Call","reqd":1,"search_index":1},
+  {"fieldname":"user","fieldtype":"Link","label":"User","options":"User","reqd":1,"search_index":1},
+  {"fieldname":"role","fieldtype":"Select","label":"Role","options":"initiator\nparticipant","reqd":1,"search_index":1},
+  {"fieldname":"status","fieldtype":"Select","label":"Status","options":"invited\nringing\njoined\ndeclined\nmissed\nleft\nfailed\ncancelled","reqd":1,"search_index":1},
+  {"fieldname":"added_by","fieldtype":"Link","label":"Added By","options":"User","read_only":1},
+  {"fieldname":"visible","fieldtype":"Check","label":"Visible In History","default":"1","read_only":1,"search_index":1},
+  {"fieldname":"invited_at","fieldtype":"Datetime","label":"Invited At","read_only":1},
+  {"fieldname":"incoming_dispatched_at","fieldtype":"Datetime","label":"Incoming Dispatched At","read_only":1},
+  {"fieldname":"ring_expires_at","fieldtype":"Datetime","label":"Ring Expires At","read_only":1,"search_index":1},
+  {"fieldname":"ringing_at","fieldtype":"Datetime","label":"Ringing At","read_only":1},
+  {"fieldname":"joined_at","fieldtype":"Datetime","label":"Joined At","read_only":1},
+  {"fieldname":"responded_at","fieldtype":"Datetime","label":"Responded At","read_only":1},
+  {"fieldname":"left_at","fieldtype":"Datetime","label":"Left At","read_only":1}
+ ],
+ "grid_page_length": 50,
+ "links": [],
+ "modified": "2026-09-23 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "AOS",
+ "name": "AOS Call Participant",
+ "permissions": [
+  {"create":1,"delete":1,"read":1,"report":1,"role":"System Manager","write":1}
+ ],
+ "sort_field": "creation",
+ "sort_order": "ASC"
+}

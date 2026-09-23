@@ -37,6 +37,8 @@ class TestMigrationHookContracts(unittest.TestCase):
             "install_verification_indexes.execute",
             "install_shorts_indexes.execute",
             "install_live_indexes.execute",
+            "install_call_indexes.execute",
+            "install_call_public_indexes.execute",
             "install_review_indexes.execute",
             "install_social_indexes.execute",
             "install_report_indexes.execute",

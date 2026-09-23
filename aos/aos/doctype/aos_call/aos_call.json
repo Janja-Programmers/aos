@@ -1,19 +1,17 @@
 {
  "actions": [],
- "autoname": "naming_series:",
  "creation": "2026-03-29 15:58:00.629446",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "public_id",
   "conversation",
+  "initiator",
+  "call_mode",
+  "max_participants",
+  "participant_count",
   "room_name",
   "rtc_provisioned_at",
-  "incoming_dispatched_at",
-  "ring_expires_at",
-  "caller",
-  "receiver",
   "ringing_at",
   "started_at",
   "ended_at",
@@ -30,28 +28,9 @@
   "is_active",
   "room_cleanup_pending",
   "rtc_missing_since",
-  "rtc_last_checked_at",
-  "visible_to_caller",
-  "visible_to_receiver"
+  "rtc_last_checked_at"
  ],
  "fields": [
-  {
-   "fieldname": "conversation",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Conversation",
-   "options": "AOS Conversation",
-   "reqd": 1,
-   "search_index": 1
-  },
-  {
-   "default": "CALL-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "CALL-.YYYY.-.#####"
-  },
   {
    "fieldname": "public_id",
    "fieldtype": "Data",
@@ -62,29 +41,89 @@
    "length": 37
   },
   {
-   "fieldname": "caller",
+   "fieldname": "conversation",
    "fieldtype": "Link",
-   "label": "Caller",
+   "label": "Conversation",
+   "options": "AOS Conversation",
+   "search_index": 1
+  },
+  {
+   "fieldname": "initiator",
+   "fieldtype": "Link",
+   "label": "Initiator",
    "options": "User",
    "reqd": 1,
    "search_index": 1
   },
   {
-   "fieldname": "receiver",
-   "fieldtype": "Link",
-   "label": "Receiver",
-   "options": "User",
-   "reqd": 1,
-   "search_index": 1
-  },
-  {
-   "default": "audio",
-   "fieldname": "call_type",
+   "default": "direct",
+   "fieldname": "call_mode",
    "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Call Type",
-   "options": "audio\nvideo"
+   "label": "Call Mode",
+   "options": "direct\ngroup",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "2",
+   "fieldname": "max_participants",
+   "fieldtype": "Int",
+   "label": "Max Participants",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "participant_count",
+   "fieldtype": "Int",
+   "label": "Participant Count",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "room_name",
+   "fieldtype": "Data",
+   "label": "Room Name",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "rtc_provisioned_at",
+   "fieldtype": "Datetime",
+   "label": "RTC Provisioned At",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "ringing_at",
+   "fieldtype": "Datetime",
+   "label": "Ringing At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ended_at",
+   "fieldtype": "Datetime",
+   "label": "Ended At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ended_by",
+   "fieldtype": "Link",
+   "label": "Ended By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "duration",
+   "fieldtype": "Int",
+   "label": "Duration (seconds)",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_vdfj",
@@ -110,86 +149,13 @@
    "reqd": 1
   },
   {
-   "fieldname": "room_name",
-   "fieldtype": "Data",
+   "default": "audio",
+   "fieldname": "call_type",
+   "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Room Name",
-   "read_only": 1,
-   "reqd": 1
-  },
-  {
-   "fieldname": "rtc_provisioned_at",
-   "fieldtype": "Datetime",
-   "label": "RTC Provisioned At",
-   "read_only": 1,
-   "hidden": 1
-  },
-  {
-   "fieldname": "incoming_dispatched_at",
-   "fieldtype": "Datetime",
-   "label": "Incoming Dispatched At",
-   "read_only": 1,
-   "hidden": 1
-  },
-  {
-   "fieldname": "ring_expires_at",
-   "fieldtype": "Datetime",
-   "label": "Ring Expires At",
-   "read_only": 1,
-   "hidden": 1
-  },
-  {
-   "fieldname": "started_at",
-   "fieldtype": "Datetime",
-   "label": "Started At",
-   "read_only": 1
-  },
-  {
-   "fieldname": "ended_at",
-   "fieldtype": "Datetime",
-   "label": "Ended At",
-   "read_only": 1
-  },
-  {
-   "fieldname": "duration",
-   "fieldtype": "Int",
-   "label": "Duration (seconds)",
-   "read_only": 1
-  },
-  {
-   "fieldname": "ended_by",
-   "fieldtype": "Link",
-   "label": "Ended By",
-   "options": "User",
-   "read_only": 1
-  },
-  {
-   "default": "1",
-   "fieldname": "is_active",
-   "fieldtype": "Check",
-   "label": "Is Active",
-   "read_only": 1
-  },
-  {
-   "fieldname": "ringing_at",
-   "fieldtype": "Datetime",
-   "label": "Ringing At",
-   "read_only": 1
-  },
-  {
-   "default": "1",
-   "fieldname": "visible_to_caller",
-   "fieldtype": "Check",
-   "label": "Visible To Caller",
-   "read_only": 1
-  },
-  {
-   "default": "1",
-   "fieldname": "visible_to_receiver",
-   "fieldtype": "Check",
-   "label": "Visible To Receiver",
-   "read_only": 1
+   "label": "Call Type",
+   "options": "audio\nvideo"
   },
   {
    "default": "none",
@@ -221,6 +187,13 @@
    "read_only": 1
   },
   {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Is Active",
+   "read_only": 1
+  },
+  {
    "fieldname": "room_cleanup_pending",
    "fieldtype": "Check",
    "label": "Room Cleanup Pending",
@@ -245,11 +218,10 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-09-23 13:55:00.000000",
+ "modified": "2026-09-23 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Call",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {
@@ -268,39 +240,5 @@
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
  "sort_field": "creation",
- "sort_order": "DESC",
- "states": [
-  {
-   "color": "Orange",
-   "title": "initiated"
-  },
-  {
-   "color": "Blue",
-   "title": "ringing"
-  },
-  {
-   "color": "Green",
-   "title": "ongoing"
-  },
-  {
-   "color": "Gray",
-   "title": "cancelled"
-  },
-  {
-   "color": "Red",
-   "title": "rejected"
-  },
-  {
-   "color": "Orange",
-   "title": "missed"
-  },
-  {
-   "color": "Gray",
-   "title": "ended"
-  },
-  {
-   "color": "Red",
-   "title": "failed"
-  }
- ]
+ "sort_order": "DESC"
 }

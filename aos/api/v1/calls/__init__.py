@@ -22,6 +22,7 @@ from aos.api.calls.call import (
     reject_call_impl as _reject_call_impl,
     cancel_call_impl as _cancel_call_impl,
     end_call_impl as _end_call_impl,
+    add_call_participants_impl as _add_call_participants_impl,
     request_video_upgrade_impl as _request_video_upgrade_impl,
     respond_video_upgrade_impl as _respond_video_upgrade_impl,
 )
@@ -29,7 +30,6 @@ from aos.api.calls.status import get_call_status_impl as _get_call_status_impl
 from aos.api.calls.token import get_call_token_impl as _get_call_token_impl
 from aos.api.calls.history import (
     list_calls_impl as _list_calls_impl,
-    get_call_group_details_impl as _get_call_group_details_impl,
     delete_call_logs_impl as _delete_call_logs_impl,
     clear_call_history_impl as _clear_call_history_impl,
 )
@@ -76,6 +76,11 @@ def end_call(**kwargs):
 
 
 @frappe.whitelist(methods=["POST"])
+def add_call_participants(**kwargs):
+    return _call("add_call_participants", _add_call_participants_impl, kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
 def request_video_upgrade(**kwargs):
     return _call("request_video_upgrade", _request_video_upgrade_impl, kwargs)
 
@@ -98,11 +103,6 @@ def get_call_token(**kwargs):
 @frappe.whitelist(methods=["GET", "POST"])
 def list_calls(**kwargs):
     return _call("list_calls", _list_calls_impl, kwargs)
-
-
-@frappe.whitelist(methods=["GET", "POST"])
-def get_call_group_details(**kwargs):
-    return _call("get_call_group_details", _get_call_group_details_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])

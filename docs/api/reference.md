@@ -92,11 +92,11 @@ Owner documentation: [docs/features/calls/api.md](../features/calls/api.md)
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
 | `/api/method/aos.api.v1.calls.accept_call` | POST | Session required | Client | `aos/api/v1/calls/__init__.py` |
+| `/api/method/aos.api.v1.calls.add_call_participants` | POST | Session required | Client | `aos/api/v1/calls/__init__.py` |
 | `/api/method/aos.api.v1.calls.cancel_call` | POST | Session required | Client | `aos/api/v1/calls/__init__.py` |
 | `/api/method/aos.api.v1.calls.clear_call_history` | POST | Session required | Client | `aos/api/v1/calls/__init__.py` |
 | `/api/method/aos.api.v1.calls.delete_call_logs` | POST | Session required | Client | `aos/api/v1/calls/__init__.py` |
 | `/api/method/aos.api.v1.calls.end_call` | POST | Session required | Client | `aos/api/v1/calls/__init__.py` |
-| `/api/method/aos.api.v1.calls.get_call_group_details` | GET/POST | Session required | Client | `aos/api/v1/calls/__init__.py` |
 | `/api/method/aos.api.v1.calls.get_call_status` | GET/POST | Session required | Client | `aos/api/v1/calls/__init__.py` |
 | `/api/method/aos.api.v1.calls.get_call_token` | POST | Session required | Client | `aos/api/v1/calls/__init__.py` |
 | `/api/method/aos.api.v1.calls.initiate_call` | POST | Session required | Client | `aos/api/v1/calls/__init__.py` |

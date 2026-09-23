@@ -3,14 +3,16 @@
 <!-- BEGIN CODE-DERIVED ENDPOINTS -->
 ## Endpoint inventory (code-derived)
 
+This table is generated from the current `@frappe.whitelist` declarations. Business semantics are documented below; do not hand-edit this inventory.
+
 | Endpoint | HTTP | Decorator access | Audience |
 |---|---|---|---|
 | `accept_call` | POST | Session required | Client |
+| `add_call_participants` | POST | Session required | Client |
 | `cancel_call` | POST | Session required | Client |
 | `clear_call_history` | POST | Session required | Client |
 | `delete_call_logs` | POST | Session required | Client |
 | `end_call` | POST | Session required | Client |
-| `get_call_group_details` | GET/POST | Session required | Client |
 | `get_call_status` | GET/POST | Session required | Client |
 | `get_call_token` | POST | Session required | Client |
 | `initiate_call` | POST | Session required | Client |
@@ -19,45 +21,34 @@
 | `reject_call` | POST | Session required | Client |
 | `request_video_upgrade` | POST | Session required | Client |
 | `respond_video_upgrade` | POST | Session required | Client |
+
+`Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
-All Calls methods require authentication. Public wrappers accept only documented business fields after stripping Frappe's `cmd` transport field; unknown fields fail closed. Call IDs are canonical opaque `call_<32 hex>` values. The internal Frappe Call name and LiveKit room name are not client contracts.
 
-| Endpoint | Intended method | Allowed fields | App limit/min/user |
-|---|---|---|---:|
-| `initiate_call` | POST | `conversation_id`, `call_type` | 10 |
-| `mark_call_ringing` | POST | `call_id` | 120 |
-| `accept_call` | POST | `call_id` | 60 |
-| `reject_call` | POST | `call_id` | 60 |
-| `cancel_call` | POST | `call_id` | 60 |
-| `end_call` | POST | `call_id` | 60 |
-| `request_video_upgrade` | POST | `call_id` | 30 |
-| `respond_video_upgrade` | POST | `call_id`, `action` | 60 |
-| `get_call_status` | GET/POST | `call_id` | 120 |
-| `get_call_token` | POST | `call_id` | 120 |
-| `list_calls` | GET/POST | `limit`, `conversation_id`, `type`, `cursor_created_at`, `cursor_call_id` | 120 |
-| `get_call_group_details` | GET/POST | `latest_call_id`, `oldest_call_id` | 120 |
-| `delete_call_logs` | POST | `call_ids` (max 100) | 60 |
-| `clear_call_history` | POST | none | 20 |
+All methods require authentication and strict allowlisted request fields. Client call IDs are opaque `call_<32 hex>` values.
 
-Initiation also applies the existing aggregate incoming-attempt protection per target account. Shared bounded/hashed rate-limit keys are reused.
+| Endpoint | Fields | Limit/min/user |
+|---|---|---:|
+| `initiate_call` | `participant_ids`, `conversation_id`, `call_type` | 10 |
+| `mark_call_ringing` | `call_id` | 120 |
+| `accept_call` | `call_id` | 60 |
+| `reject_call` | `call_id` | 60 |
+| `cancel_call` | `call_id` | 60 |
+| `end_call` | `call_id` | 60 |
+| `add_call_participants` | `call_id`, `participant_ids` | 30 |
+| `request_video_upgrade` | `call_id` | 30 |
+| `respond_video_upgrade` | `call_id`, `action` | 60 |
+| `get_call_status` | `call_id` | 120 |
+| `get_call_token` | `call_id` | 120 |
+| `list_calls` | `limit`, `conversation_id`, `type`, `cursor_created_at`, `cursor_call_id` | 120 |
+| `delete_call_logs` | `call_ids` (max 100) | 60 |
+| `clear_call_history` | none | 20 |
 
-## Initiation and RTC readiness
+`participant_ids` contain opaque Accounts IDs, never User/email identities. One target means direct; 2–31 targets means group. Total membership may never exceed 32. Group calls cannot bind to the one-to-one Conversation model.
 
-`initiate_call` persists or reuses the one active caller/receiver call under deterministic locks, then queues shared-LiveKit room provisioning after commit. A newly created/pending call returns its public call payload with `rtc_ready=false` and no token/room name. Once provisioning has been durably dispatched, the caller receives `aos_call_ready`; `get_call_token` then returns a fresh short-lived caller token while the durable `ring_expires_at` window remains open. Retrying `initiate_call` for that same ready active call is idempotent and may return a fresh caller token.
+Accept/reject/ring state is participant-scoped. `cancel_call` is initiator-only before anyone accepts. During an ongoing direct call, `end_call` ends the call for both sides. During an ongoing group call, `end_call` means the current participant leaves; the call becomes terminal only when no joined participants remain. `add_call_participants` requires a joined participant in an ongoing call. On a direct call, the first successful addition atomically promotes it to group mode and clears the one-to-one conversation/video-upgrade state without recreating the LiveKit room.
 
-## Lifecycle authorization
+Tokens are issued only to joined participants. Direct audio calls retain the existing server-authorized audio-to-video upgrade flow; group calls choose audio/video at initiation and do not use the direct-call upgrade handshake.
 
-- Ring: receiver only; requires the call to be durably RTC-ready and not past `ring_expires_at`. Repeated `ringing` is idempotent.
-- Accept: receiver only; policy/readiness and the ring deadline are rechecked. Repeated `ongoing` accept is idempotent and returns a fresh receiver token.
-- Reject: receiver only while ringing-capable; repeated `rejected` is idempotent.
-- Cancel: caller only while ringing-capable; repeated `cancelled` is idempotent.
-- End: either participant while `ongoing`; repeated `ended` is idempotent.
-- Token: participant only; receiver cannot mint before `ongoing`; terminal calls cannot mint.
-- Video upgrade: active participants only; request/response is serialized and identical retries are idempotent. After acceptance, clients refresh via `get_call_token` to obtain the video-scoped camera grant.
-
-Account enabled/deleted state and bidirectional Social block policy are rechecked at interaction/token boundaries. The server owns all timestamps, duration, room identity, participant identity, grants, and state transitions.
-
-## History
-
-History is participant-only and uses per-user visibility flags rather than deleting the shared audit row. Lists use keyset/cursor pagination with a maximum page size of 100 and batch Accounts projection. The client sends the opaque boundary `cursor_call_id` plus its returned timestamp; the server resolves the authorized call and uses the database-owned creation/name boundary for SQL ordering rather than trusting a client sort key. Bulk log deletion is bounded to 100 call IDs, and clear-history work is batched.
+History is participant-scoped, cursor-paginated, bounded, and uses batched Accounts projections. Hidden history is per participant and never deletes the shared audit record.

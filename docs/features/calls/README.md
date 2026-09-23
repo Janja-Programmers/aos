@@ -1,35 +1,17 @@
 # AOS Calls backend
 
-AOS Calls is the existing one-to-one Connect calling domain. The authoritative model supports **audio** and **video** calls between the two users of an `AOS Conversation`. This hardening keeps Calls small: authentication, Accounts projection/state, Social blocking, Notifications delivery, and LiveKit RTC infrastructure remain owned by their hardened shared domains.
+AOS Calls supports direct and conference audio/video calling while consuming the hardened Authentication, Accounts, Social, Notifications, and shared LiveKit contracts. Direct calls contain two participants; group calls contain 3–32 total participants. Calls does not own a second RTC client/admin stack, token signer, webhook verifier, Redis correctness layer, or notification pipeline.
 
-Calls does **not** own a second LiveKit client/admin stack, token signer, webhook verifier, Redis correctness layer, or RTC configuration.
+## Durable model
 
-## Authoritative lifecycle
+`AOS Call` owns the conference-wide state and an opaque `call_<32 hex>` public ID. `AOS Call Participant` owns per-account invitation/ringing/join/decline/missed/leave state. The internal Frappe Call name, User names/emails, and LiveKit room name are never client identifiers.
 
-The persisted lifecycle remains compatible with the existing feature:
+Call lifecycle: `initiated -> ringing -> ongoing -> ended`, with terminal `cancelled`, `rejected`, `missed`, and `failed`. Participant lifecycle: `invited -> ringing -> joined -> left`, with `declined`, `missed`, `failed`, and `cancelled` alternatives. `state_version` is monotonic so clients can discard stale realtime updates.
 
-`initiated -> ringing -> ongoing -> ended`
+For group calls, one decline/miss does not terminate the conference. The initiator is an audit/invitation role, not the room lifetime owner: leaving an ongoing group call does not end it while other joined participants remain. Direct calls preserve two-party end semantics.
 
-Terminal alternatives are `cancelled`, `rejected`, `missed`, and `failed`. `initiated` includes the short provider-provisioning phase; `rtc_ready=false` means a client must not attempt to join yet. A monotonically increasing `state_version` accompanies client-visible state so clients can discard duplicate/stale realtime events.
+## Public contract
 
-The caller is always `frappe.session.user`. The peer is derived from the canonical conversation. Clients cannot supply caller/receiver identity, room name, RTC identity, grants, or lifecycle state. Participant rows and call rows are serialized for critical mutations, while LiveKit network calls happen outside database row locks/transactions.
+`initiate_call` accepts server-resolved opaque `participant_ids`: one target creates a direct call and 2–31 targets create a group call. The hard server maximum is 32 people including the initiator. A joined participant may invite additional accounts while capacity remains; adding to an ongoing direct call atomically promotes it to group mode without recreating the RTC room. Group calls are independent of the current one-to-one Conversation DocType; direct calls may optionally carry a validated conversation.
 
-## Public identity boundary
-
-`AOS Call.name` remains an internal Frappe key used for links and SQL ordering. Client-facing Calls APIs, history cursors, realtime events, push payloads, and LiveKit call metadata use a random opaque `call_<32 hex>` `public_id`. Internal names and LiveKit room names are not returned to clients.
-
-LiveKit room names are independently randomized server-side and remain immutable. RTC participant identity is the shared Accounts public account ID, never a User/email value.
-
-## Incoming, missed, and recovery
-
-Creation first persists an `initiated` call and queues idempotent room provisioning. The shared LiveKit admin service provisions a room limited to two participants. Only after provisioning succeeds and policy/state are revalidated does the backend durably mark the call RTC-ready, publish `aos_call_ready` to the caller, dispatch `aos_incoming_call` to the receiver, and start the unanswered timeout clock.
-
-Provisioning failure fails closed to `failed`; no join token is exposed. There is no sleeping worker per call. The minute scheduler performs bounded indexed recovery of lost provisioning enqueues and bounded missed-call finalization based on the durable `ring_expires_at` deadline.
-
-`missed_call` remains the persistent notification semantic. Incoming delivery remains transient and uses the hardened Notifications delivery/outbox path.
-
-## Recovery authority
-
-Realtime accelerates UX but is never authoritative. Clients reconcile with `get_call_status` after reconnect, app restoration, or stale native actions. Terminal calls cannot reconnect. An authorized `ongoing` participant may mint a fresh short-lived token after transient RTC disconnect.
-
-See `api.md`, `realtime.md`, `livekit.md`, `operations.md`, and `testing.md`.
+Room capacity, room names, RTC identities, token grants, timestamps, participant state, and ownership are server-controlled. Realtime accelerates UX but durable database state remains authoritative.

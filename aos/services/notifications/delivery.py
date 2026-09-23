@@ -355,26 +355,35 @@ def _delivery_suppression_reason(job) -> str | None:
 	call = frappe.db.get_value(
 		"AOS Call",
 		{"public_id": call_id},
-		["caller", "receiver", "status", "ring_expires_at"],
+		["name", "initiator", "status", "is_active"],
 		as_dict=True,
 	) or {}
 	if not call:
 		return "call_missing"
-	if _clean(call.get("receiver")) != _clean(job.user):
+	participant = frappe.db.get_value(
+		"AOS Call Participant",
+		{"call": call.get("name"), "user": _clean(job.user)},
+		["status", "ring_expires_at", "added_by"],
+		as_dict=True,
+	) or {}
+	if not participant:
 		return "call_recipient_mismatch"
-	if _clean(call.get("status")).lower() not in {"initiated", "ringing"}:
+	if _clean(call.get("status")).lower() not in {"initiated", "ringing", "ongoing"} or not int(call.get("is_active") or 0):
 		return "call_not_ringing"
-	if (
-		not call.get("ring_expires_at")
-		or get_datetime(call.get("ring_expires_at")) <= now_datetime()
-	):
+	if _clean(participant.get("status")).lower() not in {"invited", "ringing"}:
 		return "call_not_ringing"
-	caller = _clean(call.get("caller"))
-	if not caller:
+	if (not participant.get("ring_expires_at") or get_datetime(participant.get("ring_expires_at")) <= now_datetime()):
+		return "call_not_ringing"
+	# Revalidate against the durable inviter recorded by Calls. The notification
+	# payload is transport data, not the authorization source of truth. Initial
+	# fan-out records the initiator; later conference invitations record the
+	# joined participant who added the recipient.
+	actor = _clean(participant.get("added_by"))
+	if not actor:
 		return "call_actor_missing"
-	if account_availability_reason(caller):
+	if account_availability_reason(actor):
 		return "actor_unavailable"
-	return relationship_suppression_reason(_clean(job.user), caller)
+	return relationship_suppression_reason(_clean(job.user), actor)
 
 
 def _safe_callback_reason(value: Any, *, fallback: str | None = None) -> str | None:

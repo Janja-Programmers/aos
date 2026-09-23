@@ -20,7 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 import frappe
-from frappe.utils import now_datetime
+from frappe.utils import get_datetime, now_datetime
 
 from aos.services.social.repository import SocialRepository
 
@@ -187,67 +187,99 @@ def restore_deleted_account_features(user: str) -> dict[str, int]:
 
 # Feature cleanup implementations
 def _end_active_calls(*, user: str, now) -> int:
-    if not _doctype_exists("AOS Call"):
+    if not _doctype_exists("AOS Call") or not _doctype_exists("AOS Call Participant"):
         return 0
 
-    count = _update_counted(
-        "AOS Call",
-        set_sql="""
-            status = 'ended',
-            is_active = 0,
-            ended_at = COALESCE(ended_at, %s),
-            ended_by = COALESCE(ended_by, %s),
-            duration = CASE
-                WHEN started_at IS NULL THEN GREATEST(COALESCE(duration, 0), 0)
-                ELSE GREATEST(0, TIMESTAMPDIFF(SECOND, started_at, %s))
-            END,
-            room_cleanup_pending = 1,
-            rtc_missing_since = NULL,
-            state_version = COALESCE(state_version, 1) + 1,
-            modified = %s
+    rows = frappe.db.sql(
+        """
+        SELECT DISTINCT c.name,c.call_mode,c.status,c.started_at,c.initiator
+        FROM `tabAOS Call` c
+        INNER JOIN `tabAOS Call Participant` p ON p.`call`=c.name
+        WHERE p.user=%s
+          AND c.is_active=1
+          AND c.status IN ('initiated','ringing','ongoing')
+          AND p.status IN ('invited','ringing','joined')
+        ORDER BY c.creation,c.name
+        LIMIT 100
+        FOR UPDATE
         """,
-        where_sql="""
-            (caller = %s OR receiver = %s)
-            AND (
-                is_active = 1
-                OR status IN ('initiated', 'ringing', 'ongoing')
-            )
-        """,
-        set_params=(now, user, now, now),
-        where_params=(user, user),
+        (user,),
+        as_dict=True,
     )
+    if not rows:
+        return 0
 
-    if count:
-        # No provider I/O occurs inside account deletion. Queue a bounded set
-        # after commit; the Calls reconciler drains any remainder durably.
-        from aos.services.calls.livekit import enqueue_room_cleanup
+    from aos.services.calls.livekit import enqueue_room_cleanup
 
-        pending = frappe.get_all(
-            "AOS Call",
-            filters={
-                "room_cleanup_pending": 1,
-                "status": "ended",
-                "caller": ["in", [user]],
-            },
-            pluck="name",
-            order_by="modified asc, name asc",
-            limit=50,
+    terminalized: list[str] = []
+    affected = 0
+    for row in rows:
+        frappe.db.sql(
+            "SELECT name FROM `tabAOS Call Participant` WHERE `call`=%s ORDER BY user,name FOR UPDATE",
+            (row.name,),
         )
-        receiver_pending = frappe.get_all(
-            "AOS Call",
-            filters={
-                "room_cleanup_pending": 1,
-                "status": "ended",
-                "receiver": ["in", [user]],
-            },
-            pluck="name",
-            order_by="modified asc, name asc",
-            limit=50,
+        current = frappe.db.get_value(
+            "AOS Call Participant", {"call": row.name, "user": user}, ["name", "status"], as_dict=True
         )
-        for call_id in dict.fromkeys([*pending, *receiver_pending]):
-            enqueue_room_cleanup(call_id)
+        if not current or current.status not in {"invited", "ringing", "joined"}:
+            continue
+        affected += 1
 
-    return count
+        if row.call_mode == "direct":
+            duration = 0 if not row.started_at else max(0, int((now - get_datetime(row.started_at)).total_seconds()))
+            frappe.db.sql(
+                "UPDATE `tabAOS Call Participant` "
+                "SET status=CASE WHEN status='joined' THEN 'left' ELSE 'cancelled' END, "
+                "left_at=CASE WHEN status='joined' THEN COALESCE(left_at,%s) ELSE left_at END, "
+                "responded_at=CASE WHEN status IN ('invited','ringing') THEN COALESCE(responded_at,%s) ELSE responded_at END "
+                "WHERE `call`=%s AND status IN ('invited','ringing','joined')",
+                (now, now, row.name),
+            )
+            frappe.db.sql(
+                "UPDATE `tabAOS Call` SET status='ended',is_active=0,ended_at=COALESCE(ended_at,%s),"
+                "ended_by=COALESCE(ended_by,%s),duration=%s,room_cleanup_pending=1,rtc_missing_since=NULL,"
+                "state_version=COALESCE(state_version,1)+1,modified=%s WHERE name=%s AND is_active=1",
+                (now, user, duration, now, row.name),
+            )
+            terminalized.append(row.name)
+            continue
+
+        # Group calls survive an initiator/member departure when other joined
+        # participants remain. The initiator is not the conference lifetime owner.
+        frappe.db.sql(
+            "UPDATE `tabAOS Call Participant` "
+            "SET status=CASE WHEN status='joined' THEN 'left' ELSE 'cancelled' END,"
+            "left_at=CASE WHEN status='joined' THEN COALESCE(left_at,%s) ELSE left_at END,"
+            "responded_at=CASE WHEN status IN ('invited','ringing') THEN COALESCE(responded_at,%s) ELSE responded_at END "
+            "WHERE name=%s",
+            (now, now, current.name),
+        )
+        joined = int(frappe.db.count("AOS Call Participant", {"call": row.name, "status": "joined"}) or 0)
+        if joined > 0:
+            frappe.db.sql(
+                "UPDATE `tabAOS Call` SET state_version=COALESCE(state_version,1)+1,modified=%s WHERE name=%s",
+                (now, row.name),
+            )
+            continue
+
+        duration = 0 if not row.started_at else max(0, int((now - get_datetime(row.started_at)).total_seconds()))
+        terminal_status = "ended" if row.status == "ongoing" else "cancelled"
+        frappe.db.sql(
+            "UPDATE `tabAOS Call Participant` SET status='cancelled',responded_at=COALESCE(responded_at,%s) "
+            "WHERE `call`=%s AND status IN ('invited','ringing')",
+            (now, row.name),
+        )
+        frappe.db.sql(
+            "UPDATE `tabAOS Call` SET status=%s,is_active=0,ended_at=COALESCE(ended_at,%s),"
+            "ended_by=COALESCE(ended_by,%s),duration=%s,room_cleanup_pending=1,rtc_missing_since=NULL,"
+            "state_version=COALESCE(state_version,1)+1,modified=%s WHERE name=%s AND is_active=1",
+            (terminal_status, now, user, duration, now, row.name),
+        )
+        terminalized.append(row.name)
+
+    for call_id in dict.fromkeys(terminalized):
+        enqueue_room_cleanup(call_id)
+    return affected
 
 
 def _end_active_live_streams(*, user: str, now) -> int:
