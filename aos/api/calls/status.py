@@ -11,6 +11,7 @@ from aos.services.calls.livekit import call_rtc_ready
 from aos.services.calls.participants import participant_for_user
 from aos.services.calls.policy import ensure_call_interaction_allowed
 
+from .call import converge_direct_missed_if_due
 from .constants import GET_CALL_STATUS_LIMIT_PER_MINUTE_PER_USER
 from .realtime import serialize_call_for_realtime
 from .validators import validate_call_exists, validate_user_in_call
@@ -54,6 +55,8 @@ def get_call_status_impl(**kwargs):
             return err
         if (membership := validate_user_in_call(call, current_user)):
             return membership
+        if call.call_mode == "direct" and call.status in {"initiated", "ringing"} and int(call.is_active or 0):
+            call = converge_direct_missed_if_due(call)
         if call.status in {"initiated", "ringing", "ongoing"} and int(call.is_active or 0):
             if (policy_error := ensure_call_interaction_allowed(call, current_user, action="access a call with")):
                 return policy_error

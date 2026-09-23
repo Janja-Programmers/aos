@@ -1,6 +1,6 @@
 # Calls operations
 
-The minute Calls scheduler performs bounded provisioning recovery and participant ring-expiry processing. There is no sleeping worker per invited participant. Missed state is per participant; an expired invite cannot terminate a conference that already has joined participants.
+The minute Calls scheduler performs bounded provisioning recovery and participant ring-expiry processing. There is no sleeping worker per invited participant. Pending direct-call status reconciliation also idempotently finalizes an already-expired invite, closing the scheduler-granularity gap while keeping the database authoritative. The minute worker remains the fleet-wide safety net. Missed state is per participant; an expired invite cannot terminate a conference that already has joined participants.
 
 The five-minute reconciliation path retries durable room cleanup and reconciles active LiveKit rooms/account/block policy. Group initiator disappearance does not make the room terminal while other joined participants remain.
 

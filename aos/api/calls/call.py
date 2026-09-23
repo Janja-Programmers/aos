@@ -196,6 +196,44 @@ def _finalize_unanswered_if_done(call_name: str, *, ended_by: str | None = None)
     return call
 
 
+def converge_direct_missed_if_due(call):
+    """Lazily terminalize an expired unanswered direct call.
+
+    The indexed minute scheduler remains the fleet-wide safety net. Interactive
+    clients reconcile pending direct calls more frequently, so this idempotent
+    CAS path closes the scheduler-granularity gap without creating one delayed
+    background job (or sleeping worker) per ringing call.
+    """
+    if (
+        not call
+        or call.call_mode != "direct"
+        or call.status not in {"initiated", "ringing"}
+        or not int(call.is_active or 0)
+    ):
+        return call
+
+    rows = non_initiator_rows(call.name)
+    if len(rows) != 1:
+        return call
+    candidate = rows[0]
+    if (
+        candidate.status not in {"invited", "ringing"}
+        or not candidate.ring_expires_at
+        or get_datetime(candidate.ring_expires_at) > get_datetime(now_datetime())
+    ):
+        return call
+
+    lock_call_row(call.name)
+    call = _reload(call.name)
+    if call.status not in {"initiated", "ringing"} or not int(call.is_active or 0):
+        return call
+    row = participant_for_user(call.name, candidate.user, for_update=True)
+    if not row:
+        return call
+    call, _ = _expire_participant_if_due(call, row, row.user)
+    return call
+
+
 def _expire_participant_if_due(call, row, current_user: str, *, now=None):
     """Converge a stale incoming action to missed instead of surfacing INVALID_STATE.
 

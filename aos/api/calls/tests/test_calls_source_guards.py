@@ -166,6 +166,9 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
         self.assertIn("_expire_participant_if_due", reject)
         self.assertIn('return ok("Call missed."', accept)
         self.assertIn('return ok("Call missed."', reject)
+        status = _source("aos/api/calls/status.py")
+        self.assertIn("converge_direct_missed_if_due", status)
+        self.assertIn('call.call_mode == "direct"', status)
 
     def test_account_deletion_does_not_make_group_initiator_room_owner(self):
         source = _source("aos/services/account_deletion_service.py")

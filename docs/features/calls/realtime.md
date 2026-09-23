@@ -6,4 +6,4 @@ Core events include `aos_call_ready`, `aos_incoming_call`, participant ringing/j
 
 Incoming call push is transient through hardened Notifications; missed-call notification is persistent. Every invited participant has an independent durable `ring_expires_at`. Delivery suppression revalidates the recipient participant row and the actual inviter (including a non-initiator who adds somebody to an ongoing group) before delivery, preventing stale or newly-blocked invites.
 
-Multi-device retries converge through row-locked/idempotent mutations. Reconnects reconcile through `get_call_status` and `get_call_token`; stale realtime/native actions cannot revive terminal or expired participant state.
+Multi-device retries converge through row-locked/idempotent mutations. Reconnects reconcile through `get_call_status` and `get_call_token`; for a pending direct call, status reconciliation may idempotently terminalize an invite whose durable `ring_expires_at` has already elapsed instead of waiting for the next minute-scheduler tick. Stale realtime/native actions cannot revive terminal or expired participant state.

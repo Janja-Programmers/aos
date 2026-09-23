@@ -371,6 +371,45 @@ class TestCallsDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         self.assertFalse(frappe.db.exists("AOS Call Participant", {"call": name, "status": "joined"}))
 
 
+    def test_direct_status_reconciliation_finalizes_expired_missed_call(self):
+        initiator, target = self._users(2, "status-expiry")
+        initiated, _ = self._initiate(initiator, [target])
+        call_id = initiated["data"]["call_id"]
+        name = self._internal(call_id)
+        row = frappe.db.get_value(
+            "AOS Call Participant",
+            {"call": name, "user": target},
+            ["name", "ring_expires_at"],
+            as_dict=True,
+        )
+        frappe.db.set_value(
+            "AOS Call Participant",
+            row.name,
+            "ring_expires_at",
+            add_to_date(now_datetime(), seconds=-1),
+            update_modified=False,
+        )
+        frappe.db.set_value("AOS Call Participant", row.name, "status", "ringing", update_modified=False)
+        frappe.db.set_value("AOS Call", name, "status", "ringing", update_modified=False)
+
+        # The caller-side pending reconciliation is enough to close the
+        # minute-scheduler granularity gap; no receiver interaction is needed.
+        frappe.set_user(initiator)
+        with (
+            patch("aos.api.calls.status.rate_limit", return_value=None),
+            patch("aos.api.calls.call.publish_participant_missed"),
+            patch("aos.api.calls.call.publish_call_ended"),
+            patch("aos.api.calls.call.NotificationService.notify_missed_call"),
+            patch("aos.api.calls.call.enqueue_room_cleanup"),
+        ):
+            result = get_call_status_impl(call_id=call_id)
+
+        self.assertTrue(result.get("ok"), result)
+        self.assertEqual(result["data"]["status"], "missed")
+        self.assertFalse(result["data"]["is_active"])
+        self.assertEqual(frappe.db.get_value("AOS Call", name, "status"), "missed")
+        self.assertEqual(frappe.db.get_value("AOS Call Participant", row.name, "status"), "missed")
+
     def test_ongoing_direct_status_can_join_is_boolean(self):
         initiator, target = self._users(2, "status-bool")
         initiated, _ = self._initiate(initiator, [target])
