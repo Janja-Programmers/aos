@@ -64,6 +64,7 @@ from .realtime import (
     publish_participant_declined,
     publish_participant_joined,
     publish_participant_left,
+    publish_participant_missed,
     publish_participants_invited,
     publish_participant_ringing,
     publish_video_upgrade_accepted,
@@ -193,6 +194,51 @@ def _finalize_unanswered_if_done(call_name: str, *, ended_by: str | None = None)
     if not int(call.is_active or 0):
         enqueue_room_cleanup(call.name)
     return call
+
+
+def _expire_participant_if_due(call, row, current_user: str, *, now=None):
+    """Converge a stale incoming action to missed instead of surfacing INVALID_STATE.
+
+    The missed-call scheduler remains the normal expiry path. This CAS helper only
+    closes the race where a receiver presses Accept/Reject after the durable
+    deadline but before the scheduler has processed that participant.
+    """
+    now = now or now_datetime()
+    if not row or row.status not in {"invited", "ringing"} or not row.ring_expires_at:
+        return call, False
+    if get_datetime(row.ring_expires_at) > get_datetime(now):
+        return call, False
+
+    frappe.db.sql(
+        """
+        UPDATE `tabAOS Call Participant`
+        SET status='missed', responded_at=COALESCE(responded_at,%s)
+        WHERE name=%s AND status IN ('invited','ringing')
+          AND ring_expires_at IS NOT NULL AND ring_expires_at<=%s
+        """,
+        (now, row.name, now),
+    )
+    if frappe.db._cursor.rowcount == 0:
+        return _reload(call.name), False
+
+    frappe.db.sql(
+        "UPDATE `tabAOS Call` SET state_version=state_version+1 WHERE name=%s AND is_active=1",
+        (call.name,),
+    )
+    call = _finalize_unanswered_if_done(call.name)
+    publish_participant_missed(call, current_user)
+    try:
+        NotificationService.notify_missed_call(
+            user=current_user,
+            caller=(getattr(row, "added_by", None) or call.initiator),
+            call_id=public_call_id(call),
+        )
+    except Exception:
+        frappe.log_error("Calls missed-call notification failed.", "AOS Calls Late Action Expiry")
+    if not int(call.is_active or 0):
+        publish_call_ended(call, event_status=call.status)
+        _maybe_system_message(call, "📞 Missed call")
+    return call, True
 
 
 def initiate_call_impl(**kwargs):
@@ -345,7 +391,12 @@ def accept_call_impl(**kwargs):
             return ok("Call is already accepted.", data=_response(call, current_user, token=_token_for(call, current_user)))
         if call.status not in {"initiated", "ringing", "ongoing"} or row.status not in {"invited", "ringing"}:
             return fail("Call cannot be accepted.", error="INVALID_STATE")
-        if not row.ring_expires_at or get_datetime(row.ring_expires_at) <= get_datetime(now_datetime()):
+        if not row.ring_expires_at:
+            return fail("Call is no longer ringing.", error="INVALID_STATE", http_status=409)
+        if get_datetime(row.ring_expires_at) <= get_datetime(now_datetime()):
+            call, expired = _expire_participant_if_due(call, row, current_user)
+            if expired or call.status == "missed":
+                return ok("Call missed.", data=_response(call, current_user))
             return fail("Call is no longer ringing.", error="INVALID_STATE", http_status=409)
         ensure_call_join_ready(call)
         if (policy_error := ensure_call_interaction_allowed(call, current_user, action="accept a call from")):
@@ -388,7 +439,12 @@ def reject_call_impl(**kwargs):
             return fail("Only invited participants can reject.", error="PERMISSION_DENIED")
         if row.status == "declined":
             return ok("Call is already rejected.", data=_response(call, current_user))
-        if row.status not in {"invited", "ringing"} or not row.ring_expires_at or get_datetime(row.ring_expires_at) <= get_datetime(now_datetime()):
+        if row.status not in {"invited", "ringing"} or not row.ring_expires_at:
+            return fail("Call cannot be rejected.", error="INVALID_STATE")
+        if get_datetime(row.ring_expires_at) <= get_datetime(now_datetime()):
+            call, expired = _expire_participant_if_due(call, row, current_user)
+            if expired or call.status == "missed":
+                return ok("Call missed.", data=_response(call, current_user))
             return fail("Call cannot be rejected.", error="INVALID_STATE")
         now = now_datetime()
         frappe.db.sql("UPDATE `tabAOS Call Participant` SET status='declined', responded_at=%s WHERE name=%s AND status IN ('invited','ringing')", (now, row.name))

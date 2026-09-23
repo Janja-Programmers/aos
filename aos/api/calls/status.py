@@ -28,7 +28,7 @@ def _build(call, current_user: str) -> dict:
     data.update({
         "can_show_incoming_ui": incoming,
         "can_accept": incoming,
-        "can_join": joined and call_rtc_ready(call) and int(call.is_active or 0),
+        "can_join": bool(joined and call_rtc_ready(call) and int(call.is_active or 0)),
         "is_initiator": bool(participant and participant.role == "initiator"),
         "participant_status": participant.status if participant else None,
         "has_pending_video_upgrade_request": call.call_mode == "direct" and call.video_upgrade_status == "requested",

@@ -151,6 +151,22 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
         self.assertNotIn("frappe.db.add_unique", indexes)
         self.assertNotIn("frappe.db.add_index", indexes)
 
+
+    def test_call_status_capabilities_are_strict_booleans(self):
+        source = _source("aos/api/calls/status.py")
+        self.assertIn('"can_join": bool(', source)
+        self.assertNotIn('"can_join": joined and', source)
+
+    def test_expired_receiver_actions_converge_to_missed(self):
+        source = _source("aos/api/calls/call.py")
+        self.assertIn("def _expire_participant_if_due", source)
+        accept = source.split("def accept_call_impl", 1)[1].split("def reject_call_impl", 1)[0]
+        reject = source.split("def reject_call_impl", 1)[1].split("def cancel_call_impl", 1)[0]
+        self.assertIn("_expire_participant_if_due", accept)
+        self.assertIn("_expire_participant_if_due", reject)
+        self.assertIn('return ok("Call missed."', accept)
+        self.assertIn('return ok("Call missed."', reject)
+
     def test_account_deletion_does_not_make_group_initiator_room_owner(self):
         source = _source("aos/services/account_deletion_service.py")
         block = source.split("def _end_active_calls", 1)[1].split("def _end_active_live_streams", 1)[0]
