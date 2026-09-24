@@ -16,6 +16,8 @@ from typing import Any
 
 import frappe
 
+from aos.services.media.media_purposes import MEDIA_PURPOSES
+
 _LOCK = Lock()
 _REQUESTS: Counter[tuple[str, str, str]] = Counter()
 _DURATIONS: Counter[tuple[str, str]] = Counter()
@@ -246,11 +248,9 @@ def _safe_catalog_metrics(lines: list[str]) -> None:
             )
 
 
-_ALLOWED_MEDIA_PURPOSES = {
-	"ad_image", "ad_video", "review_image", "seller_banner", "live_cover",
-	"profile_image", "category_icon", "chat_attachment", "verification_document",
-	"background_removal_source", "short_video_raw", "short_photo", "short_video_manifest", "short_poster", "short_storyboard", "short_storyboard_manifest", "short_download", "short_thumbnail", "sound_upload", "unknown",
-}
+# Keep operational metric labels bounded to the authoritative Media purpose registry.
+# `unknown` is the sole synthetic bucket for rejected/unrecognized purpose values.
+_ALLOWED_MEDIA_PURPOSES = frozenset({*MEDIA_PURPOSES.keys(), "unknown"})
 _ALLOWED_MEDIA_EVENTS = {
 	"upload_initiated", "upload_completed", "upload_rejected", "upload_failed",
 	"attachment_completed", "replacement_completed", "delete_requested", "delete_completed",

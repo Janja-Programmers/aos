@@ -16,6 +16,7 @@ EXPECTED_PURPOSES = {
 	"live_cover",
 	"profile_image",
 	"category_icon",
+	"chat_group_avatar",
 	"chat_attachment",
 	"verification_document",
 	"background_removal_source",
@@ -41,6 +42,7 @@ class TestMediaPurposePolicies(TestCase):
 
 	def test_private_purposes_never_use_public_visibility(self):
 		private = {
+			"chat_group_avatar",
 			"chat_attachment",
 			"verification_document",
 			"background_removal_source",
@@ -61,6 +63,17 @@ class TestMediaPurposePolicies(TestCase):
 			"short_thumbnail",
 	"short_original_audio",
 			list_media_purposes(client_upload_only=True),
+		)
+
+	def test_chat_group_avatar_is_private_conversation_media(self):
+		policy = MEDIA_PURPOSES["chat_group_avatar"]
+		self.assertTrue(policy.is_private)
+		self.assertEqual(policy.bucket_type, "private")
+		self.assertEqual(policy.media_kind, "image")
+		self.assertEqual(policy.max_items_per_resource, 1)
+		self.assertEqual(
+			policy.allowed_attachment_doctypes,
+			frozenset({"AOS Conversation"}),
 		)
 
 	def test_category_icon_uses_role_permission_manager_capability(self):
