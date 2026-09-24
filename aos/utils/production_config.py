@@ -992,6 +992,15 @@ def _check_ai_services(issues: list[dict[str, Any]], env: Mapping[str, Any] | No
 		issues,
 		env=env,
 		category="ai_ml",
+		keys=("TRANSLATION_INTERNAL_TOKEN",),
+		label="translation internal service secret",
+		secret=True,
+	)
+
+	_check_required_value(
+		issues,
+		env=env,
+		category="ai_ml",
 		keys=("BACKGROUND_REMOVAL_SERVICE_SECRET",),
 		label="background-removal internal service secret",
 		secret=True,

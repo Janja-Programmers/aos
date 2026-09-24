@@ -21,7 +21,7 @@ from typing import Any, Dict
 
 import requests
 
-from aos.utils.aos_config import get_translation_service_url
+from aos.utils.aos_config import get_env, get_translation_service_url
 from aos.utils.aos_settings import get_aos_settings_snapshot
 
 
@@ -87,7 +87,7 @@ def get_translation_client_settings() -> TranslationClientSettings:
             service_url=DEFAULT_SERVICE_URL,
             timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
             max_characters=DEFAULT_MAX_CHARACTERS,
-            internal_token=str(os.getenv("TRANSLATION_INTERNAL_TOKEN", "")).strip(),
+            internal_token=str(get_env("TRANSLATION_INTERNAL_TOKEN", "") or "").strip(),
         )
 
     return TranslationClientSettings(
@@ -107,7 +107,7 @@ def get_translation_client_settings() -> TranslationClientSettings:
             min_value=1,
             max_value=MAX_CHARACTERS,
         ),
-        internal_token=str(os.getenv("TRANSLATION_INTERNAL_TOKEN", "")).strip(),
+        internal_token=str(get_env("TRANSLATION_INTERNAL_TOKEN", "") or "").strip(),
     )
 
 

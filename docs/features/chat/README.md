@@ -35,7 +35,7 @@ Chat does not own authentication, account/profile truth, social blocking, Media 
 - **Ads** owns `ad_*` public IDs and shareability/projection.
 - **Shorts** owns `SHR-*` IDs and visibility/projection.
 - **Live** owns `LIVE-*` IDs and lifecycle/projection. A newly shared Live must be shareable; the Live-owned share endpoint additionally requires it to be active.
-- **Calls** owns `call_*`, call state, room lifecycle and LiveKit. Calls may project one durable system message into a **direct** Chat conversation. Group Chat does not create a second group-calling model.
+- **Calls** owns `call_*`, call state, conference membership, room lifecycle and LiveKit. A direct or eligible group Chat may bind to the existing Calls contract, and Calls may project one durable system message per call into that conversation. Chat never owns a second call state machine.
 - **Translation service** owns model inference. Chat owns message authorization, request limits, source-aware caching and public serialization.
 
 ## Architecture
@@ -95,6 +95,8 @@ Conversation types: `direct`, `group`.
 
 Group roles: `owner`, `admin`, `member`. Membership statuses: `active`, `left`, `removed`. Groups are bounded to **256 active participants** and require at least two participants including the creator.
 
+Group lifecycle changes are durable history events, not socket-only decorations. Creation, rename/photo changes, add/remove, admin promotion/demotion, ownership transfer, and leave actions insert a `system` message such as “X created the group.” or “X added Y.” New members see the event that added them but cannot read messages from before their `visible_from` join boundary.
+
 Message types: `text`, `media`, `ad`, `short`, `live`, `mixed`, and backend-managed `system`.
 
 Canonical references are Media IDs, Ads public IDs, Shorts `SHR-*`, Live `LIVE-*`, and Calls public `call_*`. Shared entities are projected at read time; unavailable entities remain durable message references but serialize as unavailable rather than stale duplicated snapshots.
@@ -152,7 +154,7 @@ All routes are `/api/method/aos.api.v1.chat.<method>` and require an authenticat
 | `update_group` | `conversation_id`, `title`, `avatar_media_id`, `remove_avatar`, `lock_token` | Owner/admin updates group metadata; Media owns avatar authorization. |
 | `add_group_members` | `conversation_id`, `participant_ids`, `lock_token` | Owner/admin adds bounded members. New history visibility starts at join. |
 | `remove_group_member` | `conversation_id`, `account_id`, `lock_token` | Owner/admin removes a member subject to role rules. |
-| `set_group_member_role` | `conversation_id`, `account_id`, `role`, `lock_token` | Owner changes `admin`/`member` role. |
+| `set_group_member_role` | `conversation_id`, `account_id`, `role`, `lock_token` | Owner/admin changes another non-owner member between `admin` and `member`; admins cannot change their own role. |
 | `transfer_group_ownership` | `conversation_id`, `account_id`, `lock_token` | Owner transfers ownership to an active member. |
 | `leave_group` | `conversation_id`, `lock_token` | Current member leaves. If owner leaves, ownership transfers deterministically. |
 | `list_group_members` | `conversation_id`, `limit`, `cursor`, `lock_token` | Cursor-paginated active member projection using public account identities. |
@@ -187,9 +189,9 @@ List endpoints return `data.items` and opaque `data.next_cursor`. Limits are 1�
 
 Lock state belongs to each participant, never to the conversation globally. Other participants are not told that a user locked a chat.
 
-Without a configured secret, a locked conversation is removed from the normal inbox and appears through `list_locked_conversations`; the client is expected to place its device/app authentication gate in front of that surface. A user may additionally configure a 4–64 character Unicode secret and set `hide_locked_chats=1`. In hidden mode the Locked Chats surface itself becomes undiscoverable: list/count/content operations require the short-lived token returned by `verify_chat_lock_secret`.
+Without a configured secret, a locked conversation is removed from the normal inbox and appears through `list_locked_conversations`; the client may place its device/app authentication gate in front of that surface. Once a user configures a 4–64 character Unicode Chat Lock secret, **every access to any locked conversation or the locked-conversation list requires a valid secret-derived token**, whether hidden mode is enabled or not. Clients must discard that authorization when the user leaves the locked surface/conversation so the next entry requires the secret again. If `hide_locked_chats=1`, the Locked Chats menu/count must not be exposed at all; discovery is only by explicitly submitting the secret through the client search affordance.
 
-The secret is NFC-normalized, slow-hashed with Frappe's password context, never logged/stored plaintext, and has a five-attempt failure threshold followed by a 15-minute verification lockout. Access tokens last 300 seconds and live only in shared Redis. Changing the secret increments its version, invalidating older tokens.
+The secret is NFC-normalized, slow-hashed with Frappe's password context, never logged/stored plaintext, and has a five-attempt failure threshold followed by a 15-minute verification lockout. Server authorization tokens have a hard 300-second ceiling and live only in shared Redis; the Web client keeps them in memory only and clears them on exit from the locked surface. Changing the secret increments its version, invalidating older tokens.
 
 Locked-chat notifications suppress sender identity and message content. Locked group metadata realtime events are reduced to `{conversation_id, change: "refresh"}`. Hidden conversations return `CHAT_NOT_FOUND` without authorization so possession of an ID does not reveal them.
 
@@ -219,7 +221,7 @@ Chat stores only canonical public IDs and resolves current visibility/projection
 
 ### Calls and LiveKit
 
-Calls may attach a direct `conversation_id` only after validating that it is a `direct` Chat conversation containing the intended peers. One `call_id` maps to at most one Chat system message. Call lifecycle and LiveKit are Calls-owned; Chat contains no call state machine and no group-call implementation.
+Calls may bind a direct call to the exact two-member `direct` conversation, or bind a conference call to a `group` conversation only when the call participant set exactly equals the group's active membership. A Chat-bound group call is available only for groups with 3–32 active members, matching the hardened Calls conference maximum; larger Chat groups remain message-only for calling purposes. One `call_id` maps to at most one Chat system message. Call lifecycle, invitations, RTC tokens and LiveKit remain Calls-owned; Chat only supplies conversation context and renders the durable projection.
 
 ### Notifications
 

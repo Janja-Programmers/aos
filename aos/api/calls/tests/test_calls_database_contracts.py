@@ -22,6 +22,7 @@ from aos.api.calls.token import get_call_token_impl
 from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.calls.identifiers import internal_call_name
 from aos.services.livekit.admin import RoomAdminResult
+from aos.services.chat.membership import create_membership
 from aos.tasks.calls import _mark_participant_missed, provision_call_room
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
@@ -43,6 +44,27 @@ class TestCallsDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
 
     def _users(self, count: int, stem: str = "user") -> list[str]:
         return [self.make_user(f"{stem}-{i}") for i in range(count)]
+
+    def _group_conversation(self, users: list[str]):
+        owner = users[0]
+        conv = frappe.get_doc({
+            "doctype": "AOS Conversation",
+            "conversation_type": "group",
+            "title": f"{self.prefix} group",
+            "created_by": owner,
+            "participant_count": len(users),
+            "membership_version": 1,
+        })
+        conv.insert(ignore_permissions=True)
+        for index, user in enumerate(users):
+            create_membership(
+                conversation_id=conv.name,
+                user=user,
+                role="owner" if index == 0 else "member",
+                added_by=owner,
+                visible_from=conv.creation,
+            )
+        return conv
 
     @staticmethod
     def _account_ids(users: list[str]) -> list[str]:
@@ -112,6 +134,35 @@ class TestCallsDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(queue.call_count, 1)
         self.assertNotIn("room_name", result["data"])
 
+    def test_chat_bound_direct_provisioning_uses_public_call_id_and_reaches_peer(self):
+        initiator, target = self._users(2, "chat-provision")
+        conversation = self.make_conversation(initiator, target)
+        initiated, _ = self._initiate(
+            initiator, [target], conversation_id=conversation.name, ready=False
+        )
+        self.assertTrue(initiated.get("ok"), initiated)
+        call_id = initiated["data"]["call_id"]
+        name = self._internal(call_id)
+        incoming = Mock()
+        notify = Mock()
+        with (
+            patch("aos.tasks.calls.provision_livekit_room", return_value=RoomAdminResult(True, "created")),
+            patch("aos.tasks.calls.publish_incoming_call", incoming),
+            patch("aos.tasks.calls.NotificationService.notify_incoming_call", notify),
+            patch("aos.tasks.calls.publish_call_ready"),
+        ):
+            provision_call_room(name)
+        self.assertEqual(incoming.call_count, 1)
+        self.assertEqual(notify.call_count, 1)
+        self.assertEqual(notify.call_args.kwargs["call_id"], call_id)
+        self.assertTrue(frappe.db.get_value("AOS Call", name, "rtc_provisioned_at"))
+        message = frappe.db.get_value(
+            "AOS Message", {"call_id": call_id, "conversation": conversation.name},
+            ["name", "content"], as_dict=True,
+        )
+        self.assertTrue(message)
+        self.assertEqual(message.content, "📞 Calling...")
+
     def test_direct_ringing_call_cancellation_is_durable_and_notifies_both_members(self):
         initiator, target = self._users(2, "direct-cancel")
         initiated, _ = self._initiate(initiator, [target])
@@ -141,6 +192,30 @@ class TestCallsDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(by_user[target].status, "cancelled")
         published.assert_called_once()
         self.assertEqual(set(published.call_args.kwargs["users"]), {initiator, target})
+
+    def test_group_chat_call_binds_only_to_exact_active_membership(self):
+        users = self._users(4, "chat-group-call")
+        initiator, targets = users[0], users[1:]
+        conversation = self._group_conversation(users)
+        result, queue = self._initiate(
+            initiator, targets, conversation_id=conversation.name, ready=False
+        )
+        self.assertTrue(result.get("ok"), result)
+        call = frappe.db.get_value(
+            "AOS Call", self._internal(result["data"]["call_id"]),
+            ["call_mode", "conversation", "participant_count"], as_dict=True,
+        )
+        self.assertEqual(call.call_mode, "group")
+        self.assertEqual(call.conversation, conversation.name)
+        self.assertEqual(int(call.participant_count), 4)
+        self.assertEqual(queue.call_count, 1)
+
+        mismatched, mismatch_queue = self._initiate(
+            initiator, targets[:-1], conversation_id=conversation.name, ready=False
+        )
+        self.assertFalse(mismatched.get("ok"), mismatched)
+        self.assertEqual(mismatched.get("error"), "VALIDATION_ERROR")
+        self.assertEqual(mismatch_queue.call_count, 0)
 
     def test_group_call_supports_up_to_32_total_participants(self):
         users = self._users(32, "cap")

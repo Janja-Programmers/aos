@@ -43,8 +43,10 @@ class AOSCall(Document):
             self.max_participants = expected_max
         if int(self.participant_count or 0) < 0 or int(self.participant_count or 0) > expected_max:
             frappe.throw("Invalid participant count")
-        if self.call_mode == "group" and self.conversation:
-            frappe.throw("Group calls are not bound to one-to-one conversations")
+        if self.conversation:
+            conversation_type = frappe.db.get_value("AOS Conversation", self.conversation, "conversation_type")
+            if conversation_type != self.call_mode:
+                frappe.throw("Call conversation type does not match call mode")
         if self.call_mode == "group" and (self.video_upgrade_status or "none") != "none":
             frappe.throw("Group calls do not use the direct-call video upgrade flow")
         self._validate_status_transition()

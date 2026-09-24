@@ -18,6 +18,7 @@ from aos.services.chat.cursors import decode_cursor, encode_cursor
 from aos.services.chat.errors import ChatError
 from aos.services.chat.events import publish_after_commit
 from aos.services.chat.lock import authorize_locked_conversation, credential_state, token_valid
+from aos.services.chat.system_messages import display_name, format_display_names, group_system_message
 from aos.services.chat.membership import (
     ACTIVE,
     GROUP,
@@ -301,9 +302,13 @@ def list_locked_conversations_impl(**kwargs):
     if (limited := _rl("list_locked_conversations", current_user, LIST_CONVERSATIONS_LIMIT_PER_MINUTE_PER_USER)):
         return limited
     state = credential_state(current_user)
-    if state["hide_locked_chats"] and not token_valid(user=current_user, token=kwargs.get("lock_token")):
-        # Hidden means the folder itself is undiscoverable without the secret-derived token.
-        return ok("Locked conversations loaded.", data={"items": [], "next_cursor": None, "hidden": True})
+    if state["secret_configured"] and not token_valid(user=current_user, token=kwargs.get("lock_token")):
+        # A configured secret protects the locked folder. Hidden mode additionally
+        # prevents clients from advertising that the folder exists.
+        return ok(
+            "Locked conversations loaded.",
+            data={"items": [], "next_cursor": None, "hidden": bool(state["hide_locked_chats"])},
+        )
     limit = int(kwargs.get("limit") or 50)
     rows, next_cursor = _conversation_list_query(user=current_user, locked=True, limit=limit, cursor=kwargs.get("cursor"))
     return ok(
@@ -387,7 +392,17 @@ def create_group_impl(**kwargs):
             attached_field="avatar_media",
         )
         frappe.db.set_value("AOS Conversation", doc.name, "avatar_media", avatar_media_id, update_modified=False)
-    _publish_group_update(conversation_id=doc.name, recipient=current_user, payload={"conversation_id": doc.name, "change": "created"})
+    group_system_message(
+        conversation_id=doc.name,
+        actor=current_user,
+        content=f"{display_name(current_user)} created the group.",
+    )
+    for recipient in [str(m.user) for m in active_members(doc.name)]:
+        _publish_group_update(
+            conversation_id=doc.name,
+            recipient=recipient,
+            payload={"conversation_id": doc.name, "change": "created"},
+        )
     row, _member = require_active_membership(doc.name, current_user)
     qrow = frappe.db.sql(
         """
@@ -416,11 +431,14 @@ def update_group_impl(**kwargs):
     conv, member = require_active_membership(conv_id, current_user, for_update=True)
     assert_group_manager(conv, member)
     updates: dict[str, Any] = {}
+    event_messages: list[str] = []
     if "title" in kwargs:
         title = str(kwargs.get("title") or "").strip()
         if not title:
             return fail("Group title is required.", error="CHAT_INVALID_REQUEST", http_status=422)
-        updates["title"] = title
+        if title != str(conv.title or ""):
+            updates["title"] = title
+            event_messages.append(f"{display_name(current_user)} changed the group name to “{title}”.")
     media = MediaService()
     old_avatar = str(conv.avatar_media or "").strip() or None
     new_avatar = str(kwargs.get("avatar_media_id") or "").strip() or None
@@ -440,12 +458,16 @@ def update_group_impl(**kwargs):
                 attached_name=conv_id, replacement_media_id=new_avatar,
             )
         updates["avatar_media"] = new_avatar
+        event_messages.append(f"{display_name(current_user)} changed the group photo.")
     elif remove_avatar and old_avatar:
         media.release_media(media_id=old_avatar, user=current_user, attached_doctype="AOS Conversation", attached_name=conv_id)
         updates["avatar_media"] = None
+        event_messages.append(f"{display_name(current_user)} removed the group photo.")
     if updates:
         frappe.db.set_value("AOS Conversation", conv_id, updates, update_modified=True)
         increment_membership_version(conv_id)
+        for event_message in event_messages:
+            group_system_message(conversation_id=conv_id, actor=current_user, content=event_message)
     for target in active_members(conv_id):
         _publish_group_update(conversation_id=conv_id, recipient=str(target.user), payload={"conversation_id": conv_id, "change": "metadata"})
     return ok("Group updated.", data={"conversation_id": conv_id})
@@ -474,6 +496,11 @@ def add_group_members_impl(**kwargs):
     refresh_participant_count(conv_id)
     if to_add:
         increment_membership_version(conv_id)
+        group_system_message(
+            conversation_id=conv_id,
+            actor=current_user,
+            content=f"{display_name(current_user)} added {format_display_names(to_add)}.",
+        )
         recipients = [str(m.user) for m in active_members(conv_id)]
         for recipient in recipients:
             _publish_group_update(conversation_id=conv_id, recipient=recipient, payload={"conversation_id": conv_id, "change": "members_added", "account_ids": [public_account_id_for_user(u) for u in to_add]})
@@ -501,9 +528,15 @@ def remove_group_member_impl(**kwargs):
         return fail("Admins cannot remove the owner or another admin.", error="CHAT_ACCESS_DENIED", http_status=403)
     if target.role == ROLE_OWNER:
         return fail("Transfer ownership before removing the owner.", error="CHAT_INVALID_STATE", http_status=409)
+    target_name = display_name(target_user)
     mark_membership_inactive(membership_name=target.name, status=REMOVED)
     refresh_participant_count(conv_id)
     increment_membership_version(conv_id)
+    group_system_message(
+        conversation_id=conv_id,
+        actor=current_user,
+        content=f"{display_name(current_user)} removed {target_name}.",
+    )
     recipients = [str(m.user) for m in active_members(conv_id)] + [target_user]
     for recipient in dict.fromkeys(recipients):
         _publish_group_update(conversation_id=conv_id, recipient=recipient, payload={"conversation_id": conv_id, "change": "member_removed", "account_id": public_account_id_for_user(target_user)})
@@ -519,8 +552,8 @@ def set_group_member_role_impl(**kwargs):
     conv_id = kwargs.get("conversation_id")
     authorize_locked_conversation(user=current_user, conversation_id=conv_id, lock_token=kwargs.get("lock_token"))
     conv, actor = require_active_membership(conv_id, current_user, for_update=True)
-    if conv.conversation_type != GROUP or actor.role != ROLE_OWNER:
-        return fail("Only the group owner can change admin roles.", error="CHAT_ACCESS_DENIED", http_status=403)
+    if conv.conversation_type != GROUP or actor.role not in GROUP_MANAGERS:
+        return fail("Only group admins can change admin roles.", error="CHAT_ACCESS_DENIED", http_status=403)
     target_user = _resolve_active_account(str(kwargs.get("account_id") or ""))
     role = str(kwargs.get("role") or "").strip().lower()
     if role not in {ROLE_ADMIN, ROLE_MEMBER}:
@@ -529,8 +562,20 @@ def set_group_member_role_impl(**kwargs):
     target = get_membership(conv_id, target_user, for_update=True, include_inactive=False)
     if not target or target.role == ROLE_OWNER:
         return fail("Group member not found.", error="CHAT_NOT_FOUND", http_status=404)
+    if target_user == current_user:
+        return fail("You cannot change your own admin role.", error="CHAT_INVALID_REQUEST", http_status=422)
     frappe.db.set_value("AOS Conversation Participant", target.name, "role", role, update_modified=True)
     increment_membership_version(conv_id)
+    target_name = display_name(target_user)
+    group_system_message(
+        conversation_id=conv_id,
+        actor=current_user,
+        content=(
+            f"{display_name(current_user)} made {target_name} a group admin."
+            if role == ROLE_ADMIN
+            else f"{display_name(current_user)} removed {target_name} as a group admin."
+        ),
+    )
     for recipient in [str(m.user) for m in active_members(conv_id)]:
         _publish_group_update(conversation_id=conv_id, recipient=recipient, payload={"conversation_id": conv_id, "change": "role", "account_id": public_account_id_for_user(target_user), "role": role})
     return ok("Group role updated.", data={"conversation_id": conv_id, "account_id": public_account_id_for_user(target_user), "role": role})
@@ -557,6 +602,11 @@ def transfer_group_ownership_impl(**kwargs):
     frappe.db.set_value("AOS Conversation Participant", actor.name, "role", ROLE_ADMIN, update_modified=True)
     frappe.db.set_value("AOS Conversation Participant", target.name, "role", ROLE_OWNER, update_modified=True)
     increment_membership_version(conv_id)
+    group_system_message(
+        conversation_id=conv_id,
+        actor=current_user,
+        content=f"{display_name(current_user)} made {display_name(target_user)} the group owner.",
+    )
     for recipient in [str(m.user) for m in active_members(conv_id)]:
         _publish_group_update(conversation_id=conv_id, recipient=recipient, payload={"conversation_id": conv_id, "change": "owner", "account_id": public_account_id_for_user(target_user)})
     return ok("Group ownership transferred.", data={"conversation_id": conv_id, "owner": public_account_id_for_user(target_user)})
@@ -575,9 +625,16 @@ def leave_group_impl(**kwargs):
         return fail("Only group conversations can be left.", error="CHAT_INVALID_REQUEST", http_status=422)
     lock_memberships(conv_id)
     new_owner = transfer_owner_if_needed(conv_id, current_user)
+    actor_name = display_name(current_user)
     mark_membership_inactive(membership_name=member.name, status=LEFT)
     refresh_participant_count(conv_id)
     increment_membership_version(conv_id)
+    if active_members(conv_id):
+        group_system_message(
+            conversation_id=conv_id,
+            actor=current_user,
+            content=f"{actor_name} left the group.",
+        )
     recipients = [str(m.user) for m in active_members(conv_id)] + [current_user]
     for recipient in dict.fromkeys(recipients):
         _publish_group_update(conversation_id=conv_id, recipient=recipient, payload={"conversation_id": conv_id, "change": "member_left", "account_id": public_account_id_for_user(current_user), "new_owner": public_account_id_for_user(new_owner) if new_owner else None})

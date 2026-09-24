@@ -77,6 +77,7 @@ from .validators import (
     parse_participant_ids,
     resolve_participant_users,
     validate_call_exists,
+    validate_conversation_for_call,
     validate_direct_conversation,
     validate_is_initiator,
     validate_user_in_call,
@@ -300,11 +301,18 @@ def initiate_call_impl(**kwargs):
     if (type_error := _validate_call_type(call_type)):
         return type_error
     conversation_id = str(kwargs.get("conversation_id") or "").strip() or None
-    call_mode = "direct" if len(targets) == 1 else "group"
-    if call_mode == "group" and conversation_id:
-        return fail("Group calls are not bound to one-to-one conversations.", error="VALIDATION_ERROR")
-    if call_mode == "direct":
-        if (conv_error := validate_direct_conversation(conversation_id, current_user=current_user, target_user=targets[0])):
+    conversation_type = (
+        str(frappe.db.get_value("AOS Conversation", conversation_id, "conversation_type") or "").strip()
+        if conversation_id else ""
+    )
+    call_mode = "group" if conversation_type == "group" else ("direct" if len(targets) == 1 else "group")
+    if conversation_id:
+        if (conv_error := validate_conversation_for_call(
+            conversation_id, current_user=current_user, target_users=targets, call_mode=call_mode
+        )):
+            return conv_error
+    elif call_mode == "direct":
+        if (conv_error := validate_direct_conversation(None, current_user=current_user, target_user=targets[0])):
             return conv_error
 
     try:

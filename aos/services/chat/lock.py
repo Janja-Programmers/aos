@@ -174,7 +174,15 @@ def token_valid(*, user: str, token: str | None) -> bool:
     return str(cached or "") == str(int(row.secret_version or 1))
 
 
+def locked_conversation_requires_token(*, user: str, membership: Any) -> bool:
+    """A configured secret protects every locked conversation, hidden or visible."""
+    if not membership or not bool(int(membership.is_locked or 0)):
+        return False
+    return bool(_credential_for_user(user))
+
+
 def hidden_lock_requires_token(*, user: str, membership: Any) -> bool:
+    """Compatibility-named helper retained internally for hidden-folder checks only."""
     if not membership or not bool(int(membership.is_locked or 0)):
         return False
     row = _credential_for_user(user)
@@ -185,6 +193,6 @@ def authorize_locked_conversation(*, user: str, conversation_id: str, lock_token
     membership = get_membership(conversation_id, user, include_inactive=False)
     if not membership:
         return
-    if hidden_lock_requires_token(user=user, membership=membership) and not token_valid(user=user, token=lock_token):
-        # Deliberately indistinguishable from unknown conversation when hidden.
+    if locked_conversation_requires_token(user=user, membership=membership) and not token_valid(user=user, token=lock_token):
+        # Do not disclose whether a protected conversation exists.
         raise ChatError("Conversation not found.", code="CHAT_NOT_FOUND", http_status=404)

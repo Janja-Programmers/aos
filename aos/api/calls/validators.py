@@ -109,3 +109,36 @@ def validate_direct_conversation(conversation_id: str | None, *, current_user: s
     if len(users) != 2 or set(users) != {current_user, target_user}:
         return fail("Conversation not found.", error="NOT_FOUND", http_status=404)
     return None
+
+
+def validate_conversation_for_call(
+    conversation_id: str | None,
+    *,
+    current_user: str,
+    target_users: list[str],
+    call_mode: str,
+):
+    """Bind a call only to the exact active Chat membership set.
+
+    Direct calls require a direct conversation with exactly two active members.
+    Group-chat calls require a group conversation whose complete active
+    membership matches the call participants. Calls started outside Chat may
+    omit conversation_id.
+    """
+    if not conversation_id:
+        return None
+    conv_type = frappe.db.get_value("AOS Conversation", conversation_id, "conversation_type")
+    if conv_type not in {"direct", "group"} or conv_type != call_mode:
+        return fail("Conversation not found.", error="NOT_FOUND", http_status=404)
+    users = frappe.get_all(
+        "AOS Conversation Participant",
+        filters={"conversation": conversation_id, "status": "active"},
+        pluck="user",
+        limit=MAX_CALL_PARTICIPANTS + 1,
+    )
+    expected = {current_user, *target_users}
+    if len(users) != len(expected) or set(users) != expected:
+        return fail("Conversation participants do not match this call.", error="VALIDATION_ERROR", http_status=422)
+    if call_mode == "group" and len(users) < 3:
+        return fail("A group call requires at least three active group members.", error="VALIDATION_ERROR", http_status=422)
+    return None

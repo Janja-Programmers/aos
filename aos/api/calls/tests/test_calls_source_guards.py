@@ -92,6 +92,14 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
         self.assertIn("publish_participants_invited", call)
         self.assertIn("A group call supports at most 32 participants.", call)
 
+    def test_chat_bound_room_provisioning_uses_public_call_id_before_incoming_fanout(self):
+        task = _source("aos/tasks/calls.py")
+        maybe = task.split("def _maybe_message", 1)[1].split("def _terminalize_provision_failure", 1)[0]
+        self.assertIn("public_call_id(call)", maybe)
+        self.assertNotIn("call_id=call.name", maybe)
+        provision = task.split("def provision_call_room", 1)[1].split("def _finalize_unanswered", 1)[0]
+        self.assertLess(provision.index('_maybe_message(call, "📞 Calling...")'), provision.index("publish_call_ready(call)"))
+
     def test_room_provisioning_fans_out_after_provider_io_without_db_lock(self):
         task = _source("aos/tasks/calls.py")
         provision = task.split("def provision_call_room", 1)[1].split("def _finalize_unanswered", 1)[0]

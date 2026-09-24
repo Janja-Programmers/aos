@@ -44,7 +44,7 @@ All methods require authentication and strict allowlisted request fields. Client
 | `delete_call_logs` | `call_ids` (max 100) | 60 |
 | `clear_call_history` | none | 20 |
 
-`participant_ids` contain opaque Accounts IDs, never User/email identities. One target means direct; 2–31 targets means group. Total membership may never exceed 32. Group calls cannot bind to the one-to-one Conversation model.
+`participant_ids` contain opaque Accounts IDs, never User/email identities. One target means direct; 2–31 targets means group. Total membership may never exceed 32. `conversation_id` is optional for calls started outside Chat. When supplied, a direct call must exactly match a two-member direct Chat conversation, while a group call must exactly match all active members of a group Chat conversation (3–32 total).
 
 Accept/reject/ring state is participant-scoped. `cancel_call` is initiator-only before anyone accepts. During an ongoing direct call, `end_call` ends the call for both sides. During an ongoing group call, `end_call` means the current participant leaves; the call becomes terminal only when no joined participants remain. `add_call_participants` requires a joined participant in an ongoing call. On a direct call, the first successful addition atomically promotes it to group mode and clears the one-to-one conversation/video-upgrade state without recreating the LiveKit room.
 

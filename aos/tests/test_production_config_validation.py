@@ -85,6 +85,7 @@ class TestProductionConfigValidation(FrappeTestCase):
 			"NOTIFICATION_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.v1.notifications.handle_delivery_callback",
 			"NOTIFICATION_FIREBASE_SERVICE_ACCOUNT_PATH": "/run/secrets/firebase-service-account.json",
 			"TRANSLATION_SERVICE_URL": "http://127.0.0.1:8100",
+			"TRANSLATION_INTERNAL_TOKEN": "translation-internal-secret-value-0123456789abcdef",
 			"IMAGE_SEARCH_SERVICE_URL": "http://127.0.0.1:8110",
 			"BACKGROUND_REMOVAL_SERVICE_URL": "http://127.0.0.1:8120",
 			"BACKGROUND_REMOVAL_SERVICE_SECRET": "background-removal-secret-value-0123456789abcdef",
@@ -176,6 +177,13 @@ class TestProductionConfigValidation(FrappeTestCase):
 			report_contains_secret_value(report, env["AOS_OBJECT_STORAGE_SECRET_KEY"]),
 			"Media object-storage secrets must never appear in diagnostics.",
 		)
+
+	def test_translation_internal_token_is_required(self):
+		env = self._valid_env()
+		env.pop("TRANSLATION_INTERNAL_TOKEN")
+		report = validate_production_config(env=env, site_config=self._valid_site_config())
+		self.assertFalse(report["ready"])
+		self.assertIn("TRANSLATION_INTERNAL_TOKEN", {issue["key"] for issue in report["errors"]})
 
 	def test_missing_and_placeholder_values_are_reported_without_leaking_values(self):
 		env = self._valid_env()

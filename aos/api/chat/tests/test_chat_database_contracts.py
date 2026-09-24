@@ -20,6 +20,7 @@ from aos.services.chat.conversation_ops import (
 from aos.services.chat.endpoints import ENDPOINT_SPECS, TRANSACTIONAL_ENDPOINTS
 from aos.services.chat.lock_ops import (
     configure_chat_lock_secret_impl,
+    get_chat_lock_state_impl,
     set_conversation_lock_impl,
     verify_chat_lock_secret_impl,
 )
@@ -209,7 +210,10 @@ class TestChatDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         frappe.set_user(late)
         history = self._chat("list_messages", list_messages_impl, conversation_id=group_id, limit=20)
         self.assertTrue(history.get("ok"), history)
-        self.assertEqual([item["id"] for item in history["data"]["items"]], [after["data"]["id"]])
+        late_items = history["data"]["items"]
+        self.assertIn(after["data"]["id"], [item["id"] for item in late_items])
+        self.assertNotIn(before["data"]["id"], [item["id"] for item in late_items])
+        self.assertTrue(any(item["message_type"] == "system" and " added " in str(item.get("content") or "") for item in late_items))
 
         frappe.set_user(outsider)
         denied = self._chat("list_messages", list_messages_impl, conversation_id=group_id, limit=20)
@@ -238,11 +242,11 @@ class TestChatDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         unread = frappe.db.get_value(
             "AOS Conversation Participant", {"conversation": group_id, "user": member}, "unread_count"
         )
-        self.assertEqual(int(unread or 0), 2)
+        self.assertEqual(int(unread or 0), 3)
         frappe.set_user(member)
         read = self._chat("mark_read", mark_read_impl, conversation_id=group_id)
         self.assertTrue(read.get("ok"), read)
-        self.assertEqual(read["data"]["updated_count"], 2)
+        self.assertEqual(read["data"]["updated_count"], 3)
         self.assertFalse(read["data"]["has_more"])
         unread_after = frappe.db.get_value(
             "AOS Conversation Participant", {"conversation": group_id, "user": member}, "unread_count"
@@ -253,7 +257,37 @@ class TestChatDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
                WHERE conversation=%s AND user=%s AND read_at IS NOT NULL""",
             (group_id, member),
         )[0][0]
-        self.assertEqual(int(states), 2)
+        self.assertEqual(int(states), 3)
+
+    def test_visible_locked_folder_reports_count_but_secret_is_required_for_access(self):
+        _sender, receiver, conversation = self._users_and_conversation()
+        frappe.set_user(receiver)
+        locked = self._chat(
+            "set_conversation_lock", set_conversation_lock_impl,
+            conversation_id=conversation.name, locked=1,
+        )
+        configured = self._chat(
+            "configure_chat_lock_secret", configure_chat_lock_secret_impl,
+            secret="Copper River 29", hide_locked_chats=0,
+        )
+        self.assertTrue(locked.get("ok") and configured.get("ok"))
+
+        state = self._chat("get_chat_lock_state", get_chat_lock_state_impl)
+        self.assertTrue(state.get("ok"), state)
+        self.assertTrue(state["data"]["secret_configured"])
+        self.assertFalse(state["data"]["hide_locked_chats"])
+        self.assertEqual(state["data"]["locked_conversation_count"], 1)
+
+        locked_folder = self._chat("list_locked_conversations", list_locked_conversations_impl, limit=20)
+        history = self._chat("list_messages", list_messages_impl, conversation_id=conversation.name, limit=20)
+        self.assertEqual(locked_folder["data"]["items"], [])
+        self.assertFalse(locked_folder["data"]["hidden"])
+        self.assertEqual(history.get("error"), "CHAT_NOT_FOUND")
+
+        verified = self._chat("verify_chat_lock_secret", verify_chat_lock_secret_impl, secret="Copper River 29")
+        token = verified["data"]["lock_token"]
+        allowed = self._chat("list_locked_conversations", list_locked_conversations_impl, limit=20, lock_token=token)
+        self.assertEqual([item["id"] for item in allowed["data"]["items"]], [conversation.name])
 
     def test_hidden_chat_lock_requires_secret_token_even_to_unlock(self):
         sender, receiver, conversation = self._users_and_conversation()
@@ -266,6 +300,7 @@ class TestChatDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(locked.get("ok") and configured.get("ok"))
 
         normal = self._chat("list_conversations", list_conversations_impl, limit=20)
+        hidden_state = self._chat("get_chat_lock_state", get_chat_lock_state_impl)
         hidden_folder = self._chat("list_locked_conversations", list_locked_conversations_impl, limit=20)
         hidden_history = self._chat("list_messages", list_messages_impl, conversation_id=conversation.name, limit=20)
         bypass = self._chat(
@@ -273,6 +308,8 @@ class TestChatDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
             conversation_id=conversation.name, locked=0,
         )
         self.assertEqual(normal["data"]["items"], [])
+        self.assertTrue(hidden_state["data"]["hidden"])
+        self.assertIsNone(hidden_state["data"]["locked_conversation_count"])
         self.assertEqual(hidden_folder["data"]["items"], [])
         self.assertTrue(hidden_folder["data"]["hidden"])
         self.assertEqual(hidden_history.get("error"), "CHAT_NOT_FOUND")

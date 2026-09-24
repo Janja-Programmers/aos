@@ -20,7 +20,10 @@ def _validate_system_message_inputs(
 ) -> None:
     if not PUBLIC_CALL_ID_RE.fullmatch(str(call_id or "").strip()):
         frappe.throw("A canonical public call_id is required for call system message")
-    if not frappe.db.exists("AOS Call", {"public_id": call_id}):
+    call = frappe.db.get_value(
+        "AOS Call", {"public_id": call_id}, ["name", "conversation"], as_dict=True
+    )
+    if not call or str(call.conversation or "") != str(conversation_id or ""):
         frappe.throw("Call not found")
 
     if not conversation_id:
@@ -32,17 +35,17 @@ def _validate_system_message_inputs(
 
 def _validate_conversation_exists(conversation_id: str) -> None:
     rows = frappe.db.sql(
-        "SELECT name FROM `tabAOS Conversation` WHERE name=%s AND conversation_type='direct' LIMIT 1 FOR UPDATE",
+        "SELECT name FROM `tabAOS Conversation` WHERE name=%s AND conversation_type IN ('direct','group') LIMIT 1 FOR UPDATE",
         (conversation_id,),
     )
     if not rows:
-        frappe.throw("Direct conversation not found")
+        frappe.throw("Conversation not found")
 
 
 def _set_conversation_call_preview(
     *, conversation_id: str, message_id: str, content: str, sender: str, timestamp
 ) -> None:
-    """Project the Calls-owned durable log into the direct Chat inbox."""
+    """Project the Calls-owned durable log into the bound Chat inbox."""
     frappe.db.set_value(
         "AOS Conversation", conversation_id,
         {"last_message": content, "last_message_at": timestamp, "last_sender": sender},

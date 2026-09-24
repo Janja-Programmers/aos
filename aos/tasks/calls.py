@@ -37,7 +37,7 @@ def _reload(call_name: str):
 
 def _maybe_message(call, content: str):
     if call.conversation:
-        upsert_call_system_message(call_id=call.name, conversation_id=call.conversation, content=content)
+        upsert_call_system_message(call_id=public_call_id(call), conversation_id=call.conversation, content=content)
 
 
 def _terminalize_provision_failure(call_name: str, ended_at) -> bool:

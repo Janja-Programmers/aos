@@ -141,7 +141,7 @@ class TestChatSourceGuards(unittest.TestCase):
         self.assertNotIn('"forwarded_from_message"', base)
         self.assertNotIn('"forwarded_from_conversation"', base)
 
-    def test_calls_accept_only_direct_chat_context(self):
+    def test_calls_bind_only_to_exact_chat_membership_context(self):
         calls = "\n".join(
             _source(path)
             for path in (
@@ -150,9 +150,11 @@ class TestChatSourceGuards(unittest.TestCase):
                 "aos/api/calls/call.py",
             )
         )
+        self.assertIn("validate_conversation_for_call", calls)
         self.assertIn("conversation_type", calls)
-        self.assertIn("direct", calls.lower())
+        self.assertIn('{"direct", "group"}', calls)
         self.assertIn("AOS Conversation Participant", calls)
+        self.assertIn("Conversation participants do not match this call", calls)
 
     def test_translation_cache_is_source_aware_and_german_supported(self):
         indexes = _source("aos/patches/v1_0/install_chat_indexes.py")
@@ -163,6 +165,22 @@ class TestChatSourceGuards(unittest.TestCase):
         self.assertIn("request_target_language", translation)
         self.assertIn('"de": LanguageInfo("deu_Latn", "German")', languages)
         self.assertNotIn('"translated_by":', translation.split("def _serialize", 1)[1].split("def translate_message_impl", 1)[0])
+
+    def test_translation_client_uses_aos_runtime_config_fallback_for_shared_secret(self):
+        client = _source("aos/integrations/ai/translation_client.py")
+        self.assertIn('get_env("TRANSLATION_INTERNAL_TOKEN"', client)
+        self.assertNotIn('os.getenv("TRANSLATION_INTERNAL_TOKEN"', client)
+        production = _source("aos/utils/production_config.py")
+        self.assertIn('keys=("TRANSLATION_INTERNAL_TOKEN",)', production)
+
+    def test_group_membership_changes_are_durable_system_messages(self):
+        ops = _source("aos/services/chat/conversation_ops.py")
+        system = _source("aos/services/chat/system_messages.py")
+        self.assertIn("group_system_message", ops)
+        self.assertIn("created the group", ops)
+        self.assertIn("group admin", ops)
+        self.assertIn('msg.message_type = "system"', system)
+        self.assertIn('event="aos_new_message"', system)
 
     def test_translation_service_fails_closed_and_runtime_is_bounded(self):
         main = _source("infra/translation/app/main.py")

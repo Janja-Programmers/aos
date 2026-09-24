@@ -12,6 +12,6 @@ For group calls, one decline/miss does not terminate the conference. The initiat
 
 ## Public contract
 
-`initiate_call` accepts server-resolved opaque `participant_ids`: one target creates a direct call and 2–31 targets create a group call. The hard server maximum is 32 people including the initiator. A joined participant may invite additional accounts while capacity remains; adding to an ongoing direct call atomically promotes it to group mode without recreating the RTC room. Group calls are independent of the current one-to-one Conversation DocType; direct calls may optionally carry a validated conversation.
+`initiate_call` accepts server-resolved opaque `participant_ids`: one target creates a direct call and 2–31 targets create a group call. The hard server maximum is 32 people including the initiator. A joined participant may invite additional accounts while capacity remains; adding to an ongoing direct call atomically promotes it to group mode without recreating the RTC room. Calls started outside Chat may omit `conversation_id`. A Chat-bound direct call must match the exact active two-member direct conversation; a Chat-bound group call must match the exact active membership of a group conversation and therefore is available only while that group contains 3–32 active members.
 
 Room capacity, room names, RTC identities, token grants, timestamps, participant state, and ownership are server-controlled. Realtime accelerates UX but durable database state remains authoritative.
