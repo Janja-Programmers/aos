@@ -118,7 +118,7 @@ Owner documentation: [docs/features/catalog/README.md](../features/catalog/READM
 
 ## Chat (17)
 
-Owner documentation: [docs/features/chat/api.md](../features/chat/api.md)
+Owner documentation: [docs/features/chat/README.md](../features/chat/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
@@ -127,17 +127,17 @@ Owner documentation: [docs/features/chat/api.md](../features/chat/api.md)
 | `/api/method/aos.api.v1.chat.delete_messages` | POST | Session required | Client | `aos/api/v1/chat/__init__.py` |
 | `/api/method/aos.api.v1.chat.edit_message` | POST | Session required | Client | `aos/api/v1/chat/__init__.py` |
 | `/api/method/aos.api.v1.chat.forward_message` | POST | Session required | Client | `aos/api/v1/chat/__init__.py` |
-| `/api/method/aos.api.v1.chat.get_presence` | GET/POST | Session required | Client | `aos/api/v1/chat/__init__.py` |
-| `/api/method/aos.api.v1.chat.list_conversations` | GET/POST | Session required | Client | `aos/api/v1/chat/__init__.py` |
-| `/api/method/aos.api.v1.chat.list_messages` | GET/POST | Session required | Client | `aos/api/v1/chat/__init__.py` |
-| `/api/method/aos.api.v1.chat.list_starred_messages` | GET/POST | Session required | Client | `aos/api/v1/chat/__init__.py` |
+| `/api/method/aos.api.v1.chat.get_presence` | GET | Session required | Client | `aos/api/v1/chat/__init__.py` |
+| `/api/method/aos.api.v1.chat.list_conversations` | GET | Session required | Client | `aos/api/v1/chat/__init__.py` |
+| `/api/method/aos.api.v1.chat.list_messages` | GET | Session required | Client | `aos/api/v1/chat/__init__.py` |
+| `/api/method/aos.api.v1.chat.list_starred_messages` | GET | Session required | Client | `aos/api/v1/chat/__init__.py` |
 | `/api/method/aos.api.v1.chat.mark_delivered` | POST | Session required | Client | `aos/api/v1/chat/__init__.py` |
 | `/api/method/aos.api.v1.chat.mark_read` | POST | Session required | Client | `aos/api/v1/chat/__init__.py` |
 | `/api/method/aos.api.v1.chat.open_conversation` | POST | Session required | Client | `aos/api/v1/chat/__init__.py` |
 | `/api/method/aos.api.v1.chat.send_message` | POST | Session required | Client | `aos/api/v1/chat/__init__.py` |
 | `/api/method/aos.api.v1.chat.send_typing_event` | POST | Session required | Client | `aos/api/v1/chat/__init__.py` |
-| `/api/method/aos.api.v1.chat.toggle_message_reaction` | POST | Session required | Client | `aos/api/v1/chat/__init__.py` |
-| `/api/method/aos.api.v1.chat.toggle_message_star` | POST | Session required | Client | `aos/api/v1/chat/__init__.py` |
+| `/api/method/aos.api.v1.chat.set_message_reaction` | POST | Session required | Client | `aos/api/v1/chat/__init__.py` |
+| `/api/method/aos.api.v1.chat.set_message_star` | POST | Session required | Client | `aos/api/v1/chat/__init__.py` |
 | `/api/method/aos.api.v1.chat.translate_message` | POST | Session required | Client | `aos/api/v1/chat/__init__.py` |
 
 ## Diagnostics (4)

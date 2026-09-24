@@ -9,11 +9,12 @@ from datetime import datetime
 from dataclasses import dataclass
 from typing import Any, Mapping, Pattern
 
+from aos.services.chat.identifiers import CONVERSATION_ID_RE
+
 from .errors import CallError
 from .identifiers import PUBLIC_CALL_ID_RE
 
 CALL_ID_RE = PUBLIC_CALL_ID_RE
-CONVERSATION_ID_RE = re.compile(r"^CONV-\d{4}-\d{5}$")
 MAX_REQUEST_BYTES = 32 * 1024
 MAX_TEXT_LENGTH = 128
 MAX_CALL_IDS = 100

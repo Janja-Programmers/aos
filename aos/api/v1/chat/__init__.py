@@ -30,11 +30,11 @@ from aos.api.chat.clear_chat import (
     clear_chat_impl as _clear_chat_impl,
 )
 from aos.api.chat.stars import (
-    toggle_message_star_impl as _toggle_message_star_impl,
+    set_message_star_impl as _set_message_star_impl,
     list_starred_messages_impl as _list_starred_messages_impl,
 )
 from aos.api.chat.reactions import (
-    toggle_message_reaction_impl as _toggle_message_reaction_impl,
+    set_message_reaction_impl as _set_message_reaction_impl,
 )
 from aos.api.chat.translate_message import (
     translate_message_impl as _translate_message_impl,
@@ -67,7 +67,7 @@ def open_conversation(**kwargs):
     return _call("open_conversation", _open_conversation_impl, kwargs)
 
 
-@frappe.whitelist(methods=["GET", "POST"])
+@frappe.whitelist(methods=["GET"])
 def list_conversations(**kwargs):
     """List current user's conversations."""
     return _call("list_conversations", _list_conversations_impl, kwargs)
@@ -85,7 +85,7 @@ def send_message(**kwargs):
     return _call("send_message", _send_message_impl, kwargs)
 
 
-@frappe.whitelist(methods=["GET", "POST"])
+@frappe.whitelist(methods=["GET"])
 def list_messages(**kwargs):
     """List messages for a conversation."""
     return _call("list_messages", _list_messages_impl, kwargs)
@@ -116,21 +116,21 @@ def clear_chat(**kwargs):
 
 
 @frappe.whitelist(methods=["POST"])
-def toggle_message_star(**kwargs):
-    """Star or unstar a message for the current user."""
-    return _call("toggle_message_star", _toggle_message_star_impl, kwargs)
+def set_message_star(**kwargs):
+    """Set the current user's desired private star state for a message."""
+    return _call("set_message_star", _set_message_star_impl, kwargs)
 
 
-@frappe.whitelist(methods=["GET", "POST"])
+@frappe.whitelist(methods=["GET"])
 def list_starred_messages(**kwargs):
     """List current user's starred messages."""
     return _call("list_starred_messages", _list_starred_messages_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
-def toggle_message_reaction(**kwargs):
-    """Add, change, or remove the current user's reaction to a message."""
-    return _call("toggle_message_reaction", _toggle_message_reaction_impl, kwargs)
+def set_message_reaction(**kwargs):
+    """Set or clear the current user's reaction to a message."""
+    return _call("set_message_reaction", _set_message_reaction_impl, kwargs)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -157,7 +157,7 @@ def send_typing_event(**kwargs):
     return _call("send_typing_event", _send_typing_event_impl, kwargs)
 
 
-@frappe.whitelist(methods=["GET", "POST"])
+@frappe.whitelist(methods=["GET"])
 def get_presence(**kwargs):
     """Return the other participant's current online/last-seen snapshot."""
     return _call("get_presence", _get_presence_impl, kwargs)

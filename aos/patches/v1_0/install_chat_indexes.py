@@ -1,4 +1,4 @@
-"""Install Chat uniqueness and query indexes after bounded data reconciliation."""
+"""Install the canonical fresh-site Chat uniqueness and query indexes."""
 
 from __future__ import annotations
 
@@ -8,19 +8,24 @@ import frappe
 
 INDEXES: tuple[tuple[str, str, tuple[str, ...], bool], ...] = (
     ("AOS Conversation", "uniq_chat_pair_key", ("pair_key",), True),
-    ("AOS Conversation", "idx_chat_conv_p1_active", ("participant_1", "is_active_1", "last_message_at_1"), False),
-    ("AOS Conversation", "idx_chat_conv_p2_active", ("participant_2", "is_active_2", "last_message_at_2"), False),
+    ("AOS Conversation", "idx_chat_conv_p1_active", ("participant_1", "is_active_1", "last_message_at_1", "name"), False),
+    ("AOS Conversation", "idx_chat_conv_p2_active", ("participant_2", "is_active_2", "last_message_at_2", "name"), False),
     ("AOS Message", "uniq_chat_message_idempotency", ("idempotency_key",), True),
+    ("AOS Message", "uniq_chat_call_message", ("call_id",), True),
     ("AOS Message", "idx_chat_message_history", ("conversation", "creation", "name"), False),
-    ("AOS Message", "idx_chat_message_delivery", ("conversation", "sender", "delivered_to_receiver_at"), False),
-    ("AOS Message", "idx_chat_message_read", ("conversation", "sender", "read_by_receiver_at"), False),
+    ("AOS Message", "idx_chat_message_delivery", ("conversation", "sender", "delivered_to_receiver_at", "name"), False),
+    ("AOS Message", "idx_chat_message_read", ("conversation", "sender", "read_by_receiver_at", "name"), False),
     ("AOS Message", "idx_chat_message_reply", ("reply_to_message", "creation", "name"), False),
+    ("AOS Message", "idx_chat_message_ad", ("ad", "creation", "name"), False),
     ("AOS Message", "idx_chat_message_short", ("short", "creation", "name"), False),
     ("AOS Message", "idx_chat_message_live", ("live", "creation", "name"), False),
     ("AOS Message Attachment", "uniq_chat_attachment_message_media", ("message", "media"), True),
     ("AOS Message Attachment", "idx_chat_attachment_message", ("message", "sort_order", "name"), False),
-    ("AOS Message Star", "idx_chat_star_user_created", ("user", "creation", "name"), False),
-    ("AOS Message Reaction", "idx_chat_reaction_message", ("message", "creation", "name"), False),
+    ("AOS Message Star", "uniq_chat_star_message_user", ("message", "user"), True),
+    ("AOS Message Star", "idx_chat_star_user_created", ("user", "creation", "message"), False),
+    ("AOS Message Reaction", "uniq_chat_reaction_message_user", ("message", "user"), True),
+    ("AOS Message Reaction", "idx_chat_reaction_message", ("message", "emoji", "user"), False),
+    ("AOS Message Translation", "uniq_chat_translation_cache", ("message", "target_language", "original_content_hash"), True),
     ("AOS Message Translation", "idx_chat_translation_conversation", ("conversation", "creation", "name"), False),
 )
 

@@ -17,6 +17,7 @@ from aos.api.shared.auth import require_login
 from aos.api.shared.blocking import ensure_not_blocked, get_blocked_user_set
 from aos.api.shared.account_status import ensure_account_active
 from aos.services.accounts.identity import resolve_account_reference
+from aos.services.chat.cursors import decode_cursor, encode_cursor
 from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.public_errors import safe_fail_from_exception
@@ -42,13 +43,11 @@ def _pair_key(u1: str, u2: str) -> str:
 
 
 def _get_conversation_by_pair(*, p1: str, p2: str, lock: bool = False):
-    params = {"pair_key": _pair_key(p1, p2), "p1": p1, "p2": p2}
+    params = {"pair_key": _pair_key(p1, p2)}
     query = """
         SELECT name, participant_1, participant_2, is_active_1, is_active_2
         FROM `tabAOS Conversation`
         WHERE pair_key = %(pair_key)s
-           OR (participant_1 = %(p1)s AND participant_2 = %(p2)s)
-        ORDER BY creation ASC, name ASC
         LIMIT 1
     """
     if lock:
@@ -338,102 +337,116 @@ def list_conversations_impl(**kwargs):
         min_value=1,
         max_value=50,
     )
-
-    offset = _clean_int(
-        kwargs.get("offset"),
-        default=0,
-        min_value=0,
-        max_value=10000,
+    cursor = decode_cursor(
+        kwargs.get("cursor"),
+        kind="conversations",
+        required_keys=("activity_at", "conversation_id"),
     )
 
     try:
+        params = {
+            "current_user": current_user,
+            "cursor_activity_at": cursor.get("activity_at") if cursor else None,
+            "cursor_conversation_id": cursor.get("conversation_id") if cursor else None,
+            "fetch_limit": limit + 1,
+        }
         conversations = frappe.db.sql(
             """
-            SELECT
-                name,
-                participant_1,
-                participant_2,
-                last_message_1,
-                last_message_at_1,
-                last_sender_1,
-                last_message_2,
-                last_message_at_2,
-                last_sender_2,
-                unread_count_1,
-                unread_count_2,
-                creation,
-                modified
-            FROM `tabAOS Conversation`
-            WHERE
-                (
-                    participant_1 = %(current_user)s
-                    AND IFNULL(is_active_1, 1) = 1
-                )
-                OR
-                (
-                    participant_2 = %(current_user)s
-                    AND IFNULL(is_active_2, 1) = 1
-                )
-            ORDER BY
-                CASE
-                    WHEN participant_1 = %(current_user)s
-                        THEN COALESCE(last_message_at_1, creation)
-                    ELSE COALESCE(last_message_at_2, creation)
-                END DESC,
-                modified DESC,
-                name DESC
-            LIMIT %(limit)s OFFSET %(offset)s
+            SELECT * FROM (
+                SELECT
+                    name,
+                    participant_1,
+                    participant_2,
+                    last_message_1,
+                    last_message_at_1,
+                    last_sender_1,
+                    last_message_2,
+                    last_message_at_2,
+                    last_sender_2,
+                    unread_count_1,
+                    unread_count_2,
+                    creation,
+                    modified,
+                    COALESCE(last_message_at_1, creation) AS activity_at
+                FROM `tabAOS Conversation`
+                WHERE participant_1 = %(current_user)s
+                  AND IFNULL(is_active_1, 1) = 1
+                  AND (
+                        %(cursor_activity_at)s IS NULL
+                     OR COALESCE(last_message_at_1, creation) < %(cursor_activity_at)s
+                     OR (
+                            COALESCE(last_message_at_1, creation) = %(cursor_activity_at)s
+                        AND name < %(cursor_conversation_id)s
+                     )
+                  )
+
+                UNION ALL
+
+                SELECT
+                    name,
+                    participant_1,
+                    participant_2,
+                    last_message_1,
+                    last_message_at_1,
+                    last_sender_1,
+                    last_message_2,
+                    last_message_at_2,
+                    last_sender_2,
+                    unread_count_1,
+                    unread_count_2,
+                    creation,
+                    modified,
+                    COALESCE(last_message_at_2, creation) AS activity_at
+                FROM `tabAOS Conversation`
+                WHERE participant_2 = %(current_user)s
+                  AND IFNULL(is_active_2, 1) = 1
+                  AND (
+                        %(cursor_activity_at)s IS NULL
+                     OR COALESCE(last_message_at_2, creation) < %(cursor_activity_at)s
+                     OR (
+                            COALESCE(last_message_at_2, creation) = %(cursor_activity_at)s
+                        AND name < %(cursor_conversation_id)s
+                     )
+                  )
+            ) AS visible_conversations
+            ORDER BY activity_at DESC, name DESC
+            LIMIT %(fetch_limit)s
             """,
-            {
-                "current_user": current_user,
-                "limit": limit,
-                "offset": offset,
-            },
+            params,
             as_dict=True,
         )
 
-        if not conversations:
+        has_more = len(conversations) > limit
+        page = conversations[:limit]
+        if not page:
             schedule_presence_update_to_peers(current_user)
-            return ok("Conversations fetched.", data=[])
+            return ok(
+                "Conversations fetched.",
+                data={"items": [], "next_cursor": None},
+            )
 
-        # Collect users needed for display:
-        # - other participant
-        # - viewer-specific last sender
         user_ids = set()
-
-        for conv in conversations:
+        for conv in page:
             is_p1 = conv["participant_1"] == current_user
-
             other = conv["participant_2"] if is_p1 else conv["participant_1"]
             user_ids.add(other)
-
             _, _, last_sender = _viewer_preview_fields(conv, current_user)
             if last_sender:
                 user_ids.add(last_sender)
 
         user_map = _fetch_users(list(user_ids))
         blocked_users = get_blocked_user_set(current_user, user_ids)
-        outgoing_statuses = _fetch_latest_outgoing_statuses(conversations, current_user)
+        outgoing_statuses = _fetch_latest_outgoing_statuses(page, current_user)
 
         results = []
-
-        for conv in conversations:
+        for conv in page:
             is_p1 = conv["participant_1"] == current_user
-
             other_user = conv["participant_2"] if is_p1 else conv["participant_1"]
-
             user = user_map.get(other_user) or get_user_display(other_user)
-
-            display_name = user.get("display_name")
-            avatar = user.get("avatar")
-
             unread = conv["unread_count_1"] if is_p1 else conv["unread_count_2"]
-
             last_message, last_message_at, last_sender = _viewer_preview_fields(
-                conv,
-                current_user,
+                conv, current_user
             )
-
             last_sender_user = user_map.get(last_sender) if last_sender else None
             outgoing_status = outgoing_statuses.get(conv["name"]) or {}
             other_blocked = other_user in blocked_users
@@ -443,8 +456,8 @@ def list_conversations_impl(**kwargs):
                 {
                     "id": conv["name"],
                     "user": user.get("user"),
-                    "display_name": display_name,
-                    "avatar": avatar,
+                    "display_name": user.get("display_name"),
+                    "avatar": user.get("avatar"),
                     "is_deleted": bool(user.get("is_deleted")),
                     "is_live": (
                         bool(user.get("is_live"))
@@ -463,21 +476,15 @@ def list_conversations_impl(**kwargs):
                     ),
                     "last_message": last_message,
                     "last_message_at": last_message_at,
-                    "last_sender": (last_sender_user.get("user") if last_sender_user else None),
+                    "last_sender": last_sender_user.get("user") if last_sender_user else None,
                     "last_sender_display_name": (
-                        last_sender_user.get("display_name")
-                        if last_sender_user
-                        else None
+                        last_sender_user.get("display_name") if last_sender_user else None
                     ),
                     "last_sender_avatar": (
-                        last_sender_user.get("avatar")
-                        if last_sender_user
-                        else None
+                        last_sender_user.get("avatar") if last_sender_user else None
                     ),
                     "last_sender_is_deleted": (
-                        bool(last_sender_user.get("is_deleted"))
-                        if last_sender_user
-                        else False
+                        bool(last_sender_user.get("is_deleted")) if last_sender_user else False
                     ),
                     "last_sender_is_live": (
                         bool(last_sender_user.get("is_live"))
@@ -493,10 +500,6 @@ def list_conversations_impl(**kwargs):
                         and not bool(last_sender_user.get("is_deleted"))
                         else None
                     ),
-                    # Sender-only receipt state for WhatsApp-style conversation
-                    # preview ticks. last_message_id lets realtime clients apply
-                    # a receipt event only when it actually contains the current
-                    # preview message, avoiding stale-event races with newer sends.
                     "last_message_id": outgoing_status.get("message_id"),
                     "last_message_is_mine": bool(last_sender == current_user),
                     "last_message_delivered_at": outgoing_status.get("delivered_at"),
@@ -505,20 +508,26 @@ def list_conversations_impl(**kwargs):
                 }
             )
 
-        schedule_presence_update_to_peers(current_user)
+        next_cursor = None
+        if has_more:
+            last = page[-1]
+            next_cursor = encode_cursor(
+                kind="conversations",
+                values={
+                    "activity_at": str(last["activity_at"]),
+                    "conversation_id": last["name"],
+                },
+            )
 
+        schedule_presence_update_to_peers(current_user)
         return ok(
             "Conversations fetched.",
-            data=results,
+            data={"items": results, "next_cursor": next_cursor},
         )
 
     except Exception:
         frappe.log_error("Chat operation failed.", "AOS List Conversations Failed")
-
-        return fail(
-            "Failed to fetch conversations.",
-            error="INTERNAL_ERROR",
-        )
+        return fail("Failed to fetch conversations.", error="INTERNAL_ERROR")
 
 
 # delete_conversation

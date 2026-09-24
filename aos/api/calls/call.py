@@ -133,7 +133,11 @@ def _response(call, current_user: str, *, token: str | None = None) -> dict:
 
 def _maybe_system_message(call, content: str) -> None:
     if call.conversation:
-        upsert_call_system_message(call_id=call.name, conversation_id=call.conversation, content=content)
+        upsert_call_system_message(
+            call_id=public_call_id(call),
+            conversation_id=call.conversation,
+            content=content,
+        )
 
 
 def _reload(call_name: str):

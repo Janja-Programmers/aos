@@ -7,11 +7,12 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any, Mapping, Pattern
 
+from aos.services.chat.identifiers import CONVERSATION_ID_RE
+
 from .constants import MAX_CURSOR_LENGTH, MAX_REASON_LENGTH, MAX_SESSION_ID_LENGTH, MAX_TITLE_LENGTH
 from .errors import LiveError
 
 LIVE_ID_RE = re.compile(r"^LIVE-[0-9a-f]{32}$")
-CONVERSATION_ID_RE = re.compile(r"^CONV-\d{4}-\d{5}$")
 SAFE_ROW_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,139}$")
 LIVEKIT_PARTICIPANT_ID_RE = re.compile(r"^aos:participant:[A-Za-z0-9_-]{20,64}$")
 

@@ -84,8 +84,6 @@ def _normalize_response(response: dict[str, Any]) -> dict[str, Any]:
 def _reason(code: str) -> str:
     if code == "CHAT_UNKNOWN_FIELD":
         return "unknown_field"
-    if code == "CHAT_ALIAS_CONFLICT":
-        return "alias_conflict"
     if code == "CHAT_INVALID_IDENTIFIER":
         return "identifier"
     if code in {"CHAT_ACCESS_DENIED", "AUTH_REQUIRED", "LOGIN_REQUIRED"}:

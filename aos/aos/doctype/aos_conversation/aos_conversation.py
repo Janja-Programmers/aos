@@ -6,8 +6,13 @@ import hashlib
 import frappe
 from frappe.model.document import Document
 
+from aos.services.chat.identifiers import generate_conversation_id
+
 
 class AOSConversation(Document):
+    def autoname(self):
+        self.name = generate_conversation_id()
+
     def validate(self):
         self._validate_participants()
         self._sort_participants()

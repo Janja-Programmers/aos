@@ -44,13 +44,13 @@ DELETE_MESSAGES_LIMIT_PER_MINUTE_PER_USER = 60
 CLEAR_CHAT_LIMIT_PER_MINUTE_PER_USER = 20
 
 # Star/unstar messages for the current user.
-TOGGLE_MESSAGE_STAR_LIMIT_PER_MINUTE_PER_USER = 120
+SET_MESSAGE_STAR_LIMIT_PER_MINUTE_PER_USER = 120
 
 # Listing starred messages for the current user.
 LIST_STARRED_MESSAGES_LIMIT_PER_MINUTE_PER_USER = 120
 
 # Add/change/remove message reactions.
-TOGGLE_MESSAGE_REACTION_LIMIT_PER_MINUTE_PER_USER = 120
+SET_MESSAGE_REACTION_LIMIT_PER_MINUTE_PER_USER = 120
 
 # Translate one visible text message for the current user.
 TRANSLATE_MESSAGE_LIMIT_PER_MINUTE_PER_USER = 60
@@ -78,6 +78,8 @@ GET_PRESENCE_LIMIT_PER_MINUTE_PER_USER = 120
 
 # Prevent presence events from being broadcast too frequently.
 PRESENCE_BROADCAST_THROTTLE_SECONDS = 10
+PRESENCE_ACTIVITY_WRITE_THROTTLE_SECONDS = 30
+PRESENCE_MAX_PEERS = 200
 
 # User is considered online if last_active is within this window.
 ONLINE_THRESHOLD_SECONDS = 60

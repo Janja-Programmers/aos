@@ -10,8 +10,8 @@ from .errors import ChatError
 
 
 _ERROR_MAP = {
-    # Legacy implementation codes (the canonical service is also called
-    # directly by feature-owned adapters, bypassing the public v1 wrapper).
+    # Internal implementation codes are normalized because feature-owned
+    # adapters call this service directly, bypassing the HTTP wrapper.
     "NOT_FOUND": ("Chat resource not found.", "CHAT_NOT_FOUND", 404),
     "RESOURCE_NOT_FOUND": ("Chat resource not found.", "CHAT_NOT_FOUND", 404),
     "PERMISSION_DENIED": ("Chat action is not allowed.", "CHAT_ACCESS_DENIED", 403),
@@ -32,8 +32,8 @@ _ERROR_MAP = {
     "CHAT_ACCESS_DENIED": ("Chat action is not allowed.", "CHAT_ACCESS_DENIED", 403),
     "CHAT_INVALID_REQUEST": ("Invalid Chat request.", "CHAT_INVALID_REQUEST", 422),
     "CHAT_UNKNOWN_FIELD": ("Invalid Chat request.", "CHAT_UNKNOWN_FIELD", 422),
-    "CHAT_ALIAS_CONFLICT": ("Invalid Chat request.", "CHAT_ALIAS_CONFLICT", 422),
     "CHAT_INVALID_IDENTIFIER": ("Invalid Chat request.", "CHAT_INVALID_IDENTIFIER", 422),
+    "CHAT_INVALID_CURSOR": ("Invalid Chat cursor.", "CHAT_INVALID_CURSOR", 422),
     "CHAT_INPUT_TOO_LARGE": ("Chat request is too large.", "CHAT_INPUT_TOO_LARGE", 413),
     "CHAT_CONFLICT": ("Chat state changed.", "CHAT_CONFLICT", 409),
     "CHAT_INVALID_STATE": ("Chat state changed.", "CHAT_INVALID_STATE", 409),

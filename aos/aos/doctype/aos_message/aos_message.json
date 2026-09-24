@@ -1,11 +1,9 @@
 {
  "actions": [],
- "autoname": "naming_series:",
  "creation": "2026-03-19 00:07:39.968747",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "conversation",
   "sender",
   "message_type",
@@ -31,16 +29,10 @@
   "delivered_to_receiver_at",
   "read_by_receiver_at",
   "has_attachments",
-  "idempotency_key"
+  "idempotency_key",
+  "idempotency_request_hash"
  ],
  "fields": [
-  {
-   "default": "MSG-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "MSG-.YYYY.-.#####"
-  },
   {
    "fieldname": "conversation",
    "fieldtype": "Link",
@@ -75,22 +67,23 @@
   },
   {
    "fieldname": "ad",
-   "fieldtype": "Link",
-   "label": "Ad",
-   "options": "AOS Ad"
+   "fieldtype": "Data",
+   "label": "Ad Public ID",
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "short",
-   "fieldtype": "Link",
-   "label": "Short",
-   "options": "AOS Short"
+   "fieldtype": "Data",
+   "label": "Short Public ID",
+   "read_only": 1
   },
   {
    "fieldname": "live",
-   "fieldtype": "Link",
-   "label": "Live",
-   "options": "AOS Live Stream",
-   "search_index": 1
+   "fieldtype": "Data",
+   "label": "Live Public ID",
+   "search_index": 1,
+   "read_only": 1
   },
   {
    "fieldname": "column_break_bgvu",
@@ -121,11 +114,11 @@
   },
   {
    "fieldname": "call_id",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "hidden": 1,
-   "label": "Call",
-   "options": "AOS Call",
-   "search_index": 1
+   "label": "Call Public ID",
+   "search_index": 1,
+   "read_only": 1
   },
   {
    "fieldname": "reply_to_message",
@@ -223,9 +216,20 @@
    "fieldname": "idempotency_key",
    "fieldtype": "Data",
    "hidden": 1,
-   "label": "Idempotency Key",
+   "label": "Idempotency Key Hash",
    "read_only": 1,
-   "search_index": 1
+   "search_index": 1,
+   "no_copy": 1,
+   "length": 64
+  },
+  {
+   "fieldname": "idempotency_request_hash",
+   "fieldtype": "Data",
+   "label": "Idempotency Request Hash",
+   "read_only": 1,
+   "hidden": 1,
+   "no_copy": 1,
+   "length": 64
   }
  ],
  "grid_page_length": 50,
@@ -235,7 +239,6 @@
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Message",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {

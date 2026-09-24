@@ -31,12 +31,7 @@ class TestChatSourceGuards(unittest.TestCase):
         paths = []
         for root in CHAT_SCOPE:
             paths.extend(root.rglob("*.py"))
-        paths.extend(
-            [
-                ROOT / "aos/patches/v1_0/harden_chat_subsystem.py",
-                ROOT / "aos/patches/v1_0/install_chat_indexes.py",
-            ]
-        )
+        paths.append(ROOT / "aos/patches/v1_0/install_chat_indexes.py")
         for path in paths:
             if "tests" in path.parts:
                 continue
@@ -61,7 +56,11 @@ class TestChatSourceGuards(unittest.TestCase):
         message_type = next(field for field in message_json["fields"] if field.get("fieldname") == "message_type")
         self.assertIn("live", str(message_type.get("options") or "").lower().splitlines())
         live_field = next(field for field in message_json["fields"] if field.get("fieldname") == "live")
-        self.assertEqual(live_field.get("options"), "AOS Live Stream")
+        short_field = next(field for field in message_json["fields"] if field.get("fieldname") == "short")
+        self.assertEqual(live_field.get("fieldtype"), "Data")
+        self.assertEqual(short_field.get("fieldtype"), "Data")
+        self.assertNotIn("options", live_field)
+        self.assertNotIn("options", short_field)
         chat = _source("aos/api/chat/message.py")
         self.assertIn('"live_preview"', chat)
         self.assertIn('"live_unavailable"', chat)
@@ -137,24 +136,25 @@ class TestChatSourceGuards(unittest.TestCase):
                 offenders.append(str(path.relative_to(ROOT)))
         self.assertEqual(offenders, [])
 
-    def test_chat_uniqueness_and_indexes_are_migration_ordered(self):
+    def test_chat_fresh_site_indexes_are_canonical(self):
         patches = _source("aos/patches.txt")
-        data = patches.index("aos.patches.v1_0.harden_chat_subsystem")
-        indexes = patches.index("aos.patches.v1_0.install_chat_indexes")
-        self.assertLess(data, indexes)
+        self.assertNotIn("harden_chat_subsystem", patches)
+        self.assertIn("aos.patches.v1_0.install_chat_indexes", patches)
         installer = _source("aos/patches/v1_0/install_chat_indexes.py")
-        self.assertIn("pair_key", installer)
-        self.assertIn("idempotency_key", installer)
-        self.assertIn("message", installer)
-        self.assertIn("media", installer)
+        for name in (
+            "uniq_chat_pair_key",
+            "uniq_chat_message_idempotency",
+            "uniq_chat_call_message",
+            "uniq_chat_star_message_user",
+            "uniq_chat_reaction_message_user",
+            "uniq_chat_translation_cache",
+            "idx_chat_message_history",
+            "idx_chat_conv_p1_active",
+            "idx_chat_conv_p2_active",
+        ):
+            self.assertIn(name, installer)
         self.assertNotIn("frappe.db.commit", installer)
-        migration = _source("aos/patches/v1_0/harden_chat_subsystem.py")
-        self.assertIn("BATCH_SIZE", migration)
-        self.assertIn("_deactivate_unavailable_participants", migration)
-        self.assertIn("unavailable_participants_deactivated", migration)
-        self.assertNotIn("LiveKitAPI", migration)
-        self.assertNotIn("frappe.enqueue", migration)
-        self.assertNotIn("frappe.db.commit", migration)
+        self.assertFalse((ROOT / "aos/patches/v1_0/harden_chat_subsystem.py").exists())
 
     def test_chat_rate_keys_and_registry_are_private_and_complete(self):
         for path in (ROOT / "aos/api/chat").glob("*.py"):
@@ -166,7 +166,7 @@ class TestChatSourceGuards(unittest.TestCase):
         registry = {entry["endpoint"]: entry for entry in entries}
         for endpoint in (
             "open_conversation", "list_conversations", "send_message", "list_messages",
-            "forward_message", "edit_message", "delete_messages", "toggle_message_reaction",
+            "forward_message", "edit_message", "delete_messages", "set_message_star", "set_message_reaction",
             "translate_message", "mark_delivered", "mark_read", "send_typing_event", "get_presence",
         ):
             self.assertIn(f"aos.api.v1.chat.__init__.{endpoint}", registry)
@@ -240,15 +240,29 @@ class TestChatSourceGuards(unittest.TestCase):
             self.assertIn(f'"{code}"', service)
         self.assertNotIn('response.get("http_status")', service)
 
-    def test_required_chat_documents_exist(self):
-        for name in (
-            "README.md", "architecture.md", "api.md", "messages.md", "sharing.md",
-            "realtime.md", "presence.md", "attachments.md", "privacy.md",
-            "notifications.md", "migration.md", "operations.md", "testing.md",
-        ):
-            self.assertTrue((ROOT / "docs/features/chat" / name).is_file(), name)
+    def test_chat_has_one_authoritative_feature_document(self):
+        chat_docs = ROOT / "docs/features/chat"
+        self.assertTrue((chat_docs / "README.md").is_file())
+        self.assertEqual(
+            sorted(path.name for path in chat_docs.iterdir() if path.is_file()),
+            ["README.md"],
+        )
 
 
+
+
+    def test_removed_chat_compatibility_surfaces_do_not_return(self):
+        v1 = _source("aos/api/v1/chat/__init__.py")
+        self.assertNotIn("toggle_message_star", v1)
+        self.assertNotIn("toggle_message_reaction", v1)
+        self.assertIn("def set_message_star", v1)
+        self.assertIn("def set_message_reaction", v1)
+        endpoints = _source("aos/services/chat/endpoints.py")
+        self.assertNotIn('"offset"', endpoints)
+        self.assertNotIn('"before"', endpoints)
+        identifiers = _source("aos/services/chat/identifiers.py")
+        self.assertIn(r'^CONV-[0-9a-f]{32}$', identifiers)
+        self.assertIn(r'^MSG-[0-9a-f]{32}$', identifiers)
 
     def test_starred_messages_expose_public_conversation_id_for_navigation(self):
         source = _source("aos/api/chat/stars.py")

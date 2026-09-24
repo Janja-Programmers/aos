@@ -2,7 +2,7 @@
 Message star APIs (implementation).
 
 Handles:
-- toggle_message_star
+- set_message_star
 - list_starred_messages
 
 Rules:
@@ -24,9 +24,10 @@ from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import ok, fail
 from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.services.chat.repository import lock_conversations, lock_messages
+from aos.services.chat.cursors import decode_cursor, encode_cursor
 
 from .constants import (
-    TOGGLE_MESSAGE_STAR_LIMIT_PER_MINUTE_PER_USER,
+    SET_MESSAGE_STAR_LIMIT_PER_MINUTE_PER_USER,
     LIST_STARRED_MESSAGES_LIMIT_PER_MINUTE_PER_USER,
 )
 
@@ -150,6 +151,7 @@ def _fetch_starred_message_ids(message_ids: List[str], user: str) -> set[str]:
             "user": user,
         },
         fields=["message"],
+        limit=max(1, len(unique_ids)),
     )
 
     return {row.message for row in rows}
@@ -258,22 +260,28 @@ def _serialize_starred_messages(
     return results
 
 
-def toggle_message_star_impl(**kwargs):
+def set_message_star_impl(**kwargs):
+    """Set the caller's private star state to the requested value.
+
+    This is a desired-state mutation: retrying the same request is a no-op and
+    cannot accidentally invert the state after a network retry.
+    """
+
     current_user, err = require_login()
     if err:
         return err
 
     rl = rate_limit(
-        key=rate_limit_key("chat", "toggle_message_star", current_user),
+        key=rate_limit_key("chat", "set_message_star", current_user),
         ttl_seconds=60,
-        limit=TOGGLE_MESSAGE_STAR_LIMIT_PER_MINUTE_PER_USER,
+        limit=SET_MESSAGE_STAR_LIMIT_PER_MINUTE_PER_USER,
         message="Too many star requests. Please slow down.",
     )
     if rl:
         return rl
 
     message_id = kwargs.get("message_id")
-
+    starred = bool(kwargs.get("starred"))
     if not message_id:
         return fail("message_id is required.", error="VALIDATION_ERROR")
 
@@ -286,7 +294,6 @@ def toggle_message_star_impl(**kwargs):
             return fail("Message not found.", error="NOT_FOUND")
 
         msg = _get_message_with_conversation(message_id)
-
         if not msg:
             return fail("Message not found.", error="NOT_FOUND")
 
@@ -294,86 +301,44 @@ def toggle_message_star_impl(**kwargs):
         if validation_error:
             return validation_error
 
-        existing_star = _get_existing_star(
-            message_id=message_id,
-            user=current_user,
-        )
-
-        if existing_star:
-            frappe.delete_doc(
-                "AOS Message Star",
-                existing_star,
-                ignore_permissions=True,
-            )
-
-            return ok(
-                "Message unstarred.",
-                data={
-                    "message_id": message_id,
-                    "conversation_id": msg.conversation,
-                    "is_starred": False,
-                },
-            )
-
-        star = frappe.new_doc("AOS Message Star")
-        star.message = message_id
-        star.conversation = msg.conversation
-        star.user = current_user
-        star.insert(ignore_permissions=True)
+        existing_star = _get_existing_star(message_id=message_id, user=current_user)
+        if starred:
+            if not existing_star:
+                star = frappe.new_doc("AOS Message Star")
+                star.message = message_id
+                star.conversation = msg.conversation
+                star.user = current_user
+                star.insert(ignore_permissions=True)
+        elif existing_star:
+            frappe.delete_doc("AOS Message Star", existing_star, ignore_permissions=True)
 
         return ok(
-            "Message starred.",
+            "Message star state updated.",
             data={
                 "message_id": message_id,
                 "conversation_id": msg.conversation,
-                "is_starred": True,
+                "is_starred": starred,
             },
         )
 
     except frappe.DuplicateEntryError:
-
-        return ok(
-            "Message already starred.",
-            data={
-                "message_id": message_id,
-                "is_starred": True,
-            },
-        )
-
+        if starred:
+            return ok(
+                "Message star state updated.",
+                data={
+                    "message_id": message_id,
+                    "conversation_id": conversation_id,
+                    "is_starred": True,
+                },
+            )
+        raise
     except frappe.ValidationError as ex:
-        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
-
+        return safe_fail_from_exception(
+            ex, fallback="Invalid request.", error="VALIDATION_ERROR"
+        )
     except Exception:
-        frappe.log_error("Chat operation failed.", "AOS Toggle Message Star Failed")
+        frappe.log_error("Chat operation failed.", "AOS Set Message Star Failed")
         return fail("Failed to update message star.", error="INTERNAL_ERROR")
-
-
-def _get_before_star_cursor(*, before: str | None, current_user: str):
-    """Resolve a deterministic starred-message cursor.
-
-    Backward compatibility accepts either the private star row name previously
-    returned by this endpoint or the public message id. The cursor itself is
-    resolved server-side to (creation, name), so values are never interpolated.
-    """
-
-    if not before:
-        return None
-
-    row = frappe.db.get_value(
-        "AOS Message Star",
-        {"name": before, "user": current_user},
-        ["creation", "name"],
-        as_dict=True,
-    )
-    if row:
-        return row
-
-    return frappe.db.get_value(
-        "AOS Message Star",
-        {"message": before, "user": current_user},
-        ["creation", "name"],
-        as_dict=True,
-    )
 
 
 def list_starred_messages_impl(**kwargs):
@@ -390,44 +355,34 @@ def list_starred_messages_impl(**kwargs):
     if rl:
         return rl
 
-    limit = _clean_int(
-        kwargs.get("limit"),
-        default=30,
-        min_value=1,
-        max_value=100,
+    limit = _clean_int(kwargs.get("limit"), default=30, min_value=1, max_value=100)
+    conversation_id = kwargs.get("conversation_id")
+    cursor = decode_cursor(
+        kwargs.get("cursor"),
+        kind="starred_messages",
+        required_keys=("starred_at", "message_id"),
     )
 
-    conversation_id = kwargs.get("conversation_id")
-    before = kwargs.get("before")
-
     try:
-        before_cursor = _get_before_star_cursor(
-            before=before,
-            current_user=current_user,
-        )
-        if before and not before_cursor:
-            return fail("Invalid 'before' cursor.", error="VALIDATION_ERROR")
-
         params: Dict[str, Any] = {
             "current_user": current_user,
             "conversation_id": conversation_id or None,
-            "before_creation": before_cursor.creation if before_cursor else None,
-            "before_name": before_cursor.name if before_cursor else None,
-            "limit": limit,
+            "cursor_starred_at": cursor.get("starred_at") if cursor else None,
+            "cursor_message_id": cursor.get("message_id") if cursor else None,
+            "fetch_limit": limit + 1,
         }
-
         messages = frappe.db.sql(
             """
             SELECT
                 m.name, m.conversation, m.sender, m.content, m.message_type,
-                m.ad, m.short, m.live, m.reply_to_message, m.has_attachments,
+                m.ad, m.short, m.live, m.call_id, m.reply_to_message, m.has_attachments,
                 m.is_forwarded, m.forwarded_from_message, m.forwarded_from_conversation,
                 m.is_edited, m.edited_at,
                 m.deleted_for_everyone, m.deleted_for_everyone_at,
                 m.deleted_for_1, m.deleted_for_1_at,
                 m.deleted_for_2, m.deleted_for_2_at,
                 m.delivered_to_receiver_at, m.read_by_receiver_at, m.creation,
-                s.name AS star_id, s.creation AS starred_at
+                s.creation AS starred_at
             FROM `tabAOS Message Star` s
             INNER JOIN `tabAOS Message` m ON m.name = s.message
             INNER JOIN `tabAOS Conversation` c ON c.name = s.conversation
@@ -438,31 +393,40 @@ def list_starred_messages_impl(**kwargs):
               )
               AND (%(conversation_id)s IS NULL OR s.conversation = %(conversation_id)s)
               AND (
-                    %(before_creation)s IS NULL
-                 OR s.creation < %(before_creation)s
-                 OR (s.creation = %(before_creation)s AND s.name < %(before_name)s)
+                    %(cursor_starred_at)s IS NULL
+                 OR s.creation < %(cursor_starred_at)s
+                 OR (s.creation = %(cursor_starred_at)s AND m.name < %(cursor_message_id)s)
               )
-            ORDER BY s.creation DESC, s.name DESC
-            LIMIT %(limit)s
+            ORDER BY s.creation DESC, m.name DESC
+            LIMIT %(fetch_limit)s
             """,
             params,
             as_dict=True,
         )
 
-        if not messages:
-            return ok("Starred messages fetched.", data=[])
-
-        results = _serialize_starred_messages(
-            messages=messages,
-            current_user=current_user,
-        )
-
-        for payload, msg in zip(results, messages, strict=False):
-            payload["star_id"] = msg.star_id
+        has_more = len(messages) > limit
+        page = messages[:limit]
+        results = _serialize_starred_messages(messages=page, current_user=current_user)
+        for payload, msg in zip(results, page, strict=False):
             payload["starred_at"] = msg.starred_at
 
-        return ok("Starred messages fetched.", data=results)
+        next_cursor = None
+        if has_more:
+            last = page[-1]
+            next_cursor = encode_cursor(
+                kind="starred_messages",
+                values={
+                    "starred_at": str(last.starred_at),
+                    "message_id": last.name,
+                },
+            )
+
+        return ok(
+            "Starred messages fetched.",
+            data={"items": results, "next_cursor": next_cursor},
+        )
 
     except Exception:
         frappe.log_error("Chat operation failed.", "AOS List Starred Messages Failed")
         return fail("Failed to fetch starred messages.", error="INTERNAL_ERROR")
+

@@ -4,6 +4,12 @@
 import frappe
 from frappe.model.document import Document
 
+from aos.services.chat.identifiers import generate_message_id
+from aos.services.marketplace_discovery.ids import resolve_ad_name
+from aos.services.calls.identifiers import PUBLIC_CALL_ID_RE
+from aos.services.live.validation import LIVE_ID_RE
+from aos.services.shorts.identity import SHORT_ID_RE
+
 
 VALID_MESSAGE_TYPES = {
     "text",
@@ -43,10 +49,15 @@ SYSTEM_MANAGED_FIELDS = [
     "deleted_for_2",
     "deleted_for_2_at",
     "idempotency_key",
+    "idempotency_request_hash",
+    "call_id",
 ]
 
 
 class AOSMessage(Document):
+    def autoname(self):
+        self.name = generate_message_id()
+
     def validate(self):
         self._validate_conversation()
         self._validate_message_type()
@@ -55,6 +66,7 @@ class AOSMessage(Document):
         self._validate_ad_reference()
         self._validate_short_reference()
         self._validate_live_reference()
+        self._validate_call_reference()
         self._validate_reply_to_message()
         self._validate_forward_reference()
 
@@ -173,24 +185,36 @@ class AOSMessage(Document):
     def _validate_ad_reference(self):
         if not self.ad:
             return
-
-        if not frappe.db.exists("AOS Ad", self.ad):
+        try:
+            resolve_ad_name(self.ad)
+        except Exception:
             frappe.throw("Invalid ad reference")
 
 
     def _validate_short_reference(self):
-        if not getattr(self, "short", None):
+        short_id = str(getattr(self, "short", None) or "").strip()
+        if not short_id:
             return
-
-        if not frappe.db.exists("AOS Short", self.short):
+        if not SHORT_ID_RE.fullmatch(short_id) or not frappe.db.exists("AOS Short", short_id):
             frappe.throw("Invalid short reference")
+        self.short = short_id
 
     def _validate_live_reference(self):
-        if not getattr(self, "live", None):
+        live_id = str(getattr(self, "live", None) or "").strip()
+        if not live_id:
             return
-
-        if not frappe.db.exists("AOS Live Stream", self.live):
+        if not LIVE_ID_RE.fullmatch(live_id) or not frappe.db.exists("AOS Live Stream", live_id):
             frappe.throw("Invalid live reference")
+        self.live = live_id
+
+    def _validate_call_reference(self):
+        call_id = str(getattr(self, "call_id", None) or "").strip()
+        if not call_id:
+            return
+        if self.message_type != "system" or not PUBLIC_CALL_ID_RE.fullmatch(call_id):
+            frappe.throw("Invalid call reference")
+        if not frappe.db.exists("AOS Call", {"public_id": call_id}):
+            frappe.throw("Invalid call reference")
 
     def _validate_reply_to_message(self):
         if not self.reply_to_message:

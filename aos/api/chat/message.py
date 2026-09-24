@@ -9,6 +9,7 @@ Handles:
 from __future__ import annotations
 
 import hashlib
+import json
 
 from typing import Any, Dict, List
 
@@ -37,6 +38,8 @@ from aos.services.seller_response_metrics import (
     enqueue_conversation_response_metrics_refresh,
 )
 from aos.services.chat.events import publish_after_commit
+from aos.services.chat.cursors import decode_cursor, encode_cursor
+from aos.services.chat.errors import ChatError
 from aos.services.chat.shared_objects import ad_is_shareable_to_users, fetch_chat_ad_previews
 
 from .constants import (
@@ -152,21 +155,14 @@ def _serialize_user(user_id: str, user_map: Dict[str, dict]) -> Dict[str, Any]:
     }
 
 
-def _infer_attachment_type_from_content_type(
-    content_type: str | None,
-    fallback: str | None = None,
-) -> str:
+def _infer_attachment_type_from_content_type(content_type: str | None) -> str:
     content_type = str(content_type or "").split(";", 1)[0].strip().lower()
-    fallback = str(fallback or "").strip().lower()
-
     if content_type.startswith("image/"):
         return "image"
     if content_type.startswith("video/"):
         return "video"
     if content_type.startswith("audio/"):
         return "audio"
-    if fallback in {"image", "video", "audio", "document"}:
-        return fallback
     return "document"
 
 
@@ -175,116 +171,65 @@ def _serialize_attachments_bulk(
     *,
     current_user: str | None = None,
 ) -> Dict[str, List[Dict]]:
-    if not message_ids:
-        return {}
+    """Project bounded attachment metadata through the hardened Media boundary."""
 
-    unique_message_ids = list({message_id for message_id in message_ids if message_id})
-
+    unique_message_ids = list(dict.fromkeys(message_id for message_id in message_ids if message_id))
     if not unique_message_ids:
         return {}
-
-    fields = ["name", "message", "file", "file_type", "sort_order"]
-    try:
-        if frappe.get_meta("AOS Message Attachment").has_field("media"):
-            fields.append("media")
-    except Exception:
-        pass
 
     rows = frappe.get_all(
         "AOS Message Attachment",
         filters={"message": ["in", unique_message_ids]},
-        fields=fields,
-        order_by="sort_order asc",
+        fields=["message", "media", "sort_order"],
+        order_by="message asc, sort_order asc, name asc",
+        limit=max(1, len(unique_message_ids) * 10),
     )
-
     if not rows:
         return {}
 
+    media_ids = list(dict.fromkeys(str(row.media) for row in rows if row.media))
+    media_rows = frappe.get_all(
+        "AOS Media Object",
+        filters={"name": ["in", media_ids]},
+        fields=[
+            "name", "original_filename", "content_type", "size_bytes",
+            "width", "height", "duration_seconds",
+        ],
+        limit=max(1, len(media_ids)),
+    ) if media_ids else []
+    media_map = {str(row.name): row for row in media_rows}
+
+    urls: Dict[str, str] = {}
+    if current_user and media_ids:
+        try:
+            urls = MediaService().get_chat_attachment_url_map(media_ids, user=current_user)
+        except (MediaNotFoundError, MediaPermissionError, MediaValidationError):
+            urls = {}
+        except Exception:
+            frappe.log_error("Chat attachment URL projection failed.", "AOS Chat Media Projection")
+            urls = {}
+
     grouped: Dict[str, List[Dict]] = {}
-
-    media_ids = list(
-        {
-            getattr(row, "media", None)
-            for row in rows
-            if getattr(row, "media", None)
-        }
-    )
-
-    media_map: Dict[str, frappe._dict] = {}
-    media_urls: Dict[str, str] = {}
-
-    if media_ids:
-        media_rows = frappe.get_all(
-            "AOS Media Object",
-            filters={"name": ["in", media_ids]},
-            fields=[
-                "name",
-                "purpose",
-                "status",
-                "visibility",
-                "original_filename",
-                "content_type",
-                "size_bytes",
-                "width",
-                "height",
-                "duration_seconds",
-            ],
-        )
-        media_map = {media.name: media for media in media_rows}
-
-        service = MediaService()
-        for media_id in media_ids:
-            try:
-                media_urls[media_id] = service.get_url(
-                    media_id=media_id,
-                    user=current_user,
-                )
-            except (MediaNotFoundError, MediaPermissionError, MediaValidationError):
-                # The caller should already have checked conversation visibility.
-                # If a stale/invalid media row slips through, skip exposing it.
-                continue
-            except Exception:
-                frappe.log_error("Chat operation failed.", "AOS Chat Attachment Media URL Failed")
-                continue
-
     for row in rows:
-        media_id = getattr(row, "media", None)
-
-        if media_id:
-            media = media_map.get(media_id)
-            url = media_urls.get(media_id)
-            if not media or not url:
-                continue
-
-            file_type = _infer_attachment_type_from_content_type(
-                media.content_type,
-                row.file_type,
-            )
-
-            grouped.setdefault(row.message, []).append(
-                {
-                    "id": row.name,
-                    "media": media_id,
-                    "media_id": media_id,
-                    "file": getattr(row, "file", None),
-                    "url": url,
-                    "type": file_type,
-                    "file_type": file_type,
-                    "sort_order": row.sort_order,
-                    "filename": media.original_filename,
-                    "content_type": media.content_type,
-                    "size_bytes": media.size_bytes,
-                    "width": media.width,
-                    "height": media.height,
-                    "duration_seconds": media.duration_seconds,
-                    "visibility": media.visibility,
-                }
-            )
+        media_id = str(row.media or "").strip()
+        media = media_map.get(media_id)
+        url = urls.get(media_id)
+        if not media or not url:
             continue
-
-        # Attachments without media are invalid in the rewritten backend.
-        continue
-
+        grouped.setdefault(str(row.message), []).append(
+            {
+                "media_id": media_id,
+                "url": url,
+                "type": _infer_attachment_type_from_content_type(media.content_type),
+                "sort_order": int(row.sort_order or 0),
+                "filename": media.original_filename,
+                "content_type": media.content_type,
+                "size_bytes": media.size_bytes,
+                "width": media.width,
+                "height": media.height,
+                "duration_seconds": media.duration_seconds,
+            }
+        )
     return grouped
 
 
@@ -541,11 +486,45 @@ def _message_idempotency_digest(*, sender: str, conversation_id: str, key: str |
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
+def _message_request_hash(
+    *,
+    content: str,
+    attachments: List[Dict[str, Any]],
+    ad: str | None,
+    short: str | None,
+    live: str | None,
+    reply_to_message: str | None,
+) -> str:
+    canonical = {
+        "content": content or "",
+        "attachments": [str(row.get("media_id") or "") for row in attachments],
+        "ad": str(ad or ""),
+        "short": str(short or ""),
+        "live": str(live or ""),
+        "reply_to_message": str(reply_to_message or ""),
+    }
+    raw = json.dumps(canonical, separators=(",", ":"), sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
 def _get_idempotent_message(*, digest: str | None):
     if not digest:
         return None
     name = frappe.db.get_value("AOS Message", {"idempotency_key": digest}, "name")
     return frappe.get_doc("AOS Message", name) if name else None
+
+
+def _idempotency_replay_response(existing, *, request_hash: str, current_user: str):
+    if str(getattr(existing, "idempotency_request_hash", "") or "") != request_hash:
+        return fail(
+            "Idempotency key was already used for a different message.",
+            error="CHAT_CONFLICT",
+            http_status=409,
+        )
+    return ok(
+        "Message already sent.",
+        data=_serialize_existing_message_for_viewer(existing, current_user=current_user),
+    )
 
 
 def _serialize_existing_message_for_viewer(existing, *, current_user: str) -> Dict[str, Any]:
@@ -608,6 +587,7 @@ def _fetch_reply_messages_bulk(
             "ad",
             "short",
             "live",
+            "call_id",
             "has_attachments",
             "is_forwarded",
             "forwarded_from_message",
@@ -622,6 +602,7 @@ def _fetch_reply_messages_bulk(
             "deleted_for_2_at",
             "creation",
         ],
+        limit=max(1, len(unique_ids)),
     )
 
     return {row.name: row for row in rows}
@@ -647,6 +628,7 @@ def _fetch_starred_message_ids(message_ids: List[str], user: str) -> set[str]:
             "user": user,
         },
         fields=["message"],
+        limit=max(1, len(unique_message_ids)),
     )
 
     return {row.message for row in rows}
@@ -847,6 +829,7 @@ def _build_deleted_message_payload(
         "live": None,
         "live_preview": None,
         "live_unavailable": False,
+        "call_id": None,
         "reply_to_message": getattr(msg, "reply_to_message", None),
         "reply_to": None,
         "has_attachments": 0,
@@ -921,6 +904,7 @@ def _build_reply_payload(
             "live": None,
             "live_preview": None,
             "live_unavailable": False,
+            "call_id": None,
             "has_attachments": 0,
             "is_forwarded": getattr(replied, "is_forwarded", 0) or 0,
             "forwarded_from_message": getattr(
@@ -970,6 +954,7 @@ def _build_reply_payload(
         "live": live_id,
         "live_preview": live_payload["live_preview"],
         "live_unavailable": live_payload["live_unavailable"],
+        "call_id": getattr(replied, "call_id", None),
         "has_attachments": replied.has_attachments or 0,
         "is_forwarded": getattr(replied, "is_forwarded", 0) or 0,
         "forwarded_from_message": getattr(replied, "forwarded_from_message", None),
@@ -1052,6 +1037,7 @@ def _serialize_message(
         "live": live_id,
         "live_preview": live_payload["live_preview"],
         "live_unavailable": live_payload["live_unavailable"],
+        "call_id": getattr(msg, "call_id", None),
         "reply_to_message": reply_to_message,
         "reply_to": reply_to,
         "has_attachments": msg.has_attachments or 0,
@@ -1084,64 +1070,32 @@ def _prepare_chat_attachments(
     attachments: List[Dict],
     current_user: str,
 ) -> tuple[List[Dict[str, Any]], Any | None]:
-    """Validate chat attachment payloads and return normalized rows."""
+    """Validate canonical ``{media_id}`` references through Media."""
 
     if not isinstance(attachments, list):
-        return [], fail("attachments must be a list.", error="VALIDATION_ERROR")
+        return [], fail("attachments must be a list.", error="CHAT_INVALID_REQUEST")
 
     service = MediaService()
     prepared: List[Dict[str, Any]] = []
-
-    for index, att in enumerate(attachments):
-        if not isinstance(att, dict):
-            return [], fail("Invalid attachment payload.", error="VALIDATION_ERROR")
-
-        media_id = (
-            att.get("media")
-            or att.get("media_id")
-            or att.get("id")
-        )
-        media_id = str(media_id or "").strip()
-
+    for index, attachment in enumerate(attachments):
+        if not isinstance(attachment, dict):
+            return [], fail("Invalid attachment payload.", error="CHAT_INVALID_REQUEST")
+        media_id = str(attachment.get("media_id") or "").strip()
         if not media_id:
-            if att.get("file"):
-                return [], fail(
-                    "Chat attachments must be uploaded as media_id using purpose chat_attachment.",
-                    error="VALIDATION_ERROR",
-                )
-            return [], fail("Attachment media_id is required.", error="VALIDATION_ERROR")
-
+            return [], fail("Attachment media_id is required.", error="CHAT_INVALID_REQUEST")
         try:
-            media_doc = service.assert_media_ready_for_attach(
+            service.assert_media_ready_for_attach(
                 media_id=media_id,
                 user=current_user,
                 purpose="chat_attachment",
             )
         except MediaNotFoundError as exc:
-            return [], safe_fail_from_exception(exc, fallback="Resource not found.", error="NOT_FOUND")
+            return [], safe_fail_from_exception(exc, fallback="Resource not found.", error="CHAT_NOT_FOUND")
         except MediaPermissionError as exc:
-            return [], safe_fail_from_exception(exc, fallback="Not allowed.", error="FORBIDDEN")
+            return [], safe_fail_from_exception(exc, fallback="Not allowed.", error="CHAT_ACCESS_DENIED")
         except MediaValidationError as exc:
-            return [], safe_fail_from_exception(exc, fallback="Invalid request.", error="VALIDATION_ERROR")
-
-        file_type = (
-            att.get("file_type")
-            or att.get("type")
-            or _infer_attachment_type_from_content_type(media_doc.content_type)
-        )
-        file_type = str(file_type or "").strip().lower()
-
-        if file_type not in {"image", "video", "audio", "document"}:
-            file_type = _infer_attachment_type_from_content_type(media_doc.content_type)
-
-        prepared.append(
-            {
-                "media": media_id,
-                "file_type": file_type,
-                "sort_order": index,
-            }
-        )
-
+            return [], safe_fail_from_exception(exc, fallback="Invalid request.", error="CHAT_INVALID_REQUEST")
+        prepared.append({"media_id": media_id, "sort_order": index})
     return prepared, None
 
 
@@ -1239,16 +1193,23 @@ def send_message_for_user(*, current_user: str, require_live_active: bool = Fals
             conversation_id=conv_id,
             key=client_idempotency_key,
         )
+        request_hash = _message_request_hash(
+            content=content,
+            attachments=prepared_attachments,
+            ad=ad,
+            short=short,
+            live=live,
+            reply_to_message=reply_to_message,
+        )
         existing = _get_idempotent_message(digest=idempotency_digest)
         if existing:
-            return ok(
-                "Message already sent.",
-                data=_serialize_existing_message_for_viewer(existing, current_user=current_user),
+            return _idempotency_replay_response(
+                existing, request_hash=request_hash, current_user=current_user
             )
 
         message_type = _determine_message_type(
             content=content,
-            attachments=attachments,
+            attachments=prepared_attachments,
             ad=ad,
             short=short,
             live=live,
@@ -1274,6 +1235,7 @@ def send_message_for_user(*, current_user: str, require_live_active: bool = Fals
 
         if idempotency_digest:
             msg.idempotency_key = idempotency_digest
+            msg.idempotency_request_hash = request_hash
 
         if reply_to_message:
             msg.reply_to_message = reply_to_message
@@ -1284,9 +1246,8 @@ def send_message_for_user(*, current_user: str, require_live_active: bool = Fals
             existing = _get_idempotent_message(digest=idempotency_digest)
             if not existing:
                 raise
-            return ok(
-                "Message already sent.",
-                data=_serialize_existing_message_for_viewer(existing, current_user=current_user),
+            return _idempotency_replay_response(
+                existing, request_hash=request_hash, current_user=current_user
             )
 
         # Attachments.
@@ -1298,14 +1259,13 @@ def send_message_for_user(*, current_user: str, require_live_active: bool = Fals
                 {
                     "doctype": "AOS Message Attachment",
                     "message": msg.name,
-                    "media": att["media"],
-                    "file_type": att["file_type"],
+                    "media": att["media_id"],
                     "sort_order": att["sort_order"],
                 }
             ).insert(ignore_permissions=True)
 
             media_service.attach_media(
-                media_id=att["media"],
+                media_id=att["media_id"],
                 user=current_user,
                 purpose="chat_attachment",
                 attached_doctype="AOS Message",
@@ -1510,76 +1470,44 @@ def list_messages_impl(**kwargs):
         return rl
 
     conv_id = kwargs.get("conversation_id")
-
-    limit = _clean_int(
-        kwargs.get("limit"),
-        default=30,
-        min_value=1,
-        max_value=100,
-    )
-
-    before = kwargs.get("before")
-
+    limit = _clean_int(kwargs.get("limit"), default=30, min_value=1, max_value=100)
     if not conv_id:
-        return fail("conversation_id is required.", error="VALIDATION_ERROR")
+        return fail("conversation_id is required.", error="CHAT_INVALID_REQUEST")
+
+    try:
+        cursor = decode_cursor(
+            kwargs.get("cursor"),
+            kind="messages",
+            required_keys=("created_at", "message_id"),
+        )
+    except ChatError as exc:
+        return fail(exc.public_message, error=exc.code, data=exc.data, http_status=exc.http_status)
 
     try:
         conv = _get_conversation_row(conv_id)
         if not conv:
-            return fail("Conversation not found.", error="NOT_FOUND")
-
+            return fail("Conversation not found.", error="CHAT_NOT_FOUND", http_status=404)
         if current_user not in (conv.participant_1, conv.participant_2):
-            return fail("Not allowed.", error="PERMISSION_DENIED")
+            return fail("Not allowed.", error="CHAT_ACCESS_DENIED", http_status=403)
 
         participant_index = 1 if current_user == conv.participant_1 else 2
         params: Dict[str, Any] = {
             "conversation_id": conv_id,
             "participant_index": participant_index,
-            "before_creation": None,
-            "before_name": None,
-            "limit": limit,
+            "cursor_creation": cursor.get("created_at") if cursor else None,
+            "cursor_name": cursor.get("message_id") if cursor else None,
+            "query_limit": limit + 1,
         }
-
-        if before:
-            before_row = frappe.db.get_value(
-                "AOS Message",
-                {"name": before, "conversation": conv_id},
-                ["creation", "name"],
-                as_dict=True,
-            )
-
-            if not before_row:
-                return fail("Invalid 'before' message.", error="VALIDATION_ERROR")
-
-            params["before_creation"] = before_row.creation
-            params["before_name"] = before_row.name
 
         messages = frappe.db.sql(
             """
             SELECT
-                name,
-                sender,
-                content,
-                message_type,
-                ad,
-                short,
-                live,
-                reply_to_message,
-                has_attachments,
-                is_forwarded,
-                forwarded_from_message,
-                forwarded_from_conversation,
-                is_edited,
-                edited_at,
-                deleted_for_everyone,
-                deleted_for_everyone_at,
-                deleted_for_1,
-                deleted_for_1_at,
-                deleted_for_2,
-                deleted_for_2_at,
-                delivered_to_receiver_at,
-                read_by_receiver_at,
-                creation
+                name, sender, content, message_type, ad, short, live, call_id, reply_to_message,
+                has_attachments, is_forwarded, forwarded_from_message,
+                forwarded_from_conversation, is_edited, edited_at,
+                deleted_for_everyone, deleted_for_everyone_at,
+                deleted_for_1, deleted_for_1_at, deleted_for_2, deleted_for_2_at,
+                delivered_to_receiver_at, read_by_receiver_at, creation
             FROM `tabAOS Message`
             WHERE conversation = %(conversation_id)s
               AND (
@@ -1587,97 +1515,67 @@ def list_messages_impl(**kwargs):
                  OR (%(participant_index)s = 2 AND IFNULL(deleted_for_2, 0) = 0)
               )
               AND (
-                    %(before_creation)s IS NULL
-                 OR creation < %(before_creation)s
-                 OR (creation = %(before_creation)s AND name < %(before_name)s)
+                    %(cursor_creation)s IS NULL
+                 OR creation < %(cursor_creation)s
+                 OR (creation = %(cursor_creation)s AND name < %(cursor_name)s)
               )
             ORDER BY creation DESC, name DESC
-            LIMIT %(limit)s
+            LIMIT %(query_limit)s
             """,
             params,
             as_dict=True,
         )
 
-        if not messages:
-            return ok("Messages fetched.", data=[])
+        has_more = len(messages) > limit
+        page = list(messages[:limit])
+        if not page:
+            return ok("Messages fetched.", data={"items": [], "next_cursor": None})
 
-        all_message_ids = [m.name for m in messages]
-        visible_message_ids = [
-            m.name for m in messages if not _is_deleted_for_everyone(m)
-        ]
-
-        starred_message_ids = _fetch_starred_message_ids(
-            all_message_ids,
-            current_user,
-        )
-
+        all_message_ids = [m.name for m in page]
+        visible_message_ids = [m.name for m in page if not _is_deleted_for_everyone(m)]
+        starred_message_ids = _fetch_starred_message_ids(all_message_ids, current_user)
         reaction_map = fetch_message_reaction_summaries(
-            message_ids=visible_message_ids,
-            viewer=current_user,
+            message_ids=visible_message_ids, viewer=current_user
         )
-
         my_reaction_map = fetch_my_reactions(
-            message_ids=visible_message_ids,
-            user=current_user,
+            message_ids=visible_message_ids, user=current_user
         )
-
-        reply_message_ids = list(
-            {
-                m.reply_to_message
-                for m in messages
-                if getattr(m, "reply_to_message", None)
-                and not _is_deleted_for_everyone(m)
-            }
-        )
-
+        reply_message_ids = list({
+            m.reply_to_message
+            for m in page
+            if getattr(m, "reply_to_message", None) and not _is_deleted_for_everyone(m)
+        })
         reply_map = _fetch_reply_messages_bulk(reply_message_ids)
 
-        sender_ids = list({m.sender for m in messages if m.sender})
-
-        for replied in reply_map.values():
-            if replied.sender:
-                sender_ids.append(replied.sender)
-
+        sender_ids = list({m.sender for m in page if m.sender})
+        sender_ids.extend(row.sender for row in reply_map.values() if row.sender)
         sender_ids = list(set(sender_ids))
 
-        ad_ids = list(
-            {
-                m.ad
-                for m in messages
-                if m.ad and not _is_deleted_for_everyone(m)
-            }
+        ad_ids = list({m.ad for m in page if m.ad and not _is_deleted_for_everyone(m)})
+        ad_ids.extend(
+            row.ad for row in reply_map.values()
+            if getattr(row, "ad", None) and not _is_deleted_for_everyone(row)
         )
-
-        for replied in reply_map.values():
-            if replied.ad and not _is_deleted_for_everyone(replied):
-                ad_ids.append(replied.ad)
-
         ad_ids = list(set(ad_ids))
 
-        short_ids = list(
-            {
-                getattr(m, "short", None)
-                for m in messages
-                if getattr(m, "short", None) and not _is_deleted_for_everyone(m)
-            }
+        short_ids = list({
+            getattr(m, "short", None) for m in page
+            if getattr(m, "short", None) and not _is_deleted_for_everyone(m)
+        })
+        short_ids.extend(
+            row.short for row in reply_map.values()
+            if getattr(row, "short", None) and not _is_deleted_for_everyone(row)
         )
-
-        for replied in reply_map.values():
-            if getattr(replied, "short", None) and not _is_deleted_for_everyone(replied):
-                short_ids.append(replied.short)
-
         short_ids = list(set(short_ids))
 
-        live_ids = list(
-            {
-                getattr(m, "live", None)
-                for m in messages
-                if getattr(m, "live", None) and not _is_deleted_for_everyone(m)
-            }
+        live_ids = list({
+            getattr(m, "live", None) for m in page
+            if getattr(m, "live", None) and not _is_deleted_for_everyone(m)
+        })
+        live_ids.extend(
+            row.live for row in reply_map.values()
+            if getattr(row, "live", None) and not _is_deleted_for_everyone(row)
         )
-        for replied in reply_map.values():
-            if getattr(replied, "live", None) and not _is_deleted_for_everyone(replied):
-                live_ids.append(replied.live)
         live_ids = list(set(live_ids))
 
         attachments_map = _serialize_attachments_bulk(visible_message_ids, current_user=current_user)
@@ -1686,27 +1584,34 @@ def list_messages_impl(**kwargs):
         short_map = _fetch_shorts_bulk(short_ids, viewer=current_user)
         live_map = _fetch_lives_bulk(live_ids, viewer=current_user)
 
-        results = []
-
-        for m in messages:
-            results.append(
-                _serialize_message(
-                    m,
-                    attachments_map=attachments_map,
-                    user_map=user_map,
-                    ad_map=ad_map,
-                    short_map=short_map,
-                    live_map=live_map,
-                    current_user=current_user,
-                    reply_map=reply_map,
-                    is_starred=m.name in starred_message_ids,
-                    reactions=reaction_map.get(m.name, []),
-                    my_reaction=my_reaction_map.get(m.name),
-                )
+        results = [
+            _serialize_message(
+                message,
+                attachments_map=attachments_map,
+                user_map=user_map,
+                ad_map=ad_map,
+                short_map=short_map,
+                live_map=live_map,
+                current_user=current_user,
+                reply_map=reply_map,
+                is_starred=message.name in starred_message_ids,
+                reactions=reaction_map.get(message.name, []),
+                my_reaction=my_reaction_map.get(message.name),
             )
-
-        return ok("Messages fetched.", data=results)
+            for message in page
+        ]
+        last = page[-1]
+        next_cursor = (
+            encode_cursor(
+                "messages",
+                {"created_at": str(last.creation), "message_id": str(last.name)},
+            )
+            if has_more
+            else None
+        )
+        return ok("Messages fetched.", data={"items": results, "next_cursor": next_cursor})
 
     except Exception:
         frappe.log_error("Chat operation failed.", "AOS List Messages Failed")
-        return fail("Failed to fetch messages.", error="INTERNAL_ERROR")
+        return fail("Failed to fetch messages.", error="CHAT_INTERNAL_ERROR", http_status=500)
+

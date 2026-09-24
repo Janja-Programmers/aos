@@ -1194,6 +1194,59 @@ class MediaService:
                 result[str(row.name)] = url
         return result
 
+    def get_chat_attachment_url_map(
+        self,
+        media_ids: Iterable[str],
+        *,
+        user: str,
+        expiry_minutes: int | None = None,
+    ) -> dict[str, str]:
+        """Resolve private Chat attachment URLs with one authorization query.
+
+        Media remains the authorization/storage owner.  The query mirrors the
+        canonical Chat attachment read rule already enforced by
+        ``_user_can_read_chat_attachment`` but evaluates a bounded page in one
+        database round trip instead of one query per attachment.
+        """
+
+        clean_user = str(user or "").strip()
+        if not clean_user or clean_user == "Guest":
+            raise MediaPermissionError("Authentication is required", code="AUTH_REQUIRED")
+        unique = sorted({str(media_id or "").strip() for media_id in media_ids if media_id})
+        if not unique:
+            return {}
+        rows = frappe.db.sql(
+            """
+            SELECT DISTINCT mo.name, mo.bucket, mo.object_key
+            FROM `tabAOS Media Object` mo
+            INNER JOIN `tabAOS Message Attachment` a ON a.media = mo.name
+            INNER JOIN `tabAOS Message` m ON m.name = a.message
+            INNER JOIN `tabAOS Conversation` c ON c.name = m.conversation
+            WHERE mo.name IN %(media_ids)s
+              AND mo.purpose = 'chat_attachment'
+              AND mo.visibility = 'Private'
+              AND mo.status IN ('Uploaded', 'Attached')
+              AND IFNULL(m.deleted_for_everyone, 0) = 0
+              AND (
+                    (c.participant_1 = %(user)s AND IFNULL(m.deleted_for_1, 0) = 0)
+                 OR (c.participant_2 = %(user)s AND IFNULL(m.deleted_for_2, 0) = 0)
+              )
+            LIMIT %(limit)s
+            """,
+            {"media_ids": tuple(unique), "user": clean_user, "limit": len(unique)},
+            as_dict=True,
+        )
+        minutes = self._normalize_download_expiry(expiry_minutes)
+        result: dict[str, str] = {}
+        for row in rows:
+            try:
+                result[str(row.name)] = self.storage.presigned_get_url(
+                    row.bucket, row.object_key, expiry_minutes=minutes
+                )
+            except StorageUnavailableError:
+                continue
+        return result
+
     def get_public_attachment_url_map(
         self,
         attachments: Iterable[tuple[str, str]],

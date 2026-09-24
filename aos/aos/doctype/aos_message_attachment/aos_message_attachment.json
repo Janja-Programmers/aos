@@ -1,26 +1,14 @@
 {
  "actions": [],
- "autoname": "naming_series:",
  "creation": "2026-03-19 01:27:01.500838",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "message",
   "media",
-  "file",
-  "column_break_szow",
-  "file_type",
   "sort_order"
  ],
  "fields": [
-  {
-   "default": "MSG-ATT-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "MSG-ATT-.YYYY.-.#####"
-  },
   {
    "fieldname": "message",
    "fieldtype": "Link",
@@ -41,33 +29,10 @@
    "reqd": 1
   },
   {
-   "fieldname": "file",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Deprecated File",
-   "reqd": 0,
-   "description": "Deprecated hidden field. AOS attachments require media.",
-   "hidden": 1,
-   "read_only": 1
-  },
-  {
-   "fieldname": "file_type",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "File Type",
-   "options": "image\nvideo\ndocument\naudio",
-   "reqd": 1
-  },
-  {
    "default": "0",
    "fieldname": "sort_order",
    "fieldtype": "Int",
    "label": "Sort Order"
-  },
-  {
-   "fieldname": "column_break_szow",
-   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
@@ -77,7 +42,6 @@
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Message Attachment",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {

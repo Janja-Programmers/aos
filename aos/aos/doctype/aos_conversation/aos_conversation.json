@@ -1,11 +1,9 @@
 {
  "actions": [],
- "autoname": "naming_series:",
  "creation": "2026-03-18 19:37:27.697030",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "participant_1",
   "participant_2",
   "pair_key",
@@ -22,13 +20,6 @@
   "is_active_2"
  ],
  "fields": [
-  {
-   "default": "CONV-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "CONV-.YYYY.-.#####"
-  },
   {
    "fieldname": "participant_1",
    "fieldtype": "Link",
@@ -137,7 +128,6 @@
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Conversation",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {

@@ -75,8 +75,8 @@ class TestChatDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(sent.get("ok"), sent)
 
         with patch("aos.api.chat.conversation.rate_limit", return_value=None):
-            initial = list_conversations_impl(limit=20, offset=0)
-        row = next(item for item in (initial.get("data") or []) if item.get("id") == conversation.name)
+            initial = list_conversations_impl(limit=20)
+        row = next(item for item in (initial.get("data", {}).get("items") or []) if item.get("id") == conversation.name)
         self.assertTrue(row.get("last_message_id"))
         self.assertTrue(row.get("last_message_is_mine"))
         self.assertIsNone(row.get("last_message_delivered_at"))
@@ -89,8 +89,8 @@ class TestChatDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
 
         frappe.set_user(sender)
         with patch("aos.api.chat.conversation.rate_limit", return_value=None):
-            after_delivery = list_conversations_impl(limit=20, offset=0)
-        row = next(item for item in (after_delivery.get("data") or []) if item.get("id") == conversation.name)
+            after_delivery = list_conversations_impl(limit=20)
+        row = next(item for item in (after_delivery.get("data", {}).get("items") or []) if item.get("id") == conversation.name)
         self.assertTrue(row.get("last_message_delivered_at"))
         self.assertIsNone(row.get("last_message_read_at"))
 
@@ -101,8 +101,8 @@ class TestChatDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
 
         frappe.set_user(sender)
         with patch("aos.api.chat.conversation.rate_limit", return_value=None):
-            after_read = list_conversations_impl(limit=20, offset=0)
-        row = next(item for item in (after_read.get("data") or []) if item.get("id") == conversation.name)
+            after_read = list_conversations_impl(limit=20)
+        row = next(item for item in (after_read.get("data", {}).get("items") or []) if item.get("id") == conversation.name)
         self.assertTrue(row.get("last_message_delivered_at"))
         self.assertTrue(row.get("last_message_read_at"))
 
@@ -151,7 +151,7 @@ class TestChatDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         with patch("aos.api.chat.message.rate_limit", return_value=None):
             history = list_messages_impl(conversation_id=conversation.name, limit=20)
         self.assertTrue(history.get("ok"), history)
-        ids = [row.get("id") for row in (history.get("data") or [])]
+        ids = [row.get("id") for row in (history.get("data", {}).get("items") or [])]
         self.assertEqual(ids, [new_message.get("data", {}).get("id")])
 
     def test_message_idempotency_prevents_duplicate_side_effects(self):
@@ -288,7 +288,7 @@ class TestChatDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         with patch("aos.api.chat.message.rate_limit", return_value=None):
             history = list_messages_impl(conversation_id=conversation.name, limit=20)
         self.assertTrue(history.get("ok"), history)
-        item = next(row for row in (history.get("data") or []) if row.get("live") == live.name)
+        item = next(row for row in (history.get("data", {}).get("items") or []) if row.get("live") == live.name)
         self.assertEqual(item.get("live_preview", {}).get("status"), "ended")
         serialized = repr(item).lower()
         self.assertNotIn("token", serialized)
@@ -306,19 +306,19 @@ class TestChatDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         ):
             sent = send_message_impl(
                 conversation_id=conversation.name,
-                ad=ad.name,
+                ad=ad.public_id,
                 content="Look at this",
                 idempotency_key="ad-history-1",
             )
         self.assertTrue(sent.get("ok"), sent)
-        self.assertEqual(sent.get("data", {}).get("ad_preview", {}).get("id"), ad.name)
+        self.assertEqual(sent.get("data", {}).get("ad_preview", {}).get("id"), ad.public_id)
 
         frappe.db.set_value("AOS Ad", ad.name, "status", "Suspended", update_modified=False)
         frappe.set_user(receiver)
         with patch("aos.api.chat.message.rate_limit", return_value=None):
             history = list_messages_impl(conversation_id=conversation.name, limit=20)
         self.assertTrue(history.get("ok"), history)
-        item = next(row for row in (history.get("data") or []) if row.get("ad") == ad.name)
+        item = next(row for row in (history.get("data", {}).get("items") or []) if row.get("ad") == ad.public_id)
         self.assertIsNone(item.get("ad_preview"))
         self.assertTrue(item.get("ad_unavailable"))
 
@@ -329,7 +329,7 @@ class TestChatDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         ):
             rejected = send_message_impl(
                 conversation_id=conversation.name,
-                ad=ad.name,
+                ad=ad.public_id,
                 idempotency_key="ad-history-2",
             )
         self.assertFalse(rejected.get("ok"), rejected)

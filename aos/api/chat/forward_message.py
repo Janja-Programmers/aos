@@ -62,24 +62,12 @@ from .presence import schedule_presence_update_to_peers
 from .visibility import get_deleted_for_user_field
 
 
-def _normalize_target_conversation_ids(kwargs) -> List[str]:
-    """
-    Accept either:
-    - target_conversation_id: "CONV-1"
-    - target_conversation_ids: ["CONV-1", "CONV-2"]
-    """
+def _normalize_target_conversation_ids(value) -> List[str]:
+    """Normalize the already-validated canonical target conversation list."""
 
-    single = kwargs.get("target_conversation_id")
-    multiple = kwargs.get("target_conversation_ids")
-
-    if isinstance(multiple, list):
-        values = [str(v).strip() for v in multiple if str(v or "").strip()]
-    elif isinstance(single, str) and single.strip():
-        values = [single.strip()]
-    else:
-        values = []
-
-    # Deduplicate while preserving order.
+    if not isinstance(value, list):
+        return []
+    values = [str(item).strip() for item in value if str(item or "").strip()]
     return list(dict.fromkeys(values))
 
 
@@ -158,8 +146,9 @@ def _fetch_source_attachments(message_id: str) -> List[frappe._dict]:
     return frappe.get_all(
         "AOS Message Attachment",
         filters={"message": message_id},
-        fields=["media", "file", "file_type", "sort_order"],
+        fields=["media", "sort_order"],
         order_by="sort_order asc",
+        limit=10,
     )
 
 
@@ -331,7 +320,6 @@ def _copy_attachments(
             "doctype": "AOS Message Attachment",
             "message": target_message_id,
             "media": media_id,
-            "file_type": att.file_type,
             "sort_order": att.sort_order if att.sort_order is not None else index,
         }
 
@@ -357,13 +345,9 @@ def _create_forwarded_message(
     message_type = _determine_message_type(
         content=content,
         attachments=[
-            {
-                "media": getattr(att, "media", None),
-                "file": getattr(att, "file", None),
-                "file_type": att.file_type,
-            }
+            {"media_id": getattr(att, "media", None)}
             for att in source_attachments
-            if (getattr(att, "media", None) or getattr(att, "file", None)) and att.file_type
+            if getattr(att, "media", None)
         ],
         ad=ad,
         short=short,
@@ -525,7 +509,9 @@ def forward_message_impl(**kwargs):
         return rl
 
     message_id = kwargs.get("message_id")
-    target_conversation_ids = _normalize_target_conversation_ids(kwargs)
+    target_conversation_ids = _normalize_target_conversation_ids(
+        kwargs.get("target_conversation_ids")
+    )
     client_idempotency_key = str(kwargs.get("idempotency_key") or "").strip() or None
 
     if not message_id:
@@ -533,7 +519,7 @@ def forward_message_impl(**kwargs):
 
     if not target_conversation_ids:
         return fail(
-            "target_conversation_id or target_conversation_ids is required.",
+            "target_conversation_ids is required.",
             error="VALIDATION_ERROR",
         )
 

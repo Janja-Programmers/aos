@@ -2,7 +2,7 @@
 Message reaction APIs (implementation).
 
 Handles:
-- toggle_message_reaction
+- set_message_reaction
 
 Behavior:
 - Add a reaction if none exists.
@@ -27,7 +27,7 @@ from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.services.chat.events import publish_after_commit
 from aos.services.chat.repository import lock_conversations, lock_messages
 
-from .constants import TOGGLE_MESSAGE_REACTION_LIMIT_PER_MINUTE_PER_USER
+from .constants import SET_MESSAGE_REACTION_LIMIT_PER_MINUTE_PER_USER
 from .visibility import get_deleted_for_user_field, get_other_participant
 
 
@@ -257,10 +257,7 @@ def fetch_my_reactions(
     """
     Fetch current user's reaction per message.
 
-    Returns:
-        {
-            "MSG-001": "😂"
-        }
+    Returns a mapping from canonical message ID to the viewer's emoji.
     """
 
     if not message_ids or not user:
@@ -278,6 +275,7 @@ def fetch_my_reactions(
             "user": user,
         },
         fields=["message", "emoji"],
+        limit=max(1, len(unique_ids)),
     )
 
     return {row.message: row.emoji for row in rows}
@@ -324,15 +322,20 @@ def _publish_reaction_update(
     )
 
 
-def toggle_message_reaction_impl(**kwargs):
+def set_message_reaction_impl(**kwargs):
+    """Set the caller's reaction to ``emoji`` or clear it when null/empty.
+
+    The mutation is desired-state based so identical retries are idempotent.
+    """
+
     current_user, err = require_login()
     if err:
         return err
 
     rl = rate_limit(
-        key=rate_limit_key("chat", "toggle_message_reaction", current_user),
+        key=rate_limit_key("chat", "set_message_reaction", current_user),
         ttl_seconds=60,
-        limit=TOGGLE_MESSAGE_REACTION_LIMIT_PER_MINUTE_PER_USER,
+        limit=SET_MESSAGE_REACTION_LIMIT_PER_MINUTE_PER_USER,
         message="Too many reaction requests. Please slow down.",
     )
     if rl:
@@ -340,7 +343,6 @@ def toggle_message_reaction_impl(**kwargs):
 
     message_id = kwargs.get("message_id")
     emoji = _clean_emoji(kwargs.get("emoji"))
-
     if not message_id:
         return fail("message_id is required.", error="VALIDATION_ERROR")
 
@@ -357,109 +359,77 @@ def toggle_message_reaction_impl(**kwargs):
             return fail("Message not found.", error="NOT_FOUND")
 
         msg = _get_message_with_conversation(message_id)
-
         if not msg:
             return fail("Message not found.", error="NOT_FOUND")
 
-        validation_error = _validate_message_can_be_reacted_to(
-            msg,
-            current_user,
-        )
+        validation_error = _validate_message_can_be_reacted_to(msg, current_user)
         if validation_error:
             return validation_error
 
-        existing = _get_existing_reaction(
-            message_id=message_id,
-            user=current_user,
-        )
+        existing = _get_existing_reaction(message_id=message_id, user=current_user)
+        changed = False
+        action = "unchanged"
 
-        action = "none"
-
-        # No emoji means remove reaction if it exists.
         if emoji is None:
             if existing:
                 frappe.delete_doc(
-                    "AOS Message Reaction",
-                    existing.name,
-                    ignore_permissions=True,
+                    "AOS Message Reaction", existing.name, ignore_permissions=True
                 )
+                changed = True
                 action = "removed"
-            else:
-                action = "none"
-
         elif existing and existing.emoji == emoji:
-            # Tapping the same reaction removes it.
-            frappe.delete_doc(
-                "AOS Message Reaction",
-                existing.name,
-                ignore_permissions=True,
-            )
-            action = "removed"
-
+            pass
         elif existing:
-            # Change existing reaction.
             frappe.db.set_value(
                 "AOS Message Reaction",
                 existing.name,
-                {
-                    "emoji": emoji,
-                },
+                {"emoji": emoji},
                 update_modified=True,
             )
+            changed = True
             action = "updated"
-
         else:
-            # Create new reaction.
             reaction = frappe.new_doc("AOS Message Reaction")
             reaction.message = message_id
             reaction.conversation = msg.conversation
             reaction.user = current_user
             reaction.emoji = emoji
             reaction.insert(ignore_permissions=True)
+            changed = True
             action = "added"
 
         reactions = fetch_message_reaction_summary(
             message_id=message_id,
             viewer=current_user,
         )
-
         my_reaction = frappe.db.get_value(
             "AOS Message Reaction",
-            {
-                "message": message_id,
-                "user": current_user,
-            },
+            {"message": message_id, "user": current_user},
             "emoji",
         )
 
-        _publish_reaction_update(
-            msg=msg,
-            current_user=current_user,
-        )
+        if changed:
+            _publish_reaction_update(msg=msg, current_user=current_user)
 
         return ok(
-            "Message reaction updated.",
+            "Message reaction state updated.",
             data={
                 "conversation_id": msg.conversation,
                 "message_id": message_id,
                 "action": action,
                 "emoji": my_reaction,
                 "reactions": reactions,
-                "viewer_state": {
-                    "my_reaction": my_reaction,
-                },
+                "viewer_state": {"my_reaction": my_reaction},
             },
         )
 
     except frappe.DuplicateEntryError:
-        return fail(
-            "Reaction already exists. Please retry.",
-            error="CONFLICT",
-        )
-
+        return fail("Reaction state changed concurrently. Retry the request.", error="CONFLICT")
     except frappe.ValidationError as ex:
-        return safe_fail_from_exception(ex, fallback="Invalid request.", error="VALIDATION_ERROR")
-
+        return safe_fail_from_exception(
+            ex, fallback="Invalid request.", error="VALIDATION_ERROR"
+        )
     except Exception:
-        frappe.log_error("Chat operation failed.", "AOS Toggle Message Reaction Failed")
+        frappe.log_error("Chat operation failed.", "AOS Set Message Reaction Failed")
         return fail("Failed to update message reaction.", error="INTERNAL_ERROR")
+

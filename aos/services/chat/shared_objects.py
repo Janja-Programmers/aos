@@ -19,7 +19,7 @@ def _clean_ids(values: Iterable[str]) -> list[str]:
 
 
 def _get_ad_meta_fields() -> list[str]:
-    fields = ["name"]
+    fields = ["name", "public_id"]
     try:
         meta = frappe.get_meta("AOS Ad")
     except Exception:
@@ -95,15 +95,16 @@ def _fetch_ad_thumbnails(ad_ids: list[str]) -> dict[str, str | None]:
     }
 
 
-def _eligible_ad_rows(ad_ids: list[str]) -> tuple[list[Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Return active public-marketplace ad rows and batched seller/account state."""
-    if not ad_ids:
+def _eligible_ad_rows(public_ad_ids: list[str]) -> tuple[list[Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Return active Ads resolved only through canonical public identifiers."""
+    if not public_ad_ids:
         return [], {}, {}, {}
 
     rows = frappe.get_all(
         "AOS Ad",
-        filters={"name": ["in", ad_ids]},
+        filters={"public_id": ["in", public_ad_ids]},
         fields=_get_ad_meta_fields(),
+        limit=max(1, len(public_ad_ids)),
     )
     seller_ids = _clean_ids(row.get("seller") for row in rows)
     seller_rows = (
@@ -111,6 +112,7 @@ def _eligible_ad_rows(ad_ids: list[str]) -> tuple[list[Any], dict[str, Any], dic
             "AOS Seller",
             filters={"name": ["in", seller_ids]},
             fields=["name", "user", "status"],
+            limit=max(1, len(seller_ids)),
         )
         if seller_ids
         else []
@@ -122,6 +124,7 @@ def _eligible_ad_rows(ad_ids: list[str]) -> tuple[list[Any], dict[str, Any], dic
             "User",
             filters={"name": ["in", seller_users]},
             fields=["name", "enabled"],
+            limit=max(1, len(seller_users)),
         )
         if seller_users
         else []
@@ -132,6 +135,7 @@ def _eligible_ad_rows(ad_ids: list[str]) -> tuple[list[Any], dict[str, Any], dic
             "AOS Profile",
             filters={"user": ["in", seller_users]},
             fields=["user", "account_status"],
+            limit=max(1, len(seller_users)),
         )
         if seller_users
         else []
@@ -165,18 +169,19 @@ def _row_is_publicly_available(row: Any, *, sellers: dict[str, Any], users: dict
 
 
 def fetch_chat_ad_previews(ad_ids: Iterable[str], *, viewer: str | None = None) -> dict[str, dict[str, Any]]:
-    """Fetch only Ads the viewer could open through the canonical public marketplace policy."""
-    ids = _clean_ids(ad_ids)
-    if not ids:
+    """Project public Ads without exposing internal ``AOS Ad.name`` values."""
+    public_ids = _clean_ids(ad_ids)
+    if not public_ids:
         return {}
-    rows, sellers, users, profiles = _eligible_ad_rows(ids)
+    rows, sellers, users, profiles = _eligible_ad_rows(public_ids)
     seller_users = [
         str(sellers[str(row.get("seller"))].get("user"))
         for row in rows
         if str(row.get("seller") or "") in sellers
     ]
     blocked = get_blocked_user_set(viewer, seller_users) if viewer else set()
-    thumbnails = _fetch_ad_thumbnails(ids)
+    internal_ids = [str(row.name) for row in rows]
+    thumbnails = _fetch_ad_thumbnails(internal_ids)
 
     result: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -186,15 +191,17 @@ def fetch_chat_ad_previews(ad_ids: Iterable[str], *, viewer: str | None = None) 
         seller_user = str(seller.get("user") or "") if seller else ""
         if seller_user in blocked:
             continue
-        title = row.get("title") or row.get("ad_title") or row.get("name1") or row.name
+        public_id = str(row.get("public_id") or "").strip()
+        if not public_id:
+            continue
+        title = row.get("title") or row.get("ad_title") or row.get("name1") or "Ad"
         seller_id = public_seller_id_for_name(row.get("seller"))
-        result[str(row.name)] = {
-            "id": str(row.name),
+        result[public_id] = {
+            "id": public_id,
             "title": title,
             "price": row.get("price"),
             "currency": row.get("currency"),
             "status": row.get("status"),
-            "seller": seller_id,
             "seller_id": seller_id,
             "thumbnail": thumbnails.get(str(row.name)),
         }

@@ -11,7 +11,7 @@ import frappe
 
 _ALLOWED_OUTCOMES = {"success", "rejected", "conflict", "failure"}
 _ALLOWED_REASONS = {
-    "none", "validation", "unknown_field", "alias_conflict", "identifier", "access",
+    "none", "validation", "unknown_field", "identifier", "access",
     "state", "rate_limit", "dependency", "duplicate", "pagination", "not_found",
 }
 

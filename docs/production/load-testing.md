@@ -82,7 +82,7 @@ Recommended seed values:
 export AD_IDS="ad_replace_with_public_id_1,ad_replace_with_public_id_2"
 export SHORT_IDS="SHR-AAAAAAAAAAAAAAAAAAAA,SHR-BBBBBBBBBBBBBBBBBBBB"
 export TEST_SHORT_ID="SHR-AAAAAAAAAAAAAAAAAAAA"
-export CHAT_CONVERSATION_ID="CONV-2026-00001"
+export CHAT_CONVERSATION_ID="CONV-0123456789abcdef0123456789abcdef"
 export CHAT_RECEIVER_USER="load-user-2@example.com"
 export LIVE_ID="LIVE-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```

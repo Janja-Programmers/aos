@@ -7,6 +7,8 @@ from __future__ import annotations
 import frappe
 from frappe.utils import now_datetime
 
+from aos.services.calls.identifiers import PUBLIC_CALL_ID_RE
+
 SYSTEM_MESSAGE_SENDER = "Administrator"
 
 
@@ -16,8 +18,10 @@ def _validate_system_message_inputs(
     conversation_id: str,
     content: str,
 ) -> None:
-    if not call_id:
-        frappe.throw("call_id is required for call system message")
+    if not PUBLIC_CALL_ID_RE.fullmatch(str(call_id or "").strip()):
+        frappe.throw("A canonical public call_id is required for call system message")
+    if not frappe.db.exists("AOS Call", {"public_id": call_id}):
+        frappe.throw("Call not found")
 
     if not conversation_id:
         frappe.throw("conversation_id is required for call system message")
@@ -27,7 +31,11 @@ def _validate_system_message_inputs(
 
 
 def _validate_conversation_exists(conversation_id: str) -> None:
-    if not frappe.db.exists("AOS Conversation", conversation_id):
+    rows = frappe.db.sql(
+        "SELECT name FROM `tabAOS Conversation` WHERE name=%s LIMIT 1 FOR UPDATE",
+        (conversation_id,),
+    )
+    if not rows:
         frappe.throw("Conversation not found")
 
 
@@ -121,9 +129,25 @@ def upsert_call_system_message(
         msg.message_type = "system"
         msg.content = content
         msg.call_id = call_id
-        msg.insert(ignore_permissions=True)
-
-        msg_name = msg.name
+        try:
+            msg.insert(ignore_permissions=True)
+            msg_name = msg.name
+        except frappe.DuplicateEntryError:
+            # The database uniqueness rule on call_id elects one concurrent
+            # writer. Reuse that durable winner instead of creating a duplicate.
+            msg_name = frappe.db.get_value(
+                "AOS Message",
+                {"call_id": call_id, "message_type": "system"},
+                "name",
+            )
+            if not msg_name:
+                raise
+            frappe.db.set_value(
+                "AOS Message",
+                msg_name,
+                {"content": content},
+                update_modified=False,
+            )
 
     _set_conversation_call_preview(
         conversation_id=conversation_id,

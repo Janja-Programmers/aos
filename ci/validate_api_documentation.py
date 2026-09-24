@@ -19,7 +19,7 @@ FEATURE_DOCS = {
 	"auth": "docs/features/authentication/README.md",
 	"calls": "docs/features/calls/api.md",
 	"catalog": "docs/features/catalog/README.md",
-	"chat": "docs/features/chat/api.md",
+	"chat": "docs/features/chat/README.md",
 	"diagnostics": "docs/features/diagnostics/api.md",
 	"live": "docs/features/live/README.md",
 	"localization": "docs/features/localization/README.md",
@@ -54,6 +54,7 @@ REQUIRED_HARDENED_FEATURE_SECTIONS = (
 )
 
 SINGLE_FILE_FEATURE_DOCS = {
+	"chat": "docs/features/chat/README.md",
 	"accounts": "docs/features/accounts/README.md",
 	"ads": "docs/features/ads/README.md",
 	"auth": "docs/features/authentication/README.md",

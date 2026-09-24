@@ -26,6 +26,8 @@ from .constants import (
     SEND_TYPING_LIMIT_PER_MINUTE_PER_USER,
     GET_PRESENCE_LIMIT_PER_MINUTE_PER_USER,
     PRESENCE_BROADCAST_THROTTLE_SECONDS,
+    PRESENCE_ACTIVITY_WRITE_THROTTLE_SECONDS,
+    PRESENCE_MAX_PEERS,
     ONLINE_THRESHOLD_SECONDS,
 )
 
@@ -129,41 +131,39 @@ def _get_other_participant(conv_row, user: str) -> str | None:
 
 
 def _get_presence_subscribers_for_user(user: str) -> list[str]:
-    """
-    Return distinct users who share an active conversation with `user`.
-
-    This keeps presence private/scoped:
-    only chat peers receive presence updates.
-    """
+    """Return a bounded set of recent active Chat peers for presence fanout."""
 
     rows = frappe.db.sql(
         """
-        SELECT DISTINCT
-            CASE
-                WHEN participant_1 = %(user)s THEN participant_2
-                ELSE participant_1
-            END AS peer
-        FROM `tabAOS Conversation`
-        WHERE
-            (
-                participant_1 = %(user)s
-                AND IFNULL(is_active_2, 1) = 1
-            )
-            OR
-            (
-                participant_2 = %(user)s
-                AND IFNULL(is_active_1, 1) = 1
-            )
+        SELECT peer
+        FROM (
+            SELECT participant_2 AS peer,
+                   COALESCE(last_message_at_1, creation) AS activity_at,
+                   name AS conversation_id
+            FROM `tabAOS Conversation`
+            WHERE participant_1 = %(user)s AND IFNULL(is_active_2, 1) = 1
+
+            UNION ALL
+
+            SELECT participant_1 AS peer,
+                   COALESCE(last_message_at_2, creation) AS activity_at,
+                   name AS conversation_id
+            FROM `tabAOS Conversation`
+            WHERE participant_2 = %(user)s AND IFNULL(is_active_1, 1) = 1
+        ) AS peers
+        WHERE peer IS NOT NULL AND peer != %(user)s
+        ORDER BY activity_at DESC, conversation_id DESC
+        LIMIT %(limit)s
         """,
-        {"user": user},
+        {"user": user, "limit": PRESENCE_MAX_PEERS},
         as_dict=True,
     )
 
-    peers = {row.peer for row in rows if row.peer and row.peer != user}
+    peers = list(dict.fromkeys(row.peer for row in rows if row.peer and row.peer != user))
     if not peers:
         return []
     blocked = get_blocked_user_set(user, peers)
-    return sorted(peer for peer in peers if peer not in blocked)
+    return [peer for peer in peers if peer not in blocked]
 
 
 def _should_throttle_presence_publish(user: str) -> bool:
@@ -189,14 +189,21 @@ def _should_throttle_presence_publish(user: str) -> bool:
 
 
 def touch_user_activity(user: str) -> None:
-    """
-    Update user's last_active timestamp.
-    """
+    """Persist activity with a shared Redis throttle to cap write amplification."""
 
     if not user:
         return
 
     try:
+        cache = frappe.cache()
+        key = rate_limit_key("chat", "presence", "activity_write", user)
+        if not cache.set(
+            key,
+            "1",
+            ex=PRESENCE_ACTIVITY_WRITE_THROTTLE_SECONDS,
+            nx=True,
+        ):
+            return
         frappe.db.set_value(
             "User",
             user,
@@ -204,7 +211,6 @@ def touch_user_activity(user: str) -> None:
             now_datetime(),
             update_modified=False,
         )
-
     except Exception:
         frappe.log_error("Chat operation failed.", "AOS Touch User Activity Failed")
 
@@ -255,8 +261,8 @@ def publish_presence_update(user: str, to_user: str | None = None):
 def publish_presence_update_to_peers(user: str):
     """Publish the current persisted presence snapshot to allowed peers.
 
-    This compatibility helper performs no database write. New mutation/read
-    paths should call ``schedule_presence_update_to_peers`` so ``last_active``
+    This helper performs no database write. Mutation/read paths should call
+    ``schedule_presence_update_to_peers`` so ``last_active``
     is persisted inside the caller-managed transaction and realtime is emitted
     only after that transaction commits.
     """

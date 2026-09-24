@@ -55,19 +55,11 @@ VALID_DELETE_SCOPES = {
 
 
 def _normalize_message_ids(value) -> List[str]:
-    """
-    Accept either:
-    - message_ids: ["MSG-1", "MSG-2"]
-    - message_id: "MSG-1"
-    """
+    """Normalize the already-validated canonical message id list."""
 
-    if isinstance(value, str):
-        return [value]
-
-    if isinstance(value, list):
-        return [str(v) for v in value if v]
-
-    return []
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item or "").strip()]
 
 
 def _get_conversation(conv_id: str):
@@ -176,9 +168,7 @@ def delete_messages_impl(**kwargs):
     if rl:
         return rl
 
-    message_ids = _normalize_message_ids(
-        kwargs.get("message_ids") or kwargs.get("message_id")
-    )
+    message_ids = _normalize_message_ids(kwargs.get("message_ids"))
 
     delete_scope = (kwargs.get("delete_scope") or "me").strip().lower()
 

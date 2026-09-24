@@ -8,23 +8,24 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any, Mapping, Pattern
 
+from aos.services.live.validation import LIVE_ID_RE
 from aos.services.media.identifiers import MEDIA_ID_RE
+from aos.services.shorts.identity import SHORT_ID_RE
 
 from .errors import ChatError
+from .identifiers import CONVERSATION_ID_RE, MESSAGE_ID_RE
 
-CONVERSATION_ID_RE = re.compile(r"^CONV-\d{4}-\d{5}$")
-MESSAGE_ID_RE = re.compile(r"^MSG-\d{4}-\d{5}$")
-LIVE_ID_RE = re.compile(r"^LIVE-[0-9a-f]{32}$")
-SHORT_ID_RE = re.compile(r"^SHORT-\d{4}-\d{5}$")
-AD_ID_RE = re.compile(r"^AD-\d{4}-\d{5}$")
+# Ads owns this public identifier.  Marketplace Discovery generates exactly
+# ``ad_`` plus 24 URL-safe base64 characters from 18 random bytes.
+AD_ID_RE = re.compile(r"^ad_[A-Za-z0-9_-]{24}$")
 PUBLIC_ACCOUNT_ID_RE = re.compile(r"^ACC-[A-Z2-7]{20}$")
-SAFE_ROW_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,139}$")
 
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_CONTENT_LENGTH = 4000
 MAX_TRANSLATION_LANGUAGE_LENGTH = 32
 MAX_EMOJI_LENGTH = 16
 MAX_IDEMPOTENCY_KEY_LENGTH = 128
+MAX_CURSOR_LENGTH = 512
 MAX_ATTACHMENTS = 10
 MAX_MULTI_MESSAGE_IDS = 100
 MAX_FORWARD_TARGETS = 20
@@ -36,7 +37,6 @@ TRANSPORT_FIELDS = frozenset({"cmd"})
 @dataclass(frozen=True)
 class EndpointSpec:
     allowed_fields: frozenset[str]
-    aliases: tuple[tuple[str, ...], ...] = ()
     id_fields: tuple[tuple[str, Pattern[str]], ...] = ()
 
 
@@ -66,9 +66,9 @@ def _depth(value: Any, current: int = 0) -> int:
     if isinstance(value, dict):
         if not value:
             return current + 1
-        return max(_depth(k, current + 1) for k in value) if not value.values() else max(
-            [_depth(k, current + 1) for k in value] + [_depth(v, current + 1) for v in value.values()]
-        )
+        values = [_depth(key, current + 1) for key in value]
+        values.extend(_depth(item, current + 1) for item in value.values())
+        return max(values)
     if isinstance(value, (list, tuple)):
         return current + 1 if not value else max(_depth(item, current + 1) for item in value)
     return current + 1
@@ -88,19 +88,28 @@ def _validate_shape(clean: Mapping[str, Any]) -> None:
 def _normalize_id_list(value: Any, *, field: str, pattern: Pattern[str], maximum: int) -> list[str]:
     if value is None or value == "":
         return []
-    raw = value if isinstance(value, list) else [value]
-    if len(raw) > maximum:
+    if not isinstance(value, list):
+        raise ChatError(f"{field} must be a list.", data={"field": field})
+    if len(value) > maximum:
         raise ChatError("Too many identifiers.", code="CHAT_INPUT_TOO_LARGE", http_status=413, data={"field": field})
     result: list[str] = []
-    for item in raw:
+    for item in value:
         if not isinstance(item, str) or not pattern.fullmatch(item.strip()):
             raise ChatError("Invalid public identifier.", code="CHAT_INVALID_IDENTIFIER", data={"field": field})
         result.append(item.strip())
     return list(dict.fromkeys(result))
 
 
+def _normalize_bool(value: Any, *, field: str) -> int:
+    if value in (True, 1, "1", "true", "True"):
+        return 1
+    if value in (False, 0, "0", "false", "False"):
+        return 0
+    raise ChatError("Invalid boolean value.", data={"field": field})
+
+
 def validate_public_kwargs(kwargs: Mapping[str, Any], spec: EndpointSpec) -> dict[str, Any]:
-    clean = {k: v for k, v in dict(kwargs or {}).items() if k not in TRANSPORT_FIELDS}
+    clean = {key: value for key, value in dict(kwargs or {}).items() if key not in TRANSPORT_FIELDS}
     _validate_shape(clean)
 
     unknown = sorted(set(clean) - set(spec.allowed_fields))
@@ -110,20 +119,6 @@ def validate_public_kwargs(kwargs: Mapping[str, Any], spec: EndpointSpec) -> dic
             code="CHAT_UNKNOWN_FIELD",
             data={"fields": unknown[:10]},
         )
-
-    for group in spec.aliases:
-        supplied = [field for field in group if clean.get(field) not in (None, "", [], ())]
-        if len(supplied) > 1:
-            canonical = []
-            for field in supplied:
-                value = clean[field]
-                canonical.append(json.dumps(value, sort_keys=True, default=str) if isinstance(value, (dict, list)) else str(value).strip())
-            if len(set(canonical)) > 1:
-                raise ChatError(
-                    "Conflicting Chat request aliases.",
-                    code="CHAT_ALIAS_CONFLICT",
-                    data={"fields": supplied},
-                )
 
     for field, pattern in spec.id_fields:
         value = clean.get(field)
@@ -137,8 +132,6 @@ def validate_public_kwargs(kwargs: Mapping[str, Any], spec: EndpointSpec) -> dic
         clean["user"] = normalize_text(clean["user"], field="user", max_length=254, required=True)
     if "content" in clean and clean.get("content") is not None:
         clean["content"] = normalize_text(clean["content"], field="content", max_length=MAX_CONTENT_LENGTH)
-    if "message" in clean and clean.get("message") is not None:
-        clean["message"] = normalize_text(clean["message"], field="message", max_length=MAX_CONTENT_LENGTH)
     if "emoji" in clean and clean.get("emoji") is not None:
         clean["emoji"] = normalize_text(clean["emoji"], field="emoji", max_length=MAX_EMOJI_LENGTH)
     for field in ("source_language", "target_language"):
@@ -148,6 +141,8 @@ def validate_public_kwargs(kwargs: Mapping[str, Any], spec: EndpointSpec) -> dic
         clean["idempotency_key"] = normalize_text(
             clean["idempotency_key"], field="idempotency_key", max_length=MAX_IDEMPOTENCY_KEY_LENGTH
         )
+    if "cursor" in clean and clean.get("cursor") is not None:
+        clean["cursor"] = normalize_text(clean["cursor"], field="cursor", max_length=MAX_CURSOR_LENGTH)
 
     if "attachments" in clean:
         attachments = clean.get("attachments") or []
@@ -155,37 +150,31 @@ def validate_public_kwargs(kwargs: Mapping[str, Any], spec: EndpointSpec) -> dic
             raise ChatError("attachments must be a list.", data={"field": "attachments"})
         if len(attachments) > MAX_ATTACHMENTS:
             raise ChatError("Too many attachments.", code="CHAT_INPUT_TOO_LARGE", http_status=413)
-        allowed_attachment_fields = frozenset({"media", "media_id", "id", "file_type", "type", "file"})
+        normalized: list[dict[str, str]] = []
+        seen: set[str] = set()
         for attachment in attachments:
-            if not isinstance(attachment, dict) or len(attachment) > 8:
+            if not isinstance(attachment, dict):
                 raise ChatError("Invalid attachment payload.", data={"field": "attachments"})
-            unknown_attachment = sorted(set(attachment) - allowed_attachment_fields)
+            unknown_attachment = sorted(set(attachment) - {"media_id"})
             if unknown_attachment:
                 raise ChatError(
                     "Unsupported attachment field.",
                     code="CHAT_UNKNOWN_FIELD",
                     data={"fields": unknown_attachment[:8]},
                 )
-            media_values = [
-                attachment.get(field)
-                for field in ("media", "media_id", "id")
-                if attachment.get(field) not in (None, "")
-            ]
-            if media_values:
-                canonical = [str(value).strip() for value in media_values]
-                if len(set(canonical)) > 1:
-                    raise ChatError(
-                        "Conflicting attachment aliases.",
-                        code="CHAT_ALIAS_CONFLICT",
-                        data={"fields": ["media", "media_id", "id"]},
-                    )
-                if not MEDIA_ID_RE.fullmatch(canonical[0]):
-                    raise ChatError(
-                        "Invalid public identifier.",
-                        code="CHAT_INVALID_IDENTIFIER",
-                        data={"field": "attachments.media_id"},
-                    )
-        clean["attachments"] = attachments
+            media_id = attachment.get("media_id")
+            if not isinstance(media_id, str) or not MEDIA_ID_RE.fullmatch(media_id.strip()):
+                raise ChatError(
+                    "Invalid public identifier.",
+                    code="CHAT_INVALID_IDENTIFIER",
+                    data={"field": "attachments.media_id"},
+                )
+            media_id = media_id.strip()
+            if media_id in seen:
+                raise ChatError("Duplicate attachment media_id.", code="CHAT_CONFLICT", http_status=409)
+            seen.add(media_id)
+            normalized.append({"media_id": media_id})
+        clean["attachments"] = normalized
 
     if "message_ids" in clean:
         clean["message_ids"] = _normalize_id_list(
@@ -199,20 +188,17 @@ def validate_public_kwargs(kwargs: Mapping[str, Any], spec: EndpointSpec) -> dic
             maximum=MAX_FORWARD_TARGETS,
         )
 
-    for field, minimum, maximum in (("limit", 1, 100), ("offset", 0, 10000)):
-        if field not in clean or clean.get(field) in (None, ""):
-            continue
-        value = clean[field]
+    if "limit" in clean and clean.get("limit") not in (None, ""):
+        value = clean["limit"]
         if isinstance(value, bool):
-            raise ChatError("Invalid pagination value.", data={"field": field})
+            raise ChatError("Invalid pagination value.", data={"field": "limit"})
         try:
             parsed = int(value)
         except (TypeError, ValueError) as exc:
-            raise ChatError("Invalid pagination value.", data={"field": field}) from exc
-        if parsed < minimum or parsed > maximum:
-            raise ChatError("Invalid pagination value.", data={"field": field})
-        clean[field] = parsed
-
+            raise ChatError("Invalid pagination value.", data={"field": "limit"}) from exc
+        if parsed < 1 or parsed > 100:
+            raise ChatError("Invalid pagination value.", data={"field": "limit"})
+        clean["limit"] = parsed
 
     if "delete_scope" in clean and clean.get("delete_scope") not in (None, ""):
         scope = normalize_text(clean["delete_scope"], field="delete_scope", max_length=16).lower()
@@ -220,15 +206,9 @@ def validate_public_kwargs(kwargs: Mapping[str, Any], spec: EndpointSpec) -> dic
             raise ChatError("Invalid delete scope.", data={"field": "delete_scope"})
         clean["delete_scope"] = scope
 
-    for field in ("is_typing", "force_refresh"):
-        if field not in clean or clean.get(field) in (None, ""):
-            continue
-        value = clean[field]
-        if value in (True, 1, "1", "true", "True"):
-            clean[field] = 1
-        elif value in (False, 0, "0", "false", "False"):
-            clean[field] = 0
-        else:
-            raise ChatError("Invalid boolean value.", data={"field": field})
+    for field in ("is_typing", "force_refresh", "starred"):
+        if field in clean and clean.get(field) not in (None, ""):
+            clean[field] = _normalize_bool(clean[field], field=field)
 
+    _validate_shape(clean)
     return clean
