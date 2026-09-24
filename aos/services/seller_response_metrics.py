@@ -458,14 +458,12 @@ def _get_eligible_messages(
 
         FROM `tabAOS Message` m
 
-        INNER JOIN `tabAOS Conversation` c
-            ON c.name = m.conversation
+        INNER JOIN `tabAOS Conversation` c ON c.name = m.conversation
+        INNER JOIN `tabAOS Conversation Participant` cp
+            ON cp.conversation=c.name AND cp.user=%(user)s AND cp.status='active'
 
         WHERE
-            (
-                c.participant_1 = %(user)s
-                OR c.participant_2 = %(user)s
-            )
+            c.conversation_type = 'direct' 
             AND m.creation >= %(cutoff)s
             AND m.message_type IN (
                 'text',

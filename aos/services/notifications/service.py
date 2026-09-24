@@ -387,23 +387,38 @@ class NotificationService:
         conversation_id: str,
         preview: str,
         message_id: str | None = None,
+        private_preview: bool = False,
     ):
+        """Persist one message notification.
+
+        Locked-chat recipients receive no sender identity or message text in the
+        notification record/push payload. The conversation/message IDs remain as
+        opaque navigation handles and are re-authorized by Chat on open.
+        """
         sender_name = cls._display_name(sender)
         sender_account_id = public_account_id_for_user(sender)
         dedupe_key = f"chat_message:{message_id}:{user}" if message_id else None
+        if private_preview:
+            body = "New message in a locked chat"
+            actor = None
+            payload = {"conversation_id": conversation_id, "message_id": message_id, "private_preview": True}
+        else:
+            body = f"{sender_name}: {preview}"
+            actor = sender
+            payload = {
+                "conversation_id": conversation_id,
+                "sender": sender_account_id,
+                "sender_account_id": sender_account_id,
+                "message_id": message_id,
+            }
 
         return cls.notify(
             user=user,
             type="message",
             title="New Message",
-            body=f"{sender_name}: {preview}",
-            actor=sender,
-            payload={
-                "conversation_id": conversation_id,
-                "sender": sender_account_id,
-                "sender_account_id": sender_account_id,
-                "message_id": message_id,
-            },
+            body=body,
+            actor=actor,
+            payload=payload,
             event="aos_new_message",
             dedupe_key=dedupe_key,
         )

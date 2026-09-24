@@ -77,6 +77,13 @@ TRANSLATION_DEVICE=cpu
 TRANSLATION_COMPUTE_TYPE=int8
 TRANSLATION_DEFAULT_SOURCE_LANGUAGE=eng_Latn
 TRANSLATION_MAX_CHARS=1000
+TRANSLATION_MAX_SOURCE_TOKENS=768
+TRANSLATION_MAX_DECODING_LENGTH=384
+TRANSLATION_BEAM_SIZE=4
+TRANSLATION_MAX_CONCURRENT_REQUESTS=4
+TRANSLATION_INTER_THREADS=2
+TRANSLATION_INTRA_THREADS=0
+TRANSLATION_INTERNAL_TOKEN=<long-random-private-token>
 TRANSLATION_MODEL_HOST_PATH=./models/nllb-200-distilled-1.3B-ct2-int8
 
 TRANSLATION_MEMORY_LIMIT=4g
@@ -93,6 +100,7 @@ Configure the private translation service URL in `.env` and keep only product li
 ```text
 # .env
 TRANSLATION_SERVICE_URL=http://127.0.0.1:8100
+TRANSLATION_INTERNAL_TOKEN=<same-long-random-private-token>
 
 # AOS Settings
 translation_max_characters: 1000
@@ -100,6 +108,17 @@ translation_service_timeout_seconds: 30
 ```
 
 Do not add provider/model/device/compute settings to Frappe unless they are passive display metadata. Model and runtime decisions belong to the translation service.
+
+
+## Private-service authentication
+
+`/translate` and `/languages` require the shared `TRANSLATION_INTERNAL_TOKEN` in the `X-AOS-Internal-Token` header. The service fails closed with `503` when the token is not configured and rejects missing/incorrect tokens with `401`. `/health` and `/ready` remain unauthenticated so loopback/container probes can work without exposing the secret in process arguments.
+
+Use a long random token and keep it identical in the Frappe/backend environment and the translation container environment. Do not commit a real token to the repository.
+
+## Supported languages
+
+The canonical registry lives in `infra/translation/app/languages.py`. German is production-supported and accepts `de`, `de-DE`, `deu`, and `deu_Latn`, all normalized to `deu_Latn`. Clients may use the normal BCP-47-style `de`/`de-DE` aliases; the backend/service returns the normalized model language.
 
 ## Model setup
 
@@ -167,14 +186,15 @@ Expected readiness includes:
 ```bash
 curl -X POST http://127.0.0.1:8100/translate \
   -H "Content-Type: application/json" \
+  -H "X-AOS-Internal-Token: $TRANSLATION_INTERNAL_TOKEN" \
   -d '{
     "text": "Hello, how are you?",
-    "source_language": "eng_Latn",
-    "target_language": "swh_Latn"
+    "source_language": "en",
+    "target_language": "de"
   }'
 ```
 
-Expected response includes translated content, normalized languages, and passive metadata such as provider/model name.
+Expected response includes translated content, normalized languages, and passive metadata such as provider/model name. German aliases `de`, `de-DE`, `deu`, and `deu_Latn` normalize to canonical NLLB `deu_Latn`.
 
 ## Frappe client test
 
@@ -193,7 +213,7 @@ print(
     translate_text(
         text="Hello, how are you?",
         source_language="eng_Latn",
-        target_language="swh_Latn",
+        target_language="de",
     )
 )
 ```
@@ -205,8 +225,8 @@ Use a message that belongs to a conversation the logged-in user can access:
 ```bash
 curl -X POST "https://<site>/api/method/aos.api.v1.chat.translate_message" \
   -H "Cookie: sid=YOUR_SID" \
-  -F "message_id=MSG-YYYY-XXXXX" \
-  -F "target_language=swh_Latn"
+  -F "message_id=MSG-0123456789abcdef0123456789abcdef" \
+  -F "target_language=de"
 ```
 
 Expected success shape:
@@ -217,9 +237,9 @@ Expected success shape:
     "ok": true,
     "message": "Message translated.",
     "data": {
-      "message_id": "MSG-YYYY-XXXXX",
+      "message_id": "MSG-0123456789abcdef0123456789abcdef",
       "source_language": "eng_Latn",
-      "target_language": "swh_Latn",
+      "target_language": "deu_Latn",
       "translated_content": "...",
       "cached": false
     }
@@ -240,7 +260,7 @@ Call the same request twice. The second response should return the saved `AOS Me
 `AOS Message Translation` caches translations by:
 
 ```text
-message + target_language + original_content_hash
+message + source_language + target_language + original_content_hash
 ```
 
 The content hash prevents stale translations when the original message changes. Provider/model metadata may be saved for audit/debugging, but should not control business logic.

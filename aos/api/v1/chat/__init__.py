@@ -1,163 +1,131 @@
-"""Public AOS API v1 wrappers for chat.
+"""Canonical public AOS Chat v1 API.
 
-These thin wrappers are the stable external contract for /api/method/aos.api.v1.chat.*.
-Implementation stays in aos.api.chat implementation modules.
+Only this module is whitelisted. Domain implementation lives in aos.services.chat.
 """
-
 from __future__ import annotations
 
 import frappe
 
-from aos.api.chat.conversation import (
-    get_or_create_conversation_impl as _open_conversation_impl,
-    list_conversations_impl as _list_conversations_impl,
-    delete_conversation_impl as _delete_conversation_impl,
-)
-from aos.api.chat.message import (
-    send_message_impl as _send_message_impl,
-    list_messages_impl as _list_messages_impl,
-)
-from aos.api.chat.forward_message import (
-    forward_message_impl as _forward_message_impl,
-)
-from aos.api.chat.edit_message import (
-    edit_message_impl as _edit_message_impl,
-)
-from aos.api.chat.delete_messages import (
-    delete_messages_impl as _delete_messages_impl,
-)
-from aos.api.chat.clear_chat import (
-    clear_chat_impl as _clear_chat_impl,
-)
-from aos.api.chat.stars import (
-    set_message_star_impl as _set_message_star_impl,
-    list_starred_messages_impl as _list_starred_messages_impl,
-)
-from aos.api.chat.reactions import (
-    set_message_reaction_impl as _set_message_reaction_impl,
-)
-from aos.api.chat.translate_message import (
-    translate_message_impl as _translate_message_impl,
-)
-from aos.api.chat.status import (
-    mark_delivered_impl as _mark_delivered_impl,
-    mark_read_impl as _mark_read_impl,
-)
-from aos.api.chat.presence import (
-    get_presence_impl as _get_presence_impl,
-    send_typing_event_impl as _send_typing_event_impl,
-)
-
 from aos.services.chat.api import run_chat_api
+from aos.services.chat.conversation_ops import (
+    add_group_members_impl, create_group_impl, delete_conversation_impl, leave_group_impl,
+    list_conversations_impl, list_group_members_impl, list_locked_conversations_impl,
+    open_conversation_impl, remove_group_member_impl, set_group_member_role_impl,
+    transfer_group_ownership_impl, update_group_impl,
+)
 from aos.services.chat.endpoints import ENDPOINT_SPECS, TRANSACTIONAL_ENDPOINTS
+from aos.services.chat.lock_ops import (
+    configure_chat_lock_secret_impl, get_chat_lock_state_impl, remove_chat_lock_secret_impl,
+    set_conversation_lock_impl, verify_chat_lock_secret_impl,
+)
+from aos.services.chat.message_mutations import (
+    clear_chat_impl, delete_messages_impl, edit_message_impl, forward_message_impl,
+    list_starred_messages_impl, set_message_reaction_impl, set_message_star_impl,
+)
+from aos.services.chat.message_ops import list_messages_impl, send_message_impl
+from aos.services.chat.presence_ops import get_presence_impl, send_typing_event_impl
+from aos.services.chat.status_ops import mark_delivered_impl, mark_read_impl
+from aos.services.chat.translation_ops import translate_message_impl
 
 
 def _call(name, implementation, kwargs):
-    return run_chat_api(
-        implementation,
-        kwargs,
-        spec=ENDPOINT_SPECS[name],
-        operation_name=name,
-        transactional=name in TRANSACTIONAL_ENDPOINTS,
-    )
+    return run_chat_api(implementation, kwargs, spec=ENDPOINT_SPECS[name], operation_name=name,
+                        transactional=name in TRANSACTIONAL_ENDPOINTS)
+
+
+def _post(name, impl, doc):
+    return frappe.whitelist(methods=["POST"])(doc)
+
 
 @frappe.whitelist(methods=["POST"])
-def open_conversation(**kwargs):
-    """Get existing conversation between two users or create a new one."""
-    return _call("open_conversation", _open_conversation_impl, kwargs)
+def open_conversation(**kwargs): return _call("open_conversation", open_conversation_impl, kwargs)
 
+@frappe.whitelist(methods=["POST"])
+def create_group(**kwargs): return _call("create_group", create_group_impl, kwargs)
+
+@frappe.whitelist(methods=["POST"])
+def update_group(**kwargs): return _call("update_group", update_group_impl, kwargs)
+
+@frappe.whitelist(methods=["POST"])
+def add_group_members(**kwargs): return _call("add_group_members", add_group_members_impl, kwargs)
+
+@frappe.whitelist(methods=["POST"])
+def remove_group_member(**kwargs): return _call("remove_group_member", remove_group_member_impl, kwargs)
+
+@frappe.whitelist(methods=["POST"])
+def set_group_member_role(**kwargs): return _call("set_group_member_role", set_group_member_role_impl, kwargs)
+
+@frappe.whitelist(methods=["POST"])
+def transfer_group_ownership(**kwargs): return _call("transfer_group_ownership", transfer_group_ownership_impl, kwargs)
+
+@frappe.whitelist(methods=["POST"])
+def leave_group(**kwargs): return _call("leave_group", leave_group_impl, kwargs)
 
 @frappe.whitelist(methods=["GET"])
-def list_conversations(**kwargs):
-    """List current user's conversations."""
-    return _call("list_conversations", _list_conversations_impl, kwargs)
-
-
-@frappe.whitelist(methods=["POST"])
-def delete_conversation(**kwargs):
-    """Soft delete/hide a conversation for the current user."""
-    return _call("delete_conversation", _delete_conversation_impl, kwargs)
-
-
-@frappe.whitelist(methods=["POST"])
-def send_message(**kwargs):
-    """Send a message in a conversation."""
-    return _call("send_message", _send_message_impl, kwargs)
-
+def list_group_members(**kwargs): return _call("list_group_members", list_group_members_impl, kwargs)
 
 @frappe.whitelist(methods=["GET"])
-def list_messages(**kwargs):
-    """List messages for a conversation."""
-    return _call("list_messages", _list_messages_impl, kwargs)
-
-
-@frappe.whitelist(methods=["POST"])
-def forward_message(**kwargs):
-    """Forward a visible message to one or more conversations."""
-    return _call("forward_message", _forward_message_impl, kwargs)
-
-
-@frappe.whitelist(methods=["POST"])
-def edit_message(**kwargs):
-    """Edit a sent message."""
-    return _call("edit_message", _edit_message_impl, kwargs)
-
-
-@frappe.whitelist(methods=["POST"])
-def delete_messages(**kwargs):
-    """Delete one or more messages for the current user or everyone."""
-    return _call("delete_messages", _delete_messages_impl, kwargs)
-
-
-@frappe.whitelist(methods=["POST"])
-def clear_chat(**kwargs):
-    """Clear all visible messages in a conversation for the current user."""
-    return _call("clear_chat", _clear_chat_impl, kwargs)
-
-
-@frappe.whitelist(methods=["POST"])
-def set_message_star(**kwargs):
-    """Set the current user's desired private star state for a message."""
-    return _call("set_message_star", _set_message_star_impl, kwargs)
-
+def list_conversations(**kwargs): return _call("list_conversations", list_conversations_impl, kwargs)
 
 @frappe.whitelist(methods=["GET"])
-def list_starred_messages(**kwargs):
-    """List current user's starred messages."""
-    return _call("list_starred_messages", _list_starred_messages_impl, kwargs)
-
+def list_locked_conversations(**kwargs): return _call("list_locked_conversations", list_locked_conversations_impl, kwargs)
 
 @frappe.whitelist(methods=["POST"])
-def set_message_reaction(**kwargs):
-    """Set or clear the current user's reaction to a message."""
-    return _call("set_message_reaction", _set_message_reaction_impl, kwargs)
-
+def delete_conversation(**kwargs): return _call("delete_conversation", delete_conversation_impl, kwargs)
 
 @frappe.whitelist(methods=["POST"])
-def translate_message(**kwargs):
-    """Translate a visible text message for the current user."""
-    return _call("translate_message", _translate_message_impl, kwargs)
-
+def set_conversation_lock(**kwargs): return _call("set_conversation_lock", set_conversation_lock_impl, kwargs)
 
 @frappe.whitelist(methods=["POST"])
-def mark_delivered(**kwargs):
-    """Mark incoming messages in a conversation as delivered."""
-    return _call("mark_delivered", _mark_delivered_impl, kwargs)
-
+def configure_chat_lock_secret(**kwargs): return _call("configure_chat_lock_secret", configure_chat_lock_secret_impl, kwargs)
 
 @frappe.whitelist(methods=["POST"])
-def mark_read(**kwargs):
-    """Mark incoming messages in a conversation as read."""
-    return _call("mark_read", _mark_read_impl, kwargs)
-
+def verify_chat_lock_secret(**kwargs): return _call("verify_chat_lock_secret", verify_chat_lock_secret_impl, kwargs)
 
 @frappe.whitelist(methods=["POST"])
-def send_typing_event(**kwargs):
-    """Send typing indicator for a conversation."""
-    return _call("send_typing_event", _send_typing_event_impl, kwargs)
-
+def remove_chat_lock_secret(**kwargs): return _call("remove_chat_lock_secret", remove_chat_lock_secret_impl, kwargs)
 
 @frappe.whitelist(methods=["GET"])
-def get_presence(**kwargs):
-    """Return the other participant's current online/last-seen snapshot."""
-    return _call("get_presence", _get_presence_impl, kwargs)
+def get_chat_lock_state(**kwargs): return _call("get_chat_lock_state", get_chat_lock_state_impl, kwargs)
+
+@frappe.whitelist(methods=["POST"])
+def send_message(**kwargs): return _call("send_message", send_message_impl, kwargs)
+
+@frappe.whitelist(methods=["GET"])
+def list_messages(**kwargs): return _call("list_messages", list_messages_impl, kwargs)
+
+@frappe.whitelist(methods=["POST"])
+def forward_message(**kwargs): return _call("forward_message", forward_message_impl, kwargs)
+
+@frappe.whitelist(methods=["POST"])
+def edit_message(**kwargs): return _call("edit_message", edit_message_impl, kwargs)
+
+@frappe.whitelist(methods=["POST"])
+def delete_messages(**kwargs): return _call("delete_messages", delete_messages_impl, kwargs)
+
+@frappe.whitelist(methods=["POST"])
+def clear_chat(**kwargs): return _call("clear_chat", clear_chat_impl, kwargs)
+
+@frappe.whitelist(methods=["POST"])
+def set_message_star(**kwargs): return _call("set_message_star", set_message_star_impl, kwargs)
+
+@frappe.whitelist(methods=["GET"])
+def list_starred_messages(**kwargs): return _call("list_starred_messages", list_starred_messages_impl, kwargs)
+
+@frappe.whitelist(methods=["POST"])
+def set_message_reaction(**kwargs): return _call("set_message_reaction", set_message_reaction_impl, kwargs)
+
+@frappe.whitelist(methods=["POST"])
+def translate_message(**kwargs): return _call("translate_message", translate_message_impl, kwargs)
+
+@frappe.whitelist(methods=["POST"])
+def mark_delivered(**kwargs): return _call("mark_delivered", mark_delivered_impl, kwargs)
+
+@frappe.whitelist(methods=["POST"])
+def mark_read(**kwargs): return _call("mark_read", mark_read_impl, kwargs)
+
+@frappe.whitelist(methods=["POST"])
+def send_typing_event(**kwargs): return _call("send_typing_event", send_typing_event_impl, kwargs)
+
+@frappe.whitelist(methods=["GET"])
+def get_presence(**kwargs): return _call("get_presence", get_presence_impl, kwargs)

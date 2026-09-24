@@ -25,7 +25,6 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
-
 All methods require authentication and strict allowlisted request fields. Client call IDs are opaque `call_<32 hex>` values.
 
 | Endpoint | Fields | Limit/min/user |

@@ -186,49 +186,16 @@ def _purge_localization_preference(*, user: str, limit: int) -> int:
 
 def _purge_chat_private_batch(*, user: str, limit: int) -> dict[str, int]:
     """Remove one bounded batch of account-private Chat state."""
-    removed_stars = _delete_name_batch(
-        "AOS Message Star", where_sql="user = %s", params=(user,), limit=limit
-    )
-    removed_reactions = _delete_name_batch(
-        "AOS Message Reaction", where_sql="user = %s", params=(user,), limit=limit
-    )
-    removed_translations = _delete_name_batch(
-        "AOS Message Translation", where_sql="translated_by = %s", params=(user,), limit=limit
-    )
+    removed_stars=_delete_name_batch("AOS Message Star",where_sql="user = %s",params=(user,),limit=limit)
+    removed_reactions=_delete_name_batch("AOS Message Reaction",where_sql="user = %s",params=(user,),limit=limit)
+    removed_translations=_delete_name_batch("AOS Message Translation",where_sql="translated_by = %s",params=(user,),limit=limit)
+    removed_states=_delete_name_batch("AOS Message User State",where_sql="user = %s",params=(user,),limit=limit)
+    removed_locks=_delete_name_batch("AOS Chat Lock Credential",where_sql="user = %s",params=(user,),limit=limit)
     deactivated = 0
-    if _doctype_exists("AOS Conversation"):
-        size = max(1, min(int(limit or 1), 10_000))
-        rows = frappe.db.sql(
-            """
-            SELECT name, participant_1, participant_2
-            FROM `tabAOS Conversation`
-            WHERE (participant_1 = %(user)s AND IFNULL(is_active_1, 1) = 1)
-               OR (participant_2 = %(user)s AND IFNULL(is_active_2, 1) = 1)
-            ORDER BY name ASC
-            LIMIT %(limit)s FOR UPDATE
-            """,
-            {"user": user, "limit": size},
-            as_dict=True,
-        )
-        p1 = tuple(str(row.name) for row in rows if row.participant_1 == user and row.name)
-        p2 = tuple(str(row.name) for row in rows if row.participant_2 == user and row.name)
-        if p1:
-            frappe.db.sql(
-                "UPDATE `tabAOS Conversation` SET is_active_1 = 0, unread_count_1 = 0 WHERE name IN %(names)s",
-                {"names": p1},
-            )
-        if p2:
-            frappe.db.sql(
-                "UPDATE `tabAOS Conversation` SET is_active_2 = 0, unread_count_2 = 0 WHERE name IN %(names)s",
-                {"names": p2},
-            )
-        deactivated = len(rows)
-    return {
-        "chat_stars_removed": removed_stars,
-        "chat_reactions_removed": removed_reactions,
-        "chat_translation_cache_removed": removed_translations,
-        "chat_conversations_deactivated": deactivated,
-    }
+    if _doctype_exists("AOS Conversation Participant"):
+        from aos.services.chat.membership import deactivate_account_memberships
+        deactivated = deactivate_account_memberships(user, limit=limit)
+    return {"chat_stars_removed":removed_stars,"chat_reactions_removed":removed_reactions,"chat_translation_cache_removed":removed_translations,"chat_message_state_removed":removed_states,"chat_lock_credentials_removed":removed_locks,"chat_conversations_deactivated":deactivated}
 
 
 def _purge_reports_private_batch(*, user: str, limit: int) -> dict[str, int]:
@@ -429,7 +396,9 @@ def _remaining_bounded_private_rows(user: str) -> int:
         ("AOS Message Star", "user = %s", (user,)),
         ("AOS Message Reaction", "user = %s", (user,)),
         ("AOS Message Translation", "translated_by = %s", (user,)),
-        ("AOS Conversation", "(participant_1 = %s AND IFNULL(is_active_1, 1) = 1) OR (participant_2 = %s AND IFNULL(is_active_2, 1) = 1)", (user, user)),
+        ("AOS Message User State", "user = %s", (user,)),
+        ("AOS Chat Lock Credential", "user = %s", (user,)),
+        ("AOS Conversation Participant", "user = %s AND status = 'active'", (user,)),
         ("AOS User Report", "reported_by = %s", (user,)),
         ("AOS Short Report", "reported_by = %s", (user,)),
         ("AOS Ad Report", "reported_by = %s", (user,)),

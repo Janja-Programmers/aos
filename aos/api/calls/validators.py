@@ -94,14 +94,18 @@ def resolve_participant_users(account_ids: list[str], *, current_user: str) -> t
 
 
 def validate_direct_conversation(conversation_id: str | None, *, current_user: str, target_user: str):
+    """Allow Calls to bind only to the exact active 1:1 Chat conversation."""
     if not conversation_id:
         return None
-    conv = frappe.db.get_value(
-        "AOS Conversation",
-        conversation_id,
-        ["participant_1", "participant_2"],
-        as_dict=True,
+    conv_type = frappe.db.get_value("AOS Conversation", conversation_id, "conversation_type")
+    if conv_type != "direct":
+        return fail("Conversation not found.", error="NOT_FOUND", http_status=404)
+    users = frappe.get_all(
+        "AOS Conversation Participant",
+        filters={"conversation": conversation_id, "status": "active"},
+        pluck="user",
+        limit=3,
     )
-    if not conv or {conv.participant_1, conv.participant_2} != {current_user, target_user}:
+    if len(users) != 2 or set(users) != {current_user, target_user}:
         return fail("Conversation not found.", error="NOT_FOUND", http_status=404)
     return None

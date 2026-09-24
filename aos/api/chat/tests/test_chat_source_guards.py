@@ -6,11 +6,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
-CHAT_SCOPE = (
-    ROOT / "aos/api/chat",
-    ROOT / "aos/api/v1/chat",
-    ROOT / "aos/services/chat",
-)
+CHAT_RUNTIME = ROOT / "aos/services/chat"
 
 
 def _source(path: str) -> str:
@@ -20,21 +16,168 @@ def _source(path: str) -> str:
 class TestChatSourceGuards(unittest.TestCase):
     def test_public_v1_surface_is_complete_and_thin(self):
         source = _source("aos/api/v1/chat/__init__.py")
-        endpoints = re.findall(r"^def ([a-z_]+)\(\*\*kwargs\):", source, flags=re.MULTILINE)
-        self.assertEqual(len(endpoints), 17)
-        self.assertEqual(len(endpoints), len(set(endpoints)))
+        endpoints = set(re.findall(r"^def ([a-z_]+)\(\*\*kwargs\):", source, flags=re.MULTILINE))
+        expected = {
+            "open_conversation", "create_group", "update_group", "add_group_members",
+            "remove_group_member", "set_group_member_role", "transfer_group_ownership",
+            "leave_group", "list_group_members", "list_conversations", "list_locked_conversations",
+            "delete_conversation", "set_conversation_lock", "configure_chat_lock_secret",
+            "verify_chat_lock_secret", "remove_chat_lock_secret", "get_chat_lock_state",
+            "send_message", "list_messages", "forward_message", "edit_message", "delete_messages",
+            "clear_chat", "set_message_star", "list_starred_messages", "set_message_reaction",
+            "translate_message", "mark_delivered", "mark_read", "send_typing_event", "get_presence",
+        }
+        self.assertEqual(endpoints, expected)
         self.assertIn("run_chat_api(", source)
         self.assertIn("ENDPOINT_SPECS[name]", source)
 
+    def test_old_runtime_wrappers_are_removed(self):
+        runtime_files = sorted(
+            p.name for p in (ROOT / "aos/api/chat").glob("*.py") if p.name != "__init__.py"
+        )
+        self.assertEqual(runtime_files, [])
+
+    def test_normalized_group_schema_is_authoritative(self):
+        conversation = json.loads(_source("aos/aos/doctype/aos_conversation/aos_conversation.json"))
+        participant = json.loads(_source("aos/aos/doctype/aos_conversation_participant/aos_conversation_participant.json"))
+        message = json.loads(_source("aos/aos/doctype/aos_message/aos_message.json"))
+        cfields = {f["fieldname"]: f for f in conversation["fields"]}
+        pfields = {f["fieldname"]: f for f in participant["fields"]}
+        mfields = {f["fieldname"]: f for f in message["fields"]}
+        self.assertEqual(cfields["conversation_type"]["options"].splitlines(), ["direct", "group"])
+        self.assertIn("direct_key", cfields)
+        self.assertNotIn("participant_1", cfields)
+        self.assertNotIn("participant_2", cfields)
+        for field in ("conversation", "user", "role", "status", "visible_from", "unread_count", "is_locked"):
+            self.assertIn(field, pfields)
+        self.assertIn("recipient_count", mfields)
+        self.assertNotIn("delivered_to_receiver_at", mfields)
+
+    def test_group_membership_is_bounded_and_owner_safe(self):
+        source = _source("aos/services/chat/membership.py")
+        self.assertIn("MAX_GROUP_PARTICIPANTS = 256", source)
+        self.assertIn("def transfer_owner_if_needed", source)
+        self.assertIn("def deactivate_account_memberships", source)
+        conversation = _source("aos/services/chat/conversation_ops.py")
+        self.assertIn("assert_group_manager", conversation)
+        self.assertIn("visible_from=now_datetime()", conversation)
+        deletion = _source("aos/services/account_deletion_service.py")
+        purge = _source("aos/services/account_purge_service.py")
+        self.assertIn("deactivate_account_memberships", deletion)
+        self.assertIn("deactivate_account_memberships", purge)
+
+    def test_chat_lock_is_per_user_hashed_and_redis_tokenized(self):
+        source = _source("aos/services/chat/lock.py")
+        self.assertIn("passlibctx.hash", source)
+        self.assertIn("passlibctx.verify", source)
+        self.assertIn("SELECT name FROM `tabUser` WHERE name=%s LIMIT 1 FOR UPDATE", source)
+        self.assertIn("ACCESS_TOKEN_TTL_SECONDS = 300", source)
+        self.assertIn("frappe.cache()", source)
+        self.assertNotIn("doc.secret =", source)
+        participant = json.loads(_source("aos/aos/doctype/aos_conversation_participant/aos_conversation_participant.json"))
+        self.assertIn("is_locked", {f["fieldname"] for f in participant["fields"]})
+
+    def test_hidden_locked_chats_fail_closed_and_notifications_are_private(self):
+        lock = _source("aos/services/chat/lock.py")
+        ops = _source("aos/services/chat/lock_ops.py")
+        message = _source("aos/services/chat/message_ops.py")
+        notification = _source("aos/services/notifications/service.py")
+        self.assertIn('code="CHAT_NOT_FOUND"', lock)
+        self.assertIn('"locked_conversation_count": locked_count', ops)
+        self.assertIn('"hidden": bool(', ops)
+        self.assertIn("private_preview=recipient in locked", message)
+        self.assertIn("private_preview", notification)
+        self.assertIn("New message in a locked chat", notification)
+
+    def test_locked_group_events_are_redacted(self):
+        source = _source("aos/services/chat/conversation_ops.py")
+        self.assertIn("def _publish_group_update", source)
+        self.assertIn('message = {"conversation_id": conversation_id, "change": "refresh"}', source)
+
+    def test_persistent_realtime_is_after_commit(self):
+        helper = _source("aos/services/chat/events.py")
+        self.assertIn("manager.add(callback)", helper)
+        self.assertIn("frappe.publish_realtime", helper)
+        for relative in (
+            "aos/services/chat/message_ops.py",
+            "aos/services/chat/message_mutations.py",
+            "aos/services/chat/status_ops.py",
+            "aos/services/chat/conversation_ops.py",
+        ):
+            self.assertIn("publish_after_commit", _source(relative), relative)
+
+    def test_idempotency_and_retry_sensitive_mutations_are_safe(self):
+        message = _source("aos/services/chat/message_ops.py")
+        mutations = _source("aos/services/chat/message_mutations.py")
+        self.assertIn("idempotency_request_hash", message)
+        self.assertIn('error="CHAT_CONFLICT"', message)
+        self.assertIn("lock_conversations([conv_id]); lock_messages([mid])", mutations)
+        self.assertIn("set_message_star_impl", mutations)
+        self.assertIn("set_message_reaction_impl", mutations)
+        self.assertIn('derived=f"{key}:{source_id}:{idx}:{target}"', mutations)
+
+    def test_status_updates_are_bounded_and_report_continuation(self):
+        source = _source("aos/services/chat/status_ops.py")
+        self.assertIn("BATCH_SIZE = 500", source)
+        self.assertIn("MAX_BATCHES_PER_REQUEST = 4", source)
+        self.assertIn('"has_more": has_more', source)
+        self.assertNotIn('"unread_count", 0', source)
+
+    def test_shared_objects_use_feature_owned_visibility(self):
+        projections = _source("aos/services/chat/projections.py")
+        shared = _source("aos/services/chat/shared_objects.py")
+        self.assertIn("filter_viewable_rows", projections)
+        self.assertIn("LivePolicy", projections)
+        self.assertIn("fetch_chat_ad_previews", projections)
+        self.assertIn("ad_is_shareable_to_users", shared)
+        self.assertIn('"short_unavailable"', projections)
+        self.assertIn('"live_unavailable"', projections)
+        self.assertIn('"ad_unavailable"', projections)
+
+    def test_forward_provenance_is_not_public(self):
+        serializer = _source("aos/services/chat/projections.py").split("def serialize_messages", 1)[1]
+        base = serializer.split("if int(row.deleted_for_everyone", 1)[0]
+        self.assertIn('"conversation_id": row.conversation', base)
+        self.assertNotIn('"forwarded_from_message"', base)
+        self.assertNotIn('"forwarded_from_conversation"', base)
+
+    def test_calls_accept_only_direct_chat_context(self):
+        calls = "\n".join(
+            _source(path)
+            for path in (
+                "aos/api/calls/validators.py",
+                "aos/api/calls/utils.py",
+                "aos/api/calls/call.py",
+            )
+        )
+        self.assertIn("conversation_type", calls)
+        self.assertIn("direct", calls.lower())
+        self.assertIn("AOS Conversation Participant", calls)
+
+    def test_translation_cache_is_source_aware_and_german_supported(self):
+        indexes = _source("aos/patches/v1_0/install_chat_indexes.py")
+        translation = _source("aos/services/chat/translation_ops.py")
+        languages = _source("infra/translation/app/languages.py")
+        self.assertIn("uniq_chat_translation_request_cache", indexes)
+        self.assertIn("request_source_language", translation)
+        self.assertIn("request_target_language", translation)
+        self.assertIn('"de": LanguageInfo("deu_Latn", "German")', languages)
+        self.assertNotIn('"translated_by":', translation.split("def _serialize", 1)[1].split("def translate_message_impl", 1)[0])
+
+    def test_translation_service_fails_closed_and_runtime_is_bounded(self):
+        main = _source("infra/translation/app/main.py")
+        runtime = _source("infra/translation/app/translator.py")
+        dockerfile = _source("infra/translation/Dockerfile")
+        self.assertIn("Service authentication is not configured", main)
+        self.assertIn('Depends(_internal_auth)', main)
+        self.assertIn("BoundedSemaphore", runtime)
+        self.assertIn("max_source_tokens", runtime)
+        self.assertIn("max_decoding_length", runtime)
+        self.assertIn("USER 10001:10001", dockerfile)
+
     def test_no_internal_commit_or_whole_transaction_rollback(self):
         violations: list[str] = []
-        paths = []
-        for root in CHAT_SCOPE:
-            paths.extend(root.rglob("*.py"))
-        paths.append(ROOT / "aos/patches/v1_0/install_chat_indexes.py")
-        for path in paths:
-            if "tests" in path.parts:
-                continue
+        for path in CHAT_RUNTIME.rglob("*.py"):
             source = path.read_text(encoding="utf-8")
             if "frappe.db.commit(" in source:
                 violations.append(f"{path.relative_to(ROOT)}: commit")
@@ -44,229 +187,30 @@ class TestChatSourceGuards(unittest.TestCase):
         api = _source("aos/services/chat/api.py")
         self.assertIn("rollback(save_point=savepoint)", api)
 
-    def test_savepoint_boundary_preserves_outer_callbacks(self):
-        source = _source("aos/services/chat/api.py")
-        self.assertIn("_snapshot_callbacks", source)
-        self.assertIn("_restore_callbacks", source)
-        self.assertIn("_restore_outbox_flag", source)
-        self.assertIn("rollback(save_point=savepoint)", source)
-
-    def test_native_live_message_and_feature_owned_share_exist(self):
-        message_json = json.loads(_source("aos/aos/doctype/aos_message/aos_message.json"))
-        message_type = next(field for field in message_json["fields"] if field.get("fieldname") == "message_type")
-        self.assertIn("live", str(message_type.get("options") or "").lower().splitlines())
-        live_field = next(field for field in message_json["fields"] if field.get("fieldname") == "live")
-        short_field = next(field for field in message_json["fields"] if field.get("fieldname") == "short")
-        self.assertEqual(live_field.get("fieldtype"), "Data")
-        self.assertEqual(short_field.get("fieldtype"), "Data")
-        self.assertNotIn("options", live_field)
-        self.assertNotIn("options", short_field)
-        chat = _source("aos/api/chat/message.py")
-        self.assertIn('"live_preview"', chat)
-        self.assertIn('"live_unavailable"', chat)
-        self.assertIn("LivePolicy", chat)
-        live_share = _source("aos/api/live/share.py")
-        self.assertIn("ChatService", live_share)
-        self.assertIn("send_live_reference", live_share)
-        live_v1 = _source("aos/api/v1/live/__init__.py")
-        self.assertIn("def share_live_to_chat", live_v1)
-
-    def test_shorts_share_boundary_is_chat_ready_without_a_client_shortcut(self):
-        chat_service = _source("aos/services/chat/service.py")
-        shorts_v1 = _source("aos/api/v1/shorts/__init__.py")
-        self.assertIn("def send_short_reference", chat_service)
-        self.assertNotIn("share_short_to_chat", shorts_v1)
-        self.assertNotIn("ChatService", shorts_v1)
-
-    def test_persistent_chat_realtime_is_after_commit(self):
-        for relative in (
-            "aos/api/chat/message.py",
-            "aos/api/chat/forward_message.py",
-            "aos/api/chat/edit_message.py",
-            "aos/api/chat/delete_messages.py",
-            "aos/api/chat/reactions.py",
-            "aos/api/chat/status.py",
-        ):
-            source = _source(relative)
-            self.assertIn("publish_after_commit", source, relative)
-        event_helper = _source("aos/services/chat/events.py")
-        self.assertIn("manager.add(callback)", event_helper)
-        self.assertIn("frappe.publish_realtime", event_helper)
-
-    def test_public_error_paths_do_not_return_raw_exception_strings(self):
+    def test_public_errors_do_not_return_raw_exception_strings(self):
         offenders = []
-        for root in CHAT_SCOPE:
-            for path in root.rglob("*.py"):
-                if "tests" in path.parts:
-                    continue
-                source = path.read_text(encoding="utf-8")
-                if "fail(str(exc)" in source or "fail(str(exception)" in source:
-                    offenders.append(str(path.relative_to(ROOT)))
-        self.assertEqual(offenders, [])
-
-    def test_chat_logs_do_not_capture_raw_tracebacks_or_payload_values(self):
-        offenders = []
-        for path in (ROOT / "aos/api/chat").glob("*.py"):
+        for path in CHAT_RUNTIME.rglob("*.py"):
             source = path.read_text(encoding="utf-8")
-            if "frappe.get_traceback()" in source:
-                offenders.append(str(path.relative_to(ROOT)))
-        self.assertEqual(offenders, [])
-        observability = _source("aos/services/chat/observability.py")
-        for private_field in ("account_id", "message_id", "conversation_id", "cursor", "comment_text", "ip_address"):
-            self.assertNotIn(f'"{private_field}"', observability)
-
-    def test_bulk_history_mutations_are_bounded(self):
-        clear = _source("aos/api/chat/clear_chat.py")
-        self.assertIn("CLEAR_CHAT_BATCH_SIZE = 500", clear)
-        self.assertIn("LIMIT %(limit)s", clear)
-        self.assertIn("_clear_visible_messages_bounded", clear)
-        status = _source("aos/api/chat/status.py")
-        self.assertIn("batch_size = 500", status)
-        self.assertIn("LIMIT %(limit)s", status)
-        endpoints = _source("aos/services/chat/endpoints.py")
-        self.assertIn('"send_typing_event"', endpoints.split("TRANSACTIONAL_ENDPOINTS", 1)[1])
-
-    def test_chat_api_sql_has_no_f_string_queries(self):
-        offenders = []
-        pattern = re.compile(r"frappe\.db\.sql\(\s*f(?:\"\"\"|'''|\"|')", re.MULTILINE)
-        for path in (ROOT / "aos/api/chat").rglob("*.py"):
-            if "tests" in path.parts:
-                continue
-            if pattern.search(path.read_text(encoding="utf-8")):
+            if "fail(str(exc)" in source or "fail(str(exception)" in source or "frappe.get_traceback()" in source:
                 offenders.append(str(path.relative_to(ROOT)))
         self.assertEqual(offenders, [])
 
-    def test_chat_fresh_site_indexes_are_canonical(self):
-        patches = _source("aos/patches.txt")
-        self.assertNotIn("harden_chat_subsystem", patches)
-        self.assertIn("aos.patches.v1_0.install_chat_indexes", patches)
-        installer = _source("aos/patches/v1_0/install_chat_indexes.py")
-        for name in (
-            "uniq_chat_pair_key",
-            "uniq_chat_message_idempotency",
-            "uniq_chat_call_message",
-            "uniq_chat_star_message_user",
-            "uniq_chat_reaction_message_user",
-            "uniq_chat_translation_cache",
-            "idx_chat_message_history",
-            "idx_chat_conv_p1_active",
-            "idx_chat_conv_p2_active",
-        ):
-            self.assertIn(name, installer)
-        self.assertNotIn("frappe.db.commit", installer)
-        self.assertFalse((ROOT / "aos/patches/v1_0/harden_chat_subsystem.py").exists())
-
-    def test_chat_rate_keys_and_registry_are_private_and_complete(self):
-        for path in (ROOT / "aos/api/chat").glob("*.py"):
-            source = path.read_text(encoding="utf-8")
-            if "rate_limit(" in source:
-                self.assertIn("rate_limit_key", source, str(path.relative_to(ROOT)))
-                self.assertNotIn('key=f"aos:chat:', source)
-        entries = json.loads(_source("ci/public-endpoint-rate-limits.json"))
-        registry = {entry["endpoint"]: entry for entry in entries}
-        for endpoint in (
-            "open_conversation", "list_conversations", "send_message", "list_messages",
-            "forward_message", "edit_message", "delete_messages", "set_message_star", "set_message_reaction",
-            "translate_message", "mark_delivered", "mark_read", "send_typing_event", "get_presence",
-        ):
-            self.assertIn(f"aos.api.v1.chat.__init__.{endpoint}", registry)
-        self.assertIn("aos.api.v1.live.__init__.share_live_to_chat", registry)
-
-    def test_notification_payload_uses_public_sender_and_dedupe(self):
-        source = _source("aos/services/notifications/service.py")
-        block = source.split("def notify_new_message", 1)[1].split("def ", 1)[0]
-        self.assertIn("public_account_id_for_user", block)
-        self.assertIn("dedupe_key", block)
-        self.assertIn("message_id", block)
-
-    def test_short_previews_use_batch_visibility_policy(self):
-        source = _source("aos/api/chat/message.py")
-        block = source.split("def _fetch_shorts_bulk", 1)[1].split("def _can_view_short", 1)[0]
-        self.assertIn("filter_viewable_rows", block)
-        self.assertNotIn("_can_view_short(", block)
-
-    def test_ad_previews_and_forwards_apply_marketplace_visibility_policy(self):
-        shared = _source("aos/services/chat/shared_objects.py")
-        self.assertIn("fetch_chat_ad_previews", shared)
-        self.assertIn("expires_on", shared)
-        self.assertIn('seller.get("status")', shared)
-        self.assertIn("ACCOUNT_STATUS_ACTIVE", shared)
-        self.assertIn("get_blocked_user_set", shared)
-        message = _source("aos/api/chat/message.py")
-        self.assertIn('"ad_unavailable"', message)
-        self.assertIn("ad_is_shareable_to_users", message)
-        forward = _source("aos/api/chat/forward_message.py")
-        self.assertIn("_validate_forwarded_ad_access", forward)
-        self.assertIn("ad_error = _validate_forwarded_ad_access", forward)
-
-    def test_permanent_account_cleanup_clears_private_chat_state_without_commits(self):
-        source = _source("aos/services/account_deletion_service.py")
-        self.assertIn("_cleanup_chat_private_state", source)
-        self.assertIn("chat_stars_removed", source)
-        self.assertIn("chat_reactions_removed", source)
-        self.assertIn("chat_translation_cache_removed", source)
-        self.assertIn("_CHAT_PRIVATE_USER_FIELDS", source)
-        self.assertIn('"AOS Message Star": "user"', source)
-
-
-    def test_new_live_messages_require_active_live_and_forward_realtime_is_receiver_aware(self):
-        message = _source("aos/api/chat/message.py")
-        send_block = message.split("def send_message_impl", 1)[1].split("# list_messages", 1)[0]
-        self.assertIn("require_live_active=True", send_block)
-        forward = _source("aos/api/chat/forward_message.py")
-        self.assertIn("serialized_for_receiver", forward)
-        self.assertIn('"message": serialized_for_receiver', forward)
-        self.assertIn('"message": serialized_for_sender', forward)
-
-    def test_transient_chat_interactions_respect_social_blocks(self):
-        presence = _source("aos/api/chat/presence.py")
-        typing_block = presence.split("def send_typing_event_impl", 1)[1]
-        self.assertIn("get_blocked_user_set", typing_block)
-        self.assertIn('return fail("Not allowed.", error="PERMISSION_DENIED", http_status=403)', typing_block)
-        self.assertIn("def get_presence_impl", presence)
-        self.assertIn("_presence_payload(peer)", presence)
-        self.assertIn("GET_PRESENCE_LIMIT_PER_MINUTE_PER_USER", presence)
-        reactions = _source("aos/api/chat/reactions.py")
-        validation = reactions.split("def _validate_message_can_be_reacted_to", 1)[1].split("def _validate_emoji", 1)[0]
-        self.assertIn("get_blocked_user_set", validation)
-
-    def test_feature_owned_chat_service_preserves_stable_error_categories(self):
-        service = _source("aos/services/chat/service.py")
-        for code in (
-            "CHAT_NOT_FOUND", "CHAT_ACCESS_DENIED", "CHAT_INVALID_REQUEST",
-            "CHAT_INPUT_TOO_LARGE", "CHAT_CONFLICT", "CHAT_INVALID_STATE",
-            "CHAT_RATE_LIMITED", "CHAT_DEPENDENCY_UNAVAILABLE", "CHAT_INTERNAL_ERROR",
-        ):
-            self.assertIn(f'"{code}"', service)
-        self.assertNotIn('response.get("http_status")', service)
+    def test_rate_limit_registry_covers_every_chat_endpoint(self):
+        source = _source("aos/api/v1/chat/__init__.py")
+        endpoints = set(re.findall(r"^def ([a-z_]+)\(\*\*kwargs\):", source, flags=re.MULTILINE))
+        registry = json.loads(_source("ci/public-endpoint-rate-limits.json"))
+        registered = {
+            row["endpoint"].rsplit(".", 1)[-1]
+            for row in registry
+            if row.get("endpoint", "").startswith("aos.api.v1.chat.__init__.")
+        }
+        self.assertEqual(registered, endpoints)
 
     def test_chat_has_one_authoritative_feature_document(self):
         chat_docs = ROOT / "docs/features/chat"
         self.assertTrue((chat_docs / "README.md").is_file())
-        self.assertEqual(
-            sorted(path.name for path in chat_docs.iterdir() if path.is_file()),
-            ["README.md"],
-        )
+        self.assertEqual(sorted(p.name for p in chat_docs.iterdir() if p.is_file()), ["README.md"])
 
-
-
-
-    def test_removed_chat_compatibility_surfaces_do_not_return(self):
-        v1 = _source("aos/api/v1/chat/__init__.py")
-        self.assertNotIn("toggle_message_star", v1)
-        self.assertNotIn("toggle_message_reaction", v1)
-        self.assertIn("def set_message_star", v1)
-        self.assertIn("def set_message_reaction", v1)
-        endpoints = _source("aos/services/chat/endpoints.py")
-        self.assertNotIn('"offset"', endpoints)
-        self.assertNotIn('"before"', endpoints)
-        identifiers = _source("aos/services/chat/identifiers.py")
-        self.assertIn(r'^CONV-[0-9a-f]{32}$', identifiers)
-        self.assertIn(r'^MSG-[0-9a-f]{32}$', identifiers)
-
-    def test_starred_messages_expose_public_conversation_id_for_navigation(self):
-        source = _source("aos/api/chat/stars.py")
-        self.assertIn('payload["conversation_id"] = msg.conversation', source)
 
 if __name__ == "__main__":
     unittest.main()

@@ -8,8 +8,10 @@
   "conversation",
   "source_language",
   "source_language_label",
+  "request_source_language",
   "target_language",
   "target_language_label",
+  "request_target_language",
   "translated_by",
   "original_content_hash",
   "column_break_oanp",
@@ -49,6 +51,14 @@
    "label": "Source Language Label"
   },
   {
+   "fieldname": "request_source_language",
+   "fieldtype": "Data",
+   "label": "Request Source Language",
+   "read_only": 1,
+   "search_index": 1,
+   "length": 32
+  },
+  {
    "fieldname": "target_language",
    "fieldtype": "Data",
    "label": "Target Language",
@@ -59,6 +69,14 @@
    "fieldname": "target_language_label",
    "fieldtype": "Data",
    "label": "Target Language Label"
+  },
+  {
+   "fieldname": "request_target_language",
+   "fieldtype": "Data",
+   "label": "Request Target Language",
+   "read_only": 1,
+   "search_index": 1,
+   "length": 32
   },
   {
    "fieldname": "translated_by",

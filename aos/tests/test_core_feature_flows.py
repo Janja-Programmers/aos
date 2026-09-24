@@ -10,7 +10,7 @@ from aos.services.accounts.identity import ensure_public_account_id
 from aos.api.ads.create import create_ad_impl
 from aos.api.auth.register import register_impl
 from aos.api.auth.session import me_impl
-from aos.api.chat.message import send_message_impl
+from aos.services.chat.message_ops import send_message_impl
 from aos.api.live.live import join_live_impl, start_live_impl
 from aos.api.live.token import get_live_token_impl
 from aos.services.livekit.admin import RoomAdminResult
@@ -237,8 +237,8 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
         frappe.set_user(sender)
 
         with (
-            patch("aos.api.chat.message.rate_limit", return_value=None),
-            patch("aos.api.chat.message.MediaService", return_value=Mock()),
+            patch("aos.services.chat.message_ops.rate_limit", return_value=None),
+            patch("aos.services.chat.message_ops.MediaService", return_value=Mock()),
         ):
             response = send_message_impl(conversation_id=conv.name, content="Hello")
 

@@ -1,6 +1,5 @@
 {
  "actions": [],
- "creation": "2026-03-19 00:07:39.968747",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -17,18 +16,13 @@
   "original_content",
   "deleted_for_everyone",
   "deleted_for_everyone_at",
-  "deleted_for_1",
-  "deleted_for_1_at",
-  "deleted_for_2",
-  "deleted_for_2_at",
-  "column_break_bgvu",
+  "column_break",
   "ad",
   "short",
   "live",
   "call_id",
-  "delivered_to_receiver_at",
-  "read_by_receiver_at",
   "has_attachments",
+  "recipient_count",
   "idempotency_key",
   "idempotency_request_hash"
  ],
@@ -58,7 +52,8 @@
    "fieldtype": "Select",
    "label": "Message Type",
    "options": "text\nmedia\nad\nshort\nlive\nmixed\nsystem",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "content",
@@ -66,65 +61,33 @@
    "label": "Content"
   },
   {
-   "fieldname": "ad",
-   "fieldtype": "Data",
-   "label": "Ad Public ID",
-   "read_only": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "short",
-   "fieldtype": "Data",
-   "label": "Short Public ID",
-   "read_only": 1
-  },
-  {
-   "fieldname": "live",
-   "fieldtype": "Data",
-   "label": "Live Public ID",
-   "search_index": 1,
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_bgvu",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "0",
-   "fieldname": "has_attachments",
-   "fieldtype": "Check",
-   "label": "Has Attachments",
-   "read_only": 1
-  },
-  {
-   "fieldname": "delivered_to_receiver_at",
-   "fieldtype": "Datetime",
-   "in_list_view": 1,
-   "label": "Delivered To Receiver At",
-   "read_only": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "read_by_receiver_at",
-   "fieldtype": "Datetime",
-   "in_list_view": 1,
-   "label": "Read By Receiver At",
-   "read_only": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "call_id",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Call Public ID",
-   "search_index": 1,
-   "read_only": 1
-  },
-  {
    "fieldname": "reply_to_message",
    "fieldtype": "Link",
    "label": "Reply To Message",
    "options": "AOS Message",
+   "search_index": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_forwarded",
+   "fieldtype": "Check",
+   "label": "Is Forwarded",
+   "read_only": 1
+  },
+  {
+   "fieldname": "forwarded_from_message",
+   "fieldtype": "Link",
+   "label": "Forwarded From Message",
+   "options": "AOS Message",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "forwarded_from_conversation",
+   "fieldtype": "Link",
+   "label": "Forwarded From Conversation",
+   "options": "AOS Conversation",
+   "read_only": 1,
    "search_index": 1
   },
   {
@@ -162,55 +125,51 @@
    "search_index": 1
   },
   {
-   "default": "0",
-   "fieldname": "deleted_for_1",
-   "fieldtype": "Check",
-   "label": "Deleted For Participant 1",
+   "fieldname": "column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "ad",
+   "fieldtype": "Data",
+   "label": "Ad Public ID",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "short",
+   "fieldtype": "Data",
+   "label": "Short Public ID",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "live",
+   "fieldtype": "Data",
+   "label": "Live Public ID",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "call_id",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Call Public ID",
+   "search_index": 1,
    "read_only": 1
   },
   {
    "default": "0",
-   "fieldname": "deleted_for_2",
+   "fieldname": "has_attachments",
    "fieldtype": "Check",
-   "label": "Deleted For Participant 2",
+   "label": "Has Attachments",
    "read_only": 1
-  },
-  {
-   "fieldname": "deleted_for_1_at",
-   "fieldtype": "Datetime",
-   "label": "Deleted For Participant 1 At",
-   "read_only": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "deleted_for_2_at",
-   "fieldtype": "Datetime",
-   "label": "Deleted For Participant 2 At",
-   "read_only": 1,
-   "search_index": 1
   },
   {
    "default": "0",
-   "fieldname": "is_forwarded",
-   "fieldtype": "Check",
-   "label": "Is Forwarded",
+   "fieldname": "recipient_count",
+   "fieldtype": "Int",
+   "label": "Recipient Count At Send",
    "read_only": 1
-  },
-  {
-   "fieldname": "forwarded_from_message",
-   "fieldtype": "Link",
-   "label": "Forwarded From Message",
-   "options": "AOS Message",
-   "read_only": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "forwarded_from_conversation",
-   "fieldtype": "Link",
-   "label": "Forwarded From Conversation",
-   "options": "AOS Conversation",
-   "read_only": 1,
-   "search_index": 1
   },
   {
    "fieldname": "idempotency_key",
@@ -235,11 +194,8 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-29 15:45:05.249029",
- "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Message",
- "owner": "Administrator",
  "permissions": [
   {
    "create": 1,

@@ -1,136 +1,109 @@
 {
  "actions": [],
- "creation": "2026-03-18 19:37:27.697030",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "participant_1",
-  "participant_2",
-  "pair_key",
-  "last_message_1",
-  "last_message_at_1",
-  "last_sender_1",
-  "last_message_2",
-  "last_message_at_2",
-  "last_sender_2",
-  "column_break_iclu",
-  "unread_count_1",
-  "unread_count_2",
-  "is_active_1",
-  "is_active_2"
+  "conversation_type",
+  "direct_key",
+  "title",
+  "avatar_media",
+  "created_by",
+  "participant_count",
+  "membership_version",
+  "column_break",
+  "last_message",
+  "last_message_at",
+  "last_sender"
  ],
  "fields": [
   {
-   "fieldname": "participant_1",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Participant 1",
-   "options": "User",
+   "fieldname": "conversation_type",
+   "fieldtype": "Select",
+   "label": "Conversation Type",
+   "options": "direct\ngroup",
    "reqd": 1,
+   "in_list_view": 1,
    "search_index": 1
   },
   {
-   "fieldname": "participant_2",
+   "fieldname": "direct_key",
+   "fieldtype": "Data",
+   "label": "Direct Conversation Key",
+   "hidden": 1,
+   "read_only": 1,
+   "search_index": 1,
+   "length": 64
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Group Title",
+   "length": 140
+  },
+  {
+   "fieldname": "avatar_media",
    "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Participant 2",
+   "label": "Group Avatar Media",
+   "options": "AOS Media Object",
+   "read_only": 1
+  },
+  {
+   "fieldname": "created_by",
+   "fieldtype": "Link",
+   "label": "Created By",
    "options": "User",
    "reqd": 1,
+   "read_only": 1,
    "search_index": 1
   },
   {
-   "fieldname": "column_break_iclu",
+   "fieldname": "participant_count",
+   "fieldtype": "Int",
+   "label": "Active Participant Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "membership_version",
+   "fieldtype": "Int",
+   "label": "Membership Version",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break",
    "fieldtype": "Column Break"
   },
   {
-   "default": "0",
-   "fieldname": "unread_count_1",
-   "fieldtype": "Int",
-   "label": "Unread Count (Participant 1)",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "unread_count_2",
-   "fieldtype": "Int",
-   "label": "Unread Count (Participant 2)",
-   "read_only": 1
-  },
-  {
-   "default": "1",
-   "fieldname": "is_active_1",
-   "fieldtype": "Check",
-   "label": "Active for Participant 1"
-  },
-  {
-   "default": "1",
-   "fieldname": "is_active_2",
-   "fieldtype": "Check",
-   "label": "Active for Participant 2"
-  },
-  {
-   "fieldname": "last_message_1",
+   "fieldname": "last_message",
    "fieldtype": "Small Text",
-   "label": "Last Message For Participant 1",
+   "label": "Last Message",
    "read_only": 1
   },
   {
-   "fieldname": "last_message_at_1",
+   "fieldname": "last_message_at",
    "fieldtype": "Datetime",
-   "in_list_view": 1,
-   "label": "Last Message At For Participant 1",
+   "label": "Last Message At",
    "read_only": 1,
+   "in_list_view": 1,
    "search_index": 1
   },
   {
-   "fieldname": "last_message_2",
-   "fieldtype": "Small Text",
-   "label": "Last Message For Participant 2",
-   "read_only": 1
-  },
-  {
-   "fieldname": "last_message_at_2",
-   "fieldtype": "Datetime",
-   "in_list_view": 1,
-   "label": "Last Message At For Participant 2",
-   "read_only": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "last_sender_1",
+   "fieldname": "last_sender",
    "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Last Sender For Participant 1",
+   "label": "Last Sender",
    "options": "User",
    "read_only": 1
-  },
-  {
-   "fieldname": "last_sender_2",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Last Sender For Participant 2",
-   "options": "User",
-   "read_only": 1
-  },
-  {
-   "fieldname": "pair_key",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Participant Pair Key",
-   "read_only": 1,
-   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-04 16:22:01.897280",
- "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Conversation",
- "owner": "Administrator",
  "permissions": [
   {
+   "role": "System Manager",
    "create": 1,
    "delete": 1,
    "email": 1,
@@ -138,14 +111,13 @@
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "System Manager",
    "share": 1,
    "write": 1
   }
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
- "sort_field": "modified",
+ "sort_field": "last_message_at",
  "sort_order": "DESC",
  "states": []
 }

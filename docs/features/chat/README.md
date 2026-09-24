@@ -2,104 +2,102 @@
 
 ## Overview
 
-AOS Chat is the canonical authenticated one-to-one messaging domain. It owns conversation membership, durable message records, replies, forwarding, edit/delete semantics, private stars, reactions, translation cache, delivery/read state, conversation visibility, unread counters, typing/presence acceleration, Chat notification requests, and Chat realtime events.
+AOS Chat is the canonical authenticated messaging domain for direct and group conversations. It owns conversation membership, durable messages, replies, forwarding, edit/delete semantics, per-user visibility, stars, reactions, translation cache, delivery/read state, unread counters, Chat Lock state, typing/presence acceleration, Chat notification requests, and Chat realtime events.
 
-Chat is database-authoritative. Redis and realtime delivery are acceleration only. A missed, duplicated, delayed, or out-of-order socket event never changes durable truth; clients reconcile by reading the canonical list endpoints.
+The database is authoritative. Redis, sockets, push notifications, and presence caches accelerate delivery but never become permanent Chat truth. Clients reconcile missed, duplicated, delayed, or out-of-order realtime events through the canonical list endpoints.
 
-The final backend supports **one-to-one conversations only**. Group Chat is not part of the current data model and no group API is exposed. Calls may independently support group calling; Chat does not duplicate that model.
+Chat supports `direct` and `group` conversations. Group membership is normalized rather than encoded into fixed participant columns. Chat Lock is application-level privacy protection; it is **not end-to-end encryption** and must not be described as such.
 
 ## Responsibilities
 
 Chat owns:
 
-- one conversation per unordered account pair;
-- membership and per-participant active/hidden state;
-- message ordering and message lifecycle;
-- per-participant unread, delivery and read state;
-- reply references;
-- forwarding provenance;
-- private message stars;
-- one reaction per user/message;
-- translation cache rows;
+- one direct conversation per unordered account pair;
+- group metadata, membership, roles, join/leave/remove lifecycle, and ownership transfer;
+- message ordering and lifecycle;
+- per-member unread, clear/delete-for-me, delivery/read, inbox and lock state;
+- replies and private forwarding provenance;
+- private stars and one reaction per user/message;
+- source-aware translation cache rows;
 - Chat-to-Media linkage rows;
-- minimal canonical references to Ads, Shorts, Live sessions, and Calls;
-- notification requests for new messages;
-- authenticated user-targeted realtime Chat events.
+- minimal references to Ads, Shorts, Live and Calls;
+- Chat-specific notification requests and authenticated per-user realtime events.
 
-Chat does not own authentication, account/profile truth, relationship blocking, media storage, Ads/Shorts/Live projections, push infrastructure, Calls state, or LiveKit RTC state.
+Chat does not own authentication, account/profile truth, social blocking, Media storage/authorization, push delivery infrastructure, shared-object lifecycle, Calls state, or LiveKit RTC state.
 
 ## Boundaries
 
-- **Authentication** supplies the authenticated Frappe session. Public Chat endpoints never accept a sender/user override for mutations.
-- **Accounts** owns public `ACC-*` identities and display/profile projection.
-- **Social** owns blocking/privacy relationship rules. Chat consumes the shared blocking helpers.
-- **Media** owns upload lifecycle, MIME/type, original filename, dimensions, duration, private-object authorization, signed URLs, and storage. Chat stores only Media linkage.
-- **Notifications** owns durable/in-app/push notification delivery and retry behavior.
-- **Ads** owns `ad_*` public IDs and shareable Ad projection.
+- **Authentication** supplies the authenticated Frappe session. Mutations never accept a sender override.
+- **Accounts** owns immutable public `ACC-*` account IDs and profile/display projection.
+- **Social** owns blocking rules. Direct Chat and group-add operations consume the hardened Social helpers instead of maintaining a competing block graph.
+- **Media** owns upload lifecycle, readiness, authorization, filenames, MIME/type, dimensions, duration, URLs and storage. Chat stores only Media linkage and group-avatar references.
+- **Notifications** owns durable/in-app/push delivery and retries. Locked-chat message notifications request a private preview and contain no sender identity or message text.
+- **Ads** owns `ad_*` public IDs and shareability/projection.
 - **Shorts** owns `SHR-*` IDs and visibility/projection.
-- **Live** owns `LIVE-*` IDs and live-session state/projection.
-- **Calls** owns `call_*` IDs and the call state machine. Chat may contain a system message carrying the public call ID; it does not control Calls or LiveKit.
-- **LiveKit** is never invoked by Chat directly.
+- **Live** owns `LIVE-*` IDs and lifecycle/projection. A newly shared Live must be shareable; the Live-owned share endpoint additionally requires it to be active.
+- **Calls** owns `call_*`, call state, room lifecycle and LiveKit. Calls may project one durable system message into a **direct** Chat conversation. Group Chat does not create a second group-calling model.
+- **Translation service** owns model inference. Chat owns message authorization, request limits, source-aware caching and public serialization.
 
 ## Architecture
 
-Public traffic enters `aos.api.v1.chat.*`. Those wrappers are intentionally thin and call `aos.services.chat.api.run_chat_api`, which performs strict request validation, stable public-error normalization, per-operation savepoint handling, callback restoration, and structured observability.
+Public traffic enters `aos.api.v1.chat.*`. These wrappers are deliberately thin and invoke `aos.services.chat.api.run_chat_api`, which performs strict field validation, identifier validation, savepoint-scoped rollback, stable public-error normalization and observability. Domain/use-case code lives under `aos.services.chat`.
 
-Implementation modules under `aos.api.chat` perform authorized use cases. Shared Chat domain helpers under `aos.services.chat` own identifiers, cursors, locking, realtime-after-commit, cross-feature projections, and feature-owned Chat adapters. Business rules are not duplicated in the v1 wrappers.
+Persistent writes use database constraints and deterministic row locking. Conversation rows are the primary Chat serialization point; retry-sensitive message mutations additionally lock message rows. No correctness rule depends on Python globals, process-local locks, sticky sessions or worker-local mutable state.
 
-Write paths use the database for serialization/uniqueness. No Chat correctness rule depends on a Python global, process-local lock, sticky session, or worker-local cache.
+Persistent realtime publication is registered after commit. A recipient socket event is a hint to fetch/reconcile durable state, not permission to trust the event as state authority.
 
 ## Data Model
 
 ### AOS Conversation
 
-A one-to-one conversation. `name` is the public conversation ID. Important fields are `participant_1`, `participant_2`, `pair_key`, per-participant `is_active_*`, `unread_count_*`, and per-participant last-visible-message preview fields.
+Shared conversation metadata only. Important fields are `conversation_type`, `direct_key`, `title`, `avatar_media`, `created_by`, `participant_count`, `membership_version`, and shared last-message activity fields. `direct_key` is unique and only populated for `direct` conversations.
 
-`pair_key` is a SHA-256 digest of the sorted internal participant references and is database-unique. Participant order is deterministic. The conversation public ID is opaque and not derived from participants.
+### AOS Conversation Participant
+
+Authoritative membership and per-user conversation state: `conversation`, `user`, `role`, `status`, `joined_at`, `visible_from`, `left_at`, `added_by`, `unread_count`, `is_hidden`, `cleared_before`, last-visible-message pointers, `is_locked`, and `lock_changed_at`.
+
+`(conversation, user)` is unique. Active group roles are `owner`, `admin`, and `member`; statuses are `active`, `left`, and `removed`. A newly added/re-added member has `visible_from` reset to the join time and cannot read earlier group history.
 
 ### AOS Message
 
-A durable message. `name` is the public message ID. Important fields include `conversation`, `sender`, `message_type`, `content`, canonical `ad` / `short` / `live` references, public `call_id` for Calls-owned system messages, `reply_to_message`, edit/delete state, delivery/read timestamps, forwarding provenance, `idempotency_key`, and `idempotency_request_hash`.
+Durable message state: `conversation`, `sender`, `message_type`, `content`, canonical shared-object references, `reply_to_message`, edit/delete state, forwarding provenance, `recipient_count`, and hashed idempotency/request fingerprints. Forwarding provenance is internal and is never serialized publicly.
 
-The stored idempotency key is a server-side hash, never the raw client key.
+### AOS Message User State
+
+Sparse per-message/per-user state for `hidden_at`, `delivered_at`, and `read_at`. `(message, user)` is unique. Delete-for-me never mutates the shared message.
 
 ### AOS Message Attachment
 
-A linkage record only: `message`, `media`, `sort_order`. It does not duplicate filename, MIME type, dimensions, duration, URL, storage key, or visibility. Those remain Media-owned.
+Linkage only: `message`, `media`, `sort_order`. Media metadata and URLs remain Media-owned. `(message, media)` is unique.
 
-### AOS Message Star
+### AOS Message Star / AOS Message Reaction
 
-Private user state linking `message`, `conversation`, and `user`. `(message, user)` is unique.
-
-### AOS Message Reaction
-
-User reaction state linking `message`, `conversation`, `user`, and `emoji`. `(message, user)` is unique, so each user has at most one reaction on a message.
+Private per-user message state. Stars use `(message, user)` uniqueness. Reactions also use `(message, user)` uniqueness, so one user has at most one current reaction per message.
 
 ### AOS Message Translation
 
-Cached translation result. The canonical cache identity is `(message, target_language, original_content_hash)`.
+Authorized translation cache. The unique cache identity is `(message, request_source_language, request_target_language, original_content_hash)`. Canonical provider source/target codes are stored separately from normalized request keys so aliases such as `de` do not collide incorrectly with another requested source language.
+
+### AOS Chat Lock Credential
+
+One optional credential per user. It stores only a slow password hash, version, hidden-mode flag, failure counters/lockout and last verification time. The plaintext secret is never stored. Successful verification creates a random 5-minute token in shared Redis, bound to user and credential version.
 
 ## Fields
 
-Canonical Chat IDs:
+Public Chat IDs are opaque and multi-node safe:
 
 - conversation: `CONV-` + 32 lowercase hexadecimal characters;
-- message: `MSG-` + 32 lowercase hexadecimal characters;
-- attachment linkage: `CMA-` + 32 lowercase hexadecimal characters.
+- message: `MSG-` + 32 lowercase hexadecimal characters.
 
-High-write Chat records use random opaque IDs generated independently on every application node; no naming series or shared sequence is used.
+Internal high-write linkage/state IDs also use opaque random IDs (`CP-*`, `MUS-*`, `CMA-*`, `CLC-*`) rather than naming series.
 
-Message types are `text`, `media`, `ad`, `short`, `live`, `mixed`, and backend-managed `system`. A message may contain text plus one or more owned-feature references, in which case `mixed` is used.
+Conversation types: `direct`, `group`.
 
-Shared references are minimal and canonical:
+Group roles: `owner`, `admin`, `member`. Membership statuses: `active`, `left`, `removed`. Groups are bounded to **256 active participants** and require at least two participants including the creator.
 
-- Ad: Ads `public_id` (`ad_*`), never `AOS Ad.name`;
-- Short: canonical Shorts ID (`SHR-*`);
-- Live: canonical Live ID (`LIVE-*`);
-- Call system projection: canonical Calls public ID (`call_*`);
-- attachment: Media ID (`MEDIA-*`).
+Message types: `text`, `media`, `ad`, `short`, `live`, `mixed`, and backend-managed `system`.
 
-Unavailable/deleted shared entities remain referenced in history but serialize as unavailable previews rather than being copied into Chat permanent state.
+Canonical references are Media IDs, Ads public IDs, Shorts `SHR-*`, Live `LIVE-*`, and Calls public `call_*`. Shared entities are projected at read time; unavailable entities remain durable message references but serialize as unavailable rather than stale duplicated snapshots.
 
 ## API
 
@@ -110,179 +108,199 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 
 | Endpoint | HTTP | Decorator access | Audience |
 |---|---|---|---|
+| `add_group_members` | POST | Session required | Client |
 | `clear_chat` | POST | Session required | Client |
+| `configure_chat_lock_secret` | POST | Session required | Client |
+| `create_group` | POST | Session required | Client |
 | `delete_conversation` | POST | Session required | Client |
 | `delete_messages` | POST | Session required | Client |
 | `edit_message` | POST | Session required | Client |
 | `forward_message` | POST | Session required | Client |
+| `get_chat_lock_state` | GET | Session required | Client |
 | `get_presence` | GET | Session required | Client |
+| `leave_group` | POST | Session required | Client |
 | `list_conversations` | GET | Session required | Client |
+| `list_group_members` | GET | Session required | Client |
+| `list_locked_conversations` | GET | Session required | Client |
 | `list_messages` | GET | Session required | Client |
 | `list_starred_messages` | GET | Session required | Client |
 | `mark_delivered` | POST | Session required | Client |
 | `mark_read` | POST | Session required | Client |
 | `open_conversation` | POST | Session required | Client |
+| `remove_chat_lock_secret` | POST | Session required | Client |
+| `remove_group_member` | POST | Session required | Client |
 | `send_message` | POST | Session required | Client |
 | `send_typing_event` | POST | Session required | Client |
+| `set_conversation_lock` | POST | Session required | Client |
+| `set_group_member_role` | POST | Session required | Client |
 | `set_message_reaction` | POST | Session required | Client |
 | `set_message_star` | POST | Session required | Client |
+| `transfer_group_ownership` | POST | Session required | Client |
 | `translate_message` | POST | Session required | Client |
+| `update_group` | POST | Session required | Client |
+| `verify_chat_lock_secret` | POST | Session required | Client |
 
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
+All routes are `/api/method/aos.api.v1.chat.<method>` and require an authenticated session. Unknown fields fail closed with `CHAT_UNKNOWN_FIELD`; legacy aliases are not accepted.
 
-All routes are under `/api/method/aos.api.v1.chat.<method>`. All require an authenticated session. Request bodies/arguments are strict: unknown fields fail with `CHAT_UNKNOWN_FIELD`; removed aliases are not accepted.
-
-| Method | HTTP | Accepted fields |
+| Endpoint | Accepted fields | Canonical behavior |
 |---|---|---|
-| `open_conversation` | POST | `user` |
-| `list_conversations` | GET | `limit`, `cursor` |
-| `delete_conversation` | POST | `conversation_id` |
-| `send_message` | POST | `conversation_id`, `content`, `attachments`, `ad`, `short`, `live`, `reply_to_message`, `idempotency_key` |
-| `list_messages` | GET | `conversation_id`, `limit`, `cursor` |
-| `forward_message` | POST | `message_id`, `target_conversation_ids`, `idempotency_key` |
-| `edit_message` | POST | `message_id`, `content` |
-| `delete_messages` | POST | `message_ids`, `delete_scope` |
-| `clear_chat` | POST | `conversation_id` |
-| `set_message_star` | POST | `message_id`, `starred` |
-| `list_starred_messages` | GET | `limit`, `conversation_id`, `cursor` |
-| `set_message_reaction` | POST | `message_id`, `emoji` |
-| `translate_message` | POST | `message_id`, `target_language`, `source_language`, `force_refresh` |
-| `mark_delivered` | POST | `conversation_id` |
-| `mark_read` | POST | `conversation_id` |
-| `send_typing_event` | POST | `conversation_id`, `is_typing` |
-| `get_presence` | GET | `conversation_id` |
+| `open_conversation` | `user` | Open/reuse the unique direct conversation for the authenticated account and public `ACC-*` peer. |
+| `create_group` | `title`, `participant_ids`, `avatar_media_id` | Create a group; creator becomes owner. `participant_ids` are public Account IDs. |
+| `update_group` | `conversation_id`, `title`, `avatar_media_id`, `remove_avatar`, `lock_token` | Owner/admin updates group metadata; Media owns avatar authorization. |
+| `add_group_members` | `conversation_id`, `participant_ids`, `lock_token` | Owner/admin adds bounded members. New history visibility starts at join. |
+| `remove_group_member` | `conversation_id`, `account_id`, `lock_token` | Owner/admin removes a member subject to role rules. |
+| `set_group_member_role` | `conversation_id`, `account_id`, `role`, `lock_token` | Owner changes `admin`/`member` role. |
+| `transfer_group_ownership` | `conversation_id`, `account_id`, `lock_token` | Owner transfers ownership to an active member. |
+| `leave_group` | `conversation_id`, `lock_token` | Current member leaves. If owner leaves, ownership transfers deterministically. |
+| `list_group_members` | `conversation_id`, `limit`, `cursor`, `lock_token` | Cursor-paginated active member projection using public account identities. |
+| `list_conversations` | `limit`, `cursor` | Normal inbox. Locked conversations are excluded. |
+| `list_locked_conversations` | `limit`, `cursor`, `lock_token` | Locked inbox. Hidden mode returns an undiscoverable empty list without a valid token. |
+| `delete_conversation` | `conversation_id`, `lock_token` | Per-user hide plus history watermark; a later message can resurrect the row without resurrecting old history. |
+| `set_conversation_lock` | `conversation_id`, `locked`, `lock_token` | Per-user lock state. Hidden locked chats require a valid token even to unlock. |
+| `configure_chat_lock_secret` | `secret`, `current_secret`, `hide_locked_chats` | Create/change secret and hidden mode. Existing secret changes require the current secret. |
+| `verify_chat_lock_secret` | `secret` | Verify secret and issue a short-lived `lock_token`. |
+| `remove_chat_lock_secret` | `current_secret` | Remove the optional secret; conversation lock flags remain per-user. |
+| `get_chat_lock_state` | `lock_token` | Return secret/hidden-mode state. Hidden mode with no token does not expose locked-chat count. |
+| `send_message` | `conversation_id`, `content`, `attachments`, `ad`, `short`, `live`, `reply_to_message`, `idempotency_key`, `lock_token` | Send a durable direct/group message. Attachments are only `{media_id}`. |
+| `list_messages` | `conversation_id`, `limit`, `cursor`, `lock_token` | Cursor-paginated durable history filtered by membership visibility, clear/delete state and lock authorization. |
+| `forward_message` | `message_id`, `target_conversation_ids`, `idempotency_key`, `lock_token` | Forward to up to 20 conversations. Public responses disclose only `is_forwarded`, not source IDs. |
+| `edit_message` | `message_id`, `content`, `lock_token` | Sender-only edit of eligible text/mixed messages. |
+| `delete_messages` | `message_ids`, `delete_scope`, `lock_token` | Up to 100 IDs. Scope is `me` or sender-authorized `everyone`. |
+| `clear_chat` | `conversation_id`, `lock_token` | Advance this member's `cleared_before` watermark and reset unread/preview state. |
+| `set_message_star` | `message_id`, `starred`, `lock_token` | Desired-state private star/unstar; retry-safe. |
+| `list_starred_messages` | `limit`, `conversation_id`, `cursor`, `lock_token` | Cursor-paginated visible starred messages; hidden locked chats are not discoverable globally. |
+| `set_message_reaction` | `message_id`, `emoji`, `lock_token` | Desired-state reaction; empty emoji removes current reaction. |
+| `translate_message` | `message_id`, `target_language`, `source_language`, `force_refresh`, `lock_token` | Authorized on-demand translation. Original message is immutable and unread state is untouched. |
+| `mark_delivered` | `conversation_id`, `lock_token` | Bounded durable delivery reconciliation; returns `updated_count` and `has_more`. |
+| `mark_read` | `conversation_id`, `lock_token` | Bounded durable read reconciliation and unread decrement; returns `updated_count` and `has_more`. |
+| `send_typing_event` | `conversation_id`, `is_typing`, `lock_token` | Ephemeral authenticated per-recipient realtime signal. |
+| `get_presence` | `conversation_id`, `lock_token` | Current public presence projection for active peers/members. |
 
-`attachments` is a list of at most 10 objects and the only accepted attachment shape is `{ "media_id": "MEDIA-..." }`. Chat validates readiness/ownership through Media before a new send.
+List endpoints return `data.items` and opaque `data.next_cursor`. Limits are 1–100. Message history uses deterministic `(creation, message_id)` keyset ordering; conversation lists use per-user activity plus conversation ID; group members and stars have their own versioned cursor kinds. Deep offset pagination is not part of v1.
 
-`target_conversation_ids` is a list of at most 20 canonical conversation IDs. `message_ids` is a list of at most 100 canonical message IDs. Singular aliases are not part of v1.
+`send_message` accepts at most 10 attachments. `message_ids` is bounded to 100, `target_conversation_ids` to 20, and new group-member input to 255 (group total remains 256).
 
-List responses use `data: { "items": [...], "next_cursor": <string|null> }`. Cursors are versioned opaque base64url positions. Conversation order is deterministic by viewer activity time then conversation ID. Message history is deterministic by creation time then message ID. Starred history is deterministic by star creation time then message ID. Deep offset pagination is not supported.
+## Chat Lock
+
+Lock state belongs to each participant, never to the conversation globally. Other participants are not told that a user locked a chat.
+
+Without a configured secret, a locked conversation is removed from the normal inbox and appears through `list_locked_conversations`; the client is expected to place its device/app authentication gate in front of that surface. A user may additionally configure a 4–64 character Unicode secret and set `hide_locked_chats=1`. In hidden mode the Locked Chats surface itself becomes undiscoverable: list/count/content operations require the short-lived token returned by `verify_chat_lock_secret`.
+
+The secret is NFC-normalized, slow-hashed with Frappe's password context, never logged/stored plaintext, and has a five-attempt failure threshold followed by a 15-minute verification lockout. Access tokens last 300 seconds and live only in shared Redis. Changing the secret increments its version, invalidating older tokens.
+
+Locked-chat notifications suppress sender identity and message content. Locked group metadata realtime events are reduced to `{conversation_id, change: "refresh"}`. Hidden conversations return `CHAT_NOT_FOUND` without authorization so possession of an ID does not reveal them.
+
+## Translation
+
+The Frappe backend calls the private AOS translation service through `aos.integrations.ai.translation_client`; clients never call the model container directly. `/translate` and `/languages` require `TRANSLATION_INTERNAL_TOKEN` and fail closed when the token is missing. `/health` and `/ready` remain unauthenticated for loopback/orchestrator probes.
+
+The bundled NLLB/CTranslate2 runtime has bounded request characters, source tokens, decoding length, beam size, inference concurrency and worker thread counts. It uses local model files, a shared CTranslate2 engine, thread-local tokenizers and a bounded semaphore. The container runs as a non-root user and is loopback-bound by default in Docker Compose.
+
+German is explicitly supported: request aliases including `de`, `de-DE`, `deu`, and `deu_Latn` normalize to NLLB `deu_Latn` and serialize with label `German`. Other supported languages are defined centrally in `infra/translation/app/languages.py`.
+
+Chat caches by message, normalized requested source/target, and content hash. Editing a message changes the hash, so stale translation rows are never returned for changed content. The public translation response does not disclose the internal requesting user.
 
 ## Cross-feature Dependencies
 
 ### Media
 
-New message attachments must be canonical private `chat_attachment` Media objects in a ready state. Chat inserts only the linkage row and asks Media to attach the object. Read serialization performs one bounded membership-aware Media URL projection for the page instead of one authorization query per attachment. Forwarded messages may reference the same immutable private Media object through an additional authorized Chat linkage.
+Attachments use only `{media_id}` and group avatars use `avatar_media_id`. Media validates readiness/ownership and owns private URL projection. Chat does not persist copied MIME/type/name/dimensions/duration/URL metadata.
 
 ### Accounts and Social
 
-Internal Frappe User references remain persistence-level foreign keys where required by Frappe, but public identity projection uses Accounts. Blocking is evaluated through hardened Social helpers. A historical conversation ID does not grant interaction after a block.
+Public requests use `ACC-*` account identities; internal Frappe usernames are never accepted as public peer IDs. Direct-message/open-call relationship rules and group additions consume the hardened Social blocking boundary. Membership/IDOR checks remain Chat-owned.
+
+### Ads, Shorts and Live
+
+Chat stores only canonical public IDs and resolves current visibility/projection from the owning feature. A deleted/private/unavailable object does not corrupt history and is shown as unavailable. Native Live sharing additionally enforces active state through the Live-owned endpoint.
+
+### Calls and LiveKit
+
+Calls may attach a direct `conversation_id` only after validating that it is a `direct` Chat conversation containing the intended peers. One `call_id` maps to at most one Chat system message. Call lifecycle and LiveKit are Calls-owned; Chat contains no call state machine and no group-call implementation.
 
 ### Notifications
 
-New-message notification dispatch uses `NotificationService`. Durable notification/outbox behavior and retry semantics remain Notifications-owned. Chat does not implement a parallel push queue.
-
-### Ads, Shorts, and Live
-
-Chat stores only the canonical owning-feature ID and resolves a bounded preview at read time. Visibility is re-evaluated for the viewer. A missing/inactive/inaccessible entity produces an unavailable preview without leaking privileged fields.
-
-### Calls
-
-Calls owns the call state machine, participants, tokens, room lifecycle, and LiveKit interaction. A direct Call may carry a Chat conversation ID where the Calls contract allows it. Calls writes/updates one Chat system message per public `call_id`; database uniqueness prevents duplicate call-history messages under concurrent updates.
+Message persistence and Notification creation are separate feature responsibilities. Chat supplies a stable message ID for notification deduplication. Locked recipients request generic private-preview notifications.
 
 ## Transaction / Concurrency Model
 
-The caller/Frappe request transaction is authoritative. Chat does not manually commit. The v1 boundary creates an operation savepoint for mutations and restores Frappe transaction callbacks when rolling a handled failure back to that savepoint.
-
-The lock order for Chat mutations is **conversation row(s) first, then message row(s)**, in deterministic ID order where multiple rows are involved. Database unique constraints arbitrate conversation creation, message idempotency, call system-message projection, stars, reactions, attachment duplication, and translation cache races.
-
-### Message idempotency
-
-`send_message` accepts an optional client `idempotency_key` of at most 128 characters. Chat stores a server digest scoped to the sender/conversation/operation and a hash of the canonical message request. Retrying the same key with the same canonical payload returns the existing message. Reusing that key for a different canonical payload returns `CHAT_CONFLICT` (`409`). Concurrent duplicate inserts are resolved by the unique database index and return the durable winner.
-
-Forwarding uses a deterministic per-target digest derived from the supplied forward key, source message, sender, and target conversation. Repeating the same forward operation does not create a duplicate target message.
-
-`set_message_star` and `set_message_reaction` are desired-state mutations. Retrying a successful request cannot invert the state. Delete-for-me/everyone operations are also idempotent for already-applied state.
+- Conversation creation uses a unique `direct_key` plus database duplicate handling.
+- Group membership mutations lock the conversation then deterministic membership rows; owner departure transfers ownership before deactivation.
+- Sends lock the conversation, re-read active membership, validate shared content, then insert the message and update per-member inbox/unread state inside the request transaction.
+- Client message idempotency is scoped by sender + conversation + operation + raw key, hashed server-side. Exact replay returns the existing durable message. Reusing the key with different canonical content/references returns `409 CHAT_CONFLICT`.
+- Stars/reactions are desired-state mutations and use message/conversation locking plus unique constraints.
+- Delivery/read reconciliation processes at most 4 batches × 500 messages per request and returns `has_more` for continued reconciliation.
+- Database uniqueness is the final arbiter for direct conversations, memberships, message idempotency, Calls projections, message-user state, stars, reactions, attachments, translation cache and lock credentials.
+- Chat code does not manually commit. Public transactional wrappers use savepoints and roll back failed mutations without corrupting the caller's broader transaction context.
 
 ## Caching
 
-Chat correctness does not depend on cache state. Redis is used only for shared rate limiting/throttling and presence write/broadcast suppression. `User.last_active` remains the durable presence timestamp.
+Permanent Chat state is never Redis-only. Redis is used for short-lived Chat-Lock authorization tokens, presence write/broadcast throttles and existing platform rate limiting. Lock tokens are user-bound and version-bound and expire after 300 seconds. Presence persistence remains `User.last_active`; Redis only limits write/fanout frequency.
 
-Presence activity writes are shared-Redis throttled to reduce database write amplification. Presence broadcast fanout is limited to a bounded set of recent active Chat peers and filtered through Social blocking.
-
-## Realtime
-
-Persistent mutations publish only after successful transaction commit through `aos.services.chat.events.publish_after_commit`. Events are targeted to authenticated user rooms; Chat never publishes conversation history to an unauthenticated/global room.
-
-Current Chat events are:
-
-- `aos_new_message`;
-- `aos_message_edited`;
-- `aos_messages_deleted`;
-- `aos_message_reaction_updated`;
-- `aos_message_status`;
-- `aos_typing`;
-- `aos_presence_update`.
-
-Realtime payloads contain public Chat/object IDs and viewer-safe projections. They do not contain database room names, worker identifiers, storage secrets, raw Frappe tracebacks, or privileged internal object fields.
-
-Clients must treat events as hints: de-duplicate by public IDs/state, tolerate out-of-order delivery, and reconcile with `list_conversations` / `list_messages` after reconnect or ambiguity. Delivery/read timestamps are monotonic durable state; stale socket events must not regress them.
-
-## Permissions / Privacy
-
-Every message/conversation operation re-checks authenticated membership against the database. Knowing a conversation or message ID is never sufficient for access.
-
-Important rules:
-
-- `open_conversation` resolves the target through Accounts and rejects self-chat/unavailable/blocked relationships;
-- message reads require current conversation membership and viewer-specific visibility;
-- removed/hidden conversation state affects listing, not authorization to arbitrary IDs;
-- new transient interaction (send, typing, presence, reaction) observes Social blocking;
-- replies must reference a valid message in the same authorized conversation;
-- edit and delete-for-everyone require message ownership and applicable lifecycle rules;
-- system messages cannot be user-created, edited, reacted to, forwarded, or deleted-for-everyone through client mutation paths;
-- attachments are authorized through Media plus Chat membership/linkage;
-- shared-content visibility is re-evaluated through its owning feature;
-- public errors are stable and sanitized; raw exception strings/tracebacks are not returned.
-
-## Errors / Rate Limits
-
-Stable Chat error families include `CHAT_INVALID_REQUEST`, `CHAT_UNKNOWN_FIELD`, `CHAT_INVALID_IDENTIFIER`, `CHAT_INVALID_CURSOR`, `CHAT_INPUT_TOO_LARGE`, `CHAT_NOT_FOUND`, `CHAT_ACCESS_DENIED`, `CHAT_CONFLICT`, `CHAT_INVALID_STATE`, `CHAT_RATE_LIMITED`, `CHAT_DEPENDENCY_UNAVAILABLE`, and `CHAT_INTERNAL_ERROR`. Authentication/account-domain errors may also be returned by their owning hardened boundary.
-
-HTTP semantics: validation/identifier/cursor errors use `422`; oversized input `413`; access denial `403`; not found `404`; conflict/invalid state `409`; rate limiting `429`; dependency unavailable `503`; unexpected internal failure `500`.
-
-Application limits per authenticated user per minute are: open conversation 60, list conversations 120, delete conversation 60, send message 120, forward 60, edit 30, delete messages 60, clear Chat 20, set star 120, list stars 120, set reaction 120, translate 60, list messages 300, mark delivered 600, mark read 600, typing 600, and presence reads 120. Edge/Nginx limits may be stricter.
+Translation results are database-cached because they are durable derived data tied to an immutable content hash. Media/shared-object previews are projected from their owning features rather than copied into a Chat cache record.
 
 ## Performance / Scalability
 
-The hot-path database indexes are installed by `aos.patches.v1_0.install_chat_indexes`. They cover unique participant pair, viewer conversation activity, message idempotency, one call system message, message history, delivery/read scans, replies, shared entity references, attachment linkage/order, private stars, reactions, and translation cache identity.
+The normalized model is designed for HA/multiple Gunicorn workers and roughly 1M+ global users. Hot paths use bounded queries and deterministic keyset pagination. Important indexes cover direct-key uniqueness, per-user inbox ordering, group member/role scans, message history/sender/replies/shared references, user-state read/delivery/hidden scans, attachments, stars, reactions, translation cache and Chat-Lock credential uniqueness.
 
-Conversation/message/star history uses cursor pagination with deterministic tie-breaking. Reads are bounded to at most 50 conversations, 100 messages, or 100 starred messages per request. Bulk identity, reaction, star, attachment, shared-content, and Media URL projections avoid one-query-per-row patterns. Status and clear-history writes process fixed batches. Presence fanout is bounded to recent peers.
+Conversation serialization batches participant/profile projection. Message serialization batches reactions, stars, receipts, Media URLs and shared-object previews. Presence peer fanout is capped to 200 recently active peers and shared-Redis throttled. Groups are capped at 256 members to keep per-message realtime/notification fanout bounded; this limit must not be raised without redesigning fanout/read-state economics.
 
-No Chat path intentionally performs an unbounded conversation/message scan, deep offset pagination, naming-series allocation, worker-local synchronization, or sticky-session correctness.
+No Chat API uses unbounded deep offset scans. Cleanup/account-deactivation work is bounded and preserves group owner invariants.
+
+## Errors and Rate Limits
+
+Stable Chat errors include `CHAT_INVALID_REQUEST`, `CHAT_UNKNOWN_FIELD`, `CHAT_INVALID_IDENTIFIER`, `CHAT_INPUT_TOO_LARGE`, `CHAT_NOT_FOUND`, `CHAT_ACCESS_DENIED`, `CHAT_CONFLICT`, `CHAT_INVALID_STATE`, `CHAT_LOCK_INVALID_SECRET`, `CHAT_LOCK_SECRET_REQUIRED`, `CHAT_LOCK_RATE_LIMITED`, and dependency errors such as `TRANSLATION_UNAVAILABLE`. Hidden locked chats deliberately use `CHAT_NOT_FOUND` rather than an authorization-specific error.
+
+Rate-limit policies are registered centrally in `ci/public-endpoint-rate-limits.json` and validated against every whitelisted endpoint. High-frequency status/typing operations have separate bounded limits from normal send/mutation operations. Clients should debounce typing/presence work and follow `has_more` rather than looping unboundedly.
+
+## Realtime
+
+Durable events are user-targeted and published only after commit. Important event families include new-message hints, message status, edit/delete/reaction changes, group membership/metadata refreshes, typing and presence. Event payloads are intentionally smaller than canonical REST projections. Reconnect recovery is always `list_conversations`/`list_messages` plus status reconciliation, not replay of a socket-owned state machine.
+
+Multiple devices may receive duplicates or observe events out of order. Clients must deduplicate using durable IDs and refetch when version/order is ambiguous.
 
 ## Testing
 
-Chat tests cover strict validation/public IDs, unknown-field rejection, removed aliases, membership/IDOR, blocking, send/retry idempotency, concurrent creation/send constraints, cursor ordering, unread/delivery/read behavior, edits/deletes/reactions/stars, attachment authorization, shared Ads/Shorts/Live projection, Calls boundary, realtime payload/after-commit behavior, notification integration, translation cache races, cleanup, and source/architecture guards.
+Authoritative Chat coverage includes:
 
-Database tests create unique fixture identities and must roll back/clean all Users, Accounts, conversations, messages, Media, notifications, and dependent rows they create. Tests must not depend on execution order.
+- strict public field/identifier validation and removed aliases;
+- source guards for one v1 surface, normalized schema, Calls boundary, post-commit realtime and rate-limit coverage;
+- database-backed direct/group membership, IDOR, join-history boundary and role tests;
+- idempotent sends and conflicting key reuse;
+- per-member unread/read and delete/clear behavior;
+- hidden Chat-Lock secret/token behavior and private notification requirements;
+- Media/shared Ads/Shorts/Live projection boundaries;
+- German/source-aware translation cache behavior;
+- translation service auth, normalization, resource bounds and health/readiness behavior;
+- cleanup helpers that roll back or remove test-created Users, Accounts, Chat rows, Media, Notifications and external hot state.
 
-Run on the target Frappe site:
+Run at minimum:
 
 ```bash
+python -m unittest \
+  aos.api.chat.tests.test_chat_validation_unit \
+  aos.api.chat.tests.test_chat_source_guards -v
+PYTHONPATH=infra/translation python -m pytest -q infra/translation/tests/test_service.py
+python ci/validate_api_documentation.py
+python ci/validate_rate_limit_coverage.py .
+python ci/validate_doc_paths.py
+python ci/validate_repository.py .
 bench --site "$SITE" migrate
 bench --site "$SITE" run-tests --app aos
 ```
 
-Repository-level static validation used for Chat can also be run with:
-
-```bash
-python -m compileall -q aos
-python -m unittest aos.api.chat.tests.test_chat_validation_unit aos.api.chat.tests.test_chat_source_guards -v
-python ci/validate_api_documentation.py --check
-```
+The database-backed Chat suite is `aos.api.chat.tests.test_chat_database_contracts` and is included in the full AOS test run.
 
 ## Operational Invariants
 
-1. Database state is authoritative; realtime/cache loss cannot lose a committed message.
-2. One unordered account pair maps to at most one Chat conversation.
-3. A user cannot read/mutate a conversation or message without current database-backed authorization.
-4. One canonical message send idempotency digest maps to at most one message; the same key cannot silently represent a different payload.
-5. One user/message has at most one star and at most one reaction.
-6. One public Call ID maps to at most one Chat call-system message.
-7. Chat attachments contain only Media references; Media remains the metadata/storage/authorization owner.
-8. Shared entity references use owning-feature public IDs and are re-projected at read time.
-9. Persistent realtime events are scheduled after commit; clients can always recover by reading durable state.
-10. The final schema is for fresh deployment. Historical Chat compatibility aliases, sequence IDs, transitional response shapes, and legacy reconciliation code are not part of this contract.
+1. The database is Chat truth; sockets, push and Redis are never a third state authority.
+2. Every message/conversation read is authorized through active membership and, when hidden, Chat-Lock token authorization.
+3. A group must never retain two owners or lose deterministic owner transfer while active members remain.
+4. A re-added member cannot see messages from before the new `visible_from` boundary.
+5. A locked chat never exposes message/sender preview through Notifications; hidden lock mode never exposes the locked folder/count/content without a valid token.
+6. Calls/Live/Shorts/Ads/Media remain authoritative for their own entities; Chat stores only canonical references.
+7. Translation model inference is private, authenticated and bounded; German (`de` → `deu_Latn`) is part of the supported production language registry.
+8. No client should depend on internal Frappe usernames, DocType names, room names, Redis keys, forwarding source IDs, model internals or worker details.

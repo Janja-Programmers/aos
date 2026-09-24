@@ -16,6 +16,7 @@ Frappe. They run in the external translation service container.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from typing import Any, Dict
 
 import requests
@@ -47,6 +48,7 @@ class TranslationClientSettings:
     service_url: str
     timeout_seconds: int
     max_characters: int
+    internal_token: str = ""
 
 
 def _clamp_int(value: Any, *, default: int, min_value: int, max_value: int) -> int:
@@ -85,6 +87,7 @@ def get_translation_client_settings() -> TranslationClientSettings:
             service_url=DEFAULT_SERVICE_URL,
             timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
             max_characters=DEFAULT_MAX_CHARACTERS,
+            internal_token=str(os.getenv("TRANSLATION_INTERNAL_TOKEN", "")).strip(),
         )
 
     return TranslationClientSettings(
@@ -104,6 +107,7 @@ def get_translation_client_settings() -> TranslationClientSettings:
             min_value=1,
             max_value=MAX_CHARACTERS,
         ),
+        internal_token=str(os.getenv("TRANSLATION_INTERNAL_TOKEN", "")).strip(),
     )
 
 
@@ -209,12 +213,22 @@ class TranslationClient:
     def _url(self, path: str) -> str:
         return f"{self.settings.service_url}/{path.lstrip('/')}"
 
+    def _headers(self, *, required: bool = False) -> dict[str, str]:
+        token = str(self.settings.internal_token or "").strip()
+        if required and not token:
+            raise TranslationUnavailableError("Translation service authentication is not configured.")
+        return {"X-AOS-Internal-Token": token} if token else {}
+
+    def _timeout(self):
+        return (min(3, self.settings.timeout_seconds), self.settings.timeout_seconds)
+
     def _request_json(self, method: str, path: str) -> Dict[str, Any]:
         try:
             response = self.session.request(
                 method=method.upper(),
                 url=self._url(path),
-                timeout=self.settings.timeout_seconds,
+                timeout=self._timeout(),
+                headers=self._headers(),
             )
         except requests.Timeout as exc:
             raise TranslationUnavailableError(
@@ -244,7 +258,8 @@ class TranslationClient:
 
     def list_languages(self) -> Dict[str, Any]:
         """Return supported languages from the translation service."""
-
+        if not str(self.settings.internal_token or "").strip():
+            raise TranslationUnavailableError("Translation service authentication is not configured.")
         return self._request_json("GET", "/languages")
 
     def translate_text(
@@ -277,7 +292,8 @@ class TranslationClient:
             response = self.session.post(
                 self._url("/translate"),
                 json=request_payload,
-                timeout=self.settings.timeout_seconds,
+                timeout=self._timeout(),
+                headers=self._headers(required=True),
             )
         except requests.Timeout as exc:
             raise TranslationUnavailableError(
@@ -290,7 +306,7 @@ class TranslationClient:
 
         payload = _parse_json_response(response)
 
-        if response.status_code == 400:
+        if response.status_code in {400, 422}:
             raise TranslationValidationError(_extract_error_message(payload))
 
         if response.status_code >= 400:

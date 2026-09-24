@@ -51,6 +51,7 @@ LANGUAGE_CODE_MAP: dict[str, LanguageInfo] = {
 
     # German
     "de": LanguageInfo("deu_Latn", "German"),
+    "de-de": LanguageInfo("deu_Latn", "German"),
     "deu": LanguageInfo("deu_Latn", "German"),
     "deu_latn": LanguageInfo("deu_Latn", "German"),
 
@@ -100,13 +101,11 @@ def normalize_language_code(value: str | None) -> LanguageInfo | None:
     if not raw:
         return None
 
-    # Already normalized NLLB code.
-    if "_" in raw and len(raw) >= 7:
-        key = raw.lower()
-        return LANGUAGE_CODE_MAP.get(key) or LanguageInfo(raw, raw)
-
-    key = raw.lower().replace("_", "-")
-    return LANGUAGE_CODE_MAP.get(key)
+    key = raw.lower()
+    direct = LANGUAGE_CODE_MAP.get(key)
+    if direct:
+        return direct
+    return LANGUAGE_CODE_MAP.get(key.replace("_", "-"))
 
 
 def supported_languages() -> list[dict[str, str]]:

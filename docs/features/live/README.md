@@ -49,7 +49,6 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
-
 The public surface is the versioned Live client API only. LiveKit administration, webhooks, reconciliation, health, diagnostics, and worker operations are internal infrastructure and are not client APIs.
 
 ## Persistent model and indexes

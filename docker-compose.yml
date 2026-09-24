@@ -424,6 +424,13 @@ services:
       TRANSLATION_COMPUTE_TYPE: ${TRANSLATION_COMPUTE_TYPE:-int8}
       TRANSLATION_DEFAULT_SOURCE_LANGUAGE: ${TRANSLATION_DEFAULT_SOURCE_LANGUAGE:-eng_Latn}
       TRANSLATION_MAX_CHARS: ${TRANSLATION_MAX_CHARS:-1000}
+      TRANSLATION_MAX_SOURCE_TOKENS: ${TRANSLATION_MAX_SOURCE_TOKENS:-768}
+      TRANSLATION_MAX_DECODING_LENGTH: ${TRANSLATION_MAX_DECODING_LENGTH:-384}
+      TRANSLATION_BEAM_SIZE: ${TRANSLATION_BEAM_SIZE:-4}
+      TRANSLATION_MAX_CONCURRENT_REQUESTS: ${TRANSLATION_MAX_CONCURRENT_REQUESTS:-4}
+      TRANSLATION_INTER_THREADS: ${TRANSLATION_INTER_THREADS:-2}
+      TRANSLATION_INTRA_THREADS: ${TRANSLATION_INTRA_THREADS:-0}
+      TRANSLATION_INTERNAL_TOKEN: ${TRANSLATION_INTERNAL_TOKEN:-}
 
     ports:
       - "${TRANSLATION_BIND_ADDRESS:-127.0.0.1}:${TRANSLATION_PORT:-8100}:8000"
@@ -432,7 +439,7 @@ services:
       - "${TRANSLATION_MODEL_HOST_PATH:-./models/nllb-200-distilled-1.3B-ct2-int8}:/models/nllb:ro"
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/ready"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -619,7 +626,7 @@ services:
         condition: service_healthy
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/ready"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -811,7 +818,7 @@ services:
         condition: service_healthy
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/ready"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -923,7 +930,7 @@ services:
         condition: service_healthy
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/ready"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1030,7 +1037,7 @@ services:
         condition: service_healthy
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/ready"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1136,7 +1143,7 @@ services:
         condition: service_healthy
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/ready"]
       interval: 30s
       timeout: 10s
       retries: 5

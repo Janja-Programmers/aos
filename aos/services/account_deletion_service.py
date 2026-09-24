@@ -752,6 +752,8 @@ _CHAT_PRIVATE_USER_FIELDS = {
     "AOS Message Star": "user",
     "AOS Message Reaction": "user",
     "AOS Message Translation": "translated_by",
+    "AOS Message User State": "user",
+    "AOS Chat Lock Credential": "user",
 }
 
 
@@ -782,58 +784,25 @@ def _delete_chat_user_rows_bounded(*, doctype: str, field: str, user: str, batch
 
 
 def _cleanup_chat_private_state(*, user: str) -> dict[str, int]:
-    """Remove private Chat state without erasing shared conversation history."""
-
+    """Remove account-private Chat state and deactivate memberships without erasing shared history."""
     summary = {
-        "chat_stars_removed": _delete_chat_user_rows_bounded(
-            doctype="AOS Message Star", field="user", user=user
-        ),
-        "chat_reactions_removed": _delete_chat_user_rows_bounded(
-            doctype="AOS Message Reaction", field="user", user=user
-        ),
-        "chat_translation_cache_removed": _delete_chat_user_rows_bounded(
-            doctype="AOS Message Translation", field="translated_by", user=user
-        ),
+        "chat_stars_removed": _delete_chat_user_rows_bounded(doctype="AOS Message Star", field="user", user=user),
+        "chat_reactions_removed": _delete_chat_user_rows_bounded(doctype="AOS Message Reaction", field="user", user=user),
+        "chat_translation_cache_removed": _delete_chat_user_rows_bounded(doctype="AOS Message Translation", field="translated_by", user=user),
+        "chat_message_state_removed": _delete_chat_user_rows_bounded(doctype="AOS Message User State", field="user", user=user),
+        "chat_lock_credentials_removed": _delete_chat_user_rows_bounded(doctype="AOS Chat Lock Credential", field="user", user=user),
         "chat_conversations_deactivated": 0,
     }
-
-    if not _doctype_exists("AOS Conversation"):
+    if not _doctype_exists("AOS Conversation Participant"):
         return summary
+    from aos.services.chat.membership import deactivate_account_memberships
 
     total = 0
     while True:
-        rows = frappe.db.sql(
-            """
-            SELECT name, participant_1, participant_2
-            FROM `tabAOS Conversation`
-            WHERE (participant_1 = %(user)s AND IFNULL(is_active_1, 1) = 1)
-               OR (participant_2 = %(user)s AND IFNULL(is_active_2, 1) = 1)
-            ORDER BY name
-            LIMIT 500
-            FOR UPDATE
-            """,
-            {"user": user},
-            as_dict=True,
-        )
-        if not rows:
+        count = deactivate_account_memberships(user, limit=500)
+        total += count
+        if count < 500:
             break
-        p1_ids = [str(row.name) for row in rows if row.participant_1 == user]
-        p2_ids = [str(row.name) for row in rows if row.participant_2 == user]
-        if p1_ids:
-            frappe.db.sql(
-                """UPDATE `tabAOS Conversation`
-                SET is_active_1 = 0, unread_count_1 = 0
-                WHERE name IN %(names)s""",
-                {"names": tuple(p1_ids)},
-            )
-        if p2_ids:
-            frappe.db.sql(
-                """UPDATE `tabAOS Conversation`
-                SET is_active_2 = 0, unread_count_2 = 0
-                WHERE name IN %(names)s""",
-                {"names": tuple(p2_ids)},
-            )
-        total += len(rows)
     summary["chat_conversations_deactivated"] = total
     return summary
 

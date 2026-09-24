@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from aos.api.chat.message import send_message_for_user
+from aos.services.chat.message_ops import send_message_for_user
 
 from .errors import ChatError
 

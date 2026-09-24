@@ -88,6 +88,18 @@ def _user_can_manage_resource(*, user: str, doctype: str, name: str) -> bool:
         return frappe.db.get_value(doctype, name, "host_user") == clean_user
     if doctype == "AOS Message":
         return frappe.db.get_value(doctype, name, "sender") == clean_user
+    if doctype == "AOS Conversation":
+        return bool(
+            frappe.db.exists(
+                "AOS Conversation Participant",
+                {
+                    "conversation": name,
+                    "user": clean_user,
+                    "status": "active",
+                    "role": ["in", ["owner", "admin"]],
+                },
+            )
+        )
     if doctype == "AOS Short":
         owner = frappe.db.get_value(doctype, name, "owner")
         if owner == clean_user:

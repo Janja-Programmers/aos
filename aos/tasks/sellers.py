@@ -40,11 +40,10 @@ def refresh_recent_seller_response_metrics() -> int:
 
             FROM `tabAOS Seller` seller
 
+            INNER JOIN `tabAOS Conversation Participant` participant
+                ON participant.user = seller.user AND participant.status='active'
             INNER JOIN `tabAOS Conversation` conversation
-                ON (
-                    conversation.participant_1 = seller.user
-                    OR conversation.participant_2 = seller.user
-                )
+                ON conversation.name=participant.conversation AND conversation.conversation_type='direct'
 
             INNER JOIN `tabAOS Message` message
                 ON message.conversation = conversation.name

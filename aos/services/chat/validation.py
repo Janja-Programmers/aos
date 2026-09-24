@@ -29,6 +29,10 @@ MAX_CURSOR_LENGTH = 512
 MAX_ATTACHMENTS = 10
 MAX_MULTI_MESSAGE_IDS = 100
 MAX_FORWARD_TARGETS = 20
+MAX_GROUP_MEMBER_INPUT = 255
+MAX_GROUP_TITLE_LENGTH = 140
+MAX_LOCK_SECRET_LENGTH = 64
+MAX_LOCK_TOKEN_LENGTH = 256
 MAX_JSON_DEPTH = 8
 
 TRANSPORT_FIELDS = frozenset({"cmd"})
@@ -132,6 +136,13 @@ def validate_public_kwargs(kwargs: Mapping[str, Any], spec: EndpointSpec) -> dic
         clean["user"] = normalize_text(clean["user"], field="user", max_length=254, required=True)
     if "content" in clean and clean.get("content") is not None:
         clean["content"] = normalize_text(clean["content"], field="content", max_length=MAX_CONTENT_LENGTH)
+    if "title" in clean and clean.get("title") is not None:
+        clean["title"] = normalize_text(clean["title"], field="title", max_length=MAX_GROUP_TITLE_LENGTH, required=True)
+    for field in ("secret", "current_secret"):
+        if field in clean and clean.get(field) is not None:
+            clean[field] = normalize_text(clean[field], field=field, max_length=MAX_LOCK_SECRET_LENGTH, required=True)
+    if "lock_token" in clean and clean.get("lock_token") is not None:
+        clean["lock_token"] = normalize_text(clean["lock_token"], field="lock_token", max_length=MAX_LOCK_TOKEN_LENGTH, required=True)
     if "emoji" in clean and clean.get("emoji") is not None:
         clean["emoji"] = normalize_text(clean["emoji"], field="emoji", max_length=MAX_EMOJI_LENGTH)
     for field in ("source_language", "target_language"):
@@ -180,6 +191,10 @@ def validate_public_kwargs(kwargs: Mapping[str, Any], spec: EndpointSpec) -> dic
         clean["message_ids"] = _normalize_id_list(
             clean.get("message_ids"), field="message_ids", pattern=MESSAGE_ID_RE, maximum=MAX_MULTI_MESSAGE_IDS
         )
+    if "participant_ids" in clean:
+        clean["participant_ids"] = _normalize_id_list(
+            clean.get("participant_ids"), field="participant_ids", pattern=PUBLIC_ACCOUNT_ID_RE, maximum=MAX_GROUP_MEMBER_INPUT
+        )
     if "target_conversation_ids" in clean:
         clean["target_conversation_ids"] = _normalize_id_list(
             clean.get("target_conversation_ids"),
@@ -206,7 +221,14 @@ def validate_public_kwargs(kwargs: Mapping[str, Any], spec: EndpointSpec) -> dic
             raise ChatError("Invalid delete scope.", data={"field": "delete_scope"})
         clean["delete_scope"] = scope
 
-    for field in ("is_typing", "force_refresh", "starred"):
+    if "role" in clean and clean.get("role") not in (None, ""):
+        role = normalize_text(clean["role"], field="role", max_length=16).lower()
+        if role not in {"admin", "member"}:
+            raise ChatError("Invalid group role.", data={"field": "role"})
+        clean["role"] = role
+
+    for field in ("is_typing", "force_refresh", "starred", "locked", "hide_locked_chats", "remove_avatar"):
+
         if field in clean and clean.get(field) not in (None, ""):
             clean[field] = _normalize_bool(clean[field], field=field)
 

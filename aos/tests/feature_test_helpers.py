@@ -507,10 +507,12 @@ class AOSFeatureTestMixin:
         return ad
 
     def make_conversation(self, user_a: str, user_b: str, *, with_message: bool = False):
-        p1, p2 = sorted([user_a, user_b])
+        from aos.services.chat.membership import create_membership, direct_key
+
+        key = direct_key(user_a, user_b)
         conv_name = frappe.db.get_value(
             "AOS Conversation",
-            {"participant_1": p1, "participant_2": p2},
+            {"conversation_type": "direct", "direct_key": key},
             "name",
         )
         if conv_name:
@@ -519,13 +521,19 @@ class AOSFeatureTestMixin:
             conv = frappe.get_doc(
                 {
                     "doctype": "AOS Conversation",
-                    "participant_1": p1,
-                    "participant_2": p2,
-                    "is_active_1": 1,
-                    "is_active_2": 1,
+                    "conversation_type": "direct",
+                    "direct_key": key,
+                    "created_by": user_a,
+                    "participant_count": 2,
+                    "membership_version": 1,
                 }
             )
             conv.insert(ignore_permissions=True)
+        for user in (user_a, user_b):
+            create_membership(
+                conversation_id=conv.name, user=user, role="member", added_by=user_a, visible_from=conv.creation
+            )
+        frappe.db.set_value("AOS Conversation", conv.name, "participant_count", 2, update_modified=False)
 
         if with_message and not frappe.db.exists("AOS Message", {"conversation": conv.name}):
             frappe.get_doc(
@@ -535,6 +543,7 @@ class AOSFeatureTestMixin:
                     "sender": user_a,
                     "message_type": "text",
                     "content": "Feature test communication",
+                    "recipient_count": 1,
                 }
             ).insert(ignore_permissions=True)
 
@@ -830,11 +839,31 @@ class AOSFeatureTestMixin:
         frappe.db.sql("DELETE FROM `tabAOS Live Stream View` WHERE user LIKE %s OR session_id LIKE %s", (email_like, like))
         frappe.db.sql("DELETE FROM `tabAOS Live Stream` WHERE host_user LIKE %s OR title LIKE %s", (email_like, like))
 
-        frappe.db.sql("DELETE FROM `tabAOS Message Attachment` WHERE message IN (SELECT name FROM `tabAOS Message` WHERE sender LIKE %s)", (email_like,))
-        frappe.db.sql("DELETE FROM `tabAOS Message Reaction` WHERE user LIKE %s", (email_like,))
-        frappe.db.sql("DELETE FROM `tabAOS Message Star` WHERE user LIKE %s", (email_like,))
-        frappe.db.sql("DELETE FROM `tabAOS Message` WHERE sender LIKE %s OR conversation IN (SELECT name FROM `tabAOS Conversation` WHERE participant_1 LIKE %s OR participant_2 LIKE %s)", (email_like, email_like, email_like))
-        frappe.db.sql("DELETE FROM `tabAOS Conversation` WHERE participant_1 LIKE %s OR participant_2 LIKE %s", (email_like, email_like))
+        chat_conversations = tuple(
+            frappe.db.sql(
+                "SELECT DISTINCT conversation FROM `tabAOS Conversation Participant` WHERE user LIKE %s",
+                (email_like,),
+                pluck=True,
+            )
+        ) if frappe.db.exists("DocType", "AOS Conversation Participant") else ()
+        if chat_conversations:
+            chat_messages = tuple(
+                frappe.db.sql(
+                    "SELECT name FROM `tabAOS Message` WHERE conversation IN %s",
+                    (chat_conversations,),
+                    pluck=True,
+                )
+            )
+            if chat_messages:
+                frappe.db.sql("DELETE FROM `tabAOS Message Translation` WHERE message IN %s", (chat_messages,))
+                frappe.db.sql("DELETE FROM `tabAOS Message User State` WHERE message IN %s", (chat_messages,))
+                frappe.db.sql("DELETE FROM `tabAOS Message Attachment` WHERE message IN %s", (chat_messages,))
+                frappe.db.sql("DELETE FROM `tabAOS Message Reaction` WHERE message IN %s", (chat_messages,))
+                frappe.db.sql("DELETE FROM `tabAOS Message Star` WHERE message IN %s", (chat_messages,))
+                frappe.db.sql("DELETE FROM `tabAOS Message` WHERE name IN %s", (chat_messages,))
+            frappe.db.sql("DELETE FROM `tabAOS Conversation Participant` WHERE conversation IN %s", (chat_conversations,))
+            frappe.db.sql("DELETE FROM `tabAOS Conversation` WHERE name IN %s", (chat_conversations,))
+        frappe.db.sql("DELETE FROM `tabAOS Chat Lock Credential` WHERE user LIKE %s", (email_like,))
 
         frappe.db.sql("DELETE FROM `tabAOS Review Reaction` WHERE user LIKE %s", (email_like,))
         frappe.db.sql(

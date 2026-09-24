@@ -3,6 +3,9 @@ FROM python:3.14.6-slim-bookworm@sha256:86f975aca15cf04a40b399eebede9aea7c82eae0
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
+ENV HF_HUB_OFFLINE=1
+ENV TRANSFORMERS_OFFLINE=1
+ENV TOKENIZERS_PARALLELISM=false
 
 WORKDIR /app
 
@@ -35,6 +38,12 @@ for so_path in shared_objects:
 PY
 
 COPY app /app/app
+
+RUN addgroup --system --gid 10001 aos \
+    && adduser --system --uid 10001 --ingroup aos --home /nonexistent --no-create-home aos \
+    && chown -R aos:aos /app
+
+USER 10001:10001
 
 EXPOSE 8000
 

@@ -29,6 +29,8 @@ aos.patches.v1_0.install_live_indexes
 aos.patches.v1_0.install_live_runtime_indexes
 
 # Chat data reconciliation must run before Chat uniqueness/query indexes.
+aos.patches.v1_0.migrate_chat_to_group_model
+aos.patches.v1_0.harden_chat_translation_cache
 aos.patches.v1_0.install_chat_indexes
 
 # Calls canonical multi-participant migration and schema invariants.

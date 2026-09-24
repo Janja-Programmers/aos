@@ -390,7 +390,25 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
+    "endpoint": "aos.api.v1.chat.__init__.add_group_members",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
     "endpoint": "aos.api.v1.chat.__init__.clear_chat",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.configure_chat_lock_secret",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.create_group",
     "access": "authenticated",
     "policy": "baseline_authenticated",
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
@@ -420,13 +438,37 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
+    "endpoint": "aos.api.v1.chat.__init__.get_chat_lock_state",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
     "endpoint": "aos.api.v1.chat.__init__.get_presence",
     "access": "authenticated",
     "policy": "baseline_authenticated",
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
+    "endpoint": "aos.api.v1.chat.__init__.leave_group",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
     "endpoint": "aos.api.v1.chat.__init__.list_conversations",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.list_group_members",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.list_locked_conversations",
     "access": "authenticated",
     "policy": "baseline_authenticated",
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
@@ -462,6 +504,18 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
+    "endpoint": "aos.api.v1.chat.__init__.remove_chat_lock_secret",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.remove_group_member",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
     "endpoint": "aos.api.v1.chat.__init__.send_message",
     "access": "authenticated",
     "policy": "baseline_authenticated",
@@ -469,6 +523,18 @@
   },
   {
     "endpoint": "aos.api.v1.chat.__init__.send_typing_event",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.set_conversation_lock",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.set_group_member_role",
     "access": "authenticated",
     "policy": "baseline_authenticated",
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
@@ -486,7 +552,25 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
+    "endpoint": "aos.api.v1.chat.__init__.transfer_group_ownership",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
     "endpoint": "aos.api.v1.chat.__init__.translate_message",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.update_group",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
+  },
+  {
+    "endpoint": "aos.api.v1.chat.__init__.verify_chat_lock_secret",
     "access": "authenticated",
     "policy": "baseline_authenticated",
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."

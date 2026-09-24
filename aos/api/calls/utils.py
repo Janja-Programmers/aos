@@ -32,39 +32,28 @@ def _validate_system_message_inputs(
 
 def _validate_conversation_exists(conversation_id: str) -> None:
     rows = frappe.db.sql(
-        "SELECT name FROM `tabAOS Conversation` WHERE name=%s LIMIT 1 FOR UPDATE",
+        "SELECT name FROM `tabAOS Conversation` WHERE name=%s AND conversation_type='direct' LIMIT 1 FOR UPDATE",
         (conversation_id,),
     )
     if not rows:
-        frappe.throw("Conversation not found")
+        frappe.throw("Direct conversation not found")
 
 
 def _set_conversation_call_preview(
-    *,
-    conversation_id: str,
-    content: str,
-    sender: str,
-    timestamp,
+    *, conversation_id: str, message_id: str, content: str, sender: str, timestamp
 ) -> None:
-    """
-    Update participant-specific conversation previews for a call system message.
-
-    Call system messages are visible to both participants, so both preview
-    slots are updated together.
-    """
-
+    """Project the Calls-owned durable log into the direct Chat inbox."""
     frappe.db.set_value(
-        "AOS Conversation",
-        conversation_id,
-        {
-            "last_message_1": content,
-            "last_message_at_1": timestamp,
-            "last_sender_1": sender,
-            "last_message_2": content,
-            "last_message_at_2": timestamp,
-            "last_sender_2": sender,
-        },
+        "AOS Conversation", conversation_id,
+        {"last_message": content, "last_message_at": timestamp, "last_sender": sender},
         update_modified=False,
+    )
+    frappe.db.sql(
+        """UPDATE `tabAOS Conversation Participant`
+           SET is_hidden=0, last_visible_message=%(message)s, last_visible_message_at=%(at)s,
+               last_visible_sender=%(sender)s
+           WHERE conversation=%(conversation)s AND status='active'""",
+        {"message": message_id, "at": timestamp, "sender": sender, "conversation": conversation_id},
     )
 
 
@@ -129,6 +118,7 @@ def upsert_call_system_message(
         msg.message_type = "system"
         msg.content = content
         msg.call_id = call_id
+        msg.recipient_count = 0
         try:
             msg.insert(ignore_permissions=True)
             msg_name = msg.name
@@ -150,10 +140,8 @@ def upsert_call_system_message(
             )
 
     _set_conversation_call_preview(
-        conversation_id=conversation_id,
-        content=content,
-        sender=SYSTEM_MESSAGE_SENDER,
-        timestamp=now,
+        conversation_id=conversation_id, message_id=msg_name, content=content,
+        sender=SYSTEM_MESSAGE_SENDER, timestamp=now,
     )
 
     return msg_name

@@ -1221,16 +1221,62 @@ class MediaService:
             FROM `tabAOS Media Object` mo
             INNER JOIN `tabAOS Message Attachment` a ON a.media = mo.name
             INNER JOIN `tabAOS Message` m ON m.name = a.message
-            INNER JOIN `tabAOS Conversation` c ON c.name = m.conversation
+            INNER JOIN `tabAOS Conversation Participant` cp
+              ON cp.conversation=m.conversation AND cp.user=%(user)s AND cp.status='active'
+            LEFT JOIN `tabAOS Message User State` mus ON mus.message=m.name AND mus.user=%(user)s
             WHERE mo.name IN %(media_ids)s
               AND mo.purpose = 'chat_attachment'
               AND mo.visibility = 'Private'
               AND mo.status IN ('Uploaded', 'Attached')
               AND IFNULL(m.deleted_for_everyone, 0) = 0
-              AND (
-                    (c.participant_1 = %(user)s AND IFNULL(m.deleted_for_1, 0) = 0)
-                 OR (c.participant_2 = %(user)s AND IFNULL(m.deleted_for_2, 0) = 0)
-              )
+              AND m.creation >= cp.visible_from
+              AND (cp.cleared_before IS NULL OR m.creation > cp.cleared_before)
+              AND mus.hidden_at IS NULL
+            LIMIT %(limit)s
+            """,
+            {"media_ids": tuple(unique), "user": clean_user, "limit": len(unique)},
+            as_dict=True,
+        )
+        minutes = self._normalize_download_expiry(expiry_minutes)
+        result: dict[str, str] = {}
+        for row in rows:
+            try:
+                result[str(row.name)] = self.storage.presigned_get_url(
+                    row.bucket, row.object_key, expiry_minutes=minutes
+                )
+            except StorageUnavailableError:
+                continue
+        return result
+
+    def get_chat_group_avatar_url_map(
+        self,
+        media_ids: Iterable[str],
+        *,
+        user: str,
+        expiry_minutes: int | None = None,
+    ) -> dict[str, str]:
+        """Resolve private group-avatar URLs for active conversation members."""
+
+        clean_user = str(user or "").strip()
+        if not clean_user or clean_user == "Guest":
+            raise MediaPermissionError("Authentication is required", code="AUTH_REQUIRED")
+        unique = sorted({str(media_id or "").strip() for media_id in media_ids if media_id})
+        if not unique:
+            return {}
+        rows = frappe.db.sql(
+            """
+            SELECT DISTINCT mo.name, mo.bucket, mo.object_key
+            FROM `tabAOS Media Object` mo
+            INNER JOIN `tabAOS Conversation Participant` cp
+              ON cp.conversation = mo.attached_name
+             AND cp.user = %(user)s
+             AND cp.status = 'active'
+            WHERE mo.name IN %(media_ids)s
+              AND mo.purpose = 'chat_group_avatar'
+              AND mo.visibility = 'Private'
+              AND mo.status = 'Attached'
+              AND mo.attached_doctype = 'AOS Conversation'
+              AND mo.attached_field = 'avatar_media'
             LIMIT %(limit)s
             """,
             {"media_ids": tuple(unique), "user": clean_user, "limit": len(unique)},
@@ -1860,14 +1906,14 @@ class MediaService:
                 SELECT a.name
                 FROM `tabAOS Message Attachment` a
                 INNER JOIN `tabAOS Message` m ON m.name = a.message
-                INNER JOIN `tabAOS Conversation` c ON c.name = m.conversation
+                INNER JOIN `tabAOS Conversation Participant` cp
+                  ON cp.conversation=m.conversation AND cp.user=%(user)s AND cp.status='active'
+                LEFT JOIN `tabAOS Message User State` mus ON mus.message=m.name AND mus.user=%(user)s
                 WHERE a.media = %(media)s
                   AND IFNULL(m.deleted_for_everyone, 0) = 0
-                  AND (
-                    (c.participant_1 = %(user)s AND IFNULL(m.deleted_for_1, 0) = 0)
-                    OR
-                    (c.participant_2 = %(user)s AND IFNULL(m.deleted_for_2, 0) = 0)
-                  )
+                  AND m.creation >= cp.visible_from
+                  AND (cp.cleared_before IS NULL OR m.creation > cp.cleared_before)
+                  AND mus.hidden_at IS NULL
                 LIMIT 1
                 """,
                 {"media": doc.name, "user": user},

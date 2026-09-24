@@ -1,0 +1,173 @@
+{
+ "actions": [],
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "conversation",
+  "user",
+  "role",
+  "status",
+  "joined_at",
+  "visible_from",
+  "left_at",
+  "added_by",
+  "column_break",
+  "unread_count",
+  "is_hidden",
+  "cleared_before",
+  "last_visible_message",
+  "last_visible_message_at",
+  "last_visible_sender",
+  "is_locked",
+  "lock_changed_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "conversation",
+   "fieldtype": "Link",
+   "label": "Conversation",
+   "options": "AOS Conversation",
+   "reqd": 1,
+   "search_index": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "role",
+   "fieldtype": "Select",
+   "label": "Role",
+   "options": "owner\nadmin\nmember",
+   "reqd": 1,
+   "default": "member",
+   "search_index": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "active\nleft\nremoved",
+   "reqd": 1,
+   "default": "active",
+   "search_index": 1
+  },
+  {
+   "fieldname": "joined_at",
+   "fieldtype": "Datetime",
+   "label": "Joined At",
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "visible_from",
+   "fieldtype": "Datetime",
+   "label": "History Visible From",
+   "reqd": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "left_at",
+   "fieldtype": "Datetime",
+   "label": "Left At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "added_by",
+   "fieldtype": "Link",
+   "label": "Added By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "unread_count",
+   "fieldtype": "Int",
+   "label": "Unread Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "is_hidden",
+   "fieldtype": "Check",
+   "label": "Hidden From Inbox",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cleared_before",
+   "fieldtype": "Datetime",
+   "label": "Cleared Before",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_visible_message",
+   "fieldtype": "Link",
+   "label": "Last Visible Message",
+   "options": "AOS Message",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_visible_message_at",
+   "fieldtype": "Datetime",
+   "label": "Last Visible Message At",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "last_visible_sender",
+   "fieldtype": "Link",
+   "label": "Last Visible Sender",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "is_locked",
+   "fieldtype": "Check",
+   "label": "Locked For User",
+   "default": "0",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "lock_changed_at",
+   "fieldtype": "Datetime",
+   "label": "Lock Changed At",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "module": "AOS",
+ "name": "AOS Conversation Participant",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "joined_at",
+ "sort_order": "ASC",
+ "states": []
+}
