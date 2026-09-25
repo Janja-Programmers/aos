@@ -47,6 +47,29 @@ def test_spacing_evasion_is_detected():
     assert any(item["category"] == "profanity" for item in signals)
 
 
+
+
+def test_profanity_inflections_reject_without_substring_matching():
+    signals, failures = detect_text(
+        [{"field": "comment", "text": "you are a fucking scammer"}],
+        max_chars=500,
+    )
+    assert not failures
+    profanity = [item for item in signals if item["category"] == "profanity"]
+    assert profanity
+    assert profanity[0]["detector_version"] == "3"
+    assert profanity[0]["evidence"] == ["fuck-family"]
+    assert evaluate_policy(signals).decision == "reject"
+
+    for value in ("this is fucked", "fucker", "motherfuckers", "cunts", "f.u.c.k.i.n.g"):
+        variant_signals, _ = detect_text([{"field": "comment", "text": value}], max_chars=500)
+        assert any(item["category"] == "profanity" for item in variant_signals), value
+
+    for value in ("Scunthorpe classic furniture", "firetruck", "motherhood"):
+        innocent, _ = detect_text([{"field": "comment", "text": value}], max_chars=500)
+        assert not any(item["category"] == "profanity" for item in innocent), value
+
+
 def test_near_uniform_vision_tie_does_not_force_manual_review():
     result = evaluate_policy(
         [{"category": "nudity", "confidence": 0.132396, "severity": "medium", "source": "image"}],

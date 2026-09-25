@@ -59,7 +59,7 @@ _ACTION_TRANSITIONS = {
     },
 }
 _DECISION_ACTIONS = frozenset({"moderation_allow", "moderation_reject", "moderation_review", "manual_approve", "manual_reject", "admin_hide"})
-_CONTENT_FIELDS = ("rating", "title", "comment", "review_images")
+_SCALAR_CONTENT_FIELDS = ("rating", "title", "comment")
 _IMMUTABLE_FIELDS = ("public_id", "ad", "reviewer", "review_key", "eligibility_basis", "eligibility_reference")
 
 
@@ -164,8 +164,18 @@ class AOSReview(Document):
             return
 
         changed_fields = {
-            fieldname for fieldname in _CONTENT_FIELDS if self.has_value_changed(fieldname)
+            fieldname for fieldname in _SCALAR_CONTENT_FIELDS if self.has_value_changed(fieldname)
         }
+        # Frappe child-table change tracking is based on child document state,
+        # not only the review's canonical media relationship. A moderation-only
+        # save can therefore report review_images as changed even when the
+        # ordered Media IDs are identical (for example after child rows are
+        # rehydrated/normalized). Compare the durable content identity instead
+        # so internal lifecycle decisions never masquerade as owner edits.
+        previous_media = [str(row.media or "").strip() for row in (previous.review_images or [])]
+        current_media = [str(row.media or "").strip() for row in (self.review_images or [])]
+        if previous_media != current_media:
+            changed_fields.add("review_images")
         if not changed_fields:
             return
 

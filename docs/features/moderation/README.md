@@ -53,7 +53,7 @@ Every job stores `content_fingerprint`, `content_version`, and a unique `evaluat
 Each evaluation stores the policy version. Frappe rejects a callback whose policy version does not match the requested job. Re-evaluating unchanged content under a new policy produces a distinct logical evaluation key.
 
 ## Provider/Model Architecture
-Text rules are `aos_text_rules:2`. Vision uses the self-hosted image-search OpenCLIP runtime through an authenticated adapter. Provider output is normalized before policy evaluation. Provider credentials are environment secrets and are excluded from model/job payloads, Desk fields and logs.
+Text rules are `aos_text_rules:3`. Vision uses the self-hosted image-search OpenCLIP runtime through an authenticated adapter. Provider output is normalized before policy evaluation. Provider credentials are environment secrets and are excluded from model/job payloads, Desk fields and logs.
 
 ## Reports Integration
 Report Reason remains the reporter's allegation. Moderation Category is the moderation determination. Report count is not automatic guilt; current Reports does not directly mutate moderation decisions.

@@ -167,6 +167,44 @@ class TestReviewsDatabase(AOSFeatureTestMixin, FrappeTestCase):
         with self.assertRaises(frappe.PermissionError):
             doc.save(ignore_permissions=True)
 
+    def test_moderation_action_cannot_mutate_review_media_content(self):
+        media = self.make_media(owner=self.author, purpose="review_image")
+        public_id = self._create(media=[media.name])["review"]["id"]
+        doc = self._doc(public_id)
+
+        frappe.set_user("Guest")
+        doc.flags.aos_review_action = "moderation_allow"
+        doc.status = "Approved"
+        doc.set("review_images", [])
+        with self.assertRaises(frappe.PermissionError):
+            doc.save(ignore_permissions=True)
+
+    def test_automated_moderation_with_review_image_does_not_require_owner_edit(self):
+        media = self.make_media(owner=self.author, purpose="review_image")
+        public_id = self._create(media=[media.name])["review"]["id"]
+        doc = self._doc(public_id)
+        self.assertEqual([row.media for row in doc.review_images], [media.name])
+        self.assertEqual(doc.status, "Pending")
+
+        job = SimpleNamespace(
+            target_name=doc.name,
+            context_json=json.dumps({"moderation_generation": int(doc.moderation_generation or 1)}),
+        )
+        frappe.set_user("Guest")
+        with patch("aos.services.reviews.moderation.notify_review_decision", return_value=None):
+            _apply_review_decision(job, "review", ["vision uncertainty: weapons meaningfully outranked safe"])
+
+        reviewed = self._doc(public_id)
+        self.assertEqual(reviewed.status, "Pending")
+        self.assertEqual(reviewed.review_notes, "vision uncertainty: weapons meaningfully outranked safe")
+        self.assertEqual([row.media for row in reviewed.review_images], [media.name])
+
+        with patch("aos.services.reviews.moderation.notify_review_decision", return_value=None):
+            _apply_review_decision(job, "allow", [])
+        approved = self._doc(public_id)
+        self.assertEqual(approved.status, "Approved")
+        self.assertEqual([row.media for row in approved.review_images], [media.name])
+
     def test_manual_and_automated_moderation_are_generation_safe(self):
         public_id = self._create()["review"]["id"]
         doc = self._doc(public_id)

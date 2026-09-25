@@ -11,8 +11,25 @@ _LEET = str.maketrans({"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t
 # These rules are deliberately token/phrase based rather than substring based.
 # They are one detector among several and only high-confidence unambiguous rules
 # are eligible for automatic rejection.
+#
+# Strong profanity needs bounded inflection handling: exact-token matching of only
+# ``fuck`` missed ordinary forms such as ``fucking``/``fucked``.  Keep these as
+# full-token regex families so innocent words are never matched by substring.
+_TOKEN_FAMILY_RULES: tuple[tuple[str, str, str, float, tuple[tuple[re.Pattern[str], str], ...]], ...] = (
+    (
+        "profanity",
+        "high",
+        "strong profanity",
+        0.98,
+        (
+            (re.compile(r"^fuck(?:s|ed|er|ers|ing|in)?$"), "fuck-family"),
+            (re.compile(r"^motherfuck(?:er|ers|ing)?$"), "motherfuck-family"),
+            (re.compile(r"^cunt(?:s)?$"), "cunt-family"),
+        ),
+    ),
+)
+
 _RULES: tuple[tuple[str, str, str, float, tuple[str, ...]], ...] = (
-    ("profanity", "high", "strong profanity", 0.98, ("fuck", "motherfucker", "cunt")),
     ("pornography", "critical", "pornographic solicitation", 0.97, ("hardcore porn", "child porn", "porn video")),
     ("sexual_explicit", "high", "explicit sexual solicitation", 0.94, ("buy sex", "sexual services", "explicit sex video")),
     ("hate", "critical", "explicit hate advocacy", 0.97, ("kill all muslims", "kill all jews", "kill all christians", "kill all gay people", "kill all black people", "kill all white people", "exterminate all muslims", "exterminate all jews")),
@@ -59,6 +76,29 @@ def detect_text(items: list[dict[str, Any]], *, max_chars: int) -> tuple[list[di
         normalized, tokens = _normalize(raw)
         if not normalized:
             continue
+        for category, severity, rationale, confidence, families in _TOKEN_FAMILY_RULES:
+            matched_labels = sorted({
+                label
+                for token in tokens
+                for pattern, label in families
+                if pattern.fullmatch(token)
+            })
+            if matched_labels:
+                signals.append(
+                    {
+                        "category": category,
+                        "severity": severity,
+                        "confidence": confidence,
+                        "source": "text",
+                        "field": field,
+                        "detector": "aos_text_rules",
+                        "detector_version": "3",
+                        "reason": rationale,
+                        # Store canonical family labels, never the user's raw token/text.
+                        "evidence": matched_labels[:5],
+                    }
+                )
+
         for category, severity, rationale, confidence, phrases in _RULES:
             matched = [phrase for phrase in phrases if _phrase_matches(normalized, tokens, phrase)]
             if not matched:
@@ -71,7 +111,7 @@ def detect_text(items: list[dict[str, Any]], *, max_chars: int) -> tuple[list[di
                     "source": "text",
                     "field": field,
                     "detector": "aos_text_rules",
-                    "detector_version": "2",
+                    "detector_version": "3",
                     "reason": rationale,
                     # Store only matched canonical rule labels, never full user text.
                     "evidence": matched[:5],
