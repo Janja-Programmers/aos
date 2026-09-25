@@ -9,14 +9,15 @@ from pathlib import Path
 
 API_ROOT = Path(__file__).resolve().parents[1] / "api"
 V1_ROOT = API_ROOT / "v1"
-INTERNAL_FEATURES_TO_SKIP = {"internal", "shared", "v1", "__pycache__"}
+NON_FEATURE_API_PACKAGES = {"internal", "shared", "v1", "__pycache__"}
+INTERNAL_ONLY_FEATURES = {"moderation"}
 
 
 def _feature_init_paths() -> list[Path]:
     return [
         path
         for path in sorted(API_ROOT.glob("*/__init__.py"))
-        if path.parent.name not in INTERNAL_FEATURES_TO_SKIP
+        if path.parent.name not in NON_FEATURE_API_PACKAGES | INTERNAL_ONLY_FEATURES
     ]
 
 
@@ -97,6 +98,21 @@ class TestAPIVersioning(unittest.TestCase):
         self.assertFalse(
             missing,
             "Missing v1 public API modules:\n" + "\n".join(missing),
+        )
+
+    def test_internal_only_features_have_no_public_v1_namespace(self):
+        """Internal-only capabilities must not accidentally become public API surfaces."""
+
+        exposed = [
+            f"aos.api.v1.{feature}"
+            for feature in sorted(INTERNAL_ONLY_FEATURES)
+            if (V1_ROOT / feature / "__init__.py").exists()
+        ]
+
+        self.assertFalse(
+            exposed,
+            "Internal-only API features unexpectedly have public v1 namespaces:\n"
+            + "\n".join(exposed),
         )
 
     def test_v1_public_wrappers_are_whitelisted(self):
