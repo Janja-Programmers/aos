@@ -289,6 +289,49 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 
 					self._run_isolated(scenario)
 
+	def test_moderation_duplicate_callback_repairs_nonterminal_job_after_outbox_completed(self):
+		with patch.dict(os.environ, _ENV, clear=False):
+			adapter = next(item for item in _ADAPTERS if item.service_type == "moderation")
+
+			def scenario() -> None:
+				fixture, outbox, token = self._setup(adapter)
+				payload = self._success_payload(adapter, fixture, outbox, token)
+				first = self._invoke(adapter, payload)
+				self.assertTrue(first["ok"], first)
+				fixture.job.reload()
+				outbox.reload()
+				self.assertEqual(fixture.job.status, "Review Required")
+				self.assertEqual(outbox.status, "Completed")
+
+				# Reproduce the production inconsistency observed on staging: the
+				# companion/outbox has durably acknowledged the callback, but the
+				# correlated moderation job is non-terminal. An exact duplicate
+				# callback must repair the job instead of becoming a permanent no-op.
+				frappe.db.set_value(
+					"AOS Moderation Job",
+					fixture.job.name,
+					{
+						"status": "Processing",
+						"decision": "pending",
+						"decision_source": None,
+						"decided_at": None,
+						"completed_at": None,
+					},
+					update_modified=False,
+				)
+				frappe.db.commit()
+
+				repair = self._invoke(adapter, payload)
+				self.assertTrue(repair["ok"], repair)
+				fixture.job.reload()
+				outbox.reload()
+				self.assertEqual(fixture.job.status, "Review Required")
+				self.assertEqual(fixture.job.decision, "review")
+				self.assertEqual(fixture.job.decision_source, "automatic")
+				self.assertEqual(outbox.status, "Completed")
+
+			self._run_isolated(scenario)
+
 	def test_valid_failure_and_duplicate_failure_are_atomic_and_idempotent(self):
 		with patch.dict(os.environ, _ENV, clear=False):
 			for adapter in _ADAPTERS:

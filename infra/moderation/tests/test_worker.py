@@ -17,6 +17,10 @@ def moderation_settings():
 		vision_secret="secret",
 		vision_allowed_hosts=("image-search",),
 		vision_timeout_seconds=10,
+		vision_max_image_bytes=786432,
+		vision_max_total_bytes=4194304,
+		vision_max_dimension=1024,
+		vision_max_pixels=25000000,
 		environment="test",
 	)
 

@@ -69,6 +69,10 @@ class Settings:
     vision_allowed_hosts: tuple[str, ...] = _csv("MODERATION_VISION_ALLOWED_HOSTS", "image-search")
     vision_timeout_seconds: int = _int("MODERATION_VISION_TIMEOUT_SECONDS", 45, min_value=5, max_value=180)
     vision_ready_url: str = _clean(os.getenv("MODERATION_VISION_READY_URL"), "http://image-search:8000/internal/moderation/ready")
+    vision_max_image_bytes: int = _int("MODERATION_VISION_MAX_IMAGE_BYTES", 786432, min_value=65536, max_value=1048576)
+    vision_max_total_bytes: int = _int("MODERATION_VISION_MAX_TOTAL_BYTES", 4194304, min_value=65536, max_value=6291456)
+    vision_max_dimension: int = _int("MODERATION_VISION_MAX_DIMENSION", 1024, min_value=224, max_value=2048)
+    vision_max_pixels: int = _int("MODERATION_VISION_MAX_PIXELS", 25000000, min_value=1000000, max_value=40000000)
 
 
 

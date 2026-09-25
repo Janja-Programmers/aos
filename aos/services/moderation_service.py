@@ -420,10 +420,25 @@ def handle_moderation_callback(payload: dict[str, Any]) -> object:
 	incoming_status = str(payload.get("status") or "").strip().lower()
 	canonical_status = "completed" if incoming_status in {"completed", "ready"} else incoming_status
 	validation = validate_callback_idempotency(job, payload, callback_status=canonical_status)
-	if validation.duplicate:
-		return job
-
 	completed_statuses = {"Allowed", "Review Required", "Rejected"}
+	if validation.duplicate:
+		# A callback can be durably acknowledged by the outbox while the correlated
+		# moderation job is left non-terminal by a historical fast-callback race.
+		# Treat an exact, signed, generation/token-matched duplicate as repair
+		# evidence when the domain job is inconsistent. Reapplying the same result
+		# is safe because feature adapters are version/state guarded and the outbox
+		# terminal update itself is idempotent. A fully terminal job remains a true
+		# no-op.
+		if job.status in completed_statuses or job.status == "Failed":
+			return job
+		if incoming_status in {"completed", "ready"}:
+			return mark_moderation_job_completed(job, payload)
+		if incoming_status == "failed":
+			return mark_moderation_job_failed(
+				job.name, str(payload.get("error") or "Moderation failed"), commit=False
+			)
+		raise ModerationError("Invalid moderation callback status")
+
 	if job.status in completed_statuses or job.status == "Failed":
 		if job.status in completed_statuses and incoming_status in {"completed", "ready"}:
 			mark_outbox_callback(
