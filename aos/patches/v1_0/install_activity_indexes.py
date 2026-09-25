@@ -1,4 +1,4 @@
-"""Install Activity Center uniqueness and timeline indexes."""
+"""Install the query and idempotency indexes used by Activity Center."""
 
 from __future__ import annotations
 
@@ -8,10 +8,26 @@ import frappe
 
 INDEX_DEFINITIONS: tuple[tuple[str, tuple[str, ...], bool], ...] = (
     ("uq_aos_activity_active", ("active_key",), True),
-    ("idx_aos_activity_user_timeline", ("user", "status", "last_occurrence_at", "creation", "name"), False),
-    ("idx_aos_activity_group_timeline", ("user", "status", "activity_group", "last_occurrence_at", "creation", "name"), False),
-    ("idx_aos_activity_type_timeline", ("user", "status", "activity_type", "last_occurrence_at", "creation", "name"), False),
+    ("uq_aos_activity_event", ("event_key",), True),
+    (
+        "idx_aos_activity_user_timeline",
+        ("user", "status", "last_occurrence_at", "creation", "public_id"),
+        False,
+    ),
+    (
+        "idx_aos_activity_group_timeline",
+        ("user", "status", "activity_group", "last_occurrence_at", "creation", "public_id"),
+        False,
+    ),
+    (
+        "idx_aos_activity_type_timeline",
+        ("user", "status", "activity_type", "last_occurrence_at", "creation", "public_id"),
+        False,
+    ),
+    # Account permanent-purge and resource lifecycle redaction use route lookup.
     ("idx_aos_activity_route_target", ("route_type", "route_id", "status", "user"), False),
+    # Hourly bounded retention cleanup scans oldest occurrence first.
+    ("idx_aos_activity_retention", ("last_occurrence_at", "name"), False),
 )
 
 
@@ -43,7 +59,7 @@ def _ensure_columns(doctype: str, columns: Sequence[str]) -> None:
 
 
 def _assert_unique_ready(doctype: str, columns: Sequence[str], index_name: str) -> None:
-    non_null = " AND ".join(f"`{column}` IS NOT NULL" for column in columns)
+    non_null = " AND ".join(f"`{column}` IS NOT NULL AND `{column}` != ''" for column in columns)
     group_by = ", ".join(f"`{column}`" for column in columns)
     duplicate = frappe.db.sql(
         f"""
@@ -55,7 +71,7 @@ def _assert_unique_ready(doctype: str, columns: Sequence[str], index_name: str) 
         """
     )
     if duplicate:
-        frappe.throw(f"Cannot install Activity unique index {index_name}; duplicate active rows remain")
+        frappe.throw(f"Cannot install Activity unique index {index_name}; duplicate keys remain")
 
 
 def _ensure_index(doctype: str, index_name: str, columns: tuple[str, ...], *, unique: bool) -> None:

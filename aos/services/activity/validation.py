@@ -1,4 +1,4 @@
-"""Strict Activity Center request validation."""
+"""Strict Activity Center public-request validation."""
 
 from __future__ import annotations
 
@@ -7,25 +7,25 @@ from typing import Any, Iterable
 
 from .constants import (
     ACTIVITY_GROUP_MAX_LEN,
-    ACTIVITY_ID_MAX_LEN,
     ACTIVITY_TYPE_MAX_LEN,
     DEFAULT_ACTIVITY_LIMIT,
     MAX_ACTIVITY_LIMIT,
-    MAX_ACTIVITY_START,
+    MAX_CURSOR_LENGTH,
+    EVENT_SPECS,
     VALID_ACTIVITY_GROUPS,
     VALID_ACTIVITY_TYPES,
 )
 from .errors import ActivityValidationError
+from .identity import normalize_activity_id as _normalize_public_activity_id
 
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def ensure_known_fields(payload: dict[str, Any], allowed: Iterable[str]) -> None:
-    unknown = sorted(str(key) for key in payload if key not in set(allowed))
+    allowed_set = set(allowed)
+    unknown = sorted(str(key) for key in payload if key not in allowed_set)
     if unknown:
-        raise ActivityValidationError(
-            f"Unsupported activity fields: {', '.join(unknown[:10])}."
-        )
+        raise ActivityValidationError(f"Unsupported activity fields: {', '.join(unknown[:10])}.")
 
 
 def _optional_text(value: Any, *, field: str, max_length: int) -> str:
@@ -39,21 +39,6 @@ def _optional_text(value: Any, *, field: str, max_length: int) -> str:
     return normalized
 
 
-def aliased_text(
-    payload: dict[str, Any],
-    primary: str,
-    alias: str,
-    *,
-    field: str,
-    max_length: int,
-) -> str:
-    first = _optional_text(payload.get(primary), field=field, max_length=max_length)
-    second = _optional_text(payload.get(alias), field=field, max_length=max_length)
-    if first and second and first != second:
-        raise ActivityValidationError(f"Conflicting {field.lower()} aliases.")
-    return first or second
-
-
 def normalize_limit(value: Any) -> int:
     if value in (None, ""):
         return DEFAULT_ACTIVITY_LIMIT
@@ -64,64 +49,36 @@ def normalize_limit(value: Any) -> int:
     except (TypeError, ValueError):
         raise ActivityValidationError("Invalid activity limit.") from None
     if limit < 1 or limit > MAX_ACTIVITY_LIMIT:
-        raise ActivityValidationError(
-            f"Activity limit must be between 1 and {MAX_ACTIVITY_LIMIT}."
-        )
+        raise ActivityValidationError(f"Activity limit must be between 1 and {MAX_ACTIVITY_LIMIT}.")
     return limit
 
 
-def normalize_start(value: Any) -> int:
-    if value in (None, ""):
-        return 0
-    if isinstance(value, bool):
-        raise ActivityValidationError("Invalid activity offset.")
-    try:
-        start = int(value)
-    except (TypeError, ValueError):
-        raise ActivityValidationError("Invalid activity offset.") from None
-    if start < 0 or start > MAX_ACTIVITY_START:
-        raise ActivityValidationError("Invalid activity offset.")
-    return start
+def normalize_cursor(value: Any) -> str:
+    return _optional_text(value, field="Activity cursor", max_length=MAX_CURSOR_LENGTH)
 
 
 def normalize_group_filter(payload: dict[str, Any]) -> str:
-    group = aliased_text(
-        payload,
-        "group",
-        "activity_group",
-        field="Activity group",
-        max_length=ACTIVITY_GROUP_MAX_LEN,
-    )
-    if not group:
-        return ""
-    if group not in VALID_ACTIVITY_GROUPS:
+    group = _optional_text(payload.get("group"), field="Activity group", max_length=ACTIVITY_GROUP_MAX_LEN)
+    if group and group not in VALID_ACTIVITY_GROUPS:
         raise ActivityValidationError("Invalid activity group.")
     return group
 
 
 def normalize_type_filter(payload: dict[str, Any]) -> str:
-    activity_type = aliased_text(
-        payload,
-        "type",
-        "activity_type",
-        field="Activity type",
-        max_length=ACTIVITY_TYPE_MAX_LEN,
-    )
-    if not activity_type:
-        return ""
-    if activity_type not in VALID_ACTIVITY_TYPES:
+    activity_type = _optional_text(payload.get("type"), field="Activity type", max_length=ACTIVITY_TYPE_MAX_LEN)
+    if activity_type and activity_type not in VALID_ACTIVITY_TYPES:
         raise ActivityValidationError("Invalid activity type.")
     return activity_type
 
 
+def validate_filter_pair(*, group: str, activity_type: str) -> None:
+    if group and activity_type and str(EVENT_SPECS[activity_type]["group"]) != group:
+        raise ActivityValidationError("Activity type does not belong to the selected group.")
+
+
 def normalize_activity_id(payload: dict[str, Any]) -> str:
-    activity_id = aliased_text(
-        payload,
-        "activity_id",
-        "id",
-        field="Activity ID",
-        max_length=ACTIVITY_ID_MAX_LEN,
-    )
+    value = _optional_text(payload.get("activity_id"), field="Activity ID", max_length=64)
+    activity_id = _normalize_public_activity_id(value)
     if not activity_id:
-        raise ActivityValidationError("Activity ID is required.")
+        raise ActivityValidationError("Invalid activity ID.")
     return activity_id

@@ -309,7 +309,7 @@ def _activity_snapshot_conditions(user: str) -> tuple[str, tuple[Any, ...]]:
         placeholders = ",".join(["%s"] * len(sellers))
         clauses.append(
             "(route_type = 'ad' AND route_id IN "
-            f"(SELECT name FROM `tabAOS Ad` WHERE seller IN ({placeholders})))"
+            f"(SELECT public_id FROM `tabAOS Ad` WHERE seller IN ({placeholders}) AND public_id IS NOT NULL))"
         )
         params.extend(sellers)
     if _doctype_exists("AOS Short"):
@@ -357,9 +357,12 @@ def _purge_activity_private_batch(*, user: str, limit: int) -> dict[str, int]:
         frappe.db.sql(
             """
             UPDATE `tabAOS User Activity`
-            SET status = 'Hidden', active_key = NULL,
+            SET status = 'Hidden',
+                target_doctype = '', target_name = '',
                 target_title = 'Unavailable content', target_subtitle = 'Removed',
-                target_image = '', metadata_json = '{}'
+                target_image = '', route_type = '', route_id = '',
+                metadata_json = '{}', unique_key = '',
+                active_key = NULL, event_key = NULL
             WHERE name IN %(names)s
             """,
             {"names": names},
@@ -371,16 +374,26 @@ def _purge_activity_private_batch(*, user: str, limit: int) -> dict[str, int]:
 
 
 def _count_activity_remaining(user: str) -> int:
+    """Return a bounded presence count used only to decide purge completion."""
     if not _doctype_exists("AOS User Activity"):
         return 0
-    own = _count("AOS User Activity", "user = %s", (user,))
-    conditions, params = _activity_snapshot_conditions(user)
-    rows = frappe.db.sql(
-        f"SELECT COUNT(*) AS count FROM `tabAOS User Activity` WHERE user != %s AND status != 'Hidden' AND ({conditions})",
-        (user, *params),
-        as_dict=True,
+    own = int(
+        bool(
+            frappe.db.sql(
+                "SELECT 1 FROM `tabAOS User Activity` WHERE user=%s LIMIT 1",
+                (user,),
+            )
+        )
     )
-    retained = int((rows[0] or {}).get("count") or 0) if rows else 0
+    conditions, params = _activity_snapshot_conditions(user)
+    retained = int(
+        bool(
+            frappe.db.sql(
+                f"SELECT 1 FROM `tabAOS User Activity` WHERE user != %s AND status != 'Hidden' AND ({conditions}) LIMIT 1",
+                (user, *params),
+            )
+        )
+    )
     return own + retained
 
 def _remaining_bounded_private_rows(user: str) -> int:

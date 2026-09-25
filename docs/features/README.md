@@ -8,7 +8,7 @@ Feature documentation is the canonical human-readable description of AOS busines
 |---|---|---|
 | [Authentication](authentication/README.md) | Registration, login/session, OTP, social login, password recovery/change, delete/restore authentication flow | [Contract](authentication/README.md) |
 | [Accounts](accounts/README.md) | Profile, preferences, account lifecycle, cross-domain deletion/restore ownership | [API](accounts/README.md) |
-| [Activity](activity/README.md) | Private user activity history and cleanup | [API](activity/api.md) |
+| [Activity](activity/README.md) | Private user activity history and cleanup | [API](activity/README.md#api) |
 | [Ads](ads/README.md) | Canonical marketplace Ad/draft lifecycle, eligibility and projections | current Ads contract |
 | [Analytics ingestion](analytics/README.md) | Bounded client telemetry and durable analytics handoff | [API](analytics/api.md) |
 | [Calls](calls/README.md) | Call lifecycle, LiveKit grants, history and reconciliation | [API](calls/api.md) |

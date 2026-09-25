@@ -186,6 +186,7 @@ scheduler_events = {
 		],
 		"*/5 * * * *": [
 			"aos.tasks.notifications.cleanup_notification_retention",
+			"aos.tasks.activity.cleanup_activity_retention",
 			"aos.tasks.media.recover_media_processing_jobs",
 			"aos.tasks.shorts.recover_video_processing",
 			"aos.tasks.live.reconcile_live_state",

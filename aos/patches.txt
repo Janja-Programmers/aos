@@ -42,13 +42,9 @@ aos.patches.v1_0.install_call_public_indexes
 aos.patches.v1_0.harden_reports_subsystem
 aos.patches.v1_0.install_report_indexes
 
-# Activity Center data reconciliation must run before its schema-only indexes.
-aos.patches.v1_0.harden_activity_subsystem
+# Activity current-schema reconciliation must run before its uniqueness indexes.
+aos.patches.v1_0.finalize_activity_read_model
 aos.patches.v1_0.install_activity_indexes
 # Canonical Notifications schema-only indexes.
 aos.patches.v1_0.install_notification_indexes
 
-
-# uniqueness index on upgraded sites; reassert it after the naming change.
-
-# patch. Reconcile any interim duplicate keys, then restore the schema invariant.

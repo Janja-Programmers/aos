@@ -22,7 +22,7 @@ Owner documentation: [docs/features/accounts/README.md](../features/accounts/REA
 
 ## Activity (3)
 
-Owner documentation: [docs/features/activity/api.md](../features/activity/api.md)
+Owner documentation: [docs/features/activity/README.md](../features/activity/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|

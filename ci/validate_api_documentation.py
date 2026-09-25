@@ -13,7 +13,7 @@ END = "<!-- END CODE-DERIVED ENDPOINTS -->"
 
 FEATURE_DOCS = {
 	"accounts": "docs/features/accounts/README.md",
-	"activity": "docs/features/activity/api.md",
+	"activity": "docs/features/activity/README.md",
 	"ads": "docs/features/ads/README.md",
 	"analytics_pipeline": "docs/features/analytics/api.md",
 	"auth": "docs/features/authentication/README.md",
@@ -54,6 +54,7 @@ REQUIRED_HARDENED_FEATURE_SECTIONS = (
 )
 
 SINGLE_FILE_FEATURE_DOCS = {
+	"activity": "docs/features/activity/README.md",
 	"chat": "docs/features/chat/README.md",
 	"accounts": "docs/features/accounts/README.md",
 	"ads": "docs/features/ads/README.md",
