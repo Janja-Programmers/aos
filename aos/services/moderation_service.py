@@ -264,6 +264,47 @@ def enqueue_moderation_dispatch(moderation_job_id: str) -> object:
 	)
 
 
+def _mark_dispatch_processing_if_pending(
+	job_id: str,
+	*,
+	attempt_count: int | None = None,
+	service_job_id: str | None = None,
+	last_error: str | None = None,
+) -> object:
+	"""Advance a dispatched job without overwriting a concurrent terminal callback.
+
+	The companion can finish extremely quickly and callback while the dispatching
+	request is still unwinding.  This conditional UPDATE makes the Frappe-side
+	dispatch completion race-safe: a callback/manual decision that already moved
+	the job out of a pending state always wins.
+	"""
+	sets = ["status = 'Processing'", "started_at = COALESCE(started_at, %s)"]
+	values: list[Any] = [now_datetime()]
+	if attempt_count is not None:
+		sets.append("attempt_count = %s")
+		values.append(max(0, int(attempt_count)))
+	if service_job_id is not None:
+		sets.append("service_job_id = %s")
+		values.append(str(service_job_id or "")[:255])
+	if last_error is not None:
+		sets.append("last_error = %s")
+		values.append(str(last_error or "")[:1000])
+	values.append(job_id)
+	frappe.db.sql(
+		f"""
+		UPDATE `tabAOS Moderation Job`
+		SET {', '.join(sets)}
+		WHERE name = %s
+		  AND status IN ('Queued', 'Dispatching', 'Processing')
+		  AND decision = 'pending'
+		  AND COALESCE(decision_source, '') = ''
+		""",
+		tuple(values),
+	)
+	frappe.db.commit()
+	return frappe.get_doc("AOS Moderation Job", job_id)
+
+
 def dispatch_moderation_job(moderation_job_id: str) -> object:
 	"""Lightweight Frappe RQ dispatcher. Does not analyze content."""
 	job = frappe.get_doc("AOS Moderation Job", moderation_job_id)
@@ -320,34 +361,28 @@ def dispatch_moderation_job(moderation_job_id: str) -> object:
 		data = response.json() if response.content else {}
 		dispatch_action = record_companion_dispatch_outcome(str(data.get("dispatch_action") or ""), data)
 
-		job.reload()
-		if dispatch_action in {"enqueued", "stale_generation_replaced"}:
-			job.attempt_count = previous_work_attempt_count + 1
-		else:
-			job.attempt_count = previous_work_attempt_count
-		job.status = "Processing"
-		job.service_job_id = str(data.get("service_job_id") or data.get("job_id") or job.service_job_id or "")
-		job.started_at = now_datetime()
-		job.save(ignore_permissions=True)
-		frappe.db.commit()
-		return job
+		next_attempt_count = (
+			previous_work_attempt_count + 1
+			if dispatch_action in {"enqueued", "stale_generation_replaced"}
+			else previous_work_attempt_count
+		)
+		service_job_id = str(data.get("service_job_id") or data.get("job_id") or job.service_job_id or "")
+		return _mark_dispatch_processing_if_pending(
+			job.name,
+			attempt_count=next_attempt_count,
+			service_job_id=service_job_id,
+			last_error="",
+		)
 	except OutboxConflictError as exc:
-		job.reload()
-		job.status = "Processing"
-		job.last_error = exc.error_code
-		job.save(ignore_permissions=True)
-		frappe.db.commit()
+		_mark_dispatch_processing_if_pending(job.name, last_error=exc.error_code)
 		raise
 	except Exception as exc:
 		error_code = sanitized_dispatch_error(exc)
 		frappe.log_error(frappe.get_traceback(), f"Moderation dispatch failed: {error_code}")
-		job.reload()
 		# A transport error may occur after the companion accepted the stable job.
-		# Keep business work nonterminal; the outbox reconciles by stable identity.
-		job.status = "Processing"
-		job.last_error = error_code
-		job.save(ignore_permissions=True)
-		frappe.db.commit()
+		# Keep genuinely pending work nonterminal, but never overwrite a callback
+		# or manual decision that won the race while the request was in flight.
+		_mark_dispatch_processing_if_pending(job.name, last_error=error_code)
 		raise
 
 
