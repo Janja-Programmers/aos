@@ -29,6 +29,45 @@ _TOKEN_FAMILY_RULES: tuple[tuple[str, str, str, float, tuple[tuple[re.Pattern[st
     ),
 )
 
+_DRUG_TERM = r"(?:illegal\s+)?(?:drugs?|cocaine|heroin|meth(?:amphetamine)?|fentanyl|mdma|ecstasy|narcotics?|marijuana|cannabis|weed)"
+_DRUG_SOLICITATION_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(rf"\b(?:i|we)\s+(?:sell|supply|deliver|stock)\b(?:\s+[a-z0-9']+){{0,5}}\s+\b{_DRUG_TERM}\b"), "seller-offer"),
+    (re.compile(rf"\b{_DRUG_TERM}\b(?:\s+[a-z0-9']+){{0,4}}\s+\b(?:for\s+sale|available|in\s+stock)\b"), "availability"),
+    (re.compile(rf"\b(?:dm|message|contact|whatsapp)\b(?:\s+me)?(?:\s+[a-z0-9']+){{0,4}}\s+\b(?:for\s+)?{_DRUG_TERM}\b"), "contact-for-drugs"),
+    (re.compile(rf"\b{_DRUG_TERM}\b(?:\s+[a-z0-9']+){{0,4}}\s+\b(?:dm|message|contact|whatsapp)\b"), "drugs-contact"),
+    (re.compile(rf"\b(?:buy|order|get)\b(?:\s+[a-z0-9']+){{0,4}}\s+\b{_DRUG_TERM}\b"), "purchase-solicitation"),
+)
+
+_NEGATION_SUFFIXES = ("do not ", "don't ", "never ", "avoid ", "stop ")
+
+
+def _is_negated(normalized: str, start: int) -> bool:
+    prefix = normalized[max(0, start - 24):start]
+    return any(prefix.endswith(value) for value in _NEGATION_SUFFIXES)
+
+
+def _detect_contextual_drug_sale(normalized: str, *, field: str) -> dict[str, Any] | None:
+    labels: list[str] = []
+    for pattern, label in _DRUG_SOLICITATION_PATTERNS:
+        for match in pattern.finditer(normalized):
+            if label == "purchase-solicitation" and _is_negated(normalized, match.start()):
+                continue
+            labels.append(label)
+            break
+    if not labels:
+        return None
+    return {
+        "category": "drugs",
+        "severity": "high",
+        "confidence": 0.97,
+        "source": "text",
+        "field": field,
+        "detector": "aos_text_rules",
+        "detector_version": "4",
+        "reason": "controlled-drug transaction or solicitation",
+        "evidence": sorted(set(labels))[:5],
+    }
+
 _RULES: tuple[tuple[str, str, str, float, tuple[str, ...]], ...] = (
     ("pornography", "critical", "pornographic solicitation", 0.97, ("hardcore porn", "child porn", "porn video")),
     ("sexual_explicit", "high", "explicit sexual solicitation", 0.94, ("buy sex", "sexual services", "explicit sex video")),
@@ -76,6 +115,10 @@ def detect_text(items: list[dict[str, Any]], *, max_chars: int) -> tuple[list[di
         normalized, tokens = _normalize(raw)
         if not normalized:
             continue
+        contextual_drug_signal = _detect_contextual_drug_sale(normalized, field=field)
+        if contextual_drug_signal:
+            signals.append(contextual_drug_signal)
+
         for category, severity, rationale, confidence, families in _TOKEN_FAMILY_RULES:
             matched_labels = sorted({
                 label
@@ -92,7 +135,7 @@ def detect_text(items: list[dict[str, Any]], *, max_chars: int) -> tuple[list[di
                         "source": "text",
                         "field": field,
                         "detector": "aos_text_rules",
-                        "detector_version": "3",
+                        "detector_version": "4",
                         "reason": rationale,
                         # Store canonical family labels, never the user's raw token/text.
                         "evidence": matched_labels[:5],
@@ -111,7 +154,7 @@ def detect_text(items: list[dict[str, Any]], *, max_chars: int) -> tuple[list[di
                     "source": "text",
                     "field": field,
                     "detector": "aos_text_rules",
-                    "detector_version": "3",
+                    "detector_version": "4",
                     "reason": rationale,
                     # Store only matched canonical rule labels, never full user text.
                     "evidence": matched[:5],

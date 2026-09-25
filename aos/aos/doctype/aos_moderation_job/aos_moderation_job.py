@@ -6,6 +6,8 @@ from __future__ import annotations
 import frappe
 from frappe.model.document import Document
 
+from aos.services.moderation_contract import validate_moderation_target
+
 
 class AOSModerationJob(Document):
     def validate(self):
@@ -18,6 +20,14 @@ class AOSModerationJob(Document):
         if not self.decision:
             self.decision = "pending"
 
+        try:
+            self.content_kind, self.target_doctype = validate_moderation_target(
+                content_kind=self.content_kind,
+                target_doctype=self.target_doctype,
+            )
+        except ValueError as exc:
+            frappe.throw(str(exc), exc=frappe.ValidationError)
+
         if self.target_doctype and self.target_name and not self.target_owner:
             self.target_owner = self._resolve_target_owner()
 
@@ -29,12 +39,4 @@ class AOSModerationJob(Document):
             return frappe.db.get_value("AOS Review", self.target_name, "reviewer")
         if self.target_doctype == "AOS Short":
             return frappe.db.get_value("AOS Short", self.target_name, "owner")
-        if self.target_doctype == "AOS Profile":
-            return frappe.db.get_value("AOS Profile", self.target_name, "user") or self.target_name
-        if self.target_doctype == "AOS Seller":
-            return frappe.db.get_value("AOS Seller", self.target_name, "user")
-        if self.target_doctype == "AOS Live Stream":
-            return frappe.db.get_value("AOS Live Stream", self.target_name, "host")
-        if self.target_doctype == "AOS Message":
-            return frappe.db.get_value("AOS Message", self.target_name, "sender")
         return None

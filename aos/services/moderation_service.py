@@ -17,6 +17,7 @@ import requests
 from frappe.utils import now_datetime
 
 from aos.services.media.media_service import MediaService
+from aos.services.moderation_contract import validate_moderation_target
 from aos.services.transactional_outbox import (
 	OutboxConflictError,
 	complete_outbox_without_callback,
@@ -190,6 +191,13 @@ def create_moderation_job(
 	source = str(source or "").strip()
 	if not target_doctype or not target_name:
 		raise ModerationError("Moderation target is required")
+	try:
+		content_kind, target_doctype = validate_moderation_target(
+			content_kind=content_kind,
+			target_doctype=target_doctype,
+		)
+	except ValueError as exc:
+		raise ModerationError(str(exc)) from None
 	if not frappe.db.exists(target_doctype, target_name):
 		raise ModerationError("Moderation target does not exist")
 

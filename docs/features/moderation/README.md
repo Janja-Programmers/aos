@@ -53,7 +53,7 @@ Every job stores `content_fingerprint`, `content_version`, and a unique `evaluat
 Each evaluation stores the policy version. Frappe rejects a callback whose policy version does not match the requested job. Re-evaluating unchanged content under a new policy produces a distinct logical evaluation key.
 
 ## Provider/Model Architecture
-Text rules are `aos_text_rules:3`. Vision uses the self-hosted image-search OpenCLIP runtime through an authenticated adapter. Provider output is normalized before policy evaluation. Provider credentials are environment secrets and are excluded from model/job payloads, Desk fields and logs.
+Text rules are `aos_text_rules:4`. Vision uses the self-hosted image-search OpenCLIP runtime through an authenticated adapter. Provider output is normalized before policy evaluation. Provider credentials are environment secrets and are excluded from model/job payloads, Desk fields and logs.
 
 ## Reports Integration
 Report Reason remains the reporter's allegation. Moderation Category is the moderation determination. Report count is not automatic guilt; current Reports does not directly mutate moderation decisions.
@@ -111,3 +111,7 @@ There is no public v1 Moderation API. Internal service callback: `aos.api.intern
 
 ## Transaction / Concurrency Model
 See Transactions and Idempotency / Concurrency above; all authoritative race protection is durable database state/versioning, never Python-local locks.
+
+### Actual automatic consumers
+
+The canonical moderation job schema exposes only the hardened automatic consumers that exist today: `ad`, `review`, and `short`. Profiles, Sellers, Live, private Messages/Chat, and generic Media are not advertised as moderation content kinds unless a real feature-owned adapter and lifecycle are implemented. Reports remain signals/context rather than automatic proof of a violation.

@@ -57,7 +57,7 @@ def test_profanity_inflections_reject_without_substring_matching():
     assert not failures
     profanity = [item for item in signals if item["category"] == "profanity"]
     assert profanity
-    assert profanity[0]["detector_version"] == "3"
+    assert profanity[0]["detector_version"] == "4"
     assert profanity[0]["evidence"] == ["fuck-family"]
     assert evaluate_policy(signals).decision == "reject"
 
@@ -97,3 +97,31 @@ def test_meaningful_unsafe_leading_vision_uncertainty_requires_review():
     assert result.decision == "review"
     assert result.reasons == ("vision uncertainty: weapons meaningfully outranked safe",)
     assert result.categories == ("weapons",)
+
+
+def test_contextual_drug_transactions_reject_without_banning_discussion():
+    for value in (
+        "I sell illegal drugs",
+        "DM for drugs",
+        "cocaine available, message me",
+        "order heroin",
+        "weed for sale",
+    ):
+        signals, failures = detect_text([{"field": "comment", "text": value}], max_chars=500)
+        assert not failures
+        drug_signals = [item for item in signals if item["category"] == "drugs"]
+        assert drug_signals, value
+        assert drug_signals[0]["detector_version"] == "4"
+        assert evaluate_policy(signals).decision == "reject", value
+
+    for value in (
+        "Illegal drugs are harmful",
+        "This documentary discusses the drug trade",
+        "Do not buy illegal drugs",
+        "The pharmacy delivered my prescription medicine",
+        "I pulled weeds from the garden",
+    ):
+        signals, failures = detect_text([{"field": "comment", "text": value}], max_chars=500)
+        assert not failures
+        contextual = [item for item in signals if item.get("reason") == "controlled-drug transaction or solicitation"]
+        assert not contextual, value

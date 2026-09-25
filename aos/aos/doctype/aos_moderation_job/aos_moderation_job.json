@@ -79,7 +79,7 @@
    "fieldname": "content_kind",
    "fieldtype": "Select",
    "label": "Content Kind",
-   "options": "ad\nreview\nshort\nprofile\nseller\nlive\nmessage\nmedia",
+   "options": "ad\nreview\nshort",
    "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1

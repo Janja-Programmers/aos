@@ -116,6 +116,41 @@ class TestReviewsDatabase(AOSFeatureTestMixin, FrappeTestCase):
                 moderation_enqueue=lambda *args, **kwargs: None,
             )
 
+    def test_rejected_review_owner_edit_resubmits_and_requeues(self):
+        public_id = self._create()["review"]["id"]
+        approved = self._approve(public_id)
+
+        frappe.set_user(self.moderator)
+        with patch("aos.services.reviews.moderation.notify_review_decision", return_value=None):
+            rejected = review_review(
+                review_id=public_id,
+                decision="reject",
+                reason="Contains disallowed content.",
+                version=str(approved.modified),
+                reviewer=self.moderator,
+            )
+        self.assertEqual(rejected.status, "Rejected")
+        prior_generation = int(rejected.moderation_generation or 0)
+
+        queued: list[tuple[str, str]] = []
+        frappe.set_user(self.author)
+        result = ReviewService().update(
+            user=self.author,
+            payload={
+                "review_id": public_id,
+                "version": str(rejected.modified),
+                "title": "Updated after moderation feedback",
+            },
+            moderation_enqueue=lambda name, source: queued.append((name, source)) or SimpleNamespace(name="resubmit-job"),
+        )
+
+        fresh = self._doc(public_id)
+        self.assertTrue(result["changed"])
+        self.assertEqual(fresh.status, "Pending")
+        self.assertEqual(fresh.review_notes, "")
+        self.assertEqual(int(fresh.moderation_generation or 0), prior_generation + 1)
+        self.assertEqual(queued, [(fresh.name, "review_update")])
+
     def test_withdraw_is_idempotent_and_removes_public_aggregate(self):
         public_id = self._create()["review"]["id"]
         approved = self._approve(public_id)
