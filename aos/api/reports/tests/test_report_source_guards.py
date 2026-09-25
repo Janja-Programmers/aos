@@ -73,6 +73,8 @@ class TestReportProductionSourceGuards(unittest.TestCase):
         self.assertIn("t.target_type = %s", source)
         self.assertIn("r.is_enabled = 1", source)
         self.assertIn("ORDER BY r.sort_order ASC, r.label ASC, r.name ASC", source)
+        self.assertIn("safe_fail_from_exception", source)
+        self.assertNotIn("fail(str(exc)", source)
         for leaked in ("owner", "modified_by", "creation", "modified"):
             self.assertNotIn(f'"{leaked}":', source)
         registry = json.loads(_source("ci/public-endpoint-rate-limits.json"))

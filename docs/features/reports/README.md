@@ -142,7 +142,7 @@ Successful submissions return only:
 
 The projection does not expose internal reporter identifiers, internal Ad docnames, target-owner internals, staff notes, Frappe owner/modified metadata, or other users' reports.
 
-Stable Reports errors include `REPORT_INVALID_REQUEST`, `REPORT_INVALID_TARGET`, `REPORT_INVALID_REASON`, `REPORT_REASON_NOT_ALLOWED`, `REPORT_SELF_NOT_ALLOWED`, `REPORT_ACCESS_DENIED`, and `REPORT_CONFLICT`. Authentication/rate-limit failures continue to use the hardened shared response codes. Clients must branch on `error`, not exception prose.
+Stable Reports errors include `REPORT_INVALID_REQUEST`, `REPORT_INVALID_TARGET`, `REPORT_INVALID_REASON`, `REPORT_REASON_NOT_ALLOWED`, `REPORT_SELF_NOT_ALLOWED`, `REPORT_ACCESS_DENIED`, and `REPORT_CONFLICT`. Guest authentication failures use the hardened shared `UNAUTHORIZED` code; rate-limit failures also continue to use the shared response contract. Clients must branch on `error`, not exception prose.
 
 ## Lifecycle
 

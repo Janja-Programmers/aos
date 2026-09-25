@@ -98,7 +98,7 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         frappe.set_user("Guest")
         unauthorized = self._reasons("user")
         self.assertFalse(unauthorized.get("ok"), unauthorized)
-        self.assertEqual(unauthorized.get("error"), "AUTH_REQUIRED")
+        self.assertEqual(unauthorized.get("error"), "UNAUTHORIZED")
 
         frappe.set_user(self.reporter)
         invalid = self._reasons("seller")

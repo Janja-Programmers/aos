@@ -5,6 +5,7 @@ from __future__ import annotations
 import frappe
 
 from aos.api.shared.auth import require_login
+from aos.api.shared.public_errors import safe_fail_from_exception
 from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import fail, ok
 from aos.services.accounts.http import set_private_no_store
@@ -72,7 +73,12 @@ def get_report_reasons_impl(**kwargs):
             },
         )
     except ReportError as exc:
-        return fail(str(exc), error=exc.code, http_status=exc.http_status)
+        return safe_fail_from_exception(
+            exc,
+            fallback="Invalid report request.",
+            error=exc.code,
+            http_status=exc.http_status,
+        )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AOS Get Report Reasons Failed")
         return fail("Failed to fetch report reasons.", error="INTERNAL_ERROR")
