@@ -168,7 +168,7 @@ def test_low_safe_softmax_does_not_create_fake_other_signal(monkeypatch):
     assert review_reasons == []
 
 
-def test_unsafe_leading_class_requests_review_without_fake_confidence(monkeypatch):
+def test_unsafe_leading_class_returns_real_evidence_without_forcing_review(monkeypatch):
     source = _large_source_image()
 
     class _HTTPResponse:
@@ -198,4 +198,13 @@ def test_unsafe_leading_class_requests_review_without_fake_confidence(monkeypatc
 
     assert signals[0]["category"] == "weapons"
     assert signals[0]["confidence"] == 0.19
-    assert review_reasons == ["vision uncertainty: weapons outranked safe"]
+    assert signals[0]["reason"] == "vision_top_category"
+    assert review_reasons == [{
+        "top_category": "weapons",
+        "top_confidence": 0.19,
+        "safe_confidence": 0.18,
+        "margin": 0.01,
+        "source": "image",
+        "detector": "ViT-B-32",
+        "detector_version": "openclip-v1",
+    }]

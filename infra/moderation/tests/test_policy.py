@@ -47,11 +47,30 @@ def test_spacing_evasion_is_detected():
     assert any(item["category"] == "profanity" for item in signals)
 
 
-def test_explicit_review_reason_is_not_fabricated_as_other_category():
+def test_near_uniform_vision_tie_does_not_force_manual_review():
     result = evaluate_policy(
-        [{"category": "weapons", "confidence": 0.19, "severity": "medium"}],
-        review_reasons=["vision uncertainty: weapons outranked safe"],
+        [{"category": "nudity", "confidence": 0.132396, "severity": "medium", "source": "image"}],
+        vision_uncertainty=[{
+            "top_category": "nudity",
+            "top_confidence": 0.132396,
+            "safe_confidence": 0.128804,
+            "margin": 0.003592,
+        }],
+    )
+    assert result.decision == "allow"
+    assert result.risk_score == 0.132396
+
+
+def test_meaningful_unsafe_leading_vision_uncertainty_requires_review():
+    result = evaluate_policy(
+        [{"category": "weapons", "confidence": 0.24, "severity": "medium", "source": "image"}],
+        vision_uncertainty=[{
+            "top_category": "weapons",
+            "top_confidence": 0.24,
+            "safe_confidence": 0.18,
+            "margin": 0.06,
+        }],
     )
     assert result.decision == "review"
-    assert result.reasons == ("vision uncertainty: weapons outranked safe",)
-    assert "other" not in result.categories
+    assert result.reasons == ("vision uncertainty: weapons meaningfully outranked safe",)
+    assert result.categories == ("weapons",)

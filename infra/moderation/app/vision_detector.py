@@ -185,18 +185,18 @@ def classify_images(
                 "detector_version": version,
             }
         )
-    review_reasons: list[str] = []
-    # safe_confidence is a relative zero-shot softmax score across several prompts,
-    # not a calibrated probability of safety. A low value must therefore never be
-    # converted into a synthetic policy category. If an unsafe class actually
-    # outranks the safe class, preserve that as genuine model uncertainty for
-    # human review without falsifying category confidence.
+    uncertainty_evidence: list[dict[str, Any]] = []
+    # The provider reports relative ranking evidence only. It never decides that
+    # a near-tie must be reviewed. The canonical AOS policy owns the minimum
+    # confidence/margin required for model uncertainty to become review-worthy.
     if top_category != "safe" and top_confidence >= safe_confidence:
-        review_reasons.append(f"vision uncertainty: {top_category} outranked safe")
+        # Preserve the actual leading unsafe evidence for audit even when it is
+        # below policy thresholds. This is not a synthetic score and does not by
+        # itself force review.
         if not any(str(signal.get("category") or "").lower() == top_category for signal in signals):
             signals.append(
                 {
-                    "category": top_category if top_category else "other",
+                    "category": top_category,
                     "severity": "medium",
                     "confidence": top_confidence,
                     "source": "image",
@@ -206,4 +206,15 @@ def classify_images(
                     "margin": margin,
                 }
             )
-    return signals, {"vision": f"{model}:{version}"}, review_reasons
+        uncertainty_evidence.append(
+            {
+                "top_category": top_category,
+                "top_confidence": top_confidence,
+                "safe_confidence": safe_confidence,
+                "margin": margin,
+                "source": "image",
+                "detector": model,
+                "detector_version": version,
+            }
+        )
+    return signals, {"vision": f"{model}:{version}"}, uncertainty_evidence

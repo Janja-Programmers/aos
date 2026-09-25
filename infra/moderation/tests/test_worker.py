@@ -112,7 +112,33 @@ def test_policy_version_mismatch_fails_closed(monkeypatch):
 		})
 
 
-def test_explicit_vision_uncertainty_requires_review(monkeypatch):
+def test_near_tie_vision_uncertainty_does_not_force_review(monkeypatch):
+	monkeypatch.setattr(worker, "get_settings", moderation_settings)
+	monkeypatch.setattr(worker, "_minio_client", lambda: object())
+	monkeypatch.setattr(
+		worker,
+		"classify_images",
+		lambda **_kwargs: ([{
+			"category": "nudity",
+			"confidence": 0.132396,
+			"severity": "medium",
+			"source": "image",
+		}], {"vision": "fake:1"}, [{
+			"top_category": "nudity",
+			"top_confidence": 0.132396,
+			"safe_confidence": 0.128804,
+			"margin": 0.003592,
+		}]),
+	)
+	result = worker._moderate({
+		"text_items": [{"field": "caption", "text": "ordinary listing"}],
+		"media_items": [{"field": "image", "content_type": "image/png", "bucket": "fake", "object_key": "x"}],
+	})
+	assert result["decision"] == "allow"
+	assert result["scores"]["nudity"] == 0.132396
+
+
+def test_meaningful_vision_uncertainty_requires_review(monkeypatch):
 	monkeypatch.setattr(worker, "get_settings", moderation_settings)
 	monkeypatch.setattr(worker, "_minio_client", lambda: object())
 	monkeypatch.setattr(
@@ -120,14 +146,19 @@ def test_explicit_vision_uncertainty_requires_review(monkeypatch):
 		"classify_images",
 		lambda **_kwargs: ([{
 			"category": "weapons",
-			"confidence": 0.19,
+			"confidence": 0.24,
 			"severity": "medium",
 			"source": "image",
-		}], {"vision": "fake:1"}, ["vision uncertainty: weapons outranked safe"]),
+		}], {"vision": "fake:1"}, [{
+			"top_category": "weapons",
+			"top_confidence": 0.24,
+			"safe_confidence": 0.18,
+			"margin": 0.06,
+		}]),
 	)
 	result = worker._moderate({
 		"text_items": [{"field": "caption", "text": "ordinary listing"}],
 		"media_items": [{"field": "image", "content_type": "image/png", "bucket": "fake", "object_key": "x"}],
 	})
 	assert result["decision"] == "review"
-	assert result["reasons"] == ["vision uncertainty: weapons outranked safe"]
+	assert result["reasons"] == ["vision uncertainty: weapons meaningfully outranked safe"]
