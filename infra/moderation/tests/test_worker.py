@@ -32,7 +32,7 @@ def test_work_happy_path_is_separate_from_callback(monkeypatch):
 	monkeypatch.setattr(
 		worker,
 		"classify_images",
-		lambda client, items, settings: ([], {"vision": "fake:1"}) if client is storage else pytest.fail("unexpected storage boundary"),
+		lambda client, items, settings: ([], {"vision": "fake:1"}, []) if client is storage else pytest.fail("unexpected storage boundary"),
 	)
 	result = worker._perform_moderation_work(
 		{
@@ -80,7 +80,7 @@ def test_safe_text_with_unsafe_image_rejects(monkeypatch):
 			"confidence": 0.99,
 			"severity": "critical",
 			"source": "vision",
-		}], {"vision": "fake:1"}),
+		}], {"vision": "fake:1"}, []),
 	)
 	result = worker._moderate({
 		"text_items": [{"field": "caption", "text": "ordinary listing"}],
@@ -110,3 +110,24 @@ def test_policy_version_mismatch_fails_closed(monkeypatch):
 			"callback_url": "https://callback.invalid/moderation",
 			"policy_version": "obsolete-policy",
 		})
+
+
+def test_explicit_vision_uncertainty_requires_review(monkeypatch):
+	monkeypatch.setattr(worker, "get_settings", moderation_settings)
+	monkeypatch.setattr(worker, "_minio_client", lambda: object())
+	monkeypatch.setattr(
+		worker,
+		"classify_images",
+		lambda **_kwargs: ([{
+			"category": "weapons",
+			"confidence": 0.19,
+			"severity": "medium",
+			"source": "image",
+		}], {"vision": "fake:1"}, ["vision uncertainty: weapons outranked safe"]),
+	)
+	result = worker._moderate({
+		"text_items": [{"field": "caption", "text": "ordinary listing"}],
+		"media_items": [{"field": "image", "content_type": "image/png", "bucket": "fake", "object_key": "x"}],
+	})
+	assert result["decision"] == "review"
+	assert result["reasons"] == ["vision uncertainty: weapons outranked safe"]

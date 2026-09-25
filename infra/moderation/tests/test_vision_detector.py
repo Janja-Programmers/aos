@@ -91,6 +91,9 @@ def test_classify_images_sends_bounded_derivative_not_original(monkeypatch):
                 "status": "ready",
                 "signals": [],
                 "safe_confidence": 0.95,
+                "top_category": "safe",
+                "top_confidence": 0.95,
+                "margin": 0.80,
                 "model": "ViT-B-32",
                 "model_version": "openclip-v1",
             }
@@ -102,7 +105,7 @@ def test_classify_images_sends_bounded_derivative_not_original(monkeypatch):
         return _HTTPResponse()
 
     monkeypatch.setattr(vision_detector.requests, "post", _post)
-    signals, versions = vision_detector.classify_images(
+    signals, versions, review_reasons = vision_detector.classify_images(
         client=_Minio(source),
         items=[{"content_type": "image/bmp", "bucket": "media", "object_key": "large.bmp"}],
         settings=_settings(),
@@ -115,6 +118,7 @@ def test_classify_images_sends_bounded_derivative_not_original(monkeypatch):
     assert len(prepared) < len(source)
     assert signals == []
     assert versions == {"vision": "ViT-B-32:openclip-v1"}
+    assert review_reasons == []
 
 
 def test_prepare_inference_image_rejects_extreme_pixel_dimensions():
@@ -130,3 +134,68 @@ def test_prepare_inference_image_rejects_extreme_pixel_dimensions():
         assert "dimensions" in str(exc)
     else:
         raise AssertionError("expected oversized dimensions to fail closed")
+
+
+def test_low_safe_softmax_does_not_create_fake_other_signal(monkeypatch):
+    source = _large_source_image()
+
+    class _HTTPResponse:
+        content = b"{}"
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "status": "ready",
+                "signals": [],
+                "safe_confidence": 0.31,
+                "top_category": "safe",
+                "top_confidence": 0.31,
+                "margin": 0.04,
+                "model": "ViT-B-32",
+                "model_version": "openclip-v1",
+            }
+
+    monkeypatch.setattr(vision_detector.requests, "post", lambda *_args, **_kwargs: _HTTPResponse())
+    signals, _versions, review_reasons = vision_detector.classify_images(
+        client=_Minio(source),
+        items=[{"content_type": "image/bmp", "bucket": "media", "object_key": "ordinary.bmp"}],
+        settings=_settings(),
+    )
+
+    assert signals == []
+    assert review_reasons == []
+
+
+def test_unsafe_leading_class_requests_review_without_fake_confidence(monkeypatch):
+    source = _large_source_image()
+
+    class _HTTPResponse:
+        content = b"{}"
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "status": "ready",
+                "signals": [],
+                "safe_confidence": 0.18,
+                "top_category": "weapons",
+                "top_confidence": 0.19,
+                "margin": 0.01,
+                "model": "ViT-B-32",
+                "model_version": "openclip-v1",
+            }
+
+    monkeypatch.setattr(vision_detector.requests, "post", lambda *_args, **_kwargs: _HTTPResponse())
+    signals, _versions, review_reasons = vision_detector.classify_images(
+        client=_Minio(source),
+        items=[{"content_type": "image/bmp", "bucket": "media", "object_key": "ambiguous.bmp"}],
+        settings=_settings(),
+    )
+
+    assert signals[0]["category"] == "weapons"
+    assert signals[0]["confidence"] == 0.19
+    assert review_reasons == ["vision uncertainty: weapons outranked safe"]

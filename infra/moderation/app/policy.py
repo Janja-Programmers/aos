@@ -86,10 +86,12 @@ def evaluate_policy(
     *,
     missing_required_evidence: Iterable[str] = (),
     detector_failures: Iterable[str] = (),
+    review_reasons: Iterable[str] = (),
 ) -> PolicyResult:
     normalized = [signal for signal in signals if isinstance(signal, dict)]
     missing = tuple(sorted({str(item).strip() for item in missing_required_evidence if str(item).strip()}))
     failures = tuple(sorted({str(item).strip() for item in detector_failures if str(item).strip()}))
+    explicit_review = tuple(sorted({str(item).strip() for item in review_reasons if str(item).strip()}))
 
     highest = 0.0
     reject: list[dict[str, Any]] = []
@@ -117,6 +119,10 @@ def evaluate_policy(
         reasons = tuple([*(f"detector failure: {item}" for item in failures), *(f"missing evidence: {item}" for item in missing)])
         categories = tuple(sorted({_category(signal) for signal in review}))
         return PolicyResult(decision="review", risk_score=max(highest, 0.5), reasons=reasons, categories=categories)
+
+    if explicit_review:
+        categories = tuple(sorted({_category(signal) for signal in review}))
+        return PolicyResult(decision="review", risk_score=highest, reasons=explicit_review, categories=categories)
 
     if review:
         categories = tuple(sorted({_category(signal) for signal in review}))

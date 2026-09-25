@@ -43,6 +43,7 @@ def _moderate(payload: dict[str, Any]) -> dict[str, Any]:
 	signals, detector_failures = detect_text(text_items, max_chars=settings.max_text_chars)
 	model_versions: dict[str, str] = {"text": "aos_text_rules:2"}
 	missing_required_evidence: list[str] = []
+	explicit_review_reasons: list[str] = []
 
 	image_items = [item for item in media_items if str(item.get("content_type") or "").lower().startswith("image/")]
 	video_items = [item for item in media_items if str(item.get("content_type") or "").lower().startswith("video/")]
@@ -51,9 +52,10 @@ def _moderate(payload: dict[str, Any]) -> dict[str, Any]:
 			missing_required_evidence.append("image")
 		else:
 			try:
-				vision_signals, versions = classify_images(client=_minio_client(), items=image_items, settings=settings)
+				vision_signals, versions, vision_review_reasons = classify_images(client=_minio_client(), items=image_items, settings=settings)
 				signals.extend(vision_signals)
 				model_versions.update(versions)
+				explicit_review_reasons.extend(vision_review_reasons)
 			except Exception as exc:
 				logger.warning("Vision moderation unavailable category=%s", exc.__class__.__name__)
 				detector_failures.append("image")
@@ -73,6 +75,7 @@ def _moderate(payload: dict[str, Any]) -> dict[str, Any]:
 		signals,
 		missing_required_evidence=missing_required_evidence,
 		detector_failures=detector_failures,
+		review_reasons=explicit_review_reasons,
 	)
 	category_scores: dict[str, float] = {}
 	for signal in signals[:64]:

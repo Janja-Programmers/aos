@@ -144,6 +144,9 @@ class SafetyImageClassificationResponse(BaseModel):
     status: Literal["ready"]
     signals: list[SafetySignal] = Field(default_factory=list, max_length=32)
     safe_confidence: float = Field(ge=0.0, le=1.0)
+    top_category: str = Field(min_length=1, max_length=80)
+    top_confidence: float = Field(ge=0.0, le=1.0)
+    margin: float = Field(ge=0.0, le=1.0)
     model: str = Field(min_length=1, max_length=140)
     model_version: str = Field(min_length=1, max_length=140)
     image_count: int = Field(ge=1, le=8)

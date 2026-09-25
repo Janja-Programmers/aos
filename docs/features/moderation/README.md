@@ -38,7 +38,7 @@ Moderation does not build a second video-processing pipeline. Shorts consumes re
 Text and vision signals are combined by the canonical policy. Policy checks each severe signal independently; a high-confidence severe image/video-frame signal rejects even when all text is safe. Borderline evidence produces manual review. Required missing modalities and detector failures also produce review.
 
 ## Confidence
-Thresholds are centralized by category in `policy.py`; feature modules contain no safety thresholds. Threshold changes require a policy-version change. OpenCLIP scores are evidence rather than claims of perfect probability calibration.
+Thresholds are centralized by category in `policy.py`; feature modules contain no safety thresholds. Threshold changes require a policy-version change. OpenCLIP scores are relative zero-shot evidence rather than calibrated probabilities. In particular, a low `safe_confidence` does not manufacture an `other` violation: when `safe` remains the top visual class and no unsafe signal crosses policy thresholds, the image is treated as having no positive violation signal. When an unsafe class actually outranks `safe` but remains below an automatic violation threshold, that genuine model ambiguity is routed to manual review using the real leading category and score.
 
 ## Decision Model
 Final moderation decisions are `allow`, `reject`, `review`. Job processing states are `Queued`, `Dispatching`, `Processing`, `Allowed`, `Review Required`, `Rejected`, `Failed`, `Cancelled`; service failure is not rejection and never approval. Decision source is `automatic` or `manual`.

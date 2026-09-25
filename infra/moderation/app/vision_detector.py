@@ -107,10 +107,10 @@ def classify_images(
     client: Minio,
     items: list[dict[str, Any]],
     settings: Any,
-) -> tuple[list[dict[str, Any]], dict[str, str]]:
+) -> tuple[list[dict[str, Any]], dict[str, str], list[str]]:
     images = [item for item in items if str(item.get("content_type") or "").lower().startswith("image/")]
     if not images:
-        return [], {}
+        return [], {}, []
     if not str(settings.vision_url or "").strip() or not str(settings.vision_secret or "").strip():
         raise VisionDetectorError("Vision moderation provider is not configured")
 
@@ -160,8 +160,13 @@ def classify_images(
     version = str(data.get("model_version") or "unknown")[:140]
     try:
         safe_confidence = max(0.0, min(float(data.get("safe_confidence") or 0.0), 1.0))
+        top_confidence = max(0.0, min(float(data.get("top_confidence") or 0.0), 1.0))
+        margin = max(0.0, min(float(data.get("margin") or 0.0), 1.0))
     except (TypeError, ValueError):
         raise VisionDetectorError("Malformed vision moderation confidence")
+    top_category = str(data.get("top_category") or "").strip().lower()
+    if not top_category:
+        raise VisionDetectorError("Malformed vision moderation top category")
     signals: list[dict[str, Any]] = []
     for row in data["signals"][:32]:
         if not isinstance(row, dict):
@@ -180,16 +185,25 @@ def classify_images(
                 "detector_version": version,
             }
         )
-    if safe_confidence < 0.55 and not any(float(signal.get("confidence") or 0) >= 0.45 for signal in signals):
-        signals.append(
-            {
-                "category": "other",
-                "severity": "medium",
-                "confidence": 0.50,
-                "source": "image",
-                "detector": model,
-                "detector_version": version,
-                "reason": "vision_model_uncertain",
-            }
-        )
-    return signals, {"vision": f"{model}:{version}"}
+    review_reasons: list[str] = []
+    # safe_confidence is a relative zero-shot softmax score across several prompts,
+    # not a calibrated probability of safety. A low value must therefore never be
+    # converted into a synthetic policy category. If an unsafe class actually
+    # outranks the safe class, preserve that as genuine model uncertainty for
+    # human review without falsifying category confidence.
+    if top_category != "safe" and top_confidence >= safe_confidence:
+        review_reasons.append(f"vision uncertainty: {top_category} outranked safe")
+        if not any(str(signal.get("category") or "").lower() == top_category for signal in signals):
+            signals.append(
+                {
+                    "category": top_category if top_category else "other",
+                    "severity": "medium",
+                    "confidence": top_confidence,
+                    "source": "image",
+                    "detector": model,
+                    "detector_version": version,
+                    "reason": "vision_top_category",
+                    "margin": margin,
+                }
+            )
+    return signals, {"vision": f"{model}:{version}"}, review_reasons

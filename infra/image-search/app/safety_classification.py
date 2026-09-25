@@ -84,6 +84,10 @@ class SafetyImageClassifier:
         matrix = np.stack(per_image_probabilities, axis=0)
         maxima = np.max(matrix, axis=0)
         scores = {category: float(maxima[index]) for index, category in enumerate(categories)}
+        ranking = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+        top_category, top_confidence = ranking[0]
+        runner_up_confidence = ranking[1][1] if len(ranking) > 1 else 0.0
+        margin = max(0.0, min(top_confidence - runner_up_confidence, 1.0))
         signals = [
             {"category": category, "confidence": round(scores[category], 6), "severity": SEVERITY[category]}
             for category in categories if category != "safe" and scores[category] >= 0.20
@@ -92,6 +96,9 @@ class SafetyImageClassifier:
             "status": "ready",
             "signals": signals,
             "safe_confidence": round(scores["safe"], 6),
+            "top_category": top_category,
+            "top_confidence": round(top_confidence, 6),
+            "margin": round(margin, 6),
             "model": self.settings.model_name,
             "model_version": getattr(self.settings, "short_classification_model_version", "openclip-v1"),
             "image_count": len(frames),

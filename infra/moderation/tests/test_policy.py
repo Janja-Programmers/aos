@@ -45,3 +45,13 @@ def test_text_obfuscation_and_false_positive_boundaries():
 def test_spacing_evasion_is_detected():
     signals, _ = detect_text([{"field": "caption", "text": "f u c k"}], max_chars=500)
     assert any(item["category"] == "profanity" for item in signals)
+
+
+def test_explicit_review_reason_is_not_fabricated_as_other_category():
+    result = evaluate_policy(
+        [{"category": "weapons", "confidence": 0.19, "severity": "medium"}],
+        review_reasons=["vision uncertainty: weapons outranked safe"],
+    )
+    assert result.decision == "review"
+    assert result.reasons == ("vision uncertainty: weapons outranked safe",)
+    assert "other" not in result.categories
