@@ -1,4 +1,4 @@
-"""Authorization and reportability policy shared by Report workflows."""
+"""Authorization and reportability policy shared by Reports workflows."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import frappe
 from aos.services.accounts.constants import ACCOUNT_STATUS_ACTIVE
 from aos.utils.doctype_permissions import has_doctype_permission
 
-from .errors import ReportNotFoundError, ReportPermissionError
+from .errors import ReportNotFoundError, ReportPermissionError, ReportSelfError
 
 
 def is_reviewer(user: str | None, *, doctype: str) -> bool:
@@ -15,11 +15,7 @@ def is_reviewer(user: str | None, *, doctype: str) -> bool:
     clean_doctype = str(doctype or "").strip()
     if not actor or actor == "Guest" or not clean_doctype:
         return False
-    return has_doctype_permission(
-        user=actor,
-        doctype=clean_doctype,
-        ptype="write",
-    )
+    return has_doctype_permission(user=actor, doctype=clean_doctype, ptype="write")
 
 
 def require_reviewer(user: str | None, *, doctype: str) -> None:
@@ -29,9 +25,9 @@ def require_reviewer(user: str | None, *, doctype: str) -> None:
 
 def require_reportable_user(*, target_user: str, reporter: str) -> None:
     if not target_user:
-        raise ReportPermissionError("Target user is required.", code="VALIDATION_ERROR", http_status=422)
+        raise ReportNotFoundError("Account not found.")
     if target_user == reporter:
-        raise ReportPermissionError("You cannot report yourself.", code="VALIDATION_ERROR", http_status=422)
+        raise ReportSelfError("You cannot report yourself.")
     user = frappe.db.get_value("User", target_user, ["name", "enabled"], as_dict=True)
     profile = frappe.db.get_value(
         "AOS Profile", {"user": target_user}, ["name", "account_status"], as_dict=True
@@ -42,4 +38,4 @@ def require_reportable_user(*, target_user: str, reporter: str) -> None:
         or not profile
         or str(profile.account_status or ACCOUNT_STATUS_ACTIVE) != ACCOUNT_STATUS_ACTIVE
     ):
-        raise ReportNotFoundError("User not found.")
+        raise ReportNotFoundError("Account not found.")

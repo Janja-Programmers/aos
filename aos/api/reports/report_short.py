@@ -1,4 +1,4 @@
-"""Create a Short report through the shared Report service."""
+"""Create or idempotently replay a canonical Short report."""
 
 from __future__ import annotations
 
@@ -6,13 +6,11 @@ import uuid
 
 import frappe
 
+from aos.api.reports.rate_limits import limit_report_submission
 from aos.api.shared.auth import require_login
 from aos.api.shared.public_errors import safe_fail_from_exception
-from aos.api.shared.rate_limit import rate_limit, rate_limit_key
 from aos.api.shared.responses import fail, ok
-from aos.services.shorts.activity import record_short_report_activity
 from aos.services.accounts.http import set_private_no_store
-from aos.services.reports.constants import REPORT_SHORT_LIMIT_PER_MINUTE_PER_USER
 from aos.services.reports.errors import ReportError
 from aos.services.reports.service import ReportService
 
@@ -22,11 +20,10 @@ def report_short_impl(**kwargs):
     if err:
         return err
     set_private_no_store()
-    limited = rate_limit(
-        key=rate_limit_key("reports", "short", "user", current_user),
-        ttl_seconds=60,
-        limit=REPORT_SHORT_LIMIT_PER_MINUTE_PER_USER,
-        message="Too many reports. Please try again shortly.",
+    limited = limit_report_submission(
+        report_type="short",
+        user=current_user,
+        target_id=kwargs.get("short_id"),
     )
     if limited:
         return limited
@@ -34,11 +31,7 @@ def report_short_impl(**kwargs):
     savepoint = f"report_short_{uuid.uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        data = ReportService().report_short(
-            user=current_user,
-            payload=kwargs,
-            activity_callback=record_short_report_activity,
-        )
+        data = ReportService().report_short(user=current_user, payload=kwargs)
         return ok("Report submitted successfully. Our team will review it.", data=data)
     except ReportError as exc:
         frappe.db.rollback(save_point=savepoint)

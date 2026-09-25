@@ -2,53 +2,77 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 0,
- "autoname": "field:title",
+ "autoname": "field:reason_id",
  "creation": "2026-03-04 13:26:37.498700",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "title",
+  "reason_id",
+  "label",
+  "description",
   "icon_key",
-  "column_break_fgcq",
+  "column_break_scope",
   "sort_order",
-  "is_active"
+  "is_enabled",
+  "allowed_targets"
  ],
  "fields": [
   {
+   "fieldname": "reason_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Reason ID",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Label",
+   "reqd": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "icon_key",
+   "fieldtype": "Data",
+   "label": "Icon Key"
+  },
+  {
+   "fieldname": "column_break_scope",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
    "fieldname": "sort_order",
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Sort Order"
   },
   {
-   "fieldname": "column_break_fgcq",
-   "fieldtype": "Column Break"
-  },
-  {
    "default": "1",
-   "fieldname": "is_active",
+   "fieldname": "is_enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Is Active"
+   "in_standard_filter": 1,
+   "label": "Enabled"
   },
   {
-   "fieldname": "icon_key",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Icon Key"
-  },
-  {
-   "fieldname": "title",
-   "fieldtype": "Data",
-   "label": "Title",
-   "reqd": 1,
-   "unique": 1
+   "fieldname": "allowed_targets",
+   "fieldtype": "Table",
+   "label": "Allowed Targets",
+   "options": "AOS Report Reason Target"
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
+ "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-03-05 01:55:57.336643",
+ "modified": "2026-09-25 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
  "name": "AOS Report Reason",
@@ -64,14 +88,14 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 1,
+   "share": 0,
    "write": 1
   }
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
- "sort_field": "creation",
- "sort_order": "DESC",
+ "sort_field": "sort_order",
+ "sort_order": "ASC",
  "states": [],
  "track_changes": 1
 }

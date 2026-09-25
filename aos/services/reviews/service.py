@@ -19,6 +19,9 @@ from aos.services.ads.errors import AdsNotFoundError
 from aos.services.ads.visibility import require_public_ad_for_viewer
 from aos.services.media.media_service import MediaService
 from aos.services.moderation_service import enqueue_review_moderation
+from aos.services.reports.constants import REPORT_TARGET_REVIEW
+from aos.services.reports.errors import ReportError
+from aos.services.reports.validation import validate_reason_for_target
 from aos.services.sellers.identity import public_seller_id_for_name
 
 from .aggregates import rating_distribution
@@ -472,8 +475,13 @@ class ReviewService:
         public_id = normalize_identifier(payload.get("review_id"), field="review_id")
         reason = normalize_report_reason(payload.get("reason"))
         details = normalize_report_details(payload.get("details"))
-        if not frappe.db.exists("AOS Report Reason", {"name": reason, "is_active": 1}):
-            raise ReviewValidationError("Invalid report reason.", code="INVALID_REVIEW_REPORT_REASON")
+        try:
+            reason = validate_reason_for_target(reason, REPORT_TARGET_REVIEW)
+        except ReportError as exc:
+            raise ReviewValidationError(
+                "Invalid report reason.",
+                code="INVALID_REVIEW_REPORT_REASON",
+            ) from exc
 
         review = self._public_review_row(public_id=public_id, viewer=user, lock=True)
         if review.reviewer == user:

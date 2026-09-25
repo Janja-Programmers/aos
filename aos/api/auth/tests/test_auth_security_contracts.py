@@ -141,9 +141,12 @@ class TestAuthSecurityContracts(AOSFeatureTestMixin, FrappeTestCase):
         }
         self.assertTrue(expected.issubset(set(hooks.override_whitelisted_methods)))
         self.assertIn("aos.api.auth.user_controller.AOSAuthUserMixin", hooks.extend_doctype_class.get("User", []))
-        with patch("frappe.db.set_single_value") as set_single:
+        with patch("frappe.db.set_single_value") as set_single, patch(
+            "aos.services.reports.catalog.install_canonical_report_reasons"
+        ) as install_reasons:
             after_install()
         set_single.assert_called_once_with("Website Settings", "disable_signup", 1)
+        install_reasons.assert_called_once_with()
 
 
     def test_framework_recovery_guard_preserves_system_users_but_blocks_website_users(self):

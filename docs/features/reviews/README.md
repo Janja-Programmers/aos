@@ -84,7 +84,7 @@ Database uniqueness on `(review, user)` prevents simultaneous Like+Dislike rows 
 |---|---|---:|---|---|
 | `review` | Link → AOS Review | yes | Search + report indexes | Report target. |
 | `reported_by` | Link → User | yes | Search + unique pair | Session-derived reporter. |
-| `reason` | Link → AOS Report Reason | yes | no | Central active report reason. |
+| `reason` | Link → AOS Report Reason | yes | no | Central enabled report reason classified for the internal Review scope. |
 | `details` | Small Text | no | no | Bounded report detail. |
 | `status` | Select | yes | Search | Reports lifecycle state. |
 | `reviewed_by` | Link → User | server | no | Report operator. |

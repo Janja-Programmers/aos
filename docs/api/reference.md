@@ -279,11 +279,11 @@ Owner documentation: [docs/api/internal.md](internal.md)
 
 ## Reports (4)
 
-Owner documentation: [docs/features/reports/api.md](../features/reports/api.md)
+Owner documentation: [docs/features/reports/README.md](../features/reports/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
-| `/api/method/aos.api.v1.reports.list_report_reasons` | Any* | Session required | Client | `aos/api/v1/reports/__init__.py` |
+| `/api/method/aos.api.v1.reports.get_report_reasons` | GET | Session required | Client | `aos/api/v1/reports/__init__.py` |
 | `/api/method/aos.api.v1.reports.report_ad` | POST | Session required | Client | `aos/api/v1/reports/__init__.py` |
 | `/api/method/aos.api.v1.reports.report_short` | POST | Session required | Client | `aos/api/v1/reports/__init__.py` |
 | `/api/method/aos.api.v1.reports.report_user` | POST | Session required | Client | `aos/api/v1/reports/__init__.py` |

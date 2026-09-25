@@ -1,144 +1,19 @@
 {
  "actions": [],
  "allow_rename": 0,
- "autoname": "naming_series:",
- "creation": "2026-06-24 16:54:55.269024",
+ "creation": "2026-09-25 00:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
- "field_order": [
-  "naming_series",
-  "short",
-  "short_owner",
-  "column_break_sjzc",
-  "reported_by",
-  "reason",
-  "section_break_xebq",
-  "details",
-  "review_tab",
-  "status",
-  "reviewed_by",
-  "column_break_cnjo",
-  "admin_action",
-  "reviewed_on",
-  "active_key"
- ],
- "fields": [
-  {
-   "default": "SH-RPT-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "SH-RPT-.YYYY.-.#####"
-  },
-  {
-   "fieldname": "short",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Short",
-   "options": "AOS Short",
-   "reqd": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "short_owner",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Short Owner",
-   "options": "User",
-   "read_only": 1,
-   "reqd": 1
-  },
-  {
-   "fieldname": "reported_by",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Reported By",
-   "options": "User",
-   "reqd": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "column_break_sjzc",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "reason",
-   "fieldtype": "Link",
-   "label": "Reason",
-   "options": "AOS Report Reason",
-   "reqd": 1
-  },
-  {
-   "fieldname": "section_break_xebq",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "details",
-   "fieldtype": "Small Text",
-   "label": "Details"
-  },
-  {
-   "fieldname": "review_tab",
-   "fieldtype": "Tab Break",
-   "label": "Review"
-  },
-  {
-   "default": "Reviewing",
-   "fieldname": "status",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Status",
-   "options": "Reviewing\nResolved\nRejected",
-   "search_index": 1
-  },
-  {
-   "fieldname": "reviewed_by",
-   "fieldtype": "Link",
-   "label": "Reviewed By",
-   "options": "User",
-   "read_only": 1
-  },
-  {
-   "depends_on": "eval: doc.status == \"Resolved\"",
-   "fieldname": "admin_action",
-   "fieldtype": "Select",
-   "label": "Admin Action",
-   "mandatory_depends_on": "eval: doc.status == \"Resolved\"",
-   "options": "\nHide Short\nWarn Creator\nSuspend Creator\nDismiss Report"
-  },
-  {
-   "fieldname": "column_break_cnjo",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "reviewed_on",
-   "fieldtype": "Datetime",
-   "label": "Reviewed On",
-   "read_only": 1
-  },
-  {
-   "fieldname": "active_key",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "read_only": 1,
-   "length": 64
-  }
- ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-06-24 17:08:25.789073",
+ "modified": "2026-09-25 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
- "name": "AOS Short Report",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {
-   "create": 1,
+   "create": 0,
    "delete": 0,
    "email": 1,
    "export": 1,
@@ -168,5 +43,115 @@
    "title": "Rejected"
   }
  ],
- "track_changes": 1
+ "track_changes": 1,
+ "name": "AOS Short Report",
+ "field_order": [
+  "short",
+  "short_owner",
+  "reported_by",
+  "reason",
+  "details_section",
+  "details",
+  "review_tab",
+  "status",
+  "reviewed_by",
+  "column_break_review",
+  "reviewed_on",
+  "active_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "short",
+   "fieldtype": "Link",
+   "label": "Short",
+   "options": "AOS Short",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "short_owner",
+   "fieldtype": "Link",
+   "label": "Short Owner",
+   "options": "User",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "reported_by",
+   "fieldtype": "Link",
+   "label": "Reported By",
+   "options": "User",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Link",
+   "label": "Reason",
+   "options": "AOS Report Reason",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "details_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "details",
+   "fieldtype": "Small Text",
+   "label": "Details",
+   "read_only": 1
+  },
+  {
+   "fieldname": "review_tab",
+   "fieldtype": "Tab Break",
+   "label": "Review"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Reviewing\nResolved\nRejected",
+   "default": "Reviewing",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "reviewed_by",
+   "fieldtype": "Link",
+   "label": "Reviewed By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_review",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "reviewed_on",
+   "fieldtype": "Datetime",
+   "label": "Reviewed On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "active_key",
+   "fieldtype": "Data",
+   "label": "Active Key",
+   "hidden": 1,
+   "read_only": 1,
+   "length": 64
+  }
+ ]
 }

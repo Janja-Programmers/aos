@@ -1,137 +1,19 @@
 {
  "actions": [],
  "allow_rename": 0,
- "autoname": "naming_series:",
- "creation": "2026-03-04 13:20:44.477731",
+ "creation": "2026-09-25 00:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
- "field_order": [
-  "naming_series",
-  "ad",
-  "seller",
-  "column_break_hbeu",
-  "reported_by",
-  "reason",
-  "section_break_ctcu",
-  "details",
-  "review_tab",
-  "status",
-  "reviewed_by",
-  "column_break_qzqe",
-  "admin_action",
-  "reviewed_on"
- ],
- "fields": [
-  {
-   "default": "RPT-.YYYY.-.#####",
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "options": "RPT-.YYYY.-.#####"
-  },
-  {
-   "fieldname": "ad",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Ad",
-   "options": "AOS Ad",
-   "reqd": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "reported_by",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Reported By",
-   "options": "User",
-   "reqd": 1,
-   "search_index": 1
-  },
-  {
-   "fetch_from": "ad.seller",
-   "fieldname": "seller",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Seller",
-   "options": "AOS Seller",
-   "read_only": 1,
-   "reqd": 1
-  },
-  {
-   "fieldname": "reason",
-   "fieldtype": "Link",
-   "label": "Reason",
-   "options": "AOS Report Reason",
-   "reqd": 1
-  },
-  {
-   "default": "Reviewing",
-   "fieldname": "status",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Status",
-   "options": "Reviewing\nResolved\nRejected",
-   "search_index": 1
-  },
-  {
-   "fieldname": "section_break_ctcu",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "details",
-   "fieldtype": "Small Text",
-   "label": "Details"
-  },
-  {
-   "fieldname": "column_break_hbeu",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval: doc.status == \"Resolved\"",
-   "fieldname": "admin_action",
-   "fieldtype": "Select",
-   "label": "Admin Action",
-   "mandatory_depends_on": "eval: doc.status == \"Resolved\"",
-   "options": "\nWarn Seller\nSuspended Ad\nSuspended Seller"
-  },
-  {
-   "fieldname": "column_break_qzqe",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "reviewed_by",
-   "fieldtype": "Link",
-   "label": "Reviewed By",
-   "options": "User",
-   "read_only": 1
-  },
-  {
-   "fieldname": "reviewed_on",
-   "fieldtype": "Datetime",
-   "label": "Reviewed On",
-   "read_only": 1
-  },
-  {
-   "fieldname": "review_tab",
-   "fieldtype": "Tab Break",
-   "label": "Review"
-  }
- ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-03-05 02:24:32.225377",
+ "modified": "2026-09-25 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "AOS",
- "name": "AOS Ad Report",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {
-   "create": 1,
+   "create": 0,
    "delete": 0,
    "email": 1,
    "export": 1,
@@ -161,5 +43,115 @@
    "title": "Rejected"
   }
  ],
- "track_changes": 1
+ "track_changes": 1,
+ "name": "AOS Ad Report",
+ "field_order": [
+  "ad",
+  "seller",
+  "reported_by",
+  "reason",
+  "details_section",
+  "details",
+  "review_tab",
+  "status",
+  "reviewed_by",
+  "column_break_review",
+  "reviewed_on",
+  "active_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "ad",
+   "fieldtype": "Link",
+   "label": "Ad",
+   "options": "AOS Ad",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "seller",
+   "fieldtype": "Link",
+   "label": "Seller",
+   "options": "AOS Seller",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "reported_by",
+   "fieldtype": "Link",
+   "label": "Reported By",
+   "options": "User",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Link",
+   "label": "Reason",
+   "options": "AOS Report Reason",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "details_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "details",
+   "fieldtype": "Small Text",
+   "label": "Details",
+   "read_only": 1
+  },
+  {
+   "fieldname": "review_tab",
+   "fieldtype": "Tab Break",
+   "label": "Review"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Reviewing\nResolved\nRejected",
+   "default": "Reviewing",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "reviewed_by",
+   "fieldtype": "Link",
+   "label": "Reviewed By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_review",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "reviewed_on",
+   "fieldtype": "Datetime",
+   "label": "Reviewed On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "active_key",
+   "fieldtype": "Data",
+   "label": "Active Key",
+   "hidden": 1,
+   "read_only": 1,
+   "length": 64
+  }
+ ]
 }

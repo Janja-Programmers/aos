@@ -165,34 +165,27 @@ class TestCoreFeatureFlows(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(frappe.db.count("AOS Ad Image", {"parent": ad_name}), 1)
 
 
-    def test_report_user_with_block_option_creates_report_and_active_block(self):
+    def test_report_user_uses_canonical_account_id_without_social_side_effects(self):
         reporter = self.make_user("reporter")
         target = self.make_user("reported")
-        reason = self.make_report_reason()
+        reason = self.make_report_reason(targets=("User",))
         frappe.set_user(reporter)
 
-        with (
-            patch("aos.api.reports.report_user.rate_limit", return_value=None),
-            patch("aos.api.social.block.rate_limit", return_value=None),
-            patch("aos.api.reports.report_user.record_report_user_activity"),
-            patch("aos.api.social.block.record_block_user_activity"),
-        ):
+        with patch("aos.api.reports.report_user.limit_report_submission", return_value=None):
             response = report_user_impl(
-                target_user=ensure_public_account_id(target),
-                reason=reason,
+                account_id=ensure_public_account_id(target),
+                reason_id=reason,
                 details="Feature report test",
-                block_user=1,
             )
 
         self.assertTrue(response.get("ok"), response)
-        self.assertTrue(response.get("data", {}).get("block_applied"), response)
         self.assertEqual(frappe.db.count("AOS User Report", {"reported_user": target, "reported_by": reporter}), 1)
         self.assertEqual(
             frappe.db.count(
                 "AOS User Block",
                 {"blocker_user": reporter, "blocked_user": target, "status": "Active"},
             ),
-            1,
+            0,
         )
 
     def test_review_create_requires_prior_chat_and_creates_pending_review(self):

@@ -7,9 +7,10 @@ import frappe
 from frappe.model.document import Document
 
 from aos.services.reports.errors import ReportError
+from aos.services.reports.constants import REPORT_TARGET_REVIEW
 from aos.services.reports.lifecycle import prepare_new_report, stamp_review_metadata, validate_report_lifecycle
 from aos.services.reports.repository import locked_previous_report
-from aos.services.reports.validation import normalize_reason, validate_active_reason
+from aos.services.reports.validation import validate_existing_reason, validate_reason_for_target
 from aos.services.reviews.constants import STATUS_APPROVED
 from aos.utils.identifiers import new_prefixed_name
 
@@ -54,11 +55,10 @@ class AOSReviewReport(Document):
             frappe.throw(str(exc), frappe.ValidationError)
 
     def _validate_reason(self, previous):
-        self.reason = normalize_reason(self.reason)
         if previous is None:
-            validate_active_reason(self.reason)
-        elif not frappe.db.exists("AOS Report Reason", self.reason):
-            frappe.throw("Invalid report reason.", exc=frappe.ValidationError)
+            self.reason = validate_reason_for_target(self.reason, REPORT_TARGET_REVIEW)
+        else:
+            self.reason = validate_existing_reason(self.reason)
 
     def _validate_duplicate(self):
         if not self.review or not self.reported_by:

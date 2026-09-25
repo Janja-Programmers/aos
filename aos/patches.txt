@@ -38,8 +38,8 @@ aos.patches.v1_0.migrate_calls_to_conference_model
 aos.patches.v1_0.install_call_indexes
 aos.patches.v1_0.install_call_public_indexes
 
-# Shared human-report moderation hardening.
-aos.patches.v1_0.harden_reports_subsystem
+# Final Reports data reconciliation must run before Reports uniqueness/query indexes.
+aos.patches.v1_0.finalize_reports_domain
 aos.patches.v1_0.install_report_indexes
 
 # Activity current-schema reconciliation must run before its uniqueness indexes.

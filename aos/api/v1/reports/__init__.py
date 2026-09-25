@@ -1,47 +1,32 @@
-"""Public AOS API v1 wrappers for reports.
-
-These thin wrappers are the stable external contract for /api/method/aos.api.v1.reports.*.
-Implementation stays in aos.api.reports implementation modules.
-"""
+"""Stable public v1 endpoints for User, Ad, and Short reports."""
 
 from __future__ import annotations
 
 import frappe
 
+from aos.api.reports.reasons import get_report_reasons_impl as _get_report_reasons_impl
+from aos.api.reports.report_ad import report_ad_impl as _report_ad_impl
+from aos.api.reports.report_short import report_short_impl as _report_short_impl
+from aos.api.reports.report_user import report_user_impl as _report_user_impl
 from aos.api.shared.transport import client_kwargs
 
-from aos.api.reports.reasons import (
-    list_report_reasons_impl as _list_report_reasons_impl,
-)
-from aos.api.reports.report_ad import (
-    report_ad_impl as _report_ad_impl,
-)
-from aos.api.reports.report_user import (
-    report_user_impl as _report_user_impl,
-)
-from aos.api.reports.report_short import (
-    report_short_impl as _report_short_impl,
-)
 
-@frappe.whitelist()
-def list_report_reasons(**kwargs):
-    """List available report reasons."""
-    return _list_report_reasons_impl(**client_kwargs(kwargs))
+@frappe.whitelist(methods=["GET"])
+def get_report_reasons(**kwargs):
+    """Return enabled reasons valid for exactly one requested target type."""
+    return _get_report_reasons_impl(**client_kwargs(kwargs))
 
 
 @frappe.whitelist(methods=["POST"])
 def report_ad(**kwargs):
-    """Report an Ad."""
     return _report_ad_impl(**client_kwargs(kwargs))
 
 
 @frappe.whitelist(methods=["POST"])
 def report_user(**kwargs):
-    """Report a User."""
     return _report_user_impl(**client_kwargs(kwargs))
 
 
 @frappe.whitelist(methods=["POST"])
 def report_short(**kwargs):
-    """Report a Short."""
     return _report_short_impl(**client_kwargs(kwargs))

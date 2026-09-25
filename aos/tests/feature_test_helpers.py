@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 import uuid
 from contextlib import contextmanager
@@ -580,18 +581,30 @@ class AOSFeatureTestMixin:
         self._clear_short_ephemeral_state(short.name)
         return short
 
-    def make_report_reason(self) -> str:
-        reason = f"{self.prefix} Abuse"
+    def make_report_reason(
+        self,
+        *,
+        targets: tuple[str, ...] = ("User", "Ad", "Short", "Review"),
+        enabled: bool = True,
+        key_suffix: str = "abuse",
+    ) -> str:
+        base = re.sub(r"[^a-z0-9]+", "_", self.prefix.lower()).strip("_")
+        suffix = re.sub(r"[^a-z0-9]+", "_", key_suffix.lower()).strip("_") or "reason"
+        reason = f"{base}_{suffix}"[:64]
         created = not frappe.db.exists("AOS Report Reason", reason)
         if created:
-            frappe.get_doc(
+            doc = frappe.get_doc(
                 {
                     "doctype": "AOS Report Reason",
-                    "title": reason,
-                    "is_active": 1,
+                    "reason_id": reason,
+                    "label": f"{self.prefix} {key_suffix.replace('_', ' ').title()}",
+                    "sort_order": 500,
+                    "is_enabled": 1 if enabled else 0,
                 }
-            ).insert(ignore_permissions=True)
-        if created:
+            )
+            for target_type in targets:
+                doc.append("allowed_targets", {"target_type": target_type})
+            doc.insert(ignore_permissions=True)
             self._track_created("created_report_reason_names", reason)
         return reason
 
@@ -953,6 +966,7 @@ class AOSFeatureTestMixin:
         frappe.db.sql("DELETE FROM `tabAOS Media Object` WHERE owner_user LIKE %s OR object_key LIKE %s", (email_like, path_like))
 
         for reason_name in list(getattr(self, "created_report_reason_names", [])):
+            frappe.db.sql("DELETE FROM `tabAOS Report Reason Target` WHERE parent=%s", (reason_name,))
             frappe.db.sql("DELETE FROM `tabAOS Report Reason` WHERE name=%s", (reason_name,))
         self.created_report_reason_names = []
         for location_name in list(getattr(self, "created_location_names", [])):
@@ -963,7 +977,14 @@ class AOSFeatureTestMixin:
         self.created_category_names = []
         # Prefix-scoped deletes remain as an idempotent safety net for records
         # created directly by a test instead of through these builders.
-        frappe.db.sql("DELETE FROM `tabAOS Report Reason` WHERE title LIKE %s", (like,))
+        reason_rows = frappe.db.sql(
+            "SELECT name FROM `tabAOS Report Reason` WHERE label LIKE %s",
+            (like,),
+            as_dict=True,
+        )
+        for row in reason_rows:
+            frappe.db.sql("DELETE FROM `tabAOS Report Reason Target` WHERE parent=%s", (row.name,))
+            frappe.db.sql("DELETE FROM `tabAOS Report Reason` WHERE name=%s", (row.name,))
         frappe.db.sql("DELETE FROM `tabAOS Location` WHERE location LIKE %s", (like,))
         frappe.db.sql("DELETE FROM `tabAOS Category` WHERE category_name LIKE %s", (like,))
 

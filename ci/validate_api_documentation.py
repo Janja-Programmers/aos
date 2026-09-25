@@ -26,7 +26,7 @@ FEATURE_DOCS = {
 	"maps": "docs/features/maps/README.md",
 	"media": "docs/features/media/README.md",
 	"notifications": "docs/features/notifications/README.md",
-	"reports": "docs/features/reports/api.md",
+	"reports": "docs/features/reports/README.md",
 	"reviews": "docs/features/reviews/README.md",
 	"saved_search": "docs/features/saved-search/README.md",
 	"search_ranking": "docs/features/search-ranking/README.md",

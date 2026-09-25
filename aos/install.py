@@ -6,8 +6,11 @@ import frappe
 
 
 def after_install() -> None:
-    """Disable Frappe's parallel public signup UI/API on fresh AOS sites."""
+    """Apply fresh-site AOS defaults and install canonical master data."""
+    from aos.services.reports.catalog import install_canonical_report_reasons
+
     frappe.db.set_single_value("Website Settings", "disable_signup", 1)
+    install_canonical_report_reasons()
 
 
 def before_tests() -> None:

@@ -5,19 +5,17 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.api.reports.reasons import list_report_reasons_impl
+from aos.api.reports.reasons import get_report_reasons_impl
 from aos.api.reports.report_ad import report_ad_impl
 from aos.api.reports.report_short import report_short_impl
 from aos.api.reports.report_user import report_user_impl
-from aos.api.reviews.report import report_review_impl
 from aos.services.accounts.identity import ensure_public_account_id
 from aos.services.account_deletion_service import _cleanup_report_account_data
-from aos.services.reviews.moderation import review_review
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
 class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
-    """DB-backed Report behavior on a migrated Frappe test site."""
+    """DB-backed contracts for the final User/Ad/Short Reports subsystem."""
 
     def setUp(self):
         self.prefix = self.make_prefix("reports")
@@ -28,22 +26,62 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.other = self.make_user("other")
         self.seller_owner = self.make_user("seller")
         self.short_owner = self.make_user("short-owner")
-        self.review_author = self.make_user("review-author")
-        self.review_moderator = self.make_system_user("review-moderator")
-        self.reason = self.make_report_reason()
+        self.shared_reason = self.make_report_reason(
+            targets=("User", "Ad", "Short"), key_suffix="shared"
+        )
+        self.user_reason = self.make_report_reason(targets=("User",), key_suffix="user_only")
+        self.ad_reason = self.make_report_reason(targets=("Ad",), key_suffix="ad_only")
+        self.short_reason = self.make_report_reason(targets=("Short",), key_suffix="short_only")
+        self.disabled_reason = self.make_report_reason(
+            targets=("User", "Ad", "Short"), enabled=False, key_suffix="disabled"
+        )
         self.ad = self.make_ad(seller_user=self.seller_owner)
         self.short = self.make_short(owner=self.short_owner)
-        # The shared Short fixture creates the row while Administrator is active;
-        # set the canonical creator explicitly so ownership assertions exercise
-        # the Report policy rather than the fixture session.
+        # The shared Short fixture can be created while Administrator is active;
+        # pin ownership explicitly for Report self/visibility tests.
         frappe.db.set_value("AOS Short", self.short.name, "owner", self.short_owner, update_modified=False)
         self.short.reload()
-        self.review = self._make_approved_review()
         frappe.set_user(self.reporter)
 
     def tearDown(self):
         self.cleanup_feature_rows()
         frappe.set_user("Administrator")
+
+    def _report_user(self, **overrides):
+        payload = {
+            "account_id": ensure_public_account_id(self.target),
+            "reason_id": self.shared_reason,
+            "details": "Threatening messages",
+        }
+        payload.update(overrides)
+        with patch("aos.api.reports.report_user.limit_report_submission", return_value=None):
+            return report_user_impl(**payload)
+
+    def _report_ad(self, **overrides):
+        payload = {
+            "ad_id": self.ad.public_id,
+            "reason_id": self.shared_reason,
+            "details": "Misleading listing",
+        }
+        payload.update(overrides)
+        with patch("aos.api.reports.report_ad.limit_report_submission", return_value=None):
+            return report_ad_impl(**payload)
+
+    def _report_short(self, **overrides):
+        payload = {
+            "short_id": self.short.name,
+            "reason_id": self.shared_reason,
+            "details": "Unsafe content",
+        }
+        payload.update(overrides)
+        with patch("aos.api.reports.report_short.limit_report_submission", return_value=None):
+            return report_short_impl(**payload)
+
+    def _reasons(self, target_type: str, **overrides):
+        payload = {"target_type": target_type}
+        payload.update(overrides)
+        with patch("aos.api.reports.reasons.rate_limit", return_value=None):
+            return get_report_reasons_impl(**payload)
 
     def test_report_domain_indexes_exist_after_migrate(self):
         from aos.patches.v1_0.install_report_indexes import INDEX_DEFINITIONS
@@ -56,96 +94,59 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
             )
             self.assertTrue(rows, f"missing Report domain index {index_name}")
 
-    def _make_approved_review(self):
-        frappe.set_user(self.review_author)
-        review = frappe.get_doc(
-            {
-                "doctype": "AOS Review",
-                "ad": self.ad.name,
-                "rating": 5,
-                "title": "Useful review",
-                "comment": "Useful report feature test review.",
-                "eligibility_basis": "communication",
-                "moderation_generation": 1,
-            }
-        )
-        review.insert(ignore_permissions=True)
-
-        frappe.set_user(self.review_moderator)
-        with patch("aos.services.reviews.moderation.notify_review_decision", return_value=None):
-            review_review(
-                review_id=review.public_id,
-                decision="approve",
-                reason="",
-                version=str(review.modified),
-                reviewer=self.review_moderator,
-            )
-        review.reload()
-        return review
-
-    def _report_user(self, **overrides):
-        payload = {"target_user": ensure_public_account_id(self.target), "reason": self.reason, "details": "Threatening messages"}
-        payload.update(overrides)
-        target = payload.get("target_user")
-        if isinstance(target, str) and "@" in target:
-            payload["target_user"] = ensure_public_account_id(target)
-        with (
-            patch("aos.api.reports.report_user.rate_limit", return_value=None),
-            patch("aos.api.reports.report_user.record_report_user_activity", return_value=None),
-            patch("aos.api.reports.report_user.record_block_user_activity", return_value=None),
-        ):
-            return report_user_impl(**payload)
-
-    def _report_ad(self, **overrides):
-        payload = {"ad_id": self.ad.name, "reason": self.reason, "details": "Misleading listing"}
-        payload.update(overrides)
-        with (
-            patch("aos.api.reports.report_ad.rate_limit", return_value=None),
-            patch("aos.api.reports.report_ad.record_ad_report_activity", return_value=None),
-        ):
-            return report_ad_impl(**payload)
-
-    def _report_short(self, **overrides):
-        payload = {"short_id": self.short.name, "reason": self.reason, "details": "Unsafe content"}
-        payload.update(overrides)
-        with (
-            patch("aos.api.reports.report_short.rate_limit", return_value=None),
-            patch("aos.api.reports.report_short.record_short_report_activity", return_value=None),
-        ):
-            return report_short_impl(**payload)
-
-    def _report_review(self, **overrides):
-        payload = {"review_id": self.review.public_id, "reason": self.reason, "details": "Abusive review"}
-        payload.update(overrides)
-        with patch("aos.api.reviews.report.rate_limit", return_value=None):
-            return report_review_impl(**payload)
-
-    def test_report_reasons_require_login_reject_unknown_fields_and_return_active_rows(self):
+    def test_reason_listing_requires_auth_rejects_unknown_target_and_is_target_scoped(self):
         frappe.set_user("Guest")
-        response = list_report_reasons_impl()
-        self.assertFalse(response.get("ok"), response)
+        unauthorized = self._reasons("user")
+        self.assertFalse(unauthorized.get("ok"), unauthorized)
+        self.assertEqual(unauthorized.get("error"), "AUTH_REQUIRED")
 
         frappe.set_user(self.reporter)
-        with patch("aos.api.reports.reasons.rate_limit", return_value=None):
-            invalid = list_report_reasons_impl(unexpected="x")
-            valid = list_report_reasons_impl(cmd="aos.api.v1.reports.list_report_reasons")
+        invalid = self._reasons("seller")
+        unknown = self._reasons("user", extra="x")
         self.assertFalse(invalid.get("ok"), invalid)
-        self.assertEqual(invalid.get("error"), "VALIDATION_ERROR")
-        self.assertTrue(valid.get("ok"), valid)
-        ids = {row.get("id") for row in valid.get("data", {}).get("reasons", [])}
-        self.assertIn(self.reason, ids)
+        self.assertEqual(invalid.get("error"), "REPORT_INVALID_REQUEST")
+        self.assertFalse(unknown.get("ok"), unknown)
+        self.assertEqual(unknown.get("error"), "REPORT_INVALID_REQUEST")
 
-    def test_user_report_accepts_public_account_id_is_server_owned_and_duplicate_safe(self):
-        frappe.set_user("Administrator")
-        public_id = ensure_public_account_id(self.target)
-        frappe.set_user(self.reporter)
-        first = self._report_user(target_user=public_id)
-        duplicate = self._report_user(target_user=public_id)
+        user = self._reasons("user")
+        ad = self._reasons("ad")
+        short = self._reasons("short")
+        self.assertTrue(user.get("ok") and ad.get("ok") and short.get("ok"))
+        user_ids = [row["id"] for row in user["data"]["reasons"]]
+        ad_ids = [row["id"] for row in ad["data"]["reasons"]]
+        short_ids = [row["id"] for row in short["data"]["reasons"]]
+        self.assertIn(self.user_reason, user_ids)
+        self.assertNotIn(self.user_reason, ad_ids)
+        self.assertNotIn(self.user_reason, short_ids)
+        self.assertIn(self.ad_reason, ad_ids)
+        self.assertIn(self.short_reason, short_ids)
+        self.assertIn(self.shared_reason, user_ids)
+        self.assertIn(self.shared_reason, ad_ids)
+        self.assertIn(self.shared_reason, short_ids)
+        self.assertNotIn(self.disabled_reason, user_ids + ad_ids + short_ids)
+        # Query ordering includes name as the final deterministic tie breaker.
+        ordering = {}
+        for reason_id in user_ids:
+            row = frappe.db.get_value(
+                "AOS Report Reason", reason_id, ["sort_order", "label"], as_dict=True
+            )
+            ordering[reason_id] = (int(row.sort_order or 0), str(row.label), reason_id)
+        self.assertEqual(user_ids, sorted(user_ids, key=ordering.__getitem__))
+
+    def test_user_report_uses_acc_identity_session_reporter_and_idempotent_active_duplicate(self):
+        first = self._report_user(reason_id=self.user_reason)
+        repeated = self._report_user(reason_id=self.shared_reason, details="different retry payload")
         self.assertTrue(first.get("ok"), first)
-        self.assertFalse(duplicate.get("ok"), duplicate)
-        report = frappe.get_doc("AOS User Report", first["data"]["id"])
+        self.assertTrue(repeated.get("ok"), repeated)
+        self.assertEqual(first["data"]["report_id"], repeated["data"]["report_id"])
+        self.assertFalse(first["data"]["idempotent_replay"])
+        self.assertTrue(repeated["data"]["idempotent_replay"])
+        self.assertEqual(first["data"]["target_id"], ensure_public_account_id(self.target))
+        self.assertTrue(first["data"]["report_id"].startswith("URPT-"))
+        report = frappe.get_doc("AOS User Report", first["data"]["report_id"])
         self.assertEqual(report.reported_by, self.reporter)
         self.assertEqual(report.reported_user, self.target)
+        self.assertEqual(report.reason, self.user_reason)
         self.assertEqual(report.status, "Reviewing")
         self.assertTrue(report.active_key)
         self.assertEqual(
@@ -153,194 +154,188 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
             1,
         )
 
-    def test_user_report_unknown_and_conflicting_aliases_are_rejected(self):
-        unknown = self._report_user(extra_field="not allowed")
-        conflict = self._report_user(user=self.other)
-        self.assertFalse(unknown.get("ok"), unknown)
-        self.assertEqual(unknown.get("error"), "VALIDATION_ERROR")
-        self.assertFalse(conflict.get("ok"), conflict)
-        self.assertEqual(conflict.get("error"), "VALIDATION_ERROR")
-        self.assertFalse(frappe.db.exists("AOS User Report", {"reported_by": self.reporter}))
+    def test_user_report_rejects_self_nonexistent_malformed_and_forged_fields(self):
+        self_report = self._report_user(account_id=ensure_public_account_id(self.reporter))
+        missing = self._report_user(account_id="ACC-AAAAAAAAAAAAAAAAAAAA")
+        malformed = self._report_user(account_id=self.target)
+        forged_reporter = self._report_user(reported_by=self.other)
+        forged_status = self._report_user(status="Resolved")
+        for response, code in (
+            (self_report, "REPORT_SELF_NOT_ALLOWED"),
+            (missing, "REPORT_INVALID_TARGET"),
+            (malformed, "REPORT_INVALID_TARGET"),
+            (forged_reporter, "REPORT_INVALID_REQUEST"),
+            (forged_status, "REPORT_INVALID_REQUEST"),
+        ):
+            self.assertFalse(response.get("ok"), response)
+            self.assertEqual(response.get("error"), code)
 
-    def test_user_cannot_report_self_or_suspended_target(self):
-        self_report = self._report_user(target_user=self.reporter)
-        self.assertFalse(self_report.get("ok"), self_report)
+    def test_user_report_does_not_require_or_create_a_social_block(self):
+        # Existing blocks do not prevent a user from submitting a complaint.
         frappe.set_user("Administrator")
-        frappe.db.set_value("AOS Profile", {"user": self.target}, "account_status", "Suspended")
+        block = frappe.get_doc(
+            {
+                "doctype": "AOS User Block",
+                "blocker_user": self.reporter,
+                "blocked_user": self.target,
+                "status": "Active",
+                "reason": "test",
+            }
+        )
+        block.insert(ignore_permissions=True)
         frappe.set_user(self.reporter)
-        suspended = self._report_user()
-        self.assertFalse(suspended.get("ok"), suspended)
-        self.assertEqual(suspended.get("error"), "NOT_FOUND")
-
-    def test_report_and_block_is_atomic_without_endpoint_commit(self):
-        response = self._report_user(block_user=1)
+        response = self._report_user(reason_id=self.user_reason)
         self.assertTrue(response.get("ok"), response)
-        self.assertTrue(response.get("data", {}).get("block_applied"), response)
-        self.assertTrue(
-            frappe.db.exists(
+        self.assertEqual(
+            frappe.db.count(
                 "AOS User Block",
                 {"blocker_user": self.reporter, "blocked_user": self.target, "status": "Active"},
-            )
+            ),
+            1,
         )
 
-    def test_ad_report_enforces_target_visibility_ownership_and_duplicate_integrity(self):
-        response = self._report_ad()
-        duplicate = self._report_ad()
-        self.assertTrue(response.get("ok"), response)
-        self.assertFalse(duplicate.get("ok"), duplicate)
-        self.assertEqual(duplicate.get("error"), "DUPLICATE")
-        self.assertEqual(int(frappe.db.get_value("AOS Ad", self.ad.name, "total_reports") or 0), 1)
+    def test_reason_target_mismatch_and_disabled_reason_are_rejected_for_all_targets(self):
+        user_mismatch = self._report_user(reason_id=self.ad_reason)
+        ad_mismatch = self._report_ad(reason_id=self.user_reason)
+        short_mismatch = self._report_short(reason_id=self.user_reason)
+        disabled = self._report_user(reason_id=self.disabled_reason)
+        for response in (user_mismatch, ad_mismatch, short_mismatch):
+            self.assertFalse(response.get("ok"), response)
+            self.assertEqual(response.get("error"), "REPORT_REASON_NOT_ALLOWED")
+        self.assertFalse(disabled.get("ok"), disabled)
+        self.assertEqual(disabled.get("error"), "REPORT_INVALID_REASON")
 
-        frappe.set_user(self.seller_owner)
-        own = self._report_ad()
-        self.assertFalse(own.get("ok"), own)
-        self.assertEqual(own.get("error"), "INVALID_AD_INPUT")
-
-    def test_short_report_enforces_viewability_ownership_and_duplicate_integrity(self):
-        response = self._report_short()
-        duplicate = self._report_short()
-        self.assertTrue(response.get("ok"), response)
-        self.assertFalse(duplicate.get("ok"), duplicate)
-        frappe.set_user(self.short_owner)
-        own = self._report_short()
-        self.assertFalse(own.get("ok"), own)
-
-    def test_review_report_is_idempotent_and_rejects_unknown_fields(self):
-        first = self._report_review()
-        repeated = self._report_review()
-        invalid = self._report_review(review=self.ad.name)
+    def test_ad_report_uses_public_ad_id_visibility_and_idempotent_duplicate(self):
+        first = self._report_ad(reason_id=self.ad_reason)
+        repeated = self._report_ad(reason_id=self.shared_reason)
         self.assertTrue(first.get("ok"), first)
         self.assertTrue(repeated.get("ok"), repeated)
         self.assertEqual(first["data"]["report_id"], repeated["data"]["report_id"])
-        self.assertFalse(repeated["data"].get("changed"))
-        self.assertFalse(invalid.get("ok"), invalid)
-        self.assertEqual(invalid.get("error"), "INVALID_REVIEW_REQUEST")
+        self.assertTrue(first["data"]["report_id"].startswith("ARPT-"))
+        self.assertEqual(first["data"]["target_id"], self.ad.public_id)
+        report = frappe.get_doc("AOS Ad Report", first["data"]["report_id"])
+        self.assertEqual(report.ad, self.ad.name)
+        self.assertEqual(report.reported_by, self.reporter)
+        self.assertEqual(int(frappe.db.get_value("AOS Ad", self.ad.name, "total_reports") or 0), 1)
 
-    def test_non_reviewer_cannot_resolve_report_even_with_ignore_permissions(self):
+        frappe.set_user(self.seller_owner)
+        own = self._report_ad(reason_id=self.ad_reason)
+        self.assertFalse(own.get("ok"), own)
+        self.assertEqual(own.get("error"), "REPORT_SELF_NOT_ALLOWED")
+
+    def test_unavailable_or_internal_ad_identity_is_not_reportable(self):
+        internal = self._report_ad(ad_id=self.ad.name, reason_id=self.ad_reason)
+        self.assertFalse(internal.get("ok"), internal)
+        self.assertEqual(internal.get("error"), "REPORT_INVALID_TARGET")
+        frappe.set_user("Administrator")
+        frappe.db.set_value("AOS Ad", self.ad.name, "status", "Suspended", update_modified=False)
+        frappe.set_user(self.reporter)
+        unavailable = self._report_ad(reason_id=self.ad_reason)
+        self.assertFalse(unavailable.get("ok"), unavailable)
+        self.assertEqual(unavailable.get("error"), "REPORT_INVALID_TARGET")
+
+    def test_short_report_uses_canonical_id_visibility_and_idempotent_duplicate(self):
+        first = self._report_short(reason_id=self.short_reason)
+        repeated = self._report_short(reason_id=self.shared_reason)
+        self.assertTrue(first.get("ok"), first)
+        self.assertTrue(repeated.get("ok"), repeated)
+        self.assertEqual(first["data"]["report_id"], repeated["data"]["report_id"])
+        self.assertTrue(first["data"]["report_id"].startswith("SRPT-"))
+        self.assertEqual(first["data"]["target_id"], self.short.name)
+        frappe.set_user(self.short_owner)
+        own = self._report_short(reason_id=self.short_reason)
+        self.assertFalse(own.get("ok"), own)
+        self.assertEqual(own.get("error"), "REPORT_SELF_NOT_ALLOWED")
+
+    def test_hidden_and_nonexistent_short_are_not_reportable(self):
+        missing = self._report_short(short_id="SHR-00000000000000000000000000000000")
+        self.assertFalse(missing.get("ok"), missing)
+        self.assertEqual(missing.get("error"), "REPORT_INVALID_TARGET")
+        frappe.set_user("Administrator")
+        frappe.db.set_value("AOS Short", self.short.name, "lifecycle_status", "Hidden", update_modified=False)
+        frappe.set_user(self.reporter)
+        hidden = self._report_short(reason_id=self.short_reason)
+        self.assertFalse(hidden.get("ok"), hidden)
+        self.assertEqual(hidden.get("error"), "REPORT_INVALID_TARGET")
+
+    def test_details_are_optional_bounded_and_html_is_rejected(self):
+        html = self._report_user(details="<script>alert(1)</script>")
+        too_long = self._report_user(details="x" * 1001)
+        for response in (html, too_long):
+            self.assertFalse(response.get("ok"), response)
+            self.assertEqual(response.get("error"), "REPORT_INVALID_REQUEST")
+        ok_response = self._report_user(details="")
+        self.assertTrue(ok_response.get("ok"), ok_response)
+
+    def test_staff_lifecycle_is_reviewing_to_terminal_and_reporter_cannot_transition(self):
         submitted = self._report_user()
         self.assertTrue(submitted.get("ok"), submitted)
-        doc = frappe.get_doc("AOS User Report", submitted["data"]["id"])
+        report_id = submitted["data"]["report_id"]
+        doc = frappe.get_doc("AOS User Report", report_id)
         doc.status = "Resolved"
-        doc.admin_action = "Dismiss Report"
-        with self.assertRaises(frappe.ValidationError):
-            doc.save(ignore_permissions=True)
-        doc.reload()
-        self.assertEqual(doc.status, "Reviewing")
-
-    def test_reviewer_cannot_rewrite_submitted_report_details(self):
-        submitted = self._report_user()
-        self.assertTrue(submitted.get("ok"), submitted)
-        frappe.set_user("Administrator")
-        doc = frappe.get_doc("AOS User Report", submitted["data"]["id"])
-        doc.details = "Rewritten evidence"
         with self.assertRaises(frappe.ValidationError):
             doc.save(ignore_permissions=True)
 
-    def test_stale_desk_save_cannot_overwrite_newer_terminal_decision(self):
-        submitted = self._report_user()
-        self.assertTrue(submitted.get("ok"), submitted)
         frappe.set_user("Administrator")
-        stale = frappe.get_doc("AOS User Report", submitted["data"]["id"])
-        frappe.db.set_value(
-            "AOS User Report",
-            stale.name,
-            {"status": "Resolved", "admin_action": "Dismiss Report"},
-            update_modified=False,
-        )
-        stale.status = "Rejected"
-        stale.admin_action = ""
-        with self.assertRaises(frappe.ValidationError):
-            stale.save(ignore_permissions=True)
-        self.assertEqual(frappe.db.get_value("AOS User Report", stale.name, "status"), "Resolved")
-
-    def test_report_reason_title_is_immutable_but_reason_can_be_deactivated(self):
-        frappe.set_user("Administrator")
-        reason = frappe.get_doc("AOS Report Reason", self.reason)
-        reason.title = f"{reason.title} changed"
-        with self.assertRaises(frappe.ValidationError):
-            reason.save(ignore_permissions=True)
-        reason.reload()
-        reason.is_active = 0
-        reason.save(ignore_permissions=True)
-        self.assertEqual(int(reason.is_active or 0), 0)
-
-    def test_reason_may_be_deactivated_after_submission_without_blocking_resolution(self):
-        submitted = self._report_user()
-        self.assertTrue(submitted.get("ok"), submitted)
-        frappe.set_user("Administrator")
-        frappe.db.set_value("AOS Report Reason", self.reason, "is_active", 0)
-        doc = frappe.get_doc("AOS User Report", submitted["data"]["id"])
-        doc.status = "Rejected"
+        doc = frappe.get_doc("AOS User Report", report_id)
+        doc.status = "Resolved"
         doc.save(ignore_permissions=True)
-        self.assertEqual(doc.status, "Rejected")
-        self.assertTrue(doc.reviewed_by)
+        self.assertEqual(doc.status, "Resolved")
+        self.assertEqual(doc.reviewed_by, "Administrator")
         self.assertTrue(doc.reviewed_on)
-
-    def test_terminal_report_state_cannot_regress(self):
-        submitted = self._report_user()
-        frappe.set_user("Administrator")
-        doc = frappe.get_doc("AOS User Report", submitted["data"]["id"])
-        doc.status = "Resolved"
-        doc.admin_action = "Dismiss Report"
-        doc.save(ignore_permissions=True)
+        self.assertFalse(doc.active_key)
         doc.reload()
         doc.status = "Reviewing"
         with self.assertRaises(frappe.ValidationError):
             doc.save(ignore_permissions=True)
 
-    def test_suspend_user_action_uses_account_state_and_revokes_access(self):
-        submitted = self._report_user()
+    def test_terminal_report_allows_later_new_report_while_reviewing_uniqueness_remains(self):
+        first = self._report_ad(reason_id=self.ad_reason)
+        self.assertTrue(first.get("ok"), first)
         frappe.set_user("Administrator")
-        doc = frappe.get_doc("AOS User Report", submitted["data"]["id"])
-        doc.status = "Resolved"
-        doc.admin_action = "Suspend User"
-        with patch("aos.services.reports.moderation.revoke_account_access", return_value={}):
-            doc.save(ignore_permissions=True)
-        self.assertEqual(frappe.db.get_value("AOS Profile", {"user": self.target}, "account_status"), "Suspended")
-        self.assertEqual(int(frappe.db.get_value("User", self.target, "enabled") or 0), 0)
+        doc = frappe.get_doc("AOS Ad Report", first["data"]["report_id"])
+        doc.status = "Rejected"
+        doc.save(ignore_permissions=True)
+        self.assertFalse(doc.active_key)
 
-    def test_hide_short_action_is_idempotent_and_updates_discovery_state(self):
-        submitted = self._report_short()
-        frappe.set_user("Administrator")
-        doc = frappe.get_doc("AOS Short Report", submitted["data"]["id"])
-        doc.status = "Resolved"
-        doc.admin_action = "Hide Short"
-        with patch("aos.services.search_ranking_service.enqueue_short_search_index", return_value=None):
-            doc.save(ignore_permissions=True)
-        short = frappe.get_doc("AOS Short", self.short.name)
-        self.assertEqual(short.lifecycle_status, "Hidden")
-        self.assertEqual(short.moderation_status, "Hidden")
+        frappe.set_user(self.reporter)
+        second = self._report_ad(reason_id=self.shared_reason)
+        self.assertTrue(second.get("ok"), second)
+        self.assertNotEqual(first["data"]["report_id"], second["data"]["report_id"])
+        self.assertFalse(second["data"]["idempotent_replay"])
 
-    def test_suspend_ad_action_reuses_ad_lifecycle(self):
-        submitted = self._report_ad()
-        frappe.set_user("Administrator")
-        doc = frappe.get_doc("AOS Ad Report", submitted["data"]["id"])
-        doc.status = "Resolved"
-        doc.admin_action = "Suspended Ad"
-        with patch("aos.services.reports.moderation.enqueue_discovery_refresh", return_value=None):
-            doc.save(ignore_permissions=True)
-        self.ad.reload()
-        self.assertEqual(self.ad.status, "Suspended")
-
-    def test_suspend_seller_action_does_not_reopen_closed_seller(self):
-        submitted = self._report_ad()
+    def test_deactivated_reason_does_not_block_resolution_of_existing_report(self):
+        submitted = self._report_user(reason_id=self.user_reason)
         self.assertTrue(submitted.get("ok"), submitted)
         frappe.set_user("Administrator")
-        from aos.services.sellers.policy import set_seller_status
-
-        set_seller_status(
-            self.ad.seller,
-            status="Closed",
-            reason_code="TEST_CLOSED",
-            source="report_test",
-            actor="Administrator",
-        )
-        doc = frappe.get_doc("AOS Ad Report", submitted["data"]["id"])
-        doc.status = "Resolved"
-        doc.admin_action = "Suspended Seller"
+        frappe.db.set_value("AOS Report Reason", self.user_reason, "is_enabled", 0, update_modified=False)
+        doc = frappe.get_doc("AOS User Report", submitted["data"]["report_id"])
+        doc.status = "Rejected"
         doc.save(ignore_permissions=True)
-        self.assertEqual(frappe.db.get_value("AOS Seller", self.ad.seller, "status"), "Closed")
+        self.assertEqual(doc.status, "Rejected")
+
+    def test_target_becoming_unavailable_does_not_destroy_existing_report_evidence(self):
+        submitted = self._report_short(reason_id=self.short_reason)
+        self.assertTrue(submitted.get("ok"), submitted)
+        frappe.set_user("Administrator")
+        frappe.db.set_value("AOS Short", self.short.name, "lifecycle_status", "Hidden", update_modified=False)
+        doc = frappe.get_doc("AOS Short Report", submitted["data"]["report_id"])
+        doc.status = "Resolved"
+        doc.save(ignore_permissions=True)
         self.assertEqual(doc.status, "Resolved")
+
+    def test_reason_identity_is_immutable_but_label_and_enabled_state_are_operable(self):
+        frappe.set_user("Administrator")
+        reason = frappe.get_doc("AOS Report Reason", self.user_reason)
+        original_id = reason.reason_id
+        reason.label = f"{reason.label} updated"
+        reason.is_enabled = 0
+        reason.save(ignore_permissions=True)
+        self.assertEqual(reason.reason_id, original_id)
+        self.assertEqual(int(reason.is_enabled or 0), 0)
+        reason.reason_id = f"{original_id}_changed"
+        with self.assertRaises(frappe.ValidationError):
+            reason.save(ignore_permissions=True)
 
     def test_account_deletion_cleanup_removes_reporter_private_rows_but_retains_reports_about_account(self):
         user_report = self._report_user()
@@ -349,11 +344,11 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(user_report.get("ok") and ad_report.get("ok") and short_report.get("ok"))
 
         frappe.set_user(self.target)
-        with (
-            patch("aos.api.reports.report_user.rate_limit", return_value=None),
-            patch("aos.api.reports.report_user.record_report_user_activity", return_value=None),
-        ):
-            about_deleted = report_user_impl(target_user=ensure_public_account_id(self.reporter), reason=self.reason)
+        with patch("aos.api.reports.report_user.limit_report_submission", return_value=None):
+            about_deleted = report_user_impl(
+                account_id=ensure_public_account_id(self.reporter),
+                reason_id=self.shared_reason,
+            )
         self.assertTrue(about_deleted.get("ok"), about_deleted)
 
         frappe.set_user("Administrator")
@@ -361,11 +356,10 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertEqual(summary["user_reports_removed"], 1)
         self.assertEqual(summary["ad_reports_removed"], 1)
         self.assertEqual(summary["short_reports_removed"], 1)
-        self.assertFalse(frappe.db.exists("AOS User Report", user_report["data"]["id"]))
-        self.assertFalse(frappe.db.exists("AOS Ad Report", ad_report["data"]["id"]))
-        self.assertFalse(frappe.db.exists("AOS Short Report", short_report["data"]["id"]))
-        self.assertTrue(frappe.db.exists("AOS User Report", about_deleted["data"]["id"]))
-        self.assertEqual(int(frappe.db.get_value("AOS Ad", self.ad.name, "total_reports") or 0), 0)
+        self.assertFalse(frappe.db.exists("AOS User Report", user_report["data"]["report_id"]))
+        self.assertFalse(frappe.db.exists("AOS Ad Report", ad_report["data"]["report_id"]))
+        self.assertFalse(frappe.db.exists("AOS Short Report", short_report["data"]["report_id"]))
+        self.assertTrue(frappe.db.exists("AOS User Report", about_deleted["data"]["report_id"]))
 
 
 if __name__ == "__main__":

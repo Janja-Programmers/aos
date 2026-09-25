@@ -1,4 +1,4 @@
-"""Canonical constants for the existing AOS Report domain."""
+"""Canonical constants for the AOS human Reports domain."""
 
 from __future__ import annotations
 
@@ -12,14 +12,23 @@ REPORT_TRANSITIONS = {
     STATUS_REJECTED: frozenset(),
 }
 
-TRANSPORT_FIELDS = frozenset({"cmd"})
-
-REPORT_ACTIONS = {
-    "AOS User Report": frozenset({"", "Warn User", "Suspend User", "Dismiss Report"}),
-    "AOS Ad Report": frozenset({"", "Warn Seller", "Suspended Ad", "Suspended Seller"}),
-    "AOS Short Report": frozenset({"", "Hide Short", "Warn Creator", "Suspend Creator", "Dismiss Report"}),
-    "AOS Review Report": frozenset({""}),
+REPORT_TARGET_USER = "User"
+REPORT_TARGET_AD = "Ad"
+REPORT_TARGET_SHORT = "Short"
+# Reviews is already a hardened feature and owns Review-report submission. It
+# consumes the shared reason master only so its existing contract does not
+# regress when Report Reason classification becomes mandatory.
+REPORT_TARGET_REVIEW = "Review"
+REPORT_REASON_TARGETS = frozenset(
+    {REPORT_TARGET_USER, REPORT_TARGET_AD, REPORT_TARGET_SHORT, REPORT_TARGET_REVIEW}
+)
+PUBLIC_REPORT_TARGETS = {
+    "user": REPORT_TARGET_USER,
+    "ad": REPORT_TARGET_AD,
+    "short": REPORT_TARGET_SHORT,
 }
+
+TRANSPORT_FIELDS = frozenset({"cmd"})
 
 SUBMISSION_FIELDS = {
     "AOS User Report": ("reported_user", "reported_by", "reason", "details"),
@@ -30,17 +39,16 @@ SUBMISSION_FIELDS = {
 
 DETAIL_MAX_LENGTH = {
     "AOS User Report": 1000,
-    "AOS Ad Report": 2000,
+    "AOS Ad Report": 1000,
     "AOS Short Report": 1000,
     "AOS Review Report": 500,
 }
 
-USER_REPORT_FIELDS = frozenset({"target_user", "user", "reason", "details", "block_user", "also_block"})
-SHORT_REPORT_FIELDS = frozenset({"short", "short_id", "reason", "details"})
-AD_REPORT_FIELDS = frozenset({"ad", "ad_id", "reason", "details"})
-REASONS_FIELDS = frozenset()
+USER_REPORT_FIELDS = frozenset({"account_id", "reason_id", "details"})
+SHORT_REPORT_FIELDS = frozenset({"short_id", "reason_id", "details"})
+AD_REPORT_FIELDS = frozenset({"ad_id", "reason_id", "details"})
+REASONS_FIELDS = frozenset({"target_type"})
 
-REPORT_REASONS_LIMIT_PER_MINUTE_PER_USER = 120
-REPORT_AD_LIMIT_PER_MINUTE_PER_USER = 10
-REPORT_USER_LIMIT_PER_MINUTE_PER_USER = 10
-REPORT_SHORT_LIMIT_PER_MINUTE_PER_USER = 10
+REPORT_REASONS_LIMIT_PER_MINUTE_PER_USER = 60
+REPORT_SUBMISSION_LIMIT_PER_MINUTE_PER_USER = 10
+REPORT_SUBMISSION_LIMIT_PER_MINUTE_PER_TARGET = 3

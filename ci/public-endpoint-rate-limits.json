@@ -918,7 +918,7 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
-    "endpoint": "aos.api.v1.reports.__init__.list_report_reasons",
+    "endpoint": "aos.api.v1.reports.__init__.get_report_reasons",
     "access": "authenticated",
     "policy": "baseline_authenticated",
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
