@@ -1,20 +1,21 @@
 from __future__ import annotations
 
-import io
 import json
 import logging
-import re
 import time
+from urllib.parse import urlparse
 from typing import Any
 
 import requests
 from minio import Minio
-from PIL import Image
 
 from app.config import get_settings
 from app.durable_lifecycle import deliver_callback, execute_work_job
 from app.queue import get_queue, get_redis
 from app.security import build_signature
+from app.policy import POLICY_VERSION, evaluate_policy
+from app.text_detector import detect_text
+from app.vision_detector import VisionDetectorError, classify_images
 
 logger = logging.getLogger(__name__)
 
@@ -35,150 +36,80 @@ def _minio_client() -> Minio:
 	)
 
 
-def _normalize_text(value: str) -> str:
-	return re.sub(r"\s+", " ", str(value or "").strip().lower())
-
-
-def _contains_term(text: str, terms: tuple[str, ...]) -> list[str]:
-	found = []
-	for term in terms:
-		term = str(term or "").strip().lower()
-		if not term:
-			continue
-		if term in text:
-			found.append(term)
-	return found
-
-
-def _inspect_image_media(
-	client: Minio, item: dict[str, Any], labels: set[str], reasons: list[str], scores: dict[str, float]
-) -> None:
-	settings = get_settings()
-	size_bytes = int(item.get("size_bytes") or 0)
-	content_type = str(item.get("content_type") or "").lower()
-
-	# This worker performs byte-bounded image inspection only. Videos are
-	# accepted according to the canonical Media purpose policy and are not
-	# downloaded into memory here, so the image inspection cap must never
-	# reject an otherwise valid ad video.
-	if content_type.startswith("video/"):
-		labels.add("video_present")
-		scores.setdefault("video_present", 0.10)
-		return
-
-	if not content_type.startswith("image/"):
-		return
-
-	if size_bytes and size_bytes > settings.max_media_bytes:
-		labels.add("media_too_large_for_moderation")
-		reasons.append(f"Media {item.get('media_id')} exceeds moderation inspection limit.")
-		scores["media_too_large_for_moderation"] = 0.60
-		return
-
-	if not settings.inspect_media:
-		labels.add("image_present")
-		scores.setdefault("image_present", 0.05)
-		return
-
-	bucket = str(item.get("bucket") or "").strip().strip("/")
-	object_key = str(item.get("object_key") or "").strip().strip("/")
-	if not bucket or not object_key:
-		labels.add("media_missing_storage_reference")
-		reasons.append("Media storage reference is missing.")
-		scores["media_missing_storage_reference"] = 0.60
-		return
-
-	response = None
-	try:
-		response = client.get_object(bucket, object_key)
-		data = response.read(settings.max_media_bytes + 1)
-		if len(data) > settings.max_media_bytes:
-			labels.add("media_too_large_for_moderation")
-			reasons.append(f"Media {item.get('media_id')} exceeds moderation inspection limit.")
-			scores["media_too_large_for_moderation"] = 0.60
-			return
-		with Image.open(io.BytesIO(data)) as img:
-			width, height = int(img.width or 0), int(img.height or 0)
-			if width < 80 or height < 80:
-				labels.add("low_resolution_image")
-				reasons.append("Image is too small for reliable automated moderation.")
-				scores["low_resolution_image"] = 0.55
-			else:
-				labels.add("image_inspected")
-				scores.setdefault("image_inspected", 0.05)
-	except Exception:
-		logger.exception("Moderation media inspection failed")
-		labels.add("media_inspection_failed")
-		reasons.append("Media inspection failed.")
-		scores["media_inspection_failed"] = 0.65
-	finally:
-		if response is not None:
-			response.close()
-			response.release_conn()
-
-
 def _moderate(payload: dict[str, Any]) -> dict[str, Any]:
 	settings = get_settings()
-	labels: set[str] = set()
-	reasons: list[str] = []
-	scores: dict[str, float] = {}
+	text_items = list(payload.get("text_items") or [])[: settings.max_text_items]
+	media_items = list(payload.get("media_items") or [])[: settings.max_images + 4]
+	signals, detector_failures = detect_text(text_items, max_chars=settings.max_text_chars)
+	model_versions: dict[str, str] = {"text": "aos_text_rules:2"}
+	missing_required_evidence: list[str] = []
 
-	combined_text = " ".join(
-		_normalize_text(str(item.get("text") or ""))[: settings.max_text_chars]
-		for item in payload.get("text_items") or []
+	image_items = [item for item in media_items if str(item.get("content_type") or "").lower().startswith("image/")]
+	video_items = [item for item in media_items if str(item.get("content_type") or "").lower().startswith("video/")]
+	if image_items:
+		if not settings.inspect_media:
+			missing_required_evidence.append("image")
+		else:
+			try:
+				vision_signals, versions = classify_images(client=_minio_client(), items=image_items, settings=settings)
+				signals.extend(vision_signals)
+				model_versions.update(versions)
+			except Exception as exc:
+				logger.warning("Vision moderation unavailable category=%s", exc.__class__.__name__)
+				detector_failures.append("image")
+
+	# Moderation never downloads/processes videos independently. Shorts can provide
+	# representative storyboard/poster frames produced by hardened Video Processing.
+	# A video without such authoritative visual evidence is held for human review.
+	if video_items:
+		fields = {str(item.get("field") or "").lower() for item in image_items}
+		if not fields.intersection({"storyboard", "poster", "cover", "video_frame"}):
+			missing_required_evidence.append("video_visual")
+		context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
+		if bool(context.get("transcript_expected")) and not bool(context.get("transcript_supplied")):
+			missing_required_evidence.append("audio_transcript")
+
+	result = evaluate_policy(
+		signals,
+		missing_required_evidence=missing_required_evidence,
+		detector_failures=detector_failures,
 	)
-
-	if combined_text:
-		labels.add("text_present")
-		reject_hits = _contains_term(combined_text, settings.reject_terms)
-		review_hits = _contains_term(combined_text, settings.review_terms)
-		if reject_hits:
-			labels.add("blocked_text_term")
-			reasons.append("Blocked text terms detected: " + ", ".join(sorted(set(reject_hits))))
-			scores["blocked_text_term"] = 0.98
-		if review_hits:
-			labels.add("sensitive_text_term")
-			reasons.append("Sensitive text terms detected: " + ", ".join(sorted(set(review_hits))))
-			scores["sensitive_text_term"] = max(scores.get("sensitive_text_term", 0), 0.72)
-	else:
-		labels.add("no_text")
-
-	media_items = payload.get("media_items") or []
-	if media_items:
-		labels.add("media_present")
-		client = _minio_client()
-		for item in media_items:
-			_inspect_image_media(client, item, labels, reasons, scores)
-
-	risk_score = max(scores.values()) if scores else 0.0
-
-	if "blocked_text_term" in labels:
-		decision = "reject"
-	elif any(
-		label in labels
-		for label in {
-			"sensitive_text_term",
-			"media_inspection_failed",
-			"media_missing_storage_reference",
-			"media_too_large_for_moderation",
-			"low_resolution_image",
-		}
-	):
-		decision = "review"
-	else:
-		decision = "allow"
-
+	category_scores: dict[str, float] = {}
+	for signal in signals[:64]:
+		category = str(signal.get("category") or "other")
+		try:
+			confidence = max(0.0, min(float(signal.get("confidence") or 0), 1.0))
+		except (TypeError, ValueError):
+			continue
+		category_scores[category] = max(category_scores.get(category, 0.0), confidence)
 	return {
-		"decision": decision,
-		"labels": sorted(labels),
-		"scores": scores,
-		"reasons": reasons,
-		"risk_score": risk_score,
+		"decision": result.decision,
+		"signals": signals[:64],
+		"labels": list(result.categories),
+		"scores": category_scores,
+		"reasons": list(result.reasons),
+		"risk_score": result.risk_score,
+		"policy_version": POLICY_VERSION,
+		"model_versions": model_versions,
+		"missing_evidence": sorted(set(missing_required_evidence)),
 	}
+
+
+def _validate_callback_url(callback_url: str) -> str:
+	settings = get_settings()
+	parsed = urlparse(str(callback_url or "").strip())
+	if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+		raise ModerationProcessingError("Invalid callback URL")
+	if settings.environment.lower() in {"production", "staging"}:
+		allowed = {str(host).strip().lower() for host in settings.callback_allowed_hosts if str(host).strip()}
+		if parsed.scheme != "https" or not allowed or parsed.hostname.lower() not in allowed:
+			raise ModerationProcessingError("Invalid callback URL")
+	return parsed.geturl()
 
 
 def _callback(callback_url: str, payload: dict[str, Any]) -> Any:
 	settings = get_settings()
+	callback_url = _validate_callback_url(callback_url)
 	body = json.dumps(payload, separators=(",", ":"), sort_keys=True, default=str).encode("utf-8")
 	timestamp = str(int(time.time()))
 	signed_payload = timestamp.encode("utf-8") + b"." + body
@@ -202,6 +133,8 @@ def _perform_moderation_work(payload: dict[str, Any]) -> dict[str, Any]:
 		raise ModerationProcessingError("job_id and callback_url are required")
 
 	try:
+		if str(payload.get("policy_version") or "").strip() != POLICY_VERSION:
+			raise ModerationProcessingError("Moderation policy version mismatch")
 		result = _moderate(payload)
 		callback_payload = {
 			"job_id": job_id,

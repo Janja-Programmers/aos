@@ -112,3 +112,38 @@ class ShortFrameClassificationResponse(BaseModel):
     model: str = Field(min_length=1, max_length=140)
     model_version: str = Field(min_length=1, max_length=140)
     frame_count: int = Field(ge=1, le=8)
+
+class SafetyImageClassificationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    images: list[str] = Field(min_length=1, max_length=8)
+
+    @field_validator("images")
+    @classmethod
+    def validate_encoded_images(cls, images: list[str]) -> list[str]:
+        total = 0
+        for image in images:
+            if not isinstance(image, str) or not image:
+                raise ValueError("Image is required")
+            if len(image) > 7_000_000:
+                raise ValueError("Encoded image is too large")
+            total += len(image)
+            if total > 12_000_000:
+                raise ValueError("Encoded images are too large")
+        return images
+
+
+class SafetySignal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    category: str = Field(min_length=1, max_length=80)
+    confidence: float = Field(ge=0.0, le=1.0)
+    severity: Literal["low", "medium", "high", "critical"]
+
+
+class SafetyImageClassificationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["ready"]
+    signals: list[SafetySignal] = Field(default_factory=list, max_length=32)
+    safe_confidence: float = Field(ge=0.0, le=1.0)
+    model: str = Field(min_length=1, max_length=140)
+    model_version: str = Field(min_length=1, max_length=140)
+    image_count: int = Field(ge=1, le=8)

@@ -1,5 +1,4 @@
-"""Internal Moderation API implementation package.
+"""Internal Moderation callback implementation package.
 
-Public whitelisted endpoints are exposed under aos.api.v1.moderation.
-Do not add public Frappe endpoint wrappers here.
+Whitelisted service/staff boundaries live under aos.api.internal.moderation.
 """

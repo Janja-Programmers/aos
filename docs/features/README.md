@@ -35,7 +35,7 @@ Feature documentation is the canonical human-readable description of AOS busines
 Some HTTP methods exist for infrastructure rather than product clients. They are intentionally **not** duplicated into fake product features:
 
 - LiveKit webhook → [LiveKit integration](live/livekit.md)
-- Moderation callback → [Content moderation service](../production/content-moderation-service.md)
+- Moderation callback → [Moderation](moderation/README.md)
 - Notifications signed delivery callback → [Notifications](notifications/README.md)
 - Video-processing callback → [Video processing service](../production/video-processing-service.md)
 - Private Prometheus/background/backup metrics → [Production operations](../production/operations.md)

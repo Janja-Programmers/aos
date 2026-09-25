@@ -11,8 +11,15 @@
   "target_owner",
   "content_kind",
   "source",
+  "evaluation_key",
+  "content_fingerprint",
+  "content_version",
+  "policy_version",
   "status",
   "decision",
+  "decision_source",
+  "decided_by",
+  "decided_at",
   "context_json",
   "service_section",
   "service_job_id",
@@ -25,11 +32,12 @@
   "scores_json",
   "reasons_json",
   "risk_score",
+  "signals_json",
+  "model_versions_json",
+  "missing_evidence_json",
   "payload_section",
   "text_items_json",
   "media_items_json",
-  "request_payload",
-  "response_payload",
   "timing_section",
   "dispatched_at",
   "started_at",
@@ -83,6 +91,34 @@
    "in_standard_filter": 1
   },
   {
+   "fieldname": "evaluation_key",
+   "fieldtype": "Data",
+   "label": "Evaluation Key",
+   "read_only": 1,
+   "unique": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "content_fingerprint",
+   "fieldtype": "Data",
+   "label": "Content Fingerprint",
+   "read_only": 1
+  },
+  {
+   "fieldname": "content_version",
+   "fieldtype": "Data",
+   "label": "Content Version",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "policy_version",
+   "fieldtype": "Data",
+   "label": "Policy Version",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
    "default": "Queued",
    "fieldname": "status",
    "fieldtype": "Select",
@@ -102,6 +138,27 @@
    "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1
+  },
+  {
+   "fieldname": "decision_source",
+   "fieldtype": "Select",
+   "label": "Decision Source",
+   "options": "\nautomatic\nmanual",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "decided_by",
+   "fieldtype": "Link",
+   "label": "Decided By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "decided_at",
+   "fieldtype": "Datetime",
+   "label": "Decided At",
+   "read_only": 1
   },
   {
    "fieldname": "context_json",
@@ -176,6 +233,24 @@
    "read_only": 1
   },
   {
+   "fieldname": "signals_json",
+   "fieldtype": "Long Text",
+   "label": "Normalized Signals JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "model_versions_json",
+   "fieldtype": "Long Text",
+   "label": "Model Versions JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "missing_evidence_json",
+   "fieldtype": "Long Text",
+   "label": "Missing Evidence JSON",
+   "read_only": 1
+  },
+  {
    "fieldname": "payload_section",
    "fieldtype": "Section Break",
    "label": "Payloads"
@@ -190,18 +265,6 @@
    "fieldname": "media_items_json",
    "fieldtype": "Long Text",
    "label": "Media Items JSON",
-   "read_only": 1
-  },
-  {
-   "fieldname": "request_payload",
-   "fieldtype": "Long Text",
-   "label": "Request Payload",
-   "read_only": 1
-  },
-  {
-   "fieldname": "response_payload",
-   "fieldtype": "Long Text",
-   "label": "Response Payload",
    "read_only": 1
   },
   {
@@ -234,7 +297,7 @@
    "read_only": 1
   }
  ],
- "index_web_pages_for_search": 1,
+ "index_web_pages_for_search": 0,
  "links": [],
  "modified": "2026-07-03 00:00:00.000000",
  "modified_by": "Administrator",

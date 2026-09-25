@@ -117,7 +117,7 @@ class TestOperationalHealth(FrappeTestCase):
             "MODERATION_SERVICE_URL": "http://127.0.0.1:8140",
             "MODERATION_SERVICE_SECRET": "moderation-dispatch-secret-value-0123456789abcdef",
             "MODERATION_SERVICE_CALLBACK_SECRET": "moderation-callback-secret-value-0123456789abcdef",
-            "MODERATION_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.v1.moderation.handle_callback",
+            "MODERATION_CALLBACK_URL": "https://api.africaonlinestores.example-prod.com/api/method/aos.api.internal.moderation.handle_callback",
             "SEARCH_RANKING_ENABLED": "true",
             "SEARCH_RANKING_SERVICE_URL": "http://127.0.0.1:8150",
             "SEARCH_RANKING_SERVICE_SECRET": "search-dispatch-secret-value-0123456789abcdef",

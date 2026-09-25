@@ -47,6 +47,8 @@ class Settings:
     durable_result_ttl_seconds: int = _int("MODERATION_DURABLE_RESULT_TTL_SECONDS", 604800, min_value=3600)
     callback_job_timeout_seconds: int = _int("MODERATION_CALLBACK_JOB_TIMEOUT_SECONDS", 120, min_value=30, max_value=900)
     callback_max_attempts: int = _int("MODERATION_CALLBACK_MAX_ATTEMPTS", 8, min_value=1, max_value=20)
+    max_request_bytes: int = _int("MODERATION_MAX_REQUEST_BYTES", 5 * 1024 * 1024, min_value=65536, max_value=20 * 1024 * 1024)
+    callback_allowed_hosts: tuple[str, ...] = _csv("MODERATION_CALLBACK_ALLOWED_HOSTS", "")
 
     request_secret: str = field(default=_clean(os.getenv("MODERATION_SERVICE_SECRET"), ""), repr=False)
     callback_secret: str = field(default=_clean(os.getenv("MODERATION_SERVICE_CALLBACK_SECRET"), ""), repr=False)
@@ -56,18 +58,19 @@ class Settings:
     minio_secret_key: str = field(default=_clean(os.getenv("MINIO_SECRET_KEY") or os.getenv("MINIO_ROOT_PASSWORD"), ""), repr=False)
     minio_secure: bool = _bool("MINIO_SECURE", False)
 
-    max_text_chars: int = _int("MODERATION_MAX_TEXT_CHARS", 20000, min_value=1000)
-    max_media_bytes: int = _int("MODERATION_MAX_MEDIA_BYTES", 10485760, min_value=1024)
+    max_text_chars: int = _int("MODERATION_MAX_TEXT_CHARS", 20000, min_value=1000, max_value=100000)
+    max_media_bytes: int = _int("MODERATION_MAX_MEDIA_BYTES", 5242880, min_value=65536, max_value=10485760)
+    max_images: int = _int("MODERATION_MAX_IMAGES", 8, min_value=1, max_value=16)
+    max_text_items: int = _int("MODERATION_MAX_TEXT_ITEMS", 16, min_value=1, max_value=32)
     inspect_media: bool = _bool("MODERATION_INSPECT_MEDIA", True)
 
-    reject_terms: tuple[str, ...] = _csv(
-        "MODERATION_REJECT_TERMS",
-        "porn,porno,nude,nudes,escort,terrorist,terrorism,suicide,kill myself,child abuse,scam,fake id",
-    )
-    review_terms: tuple[str, ...] = _csv(
-        "MODERATION_REVIEW_TERMS",
-        "weapon,gun,knife,drugs,cocaine,heroin,weed,casino,gambling,betting,loan,crypto,investment,adult,sex,stolen",
-    )
+    vision_url: str = _clean(os.getenv("MODERATION_VISION_URL"), "http://image-search:8000/internal/moderation/classify-images")
+    vision_secret: str = field(default=_clean(os.getenv("MODERATION_VISION_SECRET"), ""), repr=False)
+    vision_allowed_hosts: tuple[str, ...] = _csv("MODERATION_VISION_ALLOWED_HOSTS", "image-search")
+    vision_timeout_seconds: int = _int("MODERATION_VISION_TIMEOUT_SECONDS", 45, min_value=5, max_value=180)
+    vision_ready_url: str = _clean(os.getenv("MODERATION_VISION_READY_URL"), "http://image-search:8000/internal/moderation/ready")
+
+
 
 
 def get_settings() -> Settings:

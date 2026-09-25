@@ -76,7 +76,7 @@ SINGLE_FILE_FEATURE_DOCS = {
 
 PLATFORM_DOCS = {
 	"livekit": "docs/features/live/README.md",
-	"moderation": "docs/production/content-moderation-service.md",
+	"moderation": "docs/features/moderation/README.md",
 	"video_processing": "docs/features/shorts/README.md",
 	"metrics": "docs/api/internal.md",
 }

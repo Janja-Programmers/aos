@@ -9,7 +9,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -48,6 +47,7 @@ class ModerationConfig:
 	dispatcher_timeout_seconds: int
 	enabled: bool
 	fail_open: bool
+	policy_version: str
 
 
 def get_moderation_config() -> ModerationConfig:
@@ -63,9 +63,9 @@ def get_moderation_config() -> ModerationConfig:
 	if not callback_url:
 		domain = get_env("AOS_API_DOMAIN")
 		if domain:
-			callback_url = f"https://{domain}/api/method/aos.api.v1.moderation.handle_callback"
+			callback_url = f"https://{domain}/api/method/aos.api.internal.moderation.handle_callback"
 		else:
-			callback_url = "http://127.0.0.1:8000/api/method/aos.api.v1.moderation.handle_callback"
+			callback_url = "http://127.0.0.1:8000/api/method/aos.api.internal.moderation.handle_callback"
 
 	return ModerationConfig(
 		service_url=service_url,
@@ -82,6 +82,7 @@ def get_moderation_config() -> ModerationConfig:
 		),
 		enabled=get_env_bool("MODERATION_ENABLED", True),
 		fail_open=get_env_bool("MODERATION_FAIL_OPEN", False),
+		policy_version=get_env("MODERATION_POLICY_VERSION", "aos-safety-2026-09-25-v1") or "aos-safety-2026-09-25-v1",
 	)
 
 
@@ -142,6 +143,29 @@ def build_media_item(media_id: str, *, field: str = "media") -> dict[str, Any]:
 	}
 
 
+def _content_fingerprint(*, text_items: list[dict[str, Any]], media_items: list[dict[str, Any]], context: dict[str, Any]) -> str:
+	material = {
+		"text": text_items,
+		"media": [
+			{
+				"field": item.get("field"),
+				"media_id": item.get("media_id"),
+				"object_key": item.get("object_key"),
+				"content_type": item.get("content_type"),
+				"size_bytes": item.get("size_bytes"),
+			}
+			for item in media_items
+		],
+		"context": context,
+	}
+	return hashlib.sha256(_json_bytes(material)).hexdigest()
+
+
+def _evaluation_key(*, target_doctype: str, target_name: str, content_fingerprint: str, policy_version: str) -> str:
+	value = f"{target_doctype}\n{target_name}\n{content_fingerprint}\n{policy_version}".encode("utf-8")
+	return hashlib.sha256(value).hexdigest()
+
+
 def create_moderation_job(
 	*,
 	target_doctype: str,
@@ -152,6 +176,7 @@ def create_moderation_job(
 	media_items: list[dict[str, Any]] | None = None,
 	context: dict[str, Any] | None = None,
 	target_owner: str | None = None,
+	content_version: str | None = None,
 	enqueue: bool = True,
 ) -> object | None:
 	"""Create a persistent moderation job and optionally enqueue dispatch."""
@@ -171,9 +196,22 @@ def create_moderation_job(
 	cleaned_text = [item for item in (text_items or []) if item and str(item.get("text") or "").strip()]
 	cleaned_media = [
 		item
-		for item in (media_items or [])
+		for item in (media_items or [])[:20]
 		if item and str(item.get("media_id") or item.get("object_key") or "").strip()
 	]
+	cleaned_text = cleaned_text[:32]
+	clean_context = dict(context or {})
+	fingerprint = _content_fingerprint(text_items=cleaned_text, media_items=cleaned_media, context=clean_context)
+	policy_version = config.policy_version
+	evaluation_key = _evaluation_key(
+		target_doctype=target_doctype,
+		target_name=target_name,
+		content_fingerprint=fingerprint,
+		policy_version=policy_version,
+	)
+	existing = frappe.db.get_value("AOS Moderation Job", {"evaluation_key": evaluation_key}, "name")
+	if existing:
+		return frappe.get_doc("AOS Moderation Job", existing)
 
 	job = frappe.get_doc(
 		{
@@ -183,17 +221,27 @@ def create_moderation_job(
 			"target_owner": target_owner,
 			"content_kind": content_kind,
 			"source": source,
+			"evaluation_key": evaluation_key,
+			"content_fingerprint": fingerprint,
+			"content_version": str(content_version or fingerprint)[:180],
+			"policy_version": policy_version,
 			"status": "Queued",
 			"decision": "pending",
 			"attempt_count": 0,
 			"max_attempts": config.max_attempts,
-			"idempotency_key": uuid.uuid4().hex,
+			"idempotency_key": evaluation_key,
 			"text_items_json": _json_dumps(cleaned_text),
 			"media_items_json": _json_dumps(cleaned_media),
-			"context_json": _json_dumps(context or {}),
+			"context_json": _json_dumps(clean_context),
 		}
 	)
-	job.insert(ignore_permissions=True)
+	try:
+		job.insert(ignore_permissions=True)
+	except frappe.DuplicateEntryError:
+		name = frappe.db.get_value("AOS Moderation Job", {"evaluation_key": evaluation_key}, "name")
+		if not name:
+			raise
+		return frappe.get_doc("AOS Moderation Job", name)
 
 	if enqueue:
 		enqueue_moderation_dispatch(job.name)
@@ -253,9 +301,6 @@ def dispatch_moderation_job(moderation_job_id: str) -> object:
 	frappe.db.commit()
 
 	payload = build_moderation_job_payload(job)
-	job.request_payload = json.dumps(payload, ensure_ascii=False, default=str)
-	job.save(ignore_permissions=True)
-	frappe.db.commit()
 
 	body = _json_bytes(payload)
 	headers = {
@@ -322,6 +367,9 @@ def build_moderation_job_payload(job) -> dict[str, Any]:
 		"text_items": _json_loads(job.text_items_json, []),
 		"media_items": _json_loads(job.media_items_json, []),
 		"context": _json_loads(job.context_json, {}),
+		"content_version": job.content_version,
+		"content_fingerprint": job.content_fingerprint,
+		"policy_version": job.policy_version,
 		"callback_url": get_moderation_config().callback_url,
 	}
 
@@ -383,6 +431,9 @@ def _normalize_decision(value: Any) -> str:
 
 
 def mark_moderation_job_completed(job, payload: dict[str, Any]) -> object:
+	callback_policy = str(payload.get("policy_version") or "").strip()
+	if callback_policy != str(job.policy_version or "").strip():
+		return mark_moderation_job_failed(job.name, "MODERATION_POLICY_VERSION_MISMATCH", commit=False)
 	decision = _normalize_decision(payload.get("decision"))
 	labels = payload.get("labels") if isinstance(payload.get("labels"), list) else []
 	scores = payload.get("scores") if isinstance(payload.get("scores"), dict) else {}
@@ -399,7 +450,11 @@ def mark_moderation_job_completed(job, payload: dict[str, Any]) -> object:
 	job.scores_json = _json_dumps(scores)
 	job.reasons_json = _json_dumps(reasons)
 	job.risk_score = risk_score
-	job.response_payload = json.dumps(payload, ensure_ascii=False, default=str)
+	job.signals_json = _json_dumps(payload.get("signals") if isinstance(payload.get("signals"), list) else [])
+	job.model_versions_json = _json_dumps(payload.get("model_versions") if isinstance(payload.get("model_versions"), dict) else {})
+	job.missing_evidence_json = _json_dumps(payload.get("missing_evidence") if isinstance(payload.get("missing_evidence"), list) else [])
+	job.decision_source = "automatic"
+	job.decided_at = now_datetime()
 	job.callback_received_at = now_datetime()
 	job.completed_at = now_datetime()
 	job.last_error = None
@@ -459,10 +514,14 @@ def _reason_text(reasons: list[Any], fallback: str) -> str:
 
 def _apply_ad_decision(job, decision: str, reasons: list[Any]) -> None:
 	from aos.services.ads.lifecycle import validate_status_transition
-	from aos.services.ads.mutations import apply_transition, lock_ad
+	from aos.services.ads.mutations import apply_transition
 
-	lock_ad(job.target_name)
+	rows = frappe.db.sql("SELECT name FROM `tabAOS Ad` WHERE name=%s FOR UPDATE", (job.target_name,))
+	if not rows:
+		return
 	ad = frappe.get_doc("AOS Ad", job.target_name)
+	if str(job.content_version or "") != str(ad.modified or ""):
+		return
 	if ad.status in {"Deleted", "Sold", "Expired", "Suspended"}:
 		return
 
@@ -504,7 +563,9 @@ def _apply_review_decision(job, decision: str, reasons: list[Any]) -> None:
 	from aos.services.reviews.moderation import notify_review_decision
 	from aos.services.reviews.observability import review_log
 
-	frappe.db.sql("SELECT name FROM `tabAOS Review` WHERE name = %s FOR UPDATE", (job.target_name,))
+	rows = frappe.db.sql("SELECT name FROM `tabAOS Review` WHERE name = %s FOR UPDATE", (job.target_name,))
+	if not rows:
+		return
 	review = frappe.get_doc("AOS Review", job.target_name)
 	context = _json_loads(job.context_json, {})
 	job_generation = int(context.get("moderation_generation") or 1)
@@ -710,6 +771,7 @@ def enqueue_ad_moderation(ad_id: str, *, source: str = "ad_create") -> object | 
 		target_doctype="AOS Ad",
 		target_name=ad.name,
 		target_owner=seller_user,
+		content_version=str(ad.modified or ""),
 		content_kind="ad",
 		source=source,
 		text_items=text_items,
@@ -734,6 +796,7 @@ def enqueue_review_moderation(review_id: str, *, source: str = "review_create") 
 		target_doctype="AOS Review",
 		target_name=review.name,
 		target_owner=review.reviewer,
+		content_version=f"{review.modified}:{max(1, int(getattr(review, 'moderation_generation', 1) or 1))}",
 		content_kind="review",
 		source=source,
 		text_items=text_items,
@@ -771,6 +834,7 @@ def enqueue_short_moderation(
 	if str(short.content_type) == "Video":
 		add_media(getattr(short, "raw_video_media", None), "raw_video")
 		add_media(getattr(short, "poster_media", None), "poster")
+		add_media(getattr(short, "storyboard_media", None), "storyboard")
 	else:
 		for row in frappe.get_all("AOS Short Photo", filters={"short": short.name}, fields=["media"], order_by="position asc, name asc"):
 			add_media(row.media, "photo")
@@ -779,6 +843,7 @@ def enqueue_short_moderation(
 	return create_moderation_job(
 		target_doctype="AOS Short", target_name=short.name, target_owner=short.owner,
 		content_kind="short", source=source, text_items=text_items, media_items=media_items,
+		content_version=f"{int(short.revision or 0)}:{int(short.moderation_generation or 0)}",
 		context={
 			"was_visible": bool(was_visible), "modes": modes,
 			"moderation_generation": int(short.moderation_generation or 0),

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import requests
+
 from fastapi import FastAPI, Header, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.config import get_settings
 from app.durable_lifecycle import authorize_work_replay, job_status, replay_callback_delivery
@@ -13,17 +15,52 @@ from app.queue import get_queue, get_redis
 from app.security import verify_signature
 
 
+class ModerationTarget(BaseModel):
+	model_config = ConfigDict(extra="forbid")
+	doctype: str = Field(min_length=1, max_length=140)
+	name: str = Field(min_length=1, max_length=180)
+	owner: str | None = Field(default=None, max_length=180)
+	content_kind: str = Field(min_length=1, max_length=80)
+	source: str = Field(default="", max_length=140)
+
+
+class ModerationTextItem(BaseModel):
+	model_config = ConfigDict(extra="forbid")
+	field: str = Field(min_length=1, max_length=80)
+	text: str = Field(min_length=1, max_length=100000)
+	content_type: str = Field(default="text/plain", max_length=120)
+
+
+class ModerationMediaItem(BaseModel):
+	model_config = ConfigDict(extra="forbid")
+	field: str = Field(min_length=1, max_length=80)
+	media_id: str = Field(min_length=1, max_length=180)
+	purpose: str = Field(default="", max_length=120)
+	bucket: str = Field(min_length=1, max_length=180)
+	object_key: str = Field(min_length=1, max_length=1024)
+	content_type: str = Field(min_length=1, max_length=160)
+	size_bytes: int = Field(default=0, ge=0, le=2_147_483_647)
+	visibility: str = Field(default="", max_length=80)
+	width: int = Field(default=0, ge=0, le=100000)
+	height: int = Field(default=0, ge=0, le=100000)
+	duration_seconds: float = Field(default=0, ge=0, le=86400)
+
+
 class ModerationJobRequest(BaseModel):
-	job_id: str = Field(min_length=1)
+	model_config = ConfigDict(extra="forbid")
+	job_id: str = Field(min_length=1, max_length=180)
 	idempotency_key: str | None = Field(default=None, min_length=8, max_length=200)
 	dispatch_id: str | None = Field(default=None, min_length=8, max_length=200)
 	dispatch_generation: int = Field(default=0, ge=0, le=1000)
 	dispatch_token: str | None = Field(default=None, min_length=16, max_length=140, repr=False)
-	target: dict[str, Any]
-	text_items: list[dict[str, Any]] = Field(default_factory=list)
-	media_items: list[dict[str, Any]] = Field(default_factory=list)
+	target: ModerationTarget
+	text_items: list[ModerationTextItem] = Field(default_factory=list, max_length=32)
+	media_items: list[ModerationMediaItem] = Field(default_factory=list, max_length=20)
 	context: dict[str, Any] = Field(default_factory=dict)
-	callback_url: str = Field(min_length=1)
+	content_version: str = Field(min_length=1, max_length=180)
+	content_fingerprint: str = Field(min_length=32, max_length=128)
+	policy_version: str = Field(min_length=1, max_length=140)
+	callback_url: str = Field(min_length=1, max_length=2048)
 
 
 class InternalJobLookupRequest(BaseModel):
@@ -43,17 +80,29 @@ def health():
 
 @app.get("/ready")
 def ready():
+	settings = get_settings()
 	try:
 		get_redis().ping()
 		dependency_ready("redis")
+		if settings.inspect_media:
+			if not settings.vision_secret or not settings.vision_ready_url:
+				raise RuntimeError("vision moderation is not configured")
+			response = requests.get(settings.vision_ready_url, timeout=min(settings.vision_timeout_seconds, 10))
+			response.raise_for_status()
+			data = response.json() if response.content else {}
+			if not bool(data.get("ready", data.get("ok"))):
+				raise RuntimeError("vision moderation provider is not ready")
+			dependency_ready("vision")
 		return {"ok": True, "ready": True}
 	except Exception as exc:
-		return readiness_error("redis", exc)
+		return readiness_error("moderation_dependencies", exc)
 
 
 async def _verified_json(request: Request, signature: str | None) -> bytes:
 	settings = get_settings()
 	body = await request.body()
+	if len(body) > settings.max_request_bytes:
+		raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Request too large")
 	if not verify_signature(settings.request_secret, body, signature):
 		raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid signature")
 	return body

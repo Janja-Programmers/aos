@@ -30,6 +30,7 @@ from aos.patches.v1_0 import (
     install_shorts_indexes,
 )
 from aos.services.sellers import schema as seller_schema
+from aos.services.moderation import schema as moderation_schema
 
 
 # Keep this list limited to schema-only, idempotent installers. Data
@@ -53,6 +54,7 @@ _SCHEMA_INVARIANT_INSTALLERS: tuple[Callable[[], None], ...] = (
     install_report_indexes.execute,
     install_activity_indexes.execute,
     install_notification_indexes.execute,
+    moderation_schema.execute,
 )
 
 

@@ -210,7 +210,7 @@ class TestOutboxRecoveryDispatchAllServices(FrappeTestCase):
 				},
 			}
 		if service_type == "moderation":
-			return {**base, "status": "completed", "decision": "review", "reasons": ["test"]}
+			return {**base, "status": "completed", "decision": "review", "policy_version": str(fixture.job.policy_version), "reasons": ["test"]}
 		if service_type == "search_indexing":
 			return {**base, "status": "completed", "score": 1.0}
 		if service_type == "notification_delivery":

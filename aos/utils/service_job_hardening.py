@@ -42,6 +42,7 @@ SERVICE_JOB_SPECS: tuple[ServiceJobSpec, ...] = (
         label="moderation",
         doctype="AOS Moderation Job",
         success_statuses=("Allowed", "Review Required", "Rejected"),
+        payload_fields=("text_items_json", "media_items_json", "context_json"),
     ),
     ServiceJobSpec(
         label="search_ranking",

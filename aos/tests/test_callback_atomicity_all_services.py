@@ -165,6 +165,7 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 				**base,
 				"status": "completed",
 				"decision": "review",
+				"policy_version": str(fixture.job.policy_version),
 				"reasons": ["manual review"],
 				"labels": [],
 				"scores": {},

@@ -22,10 +22,13 @@ from .schemas import (
 	ReplaceImagesResponse,
 	ShortFrameClassificationRequest,
 	ShortFrameClassificationResponse,
+	SafetyImageClassificationRequest,
+	SafetyImageClassificationResponse,
 )
 from .service import get_service
 from .security import verify_signature
 from .short_classification import ShortClassificationError, get_short_classifier
+from .safety_classification import SafetyClassificationError, get_safety_classifier
 
 app = FastAPI(
 	title="AOS Image Search Service",
@@ -231,3 +234,69 @@ async def classify_short_frames(
 		return get_short_classifier().classify(images)
 	except (EmbeddingError, ShortClassificationError) as exc:
 		raise HTTPException(status_code=503, detail="Short classification is unavailable") from exc
+
+
+@app.get("/internal/moderation/ready", include_in_schema=False)
+def moderation_vision_ready():
+	try:
+		classifier = get_safety_classifier()
+		classifier.runtime.load()
+		return {
+			"ok": True,
+			"ready": True,
+			"model": classifier.settings.model_name,
+			"model_version": getattr(classifier.settings, "short_classification_model_version", "openclip-v1"),
+		}
+	except Exception as exc:
+		LOGGER.warning("Safety vision readiness failed: %s", exc.__class__.__name__)
+		raise HTTPException(status_code=503, detail="Safety vision classification unavailable") from exc
+
+
+@app.post(
+	"/internal/moderation/classify-images",
+	response_model=SafetyImageClassificationResponse,
+	include_in_schema=False,
+)
+async def classify_moderation_images(
+	request: Request,
+	x_aos_signature: str | None = Header(default=None),
+	x_aos_timestamp: str | None = Header(default=None),
+):
+	settings = get_settings()
+	raw_body = await request.body()
+	try:
+		timestamp = int(str(x_aos_timestamp or "").strip())
+	except (TypeError, ValueError) as exc:
+		raise HTTPException(status_code=401, detail="Invalid signature") from exc
+	if abs(int(time.time()) - timestamp) > 300:
+		raise HTTPException(status_code=401, detail="Invalid signature")
+	signed_payload = str(timestamp).encode("ascii") + b"." + raw_body
+	if not verify_signature(settings.internal_secret or "", signed_payload, x_aos_signature):
+		raise HTTPException(status_code=401, detail="Invalid signature")
+	try:
+		payload = SafetyImageClassificationRequest.model_validate_json(raw_body)
+	except Exception as exc:
+		raise HTTPException(status_code=422, detail="Invalid moderation image request") from exc
+
+	images = []
+	total_bytes = 0
+	for encoded in payload.images:
+		try:
+			raw = base64.b64decode(str(encoded or ""), validate=True)
+		except (binascii.Error, ValueError) as exc:
+			raise HTTPException(status_code=400, detail="Invalid image encoding") from exc
+		if not raw or len(raw) > settings.short_classification_max_frame_bytes:
+			raise HTTPException(status_code=413, detail="Image exceeds configured limit")
+		total_bytes += len(raw)
+		if total_bytes > settings.short_classification_max_total_bytes:
+			raise HTTPException(status_code=413, detail="Images exceed configured limit")
+		try:
+			image = load_image_from_file(BytesIO(raw), settings=settings, source_label="moderation-image")
+			images.append(image)
+		except Exception as exc:
+			raise HTTPException(status_code=400, detail="Invalid moderation image") from exc
+	try:
+		return get_safety_classifier().classify(images)
+	except (SafetyClassificationError, EmbeddingError) as exc:
+		LOGGER.warning("Safety image classification unavailable: %s", exc.__class__.__name__)
+		raise HTTPException(status_code=503, detail="Safety image classification unavailable") from exc

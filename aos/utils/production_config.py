@@ -65,7 +65,7 @@ _EXTERNAL_WORKER_SERVICES: tuple[dict[str, Any], ...] = (
 		"service_secret_keys": ("MODERATION_SERVICE_SECRET",),
 		"callback_secret_keys": ("MODERATION_SERVICE_CALLBACK_SECRET",),
 		"callback_url_keys": ("MODERATION_CALLBACK_URL",),
-		"callback_method": "aos.api.v1.moderation.handle_callback",
+		"callback_method": "aos.api.internal.moderation.handle_callback",
 		"enabled_keys": ("MODERATION_ENABLED",),
 		"enabled_default": True,
 	},
