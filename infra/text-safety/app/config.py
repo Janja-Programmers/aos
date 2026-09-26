@@ -33,7 +33,7 @@ class Settings:
     model_path: str = _clean("TEXT_SAFETY_MODEL_PATH", "/models/text-safety")
     model_name: str = _clean("TEXT_SAFETY_MODEL_NAME", "multilingual-MiniLMv2-L6-mnli-xnli")
     model_revision: str = _clean("TEXT_SAFETY_MODEL_REVISION", "acf08db83390e23428c560cb578a865b39196993")
-    model_version: str = _clean("TEXT_SAFETY_MODEL_VERSION", "minilm-nli-v2")
+    model_version: str = _clean("TEXT_SAFETY_MODEL_VERSION", "minilm-nli-v3")
     max_items: int = _int("TEXT_SAFETY_MAX_ITEMS", 16, 1, 32)
     max_chars_per_item: int = _int("TEXT_SAFETY_MAX_CHARS_PER_ITEM", 6000, 128, 20000)
     max_tokens: int = _int("TEXT_SAFETY_MAX_TOKENS", 256, 64, 512)

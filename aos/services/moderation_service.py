@@ -83,7 +83,7 @@ def get_moderation_config() -> ModerationConfig:
 		),
 		enabled=get_env_bool("MODERATION_ENABLED", True),
 		fail_open=get_env_bool("MODERATION_FAIL_OPEN", False),
-		policy_version=get_env("MODERATION_POLICY_VERSION", "aos-safety-2026-09-26-v4") or "aos-safety-2026-09-26-v4",
+		policy_version=get_env("MODERATION_POLICY_VERSION", "aos-safety-2026-09-26-v5") or "aos-safety-2026-09-26-v5",
 	)
 
 
@@ -874,11 +874,25 @@ def enqueue_short_moderation(
 	short = frappe.get_doc("AOS Short", short_id)
 	if str(short.lifecycle_status) == "Deleted":
 		return None
-	hashtags = [str(row.hashtag) for row in frappe.get_all("AOS Short Hashtag", filters={"short": short.name}, fields=["hashtag"], order_by="hashtag asc")]
-	text_items = [
-		build_text_item("caption", getattr(short, "caption", "")),
-		build_text_item("hashtags", json.dumps(hashtags, separators=(",", ":")), content_type="application/json"),
+	hashtags = [
+		str(row.hashtag).strip()
+		for row in frappe.get_all(
+			"AOS Short Hashtag",
+			filters={"short": short.name},
+			fields=["hashtag"],
+			order_by="hashtag asc",
+		)
+		if str(row.hashtag or "").strip()
 	]
+	# Moderation consumes meaningful natural-language text, never a serialized
+	# representation of an empty/structured value.  Passing ``[]`` to an NLI
+	# classifier caused high-confidence false positives for otherwise clean Shorts.
+	# Hashtags are already canonical validated tokens, so flatten only non-empty
+	# values into ordinary text.
+	text_items = [build_text_item("caption", getattr(short, "caption", ""))]
+	if hashtags:
+		text_items.append(build_text_item("hashtags", " ".join(hashtags)))
+	text_items = [item for item in text_items if item]
 	media_items: list[dict[str, Any]] = []
 	seen: set[str] = set()
 	def add_media(media_id: str | None, field_name: str) -> None:

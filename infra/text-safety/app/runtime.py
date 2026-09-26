@@ -21,6 +21,54 @@ class TextSafetyBusyError(TextSafetyError):
     pass
 
 
+_SEMANTIC_EMPTY_LITERALS = frozenset({"null", "none", "true", "false", "[]", "{}"})
+
+
+def _collect_json_strings(value: Any, output: list[str], *, limit: int = 64) -> None:
+    if len(output) >= limit:
+        return
+    if isinstance(value, str):
+        text = value.strip()
+        if text and any(char.isalnum() for char in text):
+            output.append(text)
+        return
+    if isinstance(value, list):
+        for child in value:
+            _collect_json_strings(child, output, limit=limit)
+            if len(output) >= limit:
+                return
+        return
+    if isinstance(value, dict):
+        for child in value.values():
+            _collect_json_strings(child, output, limit=limit)
+            if len(output) >= limit:
+                return
+
+
+def normalize_semantic_text(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text or text.casefold() in _SEMANTIC_EMPTY_LITERALS:
+        return None
+    # Defensive boundary: direct/internal callers may still accidentally send a
+    # serialized JSON container. Never classify JSON syntax as natural language.
+    if text[:1] in {"[", "{", '"'}:
+        try:
+            parsed = json.loads(text)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            parsed = None
+        else:
+            values: list[str] = []
+            _collect_json_strings(parsed, values)
+            if not values:
+                return None
+            text = " ".join(dict.fromkeys(values)).strip()
+    if not text or text.casefold() in _SEMANTIC_EMPTY_LITERALS:
+        return None
+    if not any(char.isalnum() for char in text):
+        return None
+    return text
+
+
 @dataclass(frozen=True)
 class CategorySpec:
     category: str
@@ -129,6 +177,20 @@ class TextSafetyRuntime:
         return probs[:, 1]
 
     def classify(self, items: list[dict[str, str]]) -> dict[str, Any]:
+        prepared: list[tuple[str, str]] = []
+        for item in items[: self.settings.max_items]:
+            field = str(item.get("field") or "text")[:80]
+            text = normalize_semantic_text(item.get("text"))
+            if not text:
+                continue
+            prepared.append((field, text[: self.settings.max_chars_per_item]))
+        if not prepared:
+            return {
+                "status": "ready",
+                "signals": [],
+                "model": self.settings.model_name,
+                "model_version": self.settings.model_version,
+            }
         if not self._slots.acquire(blocking=False):
             raise TextSafetyBusyError("Text safety service is busy.")
         try:
@@ -140,11 +202,7 @@ class TextSafetyRuntime:
             input_names = {item.name for item in session.get_inputs()}
             output_name = session.get_outputs()[0].name
             signals: list[dict[str, Any]] = []
-            for item in items[: self.settings.max_items]:
-                field = str(item.get("field") or "text")[:80]
-                text = str(item.get("text") or "").strip()[: self.settings.max_chars_per_item]
-                if not text:
-                    continue
+            for field, text in prepared:
                 pairs: list[tuple[CategorySpec, str]] = [
                     (spec, hypothesis)
                     for spec in CATEGORY_SPECS

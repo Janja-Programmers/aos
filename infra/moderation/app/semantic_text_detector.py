@@ -14,6 +14,59 @@ class SemanticTextDetectorError(RuntimeError):
     pass
 
 
+_SEMANTIC_EMPTY_LITERALS = frozenset({"null", "none", "true", "false", "[]", "{}"})
+
+
+def _has_meaningful_text(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text or text.casefold() in _SEMANTIC_EMPTY_LITERALS:
+        return False
+    return any(char.isalnum() for char in text)
+
+
+def _collect_json_strings(value: Any, output: list[str], *, limit: int = 64) -> None:
+    if len(output) >= limit:
+        return
+    if isinstance(value, str):
+        text = value.strip()
+        if _has_meaningful_text(text):
+            output.append(text)
+        return
+    if isinstance(value, list):
+        for child in value:
+            _collect_json_strings(child, output, limit=limit)
+            if len(output) >= limit:
+                return
+        return
+    if isinstance(value, dict):
+        # Keys describe schema, not user-authored content. Only values are evidence.
+        for child in value.values():
+            _collect_json_strings(child, output, limit=limit)
+            if len(output) >= limit:
+                return
+
+
+def _semantic_text(item: dict[str, Any]) -> str | None:
+    raw = str(item.get("text") or "").strip()
+    if not raw:
+        return None
+    content_type = str(item.get("content_type") or "text/plain").split(";", 1)[0].strip().lower()
+    if content_type == "application/json" or content_type.endswith("+json"):
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            # Structured moderation input is internal canonical evidence. A malformed
+            # value is an orchestration defect and must fail closed at the worker.
+            raise SemanticTextDetectorError("Malformed structured text moderation item") from exc
+        values: list[str] = []
+        _collect_json_strings(parsed, values)
+        if not values:
+            return None
+        text = " ".join(dict.fromkeys(values)).strip()
+        return text if _has_meaningful_text(text) else None
+    return raw if _has_meaningful_text(raw) else None
+
+
 def _signature(secret: str, payload: bytes) -> str:
     return "sha256=" + hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
 
@@ -31,7 +84,7 @@ def _validated_url(url: str, *, allowed_hosts: tuple[str, ...], environment: str
 def classify_text(*, items: list[dict[str, Any]], settings: Any) -> tuple[list[dict[str, Any]], dict[str, str]]:
     selected: list[dict[str, str]] = []
     for item in items[: int(settings.max_text_items)]:
-        text = str(item.get("text") or "").strip()
+        text = _semantic_text(item)
         if not text:
             continue
         selected.append({
