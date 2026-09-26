@@ -220,4 +220,29 @@ def test_contextual_pornography_sale_rejects_without_semantic_provider(monkeypat
 	})
 	assert result["decision"] == "reject"
 	assert result["scores"]["pornography"] == 0.97
-	assert result["model_versions"]["text"] == "aos_text_rules:5"
+	assert result["model_versions"]["text"] == "aos_text_rules:6"
+
+
+def test_weapon_sale_rejects_even_when_semantic_model_is_noisy(monkeypatch):
+	settings = moderation_settings()
+	settings.semantic_text_enabled = True
+	settings.semantic_text_required = True
+	monkeypatch.setattr(worker, "get_settings", lambda: settings)
+	monkeypatch.setattr(
+		worker,
+		"classify_text",
+		lambda **_kwargs: ([
+			{"category": "pornography", "confidence": 0.569405, "severity": "critical", "source": "text", "field": "caption", "reason": "semantic_text_classifier"},
+			{"category": "threats", "confidence": 0.569245, "severity": "critical", "source": "text", "field": "caption", "reason": "semantic_text_classifier"},
+			{"category": "weapons", "confidence": 0.383221, "severity": "high", "source": "text", "field": "caption", "reason": "semantic_text_classifier"},
+		], {"text_semantic": "semantic-test:noise"}),
+	)
+	result = worker._moderate({
+		"text_items": [{"field": "caption", "text": "Guns for sale. DM me to buy."}],
+		"media_items": [],
+	})
+	assert result["decision"] == "reject"
+	assert result["scores"]["weapons"] == 0.98
+	assert result["scores"]["illegal_goods"] == 0.97
+	assert set(result["labels"]) == {"illegal_goods", "weapons"}
+	assert result["risk_score"] == 0.98

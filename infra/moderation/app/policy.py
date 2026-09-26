@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import os
 from typing import Any, Iterable
 
-POLICY_VERSION = os.getenv("MODERATION_POLICY_VERSION", "aos-safety-2026-09-26-v5").strip() or "aos-safety-2026-09-26-v5"
+POLICY_VERSION = os.getenv("MODERATION_POLICY_VERSION", "aos-safety-2026-09-26-v6").strip() or "aos-safety-2026-09-26-v6"
 
 CATEGORIES = (
     "sexual_explicit",
@@ -55,6 +55,15 @@ _REJECT_THRESHOLD = {
 _REVIEW_THRESHOLD = {category: 0.45 for category in CATEGORIES}
 _REVIEW_THRESHOLD.update({"nudity": 0.40, "weapons": 0.40, "graphic_violence": 0.35, "threats": 0.35})
 
+# Zero-shot/NLI semantic scores are useful contextual evidence but are not
+# calibrated probabilities. Moderate uncorroborated semantic guesses remain in
+# the audit payload without creating review load. Strong semantic evidence can
+# still reject, and cross-modal/same-category corroboration lowers the review
+# threshold back to the category policy threshold.
+_SEMANTIC_UNCORROBORATED_REVIEW_THRESHOLD = 0.75
+_SEMANTIC_REJECT_FLOOR = 0.92
+_SEMANTIC_CORROBORATION_MIN_CONFIDENCE = 0.20
+
 # OpenCLIP zero-shot scores are relative evidence, not calibrated probabilities.
 # An unsafe class narrowly winning a near-uniform softmax is not sufficient to
 # create manual-review load. Vision uncertainty is policy-relevant only when the
@@ -89,6 +98,10 @@ def _severity(signal: dict[str, Any]) -> str:
     return value if value in SEVERITY_ORDER else "medium"
 
 
+def _is_semantic_text_signal(signal: dict[str, Any]) -> bool:
+    return str(signal.get("reason") or "").strip() == "semantic_text_classifier"
+
+
 def evaluate_policy(
     signals: Iterable[dict[str, Any]],
     *,
@@ -103,18 +116,41 @@ def evaluate_policy(
     explicit_review = tuple(sorted({str(item).strip() for item in review_reasons if str(item).strip()}))
     vision_ambiguity = [item for item in vision_uncertainty if isinstance(item, dict)]
 
+    corroborated_categories = {
+        _category(signal)
+        for signal in normalized
+        if not _is_semantic_text_signal(signal)
+        and _confidence(signal) >= _SEMANTIC_CORROBORATION_MIN_CONFIDENCE
+    }
+
     highest = 0.0
     reject: list[dict[str, Any]] = []
     review: list[dict[str, Any]] = []
     for signal in normalized:
         category = _category(signal)
         confidence = _confidence(signal)
-        highest = max(highest, confidence)
         severity = _severity(signal)
-        if confidence >= _REJECT_THRESHOLD[category] and SEVERITY_ORDER[severity] >= SEVERITY_ORDER["high"]:
+        semantic = _is_semantic_text_signal(signal)
+        reject_threshold = _REJECT_THRESHOLD[category]
+        review_threshold = _REVIEW_THRESHOLD[category]
+        if semantic:
+            reject_threshold = max(reject_threshold, _SEMANTIC_REJECT_FLOOR)
+            if category not in corroborated_categories:
+                review_threshold = max(review_threshold, _SEMANTIC_UNCORROBORATED_REVIEW_THRESHOLD)
+
+        actionable = False
+        if confidence >= reject_threshold and SEVERITY_ORDER[severity] >= SEVERITY_ORDER["high"]:
             reject.append(signal)
-        elif confidence >= _REVIEW_THRESHOLD[category]:
+            actionable = True
+        elif confidence >= review_threshold:
             review.append(signal)
+            actionable = True
+        elif not semantic:
+            # Non-semantic evidence (deterministic rules / calibrated adapters)
+            # still contributes to the policy risk score even when sub-threshold.
+            actionable = True
+        if actionable:
+            highest = max(highest, confidence)
 
     if reject:
         categories = tuple(sorted({_category(signal) for signal in reject}))

@@ -65,7 +65,7 @@ printf '%s\n' "$SIMPLE|$SPACED|$QUOTED|$DANGEROUS|$EXPORTED"
     def test_example_uses_internal_moderation_callback_and_versioned_policy(self) -> None:
         text = (self.repository_root / ".env.example").read_text(encoding="utf-8")
         self.assertIn("aos.api.internal.moderation.handle_callback", text)
-        self.assertIn("MODERATION_POLICY_VERSION=aos-safety-2026-09-26-v5", text)
+        self.assertIn("MODERATION_POLICY_VERSION=aos-safety-2026-09-26-v6", text)
         self.assertIn("TEXT_SAFETY_MODEL_REVISION=acf08db83390e23428c560cb578a865b39196993", text)
         self.assertIn("MODERATION_SEMANTIC_TEXT_REQUIRED=true", text)
         self.assertNotIn("MODERATION_REJECT_TERMS", text)

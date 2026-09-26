@@ -39,6 +39,16 @@ _DRUG_SOLICITATION_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
 )
 
 
+_WEAPON_TERM = r"(?:guns?|firearms?|pistols?|rifles?|shotguns?|ammo|ammunition)"
+_WEAPON_COMMERCE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(rf"\b(?:i|we)\s+(?:sell|supply|deliver|stock|have|offer)\b(?:\s+[a-z0-9']+){{0,5}}\s+\b{_WEAPON_TERM}\b"), "seller-offer"),
+    (re.compile(rf"\b{_WEAPON_TERM}\b(?:\s+[a-z0-9']+){{0,4}}\s+\b(?:for\s+sale|available|in\s+stock)\b"), "availability"),
+    (re.compile(rf"\b(?:dm|message|contact|whatsapp)\b(?:\s+me)?(?:\s+[a-z0-9']+){{0,4}}\s+\b(?:for\s+)?{_WEAPON_TERM}\b"), "contact-for-weapons"),
+    (re.compile(rf"\b{_WEAPON_TERM}\b(?:\s+[a-z0-9']+){{0,5}}\s+\b(?:dm|message|contact|whatsapp)\b"), "weapons-contact"),
+    (re.compile(rf"\b(?:buy|order|get)\b(?:\s+[a-z0-9']+){{0,4}}\s+\b{_WEAPON_TERM}\b"), "purchase-solicitation"),
+)
+
+
 _PORN_TERM = r"(?:porn(?:o|ography|ographic)?|xxx)"
 _PORN_SOLICITATION_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(rf"\b(?:dm|message|contact|whatsapp)\b(?:\s+me)?(?:\s+[a-z0-9']+){{0,4}}\s+\b(?:for\s+)?{_PORN_TERM}\b(?:\s+(?:video|videos|image|images|pics?|content))?"), "contact-for-pornography"),
@@ -61,7 +71,7 @@ def _detect_contextual_pornography(normalized: str, *, field: str) -> dict[str, 
         "source": "text",
         "field": field,
         "detector": "aos_text_rules",
-        "detector_version": "5",
+        "detector_version": "6",
         "reason": "pornographic solicitation or distribution",
         "evidence": sorted(set(labels))[:5],
     }
@@ -72,6 +82,57 @@ _NEGATION_SUFFIXES = ("do not ", "don't ", "never ", "avoid ", "stop ")
 def _is_negated(normalized: str, start: int) -> bool:
     prefix = normalized[max(0, start - 24):start]
     return any(prefix.endswith(value) for value in _NEGATION_SUFFIXES)
+
+
+def _transaction_match_is_negated(normalized: str, match: re.Match[str]) -> bool:
+    segment = normalized[max(0, match.start() - 28):min(len(normalized), match.end() + 12)]
+    return (
+        _is_negated(normalized, match.start())
+        or "not for sale" in segment
+        or "not available" in segment
+        or "not in stock" in segment
+        or "not selling" in segment
+    )
+
+
+def _detect_contextual_weapon_commerce(normalized: str, *, field: str) -> list[dict[str, Any]]:
+    labels: list[str] = []
+    for pattern, label in _WEAPON_COMMERCE_PATTERNS:
+        for match in pattern.finditer(normalized):
+            if _transaction_match_is_negated(normalized, match):
+                continue
+            labels.append(label)
+            break
+    if not labels:
+        return []
+    evidence = sorted(set(labels))[:5]
+    # One high-precision contextual observation can support multiple canonical
+    # policy categories. Keep the evidence source explicit rather than copying
+    # semantic model guesses into deterministic rules.
+    return [
+        {
+            "category": "weapons",
+            "severity": "high",
+            "confidence": 0.98,
+            "source": "text",
+            "field": field,
+            "detector": "aos_text_rules",
+            "detector_version": "6",
+            "reason": "prohibited weapon transaction or solicitation",
+            "evidence": evidence,
+        },
+        {
+            "category": "illegal_goods",
+            "severity": "high",
+            "confidence": 0.97,
+            "source": "text",
+            "field": field,
+            "detector": "aos_text_rules",
+            "detector_version": "6",
+            "reason": "prohibited goods transaction or solicitation",
+            "evidence": evidence,
+        },
+    ]
 
 
 def _detect_contextual_drug_sale(normalized: str, *, field: str) -> dict[str, Any] | None:
@@ -91,7 +152,7 @@ def _detect_contextual_drug_sale(normalized: str, *, field: str) -> dict[str, An
         "source": "text",
         "field": field,
         "detector": "aos_text_rules",
-        "detector_version": "5",
+        "detector_version": "6",
         "reason": "controlled-drug transaction or solicitation",
         "evidence": sorted(set(labels))[:5],
     }
@@ -143,6 +204,7 @@ def detect_text(items: list[dict[str, Any]], *, max_chars: int) -> tuple[list[di
         normalized, tokens = _normalize(raw)
         if not normalized:
             continue
+        signals.extend(_detect_contextual_weapon_commerce(normalized, field=field))
         contextual_drug_signal = _detect_contextual_drug_sale(normalized, field=field)
         if contextual_drug_signal:
             signals.append(contextual_drug_signal)
@@ -166,7 +228,7 @@ def detect_text(items: list[dict[str, Any]], *, max_chars: int) -> tuple[list[di
                         "source": "text",
                         "field": field,
                         "detector": "aos_text_rules",
-                        "detector_version": "5",
+                        "detector_version": "6",
                         "reason": rationale,
                         # Store canonical family labels, never the user's raw token/text.
                         "evidence": matched_labels[:5],
@@ -185,7 +247,7 @@ def detect_text(items: list[dict[str, Any]], *, max_chars: int) -> tuple[list[di
                     "source": "text",
                     "field": field,
                     "detector": "aos_text_rules",
-                    "detector_version": "5",
+                    "detector_version": "6",
                     "reason": rationale,
                     # Store only matched canonical rule labels, never full user text.
                     "evidence": matched[:5],

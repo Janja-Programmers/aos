@@ -57,7 +57,7 @@ def test_profanity_inflections_reject_without_substring_matching():
     assert not failures
     profanity = [item for item in signals if item["category"] == "profanity"]
     assert profanity
-    assert profanity[0]["detector_version"] == "4"
+    assert profanity[0]["detector_version"] == "6"
     assert profanity[0]["evidence"] == ["fuck-family"]
     assert evaluate_policy(signals).decision == "reject"
 
@@ -111,7 +111,7 @@ def test_contextual_drug_transactions_reject_without_banning_discussion():
         assert not failures
         drug_signals = [item for item in signals if item["category"] == "drugs"]
         assert drug_signals, value
-        assert drug_signals[0]["detector_version"] == "4"
+        assert drug_signals[0]["detector_version"] == "6"
         assert evaluate_policy(signals).decision == "reject", value
 
     for value in (
@@ -125,3 +125,33 @@ def test_contextual_drug_transactions_reject_without_banning_discussion():
         assert not failures
         contextual = [item for item in signals if item.get("reason") == "controlled-drug transaction or solicitation"]
         assert not contextual, value
+
+
+def test_uncorroborated_moderate_semantic_noise_is_audit_only():
+    result = evaluate_policy([
+        {"category": "pornography", "confidence": 0.569405, "severity": "critical", "source": "text", "reason": "semantic_text_classifier"},
+        {"category": "threats", "confidence": 0.569245, "severity": "critical", "source": "text", "reason": "semantic_text_classifier"},
+        {"category": "drugs", "confidence": 0.489124, "severity": "high", "source": "text", "reason": "semantic_text_classifier"},
+    ])
+    assert result.decision == "allow"
+    assert result.risk_score == 0.0
+    assert result.categories == ()
+
+
+def test_strong_semantic_evidence_still_rejects():
+    result = evaluate_policy([
+        {"category": "pornography", "confidence": 0.97, "severity": "critical", "source": "text", "reason": "semantic_text_classifier"},
+    ])
+    assert result.decision == "reject"
+    assert result.risk_score == 0.97
+    assert result.categories == ("pornography",)
+
+
+def test_semantic_evidence_can_review_when_same_category_is_corroborated():
+    result = evaluate_policy([
+        {"category": "weapons", "confidence": 0.60, "severity": "high", "source": "text", "reason": "semantic_text_classifier"},
+        {"category": "weapons", "confidence": 0.24, "severity": "medium", "source": "image", "reason": "vision_top_category"},
+    ])
+    assert result.decision == "review"
+    assert result.categories == ("weapons",)
+    assert result.risk_score == 0.60

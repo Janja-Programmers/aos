@@ -42,7 +42,7 @@ def _moderate(payload: dict[str, Any]) -> dict[str, Any]:
 	text_items = list(payload.get("text_items") or [])[: settings.max_text_items]
 	media_items = list(payload.get("media_items") or [])[: settings.max_images + 4]
 	signals, detector_failures = detect_text(text_items, max_chars=settings.max_text_chars)
-	model_versions: dict[str, str] = {"text": "aos_text_rules:5"}
+	model_versions: dict[str, str] = {"text": "aos_text_rules:6"}
 	if text_items and settings.semantic_text_enabled:
 		try:
 			semantic_signals, semantic_versions = classify_text(items=text_items, settings=settings)
