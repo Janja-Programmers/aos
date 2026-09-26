@@ -773,6 +773,76 @@ services:
       - aos_net
 
 
+  text-safety:
+    build:
+      context: ./infra/text-safety
+      dockerfile: Dockerfile
+
+    container_name: aos-text-safety
+    restart: unless-stopped
+
+    environment:
+      TEXT_SAFETY_SERVICE_NAME: ${TEXT_SAFETY_SERVICE_NAME:-aos-text-safety}
+      TEXT_SAFETY_ENVIRONMENT: ${TEXT_SAFETY_ENVIRONMENT:-production}
+      TEXT_SAFETY_INTERNAL_SECRET: ${TEXT_SAFETY_INTERNAL_SECRET:?TEXT_SAFETY_INTERNAL_SECRET is required}
+      TEXT_SAFETY_MODEL_PATH: /models/text-safety
+      TEXT_SAFETY_MODEL_NAME: ${TEXT_SAFETY_MODEL_NAME:-multilingual-MiniLMv2-L6-mnli-xnli}
+      TEXT_SAFETY_MODEL_REVISION: ${TEXT_SAFETY_MODEL_REVISION:-acf08db83390e23428c560cb578a865b39196993}
+      TEXT_SAFETY_MODEL_VERSION: ${TEXT_SAFETY_MODEL_VERSION:-minilm-nli-v1}
+      TEXT_SAFETY_MAX_ITEMS: ${TEXT_SAFETY_MAX_ITEMS:-16}
+      TEXT_SAFETY_MAX_CHARS_PER_ITEM: ${TEXT_SAFETY_MAX_CHARS_PER_ITEM:-6000}
+      TEXT_SAFETY_MAX_TOKENS: ${TEXT_SAFETY_MAX_TOKENS:-256}
+      TEXT_SAFETY_MAX_CONCURRENT_REQUESTS: ${TEXT_SAFETY_MAX_CONCURRENT_REQUESTS:-2}
+      TEXT_SAFETY_INTRA_OP_THREADS: ${TEXT_SAFETY_INTRA_OP_THREADS:-2}
+      TEXT_SAFETY_INTER_OP_THREADS: ${TEXT_SAFETY_INTER_OP_THREADS:-1}
+      TEXT_SAFETY_MIN_SIGNAL_CONFIDENCE: ${TEXT_SAFETY_MIN_SIGNAL_CONFIDENCE:-0.60}
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+
+    ports:
+      - "${TEXT_SAFETY_BIND_ADDRESS:-127.0.0.1}:${TEXT_SAFETY_PORT:-8180}:8000"
+
+    volumes:
+      - "${TEXT_SAFETY_MODEL_HOST_PATH:-./models/multilingual-MiniLMv2-L6-mnli-xnli}:/models/text-safety:ro"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/ready"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 90s
+
+    mem_limit: "${TEXT_SAFETY_MEMORY_LIMIT:-2g}"
+    cpus: "${TEXT_SAFETY_CPU_LIMIT:-2.00}"
+    pids_limit: "${TEXT_SAFETY_PIDS_LIMIT:-512}"
+
+    stop_grace_period: 30s
+    logging: *common-logging
+    <<: *common-security
+
+    networks:
+      - aos_net
+
+  text-safety-model-fetch:
+    build:
+      context: ./infra/text-safety
+      dockerfile: Dockerfile
+    profiles: ["tools"]
+    user: "0:0"
+    command: ["python", "-m", "app.download_model"]
+    environment:
+      HF_HUB_OFFLINE: "0"
+      TRANSFORMERS_OFFLINE: "0"
+      HF_TOKEN: ${HF_TOKEN:-}
+      TEXT_SAFETY_MODEL_PATH: /models/text-safety
+      TEXT_SAFETY_MODEL_REPO: ${TEXT_SAFETY_MODEL_REPO:-MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli}
+      TEXT_SAFETY_MODEL_REVISION: ${TEXT_SAFETY_MODEL_REVISION:-acf08db83390e23428c560cb578a865b39196993}
+    volumes:
+      - "${TEXT_SAFETY_MODEL_HOST_PATH:-./models/multilingual-MiniLMv2-L6-mnli-xnli}:/models/text-safety"
+    networks:
+      - aos_net
+
+
   moderation-api:
     build:
       context: ./infra/moderation
@@ -800,9 +870,16 @@ services:
       MODERATION_CALLBACK_ALLOWED_HOSTS: ${MODERATION_CALLBACK_ALLOWED_HOSTS:-}
       MODERATION_MAX_MEDIA_BYTES: ${MODERATION_MAX_MEDIA_BYTES:-10485760}
       MODERATION_INSPECT_MEDIA: ${MODERATION_INSPECT_MEDIA:-true}
-      MODERATION_POLICY_VERSION: ${MODERATION_POLICY_VERSION:-aos-safety-2026-09-25-v2}
+      MODERATION_POLICY_VERSION: ${MODERATION_POLICY_VERSION:-aos-safety-2026-09-25-v3}
       MODERATION_MAX_IMAGES: ${MODERATION_MAX_IMAGES:-8}
       MODERATION_MAX_TEXT_ITEMS: ${MODERATION_MAX_TEXT_ITEMS:-16}
+      MODERATION_SEMANTIC_TEXT_ENABLED: ${MODERATION_SEMANTIC_TEXT_ENABLED:-true}
+      MODERATION_SEMANTIC_TEXT_REQUIRED: ${MODERATION_SEMANTIC_TEXT_REQUIRED:-true}
+      MODERATION_SEMANTIC_TEXT_URL: ${MODERATION_SEMANTIC_TEXT_URL:-http://text-safety:8000/internal/moderation/classify-text}
+      MODERATION_SEMANTIC_TEXT_READY_URL: ${MODERATION_SEMANTIC_TEXT_READY_URL:-http://text-safety:8000/ready}
+      MODERATION_SEMANTIC_TEXT_ALLOWED_HOSTS: ${MODERATION_SEMANTIC_TEXT_ALLOWED_HOSTS:-text-safety}
+      MODERATION_SEMANTIC_TEXT_SECRET: ${TEXT_SAFETY_INTERNAL_SECRET:?TEXT_SAFETY_INTERNAL_SECRET is required}
+      MODERATION_SEMANTIC_TEXT_TIMEOUT_SECONDS: ${MODERATION_SEMANTIC_TEXT_TIMEOUT_SECONDS:-8}
       MODERATION_VISION_URL: ${MODERATION_VISION_URL:-http://image-search:8000/internal/moderation/classify-images}
       MODERATION_VISION_READY_URL: ${MODERATION_VISION_READY_URL:-http://image-search:8000/internal/moderation/ready}
       MODERATION_VISION_ALLOWED_HOSTS: ${MODERATION_VISION_ALLOWED_HOSTS:-image-search}
@@ -822,6 +899,8 @@ services:
       - "${MODERATION_SERVICE_BIND_ADDRESS:-127.0.0.1}:${MODERATION_SERVICE_PORT:-8140}:8000"
 
     depends_on:
+      text-safety:
+        condition: service_healthy
       minio:
         condition: service_healthy
       moderation-redis:
@@ -873,9 +952,16 @@ services:
       MODERATION_CALLBACK_ALLOWED_HOSTS: ${MODERATION_CALLBACK_ALLOWED_HOSTS:-}
       MODERATION_MAX_MEDIA_BYTES: ${MODERATION_MAX_MEDIA_BYTES:-10485760}
       MODERATION_INSPECT_MEDIA: ${MODERATION_INSPECT_MEDIA:-true}
-      MODERATION_POLICY_VERSION: ${MODERATION_POLICY_VERSION:-aos-safety-2026-09-25-v2}
+      MODERATION_POLICY_VERSION: ${MODERATION_POLICY_VERSION:-aos-safety-2026-09-25-v3}
       MODERATION_MAX_IMAGES: ${MODERATION_MAX_IMAGES:-8}
       MODERATION_MAX_TEXT_ITEMS: ${MODERATION_MAX_TEXT_ITEMS:-16}
+      MODERATION_SEMANTIC_TEXT_ENABLED: ${MODERATION_SEMANTIC_TEXT_ENABLED:-true}
+      MODERATION_SEMANTIC_TEXT_REQUIRED: ${MODERATION_SEMANTIC_TEXT_REQUIRED:-true}
+      MODERATION_SEMANTIC_TEXT_URL: ${MODERATION_SEMANTIC_TEXT_URL:-http://text-safety:8000/internal/moderation/classify-text}
+      MODERATION_SEMANTIC_TEXT_READY_URL: ${MODERATION_SEMANTIC_TEXT_READY_URL:-http://text-safety:8000/ready}
+      MODERATION_SEMANTIC_TEXT_ALLOWED_HOSTS: ${MODERATION_SEMANTIC_TEXT_ALLOWED_HOSTS:-text-safety}
+      MODERATION_SEMANTIC_TEXT_SECRET: ${TEXT_SAFETY_INTERNAL_SECRET:?TEXT_SAFETY_INTERNAL_SECRET is required}
+      MODERATION_SEMANTIC_TEXT_TIMEOUT_SECONDS: ${MODERATION_SEMANTIC_TEXT_TIMEOUT_SECONDS:-8}
       MODERATION_VISION_URL: ${MODERATION_VISION_URL:-http://image-search:8000/internal/moderation/classify-images}
       MODERATION_VISION_READY_URL: ${MODERATION_VISION_READY_URL:-http://image-search:8000/internal/moderation/ready}
       MODERATION_VISION_ALLOWED_HOSTS: ${MODERATION_VISION_ALLOWED_HOSTS:-image-search}
@@ -892,6 +978,8 @@ services:
       MINIO_SECURE: ${MODERATION_MINIO_SECURE:-false}
 
     depends_on:
+      text-safety:
+        condition: service_healthy
       minio:
         condition: service_healthy
       moderation-redis:

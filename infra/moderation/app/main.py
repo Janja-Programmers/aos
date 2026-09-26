@@ -84,6 +84,15 @@ def ready():
 	try:
 		get_redis().ping()
 		dependency_ready("redis")
+		if settings.semantic_text_enabled and settings.semantic_text_required:
+			if not settings.semantic_text_secret or not settings.semantic_text_ready_url:
+				raise RuntimeError("semantic text moderation is not configured")
+			response = requests.get(settings.semantic_text_ready_url, timeout=min(settings.semantic_text_timeout_seconds, 10))
+			response.raise_for_status()
+			data = response.json() if response.content else {}
+			if not bool(data.get("ready", data.get("ok"))):
+				raise RuntimeError("semantic text moderation provider is not ready")
+			dependency_ready("semantic_text")
 		if settings.inspect_media:
 			if not settings.vision_secret or not settings.vision_ready_url:
 				raise RuntimeError("vision moderation is not configured")

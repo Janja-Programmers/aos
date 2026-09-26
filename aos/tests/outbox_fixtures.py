@@ -180,7 +180,7 @@ def create_durable_job(
 				"evaluation_key": idempotency_key,
 				"content_fingerprint": idempotency_key,
 				"content_version": f"{int(short.revision)}:{int(short.moderation_generation)}",
-				"policy_version": "aos-safety-2026-09-25-v2",
+				"policy_version": "aos-safety-2026-09-25-v3",
 				"attempt_count": 0,
 				"max_attempts": 3,
 				"idempotency_key": idempotency_key,

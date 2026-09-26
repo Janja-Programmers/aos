@@ -155,6 +155,11 @@ _PRIVATE_SERVICE_URLS: tuple[dict[str, Any], ...] = (
 		"name": "background_removal",
 		"keys": ("BACKGROUND_REMOVAL_SERVICE_URL",),
 	},
+	{
+		"category": "ai_ml",
+		"name": "text_safety",
+		"keys": ("TEXT_SAFETY_SERVICE_URL",),
+	},
 )
 
 
@@ -1003,6 +1008,15 @@ def _check_ai_services(issues: list[dict[str, Any]], env: Mapping[str, Any] | No
 		category="ai_ml",
 		keys=("BACKGROUND_REMOVAL_SERVICE_SECRET",),
 		label="background-removal internal service secret",
+		secret=True,
+	)
+
+	_check_required_value(
+		issues,
+		env=env,
+		category="ai_ml",
+		keys=("TEXT_SAFETY_INTERNAL_SECRET",),
+		label="text-safety internal service secret",
 		secret=True,
 	)
 

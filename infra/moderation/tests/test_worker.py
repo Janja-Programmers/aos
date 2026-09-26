@@ -13,6 +13,13 @@ def moderation_settings():
 		max_media_bytes=1024,
 		max_images=8,
 		inspect_media=True,
+		semantic_text_enabled=False,
+		semantic_text_required=False,
+		semantic_text_url="http://text-safety:8000/internal/moderation/classify-text",
+		semantic_text_ready_url="http://text-safety:8000/ready",
+		semantic_text_secret="semantic-secret",
+		semantic_text_allowed_hosts=("text-safety",),
+		semantic_text_timeout_seconds=5,
 		vision_url="http://image-search:8000/internal/moderation/classify-images",
 		vision_secret="secret",
 		vision_allowed_hosts=("image-search",),
@@ -162,3 +169,38 @@ def test_meaningful_vision_uncertainty_requires_review(monkeypatch):
 	})
 	assert result["decision"] == "review"
 	assert result["reasons"] == ["vision uncertainty: weapons meaningfully outranked safe"]
+
+
+def test_semantic_text_signal_can_reject_without_keyword_rule(monkeypatch):
+	settings = moderation_settings()
+	settings.semantic_text_enabled = True
+	settings.semantic_text_required = True
+	monkeypatch.setattr(worker, "get_settings", lambda: settings)
+	monkeypatch.setattr(
+		worker,
+		"classify_text",
+		lambda **_kwargs: ([{
+			"category": "pornography",
+			"confidence": 0.97,
+			"severity": "critical",
+			"source": "text",
+			"field": "comment",
+			"detector": "semantic-test",
+			"detector_version": "1",
+		}], {"text_semantic": "semantic-test:1"}),
+	)
+	result = worker._moderate({"text_items": [{"field": "comment", "text": "context not covered by rules"}], "media_items": []})
+	assert result["decision"] == "reject"
+	assert result["scores"]["pornography"] == 0.97
+	assert result["model_versions"]["text_semantic"] == "semantic-test:1"
+
+
+def test_required_semantic_provider_failure_never_allows(monkeypatch):
+	settings = moderation_settings()
+	settings.semantic_text_enabled = True
+	settings.semantic_text_required = True
+	monkeypatch.setattr(worker, "get_settings", lambda: settings)
+	monkeypatch.setattr(worker, "classify_text", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("down")))
+	result = worker._moderate({"text_items": [{"field": "comment", "text": "ordinary review"}], "media_items": []})
+	assert result["decision"] == "review"
+	assert "detector failure: semantic_text" in result["reasons"]

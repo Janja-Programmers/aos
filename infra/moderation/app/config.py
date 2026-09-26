@@ -64,6 +64,14 @@ class Settings:
     max_text_items: int = _int("MODERATION_MAX_TEXT_ITEMS", 16, min_value=1, max_value=32)
     inspect_media: bool = _bool("MODERATION_INSPECT_MEDIA", True)
 
+    semantic_text_enabled: bool = _bool("MODERATION_SEMANTIC_TEXT_ENABLED", True)
+    semantic_text_required: bool = _bool("MODERATION_SEMANTIC_TEXT_REQUIRED", True)
+    semantic_text_url: str = _clean(os.getenv("MODERATION_SEMANTIC_TEXT_URL"), "http://text-safety:8000/internal/moderation/classify-text")
+    semantic_text_ready_url: str = _clean(os.getenv("MODERATION_SEMANTIC_TEXT_READY_URL"), "http://text-safety:8000/ready")
+    semantic_text_secret: str = field(default=_clean(os.getenv("MODERATION_SEMANTIC_TEXT_SECRET"), ""), repr=False)
+    semantic_text_allowed_hosts: tuple[str, ...] = _csv("MODERATION_SEMANTIC_TEXT_ALLOWED_HOSTS", "text-safety")
+    semantic_text_timeout_seconds: int = _int("MODERATION_SEMANTIC_TEXT_TIMEOUT_SECONDS", 8, min_value=1, max_value=60)
+
     vision_url: str = _clean(os.getenv("MODERATION_VISION_URL"), "http://image-search:8000/internal/moderation/classify-images")
     vision_secret: str = field(default=_clean(os.getenv("MODERATION_VISION_SECRET"), ""), repr=False)
     vision_allowed_hosts: tuple[str, ...] = _csv("MODERATION_VISION_ALLOWED_HOSTS", "image-search")

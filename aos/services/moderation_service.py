@@ -83,7 +83,7 @@ def get_moderation_config() -> ModerationConfig:
 		),
 		enabled=get_env_bool("MODERATION_ENABLED", True),
 		fail_open=get_env_bool("MODERATION_FAIL_OPEN", False),
-		policy_version=get_env("MODERATION_POLICY_VERSION", "aos-safety-2026-09-25-v2") or "aos-safety-2026-09-25-v2",
+		policy_version=get_env("MODERATION_POLICY_VERSION", "aos-safety-2026-09-25-v3") or "aos-safety-2026-09-25-v3",
 	)
 
 

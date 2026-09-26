@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import os
 from typing import Any, Iterable
 
-POLICY_VERSION = os.getenv("MODERATION_POLICY_VERSION", "aos-safety-2026-09-25-v2").strip() or "aos-safety-2026-09-25-v2"
+POLICY_VERSION = os.getenv("MODERATION_POLICY_VERSION", "aos-safety-2026-09-25-v3").strip() or "aos-safety-2026-09-25-v3"
 
 CATEGORIES = (
     "sexual_explicit",

@@ -295,6 +295,11 @@ def _external_service_endpoints(env: Mapping[str, Any] | None) -> list[ServiceEn
 			category="ai_ml",
 			url=_env(env, "BACKGROUND_REMOVAL_SERVICE_URL", "http://127.0.0.1:8120"),
 		),
+		ServiceEndpoint(
+			name="text_safety",
+			category="ai_ml",
+			url=_env(env, "TEXT_SAFETY_SERVICE_URL", "http://127.0.0.1:8180"),
+		),
 	]
 
 

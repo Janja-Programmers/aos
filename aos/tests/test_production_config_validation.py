@@ -87,6 +87,8 @@ class TestProductionConfigValidation(FrappeTestCase):
 			"TRANSLATION_SERVICE_URL": "http://127.0.0.1:8100",
 			"TRANSLATION_INTERNAL_TOKEN": "translation-internal-secret-value-0123456789abcdef",
 			"IMAGE_SEARCH_SERVICE_URL": "http://127.0.0.1:8110",
+			"TEXT_SAFETY_SERVICE_URL": "http://127.0.0.1:8180",
+			"TEXT_SAFETY_INTERNAL_SECRET": "text-safety-secret-value-0123456789abcdef",
 			"BACKGROUND_REMOVAL_SERVICE_URL": "http://127.0.0.1:8120",
 			"BACKGROUND_REMOVAL_SERVICE_SECRET": "background-removal-secret-value-0123456789abcdef",
 			"IMAGE_SEARCH_QDRANT_URL": "http://qdrant:6333",
@@ -103,6 +105,14 @@ class TestProductionConfigValidation(FrappeTestCase):
 			"maps_routing_enabled": True,
 			"valhalla_base_url": "http://valhalla:8002",
 		}
+
+
+	def test_text_safety_service_is_required_in_production(self):
+		env = self._valid_env()
+		env.pop("TEXT_SAFETY_INTERNAL_SECRET")
+		report = validate_production_config(env=env, site_config=self._valid_site_config())
+		self.assertFalse(report["ready"])
+		self.assertIn("TEXT_SAFETY_INTERNAL_SECRET", {issue["key"] for issue in report["errors"]})
 
 	def test_restore_rehearsal_config_is_non_production_but_equivalently_hardened(self):
 		env = self._valid_env()

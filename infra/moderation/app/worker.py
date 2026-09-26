@@ -15,6 +15,7 @@ from app.queue import get_queue, get_redis
 from app.security import build_signature
 from app.policy import POLICY_VERSION, evaluate_policy
 from app.text_detector import detect_text
+from app.semantic_text_detector import SemanticTextDetectorError, classify_text
 from app.vision_detector import VisionDetectorError, classify_images
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,17 @@ def _moderate(payload: dict[str, Any]) -> dict[str, Any]:
 	media_items = list(payload.get("media_items") or [])[: settings.max_images + 4]
 	signals, detector_failures = detect_text(text_items, max_chars=settings.max_text_chars)
 	model_versions: dict[str, str] = {"text": "aos_text_rules:4"}
+	if text_items and settings.semantic_text_enabled:
+		try:
+			semantic_signals, semantic_versions = classify_text(items=text_items, settings=settings)
+			signals.extend(semantic_signals)
+			model_versions.update(semantic_versions)
+		except Exception as exc:
+			logger.warning("Semantic text moderation unavailable category=%s", exc.__class__.__name__)
+			if settings.semantic_text_required:
+				detector_failures.append("semantic_text")
+	elif text_items and settings.semantic_text_required:
+		detector_failures.append("semantic_text")
 	missing_required_evidence: list[str] = []
 	explicit_review_reasons: list[str] = []
 	vision_uncertainty: list[dict[str, Any]] = []
