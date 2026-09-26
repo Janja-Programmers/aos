@@ -17,7 +17,7 @@ Ordinary web/mobile clients do not call Moderation. The companion service is pri
 Current automatic consumers are Ads, Reviews and Shorts. Profiles, Sellers and Live do not currently have a hardened moderation lifecycle contract and are therefore not silently wired in. Chat private messages are not indiscriminately scanned. Reports remain a separate complaint domain and can be used as review context/priority without becoming proof of a policy violation. Notifications are emitted only by owning feature services. Activity does not receive internal moderation evidence.
 
 ## Canonical Safety Policy
-`infra/moderation/app/policy.py` is the single decision policy. Detectors/providers emit evidence; the policy emits `allow`, `reject` or `review`. High-confidence severe violations cannot be averaged away by safe modalities. Missing required evidence or detector failure routes to manual review, never approval. Policy version is `MODERATION_POLICY_VERSION` and defaults to `aos-safety-2026-09-25-v3`.
+`infra/moderation/app/policy.py` is the single decision policy. Detectors/providers emit evidence; the policy emits `allow`, `reject` or `review`. High-confidence severe violations cannot be averaged away by safe modalities. Missing required evidence or detector failure routes to manual review, never approval. Policy version is `MODERATION_POLICY_VERSION` and defaults to `aos-safety-2026-09-26-v4`.
 
 ## Taxonomy
 Canonical machine categories are `sexual_explicit`, `pornography`, `nudity`, `weapons`, `violence`, `graphic_violence`, `profanity`, `hate`, `harassment`, `threats`, `self_harm`, `illegal_goods`, `dangerous_content`, `drugs`, `spam`, `scam`, `fraud`, and `other`. Category, severity, confidence and decision are separate concepts.
@@ -53,7 +53,7 @@ Every job stores `content_fingerprint`, `content_version`, and a unique `evaluat
 Each evaluation stores the policy version. Frappe rejects a callback whose policy version does not match the requested job. Re-evaluating unchanged content under a new policy produces a distinct logical evaluation key.
 
 ## Provider/Model Architecture
-Text rules are `aos_text_rules:4`. Vision uses the self-hosted image-search OpenCLIP runtime through an authenticated adapter. Provider output is normalized before policy evaluation. Provider credentials are environment secrets and are excluded from model/job payloads, Desk fields and logs.
+Text rules are `aos_text_rules:5`. Vision uses the self-hosted image-search OpenCLIP runtime through an authenticated adapter. Provider output is normalized before policy evaluation. Provider credentials are environment secrets and are excluded from model/job payloads, Desk fields and logs.
 
 ## Reports Integration
 Report Reason remains the reporter's allegation. Moderation Category is the moderation determination. Report count is not automatic guilt; current Reports does not directly mutate moderation decisions.
@@ -116,11 +116,13 @@ See Transactions and Idempotency / Concurrency above; all authoritative race pro
 
 The canonical moderation job schema exposes only the hardened automatic consumers that exist today: `ad`, `review`, and `short`. Profiles, Sellers, Live, private Messages/Chat, and generic Media are not advertised as moderation content kinds unless a real feature-owned adapter and lifecycle are implemented. Reports remain signals/context rather than automatic proof of a violation.
 
-## Semantic text moderation (v11)
+## Semantic text moderation (v12)
 
 Rules are deliberately supplementary. The mandatory semantic provider is the stateless `text-safety` service, backed by the pinned multilingual NLI model `MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli` at revision `acf08db83390e23428c560cb578a865b39196993`. Production mounts model files locally and runs with Hugging Face/Transformers offline; runtime correctness never depends on an external model registry.
 
-The provider emits multi-label evidence for the canonical AOS categories. Its hypotheses describe policy-violating meaning (promotion, solicitation, threats, harassment, explicit sexual content, scams, etc.), not mere topic words, so informational discussion is not automatically a violation. `aos_text_rules:4` remains a high-precision supplemental detector for deterministic patterns and obfuscation. Neither detector owns the final decision: `infra/moderation/app/policy.py` remains authoritative.
+The provider emits multi-label evidence for the canonical AOS categories. Its hypotheses describe policy-violating meaning (promotion, solicitation, threats, harassment, explicit sexual content, scams, etc.), not mere topic words, so informational discussion is not automatically a violation. `aos_text_rules:5` remains a high-precision supplemental detector for deterministic patterns and obfuscation. Neither detector owns the final decision: `infra/moderation/app/policy.py` remains authoritative.
+
+The semantic provider does not apply moderation thresholds. `TEXT_SAFETY_EVIDENCE_FLOOR` (default `0.05`) is only a bounded transport/audit floor so the central policy receives moderate evidence that would previously have been suppressed. High-precision contextual rules cover deterministic solicitations such as pornographic material offered for sale/contact without turning isolated ambiguous words or informational discussion into blanket violations.
 
 If semantic text moderation is required and unavailable, text-bearing content is routed to manual review. A provider outage never becomes an automatic allow. The model is a stateless internal inference service and may be replicated independently from moderation workers for HA/throughput.
 

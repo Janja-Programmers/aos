@@ -25,29 +25,29 @@ class TextSafetyBusyError(TextSafetyError):
 class CategorySpec:
     category: str
     severity: str
-    hypothesis: str
+    hypotheses: tuple[str, ...]
 
 
 # Hypotheses intentionally describe policy-violating meaning, not mere topic
 # mentions. This reduces false positives for educational/news/reporting context.
 CATEGORY_SPECS: tuple[CategorySpec, ...] = (
-    CategorySpec("sexual_explicit", "high", "This text contains explicit sexual language, sexual solicitation, or graphically sexual content."),
-    CategorySpec("pornography", "critical", "This text requests, offers, promotes, distributes, or graphically describes pornographic material."),
-    CategorySpec("nudity", "high", "This text requests, promotes, or sexualizes nudity or nude imagery."),
-    CategorySpec("weapons", "high", "This text requests, offers, promotes, or facilitates weapons, firearms, ammunition, or weapon use."),
-    CategorySpec("violence", "high", "This text advocates, threatens, celebrates, or graphically describes physical violence against people."),
-    CategorySpec("graphic_violence", "critical", "This text contains or promotes graphic gore, mutilation, or extreme violent injury."),
-    CategorySpec("profanity", "high", "This text uses strong obscene or profane language directed at a person or as abusive expression."),
-    CategorySpec("hate", "critical", "This text attacks, dehumanizes, excludes, or advocates harm against people because of a protected identity."),
-    CategorySpec("harassment", "high", "This text targets a person with degrading, abusive, humiliating, or bullying language."),
-    CategorySpec("threats", "critical", "This text contains a threat or stated intent to harm, kill, attack, or injure someone."),
-    CategorySpec("self_harm", "high", "This text encourages, instructs, or expresses intent for suicide or self-harm."),
-    CategorySpec("illegal_goods", "high", "This text offers, requests, sells, or facilitates illegal goods, forged documents, or contraband."),
-    CategorySpec("dangerous_content", "high", "This text gives or promotes instructions for seriously dangerous harmful acts."),
-    CategorySpec("drugs", "high", "This text offers, requests, sells, supplies, or facilitates illegal or recreational drugs."),
-    CategorySpec("spam", "medium", "This text is unsolicited repetitive promotion, mass solicitation, or manipulative spam."),
-    CategorySpec("scam", "high", "This text attempts a scam, deceptive money solicitation, fake prize, or confidence trick."),
-    CategorySpec("fraud", "high", "This text facilitates fraud, credential theft, impersonation, payment theft, or account takeover."),
+    CategorySpec("sexual_explicit", "high", ("This text contains explicit sexual language, sexual solicitation, or graphically sexual content.", "This text explicitly discusses sexual acts, genitals, or sexual services in a sexualized way.")),
+    CategorySpec("pornography", "critical", ("This text requests, offers, promotes, distributes, or graphically describes pornographic material.", "This text offers or sells porn, porno, pornography, or explicit sexual videos or images.", "This text asks someone to contact or message the author for pornographic material.")),
+    CategorySpec("nudity", "high", ("This text requests, promotes, or sexualizes nudity or nude imagery.",)),
+    CategorySpec("weapons", "high", ("This text requests, offers, promotes, or facilitates weapons, firearms, ammunition, or weapon use.",)),
+    CategorySpec("violence", "high", ("This text advocates, threatens, celebrates, or graphically describes physical violence against people.",)),
+    CategorySpec("graphic_violence", "critical", ("This text contains or promotes graphic gore, mutilation, or extreme violent injury.",)),
+    CategorySpec("profanity", "high", ("This text uses strong obscene or profane language directed at a person or as abusive expression.",)),
+    CategorySpec("hate", "critical", ("This text attacks, dehumanizes, excludes, or advocates harm against people because of a protected identity.",)),
+    CategorySpec("harassment", "high", ("This text targets a person with degrading, abusive, humiliating, or bullying language.",)),
+    CategorySpec("threats", "critical", ("This text contains a threat or stated intent to harm, kill, attack, or injure someone.",)),
+    CategorySpec("self_harm", "high", ("This text encourages, instructs, or expresses intent for suicide or self-harm.",)),
+    CategorySpec("illegal_goods", "high", ("This text offers, requests, sells, or facilitates illegal goods, forged documents, or contraband.",)),
+    CategorySpec("dangerous_content", "high", ("This text gives or promotes instructions for seriously dangerous harmful acts.",)),
+    CategorySpec("drugs", "high", ("This text offers, requests, sells, supplies, or facilitates illegal or recreational drugs.", "This text asks someone to contact the author to buy or obtain illegal drugs.")),
+    CategorySpec("spam", "medium", ("This text is unsolicited repetitive promotion, mass solicitation, or manipulative spam.",)),
+    CategorySpec("scam", "high", ("This text attempts a scam, deceptive money solicitation, fake prize, or confidence trick.",)),
+    CategorySpec("fraud", "high", ("This text facilitates fraud, credential theft, impersonation, payment theft, or account takeover.",)),
 )
 
 
@@ -145,7 +145,12 @@ class TextSafetyRuntime:
                 text = str(item.get("text") or "").strip()[: self.settings.max_chars_per_item]
                 if not text:
                     continue
-                hypotheses = [spec.hypothesis for spec in CATEGORY_SPECS]
+                pairs: list[tuple[CategorySpec, str]] = [
+                    (spec, hypothesis)
+                    for spec in CATEGORY_SPECS
+                    for hypothesis in spec.hypotheses
+                ]
+                hypotheses = [hypothesis for _spec, hypothesis in pairs]
                 encoded = tokenizer(
                     [text] * len(hypotheses),
                     hypotheses,
@@ -161,9 +166,16 @@ class TextSafetyRuntime:
                 }
                 logits = np.asarray(session.run([output_name], feeds)[0])
                 scores = self._binary_entailment(logits, self._entailment_index, self._contradiction_index)
-                for spec, raw_score in zip(CATEGORY_SPECS, scores, strict=True):
+                category_scores: dict[str, tuple[CategorySpec, float]] = {}
+                for (spec, _hypothesis), raw_score in zip(pairs, scores, strict=True):
                     confidence = float(max(0.0, min(float(raw_score), 1.0)))
-                    if confidence < self.settings.min_signal_confidence:
+                    previous = category_scores.get(spec.category)
+                    if previous is None or confidence > previous[1]:
+                        category_scores[spec.category] = (spec, confidence)
+                for spec, confidence in category_scores.values():
+                    # This is only a bounded transport/audit floor. The canonical
+                    # AOS policy owns review/reject thresholds.
+                    if confidence < self.settings.evidence_floor:
                         continue
                     signals.append({
                         "field": field,

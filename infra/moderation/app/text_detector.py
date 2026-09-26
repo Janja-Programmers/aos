@@ -38,6 +38,34 @@ _DRUG_SOLICITATION_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(rf"\b(?:buy|order|get)\b(?:\s+[a-z0-9']+){{0,4}}\s+\b{_DRUG_TERM}\b"), "purchase-solicitation"),
 )
 
+
+_PORN_TERM = r"(?:porn(?:o|ography|ographic)?|xxx)"
+_PORN_SOLICITATION_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(rf"\b(?:dm|message|contact|whatsapp)\b(?:\s+me)?(?:\s+[a-z0-9']+){{0,4}}\s+\b(?:for\s+)?{_PORN_TERM}\b(?:\s+(?:video|videos|image|images|pics?|content))?"), "contact-for-pornography"),
+    (re.compile(rf"\b{_PORN_TERM}\b(?:\s+(?:video|videos|image|images|pics?|content))?(?:\s+[a-z0-9']+){{0,3}}\s+\b(?:for\s+sale|available|in\s+stock)\b"), "pornography-sale"),
+    (re.compile(rf"\b(?:i|we)\s+(?:have|sell|offer|share|send|provide)\b(?:\s+[a-z0-9']+){{0,5}}\s+\b{_PORN_TERM}\b(?:\s+(?:video|videos|image|images|pics?|content))?"), "pornography-offer"),
+)
+
+
+def _detect_contextual_pornography(normalized: str, *, field: str) -> dict[str, Any] | None:
+    labels: list[str] = []
+    for pattern, label in _PORN_SOLICITATION_PATTERNS:
+        if pattern.search(normalized):
+            labels.append(label)
+    if not labels:
+        return None
+    return {
+        "category": "pornography",
+        "severity": "critical",
+        "confidence": 0.97,
+        "source": "text",
+        "field": field,
+        "detector": "aos_text_rules",
+        "detector_version": "5",
+        "reason": "pornographic solicitation or distribution",
+        "evidence": sorted(set(labels))[:5],
+    }
+
 _NEGATION_SUFFIXES = ("do not ", "don't ", "never ", "avoid ", "stop ")
 
 
@@ -63,7 +91,7 @@ def _detect_contextual_drug_sale(normalized: str, *, field: str) -> dict[str, An
         "source": "text",
         "field": field,
         "detector": "aos_text_rules",
-        "detector_version": "4",
+        "detector_version": "5",
         "reason": "controlled-drug transaction or solicitation",
         "evidence": sorted(set(labels))[:5],
     }
@@ -118,6 +146,9 @@ def detect_text(items: list[dict[str, Any]], *, max_chars: int) -> tuple[list[di
         contextual_drug_signal = _detect_contextual_drug_sale(normalized, field=field)
         if contextual_drug_signal:
             signals.append(contextual_drug_signal)
+        contextual_porn_signal = _detect_contextual_pornography(normalized, field=field)
+        if contextual_porn_signal:
+            signals.append(contextual_porn_signal)
 
         for category, severity, rationale, confidence, families in _TOKEN_FAMILY_RULES:
             matched_labels = sorted({
@@ -135,7 +166,7 @@ def detect_text(items: list[dict[str, Any]], *, max_chars: int) -> tuple[list[di
                         "source": "text",
                         "field": field,
                         "detector": "aos_text_rules",
-                        "detector_version": "4",
+                        "detector_version": "5",
                         "reason": rationale,
                         # Store canonical family labels, never the user's raw token/text.
                         "evidence": matched_labels[:5],
@@ -154,7 +185,7 @@ def detect_text(items: list[dict[str, Any]], *, max_chars: int) -> tuple[list[di
                     "source": "text",
                     "field": field,
                     "detector": "aos_text_rules",
-                    "detector_version": "4",
+                    "detector_version": "5",
                     "reason": rationale,
                     # Store only matched canonical rule labels, never full user text.
                     "evidence": matched[:5],

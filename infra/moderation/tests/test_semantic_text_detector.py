@@ -26,7 +26,7 @@ def test_adapter_normalizes_provider_signals(monkeypatch):
             return {
                 "status": "ready",
                 "model": "multilingual-MiniLMv2-L6-mnli-xnli",
-                "model_version": "minilm-nli-v1",
+                "model_version": "minilm-nli-v2",
                 "signals": [{"field": "comment", "category": "pornography", "severity": "critical", "confidence": 0.94}],
             }
     monkeypatch.setattr(detector.requests, "post", lambda *a, **k: Response())
@@ -34,4 +34,4 @@ def test_adapter_normalizes_provider_signals(monkeypatch):
     assert signals[0]["category"] == "pornography"
     assert signals[0]["source"] == "text"
     assert signals[0]["reason"] == "semantic_text_classifier"
-    assert versions["text_semantic"].endswith(":minilm-nli-v1")
+    assert versions["text_semantic"].endswith(":minilm-nli-v2")

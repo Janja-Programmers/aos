@@ -204,3 +204,20 @@ def test_required_semantic_provider_failure_never_allows(monkeypatch):
 	result = worker._moderate({"text_items": [{"field": "comment", "text": "ordinary review"}], "media_items": []})
 	assert result["decision"] == "review"
 	assert "detector failure: semantic_text" in result["reasons"]
+
+
+def test_contextual_pornography_sale_rejects_without_semantic_provider(monkeypatch):
+	settings = moderation_settings()
+	settings.semantic_text_enabled = False
+	settings.semantic_text_required = False
+	monkeypatch.setattr(worker, "get_settings", lambda: settings)
+	result = worker._moderate({
+		"text_items": [
+			{"field": "title", "text": "Dm for porno video"},
+			{"field": "comment", "text": "I have porn videos for sale"},
+		],
+		"media_items": [],
+	})
+	assert result["decision"] == "reject"
+	assert result["scores"]["pornography"] == 0.97
+	assert result["model_versions"]["text"] == "aos_text_rules:5"
