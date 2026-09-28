@@ -20,6 +20,9 @@ class TestAnalyticsPipelineStaleLinks(FrappeTestCase):
         frappe.set_user("Administrator")
 
     def tearDown(self):
+        job_names = [r[0] for r in frappe.db.sql("SELECT name FROM `tabAOS Analytics Ingest Job` WHERE idempotency_key LIKE %s", (f"{self.prefix}%",))]
+        if job_names:
+            frappe.db.sql("DELETE FROM `tabAOS Transactional Outbox` WHERE job_doctype=%s AND job_name IN %s", ("AOS Analytics Ingest Job", tuple(job_names)))
         frappe.db.sql("DELETE FROM `tabAOS Analytics Ingest Job` WHERE idempotency_key LIKE %s", (f"{self.prefix}%",))
         frappe.set_user("Administrator")
         frappe.db.commit()
@@ -30,8 +33,8 @@ class TestAnalyticsPipelineStaleLinks(FrappeTestCase):
                 "doctype": "AOS Analytics Ingest Job",
                 "source": "test",
                 "event_group": "shorts",
-                "event_type": "view",
-                "user": f"{self.prefix}-missing-user@example.com",
+                "event_type": "ad_detail_view",
+                "actor_account_id": "ACC-AAAAAAAAAAAAAAAAAAAA",
                 "target_doctype": "AOS Short",
                 "target_name": f"{self.prefix}-missing-short",
                 "status": "Queued",

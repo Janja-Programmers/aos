@@ -74,7 +74,7 @@ def _normalize_event(raw: dict[str, Any]) -> dict[str, Any] | None:
 		return None
 
 	event_type = _clean(raw.get("event_type"), max_len=120)
-	if not event_type:
+	if event_type != "ad_detail_view":
 		return None
 
 	metadata = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
@@ -88,7 +88,7 @@ def _normalize_event(raw: dict[str, Any]) -> dict[str, Any] | None:
 		"event_group": _clean(raw.get("event_group") or raw.get("group"), max_len=80),
 		"event_date": event_date,
 		"occurred_at": occurred_at or _dt.datetime.utcnow().isoformat(timespec="seconds") + "Z",
-		"user": _clean(raw.get("user"), max_len=180),
+		"actor_account_id": _clean(raw.get("actor_account_id"), max_len=32),
 		"session_id": _clean(raw.get("session_id"), max_len=180),
 		"source": _clean(raw.get("source"), max_len=120),
 		"platform": _clean(raw.get("platform"), max_len=40),
@@ -128,10 +128,12 @@ redis.call('XADD', KEYS[2], 'MAXLEN', '~', ARGV[2], '*', 'event_type', ARGV[3], 
 for i = 3, 7 do
   if KEYS[i] ~= '-' then
     redis.call('HINCRBY', KEYS[i], ARGV[3], 1)
+    redis.call('EXPIRE', KEYS[i], ARGV[6])
   end
 end
 local metric_count = tonumber(ARGV[5]) or 0
-local offset = 6
+redis.call('EXPIRE', KEYS[8], ARGV[6])
+local offset = 7
 for i = 1, metric_count do
   redis.call('HINCRBY', KEYS[8], ARGV[offset], tonumber(ARGV[offset + 1]))
   offset = offset + 2
@@ -146,7 +148,7 @@ def _store_event(redis: Any, event: dict[str, Any], event_identity: str) -> bool
 	event_type = event["event_type"]
 	event_group = event.get("event_group") or "other"
 	country = event.get("country")
-	user = event.get("user")
+	actor_account_id = event.get("actor_account_id")
 	target_doctype = event.get("target_doctype")
 	target_name = event.get("target_name")
 
@@ -155,7 +157,7 @@ def _store_event(redis: Any, event: dict[str, Any], event_identity: str) -> bool
 		"event_group": event_group,
 		"event_date": event_date,
 		"occurred_at": event.get("occurred_at") or "",
-		"user": user or "",
+		"actor_account_id": actor_account_id or "",
 		"session_id": event.get("session_id") or "",
 		"source": event.get("source") or "",
 		"platform": event.get("platform") or "",
@@ -180,7 +182,7 @@ def _store_event(redis: Any, event: dict[str, Any], event_identity: str) -> bool
 		f"aos:analytics:day:{event_date}",
 		f"aos:analytics:group:{event_group}:{event_date}",
 		f"aos:analytics:country:{country}:{event_date}" if country else "-",
-		f"aos:analytics:user:{user}:{event_date}" if user else "-",
+		f"aos:analytics:actor:{actor_account_id}:{event_date}" if actor_account_id else "-",
 		f"aos:analytics:target:{target_doctype}:{target_name}:{event_date}"
 		if target_doctype and target_name
 		else "-",
@@ -195,6 +197,7 @@ def _store_event(redis: Any, event: dict[str, Any], event_identity: str) -> bool
 		event_type,
 		json.dumps(stream_payload, separators=(",", ":"), sort_keys=True, default=str),
 		len(metric_args) // 2,
+		max(86400, settings.aggregate_retention_seconds),
 		*metric_args,
 	)
 	return bool(int(result or 0))

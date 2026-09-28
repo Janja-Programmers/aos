@@ -15,7 +15,7 @@ FEATURE_DOCS = {
 	"accounts": "docs/features/accounts/README.md",
 	"activity": "docs/features/activity/README.md",
 	"ads": "docs/features/ads/README.md",
-	"analytics_pipeline": "docs/features/analytics/api.md",
+	"analytics_pipeline": "docs/features/analytics/README.md",
 	"auth": "docs/features/authentication/README.md",
 	"calls": "docs/features/calls/api.md",
 	"catalog": "docs/features/catalog/README.md",

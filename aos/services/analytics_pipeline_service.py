@@ -18,6 +18,7 @@ import frappe
 import requests
 from frappe.utils import now_datetime
 
+from aos.services.analytics_taxonomy import canonicalize_server_event
 from aos.services.transactional_outbox import (
 	OutboxConflictError,
 	complete_outbox_without_callback,
@@ -139,31 +140,12 @@ def _clean(value: Any, *, max_len: int = 180) -> str:
 
 
 def _normalize_event(event: dict[str, Any]) -> dict[str, Any] | None:
-	if not isinstance(event, dict):
+	try:
+		canonical = canonicalize_server_event(event)
+	except ValueError:
 		return None
-	event_type = _clean(event.get("event_type"), max_len=120)
-	if not event_type:
-		return None
-
-	metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
-	metrics = event.get("metrics") if isinstance(event.get("metrics"), dict) else {}
-
-	return {
-		"event_type": event_type,
-		"event_group": _clean(event.get("event_group") or event.get("group"), max_len=80),
-		"user": _clean(event.get("user"), max_len=180),
-		"session_id": _clean(event.get("session_id"), max_len=180),
-		"source": _clean(event.get("source"), max_len=120),
-		"platform": _clean(event.get("platform"), max_len=40),
-		"country": _clean(event.get("country"), max_len=80),
-		"target_doctype": _clean(event.get("target_doctype"), max_len=120),
-		"target_name": _clean(event.get("target_name"), max_len=180),
-		"route_type": _clean(event.get("route_type"), max_len=80),
-		"route_id": _clean(event.get("route_id"), max_len=180),
-		"occurred_at": _clean(event.get("occurred_at"), max_len=80) or str(now_datetime()),
-		"metadata": metadata,
-		"metrics": metrics,
-	}
+	canonical["occurred_at"] = canonical.get("occurred_at") or str(now_datetime())
+	return canonical
 
 
 def create_analytics_ingest_job(
@@ -176,16 +158,17 @@ def create_analytics_ingest_job(
 	if not config.enabled:
 		return None
 
-	normalized: list[dict[str, Any]] = []
-	for event in events[: config.max_events_per_job]:
-		item = _normalize_event(event)
-		if item:
-			normalized.append(item)
+	if not isinstance(events, list) or not events:
+		raise AnalyticsPipelineError("At least one analytics event is required")
+	if len(events) > config.max_events_per_job:
+		raise AnalyticsPipelineError("Analytics event batch exceeds configured maximum")
 
-	if not normalized:
-		if config.fail_open:
-			return None
-		raise AnalyticsPipelineError("At least one valid analytics event is required")
+	normalized: list[dict[str, Any]] = []
+	for event in events:
+		item = _normalize_event(event)
+		if item is None:
+			raise AnalyticsPipelineError("Invalid or unknown analytics event")
+		normalized.append(item)
 
 	first = normalized[0]
 	job = frappe.get_doc(
@@ -194,7 +177,7 @@ def create_analytics_ingest_job(
 			"source": _clean(source, max_len=120) or "server",
 			"event_group": first.get("event_group"),
 			"event_type": first.get("event_type"),
-			"user": first.get("user"),
+			"actor_account_id": first.get("actor_account_id"),
 			"session_id": first.get("session_id"),
 			"target_doctype": first.get("target_doctype"),
 			"target_name": first.get("target_name"),

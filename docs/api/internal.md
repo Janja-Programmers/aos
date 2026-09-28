@@ -14,7 +14,7 @@ The following signed companion callbacks are guest-decorated because private com
 
 Operational behavior belongs to the matching production service documentation:
 
-- [Analytics pipeline](../production/analytics-pipeline-service.md)
+- [Analytics pipeline](../features/analytics/README.md)
 - [Content moderation](../features/moderation/README.md)
 - [Notifications signed delivery callback](../features/notifications/README.md)
 - [Search/ranking](../production/search-ranking-service.md)

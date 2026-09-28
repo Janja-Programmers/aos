@@ -116,7 +116,7 @@ bench --site aos-staging.duckdns.org execute aos.tasks.service_hardening.cleanup
    - create/update moderated content;
    - run related ads or search/ranking reindex;
    - trigger a notification with an active Android FCM token;
-   - send `analytics_pipeline.track_event` smoke event.
+   - send `a normal authorized Ad detail request and verify the resulting `AOS Analytics Ingest Job` reaches `Ingested`.
 7. Confirm latest jobs are terminal-success or expected-failure with clear `last_error`.
 
 ## Reserved enqueue keyword rule

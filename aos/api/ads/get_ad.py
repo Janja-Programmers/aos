@@ -14,6 +14,7 @@ from aos.services.ads.constants import GET_AD_FIELDS, MAX_AD_ATTRIBUTES, MAX_IMA
 from aos.services.ads.validation import ensure_known_fields, normalize_identifier
 from aos.services.ads.visibility import require_public_ad_for_viewer
 from aos.services.analytics_pipeline_service import emit_analytics_event
+from aos.services.accounts.identity import public_account_id_for_user
 from aos.services.currency_conversion import convert_amount
 from aos.services.fx_service import get_fx_snapshot
 
@@ -77,13 +78,9 @@ def get_ad_impl(**kwargs):
         _record_view_best_effort(viewer=viewer,ad_name=ad_name)
         try:
             emit_analytics_event(
-                event_type="ad_view",
-                event_group="ads",
-                user=viewer if viewer != "Guest" else None,
-                target_doctype="AOS Ad",
+                event_type="ad_detail_view",
+                actor_account_id=public_account_id_for_user(viewer) if viewer != "Guest" else None,
                 target_name=ad_name,
-                route_type="ad",
-                route_id=ad_name,
                 source="ads.get_ad",
             )
         except Exception:

@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     stream_max_len: int = 500000
     max_events_per_job: int = 200
     event_dedupe_ttl_seconds: int = 2592000
+    aggregate_retention_seconds: int = 34560000
 
 
 @lru_cache(maxsize=1)
@@ -64,4 +65,5 @@ def get_settings() -> Settings:
         stream_max_len=_int("ANALYTICS_STREAM_MAX_LEN", 500000),
         max_events_per_job=_int("ANALYTICS_MAX_EVENTS_PER_JOB", 200),
         event_dedupe_ttl_seconds=_int("ANALYTICS_EVENT_DEDUPE_TTL_SECONDS", 2592000),
+        aggregate_retention_seconds=_int("ANALYTICS_AGGREGATE_RETENTION_SECONDS", 34560000),
     )

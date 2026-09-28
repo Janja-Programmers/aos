@@ -17,7 +17,7 @@ class AnalyticsEvent(BaseModel):
 	event_id: str | None = Field(default=None, min_length=8, max_length=200)
 	event_type: str = Field(min_length=1, max_length=120)
 	event_group: str | None = None
-	user: str | None = None
+	actor_account_id: str | None = Field(default=None, pattern=r"^ACC-[A-Z2-7]{20}$")
 	session_id: str | None = Field(default=None, repr=False)
 	source: str | None = None
 	platform: str | None = None

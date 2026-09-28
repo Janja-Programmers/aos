@@ -7,12 +7,11 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
   "event_section",
   "source",
   "event_group",
   "event_type",
-  "user",
+  "actor_account_id",
   "session_id",
   "target_doctype",
   "target_name",
@@ -39,14 +38,6 @@
   "completed_at"
  ],
  "fields": [
-  {
-   "fieldname": "naming_series",
-   "label": "Naming Series",
-   "fieldtype": "Select",
-   "options": "ANLY-JOB-.YYYY.-.#####",
-   "default": "ANLY-JOB-.YYYY.-.#####",
-   "reqd": 1
-  },
   {
    "fieldname": "event_section",
    "label": "Event Batch",
@@ -75,10 +66,9 @@
    "in_standard_filter": 1
   },
   {
-   "fieldname": "user",
-   "label": "User",
-   "fieldtype": "Link",
-   "options": "User",
+   "fieldname": "actor_account_id",
+   "label": "Actor Account ID",
+   "fieldtype": "Data",
    "in_standard_filter": 1
   },
   {
