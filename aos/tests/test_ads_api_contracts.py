@@ -45,7 +45,7 @@ class TestAdsApiContracts(FrappeTestCase):
         self.assertIn("s.status = 'Active'", visibility)
         self.assertIn("AOS User Block", visibility)
 
-    def test_public_detail_emits_analytics_with_keyword_only_canonical_fields(self):
+    def test_public_detail_emits_minimal_canonical_analytics_event(self):
         source = self._source("api/ads/get_ad.py")
         tree = ast.parse(source, filename="api/ads/get_ad.py")
         calls = [
@@ -59,17 +59,17 @@ class TestAdsApiContracts(FrappeTestCase):
         call = calls[0]
         self.assertEqual(call.args, [])
         keyword_names = {item.arg for item in call.keywords}
+        self.assertEqual(
+            keyword_names,
+            {"event_type", "actor_account_id", "target_name", "source"},
+        )
+        # Canonical dimensions are derived centrally from the allowlisted
+        # analytics taxonomy. Producers must not duplicate them or leak the
+        # internal Frappe User identity into Analytics.
         self.assertTrue(
-            {
-                "event_type",
-                "event_group",
-                "user",
-                "target_doctype",
-                "target_name",
-                "route_type",
-                "route_id",
-                "source",
-            }.issubset(keyword_names)
+            {"event_group", "user", "target_doctype", "route_type", "route_id"}.isdisjoint(
+                keyword_names
+            )
         )
 
     def test_public_list_is_bounded_deterministic_and_cursor_safe(self):
