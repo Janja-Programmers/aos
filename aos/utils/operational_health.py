@@ -409,7 +409,7 @@ def _livekit_endpoint(env: Mapping[str, Any] | None) -> ServiceEndpoint:
 	return ServiceEndpoint(
 		name="livekit",
 		category="livekit",
-		url=_env(env, "LIVEKIT_ADMIN_ENDPOINT", ""),
+		url=_env(env, "LIVEKIT_ADMIN_ENDPOINT", "http://127.0.0.1:7880"),
 		health_path="/",
 		ready_path=None,
 	)
