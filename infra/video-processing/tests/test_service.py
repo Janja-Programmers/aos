@@ -85,6 +85,30 @@ def test_health(monkeypatch):
 	assert response.json()["service"] == "aos-video-processing"
 
 
+def test_ready_requires_redis_and_video_binaries(monkeypatch):
+    class Redis:
+        def ping(self):
+            return True
+
+    monkeypatch.setattr(main, "get_redis", Redis)
+    monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
+    response = TestClient(main.app).get("/ready")
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "ready": True}
+
+
+def test_ready_fails_when_ffmpeg_binary_is_missing(monkeypatch):
+    class Redis:
+        def ping(self):
+            return True
+
+    monkeypatch.setattr(main, "get_redis", Redis)
+    monkeypatch.setattr(main.shutil, "which", lambda name: None if name == "ffmpeg" else f"/usr/bin/{name}")
+    response = TestClient(main.app).get("/ready")
+    assert response.status_code == 503
+    assert response.json()["ready"] is False
+
+
 def test_job_accepts_original_sound_output_locations(monkeypatch):
 	calls = []
 

@@ -1,5 +1,29 @@
 [
   {
+    "endpoint": "aos.api.health.liveness",
+    "access": "guest",
+    "policy": "infrastructure_health_dedicated",
+    "rationale": "Infrastructure probe served through a dedicated bounded edge rate bucket so client traffic cannot starve probes and probes cannot become an unbounded DB/Redis hot path."
+  },
+  {
+    "endpoint": "aos.api.health.readiness",
+    "access": "guest",
+    "policy": "infrastructure_health_dedicated",
+    "rationale": "Infrastructure probe served through a dedicated bounded edge rate bucket so client traffic cannot starve probes and probes cannot become an unbounded DB/Redis hot path."
+  },
+  {
+    "endpoint": "aos.api.internal.moderation.__init__.handle_callback",
+    "access": "guest",
+    "policy": "baseline_guest",
+    "rationale": "Signed internal Moderation callback currently traverses the bounded baseline API bucket; application HMAC/timestamp verification remains authoritative."
+  },
+  {
+    "endpoint": "aos.api.internal.moderation.__init__.review",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Desk-only Moderation review endpoint; session authorization remains server-side and edge traffic is baseline bounded."
+  },
+  {
     "endpoint": "aos.api.internal.shorts.__init__.get_review_context",
     "access": "authenticated",
     "policy": "baseline_authenticated",
@@ -178,18 +202,6 @@
     "access": "guest",
     "policy": "signed_internal_exempt",
     "rationale": "Signed worker callback; authenticated by HMAC and kept outside the public edge bucket."
-  },
-  {
-    "endpoint": "aos.api.v1.analytics_pipeline.__init__.track_event",
-    "access": "guest",
-    "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
-  },
-  {
-    "endpoint": "aos.api.v1.analytics_pipeline.__init__.track_events",
-    "access": "guest",
-    "policy": "baseline_guest",
-    "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
     "endpoint": "aos.api.v1.auth.__init__.apple_login",
@@ -574,30 +586,6 @@
     "access": "authenticated",
     "policy": "baseline_authenticated",
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
-  },
-  {
-    "endpoint": "aos.api.v1.diagnostics.__init__.get_backup_readiness_status",
-    "access": "authenticated",
-    "policy": "private_diagnostics_exempt",
-    "rationale": "System Manager diagnostics; exempt from the edge bucket so readiness remains usable."
-  },
-  {
-    "endpoint": "aos.api.v1.diagnostics.__init__.get_job_monitoring_status",
-    "access": "authenticated",
-    "policy": "private_diagnostics_exempt",
-    "rationale": "System Manager diagnostics; exempt from the edge bucket so readiness remains usable."
-  },
-  {
-    "endpoint": "aos.api.v1.diagnostics.__init__.get_operational_health_status",
-    "access": "authenticated",
-    "policy": "private_diagnostics_exempt",
-    "rationale": "System Manager diagnostics; exempt from the edge bucket so readiness remains usable."
-  },
-  {
-    "endpoint": "aos.api.v1.diagnostics.__init__.get_production_config_status",
-    "access": "authenticated",
-    "policy": "private_diagnostics_exempt",
-    "rationale": "System Manager diagnostics; exempt from the edge bucket so readiness remains usable."
   },
   {
     "endpoint": "aos.api.v1.live.__init__.activate_live_cohost",

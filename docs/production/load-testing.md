@@ -14,7 +14,7 @@ Load testing should prove that the highest-traffic AOS flows remain stable under
 - live list/start/join/token/tracking flows
 - notifications list and push-token registration
 - maps autocomplete/search/reverse/route flows
-- admin-only operational diagnostics at low rate
+- operator-only operational diagnostics before and after load
 
 It should also prove that protections added earlier still hold under concurrency:
 
@@ -49,7 +49,6 @@ RUN_CHAT_WRITES=false
 RUN_LIVE_START=false
 RUN_LIVE_JOIN=false
 RUN_NOTIFICATION_WRITES=false
-RUN_ADMIN_DIAGNOSTICS=false
 ```
 
 Never use real customer accounts for write-enabled tests. Use dedicated staging load-test users and seed records.
@@ -87,13 +86,7 @@ export CHAT_RECEIVER_USER="load-user-2@example.com"
 export LIVE_ID="LIVE-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-Admin diagnostics require a user with effective `AOS Settings` Read permission and should remain low-rate:
-
-```bash
-export ADMIN_EMAIL="admin-load-check@example.com"
-export ADMIN_PASSWORD="replace-with-staging-admin-password"
-export RUN_ADMIN_DIAGNOSTICS=true
-```
+Detailed Diagnostics are not part of k6 client traffic. Run the server-side operator checks before and after a rehearsal instead.
 
 ## Install k6
 
@@ -177,7 +170,7 @@ Pass criteria:
 - no 5xx responses
 - p95 under roughly 1.2 seconds for the tiny smoke run
 - no new Frappe traceback
-- diagnostics remain ready afterward
+- server-side operational health and job monitoring remain ready afterward
 
 ### 2. Component tests
 
@@ -225,10 +218,11 @@ Media upload-init, only when intentionally creating media rows:
 RUN_MEDIA_INIT=true VUS=3 DURATION=2m k6 run infra/load-testing/k6/media.js
 ```
 
-Admin diagnostics, low rate only:
+Operator diagnostics are server-side, not a k6 scenario:
 
 ```bash
-RUN_ADMIN_DIAGNOSTICS=true VUS=1 DURATION=1m k6 run infra/load-testing/k6/diagnostics.js
+bench --site "$SITE" execute aos.utils.operational_health.operational_health_summary
+bench --site "$SITE" execute aos.utils.job_monitoring.job_monitoring_summary
 ```
 
 ### 3. Optional write tests
@@ -285,7 +279,7 @@ For a stronger pre-production rehearsal, increase gradually:
 VUS=50 DURATION=20m k6 run infra/load-testing/k6/mixed-production-rehearsal.js
 ```
 
-Do not jump straight to large tests. Scale only after diagnostics are clean.
+Do not jump straight to large tests. Scale only after the server-side operational and job-health gates are clean.
 
 ## Default thresholds
 

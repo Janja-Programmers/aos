@@ -10,9 +10,6 @@ export USER_PASSWORD="replace-with-staging-test-password"
 export SECOND_USER_EMAIL="load-user-2@example.com"
 export SECOND_USER_PASSWORD="replace-with-staging-test-password"
 
-# Optional account with Read permission on AOS Settings for diagnostics.js only.
-export ADMIN_EMAIL="admin-load-check@example.com"
-export ADMIN_PASSWORD="replace-with-staging-admin-password"
 
 # Seed IDs from staging data. Comma-separated values are allowed where noted.
 export AD_IDS="ad_replace_with_public_id_1,ad_replace_with_public_id_2"
@@ -30,7 +27,6 @@ export RUN_CHAT_WRITES="false"
 export RUN_LIVE_START="false"
 export RUN_LIVE_JOIN="false"
 export RUN_NOTIFICATION_WRITES="false"
-export RUN_ADMIN_DIAGNOSTICS="false"
 
 export VUS="5"
 export DURATION="2m"

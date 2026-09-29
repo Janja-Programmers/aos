@@ -14,7 +14,7 @@ Feature documentation is the canonical human-readable description of AOS busines
 | [Calls](calls/README.md) | Call lifecycle, LiveKit grants, history and reconciliation | [API](calls/api.md) |
 | [Catalog](catalog/README.md) | Category/schema master data and Ad attribute rules | [API](catalog/README.md) |
 | [Chat](chat/README.md) | Conversations, messages, attachments, reactions, receipts, presence and translation | [API](chat/api.md) |
-| [Diagnostics](diagnostics/README.md) | System-Manager production/health/readiness reports | [API](diagnostics/api.md) |
+| [Diagnostics](diagnostics/README.md) | Operational liveness/readiness, dependency health, jobs/backlogs and redacted operator diagnostics | [Architecture](diagnostics/README.md) |
 | [Live](live/README.md) | Live lifecycle, LiveKit, participants/co-hosts, comments, reactions and tracking | [API](live/api.md) |
 | [Localization](localization/README.md) | Country/language/currency/location contract and preferences (single authoritative document) | [API](localization/README.md) |
 | [Maps](maps/README.md) | Geocoding, routing and seller-location services | [API](maps/README.md) |

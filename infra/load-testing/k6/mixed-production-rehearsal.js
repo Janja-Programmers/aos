@@ -6,7 +6,6 @@ import {
   getMethod,
   intEnv,
   login,
-  loginAdmin,
   postMethod,
   randomItem,
   randomSessionId,
@@ -36,12 +35,6 @@ export const options = {
       vus: Math.max(1, Math.floor(vus * 0.20)),
       duration,
       exec: 'authenticatedLight',
-    },
-    low_rate_diagnostics: {
-      executor: 'constant-vus',
-      vus: 1,
-      duration,
-      exec: 'diagnosticsLight',
     },
   },
   thresholds: commonThresholds({
@@ -105,21 +98,4 @@ export function authenticatedLight() {
     }
   });
   sleep(0.7 + Math.random() * 2);
-}
-
-export function diagnosticsLight() {
-  if (!boolEnv('RUN_ADMIN_DIAGNOSTICS', false)) {
-    sleep(10);
-    return;
-  }
-  const sid = loginAdmin();
-  if (!sid) {
-    sleep(10);
-    return;
-  }
-  group('low-rate diagnostics', () => {
-    record(getMethod('aos.api.v1.diagnostics.get_operational_health_status', {}, sid), 'diagnostics.operational_health');
-    record(getMethod('aos.api.v1.diagnostics.get_job_monitoring_status', {}, sid), 'diagnostics.job_monitoring');
-  });
-  sleep(30);
 }

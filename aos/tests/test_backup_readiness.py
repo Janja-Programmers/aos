@@ -9,7 +9,6 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.api.v1.diagnostics import get_backup_readiness_status
 from aos.utils.backup_readiness import validate_backup_readiness
 
 
@@ -455,21 +454,3 @@ class TestBackupReadiness(FrappeTestCase):
 		rehearsal = next(check for check in report["checks"] if check["name"] == "restore_rehearsal")
 		self.assertEqual(rehearsal["status"], "unhealthy")
 		self.assertIn("private_file_restore_evidence", rehearsal["details"]["errors"])
-
-	def test_admin_diagnostic_requires_system_manager(self):
-		frappe.set_user("Guest")
-		response = get_backup_readiness_status()
-		self.assertFalse(response.get("ok"), response)
-		self.assertEqual(response.get("error"), "PERMISSION_DENIED")
-
-	def test_admin_diagnostic_returns_redacted_report_for_system_manager(self):
-		frappe.set_user("Administrator")
-		expected = {
-			"ready": True,
-			"summary": {"checks": 1, "healthy": 1, "degraded": 0, "unhealthy": 0, "skipped": 0},
-			"checks": [],
-		}
-		with patch("aos.api.diagnostics.status.validate_backup_readiness", return_value=expected):
-			response = get_backup_readiness_status()
-		self.assertTrue(response.get("ok"), response)
-		self.assertEqual(response.get("data"), expected)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, Header, HTTPException, Request, status
@@ -128,10 +130,15 @@ def health():
 @app.get("/ready")
 def ready():
     try:
-        redis = get_redis(); redis.ping(); dependency_ready("redis")
-        return {"ok": True, "ready": True}
+        redis = get_redis()
+        redis.ping()
+        dependency_ready("redis")
     except Exception as exc:
         return readiness_error("redis", exc)
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        return readiness_error("ffmpeg", RuntimeError("required video binaries are unavailable"))
+    dependency_ready("ffmpeg")
+    return {"ok": True, "ready": True}
 
 
 async def _verified_json(request: Request, signature: str | None) -> bytes:

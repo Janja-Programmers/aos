@@ -16,6 +16,20 @@ from frappe.utils import add_to_date, cint, now_datetime
 
 from aos.api.shared.public_errors import is_sensitive_exception_message
 from aos.utils import aos_config
+from aos.utils.health_model import (
+	AVAILABLE,
+	DISABLED,
+	DISABLED_CONDITION,
+	HEALTHY,
+	OPTIONAL,
+	REQUIRED,
+	UNAVAILABLE,
+	UNHEALTHY,
+	UNKNOWN,
+	UNKNOWN_CONDITION,
+	health_check,
+	summarize_health,
+)
 
 JobMonitorStatus = str
 
@@ -117,15 +131,19 @@ def _check(
 	status: JobMonitorStatus,
 	message: str,
 	details: Mapping[str, Any] | None = None,
+	requirement: str = REQUIRED,
+	condition: str = AVAILABLE,
 ) -> None:
 	checks.append(
-		{
-			"name": name,
-			"category": category,
-			"status": status,
-			"message": message,
-			"details": dict(details or {}),
-		}
+		health_check(
+			name=name,
+			category=category,
+			status=status,
+			requirement=requirement,
+			condition=condition,
+			message=message,
+			details=details,
+		)
 	)
 
 
@@ -158,6 +176,16 @@ def _status_from_service_job_stats(stats: Mapping[str, Any]) -> tuple[JobMonitor
 
 
 def _service_job_check_from_stats(stats: Mapping[str, Any]) -> dict[str, Any]:
+	if bool(stats.get("inspection_failed")):
+		return health_check(
+			name=_clean(stats.get("name")) or "aos_service_jobs",
+			category=_clean(stats.get("category")) or "service_job",
+			status=UNKNOWN,
+			requirement=REQUIRED,
+			condition=UNKNOWN_CONDITION,
+			message="Service job state could not be inspected.",
+			details={"doctype": _clean(stats.get("doctype"))},
+		)
 	status, message = _status_from_service_job_stats(stats)
 	counts_by_status = {
 		_clean(key): _safe_int(value)
@@ -178,21 +206,24 @@ def _service_job_check_from_stats(stats: Mapping[str, Any]) -> dict[str, Any]:
 		"sample_stale_jobs": _limited_names(list(stats.get("sample_stale_jobs") or [])),
 	}
 	if stats.get("enabled") is False:
-		return {
-			"name": _clean(stats.get("name")),
-			"category": _clean(stats.get("category")) or "service_job",
-			"status": "skipped",
-			"message": "Service job monitor is disabled by configuration.",
-			"details": {"doctype": details["doctype"]},
-		}
-	return {
-		"name": _clean(stats.get("name")),
-		"category": _clean(stats.get("category")) or "service_job",
-		"status": status,
-		"message": message,
-		"details": details,
-	}
-
+		return health_check(
+			name=_clean(stats.get("name")),
+			category=_clean(stats.get("category")) or "service_job",
+			status=DISABLED,
+			requirement=OPTIONAL,
+			condition=DISABLED_CONDITION,
+			message="Service job monitor is disabled by configuration.",
+			details={"doctype": details["doctype"]},
+		)
+	return health_check(
+		name=_clean(stats.get("name")),
+		category=_clean(stats.get("category")) or "service_job",
+		status=status,
+		requirement=REQUIRED,
+		condition=AVAILABLE,
+		message=message,
+		details=details,
+	)
 
 def _doctype_exists(doctype: str) -> bool:
 	try:
@@ -211,6 +242,7 @@ def _collect_one_service_job_stats(
 	env: Mapping[str, Any] | None,
 	stale_threshold_minutes: int,
 	long_running_threshold_minutes: int,
+	failure_window_hours: int,
 ) -> dict[str, Any]:
 	enabled = True
 	if spec.enabled_env:
@@ -228,6 +260,7 @@ def _collect_one_service_job_stats(
 		"retry_risk_count": 0,
 		"stale_threshold_minutes": stale_threshold_minutes,
 		"long_running_threshold_minutes": long_running_threshold_minutes,
+		"failure_window_hours": failure_window_hours,
 		"sample_failed_jobs": [],
 		"sample_stale_jobs": [],
 	}
@@ -241,28 +274,29 @@ def _collect_one_service_job_stats(
 		}
 
 	table = f"`tab{spec.doctype}`"
-	counts = frappe.db.sql(
-		f"SELECT status, COUNT(*) AS count FROM {table} GROUP BY status",
-		as_dict=True,
-	)
-	counts_by_status = {
-		_clean(row.get("status")): _safe_int(row.get("count")) for row in counts if _clean(row.get("status"))
-	}
-
 	stale_cutoff = add_to_date(now_datetime(), minutes=-stale_threshold_minutes)
 	long_running_cutoff = add_to_date(now_datetime(), minutes=-long_running_threshold_minutes)
+	failure_cutoff = add_to_date(now_datetime(), hours=-failure_window_hours)
 
 	active_placeholders = _sql_in_placeholders(spec.active_statuses)
 	failed_placeholders = _sql_in_placeholders(spec.failed_statuses)
-
-	active_count = frappe.db.sql(
-		f"SELECT COUNT(*) FROM {table} WHERE status IN ({active_placeholders})",
+	active_rows = frappe.db.sql(
+		f"SELECT status, COUNT(*) AS count FROM {table} WHERE status IN ({active_placeholders}) GROUP BY status",
 		spec.active_statuses,
-	)[0][0]
-	failed_count = frappe.db.sql(
-		f"SELECT COUNT(*) FROM {table} WHERE status IN ({failed_placeholders})",
-		spec.failed_statuses,
-	)[0][0]
+		as_dict=True,
+	)
+	failed_rows = frappe.db.sql(
+		f"SELECT status, COUNT(*) AS count FROM {table} WHERE status IN ({failed_placeholders}) AND modified >= %s GROUP BY status",
+		(*spec.failed_statuses, failure_cutoff),
+		as_dict=True,
+	)
+	counts_by_status: dict[str, int] = {}
+	for row in [*active_rows, *failed_rows]:
+		status_name = _clean(row.get("status"))
+		if status_name:
+			counts_by_status[status_name] = _safe_int(row.get("count"))
+	active_count = sum(_safe_int(row.get("count")) for row in active_rows)
+	failed_count = sum(_safe_int(row.get("count")) for row in failed_rows)
 	stale_active_count = frappe.db.sql(
 		f"""
         SELECT COUNT(*)
@@ -296,10 +330,11 @@ def _collect_one_service_job_stats(
         SELECT name
         FROM {table}
         WHERE status IN ({failed_placeholders})
+          AND modified >= %s
         ORDER BY modified DESC
         LIMIT 5
         """,
-		spec.failed_statuses,
+		(*spec.failed_statuses, failure_cutoff),
 		pluck=True,
 	)
 	sample_stale = frappe.db.sql(
@@ -333,6 +368,7 @@ def _collect_service_job_stats(
 	env: Mapping[str, Any] | None,
 	stale_threshold_minutes: int,
 	long_running_threshold_minutes: int,
+	failure_window_hours: int,
 ) -> list[dict[str, Any]]:
 	return [
 		_collect_one_service_job_stats(
@@ -340,6 +376,7 @@ def _collect_service_job_stats(
 			env=env,
 			stale_threshold_minutes=stale_threshold_minutes,
 			long_running_threshold_minutes=long_running_threshold_minutes,
+			failure_window_hours=failure_window_hours,
 		)
 		for spec in SERVICE_JOB_SPECS
 	]
@@ -365,24 +402,38 @@ def _status_from_queue_stats(
 def _queue_check_from_stats(
 	stats: Mapping[str, Any], *, backlog_warn: int, backlog_unhealthy: int
 ) -> dict[str, Any]:
+	queue = _clean(stats.get("queue")) or "unknown"
 	if stats.get("status") == "unhealthy":
-		return {
-			"name": f"frappe_queue:{_clean(stats.get('queue')) or 'unknown'}",
-			"category": "frappe_queue",
-			"status": "unhealthy",
-			"message": "Queue could not be inspected.",
-			"details": {"queue": _clean(stats.get("queue")) or "unknown"},
-		}
+		return health_check(
+			name=f"frappe_queue:{queue}",
+			category="frappe_queue",
+			status=UNHEALTHY,
+			requirement=REQUIRED,
+			condition=UNAVAILABLE,
+			message="Queue could not be inspected.",
+			details={"queue": queue},
+		)
+	if bool(stats.get("inspection_failed")):
+		return health_check(
+			name=f"frappe_queue:{queue}",
+			category="frappe_queue",
+			status=UNKNOWN,
+			requirement=REQUIRED,
+			condition=UNKNOWN_CONDITION,
+			message="One or more queue registries could not be inspected.",
+			details={"queue": queue},
+		)
 	status, message = _status_from_queue_stats(
 		stats, backlog_warn=backlog_warn, backlog_unhealthy=backlog_unhealthy
 	)
-	queue = _clean(stats.get("queue")) or "unknown"
-	return {
-		"name": f"frappe_queue:{queue}",
-		"category": "frappe_queue",
-		"status": status,
-		"message": message,
-		"details": {
+	return health_check(
+		name=f"frappe_queue:{queue}",
+		category="frappe_queue",
+		status=status,
+		requirement=REQUIRED,
+		condition=AVAILABLE,
+		message=message,
+		details={
 			"queue": queue,
 			"queued_count": _safe_int(stats.get("queued_count")),
 			"failed_count": _safe_int(stats.get("failed_count")),
@@ -392,8 +443,7 @@ def _queue_check_from_stats(
 			"backlog_warning_threshold": backlog_warn,
 			"backlog_unhealthy_threshold": backlog_unhealthy,
 		},
-	}
-
+	)
 
 def _monitored_queues(env: Mapping[str, Any] | None) -> list[str]:
 	queues = list(DEFAULT_MONITORED_QUEUES)
@@ -419,54 +469,116 @@ def _collect_queue_stats(*, env: Mapping[str, Any] | None) -> list[dict[str, Any
 	except Exception:
 		return [{"queue": "all", "status": "unhealthy"}]
 
-	def registry_count(registry_cls: Any, queue: Any) -> int:
+	def registry_count(registry_cls: Any, queue: Any) -> tuple[int, bool]:
 		try:
-			return len(registry_cls(queue=queue))
+			return len(registry_cls(queue=queue)), False
 		except TypeError:
 			try:
-				return len(registry_cls(queue.name, connection=conn))
+				return len(registry_cls(queue.name, connection=conn)), False
 			except Exception:
-				return 0
+				return 0, True
 		except Exception:
-			return 0
+			return 0, True
 
 	rows: list[dict[str, Any]] = []
 	for queue_name in _monitored_queues(env):
 		try:
 			queue = Queue(queue_name, connection=conn)
+			failed, failed_error = registry_count(FailedJobRegistry, queue)
+			started, started_error = registry_count(StartedJobRegistry, queue)
+			scheduled, scheduled_error = registry_count(ScheduledJobRegistry, queue)
+			deferred, deferred_error = registry_count(DeferredJobRegistry, queue)
 			rows.append(
 				{
 					"queue": queue_name,
 					"queued_count": len(queue),
-					"failed_count": registry_count(FailedJobRegistry, queue),
-					"started_count": registry_count(StartedJobRegistry, queue),
-					"scheduled_count": registry_count(ScheduledJobRegistry, queue),
-					"deferred_count": registry_count(DeferredJobRegistry, queue),
+					"failed_count": failed,
+					"started_count": started,
+					"scheduled_count": scheduled,
+					"deferred_count": deferred,
+					"inspection_failed": any(
+						(failed_error, started_error, scheduled_error, deferred_error)
+					),
 				}
 			)
 		except Exception:
 			rows.append({"queue": queue_name, "status": "unhealthy"})
 	return rows
 
+def _collect_worker_stats() -> dict[str, Any]:
+	try:
+		from frappe.utils.background_jobs import get_workers
+
+		workers = list(get_workers() or [])
+		return {"worker_count": len(workers)}
+	except Exception:
+		return {"worker_count": 0, "inspection_failed": True}
+
+def _worker_check_from_stats(stats: Mapping[str, Any]) -> dict[str, Any]:
+	count = _safe_int(stats.get("worker_count"))
+	healthy = count > 0 and not bool(stats.get("inspection_failed"))
+	return health_check(
+		name="frappe_workers",
+		category="background_jobs",
+		status=HEALTHY if healthy else UNHEALTHY,
+		requirement=REQUIRED,
+		condition=AVAILABLE if healthy else UNAVAILABLE,
+		message="Frappe workers are registered." if healthy else "No healthy Frappe workers could be verified.",
+		details={"worker_count": count},
+	)
+
+
+def _collect_scheduler_stats() -> dict[str, Any]:
+	try:
+		from frappe.utils.scheduler import is_scheduler_inactive
+
+		return {"active": not bool(is_scheduler_inactive())}
+	except Exception:
+		return {"active": False, "inspection_failed": True}
+
+
+def _scheduler_check_from_stats(stats: Mapping[str, Any]) -> dict[str, Any]:
+	active = bool(stats.get("active")) and not bool(stats.get("inspection_failed"))
+	return health_check(
+		name="frappe_scheduler",
+		category="background_jobs",
+		status=HEALTHY if active else UNHEALTHY,
+		requirement=REQUIRED,
+		condition=AVAILABLE if active else UNAVAILABLE,
+		message="Frappe scheduler is enabled." if active else "Frappe scheduler is inactive or could not be verified.",
+		details={},
+	)
+
 
 def _background_error_check_from_stats(stats: Mapping[str, Any]) -> dict[str, Any]:
+	if bool(stats.get("inspection_failed")):
+		return health_check(
+			name="frappe_background_job_errors",
+			category="background_jobs",
+			status=UNKNOWN,
+			requirement=REQUIRED,
+			condition=UNKNOWN_CONDITION,
+			message="Recent background-job errors could not be inspected.",
+			details={"window_hours": _safe_int(stats.get("window_hours"))},
+		)
 	count = _safe_int(stats.get("error_count"))
 	status = "degraded" if count else "healthy"
 	message = (
 		"Recent background job errors were found." if count else "No recent background job errors were found."
 	)
-	return {
-		"name": "frappe_background_job_errors",
-		"category": "background_jobs",
-		"status": status,
-		"message": message,
-		"details": {
+	return health_check(
+		name="frappe_background_job_errors",
+		category="background_jobs",
+		status=status,
+		requirement=REQUIRED,
+		condition=AVAILABLE,
+		message=message,
+		details={
 			"error_count": count,
 			"window_hours": _safe_int(stats.get("window_hours")),
 			"sample_methods": _limited_names(list(stats.get("sample_methods") or [])),
 		},
-	}
-
+	)
 
 def _collect_background_error_stats(*, window_hours: int) -> dict[str, Any]:
 	cutoff = add_to_date(now_datetime(), hours=-window_hours)
@@ -501,7 +613,7 @@ def _collect_background_error_stats(*, window_hours: int) -> dict[str, Any]:
 			pluck=True,
 		)
 	except Exception:
-		return {"error_count": 1, "window_hours": window_hours, "sample_methods": ["error-log-query-failed"]}
+		return {"inspection_failed": True, "window_hours": window_hours, "sample_methods": []}
 	return {"error_count": count, "window_hours": window_hours, "sample_methods": methods}
 
 
@@ -515,6 +627,8 @@ def validate_job_monitoring(
 	queue_backlog_unhealthy: int = 10000,
 	service_job_stats_provider: Callable[..., list[dict[str, Any]]] | None = None,
 	queue_stats_provider: Callable[..., list[dict[str, Any]]] | None = None,
+	worker_stats_provider: Callable[[], dict[str, Any]] | None = None,
+	scheduler_stats_provider: Callable[[], dict[str, Any]] | None = None,
 	background_error_provider: Callable[..., dict[str, Any]] | None = None,
 	outbox_summary_provider: Callable[[], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -536,6 +650,7 @@ def validate_job_monitoring(
 			env=env,
 			stale_threshold_minutes=stale_minutes,
 			long_running_threshold_minutes=long_minutes,
+			failure_window_hours=window_hours,
 		)
 	except TypeError:
 		service_stats = service_provider()
@@ -545,10 +660,7 @@ def validate_job_monitoring(
 				"name": "aos_service_jobs",
 				"doctype": "AOS Service Jobs",
 				"category": "service_job",
-				"stale_active_count": 1,
-				"stale_threshold_minutes": stale_minutes,
-				"long_running_threshold_minutes": long_minutes,
-				"sample_stale_jobs": ["service-job-query-failed"],
+				"inspection_failed": True,
 			}
 		]
 	for stats in service_stats:
@@ -569,16 +681,23 @@ def validate_job_monitoring(
 			)
 		)
 
+	worker_provider = worker_stats_provider or _collect_worker_stats
+	scheduler_provider = scheduler_stats_provider or _collect_scheduler_stats
+	try:
+		checks.append(_worker_check_from_stats(worker_provider()))
+	except Exception:
+		checks.append(_worker_check_from_stats({"worker_count": 0, "inspection_failed": True}))
+	try:
+		checks.append(_scheduler_check_from_stats(scheduler_provider()))
+	except Exception:
+		checks.append(_scheduler_check_from_stats({"active": False, "inspection_failed": True}))
+
 	try:
 		error_stats = error_provider(window_hours=window_hours)
 	except TypeError:
 		error_stats = error_provider()
 	except Exception:
-		error_stats = {
-			"error_count": 1,
-			"window_hours": window_hours,
-			"sample_methods": ["error-log-query-failed"],
-		}
+		error_stats = {"inspection_failed": True, "window_hours": window_hours, "sample_methods": []}
 	checks.append(_background_error_check_from_stats(error_stats))
 
 	try:
@@ -624,33 +743,35 @@ def validate_job_monitoring(
 		)
 	except Exception:
 		checks.append(
-			{
-				"name": "transactional_outbox",
-				"category": "service_job",
-				"status": "unhealthy",
-				"message": "Transactional outbox monitoring query failed.",
-				"details": {},
-			}
+			health_check(
+				name="transactional_outbox",
+				category="service_job",
+				status=UNKNOWN,
+				requirement=REQUIRED,
+				condition=UNKNOWN_CONDITION,
+				message="Transactional outbox monitoring query could not be completed.",
+				details={},
+			)
 		)
 
-	counts = {
-		"healthy": 0,
-		"degraded": 0,
-		"unhealthy": 0,
-		"skipped": 0,
-		"checks": len(checks),
-	}
+	normalized: list[dict[str, Any]] = []
 	for check in checks:
-		status = _clean(check.get("status")) or "unhealthy"
-		if status not in counts:
-			status = "unhealthy"
-		counts[status] += 1
-
-	return {
-		"ready": counts["unhealthy"] == 0,
-		"summary": counts,
-		"checks": checks,
-	}
+		if "requirement" in check and "condition" in check:
+			normalized.append(check)
+			continue
+		status = _clean(check.get("status")) or UNHEALTHY
+		normalized.append(
+			health_check(
+				name=_clean(check.get("name")),
+				category=_clean(check.get("category")) or "background_jobs",
+				status=status,
+				requirement=REQUIRED,
+				condition=UNAVAILABLE if status == UNHEALTHY else AVAILABLE,
+				message=_clean(check.get("message")),
+				details=check.get("details") if isinstance(check.get("details"), Mapping) else {},
+			)
+		)
+	return summarize_health(normalized)
 
 
 def job_monitoring_summary() -> dict[str, Any]:

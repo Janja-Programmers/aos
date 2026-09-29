@@ -603,30 +603,26 @@ def _safe_outbox_metrics(lines: list[str]) -> None:
 
 
 def _safe_dependency_metrics(lines: list[str]) -> None:
+	"""Export only cheap core readiness; never fan out to external dependencies."""
 	try:
-		from aos.utils.operational_health import validate_operational_health
+		from aos.utils.operational_health import validate_readiness
 
-		report = validate_operational_health(timeout_seconds=2)
+		report = validate_readiness()
 		checks = report.get("checks") or []
 	except Exception:
 		checks = []
-	reviewed = {
-		"frappe_redis": "redis",
-		"database": "database",
-		"minio": "minio",
-		"livekit_health": "livekit",
-		"video_processing_ready": "video_processing",
-		"moderation_ready": "moderation",
-		"search_ranking_ready": "search_ranking",
-		"notification_delivery_ready": "notification_delivery",
-		"analytics_pipeline_ready": "analytics_pipeline",
-	}
-	values = {label: 0 for label in set(reviewed.values())}
+	values = {"database": 0, "redis": 0}
+	redis_values: list[int] = []
 	for check in checks:
-		label = reviewed.get(str(check.get("name") or ""))
-		if label:
-			values[label] = _check_status_value(str(check.get("status") or ""))
-	lines += ["# HELP aos_dependency_ready Dependency readiness.", "# TYPE aos_dependency_ready gauge"]
+		name = str(check.get("name") or "")
+		value = _check_status_value(str(check.get("status") or ""))
+		if name == "database":
+			values["database"] = value
+		elif name in {"redis_cache", "redis_queue"}:
+			redis_values.append(value)
+	if redis_values:
+		values["redis"] = min(redis_values)
+	lines += ["# HELP aos_dependency_ready Core traffic-readiness dependency state.", "# TYPE aos_dependency_ready gauge"]
 	for dependency, value in sorted(values.items()):
 		lines.append(_line("aos_dependency_ready", value, {"dependency": dependency}))
 

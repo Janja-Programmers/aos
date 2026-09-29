@@ -86,7 +86,8 @@
    "fieldtype": "Select",
    "options": "Queued\nDispatching\nProcessing\nIndexed\nDeleted\nFailed\nCancelled",
    "default": "Queued",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "service_section",

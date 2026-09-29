@@ -10,7 +10,7 @@ ALLOWED_POLICIES = {
 	"baseline_authenticated",
 	"signed_internal_exempt",
 	"private_metrics_exempt",
-	"private_diagnostics_exempt",
+	"infrastructure_health_dedicated",
 }
 
 

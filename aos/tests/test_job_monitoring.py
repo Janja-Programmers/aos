@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.api.v1.diagnostics import get_job_monitoring_status
 from aos.utils.job_monitoring import validate_job_monitoring
 
 
@@ -14,6 +12,11 @@ class TestJobMonitoring(FrappeTestCase):
 
     def setUp(self):
         frappe.local.response = {}
+
+    def _validate(self, **kwargs):
+        kwargs.setdefault("worker_stats_provider", lambda: {"worker_count": 2, "queues": ["short", "default", "long"]})
+        kwargs.setdefault("scheduler_stats_provider", lambda: {"active": True})
+        return validate_job_monitoring(**kwargs)
 
     def _healthy_service_stats(self, **overrides):
         base = {
@@ -78,7 +81,7 @@ class TestJobMonitoring(FrappeTestCase):
         def background_error_provider(**kwargs):
             return {"error_count": 0, "window_hours": 24, "sample_methods": [secret_error]}
 
-        report = validate_job_monitoring(
+        report = self._validate(
             service_job_stats_provider=service_provider,
             queue_stats_provider=queue_provider,
             background_error_provider=background_error_provider,
@@ -108,7 +111,7 @@ class TestJobMonitoring(FrappeTestCase):
                 )
             ]
 
-        report = validate_job_monitoring(
+        report = self._validate(
             service_job_stats_provider=service_provider,
             queue_stats_provider=lambda **kwargs: [self._healthy_queue_stats()],
             background_error_provider=lambda **kwargs: {"error_count": 0, "window_hours": 24, "sample_methods": []},
@@ -135,7 +138,7 @@ class TestJobMonitoring(FrappeTestCase):
                 "sample_methods": ["aos.tasks.video_processing.dispatch_video_processing_job"],
             }
 
-        report = validate_job_monitoring(
+        report = self._validate(
             service_job_stats_provider=lambda **kwargs: [self._healthy_service_stats()],
             queue_stats_provider=queue_provider,
             background_error_provider=background_error_provider,
@@ -153,7 +156,7 @@ class TestJobMonitoring(FrappeTestCase):
         self.assertNotIn("Traceback", serialized)
 
     def test_queue_unhealthy_makes_report_unready(self):
-        report = validate_job_monitoring(
+        report = self._validate(
             service_job_stats_provider=lambda **kwargs: [self._healthy_service_stats()],
             queue_stats_provider=lambda **kwargs: [self._healthy_queue_stats(queue="long", queued_count=10001)],
             background_error_provider=lambda **kwargs: {"error_count": 0, "window_hours": 24, "sample_methods": []},
@@ -172,7 +175,7 @@ class TestJobMonitoring(FrappeTestCase):
             summary["manual_review_count"] = 1
             return summary
 
-        report = validate_job_monitoring(
+        report = self._validate(
             service_job_stats_provider=lambda **kwargs: [self._healthy_service_stats()],
             queue_stats_provider=lambda **kwargs: [self._healthy_queue_stats()],
             background_error_provider=lambda **kwargs: {
@@ -190,20 +193,89 @@ class TestJobMonitoring(FrappeTestCase):
         self.assertEqual(outbox.get("status"), "unhealthy")
         self.assertEqual((outbox.get("details") or {}).get("manual_review_count"), 1)
 
-    def test_admin_diagnostic_requires_system_manager(self):
-        frappe.set_user("Guest")
-        response = get_job_monitoring_status()
-        self.assertFalse(response.get("ok"), response)
-        self.assertEqual(response.get("error"), "PERMISSION_DENIED")
+    def test_disabled_service_is_neutral_and_explicit(self):
+        report = self._validate(
+            service_job_stats_provider=lambda **kwargs: [self._healthy_service_stats(enabled=False)],
+            queue_stats_provider=lambda **kwargs: [self._healthy_queue_stats()],
+            background_error_provider=lambda **kwargs: {"error_count": 0, "window_hours": 24, "sample_methods": []},
+            outbox_summary_provider=self._healthy_outbox_summary,
+        )
+        service = next(check for check in report["checks"] if check["name"] == "video_processing_jobs")
+        self.assertEqual(service["status"], "disabled")
+        self.assertEqual(service["requirement"], "optional")
+        self.assertTrue(report["ready"])
 
-    def test_admin_diagnostic_returns_redacted_report_for_system_manager(self):
-        frappe.set_user("Administrator")
-        expected = {
-            "ready": True,
-            "summary": {"checks": 1, "healthy": 1, "degraded": 0, "unhealthy": 0, "skipped": 0},
-            "checks": [],
-        }
-        with patch("aos.api.diagnostics.status.validate_job_monitoring", return_value=expected):
-            response = get_job_monitoring_status()
-        self.assertTrue(response.get("ok"), response)
-        self.assertEqual(response.get("data"), expected)
+
+    def test_inspection_failure_is_unknown_and_blocks_job_health(self):
+        report = self._validate(
+            service_job_stats_provider=lambda **kwargs: [
+                {
+                    "name": "video_processing_jobs",
+                    "doctype": "AOS Video Processing Job",
+                    "category": "video_processing",
+                    "inspection_failed": True,
+                }
+            ],
+            queue_stats_provider=lambda **kwargs: [self._healthy_queue_stats()],
+            background_error_provider=lambda **kwargs: {
+                "error_count": 0,
+                "window_hours": 24,
+                "sample_methods": [],
+            },
+            outbox_summary_provider=self._healthy_outbox_summary,
+        )
+        service = next(check for check in report["checks"] if check["name"] == "video_processing_jobs")
+        self.assertEqual(service["status"], "unknown")
+        self.assertEqual(service["condition"], "unknown")
+        self.assertFalse(report["ready"])
+
+    def test_queue_registry_inspection_failure_is_unknown_and_blocks_job_health(self):
+        report = self._validate(
+            service_job_stats_provider=lambda **kwargs: [self._healthy_service_stats()],
+            queue_stats_provider=lambda **kwargs: [
+                self._healthy_queue_stats(queue="long", inspection_failed=True)
+            ],
+            background_error_provider=lambda **kwargs: {
+                "error_count": 0,
+                "window_hours": 24,
+                "sample_methods": [],
+            },
+            outbox_summary_provider=self._healthy_outbox_summary,
+        )
+        queue = next(check for check in report["checks"] if check["name"] == "frappe_queue:long")
+        self.assertEqual(queue["status"], "unknown")
+        self.assertEqual(queue["condition"], "unknown")
+        self.assertFalse(report["ready"])
+
+    def test_background_error_inspection_failure_is_unknown_and_blocks_job_health(self):
+        report = self._validate(
+            service_job_stats_provider=lambda **kwargs: [self._healthy_service_stats()],
+            queue_stats_provider=lambda **kwargs: [self._healthy_queue_stats()],
+            background_error_provider=lambda **kwargs: {
+                "inspection_failed": True,
+                "window_hours": 24,
+                "sample_methods": [],
+            },
+            outbox_summary_provider=self._healthy_outbox_summary,
+        )
+        check = next(
+            check for check in report["checks"] if check["name"] == "frappe_background_job_errors"
+        )
+        self.assertEqual(check["status"], "unknown")
+        self.assertEqual(check["condition"], "unknown")
+        self.assertFalse(report["ready"])
+
+    def test_missing_workers_or_scheduler_blocks_job_health(self):
+        report = self._validate(
+            service_job_stats_provider=lambda **kwargs: [self._healthy_service_stats()],
+            queue_stats_provider=lambda **kwargs: [self._healthy_queue_stats()],
+            background_error_provider=lambda **kwargs: {"error_count": 0, "window_hours": 24, "sample_methods": []},
+            outbox_summary_provider=self._healthy_outbox_summary,
+            worker_stats_provider=lambda: {"worker_count": 0, "queues": []},
+            scheduler_stats_provider=lambda: {"active": False},
+        )
+        self.assertFalse(report["ready"])
+        statuses = {check["name"]: check["status"] for check in report["checks"]}
+        self.assertEqual(statuses["frappe_workers"], "unhealthy")
+        self.assertEqual(statuses["frappe_scheduler"], "unhealthy")
+

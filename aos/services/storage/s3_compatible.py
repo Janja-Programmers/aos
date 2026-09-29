@@ -88,9 +88,36 @@ class S3CompatibleStorage:
                 "Invalid object-storage endpoint. Use host[:port] only, without scheme, bucket, or path."
             ) from exc
 
-    def _build_client(self, *, endpoint: str, secure: bool) -> Minio:
-        connect_timeout = max(1, min(int(getattr(self.config, "connect_timeout_seconds", 3)), 30))
-        read_timeout = max(1, min(int(getattr(self.config, "read_timeout_seconds", 15)), 300))
+    def _build_client(
+        self,
+        *,
+        endpoint: str,
+        secure: bool,
+        connect_timeout_seconds: int | None = None,
+        read_timeout_seconds: int | None = None,
+    ) -> Minio:
+        connect_timeout = max(
+            1,
+            min(
+                int(
+                    connect_timeout_seconds
+                    if connect_timeout_seconds is not None
+                    else getattr(self.config, "connect_timeout_seconds", 3)
+                ),
+                30,
+            ),
+        )
+        read_timeout = max(
+            1,
+            min(
+                int(
+                    read_timeout_seconds
+                    if read_timeout_seconds is not None
+                    else getattr(self.config, "read_timeout_seconds", 15)
+                ),
+                300,
+            ),
+        )
         pool_key = (bool(secure), connect_timeout, read_timeout)
         with _HTTP_POOLS_LOCK:
             http_client = _HTTP_POOLS.get(pool_key)
@@ -617,14 +644,28 @@ class S3CompatibleStorage:
         self._clean_bucket(bucket)
         return f"{self.public_base_url}/{self._clean_object_key(object_key)}"
 
-    def healthcheck(self) -> dict[str, object]:
+    def healthcheck(self, *, timeout_seconds: int = 3) -> dict[str, object]:
+        """Probe only the configured buckets with a dedicated short-timeout client.
+
+        Health checks must not enumerate buckets, retry with backoff, create buckets,
+        or reuse the normal media-operation timeout budget.
+        """
         started = time.perf_counter()
+        timeout = max(1, min(int(timeout_seconds or 3), 10))
         try:
             public_bucket = self.bucket_for_type("public")
             private_bucket = self.bucket_for_type("private")
-            listed = self._execute("healthcheck", lambda: self.client.list_buckets(), retryable=True)
-            existing = {str(getattr(item, "name", "") or "") for item in listed or []}
-            missing_count = sum(1 for name in {public_bucket, private_bucket} if name not in existing)
+            probe_client = self._build_client(
+                endpoint=self.config.endpoint,
+                secure=bool(self.config.secure),
+                connect_timeout_seconds=timeout,
+                read_timeout_seconds=timeout,
+            )
+            missing_count = sum(
+                1
+                for bucket in {public_bucket, private_bucket}
+                if not bool(probe_client.bucket_exists(bucket))
+            )
             return {
                 "ok": missing_count == 0 and bool(self.public_base_url) and bool(self.presign_endpoint),
                 "configured_bucket_count": 2,

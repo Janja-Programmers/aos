@@ -186,10 +186,6 @@ export function requireLogin(email = __ENV.USER_EMAIL, password = __ENV.USER_PAS
   return sid;
 }
 
-export function loginAdmin() {
-  if (!__ENV.ADMIN_EMAIL || !__ENV.ADMIN_PASSWORD) return null;
-  return login(__ENV.ADMIN_EMAIL, __ENV.ADMIN_PASSWORD);
-}
 
 export function maybeSleep(minSeconds = 0.3, maxSeconds = 1.5) {
   const seconds = minSeconds + Math.random() * (maxSeconds - minSeconds);

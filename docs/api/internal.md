@@ -26,7 +26,7 @@ Operational behavior belongs to the matching production service documentation:
 
 ## Admin diagnostics
 
-`aos.api.v1.diagnostics.*` requires effective Read permission on `AOS Settings` even though it uses normal whitelisted transport. See [Diagnostics API](../features/diagnostics/api.md).
+`aos.api.health.liveness` and `aos.api.health.readiness` are minimal infrastructure probes and are not client APIs. Detailed Diagnostics reports are bench/server-side only. See [Diagnostics](../features/diagnostics/README.md).
 
 ## Private metrics
 

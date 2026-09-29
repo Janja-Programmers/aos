@@ -9,7 +9,6 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.api.v1.diagnostics import get_operational_health_status
 from aos.utils.operational_health import validate_operational_health
 
 
@@ -165,6 +164,12 @@ class TestOperationalHealth(FrappeTestCase):
     def _report_text(self, report: dict) -> str:
         return str(report)
 
+    def _validate_operational(self, **kwargs):
+        kwargs.setdefault("database_probe", lambda: True)
+        kwargs.setdefault("cache_probe", lambda: True)
+        kwargs.setdefault("queue_probe", lambda: True)
+        return validate_operational_health(**kwargs)
+
     def test_operational_health_probes_private_livekit_admin_endpoint(self):
         env = self._valid_env()
         requested: list[str] = []
@@ -177,7 +182,7 @@ class TestOperationalHealth(FrappeTestCase):
             patch("aos.utils.operational_health.frappe.cache", return_value=_FakeCache()),
             patch("aos.utils.operational_health.os.path.exists", return_value=True),
         ):
-            validate_operational_health(
+            self._validate_operational(
                 env=env,
                 site_config=self._valid_site_config(),
                 http_get=capture_get,
@@ -193,7 +198,7 @@ class TestOperationalHealth(FrappeTestCase):
             patch("aos.utils.operational_health.frappe.cache", return_value=_FakeCache()),
             patch("aos.utils.operational_health.os.path.exists", return_value=True),
         ):
-            report = validate_operational_health(
+            report = self._validate_operational(
                 env=env,
                 site_config=self._valid_site_config(),
                 http_get=self._healthy_get,
@@ -204,7 +209,9 @@ class TestOperationalHealth(FrappeTestCase):
         names = {check.get("name") for check in report.get("checks", [])}
         self.assertIn("production_config", names)
         self.assertIn("object_storage", names)
-        self.assertIn("frappe_redis_cache", names)
+        self.assertIn("redis_cache", names)
+        self.assertIn("redis_queue", names)
+        self.assertIn("database", names)
         self.assertIn("firebase_credentials", names)
         self.assertIn("livekit_root", names)
         self.assertIn("video_processing_health", names)
@@ -238,14 +245,15 @@ class TestOperationalHealth(FrappeTestCase):
             patch("aos.utils.operational_health.frappe.cache", return_value=_FakeCache()),
             patch("aos.utils.operational_health.os.path.exists", return_value=True),
         ):
-            report = validate_operational_health(
+            report = self._validate_operational(
                 env=env,
                 site_config=self._valid_site_config(),
                 http_get=failing_get,
                 storage_factory=_FakeStorage,
             )
 
-        self.assertFalse(report.get("ready"), report)
+        self.assertTrue(report.get("ready"), report)
+        self.assertEqual(report.get("status"), "degraded")
         video_checks = [
             check for check in report.get("checks", [])
             if str(check.get("name", "")).startswith("video_processing")
@@ -256,7 +264,7 @@ class TestOperationalHealth(FrappeTestCase):
         self.assertNotIn("super-secret-value", serialized)
         self.assertNotIn("should-not-leak", serialized)
 
-    def test_image_search_ready_failure_makes_marketplace_discovery_unready(self):
+    def test_image_search_ready_failure_degrades_without_blocking_core_traffic(self):
         env = self._valid_env()
 
         def image_search_ready_fails(url: str, timeout: int = 3):
@@ -268,14 +276,15 @@ class TestOperationalHealth(FrappeTestCase):
             patch("aos.utils.operational_health.frappe.cache", return_value=_FakeCache()),
             patch("aos.utils.operational_health.os.path.exists", return_value=True),
         ):
-            report = validate_operational_health(
+            report = self._validate_operational(
                 env=env,
                 site_config=self._valid_site_config(),
                 http_get=image_search_ready_fails,
                 storage_factory=_FakeStorage,
             )
 
-        self.assertFalse(report.get("ready"), report)
+        self.assertTrue(report.get("ready"), report)
+        self.assertEqual(report.get("status"), "degraded")
         image_ready = [
             check for check in report.get("checks", [])
             if check.get("name") == "image_search_ready"
@@ -285,14 +294,36 @@ class TestOperationalHealth(FrappeTestCase):
         serialized = self._report_text(report)
         self.assertNotIn("vector store detail", serialized)
 
-    def test_disabled_optional_service_is_skipped(self):
+    def test_external_timeout_is_unknown_redacted_and_non_blocking_when_optional(self):
+        import requests
+
+        env = self._valid_env()
+        def timeout_get(url: str, timeout: int = 3):
+            if ":8130/ready" in url:
+                raise requests.Timeout("token=should-not-leak")
+            return self._healthy_get(url, timeout=timeout)
+
+        report = self._validate_operational(
+            env=env,
+            site_config=self._valid_site_config(),
+            http_get=timeout_get,
+            storage_factory=_FakeStorage,
+        )
+        video_ready = next(check for check in report["checks"] if check["name"] == "video_processing_ready")
+        self.assertEqual(video_ready["status"], "unknown")
+        self.assertEqual(video_ready["condition"], "timeout")
+        self.assertTrue(report["ready"])
+        self.assertEqual(report["status"], "degraded")
+        self.assertNotIn("should-not-leak", str(report))
+
+    def test_disabled_optional_service_is_disabled_without_blocking_readiness(self):
         env = self._valid_env()
         env["MODERATION_ENABLED"] = "false"
         with (
             patch("aos.utils.operational_health.frappe.cache", return_value=_FakeCache()),
             patch("aos.utils.operational_health.os.path.exists", return_value=True),
         ):
-            report = validate_operational_health(
+            report = self._validate_operational(
                 env=env,
                 site_config=self._valid_site_config(),
                 http_get=self._healthy_get,
@@ -301,18 +332,5 @@ class TestOperationalHealth(FrappeTestCase):
 
         moderation = [check for check in report.get("checks", []) if check.get("name") == "moderation"]
         self.assertEqual(len(moderation), 1)
-        self.assertEqual(moderation[0].get("status"), "skipped")
-
-    def test_admin_diagnostic_requires_system_manager(self):
-        frappe.set_user("Guest")
-        response = get_operational_health_status()
-        self.assertFalse(response.get("ok"), response)
-        self.assertEqual(response.get("error"), "PERMISSION_DENIED")
-
-    def test_admin_diagnostic_returns_redacted_report_for_system_manager(self):
-        frappe.set_user("Administrator")
-        expected = {"ready": True, "summary": {"checks": 1, "healthy": 1, "degraded": 0, "unhealthy": 0, "skipped": 0}, "checks": []}
-        with patch("aos.api.diagnostics.status.validate_operational_health", return_value=expected):
-            response = get_operational_health_status()
-        self.assertTrue(response.get("ok"), response)
-        self.assertEqual(response.get("data"), expected)
+        self.assertEqual(moderation[0].get("status"), "disabled")
+        self.assertTrue(report.get("ready"), report)

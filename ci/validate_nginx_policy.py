@@ -24,6 +24,23 @@ def main() -> int:
 		errors.append("callback rate must be higher-capacity but bounded between 20 and 500 requests/second")
 	if "$binary_remote_addr" not in limits:
 		errors.append("callback rate key must use the direct network peer address")
+	if not re.search(r"limit_req_zone\s+\$binary_remote_addr\s+zone=aos_health_probe:\d+m\s+rate=\d+r/s;", limits):
+		errors.append("dedicated bounded infrastructure health rate-limit zone is missing")
+	health_location = re.search(
+		r"location\s+~\s+\^/api/method/aos\\\.api\\\.health\\\.\(liveness\|readiness\)\$\s*\{(?P<body>.*?)\n\s*\}",
+		api,
+		re.S,
+	)
+	if not health_location:
+		errors.append("dedicated infrastructure health location is missing")
+	else:
+		health_body = health_location.group("body")
+		if not re.search(r"limit_req\s+zone=aos_health_probe\s+burst=\d+\s+nodelay;", health_body):
+			errors.append("infrastructure health location lacks its dedicated bounded limit")
+		if "limit_req_status 429;" not in health_body or "proxy_pass" not in health_body:
+			errors.append("infrastructure health location must preserve 429 and proxy to Frappe")
+	if r'aos\.api\.v1\.diagnostics' in limits:
+		errors.append("obsolete v1 diagnostics rate-limit exemption remains")
 	if re.search(r"proxy_add_x_forwarded_for|http_x_forwarded_for|http_cf_connecting_ip", limits, re.I):
 		errors.append("attacker-controlled forwarded headers must not be callback rate-limit keys")
 	callback_location = re.search(

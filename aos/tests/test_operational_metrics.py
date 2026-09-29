@@ -92,7 +92,7 @@ class TestOperationalMetrics(FrappeTestCase):
 		with patch(
 			"aos.services.transactional_outbox.outbox_monitoring_summary", return_value=self._outbox_summary()
 		):
-			with patch("aos.utils.operational_health.validate_operational_health", return_value=health):
+			with patch("aos.utils.operational_health.validate_readiness", return_value=health):
 				with patch("aos.utils.backup_readiness.validate_backup_readiness", return_value=backup):
 					with patch("aos.utils.production_config.validate_production_config", return_value=config):
 						return metrics.render_metrics()
@@ -159,6 +159,26 @@ class TestOperationalMetrics(FrappeTestCase):
 			label_block = line.split("{", 1)[1].split("}", 1)[0]
 			for pair in label_block.split(","):
 				self.assertIn(pair.split("=", 1)[0], allowed_label_names)
+
+
+	def test_dependency_metrics_never_run_deep_operational_health(self):
+		readiness = {
+			"checks": [
+				{"name": "database", "status": "healthy"},
+				{"name": "redis_cache", "status": "healthy"},
+				{"name": "redis_queue", "status": "healthy"},
+			]
+		}
+		lines: list[str] = []
+		with patch("aos.utils.operational_health.validate_readiness", return_value=readiness):
+			with patch(
+				"aos.utils.operational_health.validate_operational_health",
+				side_effect=AssertionError("deep diagnostics must not run on metrics scrape"),
+			):
+				metrics._safe_dependency_metrics(lines)
+		output = "\n".join(lines)
+		self.assertIn('dependency="database"', output)
+		self.assertIn('dependency="redis"', output)
 
 	def test_metrics_never_include_sensitive_values_or_dynamic_ids(self):
 		secret = "super-secret-token@example.com"

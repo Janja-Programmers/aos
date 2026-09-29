@@ -48,12 +48,12 @@ groups:
     interval: 30s
     rules:
       - alert: AOSServiceReadinessFailure
-        expr: min by (dependency) (aos_dependency_ready) < 1
+        expr: min by (service, dependency) (aos_companion_dependency_ready) < 1
         for: 5m
         labels: {severity: critical}
         annotations:
-          summary: A required AOS dependency is not ready
-          description: Follow the dependency-specific checks before restarting or failing over services.
+          summary: An AOS companion service dependency is not ready
+          description: Follow the service/dependency-specific check; whole-application traffic readiness remains governed by MariaDB and Frappe Redis.
           runbook_url: docs/production/runbooks/monitoring-and-alerting.md
       - alert: AOSDatabaseReadinessFailure
         expr: aos_dependency_ready{dependency="database"} < 1

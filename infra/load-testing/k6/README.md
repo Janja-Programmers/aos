@@ -15,7 +15,6 @@ Default behavior is read-heavy. Any endpoint that creates rows, tokens, comments
 - `live.js` — live list/detail load, with optional live start/join/token/tracking.
 - `notifications.js` — notifications list load, with optional push-token register/deactivate.
 - `maps.js` — map autocomplete/search/reverse load, with optional route checks.
-- `diagnostics.js` — low-rate admin diagnostics load; disabled by default.
 - `mixed-production-rehearsal.js` — mixed traffic rehearsal for staging.
 - `env.example.sh` / `env.example.json` — environment templates; do not commit real credentials.
 

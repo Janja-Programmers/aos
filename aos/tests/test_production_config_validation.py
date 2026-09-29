@@ -7,7 +7,6 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from aos.api.v1.diagnostics import get_production_config_status
 from aos.utils.production_config import (
 	ProductionConfigError,
 	assert_production_config_ready,
@@ -428,33 +427,3 @@ class TestProductionConfigValidation(FrappeTestCase):
 		):
 			with self.assertRaises(ProductionConfigError):
 				assert_production_config_ready()
-
-	def test_admin_diagnostic_requires_aos_settings_read_permission(self):
-		with patch(
-			"aos.api.diagnostics.status.frappe.session", type("Session", (), {"user": "guest@example.com"})()
-		):
-			with patch(
-				"aos.api.diagnostics.status.has_doctype_permission",
-				return_value=False,
-			):
-				response = get_production_config_status()
-
-		self.assertFalse(response["ok"])
-		self.assertEqual(response["error"], "PERMISSION_DENIED")
-		self.assertEqual(frappe.local.response.get("http_status_code"), 403)
-
-	def test_admin_diagnostic_returns_redacted_report_for_authorized_role(self):
-		report = {"ready": True, "summary": {"errors": 0, "warnings": 0}, "errors": [], "warnings": []}
-		with patch(
-			"aos.api.diagnostics.status.frappe.session", type("Session", (), {"user": "admin@example.com"})()
-		):
-			with patch(
-				"aos.api.diagnostics.status.has_doctype_permission",
-				return_value=True,
-			):
-				with patch("aos.api.diagnostics.status.validate_production_config", return_value=report):
-					response = get_production_config_status()
-
-		self.assertTrue(response["ok"])
-		self.assertEqual(response["data"], report)
-		self.assertEqual(frappe.local.response.get("http_status_code"), 200)
