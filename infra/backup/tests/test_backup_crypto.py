@@ -161,7 +161,6 @@ def test_plaintext_offsite_copy_is_prevented_in_production(tmp_path: Path):
 	assert "BACKUP_AGE" not in result.stdout + result.stderr
 
 
-
 def test_encrypted_artifact_can_be_retried_offsite_after_plaintext_cleanup(tmp_path: Path):
 	age = _fake_age(tmp_path)
 	backup = tmp_path / "20260719T120000Z"

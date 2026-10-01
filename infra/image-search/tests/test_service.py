@@ -9,7 +9,6 @@ from app.schemas import ImageReference
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-
 TEST_CLASSIFICATION_SECRET = "classification-secret"  # pragma: allowlist secret
 
 
@@ -36,7 +35,13 @@ class FakeService:
 		}
 
 	def replace_ad_images(self, *, ad_id, generation, images):
-		return {"ok": True, "ad_id": ad_id, "generation": generation, "embedding_version": "test:v1", "indexed_count": len(images)}
+		return {
+			"ok": True,
+			"ad_id": ad_id,
+			"generation": generation,
+			"embedding_version": "test:v1",
+			"indexed_count": len(images),
+		}
 
 	def delete_ad_vectors(self, *, ad_id):
 		return {"ok": True, "ad_id": ad_id, "deleted": True}
@@ -86,14 +91,13 @@ def test_health_does_not_load_or_download_a_model(monkeypatch):
 	assert response.json()["model_loaded"] is False
 
 
-
-
 def test_ready_checks_model_and_vector_store_boundary(monkeypatch):
 	monkeypatch.setattr(main, "get_service", FakeService)
 	response = TestClient(main.app).get("/ready")
 	assert response.status_code == 200
 	assert response.json()["ready"] is True
 	assert response.json()["vector_store_ready"] is True
+
 
 def test_replace_images_requires_signed_internal_boundary(monkeypatch):
 	monkeypatch.setattr(main, "get_service", FakeService)
@@ -104,7 +108,10 @@ def test_replace_images_requires_signed_internal_boundary(monkeypatch):
 	)
 	response = TestClient(main.app).post(
 		"/ads/AD-1/replace-images",
-		json={"generation": "20260915120000000000:abc", "images": [{"media_id": "media-1", "image_url": "/files/synthetic.png", "sort_order": 0}]},
+		json={
+			"generation": "20260915120000000000:abc",
+			"images": [{"media_id": "media-1", "image_url": "/files/synthetic.png", "sort_order": 0}],
+		},
 	)
 	assert response.status_code == 401
 
@@ -113,7 +120,10 @@ def test_replace_images_uses_signed_service_boundary(monkeypatch):
 	monkeypatch.setattr(main, "get_service", FakeService)
 	path = "/ads/AD-1/replace-images"
 	body = json.dumps(
-		{"generation": "20260915120000000000:abc", "images": [{"media_id": "media-1", "image_url": "/files/synthetic.png", "sort_order": 0}]},
+		{
+			"generation": "20260915120000000000:abc",
+			"images": [{"media_id": "media-1", "image_url": "/files/synthetic.png", "sort_order": 0}],
+		},
 		separators=(",", ":"),
 		sort_keys=True,
 	).encode("utf-8")
@@ -152,7 +162,10 @@ def test_service_failure_is_not_reported_as_success(monkeypatch):
 	monkeypatch.setattr(main, "get_service", FailingService)
 	path = "/ads/AD-1/replace-images"
 	body = json.dumps(
-		{"generation": "20260915120000000000:abc", "images": [{"media_id": "media-1", "image_url": "/files/synthetic.png", "sort_order": 0}]},
+		{
+			"generation": "20260915120000000000:abc",
+			"images": [{"media_id": "media-1", "image_url": "/files/synthetic.png", "sort_order": 0}],
+		},
 		separators=(",", ":"),
 		sort_keys=True,
 	).encode("utf-8")

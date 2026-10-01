@@ -42,7 +42,15 @@ def test_analytics_events_are_applied_effectively_once(monkeypatch, redis_conn):
 		"job_id": "job-1",
 		"idempotency_key": "stable-analytics-event-job",
 		"callback_url": "https://callback.invalid/analytics",
-		"events": [{"event_id": "EVENT-1", "event_type": "ad_detail_view", "event_date": "2026-07-18", "target_name": "AD-ABC123"}, {}],
+		"events": [
+			{
+				"event_id": "EVENT-1",
+				"event_type": "ad_detail_view",
+				"event_date": "2026-07-18",
+				"target_name": "AD-ABC123",
+			},
+			{},
+		],
 	}
 	first = worker._perform_analytics_work(payload)
 	second = worker._perform_analytics_work(payload)
@@ -67,7 +75,12 @@ def test_explicit_event_id_deduplicates_across_different_jobs(monkeypatch, redis
 		return 1
 
 	monkeypatch.setattr(redis_conn, "eval", eval_script)
-	base_event = {"event_id": "GLOBAL-EVENT-1", "event_type": "ad_detail_view", "event_date": "2026-07-20", "target_name": "AD-ABC123"}
+	base_event = {
+		"event_id": "GLOBAL-EVENT-1",
+		"event_type": "ad_detail_view",
+		"event_date": "2026-07-20",
+		"target_name": "AD-ABC123",
+	}
 	first = worker._perform_analytics_work(
 		{"job_id": "job-a", "idempotency_key": "stable-a", "events": [base_event]}
 	)
@@ -80,7 +93,12 @@ def test_explicit_event_id_deduplicates_across_different_jobs(monkeypatch, redis
 
 
 def test_fallback_identity_ignores_generated_timestamp(monkeypatch):
-	raw = {"event_type": "ad_detail_view", "event_date": "2026-07-20", "target_name": "AD-ABC123", "metadata": {"slot": "home"}}
+	raw = {
+		"event_type": "ad_detail_view",
+		"event_date": "2026-07-20",
+		"target_name": "AD-ABC123",
+		"metadata": {"slot": "home"},
+	}
 	first = worker._normalize_event(raw)
 	second = worker._normalize_event(raw)
 	assert first is not None and second is not None

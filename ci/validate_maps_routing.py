@@ -24,9 +24,7 @@ def main() -> int:
 		fail("valhalla runtime must serve the verified config directly", failures)
 	if service.get("environment"):
 		fail("valhalla serving runtime must not use scripted build environment flags", failures)
-	if not any(
-		"maps/valhalla/current" in item and item.endswith(":/custom_files:ro") for item in volumes
-	):
+	if not any("maps/valhalla/current" in item and item.endswith(":/custom_files:ro") for item in volumes):
 		fail("valhalla runtime must mount only maps/valhalla/current read-only", failures)
 	for relative in (
 		"infra/maps/scripts/build-valhalla.sh",

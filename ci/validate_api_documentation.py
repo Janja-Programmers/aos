@@ -159,7 +159,11 @@ class Endpoint:
 
 def _whitelist_metadata(decorator: ast.expr) -> tuple[bool, tuple[str, ...]] | None:
 	if isinstance(decorator, ast.Attribute):
-		if isinstance(decorator.value, ast.Name) and decorator.value.id == "frappe" and decorator.attr == "whitelist":
+		if (
+			isinstance(decorator.value, ast.Name)
+			and decorator.value.id == "frappe"
+			and decorator.attr == "whitelist"
+		):
 			return False, ()
 		return None
 	if not isinstance(decorator, ast.Call):
@@ -197,7 +201,9 @@ def _discover_file(path: Path, *, domain: str, versioned: bool) -> list[Endpoint
 	for node in tree.body:
 		if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
 			continue
-		metadata = next((value for decorator in node.decorator_list if (value := _whitelist_metadata(decorator))), None)
+		metadata = next(
+			(value for decorator in node.decorator_list if (value := _whitelist_metadata(decorator))), None
+		)
 		if metadata is None:
 			continue
 		allow_guest, methods = metadata
@@ -356,7 +362,34 @@ def validate_docs(endpoints: list[Endpoint]) -> list[str]:
 		readme = ROOT / relative
 		if readme.exists():
 			text = readme.read_text(encoding="utf-8")
-			for heading in (REQUIRED_HARDENED_FEATURE_SECTIONS if domain in {"activity", "chat", "diagnostics", "accounts", "ads", "auth", "catalog", "localization", "maps", "media", "notifications", "reviews", "saved_search", "search_ranking", "sellers", "social", "verification", "wishlist", "shorts", "livekit", "video_processing"} else ()):
+			for heading in (
+				REQUIRED_HARDENED_FEATURE_SECTIONS
+				if domain
+				in {
+					"activity",
+					"chat",
+					"diagnostics",
+					"accounts",
+					"ads",
+					"auth",
+					"catalog",
+					"localization",
+					"maps",
+					"media",
+					"notifications",
+					"reviews",
+					"saved_search",
+					"search_ranking",
+					"sellers",
+					"social",
+					"verification",
+					"wishlist",
+					"shorts",
+					"livekit",
+					"video_processing",
+				}
+				else ()
+			):
 				if heading not in text:
 					errors.append(f"hardened feature {domain} README is missing required section: {heading}")
 

@@ -607,7 +607,6 @@ def test_invalid_result_is_dead_lettered_without_malformed_callback(redis_conn):
 	assert load_result(redis_conn, SERVICE_TYPE, STABLE_ID)["callback_status"] == "dead_letter"
 
 
-
 def _seed_stale_started_record(redis_conn, *, replay_count: int = 0):
 	stale_epoch = lifecycle._epoch() - 600
 	lifecycle._write_record(

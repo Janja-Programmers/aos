@@ -6,7 +6,6 @@ from types import SimpleNamespace
 import pytest
 from app import worker
 
-
 TEST_CLASSIFICATION_SECRET = "classification-secret"  # pragma: allowlist secret
 SHORT_ID = "SHR-AAAAAAAAAAAAAAAAAAAA"
 JOB_ID = "a1b2c3d4e5"
@@ -116,10 +115,12 @@ def configure_boundaries(monkeypatch, tmp_path):
 		"_generate_hls",
 		lambda _source, directory: Path(directory, "master.m3u8").write_text("#EXTM3U\n", encoding="utf-8"),
 	)
+
 	def storyboard(_source, image_path, manifest_path, _duration):
 		Path(image_path).write_bytes(b"jpeg")
 		Path(manifest_path).write_text('{"frames":[]}', encoding="utf-8")
 		return 640, 360
+
 	monkeypatch.setattr(worker, "_generate_storyboard", storyboard)
 	monkeypatch.setattr(
 		worker,
@@ -166,7 +167,9 @@ def test_work_failure_raises_and_cleans_tempdir(monkeypatch, tmp_path):
 
 def test_classification_failure_is_non_fatal(monkeypatch, tmp_path):
 	work_dir, _uploads = configure_boundaries(monkeypatch, tmp_path)
-	monkeypatch.setattr(worker, "_classify_frames", lambda _frames: worker._classification_fallback("unavailable"))
+	monkeypatch.setattr(
+		worker, "_classify_frames", lambda _frames: worker._classification_fallback("unavailable")
+	)
 	result = worker._perform_video_work(payload())
 	assert result["status"] == "ready"
 	assert result["classification"]["status"] == "unavailable"
@@ -209,7 +212,11 @@ def test_download_operation_only_returns_private_download_output(monkeypatch, tm
 def test_side_by_side_uses_source_video_and_normal_processing(monkeypatch, tmp_path):
 	work_dir, _uploads = configure_boundaries(monkeypatch, tmp_path)
 	data = payload(operation="Side By Side")
-	data["source_video"] = {"bucket": "public", "object_key": "shorts/playback/source.mp4", "size_bytes": 1024}
+	data["source_video"] = {
+		"bucket": "public",
+		"object_key": "shorts/playback/source.mp4",
+		"size_bytes": 1024,
+	}
 	monkeypatch.setattr(
 		worker,
 		"_compose_side_by_side",
@@ -226,7 +233,11 @@ def test_segment_reuse_uses_bounded_source_segment(monkeypatch, tmp_path):
 	data = payload(operation="Segment")
 	data.update(
 		{
-			"source_video": {"bucket": "public", "object_key": "shorts/playback/source.mp4", "size_bytes": 1024},
+			"source_video": {
+				"bucket": "public",
+				"object_key": "shorts/playback/source.mp4",
+				"size_bytes": 1024,
+			},
 			"source_start_ms": 1000,
 			"source_end_ms": 4000,
 		}
@@ -236,7 +247,8 @@ def test_segment_reuse_uses_bounded_source_segment(monkeypatch, tmp_path):
 		worker,
 		"_compose_segment",
 		lambda _source, _creator, destination, start_ms, end_ms, _max_duration, _work_dir: (
-			captured.update(start_ms=start_ms, end_ms=end_ms), Path(destination).write_bytes(b"composed")
+			captured.update(start_ms=start_ms, end_ms=end_ms),
+			Path(destination).write_bytes(b"composed"),
 		),
 	)
 	result = worker._perform_video_work(data)
@@ -255,7 +267,10 @@ def test_selected_sound_mixes_with_original_audio(monkeypatch, tmp_path):
 	monkeypatch.setattr(worker, "_has_audio", lambda _path: True)
 	monkeypatch.setattr(worker, "_run", lambda cmd, _message, **_kwargs: captured.update(cmd=cmd))
 	worker._generate_mp4_with_sound(
-		str(input_path), str(sound_path), str(output_path), 12.0,
+		str(input_path),
+		str(sound_path),
+		str(output_path),
+		12.0,
 		{"start_ms": 1000, "duration_ms": 8000, "volume": 0.6},
 	)
 	filter_graph = captured["cmd"][captured["cmd"].index("-filter_complex") + 1]

@@ -5,7 +5,6 @@ from app import main
 from app.translator import TranslationConfig, TranslatorRuntime, ValidationError, get_config
 from fastapi.testclient import TestClient
 
-
 AUTH = {"X-AOS-Internal-Token": "unit-test-translation-token"}
 
 
@@ -105,7 +104,6 @@ def test_languages_endpoint_is_deterministic():
 	assert german["code"] == "deu_Latn"
 
 
-
 def test_private_translation_routes_fail_closed_without_valid_internal_token(monkeypatch):
 	client = TestClient(main.app)
 	missing = client.get("/languages")
@@ -128,6 +126,7 @@ def test_german_alias_normalizes_without_loading_model():
 	assert result.target_language == "deu_Latn"
 	assert result.target_language_label == "German"
 	assert runtime.is_loaded is False
+
 
 def test_operational_metrics_are_private_and_redacted(monkeypatch):
 	secret = "metrics-token-secret-0123456789"

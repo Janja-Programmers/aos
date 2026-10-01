@@ -581,6 +581,7 @@ def test_newer_signed_generation_rearms_completed_callback_without_rerunning_wor
 	assert lifecycle.load_result(redis_conn, SERVICE_TYPE, STABLE_ID)["callback_status"] == "pending"
 	assert work_calls == ["work"]
 
+
 def test_large_terminal_result_is_preserved_and_callback_keeps_job_id(redis_conn):
 	import json
 
@@ -663,4 +664,3 @@ def test_invalid_result_is_dead_lettered_without_malformed_callback(redis_conn):
 		"error": "CALLBACK_RESULT_INVALID",
 	}
 	assert load_result(redis_conn, SERVICE_TYPE, STABLE_ID)["callback_status"] == "dead_letter"
-

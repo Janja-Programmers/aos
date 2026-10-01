@@ -24,15 +24,15 @@ REQUIRED_MEDIA_TEST_FILES = {
 }
 
 REQUIRED_ACCOUNTS_TEST_FILES = {
-    "__init__.py",
-    "test_consumer_privacy.py",
-    "test_identity.py",
-    "test_lifecycle.py",
-    "test_schema_installer.py",
-    "test_preferences.py",
-    "test_profile.py",
-    "test_serializers.py",
-    "test_validation.py",
+	"__init__.py",
+	"test_consumer_privacy.py",
+	"test_identity.py",
+	"test_lifecycle.py",
+	"test_schema_installer.py",
+	"test_preferences.py",
+	"test_profile.py",
+	"test_serializers.py",
+	"test_validation.py",
 }
 
 
@@ -112,21 +112,18 @@ def main() -> int:
 	)
 	if missing_accounts_files:
 		raise SystemExit(
-			"Accounts feature tests must live under aos/api/accounts/tests: "
-			+ str(missing_accounts_files)
+			"Accounts feature tests must live under aos/api/accounts/tests: " + str(missing_accounts_files)
 		)
 	missing_media_files = (
 		sorted(
-			REQUIRED_MEDIA_TEST_FILES
-			- {path.name for path in media_test_root.iterdir() if path.is_file()}
+			REQUIRED_MEDIA_TEST_FILES - {path.name for path in media_test_root.iterdir() if path.is_file()}
 		)
 		if media_test_root.is_dir()
 		else sorted(REQUIRED_MEDIA_TEST_FILES)
 	)
 	if missing_media_files:
 		raise SystemExit(
-			"Media feature tests must live under aos/api/media/tests: "
-			+ str(missing_media_files)
+			"Media feature tests must live under aos/api/media/tests: " + str(missing_media_files)
 		)
 	media_fixture = media_test_root / "fixtures" / "valid_64x64.png"
 	if not media_fixture.is_file():

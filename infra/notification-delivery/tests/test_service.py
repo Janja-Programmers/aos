@@ -60,8 +60,6 @@ def test_configuration_defaults_and_invalid_integer(monkeypatch):
 	assert config.Settings().queue_name == "notification-delivery"
 
 
-
-
 def test_configuration_bounds_provider_retry_and_timeouts(monkeypatch):
 	monkeypatch.setenv("NOTIFICATION_PROVIDER_MAX_RETRIES", "999")
 	monkeypatch.setenv("NOTIFICATION_PROVIDER_TIMEOUT_SECONDS", "1")

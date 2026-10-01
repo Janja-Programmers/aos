@@ -17,7 +17,10 @@ def main() -> int:
 	feature_maps = root / "docs/features/maps"
 	map_docs = sorted(path.relative_to(root).as_posix() for path in feature_maps.glob("*.md"))
 	if map_docs != ["docs/features/maps/README.md"]:
-		print("Maps must have exactly one canonical feature document: docs/features/maps/README.md", file=sys.stderr)
+		print(
+			"Maps must have exactly one canonical feature document: docs/features/maps/README.md",
+			file=sys.stderr,
+		)
 		for item in map_docs:
 			print(f"- {item}", file=sys.stderr)
 		return 1

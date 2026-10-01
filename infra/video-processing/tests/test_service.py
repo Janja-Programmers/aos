@@ -62,7 +62,10 @@ def test_configuration_bounds(monkeypatch):
 
 
 def test_callback_allowlist_always_includes_deployed_frappe_site(monkeypatch):
-	monkeypatch.setenv("VIDEO_CALLBACK_URL", "https://aos-staging.duckdns.org/api/method/aos.api.internal.video_processing.handle_callback")
+	monkeypatch.setenv(
+		"VIDEO_CALLBACK_URL",
+		"https://aos-staging.duckdns.org/api/method/aos.api.internal.video_processing.handle_callback",
+	)
 	monkeypatch.setenv("FRAPPE_SITE_NAME", "aos-staging.duckdns.org")
 	monkeypatch.setenv("VIDEO_CALLBACK_ALLOWED_HOSTS", "secondary.example.com,aos-extra.example.com")
 	hosts = config.Settings().callback_allowed_hosts
@@ -86,27 +89,27 @@ def test_health(monkeypatch):
 
 
 def test_ready_requires_redis_and_video_binaries(monkeypatch):
-    class Redis:
-        def ping(self):
-            return True
+	class Redis:
+		def ping(self):
+			return True
 
-    monkeypatch.setattr(main, "get_redis", Redis)
-    monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
-    response = TestClient(main.app).get("/ready")
-    assert response.status_code == 200
-    assert response.json() == {"ok": True, "ready": True}
+	monkeypatch.setattr(main, "get_redis", Redis)
+	monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
+	response = TestClient(main.app).get("/ready")
+	assert response.status_code == 200
+	assert response.json() == {"ok": True, "ready": True}
 
 
 def test_ready_fails_when_ffmpeg_binary_is_missing(monkeypatch):
-    class Redis:
-        def ping(self):
-            return True
+	class Redis:
+		def ping(self):
+			return True
 
-    monkeypatch.setattr(main, "get_redis", Redis)
-    monkeypatch.setattr(main.shutil, "which", lambda name: None if name == "ffmpeg" else f"/usr/bin/{name}")
-    response = TestClient(main.app).get("/ready")
-    assert response.status_code == 503
-    assert response.json()["ready"] is False
+	monkeypatch.setattr(main, "get_redis", Redis)
+	monkeypatch.setattr(main.shutil, "which", lambda name: None if name == "ffmpeg" else f"/usr/bin/{name}")
+	response = TestClient(main.app).get("/ready")
+	assert response.status_code == 503
+	assert response.json()["ready"] is False
 
 
 def test_job_accepts_original_sound_output_locations(monkeypatch):
@@ -381,16 +384,18 @@ def test_video_job_request_accepts_reuse_operations():
 	from app.main import VideoJobRequest
 
 	data = payload()
-	data.update({
-		"operation": "Segment",
-		"source_video": {
-			"bucket": "public",
-			"object_key": "shorts/playback/source.mp4",
-			"size_bytes": 1024,
-		},
-		"source_start_ms": 1000,
-		"source_end_ms": 5000,
-	})
+	data.update(
+		{
+			"operation": "Segment",
+			"source_video": {
+				"bucket": "public",
+				"object_key": "shorts/playback/source.mp4",
+				"size_bytes": 1024,
+			},
+			"source_start_ms": 1000,
+			"source_end_ms": 5000,
+		}
+	)
 	request = VideoJobRequest.model_validate(data)
 	assert request.short_id == "SHR-AAAAAAAAAAAAAAAAAAAA"
 	assert request.operation == "Segment"

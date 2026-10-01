@@ -24,7 +24,9 @@ def main() -> int:
 		errors.append("callback rate must be higher-capacity but bounded between 20 and 500 requests/second")
 	if "$binary_remote_addr" not in limits:
 		errors.append("callback rate key must use the direct network peer address")
-	if not re.search(r"limit_req_zone\s+\$binary_remote_addr\s+zone=aos_health_probe:\d+m\s+rate=\d+r/s;", limits):
+	if not re.search(
+		r"limit_req_zone\s+\$binary_remote_addr\s+zone=aos_health_probe:\d+m\s+rate=\d+r/s;", limits
+	):
 		errors.append("dedicated bounded infrastructure health rate-limit zone is missing")
 	health_location = re.search(
 		r"location\s+~\s+\^/api/method/aos\\\.api\\\.health\\\.\(liveness\|readiness\)\$\s*\{(?P<body>.*?)\n\s*\}",
@@ -39,7 +41,7 @@ def main() -> int:
 			errors.append("infrastructure health location lacks its dedicated bounded limit")
 		if "limit_req_status 429;" not in health_body or "proxy_pass" not in health_body:
 			errors.append("infrastructure health location must preserve 429 and proxy to Frappe")
-	if r'aos\.api\.v1\.diagnostics' in limits:
+	if r"aos\.api\.v1\.diagnostics" in limits:
 		errors.append("obsolete v1 diagnostics rate-limit exemption remains")
 	if re.search(r"proxy_add_x_forwarded_for|http_x_forwarded_for|http_cf_connecting_ip", limits, re.I):
 		errors.append("attacker-controlled forwarded headers must not be callback rate-limit keys")
@@ -94,7 +96,10 @@ def main() -> int:
 		errors.append("Maps origin must target the private object-storage bucket")
 	if basemap.count("proxy_hide_header Access-Control-Allow-Origin;") < 1:
 		errors.append("Maps origin must suppress duplicate upstream CORS headers")
-	if 'proxy_hide_header Accept-Ranges;' not in basemap or 'add_header Accept-Ranges "bytes" always;' not in basemap:
+	if (
+		"proxy_hide_header Accept-Ranges;" not in basemap
+		or 'add_header Accept-Ranges "bytes" always;' not in basemap
+	):
 		errors.append("Maps origin must publish one deterministic Accept-Ranges: bytes header")
 	if maps.count('add_header Access-Control-Allow-Origin "*" always;') < 2:
 		errors.append("Maps OPTIONS/resource responses must expose canonical wildcard CORS")
