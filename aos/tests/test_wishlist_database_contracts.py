@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -38,7 +41,13 @@ class TestWishlistDatabaseContracts(FrappeTestCase):
         self.assertTrue(wishlist_meta.get_field("removed_on").read_only)
         self.assertEqual(ad_meta.get_field("wishlist_count").fieldtype, "Int")
         self.assertTrue(ad_meta.get_field("wishlist_count").read_only)
-        self.assertFalse(bool(wishlist_meta.index_web_pages_for_search))
+        schema_file = (
+            Path(__file__).resolve().parents[1] / "aos/doctype/aos_wishlist/aos_wishlist.json"
+        )
+        self.assertEqual(
+            json.loads(schema_file.read_text(encoding="utf-8"))["index_web_pages_for_search"],
+            0,
+        )
 
     def test_database_rejects_duplicate_user_ad_relationship_even_with_manual_name(self):
         # The pair uniqueness invariant is independent of the deterministic name.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 from pathlib import Path
 
 import frappe
@@ -24,7 +25,14 @@ class TestAuthDatabaseContracts(FrappeTestCase):
 
         from aos.aos.doctype.aos_auth_challenge.aos_auth_challenge import challenge_name as controller_name
         self.assertEqual(controller_name("person@example.com", "password_reset"), name)
-        self.assertFalse(bool(meta.index_web_pages_for_search))
+        schema_file = (
+            Path(__file__).resolve().parents[1]
+            / "aos/doctype/aos_auth_challenge/aos_auth_challenge.json"
+        )
+        self.assertEqual(
+            json.loads(schema_file.read_text(encoding="utf-8"))["index_web_pages_for_search"],
+            0,
+        )
 
     def test_social_identity_has_per_provider_user_uniqueness(self):
         meta = frappe.get_meta("AOS Auth Identity")

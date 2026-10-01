@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import uuid
+from pathlib import Path
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -78,7 +80,11 @@ class TestAOSMediaObject(FrappeTestCase):
         self.assertFalse(any(fieldname.endswith("_url") for fieldname in fieldnames))
 
     def test_media_is_not_indexed_for_web_search(self):
-        self.assertFalse(bool(frappe.get_meta("AOS Media Object").index_web_pages_for_search))
+        schema_file = Path(__file__).with_name("aos_media_object.json")
+        self.assertEqual(
+            json.loads(schema_file.read_text(encoding="utf-8"))["index_web_pages_for_search"],
+            0,
+        )
 
     def test_storage_identity_rejects_traversal(self):
         doc = self._new_media(object_key="profiles/images/../secret.png")

@@ -210,10 +210,28 @@ class TestCallbackAtomicityAllServices(FrappeTestCase):
 				return endpoint_impl()
 
 	def _snapshot(self, fixture, outbox) -> dict[str, Any]:
+		# Moderation persists its result in typed fields, not response_payload.
+		# Keep the cross-service atomicity comparison equally strict for every job.
+		job_fields = ["status", "last_error", "completed_at", "callback_received_at"]
+		if fixture.service_type == "moderation":
+			job_fields.extend(
+				[
+					"decision",
+					"decision_source",
+					"reasons_json",
+					"labels_json",
+					"scores_json",
+					"risk_score",
+					"model_versions_json",
+					"missing_evidence_json",
+				]
+			)
+		else:
+			job_fields.append("response_payload")
 		job = frappe.db.get_value(
 			fixture.doctype,
 			fixture.job.name,
-			["status", "last_error", "completed_at", "callback_received_at", "response_payload"],
+			job_fields,
 			as_dict=True,
 		)
 		outbox_state = frappe.db.get_value(
