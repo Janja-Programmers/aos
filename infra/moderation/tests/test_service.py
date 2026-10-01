@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from types import SimpleNamespace
 
 from app import config, main
+from app.policy import POLICY_VERSION
 from app.security import build_signature, verify_signature
 from fastapi.testclient import TestClient
 
@@ -21,13 +23,16 @@ def settings(**overrides):
 		"failure_ttl_seconds": 60,
 	}
 	values.update(overrides)
-	return SimpleNamespace(**values)
+	return replace(config.Settings(), **values)
 
 
 def payload() -> dict:
 	return {
 		"job_id": "job-1",
-		"target": {"doctype": "AOS Ad", "name": "AD-1"},
+		"target": {"doctype": "AOS Ad", "name": "AD-1", "content_kind": "ad"},
+		"content_version": "1:1",
+		"content_fingerprint": "a" * 64,
+		"policy_version": POLICY_VERSION,
 		"callback_url": "https://callback.invalid/moderation",
 	}
 
@@ -113,6 +118,21 @@ def test_blank_secret_fails_closed(monkeypatch):
 	monkeypatch.setattr(main, "get_settings", lambda: settings(request_secret=""))
 	body, headers = signed(payload())
 	assert TestClient(main.app).post("/jobs", content=body, headers=headers).status_code == 401
+
+
+def test_oversized_body_is_rejected_before_signature(monkeypatch):
+	monkeypatch.setattr(main, "get_settings", lambda: settings(max_request_bytes=32))
+	response = TestClient(main.app).post("/jobs", content=b"x" * 33)
+	assert response.status_code == 413
+
+
+def test_job_request_requires_canonical_policy_version(monkeypatch):
+	monkeypatch.setattr(main, "get_settings", lambda: settings())
+	request = payload()
+	del request["policy_version"]
+	body, headers = signed(request)
+	response = TestClient(main.app).post("/jobs", content=body, headers=headers)
+	assert response.status_code == 422
 
 
 def test_operational_metrics_are_private_and_redacted(monkeypatch):

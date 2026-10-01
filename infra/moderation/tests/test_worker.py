@@ -66,7 +66,11 @@ def test_work_failure_raises(monkeypatch):
 	)
 	with pytest.raises(RuntimeError, match="ML failed"):
 		worker._perform_moderation_work(
-			{"job_id": "job-2", "callback_url": "https://callback.invalid/moderation"}
+			{
+				"job_id": "job-2",
+				"policy_version": worker.POLICY_VERSION,
+				"callback_url": "https://callback.invalid/moderation",
+			}
 		)
 
 
