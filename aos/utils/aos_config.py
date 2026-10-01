@@ -205,7 +205,7 @@ def get_object_storage_config() -> ObjectStorageConfig:
     """Resolve canonical Media object-storage configuration.
 
     Media intentionally uses only provider-neutral AOS_OBJECT_STORAGE_* values.
-    MinIO container credentials remain separate deployment concerns and legacy
+    MinIO container credentials remain separate deployment concerns and distinct
     non-Media consumers may continue to use get_minio_config until hardened.
     """
 

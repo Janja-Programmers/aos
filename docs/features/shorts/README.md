@@ -1,8 +1,8 @@
-# Shorts + Video Processing
+# Shorts
 
 ## Overview
 
-AOS Shorts is the client-facing short-form content domain. Video Processing is its private infrastructure companion. Shorts supports immersive Video and Photo posts, exactly two primary feeds (`For You` and `Following`), and four server-derived Content Modes: `shop`, `geo`, `vibes`, and `learn`.
+AOS Shorts is the client-facing short-form content domain and consumes the private [Video Processing](../video-processing/README.md) pipeline. Shorts supports immersive Video and Photo posts, exactly two primary feeds (`For You` and `Following`), and four server-derived Content Modes: `shop`, `geo`, `vibes`, and `learn`.
 
 ## Responsibilities
 

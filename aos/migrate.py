@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from aos.patches.v1_0 import (
+    add_outbox_indexes,
     install_media_indexes,
     install_accounts_indexes,
     install_activity_indexes,
@@ -19,6 +20,7 @@ from aos.patches.v1_0 import (
     install_catalog_indexes,
     install_chat_indexes,
     install_live_indexes,
+    install_live_runtime_indexes,
     install_localization_schema,
     install_marketplace_discovery_indexes,
     install_notification_indexes,
@@ -33,16 +35,18 @@ from aos.services.sellers import schema as seller_schema
 from aos.services.moderation import schema as moderation_schema
 
 
-# Keep this list limited to schema-only, idempotent installers. Data
-# reconciliation remains in one-time patches and must not run on every migrate.
+# Current-schema installers are idempotent and safe after every model sync;
+# fresh-site deploys have no data-conversion steps.
 _SCHEMA_INVARIANT_INSTALLERS: tuple[Callable[[], None], ...] = (
     install_localization_schema.execute,
+    add_outbox_indexes.execute,
     install_accounts_indexes.execute,
     install_media_indexes.execute,
     install_verification_indexes.execute,
     seller_schema.execute,
     install_shorts_indexes.execute,
     install_live_indexes.execute,
+    install_live_runtime_indexes.execute,
     install_chat_indexes.execute,
     install_call_indexes.execute,
     install_call_public_indexes.execute,

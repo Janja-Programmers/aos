@@ -98,6 +98,8 @@ class TestChatSourceGuards(unittest.TestCase):
         helper = _source("aos/services/chat/events.py")
         self.assertIn("manager.add(callback)", helper)
         self.assertIn("frappe.publish_realtime", helper)
+        self.assertIn('manager is None or not callable(getattr(manager, "add", None))', helper)
+        self.assertNotIn('        callback()\n', helper)
         for relative in (
             "aos/services/chat/message_ops.py",
             "aos/services/chat/message_mutations.py",

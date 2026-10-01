@@ -111,9 +111,6 @@ def validate_reason_for_target(reason_id: Any, target_type: str) -> str:
 
 
 def validate_existing_reason(reason_id: Any) -> str:
-    # Existing legacy rows must remain reviewable after migration even when an
-    # old reason name was not part of the canonical public identifier set. New
-    # submissions always pass through ``validate_reason_for_target`` instead.
     reason = clean_text(reason_id, field="reason", max_length=140, required=True)
     if not frappe.db.exists("AOS Report Reason", reason):
         raise ReportReasonError("Invalid report reason.")

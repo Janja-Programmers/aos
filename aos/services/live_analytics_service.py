@@ -278,8 +278,8 @@ class LiveAnalyticsService:
         ``viewer_count`` is concurrent non-host view sessions.
         ``peak_viewers`` is the maximum concurrent count observed.
         ``unique_viewers`` is distinct authenticated accounts plus distinct
-        guest sessions. ``total_joins`` counts all session rows. The legacy
-        ``total_views`` remains an alias of total joins for compatibility.
+        guest sessions. ``total_joins`` and ``total_views`` both count all
+        session rows under the current metrics contract.
         """
         if not live_id:
             return None

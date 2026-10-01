@@ -573,7 +573,7 @@ def test_oversized_terminal_result_stays_valid_json_and_preserves_identity():
 	assert stored["status"] == "ready"
 
 
-def test_invalid_legacy_result_is_dead_lettered_without_malformed_callback(redis_conn):
+def test_invalid_result_is_dead_lettered_without_malformed_callback(redis_conn):
 	lifecycle._write_record(
 		redis_conn,
 		SERVICE_TYPE,

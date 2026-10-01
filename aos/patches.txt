@@ -1,50 +1,23 @@
 [pre_model_sync]
-# Patches added in this section will be executed before doctypes are migrated
-# Read docs to understand patches: https://docs.frappe.io/framework/user/en/database-migrations
 
 [post_model_sync]
-# Patches added in this section will be executed after doctypes are migrated
-aos.patches.v1_0.add_unique_constraints
+# Current-schema installers only. No historical data transforms.
 aos.patches.v1_0.install_localization_schema
 aos.patches.v1_0.add_outbox_indexes
-
 aos.patches.v1_0.install_media_indexes
 aos.patches.v1_0.install_accounts_indexes
 aos.patches.v1_0.install_verification_indexes
 aos.patches.v1_0.install_catalog_indexes
 aos.patches.v1_0.install_marketplace_discovery_indexes
-
 aos.patches.v1_0.install_wishlist_indexes
 aos.patches.v1_0.install_review_indexes
-
-
 aos.patches.v1_0.install_social_indexes
-
 aos.patches.v1_0.install_shorts_indexes
-
-# Live domain data reconciliation must run before its schema-only indexes.
-aos.patches.v1_0.harden_live_subsystem
-aos.patches.v1_0.canonicalize_live_runtime
 aos.patches.v1_0.install_live_indexes
 aos.patches.v1_0.install_live_runtime_indexes
-
-# Chat data reconciliation must run before Chat uniqueness/query indexes.
-aos.patches.v1_0.migrate_chat_to_group_model
-aos.patches.v1_0.harden_chat_translation_cache
 aos.patches.v1_0.install_chat_indexes
-
-# Calls canonical multi-participant migration and schema invariants.
-aos.patches.v1_0.migrate_calls_to_conference_model
 aos.patches.v1_0.install_call_indexes
 aos.patches.v1_0.install_call_public_indexes
-
-# Final Reports data reconciliation must run before Reports uniqueness/query indexes.
-aos.patches.v1_0.finalize_reports_domain
 aos.patches.v1_0.install_report_indexes
-
-# Activity current-schema reconciliation must run before its uniqueness indexes.
-aos.patches.v1_0.finalize_activity_read_model
 aos.patches.v1_0.install_activity_indexes
-# Canonical Notifications schema-only indexes.
 aos.patches.v1_0.install_notification_indexes
-

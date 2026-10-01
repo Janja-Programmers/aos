@@ -247,3 +247,6 @@ bench run-tests --app aos
 ```
 
 Administrative Desk review uses the canonical Ads review endpoint and requires an authenticated Frappe user with `AOS Ad` write permission. It does not require an `AOS User Preference`.
+
+## Security
+Listing mutations require the owning authenticated Seller and server-side eligibility checks. Public projections use opaque listing/account identifiers and apply visibility and Social restrictions; image and video submissions use canonical Media references rather than arbitrary object URLs. Moderation state and audit fields are server-owned.

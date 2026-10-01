@@ -8,7 +8,8 @@ from frappe.tests.utils import FrappeTestCase
 from aos.api.live.tracking import track_join_impl
 from aos.api.notifications.token import register_push_token_impl
 from aos.api.social.block import block_user_impl
-from aos.patches.v1_0.add_unique_constraints import USER_ACTION_UNIQUE_CONSTRAINTS
+from aos.patches.v1_0.install_shorts_indexes import INDEXES as SHORTS_INDEXES
+from aos.patches.v1_0.install_live_indexes import INDEXES as LIVE_INDEXES
 from aos.services.accounts.identity import ensure_public_account_id
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
@@ -36,17 +37,14 @@ class TestUserActionUniqueness(AOSFeatureTestMixin, FrappeTestCase):
         super().tearDown()
 
     def test_unique_indexes_exist(self):
-        # Tests must verify migration-owned schema; they must not install/commit
-        # production indexes themselves as part of fixture setup.
-        for index in USER_ACTION_UNIQUE_CONSTRAINTS:
-            with self.subTest(index=index["constraint_name"]):
-                self.assertTrue(
-                    self._unique_index_exists(
-                        doctype=index["doctype"],
-                        constraint_name=index["constraint_name"],
-                    ),
-                    index["constraint_name"],
-                )
+        # Schema checks do not install DDL or commit transaction-local fixtures.
+        indexes = [item for item in (*SHORTS_INDEXES, *LIVE_INDEXES) if item[3] and item[1] in {
+            "uq_short_comment_like", "uq_live_active_session", "uq_short_view_identity_day",
+        }]
+        self.assertEqual(len(indexes), 3)
+        for doctype, name, _columns, _unique in indexes:
+            with self.subTest(index=name):
+                self.assertTrue(self._unique_index_exists(doctype=doctype, constraint_name=name), name)
 
     def test_block_user_double_request_keeps_one_active_block(self):
         blocker = self.make_user("blocker")

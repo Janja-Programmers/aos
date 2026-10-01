@@ -32,7 +32,7 @@ def json_doc(path: str) -> dict:
 
 
 # One implementation surface; overlay deployments may leave empty directories,
-# but no executable legacy Python module may survive.
+# but no executable obsolete Python module may survive.
 def _has_python(path: Path) -> bool:
     return path.exists() and any(path.rglob("*.py"))
 
@@ -140,7 +140,7 @@ require("def after_insert" in short_sound and "def on_trash" in short_sound, "Sh
 
 short_processing = text("aos/services/shorts/processing.py")
 for obsolete_operation in ("Process Video", "Generate Download", "Side by Side", "Segment Reuse"):
-    require(obsolete_operation not in short_processing, f"legacy Video Processing operation alias remains: {obsolete_operation}")
+    require(obsolete_operation not in short_processing, f"obsolete Video Processing operation alias remains: {obsolete_operation}")
 reuse_options = str(fields.get("reuse_type", {}).get("options") or "")
 require("Side By Side" in reuse_options and "Side by Side" not in reuse_options, "Side By Side reuse value is not canonical")
 
@@ -200,7 +200,7 @@ for heading in ("## Overview", "## Responsibilities", "## Boundaries", "## Archi
 
 # Global obsolete contract scan (production/docs/infra/CI; tests may use strings only to assert absence).
 scan_roots = [ROOT / "aos", ROOT / "infra", ROOT / "docs"]
-legacy = ("visibility_status", "approval_status", "audio_mix_status", "is_commercial_safe", "toggle_save_short", "toggle_repost", "feed_by_ad", "aos.api.v1.video_processing.handle_callback")
+obsolete_fields = ("visibility_status", "approval_status", "audio_mix_status", "is_commercial_safe", "toggle_save_short", "toggle_repost", "feed_by_ad", "aos.api.v1.video_processing.handle_callback")
 for scan_root in scan_roots:
     for file in scan_root.rglob("*"):
         if not file.is_file() or file.suffix not in {".py", ".md", ".js", ".json", ".yml", ".yaml"} or "__pycache__" in file.parts:
@@ -208,7 +208,7 @@ for scan_root in scan_roots:
         if "tests" in file.parts or file.name.startswith("test_"):
             continue
         source = file.read_text(encoding="utf-8", errors="ignore")
-        for token in legacy:
+        for token in obsolete_fields:
             if token in source and file != ROOT / "ci/validate_shorts_hardening.py":
                 ERRORS.append(f"obsolete Shorts token {token!r} in {file.relative_to(ROOT)}")
 

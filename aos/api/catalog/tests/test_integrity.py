@@ -211,12 +211,12 @@ class TestCatalogIntegrity(TestCase):
             return doctype == "AOS Category Attribute Dependency Row"
 
         exists.side_effect = present
-        before = FakeDoc(field_type="Select", options="Legacy One")
+        before = FakeDoc(field_type="Select", options="Previous One")
         changed = FakeDoc(
             _new=False,
             name="Model",
             field_type="Select",
-            options="Legacy Two",
+            options="Previous Two",
             _before=before,
         )
         assert_attribute_schema_change_safe(changed)

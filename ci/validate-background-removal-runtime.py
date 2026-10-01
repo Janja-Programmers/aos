@@ -112,7 +112,7 @@ def main() -> int:
 
     volumes = compose.get("volumes") or {}
     if "background_removal_models" in volumes:
-        fail("legacy mutable background-removal model volume still exists", failures)
+        fail("obsolete mutable background-removal model volume still exists", failures)
 
     if re.search(r"FROM\s+python:3\.14", dockerfile):
         fail("background-removal still uses the repository Python 3.14 runtime", failures)

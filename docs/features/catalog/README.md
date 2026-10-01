@@ -483,3 +483,6 @@ bench --site <site> run-tests --app aos
 ```
 
 The Catalog-focused suite lives under `aos/api/catalog/tests`, with Media regression coverage in `aos/api/media/tests/test_category_integration.py` and controller metadata tests beside the Catalog DocTypes. Static repository checks should also run the API-documentation, repository/path, lint/format and source-contract validators used by CI.
+
+## Security
+Only authorized Desk operations may mutate the taxonomy or category attributes. Seller/Ad writes resolve the current Catalog definitions through the owning validation service; public category endpoints project bounded metadata and never grant mutation rights or accept owner/role values from client payloads.

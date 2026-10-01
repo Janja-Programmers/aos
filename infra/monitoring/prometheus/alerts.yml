@@ -195,7 +195,7 @@ groups:
         labels: {severity: warning}
         annotations:
           summary: Callback-complete evidence required automatic Frappe outbox repair
-          description: Investigate callback response loss or partial legacy state and confirm domain, durable job, and outbox terminal evidence agree.
+          description: Investigate callback response loss or partial state and confirm domain, durable job, and outbox terminal evidence agree.
           runbook_url: docs/production/runbooks/outbox-and-workers.md
       - alert: AOSCompanionWorkRetryExhaustion
         expr: sum(increase(aos_companion_work_retry_exhausted_total[15m])) > 3

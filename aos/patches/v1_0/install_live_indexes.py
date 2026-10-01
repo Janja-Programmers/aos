@@ -1,4 +1,4 @@
-"""Idempotent schema-only index installation for reconciled Live data."""
+"""Idempotent schema-only index installation for the current Live models."""
 
 from __future__ import annotations
 

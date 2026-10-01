@@ -61,7 +61,6 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
-
 Public Analytics API: **NOT APPLICABLE**. There is no generic `track_event` or `track_events` route.
 
 Internal service callback: `POST /api/method/aos.api.v1.analytics_pipeline.handle_callback`. It requires the callback timestamp/signature contract and is not a public client ingestion endpoint.
@@ -102,7 +101,7 @@ Clients cannot set server-authoritative actor identity or emit shared server eve
 
 ## Testing
 
-Companion tests cover HMAC authentication, schema/count bounds, queue failure behavior, effectively-once ingestion, explicit-event dedupe, durable lifecycle/callback replay, Redis/RQ lifecycle and redacted operational metrics. Frappe tests cover stale historical links/outbox callback behavior and architecture/source guards. Feature suites cover Shorts and Live semantic analytics independently.
+Companion tests cover HMAC authentication, schema/count bounds, queue failure behavior, effectively-once ingestion, explicit-event dedupe, durable lifecycle/callback replay, Redis/RQ lifecycle and redacted operational metrics. Frappe tests cover event-to-outbox callback behavior and architecture/source guards. Feature suites cover Shorts and Live semantic analytics independently.
 
 Tests must use rollback or explicit cleanup for every created record/cache key and remain order-independent. No million-row unit tests are used as a substitute for load testing.
 

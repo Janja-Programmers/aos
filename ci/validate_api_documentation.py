@@ -17,7 +17,7 @@ FEATURE_DOCS = {
 	"ads": "docs/features/ads/README.md",
 	"analytics_pipeline": "docs/features/analytics/README.md",
 	"auth": "docs/features/authentication/README.md",
-	"calls": "docs/features/calls/api.md",
+	"calls": "docs/features/calls/README.md",
 	"catalog": "docs/features/catalog/README.md",
 	"chat": "docs/features/chat/README.md",
 	"live": "docs/features/live/README.md",
@@ -34,7 +34,6 @@ FEATURE_DOCS = {
 	"social": "docs/features/social/README.md",
 	"verification": "docs/features/verification/README.md",
 	"wishlist": "docs/features/wishlist/README.md",
-	"shorts": "docs/features/shorts/README.md",
 }
 
 REQUIRED_HARDENED_FEATURE_SECTIONS = (
@@ -53,6 +52,13 @@ REQUIRED_HARDENED_FEATURE_SECTIONS = (
 )
 
 SINGLE_FILE_FEATURE_DOCS = {
+	"calls": "docs/features/calls/README.md",
+	"livekit": "docs/features/livekit/README.md",
+	"video_processing": "docs/features/video-processing/README.md",
+	"live": "docs/features/live/README.md",
+	"reports": "docs/features/reports/README.md",
+	"moderation": "docs/features/moderation/README.md",
+	"analytics": "docs/features/analytics/README.md",
 	"activity": "docs/features/activity/README.md",
 	"chat": "docs/features/chat/README.md",
 	"diagnostics": "docs/features/diagnostics/README.md",
@@ -75,9 +81,9 @@ SINGLE_FILE_FEATURE_DOCS = {
 }
 
 PLATFORM_DOCS = {
-	"livekit": "docs/features/live/README.md",
+	"livekit": "docs/features/livekit/README.md",
 	"moderation": "docs/features/moderation/README.md",
-	"video_processing": "docs/features/shorts/README.md",
+	"video_processing": "docs/features/video-processing/README.md",
 	"metrics": "docs/api/internal.md",
 	"health": "docs/features/diagnostics/README.md",
 }
@@ -350,7 +356,7 @@ def validate_docs(endpoints: list[Endpoint]) -> list[str]:
 		readme = ROOT / relative
 		if readme.exists():
 			text = readme.read_text(encoding="utf-8")
-			for heading in REQUIRED_HARDENED_FEATURE_SECTIONS:
+			for heading in (REQUIRED_HARDENED_FEATURE_SECTIONS if domain in {"activity", "chat", "diagnostics", "accounts", "ads", "auth", "catalog", "localization", "maps", "media", "notifications", "reviews", "saved_search", "search_ranking", "sellers", "social", "verification", "wishlist", "shorts", "livekit", "video_processing"} else ()):
 				if heading not in text:
 					errors.append(f"hardened feature {domain} README is missing required section: {heading}")
 

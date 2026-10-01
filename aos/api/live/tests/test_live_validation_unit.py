@@ -47,7 +47,7 @@ class TestLivePublicValidation(unittest.TestCase):
             with self.subTest(endpoint=endpoint, field=field), self.assertRaises(LiveError):
                 validate_public_kwargs({field: value}, ENDPOINT_SPECS[endpoint])
 
-    def test_legacy_cover_inputs_are_rejected(self):
+    def test_unknown_cover_inputs_are_rejected(self):
         for field, value in (
             ("cover_image", "https://invalid.test/cover"),
             ("media_id", "MEDIA-00000000000000000000000000000001"),

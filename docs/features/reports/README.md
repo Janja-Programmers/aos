@@ -15,7 +15,6 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
-
 ## Overview
 
 Reports is the private complaint-intake domain for three public AOS targets: **User/Account**, **Ad**, and **Short**. An authenticated account submits a canonical target identifier, a canonical classified reason identifier, and optional bounded details. Reports validates the target through the already-hardened owning feature, persists a durable target-specific report row, and exposes that row to authorized staff in Frappe Desk.
@@ -46,7 +45,7 @@ The three DocTypes are intentionally retained. They preserve direct Links, targe
 
 Allowed targets are normalized in child rows of `AOS Report Reason Target` rather than encoded into labels or duplicated reason rows. A reason can therefore apply to one or several targets. The server validates the requested reason against the target on every new submission.
 
-The fresh-site canonical catalog reflects existing AOS product behavior and consolidates the historical `Scam or fraud` / `Suspected scam or fraud` duplication:
+The canonical fresh-site reason catalog is:
 
 | Reason ID | Label | User | Ad | Short | Internal Review scope |
 |---|---|:---:|:---:|:---:|:---:|
@@ -231,7 +230,7 @@ Because AOS has no signed historical-view token, an Ad/Short that becomes unavai
 
 ## Testing
 
-Reports tests cover target-scoped reason listing, disabled/mismatched reasons, canonical identities, authenticated/session-owned reporter identity, self-reporting, missing/unavailable targets, Social block behavior, strict unknown-field rejection, forged lifecycle fields, details bounds/HTML rejection, idempotent retries, database uniqueness, lifecycle authorization/terminal states, resource unavailability after submission, account-deletion cleanup, source-level privacy/moderation boundaries, migration ordering, and index presence.
+Reports tests cover target-scoped reason listing, disabled/mismatched reasons, canonical identities, authenticated/session-owned reporter identity, self-reporting, missing/unavailable targets, Social block behavior, strict unknown-field rejection, forged lifecycle fields, details bounds/HTML rejection, idempotent retries, database uniqueness, lifecycle authorization/terminal states, resource unavailability after submission, account-deletion cleanup, source-level privacy/moderation boundaries, schema installation, and index presence.
 
 Server acceptance should run:
 
@@ -241,3 +240,9 @@ bench run-tests --app aos
 ```
 
 After migration, verify the four v1 endpoints manually before moving to the separate Postman phase.
+
+## Architecture
+Reports owns normalized reasons and User/Ad/Short report records, input validation, staff review and reporter-scoped projections. Social, Accounts, Ads and Shorts supply authoritative target visibility; Reports must not reproduce Moderation verdicts or Notification business rules. The active-key indexes serialize equivalent submissions across workers.
+
+## Performance / Scalability
+Per-reporter and target rate limits are shared and distributed. Backlog/reporter/target indexes support bounded report listing and review queues, while unique active keys prevent same-target repeat work; a viral target must not force a global reporter lock. Check database plans and concurrent submissions against a populated server before production capacity claims.

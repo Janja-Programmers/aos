@@ -98,7 +98,6 @@ class TestLiveApiContracts(FrappeTestCase):
             "api/v1/live",
             "services/live",
             "tasks/live.py",
-            "patches/v1_0/harden_live_subsystem.py",
             "patches/v1_0/install_live_indexes.py",
         )
         offenders: list[str] = []

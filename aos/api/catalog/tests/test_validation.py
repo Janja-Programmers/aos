@@ -159,7 +159,7 @@ class TestCatalogValidation(TestCase):
     def test_dependent_select_attributes_require_complete_acyclic_mappings(self, get_all):
         get_all.return_value = [
             {"name": "Brand", "field_type": "Select", "options": "HP\nApple", "is_active": 1},
-            {"name": "Model", "field_type": "Select", "options": "Legacy Model", "is_active": 1},
+            {"name": "Model", "field_type": "Select", "options": "Previous Model", "is_active": 1},
         ]
         brand = SimpleNamespace(
             attribute="Brand",

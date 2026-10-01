@@ -62,9 +62,9 @@ class TestShortsHardenedContract(TestCase):
         self.assertNotIn("is_commercial_safe", fields)
 
     def test_video_processing_is_not_a_v1_client_namespace(self):
-        legacy = ROOT / "aos/api/v1/video_processing"
-        self.assertFalse((legacy / "__init__.py").exists())
-        self.assertFalse(any(legacy.glob("*.py")) if legacy.exists() else False)
+        retired_path = ROOT / "aos/api/v1/video_processing"
+        self.assertFalse((retired_path / "__init__.py").exists())
+        self.assertFalse(any(retired_path.glob("*.py")) if retired_path.exists() else False)
         internal = ROOT / "aos/api/internal/video_processing/__init__.py"
         self.assertTrue(internal.exists())
         self.assertIn("handle_callback", internal.read_text())
@@ -160,12 +160,12 @@ class TestShortsHardenedContract(TestCase):
         self.assertNotIn("s.place", service)
         self.assertNotIn("AOS Location", service)
 
-    def test_short_daily_metrics_have_no_legacy_marketplace_enrichment(self):
+    def test_short_daily_metrics_have_no_cross_domain_marketplace_enrichment(self):
         source = (ROOT / "aos/aos/doctype/aos_short_metrics_daily/aos_short_metrics_daily.py").read_text()
         schema = json.loads((ROOT / "aos/aos/doctype/aos_short_metrics_daily/aos_short_metrics_daily.json").read_text())
         fields = {f["fieldname"] for f in schema["fields"]}
-        for legacy in ("ad", "seller", "country", "location", "place"):
-            self.assertNotIn(legacy, fields)
+        for forbidden_field in ("ad", "seller", "country", "location", "place"):
+            self.assertNotIn(forbidden_field, fields)
         self.assertNotIn("_enrich_from_short", source)
         self.assertNotIn('["ad", "seller", "country"]', source)
         self.assertNotIn("AOS Location", source)

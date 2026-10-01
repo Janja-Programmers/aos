@@ -679,3 +679,6 @@ Full backend regression suite:
 ```bash
 bench run-tests --app aos
 ```
+
+## Security
+Country, currency and language IDs are resolved from bounded allowlisted reference data. Preference mutations are scoped to the authenticated account; public localization bundles expose only publishable text and enabled metadata, not private preferences or internal User identifiers. Cache misses use authoritative server-side validation.

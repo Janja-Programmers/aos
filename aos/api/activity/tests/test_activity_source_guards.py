@@ -56,8 +56,8 @@ class TestActivityProductionSourceGuards(unittest.TestCase):
         self.assertIn("Unsupported activity fields", validation)
         self.assertIn("Activity type does not belong to the selected group", validation)
         self.assertIn("MAX_ACTIVITY_LIMIT", validation)
-        for legacy in ("MAX_ACTIVITY_START", 'activity_group"', 'activity_type"', 'start"'):
-            self.assertNotIn(legacy, validation)
+        for forbidden_field in ("MAX_ACTIVITY_START", 'activity_group"', 'activity_type"', 'start"'):
+            self.assertNotIn(forbidden_field, validation)
 
     def test_taxonomy_contains_only_real_current_producers(self):
         constants = _source("aos/services/activity/constants.py")
@@ -225,16 +225,10 @@ class TestActivityProductionSourceGuards(unittest.TestCase):
         self.assertIn("route_type = '', route_id = ''", purge)
         self.assertIn("metadata_json = '{}'", purge)
 
-    def test_current_schema_patch_precedes_indexes_and_has_no_runtime_aliases(self):
+    def test_activity_fresh_schema_has_direct_index_installer(self):
         patches = _source("aos/patches.txt")
-        data_name = "aos.patches.v1_0.finalize_activity_read_model"
-        index_name = "aos.patches.v1_0.install_activity_indexes"
-        self.assertLess(patches.index(data_name), patches.index(index_name))
-        patch = _source("aos/patches/v1_0/finalize_activity_read_model.py")
-        for marker in ("_remove_noncanonical_rows", "_backfill_public_ids", "_reconcile_one_off_duplicates", "ActivityService._bounded_metadata"):
-            self.assertIn(marker, patch)
-        self.assertNotIn("frappe.db.commit", patch)
-        self.assertFalse((ROOT / "aos/patches/v1_0/harden_activity_subsystem.py").exists())
+        self.assertIn("aos.patches.v1_0.install_activity_indexes", patches)
+        self.assertIn("install_activity_indexes.execute", _source("aos/migrate.py"))
 
     def test_only_one_authoritative_activity_document_exists(self):
         docs = sorted((ROOT / "docs/features/activity").glob("*.md"))

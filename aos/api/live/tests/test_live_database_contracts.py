@@ -11,8 +11,6 @@ from frappe.tests.utils import FrappeTestCase
 from aos.api.live.reactions import send_reaction_impl
 from aos.api.live.messages import add_live_message_impl, delete_live_message_impl, list_live_messages_impl
 from aos.patches.v1_0 import (
-    canonicalize_live_runtime,
-    harden_live_subsystem,
     install_live_indexes,
     install_live_runtime_indexes,
 )
@@ -20,10 +18,6 @@ from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
 class TestLiveDatabaseContracts(FrappeTestCase):
-    def test_live_data_patches_are_idempotent(self):
-        for patch_module in (harden_live_subsystem, canonicalize_live_runtime):
-            patch_module.execute()
-            patch_module.execute()
 
     def test_live_indexes_exist_after_migrate(self):
         expected = [
@@ -46,23 +40,6 @@ class TestLiveDatabaseContracts(FrappeTestCase):
             )
             self.assertTrue(rows, f"missing Live index {name}")
 
-    def test_data_patch_precedes_schema_patch_and_does_not_call_livekit(self):
-        patches = Path(frappe.get_app_path("aos", "patches.txt")).read_text(encoding="utf-8")
-        harden_patch = "aos.patches.v1_0.harden_live_subsystem"
-        canonical_patch = "aos.patches.v1_0.canonicalize_live_runtime"
-        index_patch = "aos.patches.v1_0.install_live_indexes"
-        runtime_index_patch = "aos.patches.v1_0.install_live_runtime_indexes"
-        for item in (harden_patch, canonical_patch, index_patch, runtime_index_patch):
-            self.assertIn(item, patches)
-        self.assertLess(patches.index(harden_patch), patches.index(canonical_patch))
-        self.assertLess(patches.index(canonical_patch), patches.index(index_patch))
-        self.assertLess(patches.index(index_patch), patches.index(runtime_index_patch))
-
-        for patch_module in (harden_live_subsystem, canonicalize_live_runtime):
-            source = Path(patch_module.__file__).read_text(encoding="utf-8")
-            self.assertNotIn("LiveKitAPI", source)
-            self.assertNotIn("frappe.enqueue", source)
-            self.assertNotIn("frappe.db.commit", source)
 
     def test_index_patches_are_schema_only(self):
         forbidden: list[str] = []

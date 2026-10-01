@@ -625,7 +625,7 @@ class TestCallsDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
         self.assertNotIn(target, encoded)
         self.assertNotIn(initiator, encoded)
 
-    def test_schema_indexes_and_legacy_columns_are_removed(self):
+    def test_current_schema_indexes_and_fields(self):
         required = {
             ("tabAOS Call", "uq_call_public_id"),
             ("tabAOS Call", "idx_call_provision_recovery"),
@@ -637,7 +637,6 @@ class TestCallsDatabaseContracts(AOSFeatureTestMixin, FrappeTestCase):
             self.assertTrue(rows, f"missing {index}")
         for field in ("naming_series", "caller", "receiver", "incoming_dispatched_at", "ring_expires_at", "visible_to_caller", "visible_to_receiver"):
             self.assertFalse(frappe.db.has_column("AOS Call", field), field)
-        self.assertFalse(frappe.db.sql("SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='tabAOS Call' AND INDEX_NAME='idx_call_timeout' LIMIT 1"))
 
     def test_public_status_exposes_participant_state_without_internal_identity(self):
         initiator, target = self._users(2, "status")

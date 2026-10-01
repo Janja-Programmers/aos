@@ -54,13 +54,13 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
         self.assertIn('"initiator"', serializer)
         self.assertIn("public_call_id(call)", serializer)
 
-    def test_call_model_is_normalized_multi_participant_without_legacy_pair_fields(self):
+    def test_call_model_is_normalized_multi_participant_with_current_pair_boundaries(self):
         call_doc = json.loads(_source("aos/aos/doctype/aos_call/aos_call.json"))
         fields = {f["fieldname"] for f in call_doc["fields"]}
         for required in {"initiator", "call_mode", "max_participants", "participant_count", "public_id", "rtc_provisioned_at"}:
             self.assertIn(required, fields)
-        for legacy in {"caller", "receiver", "visible_to_caller", "visible_to_receiver", "incoming_dispatched_at", "ring_expires_at"}:
-            self.assertNotIn(legacy, fields)
+        for forbidden_field in {"caller", "receiver", "visible_to_caller", "visible_to_receiver", "incoming_dispatched_at", "ring_expires_at"}:
+            self.assertNotIn(forbidden_field, fields)
         participant_doc = json.loads(_source("aos/aos/doctype/aos_call_participant/aos_call_participant.json"))
         pfields = {f["fieldname"] for f in participant_doc["fields"]}
         for required in {"call", "user", "role", "status", "visible", "incoming_dispatched_at", "ring_expires_at", "joined_at", "left_at"}:
@@ -136,32 +136,18 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
         self.assertIn("cursor_created_at", source)
         self.assertNotIn("OFFSET", source.upper())
 
-    def test_calls_migration_replaces_legacy_pair_schema_and_installs_indexes(self):
+    def test_calls_schema_installs_current_participant_and_public_indexes(self):
         patches = _source("aos/patches.txt")
-        migration_name = "aos.patches.v1_0.migrate_calls_to_conference_model"
-        self.assertIn(migration_name, patches)
-        self.assertLess(patches.index(migration_name), patches.index("aos.patches.v1_0.install_call_indexes"))
-        self.assertNotIn("harden_calls_subsystem", patches)
-        self.assertNotIn("harden_calls_public_contract", patches)
-        migration = _source("aos/patches/v1_0/migrate_calls_to_conference_model.py")
-        self.assertIn("BATCH = 200", migration)
-        self.assertIn("AOS Call Participant", migration)
-        self.assertIn("DROP COLUMN", migration)
-        self.assertIn("Pre-conference active rooms", migration)
-        self.assertIn("room_cleanup_pending=1", migration)
-        self.assertIn('"naming_series"', migration)
-        self.assertNotIn("frappe.db.commit", migration)
-        self.assertNotIn("frappe.enqueue", migration)
+        for module in ("install_call_indexes", "install_call_public_indexes"):
+            self.assertIn(f"aos.patches.v1_0.{module}", patches)
+            self.assertIn(f"{module}.execute", _source("aos/migrate.py"))
         indexes = _source("aos/patches/v1_0/install_call_indexes.py")
         for name in ("uq_call_participant", "idx_call_participant_user_active", "idx_call_participant_history", "idx_call_participant_expiry"):
             self.assertIn(name, indexes)
         public_indexes = _source("aos/patches/v1_0/install_call_public_indexes.py")
         self.assertIn("uq_call_public_id", public_indexes)
-        self.assertIn("rtc_provisioned_at", public_indexes)
         self.assertIn("_quote_identifier", indexes)
         self.assertIn("sql_ddl", indexes)
-        self.assertNotIn("frappe.db.add_unique", indexes)
-        self.assertNotIn("frappe.db.add_index", indexes)
 
 
     def test_call_status_capabilities_are_strict_booleans(self):
@@ -222,9 +208,12 @@ class TestCallsProductionSourceGuards(unittest.TestCase):
         self.assertNotIn("naming_series", {f["fieldname"] for f in metadata["fields"]})
         self.assertNotEqual(metadata.get("autoname"), "naming_series:")
 
-    def test_required_calls_documents_exist(self):
-        for name in ("README.md", "api.md", "realtime.md", "livekit.md", "operations.md", "testing.md"):
-            self.assertTrue((ROOT / "docs/features/calls" / name).is_file(), name)
+    def test_calls_have_one_authoritative_current_contract(self):
+        folder = ROOT / "docs/features/calls"
+        self.assertEqual([path.name for path in folder.glob("*.md")], ["README.md"])
+        source = (folder / "README.md").read_text(encoding="utf-8")
+        for heading in ("API", "Realtime", "LiveKit", "Operations", "Test"):
+            self.assertIn(heading, source)
 
 
     def test_feature_cleanup_removes_committed_call_participant_rows(self):

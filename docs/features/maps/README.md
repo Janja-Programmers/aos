@@ -71,7 +71,7 @@ The production design is global. No country, marketplace, Localization country, 
 
 The basemap covers the world. A client may pan, zoom, inspect and search globally. Search accepts an optional two-letter `country_code` filter, but no country filter is applied by default. Coordinates use WGS84 / EPSG:4326. Named API fields are always `latitude` then `longitude`; GeoJSON/provider geometry follows RFC 7946 order `[longitude, latitude]`. Latitude is `[-90, 90]`, longitude is `[-180, 180]`, and AOS stores explicit seller coordinates at seven decimal places.
 
-The web client is intentionally not changed in this backend phase. Its next Maps phase should use MapLibre GL JS with the versioned PMTiles basemap. Initial camera fallback should be: device location when permission is granted, otherwise existing Localization context when it can provide a useful coarse camera hint, otherwise a neutral global viewport. No Nairobi/Kenya fallback is part of the Maps contract.
+The Maps client contract uses a MapLibre GL JS versioned PMTiles basemap. Initial camera fallback is: device location when permission is granted, otherwise existing Localization context when it can provide a useful coarse camera hint, otherwise a neutral global viewport. No Nairobi/Kenya fallback is part of the Maps contract.
 
 ### Device location and precise-location privacy
 

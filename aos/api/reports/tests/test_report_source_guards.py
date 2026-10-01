@@ -139,7 +139,7 @@ class TestReportProductionSourceGuards(unittest.TestCase):
             fields = {row["fieldname"] for row in _schema(schema_name)["fields"]}
             self.assertIn("active_key", fields)
             self.assertIn(index_name, indexes)
-        self.assertIn('("AOS Ad Report", "uq_aos_ad_report_user_ad")', indexes)
+        self.assertNotIn('uq_aos_ad_report_user_ad', indexes)
         repository = _source("aos/services/reports/repository.py")
         self.assertIn('params: list[str] = [key, STATUS_REVIEWING]', repository)
         self.assertIn('WHERE active_key = %s', repository)
@@ -254,20 +254,14 @@ class TestReportProductionSourceGuards(unittest.TestCase):
         reasons = _source("aos/api/reports/reasons.py")
         self.assertIn('rate_limit_key("reports", "reasons", "user", current_user)', reasons)
 
-    def test_migration_reconciles_data_before_final_indexes_and_drops_old_ad_uniqueness(self):
+    def test_current_reports_indexes_are_installed_from_final_schema(self):
         patches = _source("aos/patches.txt")
-        finalize = "aos.patches.v1_0.finalize_reports_domain"
-        indexes = "aos.patches.v1_0.install_report_indexes"
-        self.assertIn(finalize, patches)
-        self.assertNotIn("aos.patches.v1_0.harden_reports_subsystem", patches)
-        self.assertLess(patches.index(finalize), patches.index(indexes))
-        source = _source("aos/patches/v1_0/finalize_reports_domain.py")
-        self.assertIn("_canonicalize_known_reason_links", source)
-        self.assertIn("_reconcile_reviewing_duplicates", source)
-        self.assertIn("_backfill_active_keys", source)
+        self.assertIn("aos.patches.v1_0.install_report_indexes", patches)
         index_source = _source("aos/patches/v1_0/install_report_indexes.py")
-        self.assertIn("DROP INDEX", index_source)
-        self.assertIn("uq_aos_ad_report_user_ad", index_source)
+        self.assertIn("uq_aos_ad_report_active", index_source)
+        self.assertIn("uq_aos_user_report_active", index_source)
+        self.assertIn("uq_short_report_active", index_source)
+        self.assertNotIn("DROP INDEX", index_source)
 
     def test_review_reporting_consumes_classified_reason_master_without_becoming_public_reports_target(self):
         controller = _source("aos/aos/doctype/aos_review_report/aos_review_report.py")

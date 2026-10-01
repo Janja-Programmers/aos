@@ -233,14 +233,12 @@ Calls / Chat / Reviews / Notifications / Saved Searches / Verification
               -> intentionally no Activity duplication in the current product
 ```
 
-## Migration / Fresh-site Schema
+## Fresh-site schema
 
-The authoritative DocType contains the final `public_id`, `event_key`, taxonomy/status fields and current schema. Runtime API/service code uses only this contract.
-
-`finalize_activity_read_model` is a one-time deployment reconciliation before Activity unique indexes are installed. It removes noncanonical event rows, normalizes current fields, backfills public IDs, canonicalizes current public resource references, drops rows that cannot satisfy current typed metadata, reconciles duplicate logical events, and backfills integrity keys. It is not a runtime compatibility layer and contains no explicit commit.
+Current `AOS User Activity` DocType metadata and `install_activity_indexes` define the installed schema. `after_migrate` reasserts manual unique and query indexes after synchronization, without modifying existing feature data.
 
 ## Testing
 
-`aos/api/activity/tests/` covers current architecture and behavior: taxonomy/typed metadata validation; public ID ownership; one-off and coalesced retry identities; DB uniqueness/concurrency boundaries; guest/unknown-field/IDOR rejection; keyset ordering/cursor owner/filter scope; block/account/resource fail-closed behavior; ended-Live behavior; bounded clear/retention; account purge; no public create/follower fan-out/Calls/Chat/Notification duplication; producer savepoint isolation; migration/index ordering; safe serialization/logging; documentation consolidation and cleanup contracts.
+`aos/api/activity/tests/` covers current architecture and behavior: taxonomy/typed metadata validation; public ID ownership; one-off and coalesced retry identities; DB uniqueness/concurrency boundaries; guest/unknown-field/IDOR rejection; keyset ordering/cursor owner/filter scope; block/account/resource fail-closed behavior; ended-Live behavior; bounded clear/retention; account purge; no public create/follower fan-out/Calls/Chat/Notification duplication; producer savepoint isolation; current index invariants; safe serialization/logging; documentation consolidation and cleanup contracts.
 
-DB-backed tests use `FrappeTestCase` plus `AOSFeatureTestMixin.cleanup_feature_rows()` so Activity and any valid cross-feature fixtures are rolled back/removed. Repository/source validation can run without a site; migration and the complete Frappe suite must still be run on the real staging site.
+DB-backed tests use `FrappeTestCase` plus `AOSFeatureTestMixin.cleanup_feature_rows()` so Activity and any valid cross-feature fixtures are rolled back/removed. Repository/source validation can run without a site; the complete Frappe suite must still be run on the real staging site.

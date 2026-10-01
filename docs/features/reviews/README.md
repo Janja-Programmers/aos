@@ -223,7 +223,7 @@ Application structure is designed for horizontal workers and approximately one m
 
 ## Testing
 
-Fast tests cover strict validation, cursor/query binding, eligibility, current API/schema contracts, naming/index rules, cleanup rules, moderation wiring, and rate-limit registration. `test_reviews_database.py` uses shared hardened fixtures to create valid Accounts, Sellers, Categories, Locations, Ads, Conversations and Media, then verifies create uniqueness/public IDs, owner/version authorization, withdrawal and aggregates, Media ownership/lifecycle, manual/automated moderation precedence, session-derived reaction ownership, reaction idempotency/switching/counters, keyset pagination/public visibility, and migrated indexes. `test_reviews_concurrency.py` exercises duplicate-create and competing reaction race branches so database winners remain authoritative. `AOSFeatureTestMixin.cleanup_feature_rows()` removes reaction/report/image rows before Reviews/Ads, tracked Media and dependent feature records, then users/profiles; teardown is invoked by `FrappeTestCase` even after assertion failures.
+Fast tests cover strict validation, cursor/query binding, eligibility, current API/schema contracts, naming/index rules, cleanup rules, moderation wiring, and rate-limit registration. `test_reviews_database.py` uses shared hardened fixtures to create valid Accounts, Sellers, Categories, Locations, Ads, Conversations and Media, then verifies create uniqueness/public IDs, owner/version authorization, withdrawal and aggregates, Media ownership/lifecycle, manual/automated moderation precedence, session-derived reaction ownership, reaction idempotency/switching/counters, keyset pagination/public visibility, and current-schema indexes. `test_reviews_concurrency.py` exercises duplicate-create and competing reaction race branches so database winners remain authoritative. `AOSFeatureTestMixin.cleanup_feature_rows()` removes reaction/report/image rows before Reviews/Ads, tracked Media and dependent feature records, then users/profiles; teardown is invoked by `FrappeTestCase` even after assertion failures.
 
 Server acceptance remains:
 
@@ -231,3 +231,6 @@ Server acceptance remains:
 bench --site "$SITE" migrate
 bench --site "$SITE" run-tests --app aos
 ```
+
+## Security
+Review creation, reaction and reporting require server-derived actor identity, owning Ads visibility and Social block/privacy checks. Media attachments are canonical Media IDs; automatic and human Moderation decisions are authoritative, and the public serializer must not leak Frappe identities, reviewer evidence or administrative fields.

@@ -145,7 +145,7 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 `Any*` means the whitelist decorator does not restrict HTTP methods; the implementation contract below remains authoritative for intended client use.
 <!-- END CODE-DERIVED ENDPOINTS -->
 
-All routes are `/api/method/aos.api.v1.chat.<method>` and require an authenticated session. Unknown fields fail closed with `CHAT_UNKNOWN_FIELD`; legacy aliases are not accepted.
+All routes are `/api/method/aos.api.v1.chat.<method>` and require an authenticated session. Unknown fields fail closed with `CHAT_UNKNOWN_FIELD`; retired aliases are not accepted.
 
 | Endpoint | Accepted fields | Canonical behavior |
 |---|---|---|

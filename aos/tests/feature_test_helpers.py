@@ -651,7 +651,7 @@ class AOSFeatureTestMixin:
         max_attempts: int = 5,
         base_delay_seconds: float = 0.05,
     ) -> None:
-        """Delete committed Shorts fixtures without relying on removed legacy fields.
+        """Delete committed Shorts fixtures without relying on removed fields.
 
         Ordinary Shorts fixtures are transaction-local.  This compensating path is
         only for tests that intentionally exercise a real commit boundary.  It

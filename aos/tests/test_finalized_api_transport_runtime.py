@@ -26,10 +26,10 @@ class TestFinalizedAPITransportRuntime(IntegrationTestCase):
                     response = endpoint(
                         cmd=f"{module.__name__}.{endpoint_name}",
                         canonical_field="value",
-                        legacy="must-remain-visible",
+                        unknown_field="must-remain-visible",
                     )
                 self.assertEqual(response, {"ok": True})
                 handler.assert_called_once_with(
                     canonical_field="value",
-                    legacy="must-remain-visible",
+                    unknown_field="must-remain-visible",
                 )

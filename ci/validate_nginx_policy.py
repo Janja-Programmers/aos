@@ -69,7 +69,7 @@ def main() -> int:
 	# Maps origin serves only immutable/read-only PMTiles artifacts from private
 	# object storage. Preserve byte-range requests and keep CORS canonical.
 	if "TILESERVER" in maps or "tileserver" in maps.lower():
-		errors.append("legacy TileServer dependency remains in Maps Nginx origin")
+		errors.append("obsolete TileServer dependency remains in Maps Nginx origin")
 	if "location ^~ /basemap/" not in maps:
 		errors.append("Maps origin must expose only the /basemap/ object prefix")
 	basemap_start = maps.find("location ^~ /basemap/")

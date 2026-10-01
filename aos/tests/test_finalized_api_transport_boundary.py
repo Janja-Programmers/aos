@@ -36,11 +36,11 @@ class TestFinalizedAPITransportBoundary(unittest.TestCase):
             {
                 "cmd": "aos.api.v1.catalog.get_categories",
                 "category": "Laptops",
-                "legacy": True,
+                "unknown_field": True,
             },
         )
         self.assertEqual(result, "ok")
-        self.assertEqual(captured, {"category": "Laptops", "legacy": True})
+        self.assertEqual(captured, {"category": "Laptops", "unknown_field": True})
 
     def test_optional_failure_policy_does_not_create_a_second_transport_path(self):
         captured: dict[str, object] = {}

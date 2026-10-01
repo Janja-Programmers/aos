@@ -252,7 +252,7 @@ class TestCatalogService(TestCase):
             ],
             attributes={
                 "Brand": attribute_definition("Brand", key="brand", options="HP\nApple"),
-                "Model": attribute_definition("Model", key="model", options="Legacy Model"),
+                "Model": attribute_definition("Model", key="model", options="Previous Model"),
             },
             dependencies=[
                 {"name": "D1", "parent": "Laptops", "idx": 1, "child_attribute": "Model", "parent_option": "HP", "child_options": "EliteBook\nProBook"},

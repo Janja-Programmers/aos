@@ -631,7 +631,7 @@ def test_large_terminal_result_is_preserved_and_callback_keeps_job_id(redis_conn
 	assert captured["status"] == "completed"
 
 
-def test_invalid_legacy_result_is_dead_lettered_without_malformed_callback(redis_conn):
+def test_invalid_result_is_dead_lettered_without_malformed_callback(redis_conn):
 	lifecycle._write_record(
 		redis_conn,
 		SERVICE_TYPE,

@@ -26,11 +26,11 @@ class TestCallbackCorrelation(unittest.TestCase):
 		)
 
 	def test_structural_conflict_code_survives_exception_class_reload(self):
-		class LegacyConflict(RuntimeError):
+		class StaleConflict(RuntimeError):
 			error_code = "OLD_GENERATION_CALLBACK"
 
 		self.assertEqual(
-			extract_callback_conflict_code(LegacyConflict("stale")),
+			extract_callback_conflict_code(StaleConflict("stale")),
 			"OLD_GENERATION_CALLBACK",
 		)
 

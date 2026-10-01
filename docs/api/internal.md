@@ -18,11 +18,11 @@ Operational behavior belongs to the matching production service documentation:
 - [Content moderation](../features/moderation/README.md)
 - [Notifications signed delivery callback](../features/notifications/README.md)
 - [Search/ranking](../production/search-ranking-service.md)
-- [Video processing](../features/shorts/README.md)
+- [Video processing](../features/video-processing/README.md)
 
 ## LiveKit webhook
 
-`aos.api.v1.livekit.handle_webhook` is provider-facing. It verifies the LiveKit webhook contract and durable replay/dedupe behavior described in [LiveKit integration](../features/live/livekit.md).
+`aos.api.v1.livekit.handle_webhook` is provider-facing. It verifies the LiveKit webhook contract and durable replay/dedupe behavior described in [LiveKit integration](../features/livekit/README.md).
 
 ## Admin diagnostics
 

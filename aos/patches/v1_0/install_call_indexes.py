@@ -17,14 +17,8 @@ INDEXES = (
     ("AOS Call Participant", "idx_call_participant_expiry", ("status", "ring_expires_at", "call", "name"), False),
 )
 
-LEGACY_INDEXES = (
-    "idx_call_caller_active", "idx_call_receiver_active", "idx_call_caller_history",
-    "idx_call_receiver_history", "idx_call_ring_expiry", "idx_call_timeout",
-)
-
 
 def execute() -> None:
-    _drop_legacy_indexes()
     for doctype, name, columns, unique in INDEXES:
         _ensure_index(doctype, name, columns, unique=unique)
 
@@ -77,10 +71,3 @@ def _ensure_index(doctype: str, name: str, columns: tuple[str, ...], *, unique: 
         _assert_unique_ready(doctype, columns, name)
     _add_index_ddl(doctype, name, columns, unique=unique)
 
-
-def _drop_legacy_indexes() -> None:
-    if not frappe.db.table_exists("AOS Call"):
-        return
-    for name in LEGACY_INDEXES:
-        if _exists("AOS Call", name):
-            frappe.db.sql_ddl(f"ALTER TABLE `tabAOS Call` DROP INDEX `{name}`")

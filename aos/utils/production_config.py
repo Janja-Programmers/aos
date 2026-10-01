@@ -685,7 +685,7 @@ def _check_storage(issues: list[dict[str, Any]], env: Mapping[str, Any] | None) 
 			remediation="Provision buckets and bucket/CDN policy through infrastructure, then set AOS_OBJECT_STORAGE_MANAGE_BUCKETS=false.",
 		)
 
-	# Legacy MinIO validation remains because non-Media Shorts/video components
+	# MinIO validation remains because non-Media Shorts/video components
 	# still depend on it and are explicitly outside this hardening pass.
 	endpoint = _check_required_value(
 		issues,

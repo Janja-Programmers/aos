@@ -92,3 +92,6 @@ Writes are bounded by 100 active searches per user and one owner-row lock; conte
 ## Testing
 
 Coverage is shared with marketplace-discovery and Saved Search service/contract tests, including owner scope, fingerprints, list cursors, version conflicts, bounded payloads, canonical Ads criteria and schema indexes. Shared feature fixtures remove Saved Search rows before Users. Run focused modules on a configured Frappe bench and always include `bench run-tests --app aos` in the release gate.
+
+## Security
+Saved queries belong to the authenticated internal account and are exposed externally through canonical opaque IDs. Writes reject owner/role fields supplied by the client, enforce a per-user quota under the owning service, and reuse Ads/Search Ranking visibility rather than indexing private or ineligible listings independently.

@@ -223,7 +223,7 @@ class TestTransactionalOutbox(FrappeTestCase):
 	def test_callback_idempotency_rejects_wrong_worker_correlation(self):
 		job = SimpleNamespace(idempotency_key="stable-key")
 		validate_callback_idempotency(job, {"idempotency_key": "stable-key"})
-		validate_callback_idempotency(job, {})  # legacy signed worker compatibility
+		validate_callback_idempotency(job, {})
 		with self.assertRaises(OutboxConflictError):
 			validate_callback_idempotency(job, {"idempotency_key": "wrong-key"})
 

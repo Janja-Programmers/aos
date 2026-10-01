@@ -206,3 +206,6 @@ bench --site "$SITE" execute aos.utils.backup_readiness.backup_readiness_summary
 ```
 
 Also verify the reverse proxy/load balancer uses liveness/readiness rather than deep operational health, exercise one required-dependency outage and one optional-service outage, validate worker/scheduler/backlog alerts, and run production-like load/soak plus dependency-failure/latency chaos tests before making any million-user capacity claim.
+
+## Lifecycle
+Operational signals progress from a bounded readiness/probe observation to redacted diagnostics and, when configured, alerting. Failed dependencies remain unavailable until their authoritative probe recovers; neither a probe nor a dashboard response mutates business records or creates alternative product state. Retention and alert acknowledgement follow the Monitoring/Operations configuration.

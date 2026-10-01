@@ -34,8 +34,6 @@ class TestLiveSourceGuards(unittest.TestCase):
         paths.extend(
             [
                 ROOT / "aos/tasks/live.py",
-                ROOT / "aos/patches/v1_0/harden_live_subsystem.py",
-                ROOT / "aos/patches/v1_0/canonicalize_live_runtime.py",
                 ROOT / "aos/patches/v1_0/install_live_indexes.py",
                 ROOT / "aos/patches/v1_0/install_live_runtime_indexes.py",
                 ROOT / "aos/services/livekit/admin.py",
@@ -178,20 +176,7 @@ class TestLiveSourceGuards(unittest.TestCase):
             snippet = source[start : start + 400]
             self.assertIn("after_commit=True", snippet)
 
-    def test_reconciliation_patch_is_bounded_and_has_no_external_calls(self):
-        source = _source("aos/patches/v1_0/harden_live_subsystem.py")
-        self.assertIn("def _bounded_update", source)
-        self.assertIn("LIMIT %(batch)s", source)
-        self.assertIn("def _normalize_duplicate_room_names", source)
-        self.assertIn("GROUP BY room_name HAVING COUNT(*) > 1", source)
-        self.assertNotIn("LiveKitAPI", source)
-        self.assertNotIn("frappe.enqueue", source)
 
-    def test_hardening_patches_run_data_before_unique_indexes(self):
-        patches = _source("aos/patches.txt")
-        data = patches.index("aos.patches.v1_0.harden_live_subsystem")
-        indexes = patches.index("aos.patches.v1_0.install_live_indexes")
-        self.assertLess(data, indexes)
 
     def test_new_uniqueness_boundaries_are_declared(self):
         paths_and_fields = {
@@ -247,7 +232,9 @@ class TestLiveSourceGuards(unittest.TestCase):
 
     def test_webhook_failure_rolls_back_mutation_and_retries(self):
         service = _source("aos/services/live/webhooks.py")
-        endpoint = _source("aos/api/v1/livekit/__init__.py")
+        endpoint = _source("aos/api/v1/livekit/webhook.py")
+        wrapper = _source("aos/api/v1/livekit/__init__.py")
+        self.assertIn("return handle_webhook_impl()", wrapper)
         self.assertIn("_snapshot_callbacks", service)
         self.assertIn("_rollback(savepoint", service)
         self.assertIn("LIVE_WEBHOOK_RETRY", service)

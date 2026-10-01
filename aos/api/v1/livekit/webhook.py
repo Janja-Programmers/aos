@@ -1,0 +1,45 @@
+"""Bounded LiveKit webhook transport; signed verification belongs to Live."""
+from __future__ import annotations
+
+import frappe
+
+from aos.api.shared.responses import fail, ok
+from aos.services.live.webhooks import MAX_WEBHOOK_BYTES, handle_verified_webhook
+
+
+def handle_webhook_impl():
+    request = getattr(frappe, "request", None)
+    if request is None:
+        return fail("Invalid webhook request.", error="LIVE_WEBHOOK_INVALID", http_status=401)
+    content_length = request.content_length
+    if content_length is not None and int(content_length) > MAX_WEBHOOK_BYTES:
+        return fail(
+            "LiveKit webhook rejected.",
+            error="LIVE_WEBHOOK_INVALID",
+            http_status=413,
+        )
+    raw_bytes = request.stream.read(MAX_WEBHOOK_BYTES + 1)
+    if len(raw_bytes) > MAX_WEBHOOK_BYTES:
+        return fail(
+            "LiveKit webhook rejected.",
+            error="LIVE_WEBHOOK_INVALID",
+            http_status=413,
+        )
+    try:
+        raw_body = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return fail(
+            "LiveKit webhook rejected.",
+            error="LIVE_WEBHOOK_INVALID",
+            http_status=400,
+        )
+    authorization = str(request.headers.get("Authorization") or "")
+    result = handle_verified_webhook(raw_body, authorization)
+    if not result.get("ok"):
+        code = str(result.get("error") or "LIVE_WEBHOOK_INVALID")
+        status = 401 if code == "LIVE_WEBHOOK_INVALID" else 503 if code == "LIVE_WEBHOOK_RETRY" else 500
+        return fail("LiveKit webhook rejected.", error=code, http_status=status)
+    return ok(
+        "LiveKit webhook processed.",
+        data={"duplicate": bool(result.get("duplicate")), "outcome": result.get("outcome")},
+    )

@@ -194,13 +194,7 @@ def test_signature_and_request_validation(monkeypatch):
 	assert isinstance(response.json()["data"]["fields"], list)
 
 
-def test_job_contract_accepts_fid_and_defaults_legacy_rows_to_token():
-	legacy = main.PushToken(
-		token="legacy-registration-token-abcdefghijklmnopqrstuvwxyz",
-		token_hash="a" * 64,
-		device_type="android",
-	)
-	assert legacy.registration_kind == "token"
+def test_job_contract_requires_explicit_registration_kind():
 	fid = main.PushToken(
 		token="firebase-installation-id",
 		token_hash="b" * 64,

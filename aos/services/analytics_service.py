@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 import frappe
 from frappe.utils import getdate
 
-from aos.services.shorts.hot_metrics import daily_snapshot, flush_hot_metrics
+from aos.services.shorts.hot_metrics import daily_snapshot
 
 
 class AnalyticsService:
@@ -64,7 +66,7 @@ class AnalyticsService:
 
     @classmethod
     def refresh_short_totals(cls, short_id: str):
-        flush_hot_metrics(limit=5000)
+        # The task flushes the bounded dirty set once per batch, not once per row.
         values = {
             "like_count": cls._total_table_count("AOS Short Like", short_id),
             "comment_count": cls._total_table_count("AOS Short Comment", short_id, extra="AND status='active'"),
@@ -76,32 +78,50 @@ class AnalyticsService:
         frappe.db.set_value("AOS Short", short_id, values, update_modified=False)
 
     @staticmethod
-    def _event_count(short_id, day, event_type):
+    def _day_bounds(day):
+        # Half-open ranges preserve the MariaDB creation-index access path.
+        return f"{day} 00:00:00", f"{day + timedelta(days=1)} 00:00:00"
+
+    @classmethod
+    def _event_count(cls, short_id, day, event_type):
+        start, end = cls._day_bounds(day)
         row = frappe.db.sql(
-            "SELECT COUNT(*) FROM `tabAOS Short Event` WHERE short=%s AND event_type=%s AND DATE(creation)=%s",
-            (short_id, event_type, day),
+            """SELECT COUNT(*) FROM `tabAOS Short Event`
+               WHERE short=%s AND event_type=%s AND creation >= %s AND creation < %s""",
+            (short_id, event_type, start, end),
         )
         return int(row[0][0] or 0)
 
-    @staticmethod
-    def _unique_viewers(short_id, day):
+    @classmethod
+    def _unique_viewers(cls, short_id, day):
+        start, end = cls._day_bounds(day)
         row = frappe.db.sql(
             """SELECT COUNT(DISTINCT CASE WHEN user IS NOT NULL AND user!='' THEN CONCAT('u:',user) ELSE CONCAT('s:',session_id) END)
-               FROM `tabAOS Short Event` WHERE short=%s AND event_type='qualified_view' AND DATE(creation)=%s""",
-            (short_id, day),
+               FROM `tabAOS Short Event`
+               WHERE short=%s AND event_type='qualified_view' AND creation >= %s AND creation < %s""",
+            (short_id, start, end),
         )
         return int(row[0][0] or 0)
 
-    @staticmethod
-    def _table_count(doctype, short_id, day, *, extra=""):
+    @classmethod
+    def _table_count(cls, doctype, short_id, day, *, extra=""):
+        if doctype not in {"AOS Short Like", "AOS Short Comment", "AOS Short Save", "AOS Short Repost"}:
+            raise ValueError("Unsupported Short metrics source")
+        if extra not in {"", "AND status='active'"} or (extra and doctype != "AOS Short Comment"):
+            raise ValueError("Unsupported Short metrics predicate")
+        start, end = cls._day_bounds(day)
         row = frappe.db.sql(
-            f"SELECT COUNT(*) FROM `tab{doctype}` WHERE short=%s AND DATE(creation)=%s {extra}",
-            (short_id, day),
+            f"SELECT COUNT(*) FROM `tab{doctype}` WHERE short=%s AND creation >= %s AND creation < %s {extra}",
+            (short_id, start, end),
         )
         return int(row[0][0] or 0)
 
     @staticmethod
     def _total_table_count(doctype, short_id, *, extra=""):
+        if doctype not in {"AOS Short Like", "AOS Short Comment", "AOS Short Save", "AOS Short Repost"}:
+            raise ValueError("Unsupported Short metrics source")
+        if extra not in {"", "AND status='active'"} or (extra and doctype != "AOS Short Comment"):
+            raise ValueError("Unsupported Short metrics predicate")
         row = frappe.db.sql(f"SELECT COUNT(*) FROM `tab{doctype}` WHERE short=%s {extra}", (short_id,))
         return int(row[0][0] or 0)
 
@@ -123,8 +143,17 @@ class AnalyticsService:
             "early_skips": early_skips, "likes": likes, "comments": comments,
             "shares": shares, "saves": saves, "downloads": downloads, "reposts": reposts,
         }
-        existing = frappe.db.get_value("AOS Short Metrics Daily", {"short": short_id, "date": date}, "name")
+        key = {"short": short_id, "date": date}
+        existing = frappe.db.get_value("AOS Short Metrics Daily", key, "name")
         if existing:
             frappe.db.set_value("AOS Short Metrics Daily", existing, values, update_modified=False)
-        else:
-            frappe.get_doc({"doctype": "AOS Short Metrics Daily", "short": short_id, "date": date, **values}).insert(ignore_permissions=True)
+            return
+        try:
+            frappe.get_doc({"doctype": "AOS Short Metrics Daily", **key, **values}).insert(ignore_permissions=True)
+        except frappe.DuplicateEntryError:
+            # Another worker inserted the same (short, date) after our lookup.
+            # The unique index owns correctness; retry only the exact day row.
+            existing = frappe.db.get_value("AOS Short Metrics Daily", key, "name")
+            if not existing:
+                raise
+            frappe.db.set_value("AOS Short Metrics Daily", existing, values, update_modified=False)

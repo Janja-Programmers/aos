@@ -16,4 +16,10 @@ def execute() -> None:
     if not frappe.db.table_exists(DOCTYPE):
         return
     for name, fields in INDEXES.items():
-        frappe.db.add_index(DOCTYPE, fields, index_name=name)
+        present = frappe.db.sql(
+            "SELECT 1 FROM information_schema.STATISTICS "
+            "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=%s AND INDEX_NAME=%s LIMIT 1",
+            (f"tab{DOCTYPE}", name),
+        )
+        if not present:
+            frappe.db.add_index(DOCTYPE, fields, index_name=name)

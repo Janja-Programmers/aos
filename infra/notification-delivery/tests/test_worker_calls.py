@@ -197,7 +197,7 @@ def test_firebase_initialization_applies_bounded_http_timeout(monkeypatch, tmp_p
 	assert initialized[0][1] == {"httpTimeout": 17}
 
 
-def test_mixed_legacy_tokens_and_fids_use_the_matching_firebase_target_field(monkeypatch):
+def test_mixed_registration_tokens_and_fids_use_the_matching_firebase_target_field(monkeypatch):
 	fake_messaging = _FakeMessaging()
 	monkeypatch.setattr(worker, "messaging", fake_messaging)
 	monkeypatch.setattr(worker, "get_settings", _settings)
@@ -213,7 +213,7 @@ def test_mixed_legacy_tokens_and_fids_use_the_matching_firebase_target_field(mon
 			"options": {"priority": "normal"},
 			"tokens": [
 				{
-					"token": "legacy-registration-token",
+					"token": "registration-token",
 					"token_hash": "a" * 64,
 					"device_type": "android",
 					"registration_kind": "token",
@@ -231,9 +231,9 @@ def test_mixed_legacy_tokens_and_fids_use_the_matching_firebase_target_field(mon
 	assert result["status"] == "delivered"
 	assert result["success_count"] == 2
 	assert len(fake_messaging.sent) == 2
-	legacy_message, fid_message = fake_messaging.sent
-	assert legacy_message.tokens == ["legacy-registration-token"]
-	assert not hasattr(legacy_message, "fids")
+	token_message, fid_message = fake_messaging.sent
+	assert token_message.tokens == ["registration-token"]
+	assert not hasattr(token_message, "fids")
 	assert fid_message.fids == ["firebase-installation-id"]
 	assert not hasattr(fid_message, "tokens")
 	assert [row["registration_kind"] for row in result["provider_responses"]] == ["token", "fid"]

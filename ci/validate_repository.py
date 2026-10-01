@@ -246,11 +246,11 @@ def main() -> int:
 				f"{relative}:{line_number}: secret-bearing field "
 				f"{class_name}.{field_name} must declare repr=False"
 			)
-		# The legacy Frappe app is intentionally not mass-reformatted in this
+		# The AOS Frappe app is intentionally not mass-reformatted in this
 		# checkpoint. Conflict/debug/structured-file checks still cover it;
 		# whitespace enforcement applies to all checkpoint-owned/non-app files.
-		legacy_frappe_source = relative.parts and relative.parts[0] == "aos"
-		if not legacy_frappe_source and path.suffix.lower() not in {".md", ".csv", ".svg"}:
+		frappe_source = relative.parts and relative.parts[0] == "aos"
+		if not frappe_source and path.suffix.lower() not in {".md", ".csv", ".svg"}:
 			for line_number, line in enumerate(text.splitlines(), start=1):
 				if line.rstrip(" \t") != line:
 					errors.append(f"{relative}:{line_number}: trailing whitespace")

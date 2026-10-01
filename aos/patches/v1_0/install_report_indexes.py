@@ -1,18 +1,10 @@
-"""Install final Reports indexes after Reports data reconciliation."""
+"""Install current Reports indexes from the final schema."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
 import frappe
-
-# The old Ad invariant permanently prevented a reporter from submitting another
-# report after a terminal outcome. Final Reports uses a Reviewing-only active
-# key consistently across User, Ad, and Short reports.
-_OBSOLETE_INDEXES: tuple[tuple[str, str], ...] = (
-    ("AOS Ad Report", "uq_aos_ad_report_user_ad"),
-    ("AOS Report Reason", "idx_aos_report_reason_active"),
-)
 
 INDEX_DEFINITIONS: tuple[tuple[str, str, tuple[str, ...], bool], ...] = (
     ("AOS User Report", "idx_aos_user_report_backlog", ("status", "creation", "name"), False),
@@ -37,8 +29,6 @@ INDEX_DEFINITIONS: tuple[tuple[str, str, tuple[str, ...], bool], ...] = (
 
 
 def execute() -> None:
-    for doctype, index_name in _OBSOLETE_INDEXES:
-        _drop_index_if_exists(doctype, index_name)
     for doctype, index_name, columns, unique in INDEX_DEFINITIONS:
         _ensure_index(doctype, index_name, columns, unique=unique)
 
@@ -61,13 +51,6 @@ def _index_exists(doctype: str, index_name: str) -> bool:
             (_table(doctype), index_name),
         )
     )
-
-
-def _drop_index_if_exists(doctype: str, index_name: str) -> None:
-    if not frappe.db.table_exists(doctype) or not _index_exists(doctype, index_name):
-        return
-    # Names are source-controlled constants above; no client input reaches DDL.
-    frappe.db.sql_ddl(f"ALTER TABLE `{_table(doctype)}` DROP INDEX `{index_name}`")
 
 
 def _ensure_columns(doctype: str, columns: Sequence[str]) -> None:

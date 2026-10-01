@@ -85,7 +85,7 @@ Owner documentation: [docs/features/authentication/README.md](../features/authen
 
 ## Calls (14)
 
-Owner documentation: [docs/features/calls/api.md](../features/calls/api.md)
+Owner documentation: [docs/features/calls/README.md](../features/calls/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|
@@ -194,7 +194,7 @@ Owner documentation: [docs/features/live/README.md](../features/live/README.md)
 
 ## LiveKit (1)
 
-Owner documentation: [docs/features/live/README.md](../features/live/README.md)
+Owner documentation: [docs/features/livekit/README.md](../features/livekit/README.md)
 
 | Route | HTTP | Decorator access | Audience | Source |
 |---|---|---|---|---|

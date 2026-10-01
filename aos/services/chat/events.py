@@ -10,15 +10,15 @@ import frappe
 def after_commit(callback: Callable[[], None]) -> None:
     """Run side effects only after commit; failure never invalidates persisted Chat state."""
     manager = getattr(frappe.db, "after_commit", None)
-    if manager is not None and hasattr(manager, "add"):
-        manager.add(callback)
+    if manager is None or not callable(getattr(manager, "add", None)):
+        # Realtime is a best-effort hint. Never publish inside an open transaction:
+        # clients reconcile from the durable conversation state on reconnect.
+        frappe.log_error(
+            "Chat transaction callback registration unavailable; realtime suppressed.",
+            "AOS Chat post-commit failure",
+        )
         return
-    # Fallback is mainly for isolated tests/mocks that do not expose transaction
-    # callbacks. Real Frappe requests use after_commit.add.
-    try:
-        callback()
-    except Exception:
-        frappe.log_error("Chat post-commit callback failed.", "AOS Chat post-commit failure")
+    manager.add(callback)
 
 
 def publish_after_commit(*, event: str, message: dict, user: str) -> None:

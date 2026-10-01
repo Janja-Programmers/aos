@@ -1,6 +1,6 @@
-# AOS Live + LiveKit
+# AOS Live
 
-This document is the canonical current-state backend and infrastructure reference for AOS Live. Live is the client-facing product domain. LiveKit is shared, server-controlled RTC infrastructure consumed by Live and Calls.
+This document covers AOS Live; the shared RTC adapter is documented under [LiveKit](../livekit/README.md). Live is the client-facing product domain. LiveKit is shared, server-controlled RTC infrastructure consumed by Live and Calls.
 
 ## Domain boundaries
 
@@ -59,7 +59,7 @@ Important consistency fields are internal/read-only: `active_host_key`, `last_li
 
 `AOS Live Stream View` stores durable viewer sessions. `active_identity_key` enforces one active session identity and `last_livekit_event_at` provides a monotonic callback watermark. Co-host workflows and message idempotency use their own unique consistency keys. LiveKit webhook event IDs and Notification dedupe keys are database-unique.
 
-Query indexes cover feed order, host state, cleanup/reconciliation, viewer presence and LiveKit identity, webhook ordering, co-host state, cursor message/reply pages, and webhook cleanup. Schema indexes are installed only after bounded data canonicalization.
+Query indexes cover feed order, host state, cleanup/reconciliation, viewer presence and LiveKit identity, webhook ordering, co-host state, cursor message/reply pages, and webhook cleanup. Current-schema indexes are installed after DocType synchronization.
 
 ## Lifecycle
 
@@ -234,3 +234,12 @@ Live coverage includes pure source/contract guards plus Frappe database/API test
 - repository hygiene and absence of service-layer commits.
 
 Normal feature fixtures remain transaction-local. Tests must not commit synthetic Users, Accounts, Lives, Media, or room state. Real LiveKit is not required for deterministic domain tests; room administration is mocked except in intentionally isolated infrastructure verification.
+
+## Architecture
+Live owns streams, durable viewer sessions, messages and co-host state. LiveKit transports RTC and signed provider events; Social controls visibility and blocking; shared Redis carries hot counters and distributed ephemeral coordination. Final application state is rechecked under database transaction rather than relying on local worker memory.
+
+## Security
+Room tokens and host/co-host grants are derived from the authenticated account and current Live state, never client-claimed provider identity. Viewer and moderation permissions are server enforced. Provider callbacks require signature validation, bounded request bodies and replay protection; public responses project opaque canonical account and stream IDs.
+
+## Performance / Scalability
+The bounded feed, event coalescing, Redis counters, partial reconciliation and manual indexes limit SQL-per-viewer/tap pressure. Multi-node LiveKit/TURN routing, cache durability, shared object storage and failover are infrastructure acceptance requirements; static checks do not establish sustained million-user throughput.
