@@ -130,7 +130,7 @@ def validate_matrices(root: Path, failures: list[str]) -> None:
 def main() -> int:
 	root = Path(__file__).resolve().parents[1]
 	failures: list[str] = []
-	for name in ("build", "quality", "security", "tests"):
+	for name in ("build", "quality", "security", "semgrep", "tests"):
 		assert_lock(
 			root / "ci" / "requirements" / f"{name}.in",
 			root / "ci" / "requirements" / f"{name}.lock",
@@ -160,6 +160,18 @@ def main() -> int:
 		if root_resolved.get(package) != version:
 			failures.append(f"ci/requirements/root-production.lock: missing {package}=={version}")
 
+	override_path = root / "ci/requirements/semgrep-overrides.txt"
+	if not override_path.is_file() or not override_path.read_text(encoding="utf-8").strip().endswith(
+		"pyjwt[crypto]==2.15.1"
+	):
+		failures.append("Isolated Semgrep must explicitly override PyJWT to 2.15.1")
+	semgrep_lock = root / "ci/requirements/semgrep.lock"
+	if not semgrep_lock.is_file():
+		failures.append("Missing isolated Semgrep lock")
+	elif locked_requirements(semgrep_lock.read_text(encoding="utf-8").splitlines()).get("pyjwt") != "2.15.1":
+		failures.append("Semgrep lock must include patched PyJWT 2.15.1")
+	if "semgrep-overrides.txt" not in (root / "ci/update-locks.sh").read_text(encoding="utf-8"):
+		failures.append("Semgrep override must be applied at lock generation")
 	validate_versions(root, failures)
 	validate_matrices(root, failures)
 	if failures:

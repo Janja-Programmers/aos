@@ -1,0 +1,4 @@
+# Semgrep is a separately installed, hash-locked CI scanning tool.
+# As of 2026-10-01 Semgrep 1.178.0 requires PyJWT <2.14; do not make
+# that upstream limitation a constraint on AOS production or security tooling.
+semgrep==1.178.0

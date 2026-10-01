@@ -1,0 +1,6 @@
+# Semgrep 1.178.0 declares PyJWT <2.14 even though 2.13.0 has advisories.
+# This override ONLY applies to the isolated Semgrep CI scanner, never AOS.
+# Its runtime is installed from a full hash-locked inventory using --no-deps,
+# followed by strict metadata-difference and actual scanner smoke checks.
+# Revisit as soon as upstream Semgrep supports patched PyJWT natively.
+pyjwt[crypto]==2.15.1

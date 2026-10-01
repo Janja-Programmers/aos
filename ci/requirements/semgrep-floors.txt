@@ -1,0 +1,5 @@
+# Security floors for the isolated Semgrep scanner only.
+# PyJWT is intentionally not overridden here: Semgrep 1.178.0 declares <2.14.
+# Its resolved PyJWT advisories remain blocking until specifically reviewed.
+mcp>=1.28.1,<2
+urllib3==2.8.0

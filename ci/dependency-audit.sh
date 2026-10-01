@@ -20,6 +20,7 @@ inputs=(
 	"ci/requirements/root-production.lock"
     "ci/requirements/quality.lock"
     "ci/requirements/security.lock"
+    "ci/requirements/semgrep.lock"
     "ci/requirements/tests.lock"
 )
 while IFS= read -r service; do
@@ -32,12 +33,22 @@ for relative in "${inputs[@]}"; do
     input="${CI_ROOT}/${relative}"
     [[ -f "${input}" ]] || die "Audit input is missing: ${relative}"
     report_name="${relative//\//_}.json"
-    mapfile -t ignored_advisories < <(
+    # Capture failures explicitly: process substitution would conceal the
+    # exception validator's nonzero status from the parent shell.
+    if ! exception_output="$(
         "${python_executable}" "${CI_ROOT}/ci/audit_exceptions.py" \
             --root "${CI_ROOT}" \
             --exceptions "${CI_ROOT}/ci/vulnerability-exceptions.json" \
             --lock "${relative}"
-    )
+    )"; then
+        printf 'Vulnerability exception validation failed for %s.\n' "${relative}" >&2
+        status=1
+        continue
+    fi
+    ignored_advisories=()
+    if [[ -n "${exception_output}" ]]; then
+        mapfile -t ignored_advisories <<< "${exception_output}"
+    fi
     audit_args=(
         --disable-pip
         --progress-spinner off

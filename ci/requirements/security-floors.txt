@@ -1,0 +1,6 @@
+# Central minimum safe transitive versions for all generated AOS Python locks.
+# Constraints do not add a dependency when a lock does not require it.
+mcp>=1.28.1,<2
+PyJWT==2.15.1
+urllib3==2.8.0
+virtualenv==21.7.13
