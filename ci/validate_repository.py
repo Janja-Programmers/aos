@@ -9,6 +9,7 @@ import tomllib
 from pathlib import Path
 
 import yaml
+from repository_source import source_files
 
 TEXT_SUFFIXES = {
 	".conf",
@@ -28,7 +29,6 @@ TEXT_SUFFIXES = {
 	".yaml",
 	".yml",
 }
-SKIP_DIRS = {".git", ".venv", "node_modules", "__pycache__"}
 CONFLICT = re.compile(r"^(<<<<<<< |=======\s*$|>>>>>>> )", re.MULTILINE)
 RAW_DDL = re.compile(r"^\s*(ALTER|CREATE|DROP|TRUNCATE|RENAME)\b", re.IGNORECASE)
 
@@ -56,10 +56,8 @@ UniqueKeyLoader.add_constructor(
 
 
 def files(root: Path):
-	for path in sorted(root.rglob("*")):
-		if not path.is_file() or any(part in SKIP_DIRS for part in path.parts):
-			continue
-		yield path
+	"""Audit AOS-owned source files, not ignored runtime/model artifacts."""
+	yield from source_files(root)
 
 
 def is_text_candidate(path: Path) -> bool:

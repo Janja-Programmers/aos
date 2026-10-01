@@ -8,6 +8,8 @@ import re
 import sys
 from pathlib import Path
 
+from repository_source import source_files
+
 ROOT = Path(__file__).resolve().parents[1]
 FEATURES = (
 	"localization",
@@ -64,7 +66,6 @@ TEXT_SUFFIXES = frozenset(
 		".gitignore",
 	}
 )
-SKIP_DIRS = frozenset({".git", ".venv", ".mypy_cache", ".pytest_cache", "__pycache__", "node_modules"})
 RETIRED_PATCHES = frozenset(
 	{
 		"add_unique_constraints",
@@ -124,9 +125,7 @@ def main() -> int:
 					any(marker in content for marker in markers), f"{feature} missing {topic} documentation"
 				)
 
-	for path in ROOT.rglob("*"):
-		if not path.is_file() or SKIP_DIRS.intersection(path.relative_to(ROOT).parts):
-			continue
+	for path in source_files(ROOT):
 		relative = path.relative_to(ROOT).as_posix()
 		require(path.stat().st_size > 0, f"empty repository artifact: {relative}")
 		if path.suffix not in TEXT_SUFFIXES and path.name not in {
