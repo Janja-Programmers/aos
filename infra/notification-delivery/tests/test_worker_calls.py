@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import ClassVar
 
+import pytest
 from app import worker
 
 
@@ -71,8 +72,18 @@ def test_android_incoming_call_is_data_only_and_collapsible(monkeypatch):
 				"android_notification_priority": "max",
 			},
 			"tokens": [
-				{"token": "android-token", "token_hash": "android-hash", "device_type": "android"},
-				{"token": "ios-token", "token_hash": "ios-hash", "device_type": "ios"},
+				{
+					"token": "android-token",
+					"token_hash": "android-hash",
+					"registration_kind": "token",
+					"device_type": "android",
+				},
+				{
+					"token": "ios-token",
+					"token_hash": "ios-hash",
+					"registration_kind": "token",
+					"device_type": "ios",
+				},
 			],
 		}
 	)
@@ -117,7 +128,12 @@ def test_normal_push_keeps_alert_payload_for_android(monkeypatch):
 			"data": {"event": "aos_new_message", "message_id": "MSG-1"},
 			"options": {"priority": "high"},
 			"tokens": [
-				{"token": "android-token", "token_hash": "android-hash", "device_type": "android"},
+				{
+					"token": "android-token",
+					"token_hash": "android-hash",
+					"registration_kind": "token",
+					"device_type": "android",
+				},
 			],
 		}
 	)
@@ -150,7 +166,12 @@ def test_normal_web_push_keeps_alert_and_data_with_web_headers(monkeypatch):
 			},
 			"options": {"priority": "normal", "ttl_seconds": 300},
 			"tokens": [
-				{"token": "web-token", "token_hash": "web-hash", "device_type": "web"},
+				{
+					"token": "web-token",
+					"token_hash": "web-hash",
+					"registration_kind": "token",
+					"device_type": "web",
+				},
 			],
 		}
 	)
@@ -195,6 +216,36 @@ def test_firebase_initialization_applies_bounded_http_timeout(monkeypatch, tmp_p
 	monkeypatch.setattr(worker, "_FIREBASE_INITIALIZED", False)
 	worker._init_firebase()
 	assert initialized[0][1] == {"httpTimeout": 17}
+
+
+@pytest.mark.parametrize("registration_kind", [None, "unknown"])
+def test_invalid_registration_kind_fails_closed(monkeypatch, registration_kind):
+	fake_messaging = _FakeMessaging()
+	monkeypatch.setattr(worker, "messaging", fake_messaging)
+	monkeypatch.setattr(worker, "get_settings", _settings)
+	monkeypatch.setattr(worker, "_init_firebase", lambda: None)
+
+	registration = {
+		"token": "android-token",
+		"token_hash": "a" * 64,
+		"device_type": "android",
+	}
+	if registration_kind is not None:
+		registration["registration_kind"] = registration_kind
+
+	with pytest.raises(ValueError, match="Invalid Firebase registration kind"):
+		worker._send_push(
+			{
+				"event": "aos_new_message",
+				"delivery_kind": "persistent",
+				"title": "New Message",
+				"body": "Hello",
+				"data": {"event": "aos_new_message"},
+				"options": {"priority": "high"},
+				"tokens": [registration],
+			}
+		)
+	assert fake_messaging.sent == []
 
 
 def test_mixed_registration_tokens_and_fids_use_the_matching_firebase_target_field(monkeypatch):

@@ -22,7 +22,14 @@ def settings(**overrides):
 		"callback_allowed_hosts": (),
 	}
 	values.update(overrides)
-	return SimpleNamespace(**values)
+	return config.Settings(**values)
+
+
+def test_settings_fixture_uses_canonical_status_configuration():
+	configured = settings()
+	assert isinstance(configured, config.Settings)
+	assert configured.stale_heartbeat_seconds == config.Settings().stale_heartbeat_seconds
+	assert settings(stale_heartbeat_seconds=240).stale_heartbeat_seconds == 240
 
 
 def payload() -> dict:
