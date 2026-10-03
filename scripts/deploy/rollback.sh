@@ -38,6 +38,8 @@ fi
 
 [[ "${ROLLBACK_APPROVED:-false}" == true ]] || die 'An explicit ROLLBACK_APPROVED=true is required.'
 [[ "${ROLLBACK_DB_DECISION:-}" == application-only ]] || die 'ROLLBACK_DB_DECISION=application-only is required; database restore is separate.'
+require_var REMOTE_APPLY_RELEASE_SHA256
+[[ "$REMOTE_APPLY_RELEASE_SHA256" =~ ^[0-9a-f]{64}$ ]] || die 'Remote applier requires a reviewed SHA-256.'
 require_var ROLLBACK_IMAGE_LOCK
 require_var ROLLBACK_LOCKED_COMPOSE
 [[ -f "$ROLLBACK_IMAGE_LOCK" && -f "$ROLLBACK_LOCKED_COMPOSE" ]] \
@@ -99,6 +101,7 @@ remote "test -r '$remote_archive' && test -r '$remote_manifest' \
   && '$REMOTE_BENCH_ROOT/env/bin/python' '$release_dir/policy/locked_compose.py' \
      verify-registry '$remote_manifest' '$remote_archive' '$remote_lock' \
      '$ROLLBACK_COMMIT' '$remote_compose' \
+  && printf '%s  %s\\n' '$REMOTE_APPLY_RELEASE_SHA256' '$REMOTE_APPLY_RELEASE_PATH' | sha256sum -c - \
   && '$REMOTE_APPLY_RELEASE_PATH' '$remote_archive' '$remote_manifest' \
      '$ROLLBACK_COMMIT' '$remote_lock' '$remote_compose'"
 

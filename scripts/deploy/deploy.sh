@@ -29,6 +29,8 @@ if [[ "$DRY_RUN" == "true" ]]; then
   exit 0
 fi
 
+require_var REMOTE_APPLY_RELEASE_SHA256
+[[ "$REMOTE_APPLY_RELEASE_SHA256" =~ ^[0-9a-f]{64}$ ]] || die 'Remote applier requires a reviewed SHA-256.'
 require_var RELEASE_IMAGE_LOCK
 require_var RELEASE_LOCKED_COMPOSE
 [[ -f "$RELEASE_IMAGE_LOCK" && -f "$RELEASE_LOCKED_COMPOSE" ]] \
@@ -98,19 +100,18 @@ done
 # The remote host independently reopens and verifies the exact release archive,
 # promoted OCI lock and the no-build Compose before invoking its reviewed applier.
 # Bench's pinned Python has PyYAML; crane must be installed at the reviewed version.
+# Reverify and apply within one remote command, binding the applier to its
+# reviewed protected-Environment checksum. The operator must review the binary
+# to ensure it actually consumes all five immutable inputs without rebuilding.
 remote "test -x '$REMOTE_BENCH_ROOT/env/bin/python' \
   && command -v crane >/dev/null \
   && test \"\$(crane version)\" = '0.21.7' \
   && '$REMOTE_BENCH_ROOT/env/bin/python' '$release_dir/policy/locked_compose.py' \
      verify-registry '$remote_manifest' '$remote_archive' '$remote_lock' \
-     '$RELEASE_COMMIT' '$remote_compose'"
-
-# The externally installed applier MUST implement the reviewed five-argument
-# contract and consume the lock and rendered Compose. A three-argument applier
-# must fail rather than silently rebuild or use floating image tags.
-remote "'$REMOTE_APPLY_RELEASE_PATH' '$remote_archive' '$remote_manifest' \
-  '$RELEASE_COMMIT' '$remote_lock' '$remote_compose'"
-
+     '$RELEASE_COMMIT' '$remote_compose' \
+  && printf '%s  %s\\n' '$REMOTE_APPLY_RELEASE_SHA256' '$REMOTE_APPLY_RELEASE_PATH' | sha256sum -c - \
+  && '$REMOTE_APPLY_RELEASE_PATH' '$remote_archive' '$remote_manifest' \
+     '$RELEASE_COMMIT' '$remote_lock' '$remote_compose'"
 # Repository-controlled migration is unconditional. A failure stops here and
 # prevents the workflow's smoke and production steps.
 remote "REMOTE_BENCH_ROOT='$REMOTE_BENCH_ROOT' FRAPPE_SITE='$FRAPPE_SITE' RELEASE_COMMIT='$RELEASE_COMMIT' '$REMOTE_BENCH_ROOT/apps/aos/scripts/deploy/run-migrate.sh'"

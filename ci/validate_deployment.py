@@ -24,6 +24,7 @@ REQUIRED_VARIABLE_REFERENCES = {
 	"FRAPPE_SITE",
 	"REMOTE_RELEASE_ROOT",
 	"REMOTE_APPLY_RELEASE_PATH",
+	"REMOTE_APPLY_RELEASE_SHA256",
 }
 
 
@@ -191,6 +192,8 @@ def _validate_deploy_script(root: Path, errors: list[str]) -> None:
 		errors.append("deployment still accepts arbitrary REMOTE_DEPLOY_COMMAND contents")
 	if "REMOTE_APPLY_RELEASE_PATH" not in text:
 		errors.append("deployment lacks the restricted release-apply executable path")
+	if "REMOTE_APPLY_RELEASE_SHA256" not in text or "reviewed SHA-256" not in text:
+		errors.append("live deployment must pin the reviewed remote applier binary")
 	if "Policy source differs from verified archive" not in text or "policy/$(basename" not in text:
 		errors.append("remote validator must match its archived source and uploaded checksums")
 	apply_position = text.find("REMOTE_APPLY_RELEASE_PATH")
@@ -216,6 +219,7 @@ def _validate_rollback_script(root: Path, errors: list[str]) -> None:
 		"ROLLBACK_LOCKED_COMPOSE",
 		"locked_compose.py verify-registry",
 		"REMOTE_APPLY_RELEASE_PATH",
+		"REMOTE_APPLY_RELEASE_SHA256",
 		"REMOTE_RELEASE_ROOT",
 		"ROLLBACK_APPROVED",
 		"ROLLBACK_DB_DECISION",
