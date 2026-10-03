@@ -78,11 +78,19 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: staging
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      promotion_run_id: ${{ steps.promotion.outputs.run_id }}
+      promotion_lock_sha256: ${{ steps.promotion.outputs.lock_sha256 }}
     env:
       DEPLOY_ENVIRONMENT: staging
       RELEASE_COMMIT: ${{ needs.release.outputs.commit }}
       RELEASE_ARTIFACT: aos-release.tar.gz
       RELEASE_MANIFEST: release-manifest.json
+      RELEASE_IMAGE_LOCK: release-image-lock.json
+      RELEASE_LOCKED_COMPOSE: release-compose.locked.yml
       CI_GATE_VERIFIED: ${{ github.event_name == 'workflow_run' }}
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
@@ -109,6 +117,37 @@ jobs:
             echo "::error::Staging release is stale: commit is no longer main HEAD."
             exit 1
           }
+      - name: Install pinned image-verification tools
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: 3.14.6
+      - name: Fetch exact approved promotion and lock images
+        id: promotion
+        env:
+          RELEASE_COMMIT: ${{ needs.release.outputs.commit }}
+          PROMOTION_RUN_ID: ${{ vars.AOS_PROMOTION_RUN_ID }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$PROMOTION_RUN_ID" =~ ^[1-9][0-9]{0,17}$ ]] || {
+            echo "::error::Staging requires an explicit, successful approved promotion run ID."
+            exit 1
+          }
+          python3 ci/fetch_promoted_lock.py "$RELEASE_COMMIT" "$PROMOTION_RUN_ID" release-manifest.json release-image-lock.json
+          echo "run_id=$PROMOTION_RUN_ID" >>"$GITHUB_OUTPUT"
+          echo "lock_sha256=$(sha256sum release-image-lock.json | cut -d' ' -f1)" >>"$GITHUB_OUTPUT"
+      - name: Verify registry and render immutable no-build Compose
+        env:
+          RELEASE_COMMIT: ${{ needs.release.outputs.commit }}
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip install --disable-pip-version-check --require-hashes -r ci/requirements/quality.lock
+          ci/install-compose-tools.sh "$RUNNER_TEMP/oci-tools"
+          export PATH="$RUNNER_TEMP/oci-tools/bin:$PATH"
+          python3 scripts/deploy/locked_compose.py render-registry \\
+            release-manifest.json aos-release.tar.gz release-image-lock.json \\
+            "$RELEASE_COMMIT" release-compose.locked.yml
+          echo "$RUNNER_TEMP/oci-tools/bin" >>"$GITHUB_PATH"
       - name: Install known hosts
         env:
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
@@ -144,12 +183,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment: production
+    permissions:
+      contents: read
+      actions: read
     env:
       DEPLOY_ENVIRONMENT: production
       PRODUCTION_APPROVAL_CONTEXT: 'true'
       RELEASE_COMMIT: ${{ needs.release.outputs.commit }}
       RELEASE_ARTIFACT: aos-release.tar.gz
       RELEASE_MANIFEST: release-manifest.json
+      RELEASE_IMAGE_LOCK: release-image-lock.json
+      RELEASE_LOCKED_COMPOSE: release-compose.locked.yml
       CI_GATE_VERIFIED: 'true'
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
@@ -185,6 +229,36 @@ jobs:
             echo "::error::Production deployment disabled. AOS_PRODUCTION_DEPLOYMENT_ENABLED must be true in the protected production Environment."
             exit 1
           }
+      - name: Install pinned image-verification tools
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: 3.14.6
+      - name: Reuse exact staging-approved promotion and verify lock
+        env:
+          RELEASE_COMMIT: ${{ needs.release.outputs.commit }}
+          PROMOTION_RUN_ID: ${{ needs.staging.outputs.promotion_run_id }}
+          STAGING_LOCK_SHA256: ${{ needs.staging.outputs.promotion_lock_sha256 }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$PROMOTION_RUN_ID" =~ ^[1-9][0-9]{0,17}$ && "$STAGING_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
+            echo "::error::Production must reuse the exact verified staging publication."
+            exit 1
+          }
+          python3 ci/fetch_promoted_lock.py "$RELEASE_COMMIT" "$PROMOTION_RUN_ID" release-manifest.json release-image-lock.json
+          printf '%s  %s\\n' "$STAGING_LOCK_SHA256" release-image-lock.json | sha256sum -c -
+      - name: Reverify registry and immutable no-build production Compose
+        env:
+          RELEASE_COMMIT: ${{ needs.release.outputs.commit }}
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip install --disable-pip-version-check --require-hashes -r ci/requirements/quality.lock
+          ci/install-compose-tools.sh "$RUNNER_TEMP/oci-tools"
+          export PATH="$RUNNER_TEMP/oci-tools/bin:$PATH"
+          python3 scripts/deploy/locked_compose.py render-registry \\
+            release-manifest.json aos-release.tar.gz release-image-lock.json \\
+            "$RELEASE_COMMIT" release-compose.locked.yml
+          echo "$RUNNER_TEMP/oci-tools/bin" >>"$GITHUB_PATH"
       - env:
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: printf '%s\n' "$DEPLOY_KNOWN_HOSTS" >known_hosts && chmod 0600 known_hosts
