@@ -248,10 +248,11 @@ jobs:
             if touch /app/should-not-write 2>/dev/null; then exit 1; fi
           '
 
-          docker exec aos-background-removal-ci python - <<'PY'
+          docker exec -i aos-background-removal-ci python - <<'PY'
           from PIL import Image
           Image.new("RGB", (16, 16), (255, 0, 0)).save("/tmp/input.png")
           PY
+          docker exec aos-background-removal-ci test -s /tmp/input.png
           docker exec aos-background-removal-ci sh -lc '
             curl --fail --silent --show-error \
               -H "Authorization: Bearer ${BACKGROUND_REMOVAL_SERVICE_SECRET}" \
