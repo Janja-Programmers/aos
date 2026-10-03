@@ -45,6 +45,8 @@ def _validate_job_order(jobs: dict[str, Any], errors: list[str]) -> None:
 	expectations = {
 		"staging": (
 			"Refuse stale staging release",
+			"Fetch exact approved promotion and lock images",
+			"Verify registry and render immutable no-build Compose",
 			"Staging preflight",
 			"Deploy staging",
 			"Staging smoke checks",
@@ -52,6 +54,8 @@ def _validate_job_order(jobs: dict[str, Any], errors: list[str]) -> None:
 		"production": (
 			"Refuse stale production release",
 			"Enforce production deployment enablement",
+			"Reuse exact staging-approved promotion and verify lock",
+			"Reverify registry and immutable no-build production Compose",
 			"Production preflight and migration gates",
 			"Deploy production",
 			"Production health and job checks",
@@ -66,6 +70,74 @@ def _validate_job_order(jobs: dict[str, Any], errors: list[str]) -> None:
 			errors.append(
 				f"{job_name} must verify freshness, then run preflight, deployment/migration, then smoke checks"
 			)
+
+
+def _validate_image_promotion_path(jobs: dict[str, Any], text: str, errors: list[str]) -> None:
+	for env in ("staging", "production"):
+		job = jobs.get(env) or {}
+		steps = job.get("steps") or []
+		fetch_name = (
+			"Fetch exact approved promotion and lock images"
+			if env == "staging"
+			else "Reuse exact staging-approved promotion and verify lock"
+		)
+		fetch = next((step for step in steps if step.get("name") == fetch_name), {})
+		if "fetch_promoted_lock.py" not in str(fetch.get("run") or ""):
+			errors.append(f"{env}: deployment must independently fetch a successfully published OCI lock")
+		if (fetch.get("env") or {}).get("GH_TOKEN") != "${{ github.token }}":
+			errors.append(f"{env}: promotion evidence requires a scoped GitHub Actions read token")
+		if (fetch.get("env") or {}).get("PROMOTION_RUN_ID") != (
+			"${{ vars.AOS_PROMOTION_RUN_ID }}"
+			if env == "staging"
+			else "${{ needs.staging.outputs.promotion_run_id }}"
+		):
+			errors.append(f"{env}: promotion-run provenance is not authoritative")
+		verify_name = (
+			"Verify registry and render immutable no-build Compose"
+			if env == "staging"
+			else "Reverify registry and immutable no-build production Compose"
+		)
+		verify = next((step for step in steps if step.get("name") == verify_name), {})
+		if "locked_compose.py render-registry" not in str(verify.get("run") or ""):
+			errors.append(f"{env}: immutable release must be rendered from verified registry digests")
+		if "ci/install-compose-tools.sh" not in str(verify.get("run") or ""):
+			errors.append(f"{env}: pinned registry-verification tools are missing")
+		if (job.get("permissions") or {}) != {"contents": "read", "actions": "read"}:
+			errors.append(f"{env}: only read-scoped metadata/artifact permissions are permitted")
+		if job.get("env", {}).get("RELEASE_IMAGE_LOCK") != "release-image-lock.json":
+			errors.append(f"{env}: deployment must receive the canonical promotion lock")
+		if job.get("env", {}).get("RELEASE_LOCKED_COMPOSE") != "release-compose.locked.yml":
+			errors.append(f"{env}: deployment must receive the generated no-build Compose")
+	if (jobs.get("staging") or {}).get("outputs") != {
+		"promotion_run_id": "${{ steps.promotion.outputs.run_id }}",
+		"promotion_lock_sha256": "${{ steps.promotion.outputs.lock_sha256 }}",
+	}:
+		errors.append("production must inherit the exact staging promotion identity and lock digest")
+	production_steps = (jobs.get("production") or {}).get("steps") or []
+	verify = next(
+		(step for step in production_steps if step.get("name") == "Reuse exact staging-approved promotion and verify lock"),
+		{},
+	)
+	if "sha256sum -c -" not in str(verify.get("run") or "") or (
+		(verify.get("env") or {}).get("STAGING_LOCK_SHA256")
+		!= "${{ needs.staging.outputs.promotion_lock_sha256 }}"
+	):
+		errors.append("production must enforce the exact staging-approved image-lock checksum")
+	deploy_script = (Path(__file__).resolve().parents[1] / "scripts/deploy/deploy.sh").read_text(
+		encoding="utf-8"
+	)
+	for must in (
+		"RELEASE_IMAGE_LOCK",
+		"RELEASE_LOCKED_COMPOSE",
+		"locked_compose.py verify-registry",
+		"release_dir/policy/locked_compose.py",
+		"remote_lock",
+		"remote_compose",
+	):
+		if must not in deploy_script:
+			errors.append(f"repository deploy path does not enforce promoted images: {must}")
+	if "AOS_IMAGE_DIGESTS_JSON" in text:
+		errors.append("arbitrary digest overrides must not authorize deployment")
 
 
 def _validate_production_authorization(job: dict[str, Any], errors: list[str]) -> None:
@@ -302,6 +374,65 @@ def _validate_image_lock(
 	lock.write_text(json.dumps(original), encoding="utf-8")
 
 
+def _validate_locked_compose(
+	root: Path,
+	manifest: Path,
+	artifact: Path,
+	commit: str,
+	data: dict[str, Any],
+	env: dict[str, str],
+	temp: Path,
+	errors: list[str],
+) -> None:
+	lock = temp / "release-image-lock.json"
+	output = temp / "release-compose.locked.yml"
+	base = [sys.executable, "scripts/deploy/locked_compose.py"]
+	args = [str(manifest), str(artifact), str(lock), commit, str(output)]
+	_run([*base, "render-offline", *args], root=root, env=env)
+	_run([*base, "verify-offline", *args], root=root, env=env)
+	candidate = yaml.safe_load(output.read_text(encoding="utf-8"))
+	services = candidate["services"]
+	if len(services) < len(data["source_build_contexts"]):
+		errors.append("Locked release rendered an incomplete Compose inventory")
+	for name in data["source_build_contexts"]:
+		if "build" in services[name] or "@sha256:" not in services[name]["image"]:
+			errors.append(f"{name}: build or mutable image escaped the promotion lock")
+	first = next(iter(data["source_build_contexts"]))
+	services[first]["image"] = "ghcr.io/janja-programmers/aos:latest"
+	output.write_text(yaml.safe_dump(candidate, sort_keys=False), encoding="utf-8")
+	_assert_rejected(
+		[*base, "verify-offline", *args],
+		root=root,
+		env=env,
+		reason="Deployment Compose differs from the exact promoted image lock.",
+		errors=errors,
+	)
+	output.unlink()
+	_assert_rejected(
+		[*base, "verify-offline", *args],
+		root=root,
+		env=env,
+		reason="No such file or directory",
+		errors=errors,
+	)
+	# Fetching a receipt with a malformed promotion run identifier must fail
+	# before any network/registry request can occur.
+	_assert_rejected(
+		[
+			sys.executable,
+			"ci/fetch_promoted_lock.py",
+			commit,
+			"0",
+			str(manifest),
+			str(temp / "must-not-exist.json"),
+		],
+		root=root,
+		env=env,
+		reason="Promotion requires an exact release SHA and numeric run ID.",
+		errors=errors,
+	)
+
+
 def _validate_promotion_plan(
 	root: Path,
 	manifest: Path,
@@ -507,6 +638,7 @@ def main() -> int:
 	if "CI" not in ((data.get("on") or {}).get("workflow_run") or {}).get("workflows", []):
 		errors.append("deployment must be triggered only after the named CI workflow")
 	_validate_job_order(jobs, errors)
+	_validate_image_promotion_path(jobs, text, errors)
 	_validate_production_authorization(jobs.get("production") or {}, errors)
 
 	if "AOS_IMAGE_DIGESTS_JSON" in text:
@@ -582,6 +714,7 @@ def main() -> int:
 				manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
 				_validate_release_inventory(root, manifest, artifact, commit, manifest_data, base_env, errors)
 				_validate_image_lock(root, manifest, commit, manifest_data, base_env, temp, errors)
+				_validate_locked_compose(root, manifest, artifact, commit, manifest_data, base_env, temp, errors)
 				_validate_promotion_plan(
 					root, manifest, artifact, commit, manifest_data, base_env, temp, errors
 				)
