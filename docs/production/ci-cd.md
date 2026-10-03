@@ -118,7 +118,7 @@ Rollback requires:
 - Knowledge of whether the failed release's migration completed.
 - Protected deployment access.
 
-Use `scripts/deploy/rollback.sh`; do not roll back to a branch name or mutable image tag. Application rollback and destructive database restore are separate decisions. Follow `docs/production/runbooks/deployment-and-rollback.md`.
+Use `scripts/deploy/rollback.sh` with the exact prior `aos-release.tar.gz` and `release-manifest.json`; the local and remote artifact checksums must match before the reviewed `REMOTE_APPLY_RELEASE_PATH` is invoked. Live application-only rollback requires `ROLLBACK_APPROVED=true` and `ROLLBACK_DB_DECISION=application-only`. Arbitrary remote command text is prohibited. Do not roll back to a branch name or mutable image tag. Application rollback and destructive database restore are separate decisions; rollback does not run migrations or restore the database. Follow `docs/production/runbooks/deployment-and-rollback.md`.
 
 ## Local validation
 
