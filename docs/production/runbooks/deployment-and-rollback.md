@@ -11,9 +11,10 @@ export REMOTE_BENCH_ROOT=/home/aos/frappe-bench
 export FRAPPE_SITE=<site>
 export REMOTE_RELEASE_ROOT=/srv/aos/releases
 export REMOTE_APPLY_RELEASE_PATH=/usr/local/sbin/aos-apply-release
+export REMOTE_APPLY_RELEASE_SHA256=<reviewed-64-character-sha256>
 ```
 
-`REMOTE_APPLY_RELEASE_PATH` must be one reviewed absolute executable path without arguments and must accept exactly five positional inputs: the verified archive, release manifest, release commit, promoted image lock and immutable no-build Compose. It must activate the provided Compose and reject any omitted or altered lock. The deployment wrapper first checks both registries and archive integrity, then uploads the policy verifier and rechecks everything independently on the host. The remote Bench Python must have PyYAML available; the deployment account must have pinned `crane` 0.21.7 and separately provisioned **read-only** GHCR authentication (never put tokens in the release artifacts). An older three-argument applier is not authorized. The repository invokes `scripts/deploy/run-migrate.sh` unconditionally after the reviewed applier succeeds.
+`REMOTE_APPLY_RELEASE_PATH` must be one reviewed absolute executable path without arguments and must accept exactly five positional inputs: the verified archive, release manifest, release commit, promoted image lock and immutable no-build Compose. It must activate the provided Compose and reject any omitted or altered lock. The deployment wrapper first checks both registries and archive integrity, then uploads the policy verifier and rechecks everything independently on the host. The remote Bench Python must have PyYAML available; the deployment account must have pinned `crane` 0.21.7 and separately provisioned **read-only** GHCR authentication (never put tokens in the release artifacts). Pin its reviewed executable checksum using `REMOTE_APPLY_RELEASE_SHA256` for each protected deployment Environment (and the authorized rollback operator). Both wrappers verify the remote binary immediately before invocation, and check retained policy verifier files against the original archive. An older three-argument applier is not authorized. The repository invokes `scripts/deploy/run-migrate.sh` unconditionally after the reviewed applier succeeds.
 
 ## Dry-run validation
 
