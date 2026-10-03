@@ -193,7 +193,9 @@ def _validate_deploy_script(root: Path, errors: list[str]) -> None:
 	if "REMOTE_DEPLOY_COMMAND" in text:
 		errors.append("deployment still accepts arbitrary REMOTE_DEPLOY_COMMAND contents")
 	if "REMOTE_PROJECT_ROOT" not in text or "bench restart" not in text:
-		errors.append("deployment must use the reviewed persistent Compose root and restart Bench after migration")
+		errors.append(
+			"deployment must use the reviewed persistent Compose root and restart Bench after migration"
+		)
 	if "REMOTE_APPLY_RELEASE_PATH" not in text:
 		errors.append("deployment lacks the restricted release-apply executable path")
 	if "REMOTE_APPLY_RELEASE_SHA256" not in text or "reviewed SHA-256" not in text:
