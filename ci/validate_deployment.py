@@ -323,6 +323,8 @@ def main() -> int:
 					"ROLLBACK_MANIFEST": str(manifest),
 					"ROLLBACK_ARTIFACT": str(artifact),
 					"VERIFIED_BACKUP_ID": "20260719T120000Z",
+					"ROLLBACK_APPROVED": "false",
+					"ROLLBACK_DB_DECISION": "",
 				}
 				_run(["bash", "scripts/deploy/rollback.sh", "--dry-run"], root=root, env=rollback_env)
 				_assert_rejected(
