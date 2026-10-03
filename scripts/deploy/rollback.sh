@@ -24,9 +24,10 @@ require_var VERIFIED_BACKUP_ID
 require_var REMOTE_RELEASE_ROOT
 require_var REMOTE_APPLY_RELEASE_PATH
 require_var REMOTE_BENCH_ROOT
+require_var REMOTE_PROJECT_ROOT
 require_var FRAPPE_SITE
 
-for path in "$REMOTE_RELEASE_ROOT" "$REMOTE_APPLY_RELEASE_PATH" "$REMOTE_BENCH_ROOT"; do
+for path in "$REMOTE_RELEASE_ROOT" "$REMOTE_APPLY_RELEASE_PATH" "$REMOTE_BENCH_ROOT" "$REMOTE_PROJECT_ROOT"; do
   [[ "$path" =~ ^/[A-Za-z0-9_./-]+$ && "$path" != *..* ]] || die 'Remote path must be a reviewed absolute path without traversal or arguments.'
 done
 [[ "$FRAPPE_SITE" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,139}$ ]] || die 'Invalid FRAPPE_SITE.'
@@ -102,10 +103,12 @@ remote "test -r '$remote_archive' && test -r '$remote_manifest' \
      verify-registry '$remote_manifest' '$remote_archive' '$remote_lock' \
      '$ROLLBACK_COMMIT' '$remote_compose' \
   && printf '%s  %s\\n' '$REMOTE_APPLY_RELEASE_SHA256' '$REMOTE_APPLY_RELEASE_PATH' | sha256sum -c - \
-  && '$REMOTE_APPLY_RELEASE_PATH' '$remote_archive' '$remote_manifest' \
+  && REMOTE_RELEASE_ROOT='$REMOTE_RELEASE_ROOT' REMOTE_BENCH_ROOT='$REMOTE_BENCH_ROOT' REMOTE_PROJECT_ROOT='$REMOTE_PROJECT_ROOT' \
+     '$REMOTE_APPLY_RELEASE_PATH' '$remote_archive' '$remote_manifest' \
      '$ROLLBACK_COMMIT' '$remote_lock' '$remote_compose'"
 
 remote "cd '$REMOTE_BENCH_ROOT' \
+  && bench restart \
   && bench --site '$FRAPPE_SITE' execute aos.utils.operational_health.assert_operational_health_ready \
   && bench --site '$FRAPPE_SITE' execute aos.utils.job_monitoring.assert_job_monitoring_ready"
 log "Application-only rollback verified for ${ROLLBACK_COMMIT}; evidence backup ${VERIFIED_BACKUP_ID}. Database state unchanged by this wrapper."
