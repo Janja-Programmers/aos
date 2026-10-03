@@ -92,6 +92,8 @@ def validate_promotion_workflow(path: Path, data: dict, jobs: dict, errors: list
 		"promotion_plan.py verify",
 		"publish_images.py publish",
 		"branches/main",
+		"AOS_BUILDKIT_IMAGE",
+		"crane digest",
 	):
 		if required not in publish_runs:
 			errors.append(f"{path}: GHCR publication lacks required fail-closed guard: {required}")
@@ -107,10 +109,20 @@ def validate_promotion_workflow(path: Path, data: dict, jobs: dict, errors: list
 		"AOS_IMAGE_PROMOTION_ENABLED"
 	) != "${{ vars.AOS_IMAGE_PROMOTION_ENABLED }}":
 		errors.append(f"{path}: publish enablement must be sourced from protected Environment")
-	if not any(
-		"docker/setup-buildx-action@" in str(step.get("uses") or "") for step in publish.get("steps") or []
-	):
-		errors.append(f"{path}: promotion requires an immutable Buildx action pin")
+	buildx = next(
+		(
+			step
+			for step in publish.get("steps") or []
+			if str(step.get("uses") or "").startswith("docker/setup-buildx-action@")
+		),
+		{},
+	)
+	if buildx.get("uses") != "docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f":
+		errors.append(f"{path}: promotion must pin the reviewed Buildx setup action")
+	if (buildx.get("with") or {}).get("version") != "v0.37.2":
+		errors.append(f"{path}: promotion must pin the reviewed Buildx version")
+	if "image=${{ vars.AOS_BUILDKIT_IMAGE }}" not in (buildx.get("with") or {}).get("driver-opts", ""):
+		errors.append(f"{path}: promotion BuildKit image must originate in the protected Environment")
 
 
 def main() -> int:
