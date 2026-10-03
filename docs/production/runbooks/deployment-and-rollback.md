@@ -13,16 +13,17 @@ export REMOTE_RELEASE_ROOT=/srv/aos/releases
 export REMOTE_APPLY_RELEASE_PATH=/usr/local/sbin/aos-apply-release
 ```
 
-`REMOTE_APPLY_RELEASE_PATH` must be one reviewed absolute executable path without arguments. It applies the exact archive/manifest/commit only. It does not control whether migrations run: the repository invokes `scripts/deploy/run-migrate.sh` unconditionally after the release-applier succeeds.
+`REMOTE_APPLY_RELEASE_PATH` must be one reviewed absolute executable path without arguments and must accept exactly five positional inputs: the verified archive, release manifest, release commit, promoted image lock and immutable no-build Compose. It must activate the provided Compose and reject any omitted or altered lock. The deployment wrapper first checks both registries and archive integrity, then uploads the policy verifier and rechecks everything independently on the host. The remote Bench Python must have PyYAML available; the deployment account must have pinned `crane` 0.21.7 and separately provisioned **read-only** GHCR authentication (never put tokens in the release artifacts). An older three-argument applier is not authorized. The repository invokes `scripts/deploy/run-migrate.sh` unconditionally after the reviewed applier succeeds.
 
 ## Dry-run validation
 
 ```bash
 export DEPLOY_ENVIRONMENT=staging
-export RELEASE_COMMIT=0123456789abcdef0123456789abcdef01234567
-export RELEASE_ARTIFACT=/tmp/aos-release.tar.gz
-export RELEASE_MANIFEST=/tmp/release-manifest.json
+export RELEASE_COMMIT="$(git rev-parse HEAD)"
+export RELEASE_ARTIFACT="$(mktemp -d)/aos-release.tar.gz"
+export RELEASE_MANIFEST="$(dirname "$RELEASE_ARTIFACT")/release-manifest.json"
 export CI_GATE_VERIFIED=true
+git archive --format=tar.gz --output="$RELEASE_ARTIFACT" "$RELEASE_COMMIT"
 python scripts/deploy/release_manifest.py create "$RELEASE_MANIFEST" "$RELEASE_ARTIFACT" "$RELEASE_COMMIT"
 python ci/validate_deployment.py .
 scripts/deploy/preflight.sh --dry-run
