@@ -2,7 +2,7 @@
 ghcr.io/valhalla/valhalla-scripted verified-sha256=bb3e89c0e8d3fb35e9278e23a1f7fdbcbf76d29c1edbf7effad829e1ee26b6ed
 livekit/livekit-server:v1.13.7 verified-sha256=6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3
 mediagis/nominatim:5.3 verified-sha256=7923a8e67197fc6d4f4ecb7c0e8bbedffeddcfdf4519596fe946e46a28f5a9f8
-quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z verified-sha256=14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+ghcr.io/janja-programmers/aos-minio:RELEASE.2025-09-07T16-13-09Z verified-sha256=52dfd5c0bbd38d3219f2058c7af216d9f9a27a994b7b5baad09bbd38866015ff
 qdrant/qdrant:v1.17.1 verified-sha256=94728574965d17c6485dd361aa3c0818b325b9016dac5ea6afec7b4b2700865f
 redis:7.4.5-alpine verified-sha256=bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
 # Additional CI/runtime manifests verified with the same crane binary.
