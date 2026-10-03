@@ -8,11 +8,23 @@ Review the exact release manifest, image digests, pending patches, schema-changi
 
 ```bash
 export REMOTE_BENCH_ROOT=/home/aos/frappe-bench
+export REMOTE_PROJECT_ROOT=/srv/aos/runtime
 export FRAPPE_SITE=<site>
 export REMOTE_RELEASE_ROOT=/srv/aos/releases
+export REMOTE_PROJECT_ROOT=/srv/aos/runtime
 export REMOTE_APPLY_RELEASE_PATH=/usr/local/sbin/aos-apply-release
 export REMOTE_APPLY_RELEASE_SHA256=<reviewed-64-character-sha256>
 ```
+
+The repository provides `scripts/deploy/apply-release.py` as the concrete reviewed candidate. On each host an authorized operator must inspect it and install the exact checked-out file independently (never from the just-downloaded release archive):
+
+```bash
+sudo install -o root -g root -m 0755 scripts/deploy/apply-release.py /usr/local/sbin/aos-apply-release
+sha256sum /usr/local/sbin/aos-apply-release
+# Copy the actual hash into the corresponding protected GitHub Environment variable.
+```
+
+Create `REMOTE_PROJECT_ROOT` as a persistent host-controlled directory with a private mode-`0600` `.env` and reviewed model/graph/Firebase mount paths. Neither secrets nor host mount data belong in the release archive. `REMOTE_BENCH_ROOT/apps/aos` must first be deliberately provisioned as a symlink to a fully backed-up, reviewed app source; never allow a first deployment to overwrite an existing Bench directory. Stage this change independently and verify it with Bench before any release attempt. The host applier refuses to replace a normal app directory; it verifies archive policy and exact resolved image inventory, activates the digest-locked Compose without building, then atomically points Bench to the immutable extracted source. Deployment runs guarded migration and `bench restart` only after the applier returns successfully; application-only rollback restarts Bench without migration or database restore. Do not overlap rollback with migration/restart. Recheck this cross-command coordination before permitting unattended rollback.
 
 `REMOTE_APPLY_RELEASE_PATH` must be one reviewed absolute executable path without arguments and must accept exactly five positional inputs: the verified archive, release manifest, release commit, promoted image lock and immutable no-build Compose. It must activate the provided Compose and reject any omitted or altered lock. The deployment wrapper first checks both registries and archive integrity, then uploads the policy verifier and rechecks everything independently on the host. The remote Bench Python must have PyYAML available; the deployment account must have pinned `crane` 0.21.7 and separately provisioned **read-only** GHCR authentication (never put tokens in the release artifacts). Pin its reviewed executable checksum using `REMOTE_APPLY_RELEASE_SHA256` for each protected deployment Environment (and the authorized rollback operator). Both wrappers verify the remote binary immediately before invocation, and check retained policy verifier files against the original archive. An older three-argument applier is not authorized. The repository invokes `scripts/deploy/run-migrate.sh` unconditionally after the reviewed applier succeeds.
 
