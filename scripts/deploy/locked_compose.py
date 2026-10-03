@@ -14,7 +14,7 @@ import yaml
 from image_lock import _read_json, _validate, verify as verify_image_lock
 from release_manifest import _archive_inventory, verify as verify_release, verify_manifest
 
-_STATIC_IMAGE = re.compile(r"^([^\\s@]+)@(sha256:[0-9a-f]{64})$")
+_STATIC_IMAGE = re.compile(r"^([^\s@]+)@(sha256:[0-9a-f]{64})$")
 
 
 class UniqueMappingLoader(yaml.SafeLoader):
