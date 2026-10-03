@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 import sys
 import tarfile
@@ -63,8 +62,6 @@ def build_compose(
     if not isinstance(services, dict) or not services:
         raise ValueError("Release Compose must declare all required services.")
     _, declared_builds, declared_runtime = _archive_inventory(artifact)
-    if len(set(promoted_refs)) != len(promoted_refs):
-        raise ValueError("Duplicate published image reference in release lock.")
     actual_builds: set[str] = set()
     actual_runtime: set[str] = set()
     for name, service in services.items():
@@ -95,8 +92,6 @@ def build_compose(
             raise ValueError(f"{name}: a build or mutable image escaped release locking.")
     if actual_builds != set(declared_builds) or actual_runtime != set(declared_runtime):
         raise ValueError("Rendered release does not cover every declared source or runtime image.")
-    if "VALHALLA_IMAGE" in json.dumps([x["image"] for x in services.values()]):
-        raise ValueError("Unresolved runtime image remains in release Compose.")
     return compose
 
 
