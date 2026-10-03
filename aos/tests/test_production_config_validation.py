@@ -7,6 +7,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from aos.utils import aos_config
 from aos.utils.production_config import (
 	ProductionConfigError,
 	assert_production_config_ready,
@@ -155,6 +156,50 @@ class TestProductionConfigValidation(FrappeTestCase):
 		env = self._valid_env()
 		env["AOS_ENVIRONMENT"] = "staging"
 		report = validate_staging_config(env=env, site_config=self._valid_site_config())
+		self.assertTrue(report["ready"], report)
+
+	def test_runtime_snapshot_preserves_dotenv_fallback_for_empty_process_values(self):
+		with (
+			patch("aos.utils.aos_config._dotenv_values", return_value={
+				"AOS_ENVIRONMENT": "staging",
+				"TRANSLATION_SERVICE_URL": "http://127.0.0.1:8100",
+			}),
+			patch.dict("os.environ", {
+				"AOS_ENVIRONMENT": " ",
+				"TRANSLATION_SERVICE_URL": "http://127.0.0.1:8101",
+			}, clear=True),
+		):
+			resolved = aos_config.runtime_env_snapshot()
+		self.assertEqual(resolved["AOS_ENVIRONMENT"], "staging")
+		self.assertEqual(resolved["TRANSLATION_SERVICE_URL"], "http://127.0.0.1:8101")
+
+	def test_staging_config_uses_canonical_runtime_snapshot_for_host_bench(self):
+		env = self._valid_env()
+		env["AOS_ENVIRONMENT"] = "staging"
+		with patch(
+			"aos.utils.production_config.aos_config.runtime_env_snapshot", return_value=env
+		) as snapshot:
+			report = validate_staging_config(site_config=self._valid_site_config())
+		self.assertTrue(report["ready"], report)
+		snapshot.assert_called_once_with()
+
+	def test_explicit_staging_env_does_not_read_host_configuration(self):
+		env = self._valid_env()
+		env["AOS_ENVIRONMENT"] = "staging"
+		with patch(
+			"aos.utils.production_config.aos_config.runtime_env_snapshot",
+			side_effect=AssertionError("explicit validation must be isolated"),
+		):
+			report = validate_staging_config(env=env, site_config=self._valid_site_config())
+		self.assertTrue(report["ready"], report)
+
+	def test_restore_rehearsal_uses_canonical_runtime_snapshot(self):
+		env = self._valid_env()
+		env["AOS_ENVIRONMENT"] = "rehearsal"
+		with patch(
+			"aos.utils.production_config.aos_config.runtime_env_snapshot", return_value=env
+		):
+			report = validate_restore_rehearsal_config(site_config=self._valid_site_config())
 		self.assertTrue(report["ready"], report)
 
 	def test_staging_config_rejects_wrong_environment_name(self):
