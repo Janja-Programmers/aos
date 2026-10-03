@@ -156,7 +156,7 @@ def _validate_release_inventory(
 		if service.get("image") and "@sha256:" in service["image"]
 	}
 	expected_variables = {
-		name: re.fullmatch(r"\\$\\{([A-Z][A-Z0-9_]*):\\?[^}]+\\}", service["image"]).group(1)
+		name: re.fullmatch(r"\$\{([A-Z][A-Z0-9_]*):\?[^}]+\}", service["image"]).group(1)
 		for name, service in services.items()
 		if service.get("image") and service["image"].startswith("${")
 	}
