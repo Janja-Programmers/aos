@@ -59,7 +59,6 @@ jobs:
       - id: release
         env:
           RELEASE_COMMIT: ${{ github.event.workflow_run.head_sha || inputs.release_sha }}
-          AOS_IMAGE_DIGESTS_JSON: ${{ secrets.AOS_IMAGE_DIGESTS_JSON }}
         run: |
           test "$(git rev-parse HEAD)" = "${RELEASE_COMMIT}"
           git archive --format=tar.gz --output=aos-release.tar.gz "${RELEASE_COMMIT}"

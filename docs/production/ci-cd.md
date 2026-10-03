@@ -9,7 +9,7 @@ The repository separates validation from deployment:
 - All deployment runs share one non-cancelling concurrency group. Release, staging, and production independently reject an automatic release if its commit is no longer `main` HEAD. A superseded release must be revalidated rather than silently deploying out of order.
 - Manual `workflow_dispatch` is explicitly dry-run only and cannot deploy either staging or production.
 
-Production approval, hosts, SSH material, image digests, and the reviewed remote release-applier path remain operator supplied. The repository does not contain production credentials or destinations.
+Production approval, hosts, SSH material, the reviewed remote release-applier path, and separately verified OCI build artifacts remain operator supplied. The repository does not contain production credentials or destinations.
 
 ## Compatibility and pinned tools
 
@@ -37,10 +37,11 @@ The release job:
 
 1. Checks out the exact successful CI commit.
 2. Creates a Git archive.
-3. Writes `release-manifest.json` with the full Git commit, archive SHA-256, and operator-supplied immutable container image digests.
-4. Uploads the archive and manifest as a bounded-retention Actions artifact.
+3. Writes `release-manifest.json` (schema 2) with the full Git commit, archive SHA-256, every statically digest-pinned external Compose image, every runtime-resolved image variable, and **every source-built Compose service** with its Dockerfile, context, and a deterministic SHA-256 of the context files in that exact archive.
+4. Reopens the archive during verification and independently recomputes the image inventory and source-build fingerprints; a missing service, extra service, or altered claim fails closed.
+5. Uploads the archive and manifest as a bounded-retention Actions artifact.
 
-The remote deployment verifies the archive checksum before applying it.
+The remote deployment verifies the archive checksum before applying it. The manifest's context fingerprints establish **source provenance, not OCI image digests**. In particular, an image built locally from a source context is not proven reproducible or approved merely because the source is hashed. The reviewed release-applier must record/verify the actual image IDs and ensure no floating/unapproved images are deployed. A further controlled build-and-promotion gate is required before production authorization. External variable-supplied images (such as Valhalla) must be resolved to digest-pinned references by the actual deployment configuration; the manifest explicitly records the requirement rather than inventing an image digest.
 
 ## GitHub Environments
 
@@ -56,7 +57,6 @@ Environment secrets:
 - `DEPLOY_USER`
 - `DEPLOY_SSH_PRIVATE_KEY`
 - `DEPLOY_KNOWN_HOSTS`
-- `AOS_IMAGE_DIGESTS_JSON`
 
 Environment variables (configure separately for each environment):
 

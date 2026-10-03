@@ -13,7 +13,6 @@ from typing import Any
 import yaml
 
 REQUIRED_SECRET_REFERENCES = {
-	"AOS_IMAGE_DIGESTS_JSON",
 	"DEPLOY_HOST",
 	"DEPLOY_USER",
 	"DEPLOY_SSH_PRIVATE_KEY",
@@ -137,6 +136,67 @@ def _assert_rejected(
 			f"rollback did not reject {reason!r} as required (exit={result.returncode}): "
 			f"{result.stdout}{result.stderr}"
 		)
+
+
+def _validate_release_inventory(
+	root: Path,
+	manifest: Path,
+	artifact: Path,
+	commit: str,
+	data: dict[str, Any],
+	env: dict[str, str],
+	errors: list[str],
+) -> None:
+	compose = yaml.safe_load((root / "docker-compose.yml").read_text(encoding="utf-8"))
+	services = compose["services"]
+	expected_builds = {name for name, service in services.items() if service.get("build")}
+	expected_external = {
+		service["image"].split("@", 1)[0]
+		for service in services.values()
+		if service.get("image") and "@sha256:" in service["image"]
+	}
+	expected_variables = {
+		name: re.fullmatch(r"\$\{([A-Z][A-Z0-9_]*):\?[^}]+\}", service["image"]).group(1)
+		for name, service in services.items()
+		if service.get("image") and service["image"].startswith("${")
+	}
+	if data.get("schema_version") != 2:
+		errors.append("release provenance requires manifest schema 2")
+	if set(data.get("source_build_contexts") or {}) != expected_builds:
+		errors.append("release manifest omitted or invented source-built Compose services")
+	if set(data.get("container_image_digests") or {}) != expected_external:
+		errors.append("release manifest omitted or invented static external Compose images")
+	if data.get("runtime_image_variables") != expected_variables:
+		errors.append("release manifest omitted or invented runtime image-variable requirements")
+	for service, item in (data.get("source_build_contexts") or {}).items():
+		if not re.fullmatch(r"[0-9a-f]{64}", str(item.get("source_sha256") or "")):
+			errors.append(f"{service}: missing archive source fingerprint")
+	_run(
+		[sys.executable, "scripts/deploy/release_manifest.py", "verify", str(manifest), str(artifact), commit],
+		root=root,
+		env=env,
+	)
+	# Manifest claims must match the release archive itself, not just pass schema checks.
+	original = manifest.read_text(encoding="utf-8")
+	builds = data.get("source_build_contexts") or {}
+	if builds:
+		tampered = json.loads(original)
+		first = next(iter(builds))
+		tampered["source_build_contexts"][first]["source_sha256"] = "0" * 64
+		manifest.write_text(json.dumps(tampered), encoding="utf-8")
+		try:
+			result = subprocess.run(
+				[sys.executable, "scripts/deploy/release_manifest.py", "verify", str(manifest), str(artifact), commit],
+				cwd=root,
+				env=env,
+				text=True,
+				capture_output=True,
+				check=False,
+			)
+			if result.returncode == 0 or "Release source-build inventory mismatch" not in result.stderr + result.stdout:
+				errors.append("release manifest accepted fabricated build-context provenance")
+		finally:
+			manifest.write_text(original, encoding="utf-8")
 
 
 def _write_fake_bench(path: Path, exit_code: int) -> None:
@@ -272,6 +332,8 @@ def main() -> int:
 	_validate_job_order(jobs, errors)
 	_validate_production_authorization(jobs.get("production") or {}, errors)
 
+	if "AOS_IMAGE_DIGESTS_JSON" in text:
+		errors.append("release must derive image inventory from immutable source, not arbitrary digest overrides")
 	secret_refs = set(re.findall(r"secrets\.([A-Z0-9_]+)", text))
 	variable_refs = set(re.findall(r"vars\.([A-Z0-9_]+)", text))
 	missing_secrets = REQUIRED_SECRET_REFERENCES - secret_refs
@@ -308,8 +370,12 @@ def main() -> int:
 				temp = Path(directory)
 				artifact = temp / "aos-release.tar.gz"
 				manifest = temp / "release-manifest.json"
-				artifact.write_bytes(b"immutable-release-test")
-				commit = "0123456789abcdef0123456789abcdef01234567"
+				commit = _run(["git", "rev-parse", "HEAD"], root=root, env=os.environ.copy()).strip()
+				_run(
+					["git", "archive", "--format=tar.gz", f"--output={artifact}", "HEAD"],
+					root=root,
+					env=os.environ.copy(),
+				)
 				base_env = {
 					**os.environ,
 					"DEPLOY_ENVIRONMENT": "staging",
@@ -335,8 +401,7 @@ def main() -> int:
 					env=base_env,
 				)
 				manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
-				if not manifest_data.get("container_image_digests"):
-					errors.append("release manifest did not record immutable container image digests")
+				_validate_release_inventory(root, manifest, artifact, commit, manifest_data, base_env, errors)
 				_run(["bash", "scripts/deploy/preflight.sh", "--dry-run"], root=root, env=base_env)
 				deploy_output = _run(
 					["bash", "scripts/deploy/deploy.sh", "--dry-run"], root=root, env=base_env
