@@ -43,7 +43,12 @@ def _step_index(job: dict[str, Any], name: str) -> int:
 
 def _validate_job_order(jobs: dict[str, Any], errors: list[str]) -> None:
 	expectations = {
-		"staging": ("Refuse stale staging release", "Staging preflight", "Deploy staging", "Staging smoke checks"),
+		"staging": (
+			"Refuse stale staging release",
+			"Staging preflight",
+			"Deploy staging",
+			"Staging smoke checks",
+		),
 		"production": (
 			"Refuse stale production release",
 			"Enforce production deployment enablement",
@@ -58,24 +63,36 @@ def _validate_job_order(jobs: dict[str, Any], errors: list[str]) -> None:
 		if any(index < 0 for index in indexes):
 			errors.append(f"{job_name} is missing required ordered steps: {names}")
 		elif indexes != sorted(indexes) or len(set(indexes)) != len(indexes):
-			errors.append(f"{job_name} must verify freshness, then run preflight, deployment/migration, then smoke checks")
+			errors.append(
+				f"{job_name} must verify freshness, then run preflight, deployment/migration, then smoke checks"
+			)
 
 
 def _validate_production_authorization(job: dict[str, Any], errors: list[str]) -> None:
 	steps = job.get("steps") or []
-	guard = next((step for step in steps if step.get("name") == "Enforce production deployment enablement"), {})
+	guard = next(
+		(step for step in steps if step.get("name") == "Enforce production deployment enablement"), {}
+	)
 	if not guard:
 		errors.append("production must have an explicit enablement check")
 		return
 	if guard.get("if"):
 		errors.append("production enablement guard must not be conditionally skippable")
-	if (guard.get("env") or {}).get("PRODUCTION_DEPLOYMENT_ENABLED") != "${{ vars.AOS_PRODUCTION_DEPLOYMENT_ENABLED }}":
+	if (guard.get("env") or {}).get(
+		"PRODUCTION_DEPLOYMENT_ENABLED"
+	) != "${{ vars.AOS_PRODUCTION_DEPLOYMENT_ENABLED }}":
 		errors.append("production enablement must come from the protected production Environment variable")
 	script = str(guard.get("run") or "")
-	if not script or "== \"true\"" not in script:
+	if not script or '== "true"' not in script:
 		errors.append("production enablement must require the exact value true")
 		return
-	for supplied, expected_success in (("", False), ("false", False), ("1", False), ("TRUE", False), ("true", True)):
+	for supplied, expected_success in (
+		("", False),
+		("false", False),
+		("1", False),
+		("TRUE", False),
+		("true", True),
+	):
 		result = subprocess.run(
 			["bash", "-Eeuo", "pipefail", "-c", script],
 			env={**os.environ, "PRODUCTION_DEPLOYMENT_ENABLED": supplied},
@@ -84,7 +101,9 @@ def _validate_production_authorization(job: dict[str, Any], errors: list[str]) -
 			check=False,
 		)
 		if (result.returncode == 0) != expected_success:
-			errors.append(f"production enablement unexpectedly handled {supplied!r}: exit {result.returncode}")
+			errors.append(
+				f"production enablement unexpectedly handled {supplied!r}: exit {result.returncode}"
+			)
 
 
 def _validate_deploy_script(root: Path, errors: list[str]) -> None:
@@ -173,7 +192,14 @@ def _validate_release_inventory(
 		if not re.fullmatch(r"[0-9a-f]{64}", str(item.get("source_sha256") or "")):
 			errors.append(f"{service}: missing archive source fingerprint")
 	_run(
-		[sys.executable, "scripts/deploy/release_manifest.py", "verify", str(manifest), str(artifact), commit],
+		[
+			sys.executable,
+			"scripts/deploy/release_manifest.py",
+			"verify",
+			str(manifest),
+			str(artifact),
+			commit,
+		],
 		root=root,
 		env=env,
 	)
@@ -187,14 +213,24 @@ def _validate_release_inventory(
 		manifest.write_text(json.dumps(tampered), encoding="utf-8")
 		try:
 			result = subprocess.run(
-				[sys.executable, "scripts/deploy/release_manifest.py", "verify", str(manifest), str(artifact), commit],
+				[
+					sys.executable,
+					"scripts/deploy/release_manifest.py",
+					"verify",
+					str(manifest),
+					str(artifact),
+					commit,
+				],
 				cwd=root,
 				env=env,
 				text=True,
 				capture_output=True,
 				check=False,
 			)
-			if result.returncode == 0 or "Release source-build inventory mismatch" not in result.stderr + result.stdout:
+			if (
+				result.returncode == 0
+				or "Release source-build inventory mismatch" not in result.stderr + result.stdout
+			):
 				errors.append("release manifest accepted fabricated build-context provenance")
 		finally:
 			manifest.write_text(original, encoding="utf-8")
@@ -369,10 +405,21 @@ def main() -> int:
 			errors.append(f"release eligibility is missing: {required}")
 	release_steps = release_job.get("steps") or []
 	release_guard = next(
-		(str(step.get("run") or "") for step in release_steps if step.get("name") == "Verify eligible trigger and current release"),
+		(
+			str(step.get("run") or "")
+			for step in release_steps
+			if step.get("name") == "Verify eligible trigger and current release"
+		),
 		"",
 	)
-	for required in ("MANUAL_DRY_RUN", "SOURCE_EVENT", "SOURCE_BRANCH", "SOURCE_REPOSITORY", "git ls-remote", "RELEASE_COMMIT"):
+	for required in (
+		"MANUAL_DRY_RUN",
+		"SOURCE_EVENT",
+		"SOURCE_BRANCH",
+		"SOURCE_REPOSITORY",
+		"git ls-remote",
+		"RELEASE_COMMIT",
+	):
 		if required not in release_guard:
 			errors.append(f"release trigger and freshness validation is missing: {required}")
 	for environment in ("staging", "production"):
@@ -400,7 +447,9 @@ def main() -> int:
 	_validate_production_authorization(jobs.get("production") or {}, errors)
 
 	if "AOS_IMAGE_DIGESTS_JSON" in text:
-		errors.append("release must derive image inventory from immutable source, not arbitrary digest overrides")
+		errors.append(
+			"release must derive image inventory from immutable source, not arbitrary digest overrides"
+		)
 	secret_refs = set(re.findall(r"secrets\.([A-Z0-9_]+)", text))
 	variable_refs = set(re.findall(r"vars\.([A-Z0-9_]+)", text))
 	missing_secrets = REQUIRED_SECRET_REFERENCES - secret_refs
