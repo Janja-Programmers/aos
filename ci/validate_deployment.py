@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -197,6 +198,72 @@ def _validate_release_inventory(
 				errors.append("release manifest accepted fabricated build-context provenance")
 		finally:
 			manifest.write_text(original, encoding="utf-8")
+
+
+def _validate_image_lock(
+    root: Path,
+    manifest: Path,
+    commit: str,
+    data: dict[str, Any],
+    env: dict[str, str],
+    temp: Path,
+    errors: list[str],
+) -> None:
+    contexts = {entry["context"] for entry in data["source_build_contexts"].values()}
+    builds = {
+        context: (
+            "ghcr.io/janja-programmers/aos-"
+            + context.removeprefix("infra/").replace("/", "-")
+            + "@sha256:"
+            + hashlib.sha256(("build:" + context).encode()).hexdigest()
+        )
+        for context in contexts
+    }
+    runtime = {
+        service: "ghcr.io/valhalla/valhalla-scripted@sha256:"
+        + hashlib.sha256(("runtime:" + service).encode()).hexdigest()
+        for service in data["runtime_image_variables"]
+    }
+    build_receipts = temp / "image-build-receipts.json"
+    runtime_receipts = temp / "image-runtime-receipts.json"
+    lock = temp / "release-image-lock.json"
+    build_receipts.write_text(json.dumps(builds), encoding="utf-8")
+    runtime_receipts.write_text(json.dumps(runtime), encoding="utf-8")
+    command = [sys.executable, "scripts/deploy/image_lock.py"]
+    _run(
+        [*command, "create", str(manifest), str(build_receipts), str(runtime_receipts), str(lock), commit],
+        root=root,
+        env=env,
+    )
+    _run([*command, "verify", str(manifest), str(lock), commit], root=root, env=env)
+
+    original = json.loads(lock.read_text(encoding="utf-8"))
+    first = sorted(contexts)[0]
+    test_cases = (
+        ("missing-context", "Image lock is missing or inventing a source-build context."),
+        ("false-source", "image receipt source fingerprint mismatch."),
+        ("false-image", "Image must have a real-looking immutable OCI sha256 reference."),
+        ("wrong-manifest", "Image lock does not match this exact release manifest."),
+    )
+    for scenario, reason in test_cases:
+        altered = json.loads(json.dumps(original))
+        if scenario == "missing-context":
+            del altered["build_context_images"][first]
+        elif scenario == "false-source":
+            altered["build_context_images"][first]["source_sha256"] = "0" * 64
+        elif scenario == "false-image":
+            altered["build_context_images"][first]["image_ref"] = "ghcr.io/janja-programmers/aos:latest"
+        else:
+            altered["release_manifest_sha256"] = "0" * 64
+        lock.write_text(json.dumps(altered), encoding="utf-8")
+        _assert_rejected(
+            [*command, "verify", str(manifest), str(lock), commit],
+            root=root,
+            env=env,
+            reason=reason,
+            errors=errors,
+        )
+    lock.write_text(json.dumps(original), encoding="utf-8")
 
 
 def _write_fake_bench(path: Path, exit_code: int) -> None:
@@ -402,6 +469,7 @@ def main() -> int:
 				)
 				manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
 				_validate_release_inventory(root, manifest, artifact, commit, manifest_data, base_env, errors)
+				_validate_image_lock(root, manifest, commit, manifest_data, base_env, temp, errors)
 				_run(["bash", "scripts/deploy/preflight.sh", "--dry-run"], root=root, env=base_env)
 				deploy_output = _run(
 					["bash", "scripts/deploy/deploy.sh", "--dry-run"], root=root, env=base_env
