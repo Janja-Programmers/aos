@@ -1435,7 +1435,7 @@ def validate_staging_config(
 	storage, callback, and credential checks remain fail-closed.
 	"""
 
-	values = dict(os.environ if env is None else env)
+	values = aos_config.runtime_env_snapshot() if env is None else dict(env)
 	actual_environment = _clean(values.get("AOS_ENVIRONMENT") or values.get("ENVIRONMENT")).lower()
 	values["AOS_ENVIRONMENT"] = "production"
 	report = validate_production_config(env=values, site_config=site_config)
@@ -1476,7 +1476,7 @@ def validate_restore_rehearsal_config(
 ) -> dict[str, Any]:
 	"""Validate a non-production restore environment with production controls."""
 
-	values = dict(os.environ if env is None else env)
+	values = aos_config.runtime_env_snapshot() if env is None else dict(env)
 	actual_environment = _clean(values.get("AOS_ENVIRONMENT") or values.get("ENVIRONMENT")).lower()
 	values["AOS_ENVIRONMENT"] = "production"
 	report = validate_production_config(env=values, site_config=site_config)
