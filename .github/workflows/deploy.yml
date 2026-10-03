@@ -177,6 +177,15 @@ jobs:
             echo "::error::Production release is stale: commit is no longer main HEAD."
             exit 1
           }
+      - name: Enforce production deployment enablement
+        env:
+          PRODUCTION_DEPLOYMENT_ENABLED: ${{ vars.AOS_PRODUCTION_DEPLOYMENT_ENABLED }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$PRODUCTION_DEPLOYMENT_ENABLED" == "true" ]] || {
+            echo "::error::Production deployment disabled. AOS_PRODUCTION_DEPLOYMENT_ENABLED must be true in the protected production Environment."
+            exit 1
+          }
       - env:
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: printf '%s\n' "$DEPLOY_KNOWN_HOSTS" >known_hosts && chmod 0600 known_hosts

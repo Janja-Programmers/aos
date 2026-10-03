@@ -46,6 +46,7 @@ def _validate_job_order(jobs: dict[str, Any], errors: list[str]) -> None:
 		"staging": ("Refuse stale staging release", "Staging preflight", "Deploy staging", "Staging smoke checks"),
 		"production": (
 			"Refuse stale production release",
+			"Enforce production deployment enablement",
 			"Production preflight and migration gates",
 			"Deploy production",
 			"Production health and job checks",
@@ -58,6 +59,32 @@ def _validate_job_order(jobs: dict[str, Any], errors: list[str]) -> None:
 			errors.append(f"{job_name} is missing required ordered steps: {names}")
 		elif indexes != sorted(indexes) or len(set(indexes)) != len(indexes):
 			errors.append(f"{job_name} must verify freshness, then run preflight, deployment/migration, then smoke checks")
+
+
+def _validate_production_authorization(job: dict[str, Any], errors: list[str]) -> None:
+	steps = job.get("steps") or []
+	guard = next((step for step in steps if step.get("name") == "Enforce production deployment enablement"), {})
+	if not guard:
+		errors.append("production must have an explicit enablement check")
+		return
+	if guard.get("if"):
+		errors.append("production enablement guard must not be conditionally skippable")
+	if (guard.get("env") or {}).get("PRODUCTION_DEPLOYMENT_ENABLED") != "${{ vars.AOS_PRODUCTION_DEPLOYMENT_ENABLED }}":
+		errors.append("production enablement must come from the protected production Environment variable")
+	script = str(guard.get("run") or "")
+	if not script or "== \"true\"" not in script:
+		errors.append("production enablement must require the exact value true")
+		return
+	for supplied, expected_success in (("", False), ("false", False), ("1", False), ("TRUE", False), ("true", True)):
+		result = subprocess.run(
+			["bash", "-Eeuo", "pipefail", "-c", script],
+			env={**os.environ, "PRODUCTION_DEPLOYMENT_ENABLED": supplied},
+			capture_output=True,
+			text=True,
+			check=False,
+		)
+		if (result.returncode == 0) != expected_success:
+			errors.append(f"production enablement unexpectedly handled {supplied!r}: exit {result.returncode}")
 
 
 def _validate_deploy_script(root: Path, errors: list[str]) -> None:
@@ -243,6 +270,7 @@ def main() -> int:
 	if "CI" not in ((data.get("on") or {}).get("workflow_run") or {}).get("workflows", []):
 		errors.append("deployment must be triggered only after the named CI workflow")
 	_validate_job_order(jobs, errors)
+	_validate_production_authorization(jobs.get("production") or {}, errors)
 
 	secret_refs = set(re.findall(r"secrets\.([A-Z0-9_]+)", text))
 	variable_refs = set(re.findall(r"vars\.([A-Z0-9_]+)", text))

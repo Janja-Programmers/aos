@@ -46,6 +46,8 @@ The remote deployment verifies the archive checksum before applying it.
 
 Create `staging` and `production` Environments. Configure required reviewers on `production`; do not permit routine approval bypass. This is a required GitHub repository setting, not something the workflow can establish on its own. Verify actual reviewer protection in GitHub Settings before configuring production credentials.
 
+**Production is disabled by default.** The protected `production` Environment must separately define `AOS_PRODUCTION_DEPLOYMENT_ENABLED=true` for an authorized release. An unset, blank, or any other value fails before SSH setup, preflight, or deployment. Do not set this variable during staging-only rehearsals. Keep human approval enabled even when this variable is set.
+
 A newly configured repository has no implied deployment connection. The first staging deployment will fail closed with `Required variable is missing: DEPLOY_HOST` until the staging Environment has been explicitly configured. Keep staging and production destinations, credentials, and known-hosts trust records separate. Do not paste private keys or secrets into issues, workflow inputs, PRs, or chat.
 
 Environment secrets:
@@ -56,8 +58,9 @@ Environment secrets:
 - `DEPLOY_KNOWN_HOSTS`
 - `AOS_IMAGE_DIGESTS_JSON`
 
-Environment variables:
+Environment variables (configure separately for each environment):
 
+- `AOS_PRODUCTION_DEPLOYMENT_ENABLED` (production only; leave unset until a reviewed, authorized production release)
 - `REMOTE_BENCH_ROOT`
 - `FRAPPE_SITE`
 - `REMOTE_RELEASE_ROOT`

@@ -6,6 +6,8 @@
 - [ ] Immutable release manifest records the Git SHA, archive SHA-256, and image digests.
 - [ ] Staging deployment and smoke checks passed first.
 - [ ] Production GitHub Environment approval was granted.
+- [ ] `main` protection and protected production Environment reviewers were verified in repository settings.
+- [ ] `AOS_PRODUCTION_DEPLOYMENT_ENABLED=true` was explicitly authorized for this production release; leave it unset for staging-only rehearsals.
 - [ ] No real secrets, generated files, runtime logs, plaintext backups, or decrypted workspaces are tracked.
 
 ## Migration review
