@@ -368,7 +368,7 @@ jobs:
           # is accessed by the Media projection and mocked-dispatch tests.
           AOS_OBJECT_STORAGE_ENDPOINT: "127.0.0.1:19000"
           AOS_OBJECT_STORAGE_ACCESS_KEY: "ci-test-only-access"
-          AOS_OBJECT_STORAGE_SECRET_KEY: "ci-test-only-secret"
+          AOS_OBJECT_STORAGE_SECRET_KEY: "ci-test-only-secret" # pragma: allowlist secret
           AOS_OBJECT_STORAGE_PRESIGN_ENDPOINT: "http://127.0.0.1:19000"
           AOS_MEDIA_PUBLIC_BASE_URL: "http://127.0.0.1:19100/aos-public"
         run: |
