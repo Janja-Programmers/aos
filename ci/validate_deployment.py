@@ -804,7 +804,15 @@ def main() -> int:
 	_validate_rollback_script(root, errors)
 	scripts = [
 		root / "scripts" / "deploy" / name
-		for name in ("lib.sh", "preflight.sh", "deploy.sh", "apply-release.py", "smoke.sh", "rollback.sh", "run-migrate.sh")
+		for name in (
+			"lib.sh",
+			"preflight.sh",
+			"deploy.sh",
+			"apply-release.py",
+			"smoke.sh",
+			"rollback.sh",
+			"run-migrate.sh",
+		)
 	]
 	for script in scripts:
 		if not script.is_file() or not os.access(script, os.X_OK):
