@@ -582,7 +582,9 @@ def main() -> int:
 				manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
 				_validate_release_inventory(root, manifest, artifact, commit, manifest_data, base_env, errors)
 				_validate_image_lock(root, manifest, commit, manifest_data, base_env, temp, errors)
-				_validate_promotion_plan(root, manifest, artifact, commit, manifest_data, base_env, temp, errors)
+				_validate_promotion_plan(
+					root, manifest, artifact, commit, manifest_data, base_env, temp, errors
+				)
 				_run(["bash", "scripts/deploy/preflight.sh", "--dry-run"], root=root, env=base_env)
 				deploy_output = _run(
 					["bash", "scripts/deploy/deploy.sh", "--dry-run"], root=root, env=base_env
