@@ -505,20 +505,27 @@ def _validate_promotion_metadata(commit: str, errors: list[str]) -> None:
 		("failed-run", {"conclusion": "failure"}, None, None, False),
 		("missing-publish", None, {"jobs": []}, None, False),
 		(
-			"failed-publish", None,
+			"failed-publish",
+			None,
 			{"jobs": [{"name": "publish", "conclusion": "failure", "run_attempt": 1}]},
-			None, False,
+			None,
+			False,
 		),
 		(
-			"wrong-attempt", None,
+			"wrong-attempt",
+			None,
 			{"jobs": [{"name": "publish", "conclusion": "success", "run_attempt": 2}]},
-			None, False,
+			None,
+			False,
 		),
 		("missing-artifact", None, None, {"artifacts": []}, False),
 		("expired-artifact", None, None, {"artifacts": [{"name": name, "expired": True}]}, False),
 		(
-			"ambiguous-artifact", None, None,
-			{"artifacts": [{"name": name, "expired": False}] * 2}, False,
+			"ambiguous-artifact",
+			None,
+			None,
+			{"artifacts": [{"name": name, "expired": False}] * 2},
+			False,
 		),
 	)
 	for label, run_change, jobs_change, artifact_change, accepted in cases:
@@ -543,7 +550,8 @@ def _validate_promotion_metadata(commit: str, errors: list[str]) -> None:
 				if not accepted or result != name:
 					errors.append(f"unapproved promotion evidence was accepted: {label}")
 	with mock.patch.dict(
-		os.environ, {"GITHUB_REPOSITORY": "Janja-Programmers/aos", "GH_TOKEN": ""},
+		os.environ,
+		{"GITHUB_REPOSITORY": "Janja-Programmers/aos", "GH_TOKEN": ""},
 	):
 		try:
 			promotion.verify_promotion(commit, run_id)
@@ -551,6 +559,7 @@ def _validate_promotion_metadata(commit: str, errors: list[str]) -> None:
 			pass
 		else:
 			errors.append("promotion accepted a missing GitHub authorization token")
+
 
 def _validate_promotion_plan(
 	root: Path,

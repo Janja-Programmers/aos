@@ -83,8 +83,16 @@ def fetch(commit: str, run_id: str, manifest_path: Path, output: Path) -> None:
 		work = Path(directory)
 		subprocess.run(
 			[
-				"gh", "run", "download", run_id,
-				"--repo", _REPOSITORY, "--name", name, "--dir", str(work),
+				"gh",
+				"run",
+				"download",
+				run_id,
+				"--repo",
+				_REPOSITORY,
+				"--name",
+				name,
+				"--dir",
+				str(work),
 			],
 			check=True,
 			capture_output=True,
@@ -103,9 +111,7 @@ def fetch(commit: str, run_id: str, manifest_path: Path, output: Path) -> None:
 			raise ValueError("A prior promotion receipt must not be silently replaced.")
 		# Exclusive creation prevents concurrent runs from replacing a receipt.
 		with lock_path.open("rb") as source:
-			with os.fdopen(
-				os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb"
-			) as destination:
+			with os.fdopen(os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as destination:
 				shutil.copyfileobj(source, destination)
 
 
