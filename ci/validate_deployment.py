@@ -332,6 +332,8 @@ def main() -> int:
 	_validate_job_order(jobs, errors)
 	_validate_production_authorization(jobs.get("production") or {}, errors)
 
+	if "AOS_IMAGE_DIGESTS_JSON" in text:
+		errors.append("release must derive image inventory from immutable source, not arbitrary digest overrides")
 	secret_refs = set(re.findall(r"secrets\.([A-Z0-9_]+)", text))
 	variable_refs = set(re.findall(r"vars\.([A-Z0-9_]+)", text))
 	missing_secrets = REQUIRED_SECRET_REFERENCES - secret_refs
