@@ -45,7 +45,7 @@ def build_compose(
 ) -> dict[str, Any]:
     verify_release(manifest_path, artifact, commit)
     image_lock = _read_json(lock_path)
-    promoted_refs = _validate(manifest_path, image_lock, commit)
+    _validate(manifest_path, image_lock, commit)
     if registry:
         verify_image_lock(manifest_path, lock_path, commit, registry=True)
     manifest = verify_manifest(manifest_path, commit)
