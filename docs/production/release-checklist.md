@@ -19,7 +19,7 @@
 - [ ] The remote applier SHA-256 is independently reviewed and configured as protected `REMOTE_APPLY_RELEASE_SHA256`; both deploy and rollback reject unpinned or changed executables.
 - [ ] The repository's reviewed five-argument `apply-release.py` is independently installed as a root-owned executable and SHA-pinned, accepts only the exact archive, manifest, commit, image lock and rendered Compose; the host has Bench Python/PyYAML, read-only `crane` 0.21.7 and compatible Docker Compose.
 - [ ] `REMOTE_PROJECT_ROOT` is protected per Environment, contains a host-managed mode-`0600` `.env` and stable bind mounts, and the correct Bench `apps/aos` symlink was onboarded without overwriting application data.
-- [ ] Staging demonstrated digest-only pull, no-build Compose, guarded migration and successful post-migration `bench restart` with recorded evidence; rollback was not allowed to overlap a migration/restart.
+- [ ] Staging demonstrated digest-only pull, no-build Compose, guarded migration and successful post-migration `bench restart` with recorded evidence; the common nonblocking host transaction lock rejects competing rollback with exit `75`, and locked smoke checks enforce the active release's exact SHA.
 - [ ] Staging deployment and smoke checks passed first.
 - [ ] Production GitHub Environment approval was granted.
 - [ ] `main` protection and protected production Environment reviewers were verified in repository settings.

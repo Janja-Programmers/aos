@@ -103,10 +103,10 @@ done
 # The remote host independently reopens and verifies the exact release archive,
 # promoted OCI lock and the no-build Compose before invoking its reviewed applier.
 # Bench's pinned Python has PyYAML; crane must be installed at the reviewed version.
-# Reverify and apply within one remote command, binding the applier to its
-# reviewed protected-Environment checksum. The operator must review the binary
-# to ensure it actually consumes all five immutable inputs without rebuilding.
-remote "test -x '$REMOTE_BENCH_ROOT/env/bin/python' \
+# Hold one shared host transaction lock across revalidation, exact applier,
+# unconditional migration and restart, including if the SSH session fails.
+# The operator must review and pin the binary consuming all five inputs.
+remote_transaction "test -x '$REMOTE_BENCH_ROOT/env/bin/python' \
   && command -v crane >/dev/null \
   && test \"\$(crane version)\" = '0.21.7' \
   && '$REMOTE_BENCH_ROOT/env/bin/python' '$release_dir/policy/locked_compose.py' \
@@ -115,9 +115,8 @@ remote "test -x '$REMOTE_BENCH_ROOT/env/bin/python' \
   && printf '%s  %s\\n' '$REMOTE_APPLY_RELEASE_SHA256' '$REMOTE_APPLY_RELEASE_PATH' | sha256sum -c - \
   && REMOTE_RELEASE_ROOT='$REMOTE_RELEASE_ROOT' REMOTE_BENCH_ROOT='$REMOTE_BENCH_ROOT' REMOTE_PROJECT_ROOT='$REMOTE_PROJECT_ROOT' \
      '$REMOTE_APPLY_RELEASE_PATH' '$remote_archive' '$remote_manifest' \
-     '$RELEASE_COMMIT' '$remote_lock' '$remote_compose'"
-# Repository-controlled migration is unconditional. A failure stops here and
-# prevents the workflow's smoke and production steps.
-remote "REMOTE_BENCH_ROOT='$REMOTE_BENCH_ROOT' FRAPPE_SITE='$FRAPPE_SITE' RELEASE_COMMIT='$RELEASE_COMMIT' '$REMOTE_BENCH_ROOT/apps/aos/scripts/deploy/run-migrate.sh' \
+     '$RELEASE_COMMIT' '$remote_lock' '$remote_compose' \
+  && REMOTE_BENCH_ROOT='$REMOTE_BENCH_ROOT' FRAPPE_SITE='$FRAPPE_SITE' RELEASE_COMMIT='$RELEASE_COMMIT' \
+     '$REMOTE_BENCH_ROOT/apps/aos/scripts/deploy/run-migrate.sh' \
   && cd '$REMOTE_BENCH_ROOT' && bench restart"
 log "Locked deployment and guarded migration completed for ${RELEASE_COMMIT}."

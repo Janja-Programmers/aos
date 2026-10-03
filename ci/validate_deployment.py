@@ -192,6 +192,10 @@ def _validate_deploy_script(root: Path, errors: list[str]) -> None:
 		errors.append("repository deploy path does not invoke guarded run-migrate.sh")
 	if "REMOTE_DEPLOY_COMMAND" in text:
 		errors.append("deployment still accepts arbitrary REMOTE_DEPLOY_COMMAND contents")
+	if text.count('remote_transaction "') != 1:
+		errors.append(
+			"deployment must keep host revalidation, applier, migration and restart within one shared remote transaction"
+		)
 	if "REMOTE_PROJECT_ROOT" not in text or "bench restart" not in text:
 		errors.append(
 			"deployment must use the reviewed persistent Compose root and restart Bench after migration"
@@ -206,7 +210,7 @@ def _validate_deploy_script(root: Path, errors: list[str]) -> None:
 	migrate_position = text.rfind("scripts/deploy/run-migrate.sh")
 	if apply_position < 0 or migrate_position < 0 or migrate_position <= apply_position:
 		errors.append("guarded migration must run after the immutable release apply step")
-	if not re.search(r"remote\s+\"[^\n]*run-migrate\.sh", text):
+	if not re.search(r"remote_transaction\s+\"[\s\S]*?run-migrate\.sh", text):
 		errors.append("guarded migration is not invoked through the repository-controlled remote path")
 	if re.search(r"if\s+.*(?:MIGRAT|SKIP).*;?\s*then[\s\S]{0,500}run-migrate\.sh", text, re.I):
 		errors.append("migration invocation is conditionally skippable")
@@ -216,6 +220,10 @@ def _validate_deploy_script(root: Path, errors: list[str]) -> None:
 
 def _validate_rollback_script(root: Path, errors: list[str]) -> None:
 	text = (root / "scripts/deploy/rollback.sh").read_text(encoding="utf-8")
+	if text.count('remote_transaction "') != 1:
+		errors.append(
+			"rollback must keep host revalidation, applier, restart and health checks under one shared transaction"
+		)
 	if "REMOTE_ROLLBACK_COMMAND" in text:
 		errors.append("rollback must not accept arbitrary remote command text")
 	for required in (
@@ -802,6 +810,15 @@ def main() -> int:
 
 	_validate_deploy_script(root, errors)
 	_validate_rollback_script(root, errors)
+	smoke_script = (root / "scripts/deploy/smoke.sh").read_text(encoding="utf-8")
+	if (
+		smoke_script.count('remote_transaction "') != 1
+		or "readlink -f" not in smoke_script
+		or "$RELEASE_COMMIT/source" not in smoke_script
+	):
+		errors.append(
+			"post-deployment smoke must serialize against rollback and verify the exact active release"
+		)
 	scripts = [
 		root / "scripts" / "deploy" / name
 		for name in (
@@ -914,6 +931,7 @@ def main() -> int:
 				)
 				_validate_migration_wrapper(root, base_env, errors)
 				_run([sys.executable, "ci/test_apply_release.py"], root=root, env=base_env)
+				_run([sys.executable, "ci/test_deployment_transaction.py"], root=root, env=base_env)
 		except Exception as exc:
 			errors.append(str(exc))
 

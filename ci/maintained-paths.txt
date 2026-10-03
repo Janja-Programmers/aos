@@ -17,6 +17,7 @@ infra/monitoring/prometheus/prometheus.yml.example
 infra/monitoring/alertmanager/alertmanager.yml.example
 infra/nginx/snippets/rate-limits.conf
 infra/systemd/aos-backup-failure-notify@.service
+scripts/deploy/lib.sh
 scripts/deploy/preflight.sh
 scripts/deploy/deploy.sh
 scripts/deploy/apply-release.py
