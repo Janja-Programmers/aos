@@ -40,3 +40,7 @@ ci/validate_maps_routing.py
 infra/maps/scripts/verify-valhalla.sh
 infra/maps/scripts/activate-valhalla.sh
 infra/maps/scripts/smoke-valhalla-global.py
+.github/workflows/image-promotion.yml
+ci/verify-promotion-source.sh
+scripts/deploy/promotion_plan.py
+scripts/deploy/publish_images.py
