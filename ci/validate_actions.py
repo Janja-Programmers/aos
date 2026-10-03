@@ -103,9 +103,13 @@ def validate_promotion_workflow(path: Path, data: dict, jobs: dict, errors: list
 		),
 		{},
 	)
-	if (guard.get("env") or {}).get("AOS_IMAGE_PROMOTION_ENABLED") != "${{ vars.AOS_IMAGE_PROMOTION_ENABLED }}":
+	if (guard.get("env") or {}).get(
+		"AOS_IMAGE_PROMOTION_ENABLED"
+	) != "${{ vars.AOS_IMAGE_PROMOTION_ENABLED }}":
 		errors.append(f"{path}: publish enablement must be sourced from protected Environment")
-	if not any("docker/setup-buildx-action@" in str(step.get("uses") or "") for step in publish.get("steps") or []):
+	if not any(
+		"docker/setup-buildx-action@" in str(step.get("uses") or "") for step in publish.get("steps") or []
+	):
 		errors.append(f"{path}: promotion requires an immutable Buildx action pin")
 
 
@@ -141,8 +145,10 @@ def main() -> int:
 				errors.append(f"{path.relative_to(root)}: job {job_id} must use ubuntu-24.04")
 			if "continue-on-error" in job:
 				errors.append(f"{path.relative_to(root)}: job {job_id} uses prohibited continue-on-error")
-			if "environment" in job and not is_deployment_workflow and not (
-				is_promotion_workflow and job_id == "publish"
+			if (
+				"environment" in job
+				and not is_deployment_workflow
+				and not (is_promotion_workflow and job_id == "publish")
 			):
 				errors.append(
 					f"{path.relative_to(root)}: job {job_id} must not target a deployment environment"
