@@ -43,8 +43,9 @@ def _step_index(job: dict[str, Any], name: str) -> int:
 
 def _validate_job_order(jobs: dict[str, Any], errors: list[str]) -> None:
 	expectations = {
-		"staging": ("Staging preflight", "Deploy staging", "Staging smoke checks"),
+		"staging": ("Refuse stale staging release", "Staging preflight", "Deploy staging", "Staging smoke checks"),
 		"production": (
+			"Refuse stale production release",
 			"Production preflight and migration gates",
 			"Deploy production",
 			"Production health and job checks",
@@ -56,7 +57,7 @@ def _validate_job_order(jobs: dict[str, Any], errors: list[str]) -> None:
 		if any(index < 0 for index in indexes):
 			errors.append(f"{job_name} is missing required ordered steps: {names}")
 		elif indexes != sorted(indexes) or len(set(indexes)) != len(indexes):
-			errors.append(f"{job_name} must run preflight, deployment/migration, then smoke checks")
+			errors.append(f"{job_name} must verify freshness, then run preflight, deployment/migration, then smoke checks")
 
 
 def _validate_deploy_script(root: Path, errors: list[str]) -> None:
@@ -165,6 +166,38 @@ def main() -> int:
 	text = workflow.read_text(encoding="utf-8")
 	data = yaml.load(text, Loader=yaml.BaseLoader)
 	jobs = data.get("jobs") or {}
+
+	concurrency = data.get("concurrency") or {}
+	if concurrency.get("group") != "aos-controlled-deployment-main":
+		errors.append("all deployment runs must share one global concurrency group")
+	if concurrency.get("cancel-in-progress") != "false":
+		errors.append("an active deployment must never be cancelled by a newer release")
+	release_job = jobs.get("release") or {}
+	release_if = str(release_job.get("if") or "")
+	for required in (
+		"github.event.workflow_run.conclusion == 'success'",
+		"github.event.workflow_run.event == 'push'",
+		"github.event.workflow_run.head_branch == 'main'",
+		"github.event.workflow_run.head_repository.full_name == github.repository",
+	):
+		if required not in release_if:
+			errors.append(f"release eligibility is missing: {required}")
+	release_steps = release_job.get("steps") or []
+	release_guard = next(
+		(str(step.get("run") or "") for step in release_steps if step.get("name") == "Verify eligible trigger and current release"),
+		"",
+	)
+	for required in ("MANUAL_DRY_RUN", "SOURCE_EVENT", "SOURCE_BRANCH", "SOURCE_REPOSITORY", "git ls-remote", "RELEASE_COMMIT"):
+		if required not in release_guard:
+			errors.append(f"release trigger and freshness validation is missing: {required}")
+	for environment in ("staging", "production"):
+		guard_name = f"Refuse stale {environment} release"
+		steps = (jobs.get(environment) or {}).get("steps") or []
+		guard = next((step for step in steps if step.get("name") == guard_name), {})
+		if "git ls-remote" not in str(guard.get("run") or ""):
+			errors.append(f"{environment} lacks an independent latest-main freshness check")
+		if guard.get("if") != "github.event_name == 'workflow_run'":
+			errors.append(f"{environment} freshness check must apply to automatic CI-triggered deployments")
 
 	if set(jobs) != {"release", "staging", "production"}:
 		errors.append("deployment workflow must contain release, staging, and production jobs")
