@@ -816,7 +816,9 @@ def main() -> int:
 		or "readlink -f" not in smoke_script
 		or "$RELEASE_COMMIT/source" not in smoke_script
 	):
-		errors.append("post-deployment smoke must serialize against rollback and verify the exact active release")
+		errors.append(
+			"post-deployment smoke must serialize against rollback and verify the exact active release"
+		)
 	scripts = [
 		root / "scripts" / "deploy" / name
 		for name in (
