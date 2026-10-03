@@ -253,7 +253,7 @@ jobs:
             exit 1
           }
           python3 ci/fetch_promoted_lock.py "$RELEASE_COMMIT" "$PROMOTION_RUN_ID" release-manifest.json release-image-lock.json
-          printf '%s  %s\\n' "$STAGING_LOCK_SHA256" release-image-lock.json | sha256sum -c -
+          printf '%s  %s\n' "$STAGING_LOCK_SHA256" release-image-lock.json | sha256sum -c -
       - name: Reverify registry and immutable no-build production Compose
         env:
           RELEASE_COMMIT: ${{ needs.release.outputs.commit }}

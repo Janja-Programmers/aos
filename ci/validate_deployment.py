@@ -115,7 +115,11 @@ def _validate_image_promotion_path(jobs: dict[str, Any], text: str, errors: list
 		errors.append("production must inherit the exact staging promotion identity and lock digest")
 	production_steps = (jobs.get("production") or {}).get("steps") or []
 	verify = next(
-		(step for step in production_steps if step.get("name") == "Reuse exact staging-approved promotion and verify lock"),
+		(
+			step
+			for step in production_steps
+			if step.get("name") == "Reuse exact staging-approved promotion and verify lock"
+		),
 		{},
 	)
 	if "sha256sum -c -" not in str(verify.get("run") or "") or (
@@ -416,6 +420,30 @@ def _validate_locked_compose(
 		root=root,
 		env=env,
 		reason="No such file or directory",
+		errors=errors,
+	)
+	# Check all registry refs, including pinned infrastructure images, without network.
+	crane = temp / "crane"
+	crane.write_text(
+		"#!/usr/bin/env python3\n"
+		"import os, sys\n"
+		"ref = sys.argv[2]\n"
+		"if os.environ.get('AOS_TEST_REJECT_STATIC') and ref.startswith(os.environ['AOS_TEST_REJECT_STATIC']):\n"
+		"    print('sha256:' + '0' * 64)\n"
+		"else:\n"
+		"    print('sha256:' + ref.rsplit('@sha256:', 1)[1])\n",
+		encoding="utf-8",
+	)
+	crane.chmod(0o755)
+	registry_env = {**env, "PATH": f"{temp}:{env.get('PATH', '')}"}
+	_run([*base, "render-registry", *args], root=root, env=registry_env)
+	_run([*base, "verify-registry", *args], root=root, env=registry_env)
+	static_image = next(iter(data["container_image_digests"]))
+	_assert_rejected(
+		[*base, "verify-registry", *args],
+		root=root,
+		env={**registry_env, "AOS_TEST_REJECT_STATIC": static_image},
+		reason="Registry cannot verify immutable image:",
 		errors=errors,
 	)
 	# Fetching a receipt with a malformed promotion run identifier must fail

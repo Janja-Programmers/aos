@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 import tarfile
 from pathlib import Path
@@ -10,7 +11,7 @@ from typing import Any
 
 import yaml
 
-from image_lock import _read_json, _validate, verify as verify_image_lock
+from image_lock import _read_json, _validate
 from release_manifest import _archive_inventory, verify as verify_release, verify_manifest
 
 _STATIC_IMAGE = re.compile(r"^([^\s@]+)@(sha256:[0-9a-f]{64})$")
@@ -49,8 +50,6 @@ def build_compose(
     verify_release(manifest_path, artifact, commit)
     image_lock = _read_json(lock_path)
     _validate(manifest_path, image_lock, commit)
-    if registry:
-        verify_image_lock(manifest_path, lock_path, commit, registry=True)
     manifest = verify_manifest(manifest_path, commit)
     with tarfile.open(artifact, "r:gz") as archive:
         member = archive.getmember("docker-compose.yml")
@@ -95,6 +94,22 @@ def build_compose(
             raise ValueError(f"{name}: a build or mutable image escaped release locking.")
     if actual_builds != set(declared_builds) or actual_runtime != set(declared_runtime):
         raise ValueError("Rendered release does not cover every declared source or runtime image.")
+    if registry:
+        # Verify every effective service image, including unchanged static images.
+        # Checking only promoted build/runtime receipts leaves pinned base services unverified.
+        for reference in sorted({service["image"] for service in services.values()}):
+            digest = "sha256:" + reference.rsplit("@sha256:", 1)[1]
+            result = subprocess.run(
+                ["crane", "digest", reference],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=90,
+            )
+            if result.returncode or result.stdout.strip() != digest:
+                raise ValueError(
+                    f"Registry cannot verify immutable image: {reference.split('@', 1)[0]}"
+                )
     return compose
 
 

@@ -61,7 +61,8 @@ def verify_promotion(commit: str, run_id: str) -> str:
         raise ValueError("Requested image-promotion run is not an approved successful release publication.")
     jobs = _api(f"actions/runs/{run_id}/jobs?per_page=100&filter=latest")
     published = [
-        job for job in jobs.get("jobs") or []
+        job
+        for job in jobs.get("jobs") or []
         if job.get("name") == "publish"
         and job.get("conclusion") == "success"
         and job.get("run_attempt") == run.get("run_attempt")
