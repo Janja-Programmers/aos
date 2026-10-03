@@ -15,6 +15,8 @@ from typing import Any
 
 import frappe
 
+from aos.utils import aos_config
+
 _REQUIRED_OUTBOX_COLUMNS = {
     "name",
     "status",
@@ -156,7 +158,7 @@ def _worker_check() -> tuple[bool, str, dict[str, Any]]:
 
 
 def _environment() -> str:
-    return str(os.getenv("AOS_ENVIRONMENT") or os.getenv("ENVIRONMENT") or "development").strip().lower()
+    return str(aos_config.get_env("AOS_ENVIRONMENT") or aos_config.get_env("ENVIRONMENT") or "development").strip().lower()
 
 
 def _previous_migration_failure_check() -> tuple[bool, str, dict[str, Any]]:
@@ -168,6 +170,21 @@ def _previous_migration_failure_check() -> tuple[bool, str, dict[str, Any]]:
         {"failure_marker_present": exists},
     )
 
+def _pending_patch_check() -> tuple[bool, str, dict[str, Any]]:
+    """Read the patch inventory using the supported pinned Frappe v16 API."""
+    from frappe.modules.patch_handler import get_all_patches
+
+    patches = list(get_all_patches())
+    executed = set(
+        frappe.get_all("Patch Log", filters={"skipped": 0}, fields="patch", pluck="patch")
+    )
+    pending = [patch for patch in patches if patch and patch not in executed]
+    return True, "Pending patch state is readable; release review remains required.", {
+        "pending_patch_count": len(pending),
+        "manual_patch_review_required": bool(pending),
+    }
+
+
 def validate_migration_preflight() -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
 
@@ -178,14 +195,7 @@ def validate_migration_preflight() -> dict[str, Any]:
         lambda: (bool(frappe.db.sql("SELECT 1")), "Database connectivity succeeded.", {}),
     )
 
-    def pending_patches() -> tuple[bool, str, dict[str, Any]]:
-        pending = list(frappe.get_attr("frappe.modules.patch_handler.get_pending_patches")() or [])
-        return True, "Pending patch state is readable; release review remains required.", {
-            "pending_patch_count": len(pending),
-            "manual_patch_review_required": bool(pending),
-        }
-
-    _guard(checks, "pending_patches", "error", pending_patches)
+    _guard(checks, "pending_patches", "error", _pending_patch_check)
     _guard(checks, "previous_migration_failure", "error", _previous_migration_failure_check)
 
     def installed_app() -> tuple[bool, str, dict[str, Any]]:
@@ -215,7 +225,7 @@ def validate_migration_preflight() -> dict[str, Any]:
 
         report = validate_backup_readiness()
         return bool(report.get("ready")), "Backup, encryption, offsite, and rehearsal gates are ready." if report.get("ready") else "Backup readiness blocks production migration.", {
-            "unhealthy_check_count": int((report.get("counts") or {}).get("unhealthy") or 0),
+            "unhealthy_check_count": int((report.get("summary") or {}).get("unhealthy") or 0),
         }
 
     backup_severity = "error" if _environment() == "production" else "warning"
