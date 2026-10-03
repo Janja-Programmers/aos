@@ -8,6 +8,7 @@
 - [ ] A trusted image builder produced a lock for the exact release manifest; `image_lock.py verify` and pinned-crane `verify-registry` passed, and builder provenance was independently checked.
 - [ ] The exact original controlled-deployment release archive and manifest were used as the promotion input; the latest successful push CI and `main` freshness were independently verified.
 - [ ] Protected `image-promotion` Environment reviewers and its `main` branch restriction were checked; manual `publish=true` and `AOS_IMAGE_PROMOTION_ENABLED=true` were explicitly authorized.
+- [ ] `AOS_BUILDKIT_IMAGE` resolves to an independently reviewed immutable `moby/buildkit:v0.33.1@sha256:<digest>` registry manifest, and the workflow pins Buildx v0.37.2 and Python 3.14.6.
 - [ ] Published image receipts came from actual immutable GHCR manifest digests and verified image revision/context/source-hash labels, not from synthetic test receipts or mutable registry tags.
 - [ ] Only compatible `linux/amd64` targets are considered for the current promotion workflow; other platforms require a reviewed multiarch policy.
 - [ ] The deployed release-applier independently consumes and verifies the exact promoted image lock, not only the archived source fingerprints.
