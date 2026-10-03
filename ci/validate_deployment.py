@@ -191,6 +191,8 @@ def _validate_deploy_script(root: Path, errors: list[str]) -> None:
 		errors.append("deployment still accepts arbitrary REMOTE_DEPLOY_COMMAND contents")
 	if "REMOTE_APPLY_RELEASE_PATH" not in text:
 		errors.append("deployment lacks the restricted release-apply executable path")
+	if "Policy source differs from verified archive" not in text or "policy/$(basename" not in text:
+		errors.append("remote validator must match its archived source and uploaded checksums")
 	apply_position = text.find("REMOTE_APPLY_RELEASE_PATH")
 	migrate_position = text.rfind("scripts/deploy/run-migrate.sh")
 	if apply_position < 0 or migrate_position < 0 or migrate_position <= apply_position:
@@ -219,6 +221,8 @@ def _validate_rollback_script(root: Path, errors: list[str]) -> None:
 		"ROLLBACK_DB_DECISION",
 		"application-only",
 		"sha256sum -c -",
+		"policy_checks",
+		"Archived rollback policy is incomplete",
 		"assert_operational_health_ready",
 		"assert_job_monitoring_ready",
 	):
@@ -745,7 +749,9 @@ def main() -> int:
 				manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
 				_validate_release_inventory(root, manifest, artifact, commit, manifest_data, base_env, errors)
 				_validate_image_lock(root, manifest, commit, manifest_data, base_env, temp, errors)
-				_validate_locked_compose(root, manifest, artifact, commit, manifest_data, base_env, temp, errors)
+				_validate_locked_compose(
+					root, manifest, artifact, commit, manifest_data, base_env, temp, errors
+				)
 				_validate_promotion_plan(
 					root, manifest, artifact, commit, manifest_data, base_env, temp, errors
 				)
