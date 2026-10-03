@@ -62,6 +62,26 @@ remote_manifest="$release_dir/release-manifest.json"
 remote_lock="$release_dir/release-image-lock.json"
 remote_compose="$release_dir/release-compose.locked.yml"
 
+# Verify retained policy against source inside the prior checksum-verified archive.
+policy_checks="$(python3 - "$ROLLBACK_ARTIFACT" "$release_dir" <<'PY'
+import hashlib
+import sys
+import tarfile
+
+with tarfile.open(sys.argv[1], "r:gz") as archive:
+    for name in (
+        "scripts/deploy/release_manifest.py",
+        "scripts/deploy/image_lock.py",
+        "scripts/deploy/locked_compose.py",
+    ):
+        source = archive.extractfile(name)
+        if source is None:
+            raise SystemExit(f"Archived rollback policy is incomplete: {name}")
+        digest = hashlib.sha256(source.read()).hexdigest()
+        print(f"{digest}  {sys.argv[2]}/policy/{name.rsplit('/', 1)[1]}")
+PY
+)" || die 'Unable to verify archived rollback policy.'
+
 prepare_ssh
 trap cleanup_ssh EXIT
 
@@ -72,6 +92,7 @@ remote "test -r '$remote_archive' && test -r '$remote_manifest' \
   && printf '%s  %s\\n' '$manifest_hash' '$remote_manifest' | sha256sum -c - \
   && printf '%s  %s\\n' '$lock_hash' '$remote_lock' | sha256sum -c - \
   && printf '%s  %s\\n' '$compose_hash' '$remote_compose' | sha256sum -c - \
+  && printf '%s\n' '$policy_checks' | sha256sum -c - \
   && test -x '$REMOTE_BENCH_ROOT/env/bin/python' \
   && command -v crane >/dev/null \
   && test \"\$(crane version)\" = '0.21.7' \
