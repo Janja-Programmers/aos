@@ -103,6 +103,15 @@ def _dotenv_values() -> dict[str, str]:
     return values
 
 
+def runtime_env_snapshot() -> dict[str, str]:
+    """Resolve a whole-config snapshot using the canonical host dotenv fallback.
+
+    Process environment entries take precedence, as in get_env(). Keep this
+    snapshot confined to validation: never include its values in reports.
+    """
+    return {**_dotenv_values(), **os.environ}
+
+
 def get_env(name: str, default: str | None = None) -> str | None:
     return _clean(os.environ.get(name)) or _clean(_dotenv_values().get(name)) or default
 
