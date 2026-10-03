@@ -58,7 +58,7 @@ class TestBackupReadiness(FrappeTestCase):
 			script = repo / rel
 			script.parent.mkdir(parents=True, exist_ok=True)
 			script.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
-			os.chmod(script, 0o755)
+			os.chmod(script, 0o644 if rel.endswith("rehearsal_policy.py") else 0o755)
 
 		(backup_dir / "frappe").mkdir(parents=True, exist_ok=True)
 		(backup_dir / "docker").mkdir(parents=True, exist_ok=True)
@@ -169,6 +169,29 @@ class TestBackupReadiness(FrappeTestCase):
 		self.assertNotIn("super-secret-value", serialized)
 		self.assertNotIn("db_password", serialized)
 		self.assertNotIn("MINIO_ROOT_PASSWORD", serialized)
+
+	def test_python_rehearsal_helper_must_be_readable_not_executable(self):
+		temp, env, _backup_dir = self._make_layout()
+		self.addCleanup(temp.cleanup)
+		helper = Path(env["AOS_REPO_ROOT"]) / "infra/backup/rehearsal_policy.py"
+		self.assertFalse(os.access(helper, os.X_OK))
+		report = validate_backup_readiness(backup_env=env, now=self.now)
+		tooling = next(
+			check for check in report["checks"] if check["name"] == "backup_restore_tooling"
+		)
+		self.assertEqual(tooling["status"], "healthy", tooling)
+
+	def test_directly_invoked_backup_helper_still_requires_execute_permission(self):
+		temp, env, _backup_dir = self._make_layout()
+		self.addCleanup(temp.cleanup)
+		entrypoint = Path(env["AOS_REPO_ROOT"]) / "infra/backup/backup_crypto.py"
+		entrypoint.chmod(0o644)
+		report = validate_backup_readiness(backup_env=env, now=self.now)
+		tooling = next(
+			check for check in report["checks"] if check["name"] == "backup_restore_tooling"
+		)
+		self.assertEqual(tooling["status"], "degraded", tooling)
+		self.assertIn("infra/backup/backup_crypto.py", tooling["details"]["not_executable_scripts"])
 
 	def test_frappe_native_tgz_file_archives_are_detected(self):
 		temp, env, _backup_dir = self._make_layout()
