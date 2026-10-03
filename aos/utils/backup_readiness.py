@@ -47,6 +47,10 @@ BACKUP_SCRIPT_PATHS: tuple[str, ...] = (
 	"infra/backup/rehearsal_policy.py",
 )
 
+# This policy helper is invoked by python3, not as an executable entrypoint.
+BACKUP_READABLE_HELPERS = frozenset({"infra/backup/rehearsal_policy.py"})
+
+
 SENSITIVE_KEY_RE = re.compile(
 	r"(secret|token|password|passwd|pwd|api[_-]?key|private[_-]?key|credential|signature)",
 	re.IGNORECASE,
@@ -278,19 +282,23 @@ def _script_check(env: Mapping[str, str]) -> dict[str, Any]:
 	repo_root = Path(_clean(env.get("AOS_REPO_ROOT")))
 	missing: list[str] = []
 	not_executable: list[str] = []
+	unreadable_helpers: list[str] = []
 	for rel_path in BACKUP_SCRIPT_PATHS:
 		path = repo_root / rel_path
 		if not _file_exists(path):
 			missing.append(rel_path)
+		elif rel_path in BACKUP_READABLE_HELPERS:
+			if not os.access(path, os.R_OK):
+				unreadable_helpers.append(rel_path)
 		elif not _is_executable_file(path):
 			not_executable.append(rel_path)
 
 	if missing:
 		status = "unhealthy"
 		message = "Required backup/restore scripts are missing."
-	elif not_executable:
+	elif not_executable or unreadable_helpers:
 		status = "degraded"
-		message = "Some backup/restore scripts are not executable."
+		message = "Backup entrypoints must execute and imported Python helpers must be readable."
 	else:
 		status = "healthy"
 		message = "Backup and restore scripts are present."
@@ -304,6 +312,7 @@ def _script_check(env: Mapping[str, str]) -> dict[str, Any]:
 			"required_script_count": len(BACKUP_SCRIPT_PATHS),
 			"missing_scripts": missing,
 			"not_executable_scripts": not_executable,
+			"unreadable_helpers": unreadable_helpers,
 		},
 	}
 
