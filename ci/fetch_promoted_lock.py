@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "deploy"))
-from image_lock import verify as verify_lock  # noqa: E402
+from image_lock import verify as verify_lock
 
 _RELEASE = re.compile(r"^[0-9a-f]{40}$")
 _RUN = re.compile(r"^[1-9][0-9]{0,17}$")
