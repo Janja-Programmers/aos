@@ -206,7 +206,7 @@ def _validate_deploy_script(root: Path, errors: list[str]) -> None:
 	migrate_position = text.rfind("scripts/deploy/run-migrate.sh")
 	if apply_position < 0 or migrate_position < 0 or migrate_position <= apply_position:
 		errors.append("guarded migration must run after the immutable release apply step")
-	if not re.search(r"remote\s+\"[^\n]*run-migrate\.sh", text):
+	if not re.search(r"remote_transaction\s+\"[\s\S]*?run-migrate\.sh", text):
 		errors.append("guarded migration is not invoked through the repository-controlled remote path")
 	if re.search(r"if\s+.*(?:MIGRAT|SKIP).*;?\s*then[\s\S]{0,500}run-migrate\.sh", text, re.I):
 		errors.append("migration invocation is conditionally skippable")
@@ -914,6 +914,7 @@ def main() -> int:
 				)
 				_validate_migration_wrapper(root, base_env, errors)
 				_run([sys.executable, "ci/test_apply_release.py"], root=root, env=base_env)
+				_run([sys.executable, "ci/test_deployment_transaction.py"], root=root, env=base_env)
 		except Exception as exc:
 			errors.append(str(exc))
 
