@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -195,7 +196,7 @@ def create(out: Path, artifact: Path, commit: str) -> None:
 		"source_build_contexts": builds,
 		"runtime_image_variables": variables,
 		"created_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-		"workflow_run_id": __import__("os").getenv("GITHUB_RUN_ID", ""),
+		"workflow_run_id": os.getenv("GITHUB_RUN_ID", ""),
 	}
 	_validate_manifest_data(payload, commit)
 	out.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
