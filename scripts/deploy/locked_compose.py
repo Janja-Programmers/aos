@@ -101,7 +101,7 @@ def build_compose(
 
 
 def main() -> None:
-    if len(sys.argv) != 8 or sys.argv[1] not in {"render-offline", "render-registry", "verify-offline", "verify-registry"}:
+    if len(sys.argv) != 7 or sys.argv[1] not in {"render-offline", "render-registry", "verify-offline", "verify-registry"}:
         raise SystemExit(
             "usage: locked_compose.py render-offline|render-registry|verify-offline|verify-registry "
             "MANIFEST ARCHIVE IMAGE_LOCK COMMIT OUTPUT_COMPOSE"
