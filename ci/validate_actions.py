@@ -75,8 +75,8 @@ def validate_promotion_workflow(path: Path, data: dict, jobs: dict, errors: list
 		errors.append(f"{path}: GHCR publication requires the approved plan and protected Environment")
 	if (data.get("concurrency") or {}).get("cancel-in-progress") != "false":
 		errors.append(f"{path}: promotion runs must never be cancelled during registry publication")
-	plan_runs = "\\n".join(str(step.get("run") or "") for step in plan.get("steps") or [])
-	publish_runs = "\\n".join(str(step.get("run") or "") for step in publish.get("steps") or [])
+	plan_runs = "\n".join(str(step.get("run") or "") for step in plan.get("steps") or [])
+	publish_runs = "\n".join(str(step.get("run") or "") for step in publish.get("steps") or [])
 	for required in (
 		"verify-promotion-source.sh",
 		"--release-run",
@@ -91,11 +91,16 @@ def validate_promotion_workflow(path: Path, data: dict, jobs: dict, errors: list
 		'AOS_IMAGE_PROMOTION_ENABLED" == "true"',
 		"promotion_plan.py verify",
 		"publish_images.py publish",
+		"branches/main",
 	):
 		if required not in publish_runs:
 			errors.append(f"{path}: GHCR publication lacks required fail-closed guard: {required}")
 	guard = next(
-		(step for step in publish.get("steps") or [] if step.get("name") == "Reverify freshness, CI and protected enablement"),
+		(
+			step
+			for step in publish.get("steps") or []
+			if step.get("name") == "Reverify freshness, CI and protected enablement"
+		),
 		{},
 	)
 	if (guard.get("env") or {}).get("AOS_IMAGE_PROMOTION_ENABLED") != "${{ vars.AOS_IMAGE_PROMOTION_ENABLED }}":
