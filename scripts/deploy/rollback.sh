@@ -1,14 +1,63 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 source "$(dirname "$0")/lib.sh"
-DRY_RUN=false; [[ "${1:-}" == --dry-run ]] && DRY_RUN=true
+
+DRY_RUN=false
+case "${1:-}" in
+  --dry-run) DRY_RUN=true ;;
+  '') ;;
+  *) die 'Only --dry-run is accepted.' ;;
+esac
+
 validate_environment
-require_var ROLLBACK_COMMIT; [[ "$ROLLBACK_COMMIT" =~ ^[0-9a-f]{40}$ ]] || die 'ROLLBACK_COMMIT must be the exact prior Git SHA.'
-require_var ROLLBACK_MANIFEST; [[ -f "$ROLLBACK_MANIFEST" ]] || die 'Prior release manifest is missing.'
-python3 scripts/deploy/release_manifest.py verify-manifest "$ROLLBACK_MANIFEST" "$ROLLBACK_COMMIT"
+require_var ROLLBACK_COMMIT
+[[ "$ROLLBACK_COMMIT" =~ ^[0-9a-f]{40}$ ]] || die 'ROLLBACK_COMMIT must be the exact prior Git SHA.'
+require_var ROLLBACK_ARTIFACT
+require_var ROLLBACK_MANIFEST
+[[ -f "$ROLLBACK_ARTIFACT" && -f "$ROLLBACK_MANIFEST" ]] || die 'Prior release archive or manifest is missing.'
+[[ "$(basename "$ROLLBACK_ARTIFACT")" == aos-release.tar.gz ]] || die 'Unexpected rollback archive filename.'
+[[ "$(basename "$ROLLBACK_MANIFEST")" == release-manifest.json ]] || die 'Unexpected rollback manifest filename.'
+python3 scripts/deploy/release_manifest.py verify "$ROLLBACK_MANIFEST" "$ROLLBACK_ARTIFACT" "$ROLLBACK_COMMIT"
+
 require_var VERIFIED_BACKUP_ID
-if [[ "$DRY_RUN" == true ]]; then log "Would roll back to ${ROLLBACK_COMMIT} using manifest and verified backup ${VERIFIED_BACKUP_ID}."; exit 0; fi
-require_var DEPLOY_KNOWN_HOSTS_FILE; require_var REMOTE_ROLLBACK_COMMAND
-prepare_ssh; trap cleanup_ssh EXIT
-remote "ROLLBACK_COMMIT='$ROLLBACK_COMMIT' VERIFIED_BACKUP_ID='$VERIFIED_BACKUP_ID' $REMOTE_ROLLBACK_COMMAND"
-log "Rollback command completed for exact prior commit ${ROLLBACK_COMMIT}."
+[[ "$VERIFIED_BACKUP_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || die 'VERIFIED_BACKUP_ID is invalid.'
+require_var REMOTE_RELEASE_ROOT
+require_var REMOTE_APPLY_RELEASE_PATH
+require_var REMOTE_BENCH_ROOT
+require_var FRAPPE_SITE
+
+for path in "$REMOTE_RELEASE_ROOT" "$REMOTE_APPLY_RELEASE_PATH" "$REMOTE_BENCH_ROOT"; do
+  [[ "$path" =~ ^/[A-Za-z0-9_./-]+$ && "$path" != *..* ]] || die 'Remote path must be a reviewed absolute path without traversal or arguments.'
+done
+[[ "$FRAPPE_SITE" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,139}$ ]] || die 'Invalid FRAPPE_SITE.'
+
+if [[ "$DRY_RUN" == true ]]; then
+  log "Would verify and reapply immutable prior release ${ROLLBACK_COMMIT} through ${REMOTE_APPLY_RELEASE_PATH} using verified backup evidence ${VERIFIED_BACKUP_ID}; no database restore or migration is performed."
+  exit 0
+fi
+
+[[ "${ROLLBACK_APPROVED:-false}" == true ]] || die 'An explicit ROLLBACK_APPROVED=true is required.'
+[[ "${ROLLBACK_DB_DECISION:-}" == application-only ]] || die 'ROLLBACK_DB_DECISION=application-only is required; database restore is separate.'
+require_var DEPLOY_KNOWN_HOSTS_FILE
+[[ -s "$DEPLOY_KNOWN_HOSTS_FILE" ]] || die 'Verified known-hosts file is missing or empty.'
+
+archive_hash="$(sha256sum "$ROLLBACK_ARTIFACT" | cut -d' ' -f1)"
+manifest_hash="$(sha256sum "$ROLLBACK_MANIFEST" | cut -d' ' -f1)"
+release_dir="${REMOTE_RELEASE_ROOT}/${ROLLBACK_COMMIT}"
+remote_archive="$release_dir/aos-release.tar.gz"
+remote_manifest="$release_dir/release-manifest.json"
+
+prepare_ssh
+trap cleanup_ssh EXIT
+
+# Keep validation and application in a single remote command. No operator-supplied
+# command text is accepted. An application rollback must not restore the database.
+remote "test -r '$remote_archive' && test -r '$remote_manifest' \
+  && printf '%s  %s\\n' '$archive_hash' '$remote_archive' | sha256sum -c - \
+  && printf '%s  %s\\n' '$manifest_hash' '$remote_manifest' | sha256sum -c - \
+  && '$REMOTE_APPLY_RELEASE_PATH' '$remote_archive' '$remote_manifest' '$ROLLBACK_COMMIT'"
+
+remote "cd '$REMOTE_BENCH_ROOT' \
+  && bench --site '$FRAPPE_SITE' execute aos.utils.operational_health.assert_operational_health_ready \
+  && bench --site '$FRAPPE_SITE' execute aos.utils.job_monitoring.assert_job_monitoring_ready"
+log "Application-only rollback verified for ${ROLLBACK_COMMIT}; evidence backup ${VERIFIED_BACKUP_ID}. Database state unchanged by this wrapper."
