@@ -81,6 +81,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      packages: read
     outputs:
       promotion_run_id: ${{ steps.promotion.outputs.run_id }}
       promotion_lock_sha256: ${{ steps.promotion.outputs.lock_sha256 }}
@@ -142,11 +143,13 @@ jobs:
         if: github.event_name == 'workflow_run'
         env:
           RELEASE_COMMIT: ${{ needs.release.outputs.commit }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           python3 -m pip install --disable-pip-version-check --require-hashes -r ci/requirements/quality.lock
           ci/install-compose-tools.sh "$RUNNER_TEMP/oci-tools"
           export PATH="$RUNNER_TEMP/oci-tools/bin:$PATH"
+          printf '%s' "$GH_TOKEN" | crane auth login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null
           python3 scripts/deploy/locked_compose.py render-registry \
             release-manifest.json aos-release.tar.gz release-image-lock.json \
             "$RELEASE_COMMIT" release-compose.locked.yml
@@ -189,6 +192,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      packages: read
     env:
       DEPLOY_ENVIRONMENT: production
       PRODUCTION_APPROVAL_CONTEXT: 'true'
@@ -253,11 +257,13 @@ jobs:
       - name: Reverify registry and immutable no-build production Compose
         env:
           RELEASE_COMMIT: ${{ needs.release.outputs.commit }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           python3 -m pip install --disable-pip-version-check --require-hashes -r ci/requirements/quality.lock
           ci/install-compose-tools.sh "$RUNNER_TEMP/oci-tools"
           export PATH="$RUNNER_TEMP/oci-tools/bin:$PATH"
+          printf '%s' "$GH_TOKEN" | crane auth login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null
           python3 scripts/deploy/locked_compose.py render-registry \
             release-manifest.json aos-release.tar.gz release-image-lock.json \
             "$RELEASE_COMMIT" release-compose.locked.yml
