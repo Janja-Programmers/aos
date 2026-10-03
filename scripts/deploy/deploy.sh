@@ -88,7 +88,5 @@ remote "'$REMOTE_APPLY_RELEASE_PATH' '$remote_archive' '$remote_manifest' \
 
 # Repository-controlled migration is unconditional. A failure stops here and
 # prevents the workflow's smoke and production steps.
-remote "REMOTE_BENCH_ROOT='$REMOTE_BENCH_ROOT' FRAPPE_SITE='$FRAPPE_SITE' \
-  RELEASE_COMMIT='$RELEASE_COMMIT' \
-  '$REMOTE_BENCH_ROOT/apps/aos/scripts/deploy/run-migrate.sh'"
+remote "REMOTE_BENCH_ROOT='$REMOTE_BENCH_ROOT' FRAPPE_SITE='$FRAPPE_SITE' RELEASE_COMMIT='$RELEASE_COMMIT' '$REMOTE_BENCH_ROOT/apps/aos/scripts/deploy/run-migrate.sh'"
 log "Locked deployment and guarded migration completed for ${RELEASE_COMMIT}."
