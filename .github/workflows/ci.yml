@@ -479,7 +479,7 @@ jobs:
   required-gate:
     name: CI / Required Gate
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
     if: always()
     needs:
       - repository-quality

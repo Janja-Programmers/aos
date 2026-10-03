@@ -11,18 +11,20 @@ export REMOTE_BENCH_ROOT=/home/aos/frappe-bench
 export FRAPPE_SITE=<site>
 export REMOTE_RELEASE_ROOT=/srv/aos/releases
 export REMOTE_APPLY_RELEASE_PATH=/usr/local/sbin/aos-apply-release
+export REMOTE_APPLY_RELEASE_SHA256=<reviewed-64-character-sha256>
 ```
 
-`REMOTE_APPLY_RELEASE_PATH` must be one reviewed absolute executable path without arguments. It applies the exact archive/manifest/commit only. It does not control whether migrations run: the repository invokes `scripts/deploy/run-migrate.sh` unconditionally after the release-applier succeeds.
+`REMOTE_APPLY_RELEASE_PATH` must be one reviewed absolute executable path without arguments and must accept exactly five positional inputs: the verified archive, release manifest, release commit, promoted image lock and immutable no-build Compose. It must activate the provided Compose and reject any omitted or altered lock. The deployment wrapper first checks both registries and archive integrity, then uploads the policy verifier and rechecks everything independently on the host. The remote Bench Python must have PyYAML available; the deployment account must have pinned `crane` 0.21.7 and separately provisioned **read-only** GHCR authentication (never put tokens in the release artifacts). Pin its reviewed executable checksum using `REMOTE_APPLY_RELEASE_SHA256` for each protected deployment Environment (and the authorized rollback operator). Both wrappers verify the remote binary immediately before invocation, and check retained policy verifier files against the original archive. An older three-argument applier is not authorized. The repository invokes `scripts/deploy/run-migrate.sh` unconditionally after the reviewed applier succeeds.
 
 ## Dry-run validation
 
 ```bash
 export DEPLOY_ENVIRONMENT=staging
-export RELEASE_COMMIT=0123456789abcdef0123456789abcdef01234567
-export RELEASE_ARTIFACT=/tmp/aos-release.tar.gz
-export RELEASE_MANIFEST=/tmp/release-manifest.json
+export RELEASE_COMMIT="$(git rev-parse HEAD)"
+export RELEASE_ARTIFACT="$(mktemp -d)/aos-release.tar.gz"
+export RELEASE_MANIFEST="$(dirname "$RELEASE_ARTIFACT")/release-manifest.json"
 export CI_GATE_VERIFIED=true
+git archive --format=tar.gz --output="$RELEASE_ARTIFACT" "$RELEASE_COMMIT"
 python scripts/deploy/release_manifest.py create "$RELEASE_MANIFEST" "$RELEASE_ARTIFACT" "$RELEASE_COMMIT"
 python ci/validate_deployment.py .
 scripts/deploy/preflight.sh --dry-run
@@ -87,6 +89,8 @@ export DEPLOY_ENVIRONMENT=production
 export ROLLBACK_COMMIT=<exact-prior-sha>
 export ROLLBACK_MANIFEST=/secure/releases/<prior-sha>/release-manifest.json
 export ROLLBACK_ARTIFACT=/secure/releases/<prior-sha>/aos-release.tar.gz
+export ROLLBACK_IMAGE_LOCK=/secure/releases/<prior-sha>/release-image-lock.json
+export ROLLBACK_LOCKED_COMPOSE=/secure/releases/<prior-sha>/release-compose.locked.yml
 export VERIFIED_BACKUP_ID=<exact-verified-backup-id>
 export REMOTE_RELEASE_ROOT=/srv/aos/releases
 export REMOTE_APPLY_RELEASE_PATH=/usr/local/sbin/aos-apply-release
@@ -97,6 +101,6 @@ scripts/deploy/rollback.sh --dry-run
 
 For a real application-only rollback, independently review the migration history and confirm that the **previous application is compatible with the current database schema**. Inspect the exact prior archive/manifest, their recorded hashes and image digests, verified backup evidence, incident owner, and the actual reviewed release-applier executable. Obtain separate incident/change approval and configure the trusted SSH known-hosts file/credentials. Only then set `ROLLBACK_APPROVED=true` and `ROLLBACK_DB_DECISION=application-only` for the operator-executed rollback.
 
-The rollback wrapper validates the archive against its manifest locally; validates both identical retained artifacts on the remote host by checksum immediately before invoking the same reviewed `REMOTE_APPLY_RELEASE_PATH` used for deployments; and runs operational health/job checks after the application release switch. The wrapper does not perform `bench migrate` or restore the database. It does not accept arbitrary remote rollback command text. The exact prior archive/manifest **must already be retained** under `REMOTE_RELEASE_ROOT/<prior-sha>/`; a missing or mismatched release fails closed.
+The rollback wrapper validates the prior archive, manifest, promoted image lock and no-build Compose locally, and checks all four identical retained artifacts by checksum and registry digest on the host immediately before invoking the reviewed five-argument `REMOTE_APPLY_RELEASE_PATH` used for deployments; it runs operational health/job checks after the application release switch. A release without its exact retained lock/Compose cannot be rolled back using this automated application-only wrapper. The wrapper does not perform `bench migrate` or restore the database. It does not accept arbitrary remote rollback command text. The exact prior archive/manifest **must already be retained** under `REMOTE_RELEASE_ROOT/<prior-sha>/`; a missing or mismatched release fails closed.
 
 `VERIFIED_BACKUP_ID` identifies operator-reviewed backup evidence; merely providing an ID does not independently verify backup usability. Do not perform a database restore under the application-only authorization. Database restore is a separate destructive incident operation, permitted only when application/schema compatibility requires it, after explicit approval and a fresh complete restore-rehearsal marker.

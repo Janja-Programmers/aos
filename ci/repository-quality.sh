@@ -21,7 +21,10 @@ while IFS= read -r service; do
 	quality_paths+=("${CI_ROOT}/infra/${service}/tests")
 done <"${CI_ROOT}/ci/service-matrix.txt"
 "${venv}/bin/ruff" check "${quality_paths[@]}"
-"${venv}/bin/ruff" format --check "${quality_paths[@]}"
+"${venv}/bin/ruff" format --check "${quality_paths[@]}" || {
+	"${venv}/bin/ruff" format --diff "${quality_paths[@]}"
+	exit 1
+}
 "${venv}/bin/python" "${CI_ROOT}/ci/validate_repository.py" "${CI_ROOT}"
 "${venv}/bin/python" "${CI_ROOT}/ci/validate_actions.py"
 "${venv}/bin/python" "${CI_ROOT}/ci/validate_foundation.py"

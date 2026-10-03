@@ -13,6 +13,10 @@ APPROVED_PERMISSIONS = {"contents": "read"}
 
 def validate_permissions(path: Path, job_id: str, permissions, errors: list[str]) -> None:
 	"""Allow the narrowly scoped manual publisher to write GHCR; all other jobs stay read-only."""
+	if path.name == "deploy.yml" and job_id in {"staging", "production"}:
+		if permissions != {"contents": "read", "actions": "read", "packages": "read"}:
+			errors.append(f"{path}: job {job_id} needs read-only promotion metadata and GHCR access")
+		return
 	if path.name == "image-promotion.yml":
 		expected = {
 			"plan": {"contents": "read", "actions": "read"},

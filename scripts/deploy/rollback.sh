@@ -38,14 +38,51 @@ fi
 
 [[ "${ROLLBACK_APPROVED:-false}" == true ]] || die 'An explicit ROLLBACK_APPROVED=true is required.'
 [[ "${ROLLBACK_DB_DECISION:-}" == application-only ]] || die 'ROLLBACK_DB_DECISION=application-only is required; database restore is separate.'
+require_var REMOTE_APPLY_RELEASE_SHA256
+[[ "$REMOTE_APPLY_RELEASE_SHA256" =~ ^[0-9a-f]{64}$ ]] || die 'Remote applier requires a reviewed SHA-256.'
+require_var ROLLBACK_IMAGE_LOCK
+require_var ROLLBACK_LOCKED_COMPOSE
+[[ -f "$ROLLBACK_IMAGE_LOCK" && -f "$ROLLBACK_LOCKED_COMPOSE" ]] \
+  || die 'Application rollback requires the exact previous promoted lock and no-build Compose.'
+[[ "$(basename "$ROLLBACK_IMAGE_LOCK")" == release-image-lock.json ]] \
+  || die 'Unexpected prior-release image-lock filename.'
+[[ "$(basename "$ROLLBACK_LOCKED_COMPOSE")" == release-compose.locked.yml ]] \
+  || die 'Unexpected prior-release locked-Compose filename.'
+python3 scripts/deploy/locked_compose.py verify-registry \
+  "$ROLLBACK_MANIFEST" "$ROLLBACK_ARTIFACT" "$ROLLBACK_IMAGE_LOCK" \
+  "$ROLLBACK_COMMIT" "$ROLLBACK_LOCKED_COMPOSE"
 require_var DEPLOY_KNOWN_HOSTS_FILE
 [[ -s "$DEPLOY_KNOWN_HOSTS_FILE" ]] || die 'Verified known-hosts file is missing or empty.'
 
 archive_hash="$(sha256sum "$ROLLBACK_ARTIFACT" | cut -d' ' -f1)"
 manifest_hash="$(sha256sum "$ROLLBACK_MANIFEST" | cut -d' ' -f1)"
+lock_hash="$(sha256sum "$ROLLBACK_IMAGE_LOCK" | cut -d' ' -f1)"
+compose_hash="$(sha256sum "$ROLLBACK_LOCKED_COMPOSE" | cut -d' ' -f1)"
 release_dir="${REMOTE_RELEASE_ROOT}/${ROLLBACK_COMMIT}"
 remote_archive="$release_dir/aos-release.tar.gz"
 remote_manifest="$release_dir/release-manifest.json"
+remote_lock="$release_dir/release-image-lock.json"
+remote_compose="$release_dir/release-compose.locked.yml"
+
+# Verify retained policy against source inside the prior checksum-verified archive.
+policy_checks="$(python3 - "$ROLLBACK_ARTIFACT" "$release_dir" <<'PY'
+import hashlib
+import sys
+import tarfile
+
+with tarfile.open(sys.argv[1], "r:gz") as archive:
+    for name in (
+        "scripts/deploy/release_manifest.py",
+        "scripts/deploy/image_lock.py",
+        "scripts/deploy/locked_compose.py",
+    ):
+        source = archive.extractfile(name)
+        if source is None:
+            raise SystemExit(f"Archived rollback policy is incomplete: {name}")
+        digest = hashlib.sha256(source.read()).hexdigest()
+        print(f"{digest}  {sys.argv[2]}/policy/{name.rsplit('/', 1)[1]}")
+PY
+)" || die 'Unable to verify archived rollback policy.'
 
 prepare_ssh
 trap cleanup_ssh EXIT
@@ -55,7 +92,18 @@ trap cleanup_ssh EXIT
 remote "test -r '$remote_archive' && test -r '$remote_manifest' \
   && printf '%s  %s\\n' '$archive_hash' '$remote_archive' | sha256sum -c - \
   && printf '%s  %s\\n' '$manifest_hash' '$remote_manifest' | sha256sum -c - \
-  && '$REMOTE_APPLY_RELEASE_PATH' '$remote_archive' '$remote_manifest' '$ROLLBACK_COMMIT'"
+  && printf '%s  %s\\n' '$lock_hash' '$remote_lock' | sha256sum -c - \
+  && printf '%s  %s\\n' '$compose_hash' '$remote_compose' | sha256sum -c - \
+  && printf '%s\n' '$policy_checks' | sha256sum -c - \
+  && test -x '$REMOTE_BENCH_ROOT/env/bin/python' \
+  && command -v crane >/dev/null \
+  && test \"\$(crane version)\" = '0.21.7' \
+  && '$REMOTE_BENCH_ROOT/env/bin/python' '$release_dir/policy/locked_compose.py' \
+     verify-registry '$remote_manifest' '$remote_archive' '$remote_lock' \
+     '$ROLLBACK_COMMIT' '$remote_compose' \
+  && printf '%s  %s\\n' '$REMOTE_APPLY_RELEASE_SHA256' '$REMOTE_APPLY_RELEASE_PATH' | sha256sum -c - \
+  && '$REMOTE_APPLY_RELEASE_PATH' '$remote_archive' '$remote_manifest' \
+     '$ROLLBACK_COMMIT' '$remote_lock' '$remote_compose'"
 
 remote "cd '$REMOTE_BENCH_ROOT' \
   && bench --site '$FRAPPE_SITE' execute aos.utils.operational_health.assert_operational_health_ready \

@@ -14,6 +14,10 @@
 - [ ] The deployed release-applier independently consumes and verifies the exact promoted image lock, not only the archived source fingerprints.
 
 - [ ] Runtime-supplied image references (including Valhalla) resolve to reviewed immutable digests in the deployed Compose configuration.
+- [ ] `AOS_PROMOTION_RUN_ID` points to the completed manual publish job for this exact current-main release, and the promotion lock matches the original release-manifest bytes.
+- [ ] The staging runner and host independently verified the promoted registry digests and generated immutable no-build Compose; production reused the same lock checksum.
+- [ ] The remote applier SHA-256 is independently reviewed and configured as protected `REMOTE_APPLY_RELEASE_SHA256`; both deploy and rollback reject unpinned or changed executables.
+- [ ] The reviewed five-argument remote applier consumes the archive, manifest, commit, promoted image lock and rendered Compose; the host has Bench Python/PyYAML and pinned `crane` 0.21.7.
 - [ ] Staging deployment and smoke checks passed first.
 - [ ] Production GitHub Environment approval was granted.
 - [ ] `main` protection and protected production Environment reviewers were verified in repository settings.

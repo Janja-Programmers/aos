@@ -44,3 +44,5 @@ infra/maps/scripts/smoke-valhalla-global.py
 ci/verify-promotion-source.sh
 scripts/deploy/promotion_plan.py
 scripts/deploy/publish_images.py
+ci/fetch_promoted_lock.py
+scripts/deploy/locked_compose.py
