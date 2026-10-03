@@ -63,7 +63,7 @@ Configure a GitHub Environment named `image-promotion` with **required reviewers
 
 With `publish=true` **after approval**, the publisher rechecks main freshness and CI before downloading the exact read-only plan. It extracts the immutable Git release archive into a temporary directory and builds the **ten unique source contexts** (17 Compose service build declarations share these contexts) through SHA-pinned Python (`3.14.6`), Buildx (`v0.37.2`) and digest-verified BuildKit (`v0.33.1`). Each build uses `linux/amd64`, `--pull`, BuildKit provenance `mode=max` and SBOM metadata and labels its image with the commit, context and archived source fingerprint. The repository tag `:sha-<commit>` is only a transient build/push reference; the accepted promotion identity comes from the **actual output manifest digest**. Pinned `crane` verifies the registry digest and the published image's identity labels. The publisher creates `build-receipts.json`, `runtime-receipts.json` and `release-image-lock.json`, then independently runs registry-backed image-lock verification before retaining the receipts as an Actions artifact.
 
-BuildKit provenance is **not equivalent to a separately verified, cryptographically signed SLSA attestation**, and a registry reference alone is not deployment authorization. This workflow has no automatic execution, no SSH/deployment credentials and no staging/production apply step. The controlled deployment workflow does **not yet consume or enforce the new promoted image-lock artifact**, and the reviewed remote applier is still operator supplied. Do not enable production or connect staging to this publisher until the next release-applier integration, explicit platform compatibility checks, independently reviewed image evidence and a successful staging rehearsal are implemented. For heterogeneous hosts, introduce a reviewed multi-architecture publishing policy rather than treating the current amd64-only receipts as universal.
+BuildKit provenance is **not equivalent to a separately verified, cryptographically signed SLSA attestation**, and a registry reference alone is not deployment authorization. This workflow has no automatic execution, no SSH/deployment credentials and no staging/production apply step. The controlled deployment workflow now **requires** the exact successful reviewed image-promotion run ID for every automatic staging deployment, checks its completed `publish` job and artifact, and binds the received lock to the exact release-manifest bytes. The runner independently verifies all promoted registry digests and renders a no-build Compose. The operator-installed remote applier must consume this lock and Compose through the reviewed five-argument contract described below; the actual server configuration and operational rehearsal remain pending. Do not enable production until host acceptance, signed-provenance review, platform compatibility and a successful staging rehearsal are complete. For heterogeneous hosts, introduce a reviewed multi-architecture publishing policy rather than treating the current amd64-only receipts as universal.
 
 ## GitHub Environments
 
@@ -71,7 +71,7 @@ Create `staging` and `production` Environments. Configure required reviewers on 
 
 **Production is disabled by default.** The protected `production` Environment must separately define `AOS_PRODUCTION_DEPLOYMENT_ENABLED=true` for an authorized release. An unset, blank, or any other value fails before SSH setup, preflight, or deployment. Do not set this variable during staging-only rehearsals. Keep human approval enabled even when this variable is set.
 
-A newly configured repository has no implied deployment connection. The first staging deployment will fail closed with `Required variable is missing: DEPLOY_HOST` until the staging Environment has been explicitly configured. Keep staging and production destinations, credentials, and known-hosts trust records separate. Do not paste private keys or secrets into issues, workflow inputs, PRs, or chat.
+A newly configured repository has no implied deployment connection. Every automatic staging release now fails closed **before SSH** unless the staging Environment provides `AOS_PROMOTION_RUN_ID`, identifying the exact successful reviewed `image-promotion.yml` run whose `publish` job succeeded for that current release commit. After manual publication and reviewer approval, configure that run ID and rerun only the failed staging deployment job for the original current-main release. The workflow independently checks the promotion run, downloads its immutable image lock, verifies the original release manifest bytes and registry digests, and renders `release-compose.locked.yml`. `main` freshness checks still prohibit using a superseded release. Staging also requires valid host settings (`DEPLOY_HOST`, etc.) before any SSH connection. Keep staging and production destinations, credentials, and known-hosts trust records separate. Do not paste private keys or secrets into issues, workflow inputs, PRs, or chat.
 
 Environment secrets:
 
@@ -82,21 +82,22 @@ Environment secrets:
 
 Environment variables (configure separately for each environment):
 
+- `AOS_PROMOTION_RUN_ID` (staging only; the exact successful manual publish run ID, never a plan-only run; production inherits the verified promotion ID and lock checksum from staging)
 - `AOS_PRODUCTION_DEPLOYMENT_ENABLED` (production only; leave unset until a reviewed, authorized production release)
 - `REMOTE_BENCH_ROOT`
 - `FRAPPE_SITE`
 - `REMOTE_RELEASE_ROOT`
 - `REMOTE_APPLY_RELEASE_PATH`
 
-`REMOTE_APPLY_RELEASE_PATH` must be one reviewed absolute executable path with no embedded arguments. Its only responsibility is to apply the exact uploaded archive/manifest/commit. It must not select a floating branch or image tag. Arbitrary operator command text is not accepted.
+`REMOTE_APPLY_RELEASE_PATH` must be one reviewed absolute executable path with no embedded arguments. The operator-installed applier must implement the current **five-argument** contract: `aos-release.tar.gz`, `release-manifest.json`, exact release commit, `release-image-lock.json`, `release-compose.locked.yml` (in that order). It must activate the exact provided no-build Compose, never invoke `docker compose build`, select a floating tag, invent an image digest, or ignore the lock. The deploy wrapper additionally uploads the policy verifier, verifies all four retained artifacts by checksum on the host and uses `$REMOTE_BENCH_ROOT/env/bin/python` plus installed pinned `crane` **0.21.7** to independently revalidate the release and remote registry before the applier is invoked. Install and review this five-argument applier and pinned prerequisites before configuring staging; an older or unreviewed applier must fail closed. No arbitrary operator command text is accepted.
 
 ## Repository-enforced migration
 
 `scripts/deploy/deploy.sh` always performs this order:
 
-1. Validate environment and immutable release manifest.
-2. Upload and checksum-verify the exact release.
-3. Invoke the reviewed release-applier path.
+1. Verify the original release archive/manifest and promotion lock, and compare the locked no-build Compose against independently rendered expected content and actual registry digests.
+2. Upload and checksum-verify the exact archive, manifest, image lock and no-build Compose; independently recheck them on the remote host before any release switch.
+3. Invoke the reviewed five-argument release-applier with the exact verified lock and Compose.
 4. Invoke the deployed repository's `scripts/deploy/run-migrate.sh` unconditionally.
 5. Return success only after migration succeeds.
 
@@ -122,8 +123,8 @@ The preflight is a blocker detector, not proof that every custom patch is non-de
 
 1. A same-repository `main` push CI run completes successfully; CI runs from manual dispatches, pull requests, other repositories, or obsolete commits cannot trigger a deploy.
 2. Release artifact and manifest are created only for the current `main` commit.
-3. Staging preflight runs.
-4. The exact release is applied to staging.
+3. A successful explicitly approved image-promotion run is selected by `AOS_PROMOTION_RUN_ID`; staging validates its publication job, exact release artifact, registry digests and immutable no-build Compose before contacting the host. Before this approval exists staging fails closed.
+4. Staging preflight runs; the exact locked release is applied through the reviewed five-argument applier.
 5. Repository-controlled guarded migration runs.
 6. Operational health, job diagnostics, outbox diagnostics, and smoke checks run.
 7. Production Environment approval is granted; the production job rechecks that the commit is still current `main` HEAD before contacting a host.
