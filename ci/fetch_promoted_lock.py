@@ -46,7 +46,10 @@ def verify_promotion(commit: str, run_id: str) -> str:
         (
             run.get("id") != int(run_id),
             run.get("name") != "Manual OCI image promotion",
-            not str(run.get("path") or "").endswith("/.github/workflows/image-promotion.yml"),
+            not re.fullmatch(
+                r"(?:[^/]+/[^/]+/)?\.github/workflows/image-promotion\.yml(?:@main)?",
+                str(run.get("path") or ""),
+            ),
             run.get("event") != "workflow_dispatch",
             run.get("head_sha") != commit,
             run.get("head_branch") != "main",
