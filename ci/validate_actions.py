@@ -12,7 +12,15 @@ APPROVED_PERMISSIONS = {"contents": "read"}
 
 
 def validate_permissions(path: Path, job_id: str, permissions, errors: list[str]) -> None:
-	"""Reject job overrides that can broaden the read-only token."""
+	"""Allow the narrowly scoped manual publisher to write GHCR; all other jobs stay read-only."""
+	if path.name == "image-promotion.yml":
+		expected = {
+			"plan": {"contents": "read", "actions": "read"},
+			"publish": {"contents": "read", "actions": "read", "packages": "write"},
+		}.get(job_id)
+		if permissions != expected:
+			errors.append(f"{path}: job {job_id} has invalid manual image-promotion permissions")
+		return
 	if permissions is None:
 		return
 	if not isinstance(permissions, dict):
@@ -43,6 +51,59 @@ def validate_required_gate(path: Path, jobs: dict, errors: list[str]) -> None:
 		errors.append(f"{path}: required-gate does not fail closed on every non-success result")
 
 
+def validate_promotion_workflow(path: Path, data: dict, jobs: dict, errors: list[str]) -> None:
+	"""Image publication must be an explicit reviewed main-only action, never a CI or PR side effect."""
+	if set(data.get("on") or {}) != {"workflow_dispatch"}:
+		errors.append(f"{path}: image promotion must be manual workflow_dispatch only")
+	inputs = ((data.get("on") or {}).get("workflow_dispatch") or {}).get("inputs") or {}
+	if set(inputs) != {"release_sha", "publish"}:
+		errors.append(f"{path}: image promotion inputs must be exact SHA and explicit publish flag")
+	flag = inputs.get("publish") or {}
+	if flag.get("type") != "boolean" or flag.get("default") != "false":
+		errors.append(f"{path}: GHCR publication must be disabled by default")
+	if set(jobs) != {"plan", "publish"}:
+		errors.append(f"{path}: image promotion must contain only read-only plan and protected publish jobs")
+	plan = jobs.get("plan") or {}
+	publish = jobs.get("publish") or {}
+	if plan.get("if") != "github.ref == 'refs/heads/main' && github.repository == 'Janja-Programmers/aos'":
+		errors.append(f"{path}: image-promotion plan must be restricted to canonical main")
+	if plan.get("environment"):
+		errors.append(f"{path}: read-only promotion plan must not request a deployment environment")
+	if publish.get("if") != "inputs.publish == true && needs.plan.result == 'success'":
+		errors.append(f"{path}: GHCR publication must require explicit input and successful plan")
+	if publish.get("needs") != "plan" or publish.get("environment") != "image-promotion":
+		errors.append(f"{path}: GHCR publication requires the approved plan and protected Environment")
+	if (data.get("concurrency") or {}).get("cancel-in-progress") != "false":
+		errors.append(f"{path}: promotion runs must never be cancelled during registry publication")
+	plan_runs = "\\n".join(str(step.get("run") or "") for step in plan.get("steps") or [])
+	publish_runs = "\\n".join(str(step.get("run") or "") for step in publish.get("steps") or [])
+	for required in (
+		"verify-promotion-source.sh",
+		"--release-run",
+		"release_manifest.py verify",
+		"promotion_plan.py create",
+		"promotion_plan.py verify",
+	):
+		if required not in plan_runs:
+			errors.append(f"{path}: promotion plan does not verify exact CI-green release: {required}")
+	for required in (
+		"verify-promotion-source.sh",
+		'AOS_IMAGE_PROMOTION_ENABLED" == "true"',
+		"promotion_plan.py verify",
+		"publish_images.py publish",
+	):
+		if required not in publish_runs:
+			errors.append(f"{path}: GHCR publication lacks required fail-closed guard: {required}")
+	guard = next(
+		(step for step in publish.get("steps") or [] if step.get("name") == "Reverify freshness, CI and protected enablement"),
+		{},
+	)
+	if (guard.get("env") or {}).get("AOS_IMAGE_PROMOTION_ENABLED") != "${{ vars.AOS_IMAGE_PROMOTION_ENABLED }}":
+		errors.append(f"{path}: publish enablement must be sourced from protected Environment")
+	if not any("docker/setup-buildx-action@" in str(step.get("uses") or "") for step in publish.get("steps") or []):
+		errors.append(f"{path}: promotion requires an immutable Buildx action pin")
+
+
 def main() -> int:
 	root = Path(__file__).resolve().parents[1]
 	workflow_dir = root / ".github" / "workflows"
@@ -66,6 +127,7 @@ def main() -> int:
 			errors.append(f"{path.relative_to(root)}: pull_request_target is prohibited")
 		jobs = data.get("jobs", {})
 		is_deployment_workflow = path.name in {"deploy.yml", "deploy.yaml"}
+		is_promotion_workflow = path.name == "image-promotion.yml"
 		for job_id, job in jobs.items():
 			validate_permissions(path.relative_to(root), job_id, job.get("permissions"), errors)
 			if "timeout-minutes" not in job:
@@ -74,7 +136,9 @@ def main() -> int:
 				errors.append(f"{path.relative_to(root)}: job {job_id} must use ubuntu-24.04")
 			if "continue-on-error" in job:
 				errors.append(f"{path.relative_to(root)}: job {job_id} uses prohibited continue-on-error")
-			if "environment" in job and not is_deployment_workflow:
+			if "environment" in job and not is_deployment_workflow and not (
+				is_promotion_workflow and job_id == "publish"
+			):
 				errors.append(
 					f"{path.relative_to(root)}: job {job_id} must not target a deployment environment"
 				)
@@ -110,6 +174,8 @@ def main() -> int:
 				errors.append(f"{path.relative_to(root)}: deployment must be gated by the CI workflow")
 			if jobs.get("production", {}).get("if") != "github.event_name == 'workflow_run'":
 				errors.append(f"{path.relative_to(root)}: manual dispatch must never reach production")
+		elif is_promotion_workflow:
+			validate_promotion_workflow(path.relative_to(root), data, jobs, errors)
 		else:
 			validate_required_gate(path.relative_to(root), jobs, errors)
 
