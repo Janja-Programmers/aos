@@ -20,3 +20,16 @@ prepare_ssh() {
 }
 cleanup_ssh() { [[ -n "${SSH_KEY_FILE:-}" ]] && rm -f "$SSH_KEY_FILE"; }
 remote() { ssh "${SSH_OPTS[@]}" "${DEPLOY_USER}@${DEPLOY_HOST}" "$@"; }
+
+# Carry one host-wide nonblocking transaction lock across activation, guarded
+# migration/restart and application-only rollback. SSH delivers the complete
+# script on stdin: no interpolated shell command or release input is evaluated
+# outside the lock. The inner applier retains its separate activation lock.
+remote_transaction() {
+  require_var REMOTE_RELEASE_ROOT
+  local root="${REMOTE_RELEASE_ROOT%/}"
+  [[ "$root" =~ ^/[A-Za-z0-9_./-]+$ && "$root" != "/" && "$root" != *..* ]] \
+    || die 'Transaction root must be a reviewed absolute release directory.'
+  local lock="$root/.deployment-transaction.lock"
+  remote "umask 077 && test -d '$root' && test ! -L '$root' && test ! -L '$lock' && flock -n -E 75 '$lock' bash -Eeuo pipefail -s" <<< "$1"
+}
