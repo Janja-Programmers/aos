@@ -302,6 +302,69 @@ def _validate_image_lock(
 	lock.write_text(json.dumps(original), encoding="utf-8")
 
 
+def _validate_promotion_plan(
+	root: Path,
+	manifest: Path,
+	artifact: Path,
+	commit: str,
+	data: dict[str, Any],
+	env: dict[str, str],
+	temp: Path,
+	errors: list[str],
+) -> None:
+	command = [sys.executable, "scripts/deploy/promotion_plan.py"]
+	plan = temp / "promotion-plan.json"
+	_run([*command, "create", str(manifest), str(artifact), str(plan), commit], root=root, env=env)
+	_run([*command, "verify", str(manifest), str(artifact), str(plan), commit], root=root, env=env)
+	original = json.loads(plan.read_text(encoding="utf-8"))
+	contexts = {item["context"] for item in original["builds"]}
+	expected = {row["context"] for row in data["source_build_contexts"].values()}
+	if contexts != expected:
+		errors.append("OCI promotion plan omitted an archived build context")
+	if original["artifact_sha256"] != data["artifact_sha256"]:
+		errors.append("OCI promotion plan does not match the release artifact checksum")
+	cases = ("missing-context", "false-source", "changed-tag", "wrong-manifest")
+	for scenario in cases:
+		tampered = json.loads(json.dumps(original))
+		if scenario == "missing-context":
+			tampered["builds"].pop()
+		elif scenario == "false-source":
+			tampered["builds"][0]["source_sha256"] = "0" * 64
+		elif scenario == "changed-tag":
+			tampered["builds"][0]["image_tag"] = "unapproved:latest"
+		else:
+			tampered["release_manifest_sha256"] = "0" * 64
+		plan.write_text(json.dumps(tampered), encoding="utf-8")
+		_assert_rejected(
+			[*command, "verify", str(manifest), str(artifact), str(plan), commit],
+			root=root,
+			env=env,
+			reason="Promotion plan does not match the immutable release source.",
+			errors=errors,
+		)
+	plan.write_text(json.dumps(original), encoding="utf-8")
+	output = temp / "must-not-publish"
+	blocked = subprocess.run(
+		[
+			sys.executable,
+			"scripts/deploy/publish_images.py",
+			"publish",
+			str(manifest),
+			str(artifact),
+			str(plan),
+			str(output),
+			commit,
+		],
+		cwd=root,
+		env={**env, "AOS_IMAGE_PROMOTION_ENABLED": "false"},
+		capture_output=True,
+		text=True,
+		check=False,
+	)
+	if blocked.returncode == 0 or output.exists():
+		errors.append("OCI publisher bypassed explicit protected enablement")
+
+
 def _write_fake_bench(path: Path, exit_code: int) -> None:
 	path.write_text(
 		f"#!/usr/bin/env bash\nset -Eeuo pipefail\nprintf 'fake bench invoked\\n'\nexit {exit_code}\n",
@@ -519,6 +582,9 @@ def main() -> int:
 				manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
 				_validate_release_inventory(root, manifest, artifact, commit, manifest_data, base_env, errors)
 				_validate_image_lock(root, manifest, commit, manifest_data, base_env, temp, errors)
+				_validate_promotion_plan(
+					root, manifest, artifact, commit, manifest_data, base_env, temp, errors
+				)
 				_run(["bash", "scripts/deploy/preflight.sh", "--dry-run"], root=root, env=base_env)
 				deploy_output = _run(
 					["bash", "scripts/deploy/deploy.sh", "--dry-run"], root=root, env=base_env

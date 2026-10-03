@@ -1,0 +1,162 @@
+name: Manual OCI image promotion
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Full CI-green main release commit
+        required: true
+        type: string
+      publish:
+        description: Publish the archived source images to GHCR (requires protected approval)
+        required: true
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: aos-image-promotion-main
+  cancel-in-progress: false
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main' && github.repository == 'Janja-Programmers/aos'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Check out exact release
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 1
+      - name: Install pinned Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: 3.14.6
+      - name: Verify main and download exact release artifact
+        env:
+          RELEASE_COMMIT: ${{ inputs.release_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          release_run_id="$(bash ci/verify-promotion-source.sh "$RELEASE_COMMIT" --release-run)"
+          gh run download "$release_run_id" --repo "$GITHUB_REPOSITORY" \
+            --name "release-$RELEASE_COMMIT" --dir .
+          python3 scripts/deploy/release_manifest.py verify \
+            release-manifest.json aos-release.tar.gz "$RELEASE_COMMIT"
+          python3 scripts/deploy/promotion_plan.py create \
+            release-manifest.json aos-release.tar.gz promotion-plan.json "$RELEASE_COMMIT"
+          python3 scripts/deploy/promotion_plan.py verify \
+            release-manifest.json aos-release.tar.gz promotion-plan.json "$RELEASE_COMMIT"
+      - name: Store exact promotion input
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: promotion-input-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            aos-release.tar.gz
+            release-manifest.json
+            promotion-plan.json
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    needs: plan
+    if: inputs.publish == true && needs.plan.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    environment: image-promotion
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - name: Check out approved release
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 1
+      - name: Install pinned Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: 3.14.6
+      - name: Reverify freshness, CI and protected enablement
+        env:
+          RELEASE_COMMIT: ${{ inputs.release_sha }}
+          GH_TOKEN: ${{ github.token }}
+          AOS_IMAGE_PROMOTION_ENABLED: ${{ vars.AOS_IMAGE_PROMOTION_ENABLED }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$AOS_IMAGE_PROMOTION_ENABLED" == "true" ]] || {
+            echo "::error::Image publication is disabled in the protected image-promotion Environment."
+            exit 1
+          }
+          bash ci/verify-promotion-source.sh "$RELEASE_COMMIT"
+          [[ "$(gh api -X GET "repos/$GITHUB_REPOSITORY/branches/main" --jq '.protected')" == "true" ]] || {
+            echo "::error::main branch protection must be enabled before GHCR image publication."
+            exit 1
+          }
+      - name: Download exact approved promotion input
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v8.0.0
+        with:
+          name: promotion-input-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Verify archive and deterministic build plan
+        env:
+          RELEASE_COMMIT: ${{ inputs.release_sha }}
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/deploy/promotion_plan.py verify \
+            release-manifest.json aos-release.tar.gz promotion-plan.json "$RELEASE_COMMIT"
+      - name: Install checksum-verified Compose and crane tools
+        run: |
+          set -Eeuo pipefail
+          ci/install-compose-tools.sh "$RUNNER_TEMP/oci-tools"
+          echo "$RUNNER_TEMP/oci-tools/bin" >>"$GITHUB_PATH"
+      - name: Verify immutable protected BuildKit image
+        env:
+          AOS_BUILDKIT_IMAGE: ${{ vars.AOS_BUILDKIT_IMAGE }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$AOS_BUILDKIT_IMAGE" =~ ^moby/buildkit:v0\.33\.1@sha256:[0-9a-f]{64}$ ]] || {
+            echo "::error::Protected BuildKit image must be pinned to the approved version and OCI digest."
+            exit 1
+          }
+          actual="$(crane digest "$AOS_BUILDKIT_IMAGE")"
+          [[ "$actual" == "sha256:${AOS_BUILDKIT_IMAGE##*@sha256:}" ]] || {
+            echo "::error::Pinned BuildKit registry manifest disagrees with its declared digest."
+            exit 1
+          }
+      - name: Set up pinned Buildx and BuildKit
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        with:
+          version: v0.37.2
+          driver-opts: |
+            image=${{ vars.AOS_BUILDKIT_IMAGE }}
+      - name: Authenticate to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io \
+            --username "$GITHUB_ACTOR" --password-stdin >/dev/null
+      - name: Publish and verify immutable OCI build receipts
+        env:
+          CI: "true"
+          RELEASE_COMMIT: ${{ inputs.release_sha }}
+          AOS_IMAGE_PROMOTION_ENABLED: ${{ vars.AOS_IMAGE_PROMOTION_ENABLED }}
+          VALHALLA_IMAGE: ${{ vars.VALHALLA_IMAGE }}
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/deploy/publish_images.py publish \
+            release-manifest.json aos-release.tar.gz promotion-plan.json \
+            promoted-images "$RELEASE_COMMIT"
+      - name: Retain immutable image lock and receipts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: promoted-images-${{ inputs.release_sha }}-${{ github.run_id }}
+          path: |
+            promoted-images/*.json
+            release-manifest.json
+            promotion-plan.json
+          retention-days: 30
+          if-no-files-found: error
