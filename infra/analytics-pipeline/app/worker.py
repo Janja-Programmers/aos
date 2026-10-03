@@ -132,11 +132,13 @@ for i = 3, 7 do
   end
 end
 local metric_count = tonumber(ARGV[5]) or 0
-redis.call('EXPIRE', KEYS[8], ARGV[6])
 local offset = 7
 for i = 1, metric_count do
   redis.call('HINCRBY', KEYS[8], ARGV[offset], tonumber(ARGV[offset + 1]))
   offset = offset + 2
+end
+if metric_count > 0 then
+  redis.call('EXPIRE', KEYS[8], ARGV[6])
 end
 return 1
 """

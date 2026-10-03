@@ -11,6 +11,9 @@ if [[ "${target}" == "background-removal" ]]; then
 fi
 
 assert_python_version
+if [[ "${target}" == "all" && -z "${AOS_TEST_REDIS_URL:-}" ]]; then
+    die "Full FastAPI CI requires an isolated AOS_TEST_REDIS_URL."
+fi
 python_executable="$(python314)"
 
 run_one() {

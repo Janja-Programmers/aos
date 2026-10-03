@@ -111,6 +111,7 @@ def test_real_redis_lua_applies_analytics_event_once(monkeypatch):
 			max_events_per_job=10,
 			stream_max_len=100,
 			event_dedupe_ttl_seconds=2592000,
+			aggregate_retention_seconds=34560000,
 			callback_secret="test-callback-secret",
 		),
 	)
@@ -120,7 +121,7 @@ def test_real_redis_lua_applies_analytics_event_once(monkeypatch):
 		"events": [
 			{
 				"event_id": "EVENT-REAL-1",
-				"event_type": "view",
+				"event_type": "ad_detail_view",
 				"event_date": "2026-07-20",
 				"metrics": {"watch_seconds": 3},
 			}
@@ -131,7 +132,7 @@ def test_real_redis_lua_applies_analytics_event_once(monkeypatch):
 	assert first["ingested_count"] == 1
 	assert second["ingested_count"] == 0
 	assert second["deduplicated_count"] == 1
-	assert int(redis.hget("aos:analytics:day:2026-07-20", "view") or 0) == 1
+	assert int(redis.hget("aos:analytics:day:2026-07-20", "ad_detail_view") or 0) == 1
 	assert int(redis.hget("aos:analytics:metric:2026-07-20", "watch_seconds") or 0) == 3
 
 

@@ -22,11 +22,13 @@ def test_real_redis_rq_separates_work_from_callback_delivery(monkeypatch):
 	redis.ping()
 	redis.flushdb()
 	queue = Queue(f"lifecycle-video_processing-{uuid.uuid4().hex[:8]}", connection=redis)
+	callback_queue = Queue(f"{queue.name}-callbacks", connection=redis)
 	stable_id = "stable-real-rq-job-1"
 	work_counter = "test:work-count:video_processing"
 
 	monkeypatch.setattr(worker, "get_redis", lambda: redis)
 	monkeypatch.setattr(worker, "get_queue", lambda: queue)
+	monkeypatch.setattr(worker, "get_callback_queue", lambda: callback_queue)
 	monkeypatch.setattr(
 		worker,
 		"_perform_video_work",
@@ -72,13 +74,13 @@ def test_real_redis_rq_separates_work_from_callback_delivery(monkeypatch):
 
 	# The independently queued callback job fails without altering the finished
 	# work job or re-running its external side effect.
-	SimpleWorker([queue], connection=redis).work(burst=True, max_jobs=1, with_scheduler=False)
+	SimpleWorker([callback_queue], connection=redis).work(burst=True, max_jobs=1, with_scheduler=False)
 	assert int(redis.get(work_counter) or 0) == 1
 	assert load_result(redis, "video_processing", stable_id)["work_state"] == "work_complete"
 
 	record = load_result(redis, "video_processing", stable_id)
 	callback_job_id = record["callback_job_id"]
-	registry = ScheduledJobRegistry(queue=queue)
+	registry = ScheduledJobRegistry(queue=callback_queue)
 	assert callback_job_id in registry.get_job_ids()
 
 	# Prove the retry uses RQ's scheduled registry rather than a direct manual
@@ -89,7 +91,7 @@ def test_real_redis_rq_separates_work_from_callback_delivery(monkeypatch):
 		lambda *_args, **_kwargs: SimpleNamespace(status_code=200, json=lambda: {"ok": True}),
 	)
 	registry.requeue(callback_job_id)
-	SimpleWorker([queue], connection=redis).work(burst=True, max_jobs=1, with_scheduler=False)
+	SimpleWorker([callback_queue], connection=redis).work(burst=True, max_jobs=1, with_scheduler=False)
 	completed = load_result(redis, "video_processing", stable_id)
 	assert completed["callback_status"] == "complete"
 	assert int(redis.get(work_counter) or 0) == 1
@@ -104,6 +106,7 @@ def test_real_redis_rq_retries_transient_work_before_terminal_result(monkeypatch
 	redis.ping()
 	redis.flushdb()
 	queue = Queue(f"retry-video_processing-{uuid.uuid4().hex[:8]}", connection=redis)
+	callback_queue = Queue(f"{queue.name}-callbacks", connection=redis)
 	stable_id = "stable-real-rq-retry-1"
 	attempt_counter = "test:work-attempt:video_processing"
 	effect_counter = "test:work-effect:video_processing"
@@ -111,6 +114,7 @@ def test_real_redis_rq_retries_transient_work_before_terminal_result(monkeypatch
 
 	monkeypatch.setattr(worker, "get_redis", lambda: redis)
 	monkeypatch.setattr(worker, "get_queue", lambda: queue)
+	monkeypatch.setattr(worker, "get_callback_queue", lambda: callback_queue)
 
 	def transient_then_success(_payload):
 		attempt = int(redis.incr(attempt_counter))
@@ -164,7 +168,7 @@ def test_real_redis_rq_retries_transient_work_before_terminal_result(monkeypatch
 	assert int(redis.get(attempt_counter) or 0) == 2
 	assert int(redis.get(effect_counter) or 0) == 1
 
-	SimpleWorker([queue], connection=redis).work(burst=True, max_jobs=1, with_scheduler=False)
+	SimpleWorker([callback_queue], connection=redis).work(burst=True, max_jobs=1, with_scheduler=False)
 	assert load_result(redis, "video_processing", stable_id)["callback_status"] == "complete"
 	assert int(redis.get(callback_counter) or 0) == 1
 	assert int(redis.get(effect_counter) or 0) == 1

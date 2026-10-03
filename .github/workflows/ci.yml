@@ -202,7 +202,8 @@ jobs:
       - name: Run Background Removal unit and contract tests
         run: |
           AOS_CI_ARTIFACTS="${RUNNER_TEMP}/aos-artifacts" ci/run-background-removal-tests.sh
-          python ci/validate-background-removal-runtime.py
+          source ci/lib.sh
+          "${AOS_CI_WORKDIR}/unit-background-removal/bin/python" ci/validate-background-removal-runtime.py
       - name: Build immutable Background Removal image
         run: docker build --pull --tag aos-background-removal:ci infra/background-removal
       - name: Prove offline immutable runtime
