@@ -88,9 +88,10 @@ PY
 prepare_ssh
 trap cleanup_ssh EXIT
 
-# Keep validation and application in a single remote command. No operator-supplied
-# command text is accepted. An application rollback must not restore the database.
-remote "test -r '$remote_archive' && test -r '$remote_manifest' \
+# Keep validation, exact application rollback, Bench restart and health checks
+# under the same nonblocking host-wide lock used by a normal deployment.
+# No operator-supplied command text or database restore is accepted.
+remote_transaction "test -r '$remote_archive' && test -r '$remote_manifest' \
   && printf '%s  %s\\n' '$archive_hash' '$remote_archive' | sha256sum -c - \
   && printf '%s  %s\\n' '$manifest_hash' '$remote_manifest' | sha256sum -c - \
   && printf '%s  %s\\n' '$lock_hash' '$remote_lock' | sha256sum -c - \
@@ -105,9 +106,8 @@ remote "test -r '$remote_archive' && test -r '$remote_manifest' \
   && printf '%s  %s\\n' '$REMOTE_APPLY_RELEASE_SHA256' '$REMOTE_APPLY_RELEASE_PATH' | sha256sum -c - \
   && REMOTE_RELEASE_ROOT='$REMOTE_RELEASE_ROOT' REMOTE_BENCH_ROOT='$REMOTE_BENCH_ROOT' REMOTE_PROJECT_ROOT='$REMOTE_PROJECT_ROOT' \
      '$REMOTE_APPLY_RELEASE_PATH' '$remote_archive' '$remote_manifest' \
-     '$ROLLBACK_COMMIT' '$remote_lock' '$remote_compose'"
-
-remote "cd '$REMOTE_BENCH_ROOT' \
+     '$ROLLBACK_COMMIT' '$remote_lock' '$remote_compose' \
+  && cd '$REMOTE_BENCH_ROOT' \
   && bench restart \
   && bench --site '$FRAPPE_SITE' execute aos.utils.operational_health.assert_operational_health_ready \
   && bench --site '$FRAPPE_SITE' execute aos.utils.job_monitoring.assert_job_monitoring_ready"
