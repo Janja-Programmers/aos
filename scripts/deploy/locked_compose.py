@@ -21,6 +21,9 @@ class UniqueMappingLoader(yaml.SafeLoader):
 
 
 def _unique_mapping(loader: UniqueMappingLoader, node: yaml.MappingNode) -> dict[Any, Any]:
+    # Compose's approved security defaults use YAML << anchors. Flatten their
+    # mappings before rejecting duplicate effective service keys.
+    loader.flatten_mapping(node)
     result: dict[Any, Any] = {}
     for key_node, value_node in node.value:
         key = loader.construct_object(key_node, deep=True)
