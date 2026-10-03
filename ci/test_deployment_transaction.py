@@ -20,11 +20,7 @@ class DeploymentTransactionTests(unittest.TestCase):
 		self.root = Path(self.temporary.name) / "releases"
 		self.root.mkdir()
 		self.env = {**os.environ, "REMOTE_RELEASE_ROOT": str(self.root)}
-		self.entry = (
-			'source "$1"; '
-			'remote() { bash -Eeuo pipefail -c "$1"; }; '
-			'remote_transaction "$2"'
-		)
+		self.entry = 'source "$1"; remote() { bash -Eeuo pipefail -c "$1"; }; remote_transaction "$2"'
 
 	def command(self, source: str) -> list[str]:
 		return ["bash", "-Eeuo", "pipefail", "-c", self.entry, "host-test", str(LIB), source]
@@ -32,11 +28,7 @@ class DeploymentTransactionTests(unittest.TestCase):
 	def test_nonblocking_lock_spans_activation_migration_and_restart(self) -> None:
 		entered = self.root / "entered"
 		finished = self.root / "finished"
-		script = (
-			f"printf entered > '{entered}'; "
-			"sleep 1; "
-			f"printf finished > '{finished}'"
-		)
+		script = f"printf entered > '{entered}'; sleep 1; printf finished > '{finished}'"
 		first = subprocess.Popen(
 			self.command(script),
 			cwd=ROOT,
