@@ -27,14 +27,15 @@ class TestMigrationPreflight(FrappeTestCase):
 
         backup_report = {
             "ready": backup_ready,
-            "counts": {"unhealthy": 0 if backup_ready else 1},
+            "summary": {"unhealthy": 0 if backup_ready else 1},
         }
         with (
             patch.dict("os.environ", {"AOS_ENVIRONMENT": environment}, clear=False),
             patch.object(db, "sql", side_effect=sql),
             patch.object(db, "table_exists", return_value=True),
             patch.object(db, "get_table_columns", return_value=list(migration_preflight._REQUIRED_OUTBOX_COLUMNS)),
-            patch("aos.utils.migration_preflight.frappe.get_attr", return_value=lambda: []),
+            patch("frappe.modules.patch_handler.get_all_patches", return_value=[]),
+            patch("aos.utils.migration_preflight.frappe.get_all", return_value=[]),
             patch("aos.utils.migration_preflight.frappe.get_installed_apps", return_value=["frappe", "aos"]),
             patch("aos.utils.migration_preflight.shutil.disk_usage") as disk_usage,
             patch("aos.utils.backup_readiness.validate_backup_readiness", return_value=backup_report),
@@ -53,6 +54,29 @@ class TestMigrationPreflight(FrappeTestCase):
         report = self._run(environment="staging", backup_ready=False)
         self.assertTrue(report["ready"], report)
         self.assertIn("backup_readiness", report["warnings"])
+        backup = next(item for item in report["checks"] if item["name"] == "backup_readiness")
+        self.assertEqual(backup["details"]["unhealthy_check_count"], 1)
+
+    def test_patch_inventory_uses_pinned_frappe_api_and_excludes_applied_patches(self):
+        with (
+            patch("frappe.modules.patch_handler.get_all_patches", return_value=["a.first", "a.second"]),
+            patch("aos.utils.migration_preflight.frappe.get_all", return_value=["a.first"]) as patch_log,
+        ):
+            ready, _message, details = migration_preflight._pending_patch_check()
+        self.assertTrue(ready)
+        self.assertEqual(details["pending_patch_count"], 1)
+        self.assertTrue(details["manual_patch_review_required"])
+        patch_log.assert_called_once_with(
+            "Patch Log", filters={"skipped": 0}, fields="patch", pluck="patch"
+        )
+
+    def test_patch_inventory_fails_closed_if_frappe_cannot_read_patch_log(self):
+        with (
+            patch("frappe.modules.patch_handler.get_all_patches", return_value=["a.first"]),
+            patch("aos.utils.migration_preflight.frappe.get_all", side_effect=RuntimeError("denied")),
+        ):
+            with self.assertRaises(RuntimeError):
+                migration_preflight._pending_patch_check()
 
     def test_previous_migration_failure_marker_fails_closed(self):
         with self.subTest("marker"):
