@@ -44,8 +44,9 @@ Checkout a reviewed release commit, not an unpinned branch head.
 ## 4. Configure secrets
 
 ```bash
-cp .env.example .env
-sudo chmod 600 .env
+sudo install -d -m 0750 -o aos -g aos /srv/aos/runtime /srv/aos/releases
+sudo install -m 0600 -o aos -g aos .env.example /srv/aos/runtime/.env
+# Replace every placeholder in the persistent host-owned file before provisioning staging.
 cp infra/maps/manifest.env.example infra/maps/manifest.env
 sudo chmod 600 infra/maps/manifest.env
 ```
@@ -123,33 +124,24 @@ MAPS_PUBLIC_BASE_URL=https://<maps-domain>/basemap MAPS_WEB_ORIGIN=https://<web-
 
 For disaster recovery, follow `restore.md` instead.
 
-## 6. Validate and start Docker
+## 6. Validate the controlled release prerequisites
+
+Never start a production release with `docker compose up --build` from a mutable checkout. The approved deployment workflow verifies the exact successful manual image promotion and runs the independently installed `scripts/deploy/apply-release.py` against its immutable `release-compose.locked.yml`. This uses the host-owned `/srv/aos/runtime/.env`, checks every effective digest-pinned image and invokes no-build Compose.
 
 ```bash
-docker compose config
-docker compose up -d --build
-docker compose ps
-./infra/maps/scripts/verify-map-data.sh --services
-curl http://127.0.0.1:8110/health
-curl http://127.0.0.1:8110/ready
-curl http://127.0.0.1:8120/health
-curl http://127.0.0.1:8120/ready
-curl http://127.0.0.1:8100/health
-curl http://127.0.0.1:8100/ready
+docker compose version
+python3 --version
+crane version # pinned 0.21.7, independently authenticated read-only to GHCR
+test -s /srv/aos/runtime/.env
+test -L /home/aos/frappe-bench/apps/aos
+sha256sum /usr/local/sbin/aos-apply-release
 ```
+
+Onboarding an existing `apps/aos` directory as a symlink requires a separately approved, backed-up host change; the applier refuses to overwrite the directory. The SSH deployment account must own or have suitable access to the Bench source symlink, extracted release directory and persistent Compose project without exposing secrets. Follow `docs/production/ci-cd.md` for the protected Environment variables and expected applier checksum. The actual GHCR promotion and staging deployment require separate approval; these commands only inspect prerequisites.
 
 ## 7. Migrate Frappe
 
-```bash
-cd /home/aos/frappe-bench
-bench --site <site> migrate
-bench build --force
-bench restart
-
-# Rebuild image-search vectors after the image-search service is deployed.
-bench --site <site> execute aos.integrations.ai.image_search_tasks.rebuild_image_search_index --kwargs '{"dry_run": true}'
-bench --site <site> execute aos.integrations.ai.image_search_tasks.rebuild_image_search_index
-```
+The controlled `scripts/deploy/deploy.sh` invokes the versioned guarded `run-migrate.sh` **unconditionally after the five-input applier succeeds**, then restarts Bench before post-release smoke checks. Do not bypass the migration-failure marker with an ad hoc `bench migrate`, `bench build --force`, or an unreviewed application checkout. Review pending migrations and backed-up data before authorization. Any image-search vector rebuild is a separate, scheduled operational task after service readiness, not an implicit release side effect.
 
 Smoke-test the Frappe translation integration client when translation is enabled:
 

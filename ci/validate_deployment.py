@@ -22,6 +22,7 @@ REQUIRED_SECRET_REFERENCES = {
 }
 REQUIRED_VARIABLE_REFERENCES = {
 	"REMOTE_BENCH_ROOT",
+	"REMOTE_PROJECT_ROOT",
 	"FRAPPE_SITE",
 	"REMOTE_RELEASE_ROOT",
 	"REMOTE_APPLY_RELEASE_PATH",
@@ -191,6 +192,10 @@ def _validate_deploy_script(root: Path, errors: list[str]) -> None:
 		errors.append("repository deploy path does not invoke guarded run-migrate.sh")
 	if "REMOTE_DEPLOY_COMMAND" in text:
 		errors.append("deployment still accepts arbitrary REMOTE_DEPLOY_COMMAND contents")
+	if "REMOTE_PROJECT_ROOT" not in text or "bench restart" not in text:
+		errors.append(
+			"deployment must use the reviewed persistent Compose root and restart Bench after migration"
+		)
 	if "REMOTE_APPLY_RELEASE_PATH" not in text:
 		errors.append("deployment lacks the restricted release-apply executable path")
 	if "REMOTE_APPLY_RELEASE_SHA256" not in text or "reviewed SHA-256" not in text:
@@ -220,6 +225,7 @@ def _validate_rollback_script(root: Path, errors: list[str]) -> None:
 		"ROLLBACK_LOCKED_COMPOSE",
 		"locked_compose.py verify-registry",
 		"REMOTE_APPLY_RELEASE_PATH",
+		"REMOTE_PROJECT_ROOT",
 		"REMOTE_APPLY_RELEASE_SHA256",
 		"REMOTE_RELEASE_ROOT",
 		"ROLLBACK_APPROVED",
@@ -228,6 +234,7 @@ def _validate_rollback_script(root: Path, errors: list[str]) -> None:
 		"sha256sum -c -",
 		"policy_checks",
 		"Archived rollback policy is incomplete",
+		"bench restart",
 		"assert_operational_health_ready",
 		"assert_job_monitoring_ready",
 	):
@@ -797,7 +804,15 @@ def main() -> int:
 	_validate_rollback_script(root, errors)
 	scripts = [
 		root / "scripts" / "deploy" / name
-		for name in ("lib.sh", "preflight.sh", "deploy.sh", "smoke.sh", "rollback.sh", "run-migrate.sh")
+		for name in (
+			"lib.sh",
+			"preflight.sh",
+			"deploy.sh",
+			"apply-release.py",
+			"smoke.sh",
+			"rollback.sh",
+			"run-migrate.sh",
+		)
 	]
 	for script in scripts:
 		if not script.is_file() or not os.access(script, os.X_OK):
@@ -823,6 +838,7 @@ def main() -> int:
 					"RELEASE_MANIFEST": str(manifest),
 					"CI_GATE_VERIFIED": "true",
 					"REMOTE_BENCH_ROOT": "/srv/aos-bench",
+					"REMOTE_PROJECT_ROOT": "/srv/aos/runtime",
 					"FRAPPE_SITE": "site.invalid",
 					"REMOTE_RELEASE_ROOT": "/srv/aos-releases",
 					"REMOTE_APPLY_RELEASE_PATH": "/usr/local/sbin/aos-apply-release",
@@ -897,6 +913,7 @@ def main() -> int:
 					errors=errors,
 				)
 				_validate_migration_wrapper(root, base_env, errors)
+				_run([sys.executable, "ci/test_apply_release.py"], root=root, env=base_env)
 		except Exception as exc:
 			errors.append(str(exc))
 

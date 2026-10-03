@@ -13,12 +13,15 @@ validate_environment
 validate_release
 require_var REMOTE_RELEASE_ROOT
 require_var REMOTE_BENCH_ROOT
+require_var REMOTE_PROJECT_ROOT
 require_var FRAPPE_SITE
 require_var REMOTE_APPLY_RELEASE_PATH
 [[ "$REMOTE_RELEASE_ROOT" =~ ^/[A-Za-z0-9_./-]+$ ]] \
   || die 'REMOTE_RELEASE_ROOT must be an absolute path.'
 [[ "$REMOTE_BENCH_ROOT" =~ ^/[A-Za-z0-9_./-]+$ ]] \
   || die 'REMOTE_BENCH_ROOT must be an absolute path.'
+[[ "$REMOTE_PROJECT_ROOT" =~ ^/[A-Za-z0-9_./-]+$ ]] \
+  || die 'REMOTE_PROJECT_ROOT must be an absolute path.'
 [[ "$FRAPPE_SITE" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,139}$ ]] \
   || die 'FRAPPE_SITE contains unsupported characters.'
 [[ "$REMOTE_APPLY_RELEASE_PATH" =~ ^/[A-Za-z0-9_./-]+$ ]] \
@@ -45,7 +48,7 @@ python3 scripts/deploy/locked_compose.py verify-registry \
 
 require_var DEPLOY_KNOWN_HOSTS_FILE
 [[ -s "$DEPLOY_KNOWN_HOSTS_FILE" ]] || die 'Verified known-hosts file is missing.'
-[[ "$REMOTE_RELEASE_ROOT" != *..* && "$REMOTE_BENCH_ROOT" != *..* && "$REMOTE_APPLY_RELEASE_PATH" != *..* ]] \
+[[ "$REMOTE_RELEASE_ROOT" != *..* && "$REMOTE_BENCH_ROOT" != *..* && "$REMOTE_PROJECT_ROOT" != *..* && "$REMOTE_APPLY_RELEASE_PATH" != *..* ]] \
   || die 'Remote paths must not contain traversal.'
 
 prepare_ssh
@@ -110,9 +113,11 @@ remote "test -x '$REMOTE_BENCH_ROOT/env/bin/python' \
      verify-registry '$remote_manifest' '$remote_archive' '$remote_lock' \
      '$RELEASE_COMMIT' '$remote_compose' \
   && printf '%s  %s\\n' '$REMOTE_APPLY_RELEASE_SHA256' '$REMOTE_APPLY_RELEASE_PATH' | sha256sum -c - \
-  && '$REMOTE_APPLY_RELEASE_PATH' '$remote_archive' '$remote_manifest' \
+  && REMOTE_RELEASE_ROOT='$REMOTE_RELEASE_ROOT' REMOTE_BENCH_ROOT='$REMOTE_BENCH_ROOT' REMOTE_PROJECT_ROOT='$REMOTE_PROJECT_ROOT' \
+     '$REMOTE_APPLY_RELEASE_PATH' '$remote_archive' '$remote_manifest' \
      '$RELEASE_COMMIT' '$remote_lock' '$remote_compose'"
 # Repository-controlled migration is unconditional. A failure stops here and
 # prevents the workflow's smoke and production steps.
-remote "REMOTE_BENCH_ROOT='$REMOTE_BENCH_ROOT' FRAPPE_SITE='$FRAPPE_SITE' RELEASE_COMMIT='$RELEASE_COMMIT' '$REMOTE_BENCH_ROOT/apps/aos/scripts/deploy/run-migrate.sh'"
+remote "REMOTE_BENCH_ROOT='$REMOTE_BENCH_ROOT' FRAPPE_SITE='$FRAPPE_SITE' RELEASE_COMMIT='$RELEASE_COMMIT' '$REMOTE_BENCH_ROOT/apps/aos/scripts/deploy/run-migrate.sh' \
+  && cd '$REMOTE_BENCH_ROOT' && bench restart"
 log "Locked deployment and guarded migration completed for ${RELEASE_COMMIT}."

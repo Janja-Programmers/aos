@@ -19,6 +19,7 @@ infra/nginx/snippets/rate-limits.conf
 infra/systemd/aos-backup-failure-notify@.service
 scripts/deploy/preflight.sh
 scripts/deploy/deploy.sh
+scripts/deploy/apply-release.py
 scripts/deploy/smoke.sh
 scripts/deploy/rollback.sh
 .github/workflows/deploy.yml
