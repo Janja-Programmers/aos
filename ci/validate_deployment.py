@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 from typing import Any
 
 import yaml
@@ -472,6 +473,85 @@ def _validate_locked_compose(
 	)
 
 
+def _validate_promotion_metadata(commit: str, errors: list[str]) -> None:
+	"""Test approved publication identity without GitHub/registry access."""
+	import fetch_promoted_lock as promotion
+
+	run_id = "123456"
+	name = f"promoted-images-{commit}-{run_id}"
+	valid_run = {
+		"id": int(run_id),
+		"name": "Manual OCI image promotion",
+		"path": ".github/workflows/image-promotion.yml",
+		"event": "workflow_dispatch",
+		"head_sha": commit,
+		"head_branch": "main",
+		"head_repository": {"full_name": "Janja-Programmers/aos"},
+		"status": "completed",
+		"conclusion": "success",
+		"run_attempt": 1,
+	}
+	good_jobs = {"jobs": [{"name": "publish", "conclusion": "success", "run_attempt": 1}]}
+	good_artifacts = {"artifacts": [{"name": name, "expired": False}]}
+	cases = (
+		("approved", None, None, None, True),
+		("wrong-run", {"id": 1}, None, None, False),
+		("wrong-workflow", {"path": ".github/workflows/deploy.yml"}, None, None, False),
+		("wrong-repository", {"head_repository": {"full_name": "another/aos"}}, None, None, False),
+		("wrong-source", {"head_sha": "0" * 40}, None, None, False),
+		("wrong-branch", {"head_branch": "feature"}, None, None, False),
+		("not-manual", {"event": "push"}, None, None, False),
+		("in-progress", {"status": "in_progress"}, None, None, False),
+		("failed-run", {"conclusion": "failure"}, None, None, False),
+		("missing-publish", None, {"jobs": []}, None, False),
+		(
+			"failed-publish", None,
+			{"jobs": [{"name": "publish", "conclusion": "failure", "run_attempt": 1}]},
+			None, False,
+		),
+		(
+			"wrong-attempt", None,
+			{"jobs": [{"name": "publish", "conclusion": "success", "run_attempt": 2}]},
+			None, False,
+		),
+		("missing-artifact", None, None, {"artifacts": []}, False),
+		("expired-artifact", None, None, {"artifacts": [{"name": name, "expired": True}]}, False),
+		(
+			"ambiguous-artifact", None, None,
+			{"artifacts": [{"name": name, "expired": False}] * 2}, False,
+		),
+	)
+	for label, run_change, jobs_change, artifact_change, accepted in cases:
+		run = {**valid_run, **(run_change or {})}
+		responses = [run, jobs_change or good_jobs, artifact_change or good_artifacts]
+		# Empty replacements must stay empty, not silently fall back to valid evidence.
+		responses[1] = good_jobs if jobs_change is None else jobs_change
+		responses[2] = good_artifacts if artifact_change is None else artifact_change
+		with (
+			mock.patch.dict(
+				os.environ,
+				{"GITHUB_REPOSITORY": "Janja-Programmers/aos", "GH_TOKEN": "offline-test-token"},
+			),
+			mock.patch.object(promotion, "_api", side_effect=responses),
+		):
+			try:
+				result = promotion.verify_promotion(commit, run_id)
+			except ValueError:
+				if accepted:
+					errors.append(f"valid approved promotion was rejected: {label}")
+			else:
+				if not accepted or result != name:
+					errors.append(f"unapproved promotion evidence was accepted: {label}")
+	with mock.patch.dict(
+		os.environ, {"GITHUB_REPOSITORY": "Janja-Programmers/aos", "GH_TOKEN": ""},
+	):
+		try:
+			promotion.verify_promotion(commit, run_id)
+		except ValueError:
+			pass
+		else:
+			errors.append("promotion accepted a missing GitHub authorization token")
+
 def _validate_promotion_plan(
 	root: Path,
 	manifest: Path,
@@ -759,6 +839,7 @@ def main() -> int:
 				_validate_promotion_plan(
 					root, manifest, artifact, commit, manifest_data, base_env, temp, errors
 				)
+				_validate_promotion_metadata(commit, errors)
 				_run(["bash", "scripts/deploy/preflight.sh", "--dry-run"], root=root, env=base_env)
 				deploy_output = _run(
 					["bash", "scripts/deploy/deploy.sh", "--dry-run"], root=root, env=base_env
