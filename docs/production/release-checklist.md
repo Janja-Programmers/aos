@@ -5,6 +5,7 @@
 - [ ] `CI / Required Gate` passed for the exact commit.
 - [ ] Schema-2 release manifest records the Git SHA, archive SHA-256, all static external image digests, all source-built service/context fingerprints, and required runtime image variables.
 - [ ] Every locally built application image is separately identified and verified by its actual deployed OCI digest; a source-context fingerprint alone is insufficient.
+- [ ] A trusted image builder produced a lock for the exact release manifest; `image_lock.py verify` and pinned-crane `verify-registry` passed, and builder provenance was independently checked.
 - [ ] Runtime-supplied image references (including Valhalla) resolve to reviewed immutable digests in the deployed Compose configuration.
 - [ ] Staging deployment and smoke checks passed first.
 - [ ] Production GitHub Environment approval was granted.

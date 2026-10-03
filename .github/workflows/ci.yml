@@ -30,6 +30,7 @@ jobs:
           python-version: 3.14.6
       - name: Run non-mutating repository checks
         run: |
+          set -Eeuo pipefail
           mkdir -p "${RUNNER_TEMP}/aos-artifacts/quality"
           AOS_CI_ARTIFACTS="${RUNNER_TEMP}/aos-artifacts" ci/repository-quality.sh \
             2>&1 | tee "${RUNNER_TEMP}/aos-artifacts/quality/checks.log"
@@ -363,7 +364,15 @@ jobs:
       - name: Assert collection and run complete Frappe suite
         env:
           CI: "Yes"
+          # CI-only, non-secret identity. No storage service or production bucket
+          # is accessed by the Media projection and mocked-dispatch tests.
+          AOS_OBJECT_STORAGE_ENDPOINT: "127.0.0.1:19000"
+          AOS_OBJECT_STORAGE_ACCESS_KEY: "ci-test-only-access"
+          AOS_OBJECT_STORAGE_SECRET_KEY: "ci-test-only-secret" # pragma: allowlist secret
+          AOS_OBJECT_STORAGE_PRESIGN_ENDPOINT: "http://127.0.0.1:19000"
+          AOS_MEDIA_PUBLIC_BASE_URL: "http://127.0.0.1:19100/aos-public"
         run: |
+          set -Eeuo pipefail
           python ci/assert_frappe_tests.py
           mkdir -p "${RUNNER_TEMP}/aos-artifacts/frappe"
           cd "${RUNNER_TEMP}/frappe-bench"
@@ -455,6 +464,7 @@ jobs:
           echo "NGINX_MIME_TYPES=${RUNNER_TEMP}/aos-infra-tools/nginx/conf/mime.types" >>"${GITHUB_ENV}"
       - name: Validate maintained infrastructure
         run: |
+          set -Eeuo pipefail
           mkdir -p "${RUNNER_TEMP}/aos-artifacts/infrastructure"
           ci/validate-infrastructure.sh 2>&1 | tee "${RUNNER_TEMP}/aos-artifacts/infrastructure/validation.log"
       - name: Upload validation log

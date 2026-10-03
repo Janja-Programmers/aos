@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -42,7 +43,12 @@ def _step_index(job: dict[str, Any], name: str) -> int:
 
 def _validate_job_order(jobs: dict[str, Any], errors: list[str]) -> None:
 	expectations = {
-		"staging": ("Refuse stale staging release", "Staging preflight", "Deploy staging", "Staging smoke checks"),
+		"staging": (
+			"Refuse stale staging release",
+			"Staging preflight",
+			"Deploy staging",
+			"Staging smoke checks",
+		),
 		"production": (
 			"Refuse stale production release",
 			"Enforce production deployment enablement",
@@ -57,24 +63,36 @@ def _validate_job_order(jobs: dict[str, Any], errors: list[str]) -> None:
 		if any(index < 0 for index in indexes):
 			errors.append(f"{job_name} is missing required ordered steps: {names}")
 		elif indexes != sorted(indexes) or len(set(indexes)) != len(indexes):
-			errors.append(f"{job_name} must verify freshness, then run preflight, deployment/migration, then smoke checks")
+			errors.append(
+				f"{job_name} must verify freshness, then run preflight, deployment/migration, then smoke checks"
+			)
 
 
 def _validate_production_authorization(job: dict[str, Any], errors: list[str]) -> None:
 	steps = job.get("steps") or []
-	guard = next((step for step in steps if step.get("name") == "Enforce production deployment enablement"), {})
+	guard = next(
+		(step for step in steps if step.get("name") == "Enforce production deployment enablement"), {}
+	)
 	if not guard:
 		errors.append("production must have an explicit enablement check")
 		return
 	if guard.get("if"):
 		errors.append("production enablement guard must not be conditionally skippable")
-	if (guard.get("env") or {}).get("PRODUCTION_DEPLOYMENT_ENABLED") != "${{ vars.AOS_PRODUCTION_DEPLOYMENT_ENABLED }}":
+	if (guard.get("env") or {}).get(
+		"PRODUCTION_DEPLOYMENT_ENABLED"
+	) != "${{ vars.AOS_PRODUCTION_DEPLOYMENT_ENABLED }}":
 		errors.append("production enablement must come from the protected production Environment variable")
 	script = str(guard.get("run") or "")
-	if not script or "== \"true\"" not in script:
+	if not script or '== "true"' not in script:
 		errors.append("production enablement must require the exact value true")
 		return
-	for supplied, expected_success in (("", False), ("false", False), ("1", False), ("TRUE", False), ("true", True)):
+	for supplied, expected_success in (
+		("", False),
+		("false", False),
+		("1", False),
+		("TRUE", False),
+		("true", True),
+	):
 		result = subprocess.run(
 			["bash", "-Eeuo", "pipefail", "-c", script],
 			env={**os.environ, "PRODUCTION_DEPLOYMENT_ENABLED": supplied},
@@ -83,7 +101,9 @@ def _validate_production_authorization(job: dict[str, Any], errors: list[str]) -
 			check=False,
 		)
 		if (result.returncode == 0) != expected_success:
-			errors.append(f"production enablement unexpectedly handled {supplied!r}: exit {result.returncode}")
+			errors.append(
+				f"production enablement unexpectedly handled {supplied!r}: exit {result.returncode}"
+			)
 
 
 def _validate_deploy_script(root: Path, errors: list[str]) -> None:
@@ -172,7 +192,14 @@ def _validate_release_inventory(
 		if not re.fullmatch(r"[0-9a-f]{64}", str(item.get("source_sha256") or "")):
 			errors.append(f"{service}: missing archive source fingerprint")
 	_run(
-		[sys.executable, "scripts/deploy/release_manifest.py", "verify", str(manifest), str(artifact), commit],
+		[
+			sys.executable,
+			"scripts/deploy/release_manifest.py",
+			"verify",
+			str(manifest),
+			str(artifact),
+			commit,
+		],
 		root=root,
 		env=env,
 	)
@@ -186,17 +213,93 @@ def _validate_release_inventory(
 		manifest.write_text(json.dumps(tampered), encoding="utf-8")
 		try:
 			result = subprocess.run(
-				[sys.executable, "scripts/deploy/release_manifest.py", "verify", str(manifest), str(artifact), commit],
+				[
+					sys.executable,
+					"scripts/deploy/release_manifest.py",
+					"verify",
+					str(manifest),
+					str(artifact),
+					commit,
+				],
 				cwd=root,
 				env=env,
 				text=True,
 				capture_output=True,
 				check=False,
 			)
-			if result.returncode == 0 or "Release source-build inventory mismatch" not in result.stderr + result.stdout:
+			if (
+				result.returncode == 0
+				or "Release source-build inventory mismatch" not in result.stderr + result.stdout
+			):
 				errors.append("release manifest accepted fabricated build-context provenance")
 		finally:
 			manifest.write_text(original, encoding="utf-8")
+
+
+def _validate_image_lock(
+	root: Path,
+	manifest: Path,
+	commit: str,
+	data: dict[str, Any],
+	env: dict[str, str],
+	temp: Path,
+	errors: list[str],
+) -> None:
+	contexts = {entry["context"] for entry in data["source_build_contexts"].values()}
+	builds = {
+		context: (
+			"ghcr.io/janja-programmers/aos-"
+			+ context.removeprefix("infra/").replace("/", "-")
+			+ "@sha256:"
+			+ hashlib.sha256(("build:" + context).encode()).hexdigest()
+		)
+		for context in contexts
+	}
+	runtime = {
+		service: "ghcr.io/valhalla/valhalla-scripted@sha256:"
+		+ hashlib.sha256(("runtime:" + service).encode()).hexdigest()
+		for service in data["runtime_image_variables"]
+	}
+	build_receipts = temp / "image-build-receipts.json"
+	runtime_receipts = temp / "image-runtime-receipts.json"
+	lock = temp / "release-image-lock.json"
+	build_receipts.write_text(json.dumps(builds), encoding="utf-8")
+	runtime_receipts.write_text(json.dumps(runtime), encoding="utf-8")
+	command = [sys.executable, "scripts/deploy/image_lock.py"]
+	_run(
+		[*command, "create", str(manifest), str(build_receipts), str(runtime_receipts), str(lock), commit],
+		root=root,
+		env=env,
+	)
+	_run([*command, "verify", str(manifest), str(lock), commit], root=root, env=env)
+
+	original = json.loads(lock.read_text(encoding="utf-8"))
+	first = sorted(contexts)[0]
+	test_cases = (
+		("missing-context", "Image lock is missing or inventing a source-build context."),
+		("false-source", "image receipt source fingerprint mismatch."),
+		("false-image", "Image must have a real-looking immutable OCI sha256 reference."),
+		("wrong-manifest", "Image lock does not match this exact release manifest."),
+	)
+	for scenario, reason in test_cases:
+		altered = json.loads(json.dumps(original))
+		if scenario == "missing-context":
+			del altered["build_context_images"][first]
+		elif scenario == "false-source":
+			altered["build_context_images"][first]["source_sha256"] = "0" * 64
+		elif scenario == "false-image":
+			altered["build_context_images"][first]["image_ref"] = "ghcr.io/janja-programmers/aos:latest"
+		else:
+			altered["release_manifest_sha256"] = "0" * 64
+		lock.write_text(json.dumps(altered), encoding="utf-8")
+		_assert_rejected(
+			[*command, "verify", str(manifest), str(lock), commit],
+			root=root,
+			env=env,
+			reason=reason,
+			errors=errors,
+		)
+	lock.write_text(json.dumps(original), encoding="utf-8")
 
 
 def _write_fake_bench(path: Path, exit_code: int) -> None:
@@ -302,10 +405,21 @@ def main() -> int:
 			errors.append(f"release eligibility is missing: {required}")
 	release_steps = release_job.get("steps") or []
 	release_guard = next(
-		(str(step.get("run") or "") for step in release_steps if step.get("name") == "Verify eligible trigger and current release"),
+		(
+			str(step.get("run") or "")
+			for step in release_steps
+			if step.get("name") == "Verify eligible trigger and current release"
+		),
 		"",
 	)
-	for required in ("MANUAL_DRY_RUN", "SOURCE_EVENT", "SOURCE_BRANCH", "SOURCE_REPOSITORY", "git ls-remote", "RELEASE_COMMIT"):
+	for required in (
+		"MANUAL_DRY_RUN",
+		"SOURCE_EVENT",
+		"SOURCE_BRANCH",
+		"SOURCE_REPOSITORY",
+		"git ls-remote",
+		"RELEASE_COMMIT",
+	):
 		if required not in release_guard:
 			errors.append(f"release trigger and freshness validation is missing: {required}")
 	for environment in ("staging", "production"):
@@ -333,7 +447,9 @@ def main() -> int:
 	_validate_production_authorization(jobs.get("production") or {}, errors)
 
 	if "AOS_IMAGE_DIGESTS_JSON" in text:
-		errors.append("release must derive image inventory from immutable source, not arbitrary digest overrides")
+		errors.append(
+			"release must derive image inventory from immutable source, not arbitrary digest overrides"
+		)
 	secret_refs = set(re.findall(r"secrets\.([A-Z0-9_]+)", text))
 	variable_refs = set(re.findall(r"vars\.([A-Z0-9_]+)", text))
 	missing_secrets = REQUIRED_SECRET_REFERENCES - secret_refs
@@ -402,6 +518,7 @@ def main() -> int:
 				)
 				manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
 				_validate_release_inventory(root, manifest, artifact, commit, manifest_data, base_env, errors)
+				_validate_image_lock(root, manifest, commit, manifest_data, base_env, temp, errors)
 				_run(["bash", "scripts/deploy/preflight.sh", "--dry-run"], root=root, env=base_env)
 				deploy_output = _run(
 					["bash", "scripts/deploy/deploy.sh", "--dry-run"], root=root, env=base_env

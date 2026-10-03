@@ -83,6 +83,14 @@ def main() -> int:
 					errors.append(
 						f"{path.relative_to(root)}: job {job_id} step uses prohibited continue-on-error"
 					)
+				if isinstance(step, dict):
+					script = str(step.get("run") or "")
+					for pipe in re.finditer(r"\|\s*tee\b", script):
+						guard = re.search(r"(?m)^\s*set -Eeuo pipefail\s*$", script[: pipe.start()])
+						if not guard:
+							errors.append(
+								f"{path.relative_to(root)}: job {job_id} pipes execution through tee without prior pipefail"
+							)
 		if is_deployment_workflow:
 			if set(jobs) != {"release", "staging", "production"}:
 				errors.append(

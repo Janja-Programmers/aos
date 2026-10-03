@@ -98,12 +98,21 @@ _ENV = {
 	"ANALYTICS_SERVICE_CALLBACK_SECRET": "test-analytics-callback-secret",
 	"ANALYTICS_CALLBACK_URL": "http://127.0.0.1:8000/analytics-callback",
 	"ANALYTICS_PIPELINE_ENABLED": "true",
+	# Non-Media companions may use their independent MinIO integration.
 	"MINIO_ENDPOINT": "127.0.0.1:19000",
 	"MINIO_ACCESS_KEY": "test-access-key",
 	"MINIO_SECRET_KEY": "test-secret-key",
 	"MINIO_PUBLIC_BASE_URL": "http://127.0.0.1:19100",
 	"AOS_PUBLIC_BUCKET": "aos-public",
 	"AOS_PRIVATE_BUCKET": "aos-private",
+	# Media alone owns the canonical object-storage contract.
+	"AOS_OBJECT_STORAGE_ENDPOINT": "127.0.0.1:19000",
+	"AOS_OBJECT_STORAGE_ACCESS_KEY": "test-media-access-key",
+	"AOS_OBJECT_STORAGE_SECRET_KEY": "test-media-secret-key",  # pragma: allowlist secret
+	"AOS_OBJECT_STORAGE_PRESIGN_ENDPOINT": "http://127.0.0.1:19000",
+	"AOS_MEDIA_PUBLIC_BASE_URL": "http://127.0.0.1:19100/aos-public",
+	"AOS_OBJECT_STORAGE_PUBLIC_BUCKET": "aos-public",
+	"AOS_OBJECT_STORAGE_PRIVATE_BUCKET": "aos-private",
 }
 
 
