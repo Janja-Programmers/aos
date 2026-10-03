@@ -9,8 +9,8 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from unittest import mock
 from typing import Any
+from unittest import mock
 
 import yaml
 
