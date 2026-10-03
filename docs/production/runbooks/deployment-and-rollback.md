@@ -86,8 +86,17 @@ A missing marker means only that no unresolved failure is recorded; confirm Benc
 export DEPLOY_ENVIRONMENT=production
 export ROLLBACK_COMMIT=<exact-prior-sha>
 export ROLLBACK_MANIFEST=/secure/releases/<prior-sha>/release-manifest.json
+export ROLLBACK_ARTIFACT=/secure/releases/<prior-sha>/aos-release.tar.gz
 export VERIFIED_BACKUP_ID=<exact-verified-backup-id>
+export REMOTE_RELEASE_ROOT=/srv/aos/releases
+export REMOTE_APPLY_RELEASE_PATH=/usr/local/sbin/aos-apply-release
+export REMOTE_BENCH_ROOT=/home/aos/frappe-bench
+export FRAPPE_SITE=<site>
 scripts/deploy/rollback.sh --dry-run
 ```
 
-For a real rollback, use the exact prior archive and digest manifest. Application rollback and destructive database restore are separate decisions. Restore the database only when the prior application cannot operate against the migrated schema, after explicit incident approval, and only from the exact verified backup with a current full restore-rehearsal marker.
+For a real application-only rollback, independently review the migration history and confirm that the **previous application is compatible with the current database schema**. Inspect the exact prior archive/manifest, their recorded hashes and image digests, verified backup evidence, incident owner, and the actual reviewed release-applier executable. Obtain separate incident/change approval and configure the trusted SSH known-hosts file/credentials. Only then set `ROLLBACK_APPROVED=true` and `ROLLBACK_DB_DECISION=application-only` for the operator-executed rollback.
+
+The rollback wrapper validates the archive against its manifest locally; validates both identical retained artifacts on the remote host by checksum immediately before invoking the same reviewed `REMOTE_APPLY_RELEASE_PATH` used for deployments; and runs operational health/job checks after the application release switch. The wrapper does not perform `bench migrate` or restore the database. It does not accept arbitrary remote rollback command text. The exact prior archive/manifest **must already be retained** under `REMOTE_RELEASE_ROOT/<prior-sha>/`; a missing or mismatched release fails closed.
+
+`VERIFIED_BACKUP_ID` identifies operator-reviewed backup evidence; merely providing an ID does not independently verify backup usability. Do not perform a database restore under the application-only authorization. Database restore is a separate destructive incident operation, permitted only when application/schema compatibility requires it, after explicit approval and a fresh complete restore-rehearsal marker.

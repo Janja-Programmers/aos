@@ -81,6 +81,37 @@ def _validate_deploy_script(root: Path, errors: list[str]) -> None:
 		errors.append("deployment script must stop immediately on migration failure")
 
 
+def _validate_rollback_script(root: Path, errors: list[str]) -> None:
+	text = (root / "scripts/deploy/rollback.sh").read_text(encoding="utf-8")
+	if "REMOTE_ROLLBACK_COMMAND" in text:
+		errors.append("rollback must not accept arbitrary remote command text")
+	for required in (
+		"release_manifest.py verify ",
+		"ROLLBACK_ARTIFACT",
+		"REMOTE_APPLY_RELEASE_PATH",
+		"REMOTE_RELEASE_ROOT",
+		"ROLLBACK_APPROVED",
+		"ROLLBACK_DB_DECISION",
+		"application-only",
+		"sha256sum -c -",
+		"assert_operational_health_ready",
+		"assert_job_monitoring_ready",
+	):
+		if required not in text:
+			errors.append(f"rollback integrity, approval or post-apply check missing: {required}")
+
+
+def _assert_rejected(
+	command: list[str], *, root: Path, env: dict[str, str], reason: str, errors: list[str]
+) -> None:
+	result = subprocess.run(command, cwd=root, env=env, text=True, capture_output=True, check=False)
+	if result.returncode == 0 or reason not in result.stderr + result.stdout:
+		errors.append(
+			f"rollback did not reject {reason!r} as required (exit={result.returncode}): "
+			f"{result.stdout}{result.stderr}"
+		)
+
+
 def _write_fake_bench(path: Path, exit_code: int) -> None:
 	path.write_text(
 		f"#!/usr/bin/env bash\nset -Eeuo pipefail\nprintf 'fake bench invoked\\n'\nexit {exit_code}\n",
@@ -234,6 +265,7 @@ def main() -> int:
 			errors.append(f"deployment workflow contains prohibited credential material: {token}")
 
 	_validate_deploy_script(root, errors)
+	_validate_rollback_script(root, errors)
 	scripts = [
 		root / "scripts" / "deploy" / name
 		for name in ("lib.sh", "preflight.sh", "deploy.sh", "smoke.sh", "rollback.sh", "run-migrate.sh")
@@ -289,9 +321,41 @@ def main() -> int:
 					**base_env,
 					"ROLLBACK_COMMIT": commit,
 					"ROLLBACK_MANIFEST": str(manifest),
+					"ROLLBACK_ARTIFACT": str(artifact),
 					"VERIFIED_BACKUP_ID": "20260719T120000Z",
+					"ROLLBACK_APPROVED": "false",
+					"ROLLBACK_DB_DECISION": "",
 				}
 				_run(["bash", "scripts/deploy/rollback.sh", "--dry-run"], root=root, env=rollback_env)
+				_assert_rejected(
+					["bash", "scripts/deploy/rollback.sh", "--dry-run"],
+					root=root,
+					env={**rollback_env, "VERIFIED_BACKUP_ID": "invalid;exit 0"},
+					reason="VERIFIED_BACKUP_ID is invalid",
+					errors=errors,
+				)
+				_assert_rejected(
+					["bash", "scripts/deploy/rollback.sh"],
+					root=root,
+					env=rollback_env,
+					reason="ROLLBACK_APPROVED=true is required",
+					errors=errors,
+				)
+				_assert_rejected(
+					["bash", "scripts/deploy/rollback.sh"],
+					root=root,
+					env={**rollback_env, "ROLLBACK_APPROVED": "true"},
+					reason="ROLLBACK_DB_DECISION=application-only is required",
+					errors=errors,
+				)
+				artifact.write_bytes(b"tampered-archive")
+				_assert_rejected(
+					["bash", "scripts/deploy/rollback.sh", "--dry-run"],
+					root=root,
+					env=rollback_env,
+					reason="Release artifact checksum mismatch",
+					errors=errors,
+				)
 				_validate_migration_wrapper(root, base_env, errors)
 		except Exception as exc:
 			errors.append(str(exc))
