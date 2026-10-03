@@ -43,6 +43,16 @@ The release job:
 
 The remote deployment verifies the archive checksum before applying it. The manifest's context fingerprints establish **source provenance, not OCI image digests**. In particular, an image built locally from a source context is not proven reproducible or approved merely because the source is hashed. The reviewed release-applier must record/verify the actual image IDs and ensure no floating/unapproved images are deployed. A further controlled build-and-promotion gate is required before production authorization. External variable-supplied images (such as Valhalla) must be resolved to digest-pinned references by the actual deployment configuration; the manifest explicitly records the requirement rather than inventing an image digest.
 
+## OCI image-lock verification
+
+The schema-2 release manifest fingerprints every Docker build context, but those fingerprints are **not** published OCI image digests. `scripts/deploy/image_lock.py` defines an independent, fail-closed promotion receipt for use by the reviewed image-builder and release-applier:
+
+- `create MANIFEST BUILD_RECEIPTS_JSON RUNTIME_REFS_JSON OUT COMMIT` produces a lock bound to the **exact manifest bytes and commit**. Build receipts are keyed by unique `infra/...` contexts, not duplicated worker service names.
+- `verify MANIFEST LOCK COMMIT` rejects missing/extra contexts, source fingerprint disagreement, mutable/non-digest image references, unexpected AOS image repositories, omitted runtime images, and cross-release reuse.
+- `verify-registry MANIFEST LOCK COMMIT` additionally queries the registry through the repository-pinned `crane` CLI and requires every published reference to resolve to its declared manifest digest. Run this from the trusted image-publishing job with the necessary scoped registry read credentials.
+
+Build/publish provenance remains a separate requirement: creating an image lock from manually supplied references does not prove that a given OCI binary was produced by a trusted builder, and registry existence alone does not prove correspondence to source. The publishing pipeline must bind its signed build attestations to the checked release commit and source fingerprint. This verification contract is added without automatic image publication or a deployment policy bypass. Production enablement remains unset pending a reviewed end-to-end image-promotion/release-applier implementation and staging rehearsal.
+
 ## GitHub Environments
 
 Create `staging` and `production` Environments. Configure required reviewers on `production`; do not permit routine approval bypass. This is a required GitHub repository setting, not something the workflow can establish on its own. Verify actual reviewer protection in GitHub Settings before configuring production credentials.
