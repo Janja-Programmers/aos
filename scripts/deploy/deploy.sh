@@ -3,7 +3,12 @@ set -Eeuo pipefail
 source "$(dirname "$0")/lib.sh"
 
 DRY_RUN=false
-[[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
+case "${1:-}" in
+  --dry-run) DRY_RUN=true ;;
+  '') ;;
+  *) die 'Only --dry-run is accepted.' ;;
+esac
+[[ $# -le 1 ]] || die 'Only one optional --dry-run argument is accepted.'
 validate_environment
 validate_release
 require_var REMOTE_RELEASE_ROOT
@@ -54,17 +59,37 @@ remote "install -d -m 0750 '$release_dir' '$release_dir/policy'"
 scp "${SSH_OPTS[@]}" "$RELEASE_ARTIFACT" "$RELEASE_MANIFEST" \
   "$RELEASE_IMAGE_LOCK" "$RELEASE_LOCKED_COMPOSE" \
   "${DEPLOY_USER}@${DEPLOY_HOST}:$release_dir/"
+# The remote policy must match the validator sources inside the verified archive.
+python3 - "$RELEASE_ARTIFACT" <<'PY'
+import hashlib
+import sys
+import tarfile
+from pathlib import Path
+
+with tarfile.open(sys.argv[1], "r:gz") as archive:
+    for name in (
+        "scripts/deploy/release_manifest.py",
+        "scripts/deploy/image_lock.py",
+        "scripts/deploy/locked_compose.py",
+    ):
+        source = archive.extractfile(name)
+        if source is None or hashlib.sha256(source.read()).digest() != hashlib.sha256(
+            Path(name).read_bytes()
+        ).digest():
+            raise SystemExit(f"Policy source differs from verified archive: {name}")
+PY
 scp "${SSH_OPTS[@]}" scripts/deploy/release_manifest.py \
   scripts/deploy/image_lock.py scripts/deploy/locked_compose.py \
   "${DEPLOY_USER}@${DEPLOY_HOST}:$release_dir/policy/"
-
-for file in "$RELEASE_ARTIFACT" "$RELEASE_MANIFEST" "$RELEASE_IMAGE_LOCK" "$RELEASE_LOCKED_COMPOSE"; do
+for file in "$RELEASE_ARTIFACT" "$RELEASE_MANIFEST" "$RELEASE_IMAGE_LOCK" "$RELEASE_LOCKED_COMPOSE" \
+  scripts/deploy/release_manifest.py scripts/deploy/image_lock.py scripts/deploy/locked_compose.py; do
   hash="$(sha256sum "$file" | cut -d' ' -f1)"
   case "$(basename "$file")" in
     aos-release.tar.gz) target="$remote_archive" ;;
     release-manifest.json) target="$remote_manifest" ;;
     release-image-lock.json) target="$remote_lock" ;;
     release-compose.locked.yml) target="$remote_compose" ;;
+    release_manifest.py|image_lock.py|locked_compose.py) target="$release_dir/policy/$(basename "$file")" ;;
     *) die 'Unexpected release source file.' ;;
   esac
   remote "printf '%s  %s\\n' '$hash' '$target' | sha256sum -c -"
