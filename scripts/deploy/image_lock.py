@@ -88,9 +88,9 @@ def _validate(
             raise ValueError(f"{context}: malformed source-build image receipt.")
         if entry["source_sha256"] != source:
             raise ValueError(f"{context}: image receipt source fingerprint mismatch.")
-        suffix = context.removeprefix("infra/").replace("/", "-")
-        if context == suffix:
+        if not context.startswith("infra/"):
             raise ValueError("Source-build image context must be under infra/.")
+        suffix = context.removeprefix("infra/").replace("/", "-")
         all_refs.append(
             _image_ref(
                 entry["image_ref"],
