@@ -96,9 +96,7 @@ class HostApplierTests(unittest.TestCase):
 		with mock.patch.object(applier, "run", side_effect=self.fake_run):
 			applier.apply(self.arguments)
 			self.assertEqual(self.link.resolve(), self.release / "source")
-			self.assertEqual(
-				(self.link / "aos/__init__.py").read_bytes(), self.members["aos/__init__.py"]
-			)
+			self.assertEqual((self.link / "aos/__init__.py").read_bytes(), self.members["aos/__init__.py"])
 			self.assertTrue(any("pull" in command for command in self.commands))
 			self.assertTrue(any("up" in command and "--no-build" in command for command in self.commands))
 			self.assertFalse(any("build" in command or "down" in command for command in self.commands))
