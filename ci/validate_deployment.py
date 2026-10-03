@@ -206,6 +206,9 @@ def _validate_rollback_script(root: Path, errors: list[str]) -> None:
 	for required in (
 		"release_manifest.py verify ",
 		"ROLLBACK_ARTIFACT",
+		"ROLLBACK_IMAGE_LOCK",
+		"ROLLBACK_LOCKED_COMPOSE",
+		"locked_compose.py verify-registry",
 		"REMOTE_APPLY_RELEASE_PATH",
 		"REMOTE_RELEASE_ROOT",
 		"ROLLBACK_APPROVED",
