@@ -5,8 +5,9 @@
 The repository separates validation from deployment:
 
 - `.github/workflows/ci.yml` is the required, non-deploying validation gate.
-- `.github/workflows/deploy.yml` creates an immutable release only after CI succeeds, deploys staging first, and enters the protected `production` GitHub Environment only after staging succeeds.
-- Manual `workflow_dispatch` is validation-only and cannot deploy production.
+- `.github/workflows/deploy.yml` accepts only a successful same-repository `push` CI run on `main`, creates an immutable release, deploys staging first, and enters the `production` GitHub Environment only after staging succeeds.
+- All deployment runs share one non-cancelling concurrency group. Release, staging, and production independently reject an automatic release if its commit is no longer `main` HEAD. A superseded release must be revalidated rather than silently deploying out of order.
+- Manual `workflow_dispatch` is explicitly dry-run only and cannot deploy either staging or production.
 
 Production approval, hosts, SSH material, image digests, and the reviewed remote release-applier path remain operator supplied. The repository does not contain production credentials or destinations.
 
@@ -43,7 +44,9 @@ The remote deployment verifies the archive checksum before applying it.
 
 ## GitHub Environments
 
-Create `staging` and `production` Environments. Configure required reviewers on `production`; do not permit routine approval bypass.
+Create `staging` and `production` Environments. Configure required reviewers on `production`; do not permit routine approval bypass. This is a required GitHub repository setting, not something the workflow can establish on its own. Verify actual reviewer protection in GitHub Settings before configuring production credentials.
+
+A newly configured repository has no implied deployment connection. The first staging deployment will fail closed with `Required variable is missing: DEPLOY_HOST` until the staging Environment has been explicitly configured. Keep staging and production destinations, credentials, and known-hosts trust records separate. Do not paste private keys or secrets into issues, workflow inputs, PRs, or chat.
 
 Environment secrets:
 
@@ -92,13 +95,13 @@ The preflight is a blocker detector, not proof that every custom patch is non-de
 
 ## Staging and production flow
 
-1. CI passes.
-2. Release artifact and manifest are created.
+1. A same-repository `main` push CI run completes successfully; CI runs from manual dispatches, pull requests, other repositories, or obsolete commits cannot trigger a deploy.
+2. Release artifact and manifest are created only for the current `main` commit.
 3. Staging preflight runs.
 4. The exact release is applied to staging.
 5. Repository-controlled guarded migration runs.
 6. Operational health, job diagnostics, outbox diagnostics, and smoke checks run.
-7. Production Environment approval is granted.
+7. Production Environment approval is granted; the production job rechecks that the commit is still current `main` HEAD before contacting a host.
 8. Production preflight reruns all production-only backup/encryption/rehearsal gates.
 9. The exact release is applied and guarded migration runs.
 10. Post-migration health, job, outbox, and smoke checks run.
