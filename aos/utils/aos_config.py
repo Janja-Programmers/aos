@@ -109,7 +109,10 @@ def runtime_env_snapshot() -> dict[str, str]:
     Process environment entries take precedence, as in get_env(). Keep this
     snapshot confined to validation: never include its values in reports.
     """
-    return {**_dotenv_values(), **os.environ}
+    return {
+        **_dotenv_values(),
+        **{key: value for key, value in os.environ.items() if _clean(value)},
+    }
 
 
 def get_env(name: str, default: str | None = None) -> str | None:
