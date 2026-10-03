@@ -13,12 +13,12 @@ from typing import Any
 
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
-_EXTERNAL_IMAGE_RE = re.compile(r"^([^\\s@]+)@(sha256:[0-9a-f]{64})$")
-_IMAGE_VARIABLE_RE = re.compile(r"^\\$\\{([A-Z][A-Z0-9_]*):\\?[^}]+\\}$")
-_SERVICE_RE = re.compile(r"^  ([a-z][a-z0-9_-]*):\\s*(?:#.*)?$")
-_IMAGE_LINE_RE = re.compile(r"^    image:\\s+(.+?)\\s*$")
-_CONTEXT_LINE_RE = re.compile(r"^      context:\\s+(\\S+)\\s*$")
-_DOCKERFILE_LINE_RE = re.compile(r"^      dockerfile:\\s+(\\S+)\\s*$")
+_EXTERNAL_IMAGE_RE = re.compile(r"^([^\s@]+)@(sha256:[0-9a-f]{64})$")
+_IMAGE_VARIABLE_RE = re.compile(r"^\$\{([A-Z][A-Z0-9_]*):\?[^}]+\}$")
+_SERVICE_RE = re.compile(r"^  ([a-z][a-z0-9_-]*):\s*(?:#.*)?$")
+_IMAGE_LINE_RE = re.compile(r"^    image:\s+(.+?)\s*$")
+_CONTEXT_LINE_RE = re.compile(r"^      context:\s+(\S+)\s*$")
+_DOCKERFILE_LINE_RE = re.compile(r"^      dockerfile:\s+(\S+)\s*$")
 
 
 def sha256(path: Path) -> str:
@@ -137,7 +137,7 @@ def _archive_inventory(artifact: Path) -> tuple[dict[str, str], dict[str, dict[s
 					content_hash = b"F" + file_hash.digest()
 				else:
 					content_hash = b"L" + member.linkname.encode("utf-8")
-				digest.update(path.encode("utf-8") + b"\\0" + content_hash + b"\\0")
+				digest.update(path.encode("utf-8") + b"\0" + content_hash + b"\0")
 			builds[service_name] = {
 				"context": context,
 				"dockerfile": dockerfile_path,
