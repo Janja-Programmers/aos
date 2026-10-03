@@ -75,7 +75,7 @@ done
 # Bench's pinned Python has PyYAML; crane must be installed at the reviewed version.
 remote "test -x '$REMOTE_BENCH_ROOT/env/bin/python' \
   && command -v crane >/dev/null \
-  && test '\$(crane version)' = '0.21.7' \
+  && test \"\$(crane version)\" = '0.21.7' \
   && '$REMOTE_BENCH_ROOT/env/bin/python' '$release_dir/policy/locked_compose.py' \
      verify-registry '$remote_manifest' '$remote_archive' '$remote_lock' \
      '$RELEASE_COMMIT' '$remote_compose'"
