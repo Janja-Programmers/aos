@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import frappe
 from frappe.utils import today
-from frappe.utils.password import is_password_reused, passlibctx, update_password
+from frappe.query_builder import Table
+from frappe.utils.password import passlibctx, update_password
 
 from aos.api.shared.responses import fail
 
@@ -19,6 +20,24 @@ def dummy_password_write_work(password: str) -> None:
         pass
 
 
+def _is_current_password_reused(user: str, password: str) -> bool:
+    """Compare against the current Frappe credential without mutating it."""
+    auth = Table("__Auth")
+    rows = (
+        frappe.qb.from_(auth)
+        .select(auth.password)
+        .where(
+            (auth.doctype == "User")
+            & (auth.name == user)
+            & (auth.fieldname == "password")
+            & (auth.encrypted == 0)
+        )
+        .limit(1)
+        .run(as_dict=True)
+    )
+    return bool(rows and passlibctx.verify(password, rows[0].password))
+
+
 def validate_new_password(user: str, password: str, *, field: str = "new_password"):
     """Validate configured strength and reject reuse of the current credential."""
     policy = validate_password_strength(password, user_data=(user,))
@@ -28,7 +47,7 @@ def validate_new_password(user: str, password: str, *, field: str = "new_passwor
             data["field"] = field
         return policy
     try:
-        if is_password_reused(user, password):
+        if _is_current_password_reused(user, password):
             return fail(
                 "New password must be different from the current password.",
                 error="PASSWORD_REUSED",
