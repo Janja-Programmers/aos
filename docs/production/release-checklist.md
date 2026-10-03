@@ -17,7 +17,9 @@
 - [ ] `AOS_PROMOTION_RUN_ID` points to the completed manual publish job for this exact current-main release, and the promotion lock matches the original release-manifest bytes.
 - [ ] The staging runner and host independently verified the promoted registry digests and generated immutable no-build Compose; production reused the same lock checksum.
 - [ ] The remote applier SHA-256 is independently reviewed and configured as protected `REMOTE_APPLY_RELEASE_SHA256`; both deploy and rollback reject unpinned or changed executables.
-- [ ] The reviewed five-argument remote applier consumes the archive, manifest, commit, promoted image lock and rendered Compose; the host has Bench Python/PyYAML and pinned `crane` 0.21.7.
+- [ ] The repository's reviewed five-argument `apply-release.py` is independently installed as a root-owned executable and SHA-pinned, accepts only the exact archive, manifest, commit, image lock and rendered Compose; the host has Bench Python/PyYAML, read-only `crane` 0.21.7 and compatible Docker Compose.
+- [ ] `REMOTE_PROJECT_ROOT` is protected per Environment, contains a host-managed mode-`0600` `.env` and stable bind mounts, and the correct Bench `apps/aos` symlink was onboarded without overwriting application data.
+- [ ] Staging demonstrated digest-only pull, no-build Compose, guarded migration and successful post-migration `bench restart` with recorded evidence; rollback was not allowed to overlap a migration/restart.
 - [ ] Staging deployment and smoke checks passed first.
 - [ ] Production GitHub Environment approval was granted.
 - [ ] `main` protection and protected production Environment reviewers were verified in repository settings.
