@@ -102,8 +102,8 @@ def _validate_image_promotion_path(jobs: dict[str, Any], text: str, errors: list
 			errors.append(f"{env}: immutable release must be rendered from verified registry digests")
 		if "ci/install-compose-tools.sh" not in str(verify.get("run") or ""):
 			errors.append(f"{env}: pinned registry-verification tools are missing")
-		if (job.get("permissions") or {}) != {"contents": "read", "actions": "read"}:
-			errors.append(f"{env}: only read-scoped metadata/artifact permissions are permitted")
+		if (job.get("permissions") or {}) != {"contents": "read", "actions": "read", "packages": "read"}:
+			errors.append(f"{env}: only read-scoped metadata, artifact and GHCR permissions are permitted")
 		if job.get("env", {}).get("RELEASE_IMAGE_LOCK") != "release-image-lock.json":
 			errors.append(f"{env}: deployment must receive the canonical promotion lock")
 		if job.get("env", {}).get("RELEASE_LOCKED_COMPOSE") != "release-compose.locked.yml":
