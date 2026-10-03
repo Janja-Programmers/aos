@@ -157,6 +157,35 @@ class TestProductionConfigValidation(FrappeTestCase):
 		report = validate_staging_config(env=env, site_config=self._valid_site_config())
 		self.assertTrue(report["ready"], report)
 
+	def test_staging_config_uses_canonical_runtime_snapshot_for_host_bench(self):
+		env = self._valid_env()
+		env["AOS_ENVIRONMENT"] = "staging"
+		with patch(
+			"aos.utils.production_config.aos_config.runtime_env_snapshot", return_value=env
+		) as snapshot:
+			report = validate_staging_config(site_config=self._valid_site_config())
+		self.assertTrue(report["ready"], report)
+		snapshot.assert_called_once_with()
+
+	def test_explicit_staging_env_does_not_read_host_configuration(self):
+		env = self._valid_env()
+		env["AOS_ENVIRONMENT"] = "staging"
+		with patch(
+			"aos.utils.production_config.aos_config.runtime_env_snapshot",
+			side_effect=AssertionError("explicit validation must be isolated"),
+		):
+			report = validate_staging_config(env=env, site_config=self._valid_site_config())
+		self.assertTrue(report["ready"], report)
+
+	def test_restore_rehearsal_uses_canonical_runtime_snapshot(self):
+		env = self._valid_env()
+		env["AOS_ENVIRONMENT"] = "rehearsal"
+		with patch(
+			"aos.utils.production_config.aos_config.runtime_env_snapshot", return_value=env
+		):
+			report = validate_restore_rehearsal_config(site_config=self._valid_site_config())
+		self.assertTrue(report["ready"], report)
+
 	def test_staging_config_rejects_wrong_environment_name(self):
 		report = validate_staging_config(
 			env=self._valid_env(),
