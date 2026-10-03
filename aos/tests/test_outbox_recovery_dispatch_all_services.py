@@ -108,7 +108,7 @@ _ENV = {
 	# Media alone owns the canonical object-storage contract.
 	"AOS_OBJECT_STORAGE_ENDPOINT": "127.0.0.1:19000",
 	"AOS_OBJECT_STORAGE_ACCESS_KEY": "test-media-access-key",
-	"AOS_OBJECT_STORAGE_SECRET_KEY": "test-media-secret-key",
+	"AOS_OBJECT_STORAGE_SECRET_KEY": "test-media-secret-key",  # pragma: allowlist secret
 	"AOS_OBJECT_STORAGE_PRESIGN_ENDPOINT": "http://127.0.0.1:19000",
 	"AOS_MEDIA_PUBLIC_BASE_URL": "http://127.0.0.1:19100/aos-public",
 	"AOS_OBJECT_STORAGE_PUBLIC_BUCKET": "aos-public",
