@@ -122,7 +122,7 @@ def test_production_retains_only_verified_encrypted_artifact(tmp_path: Path):
 	# Assert that only this run's native archives entered the encrypted bundle.
 	import io
 	import tarfile
-	with tarfile.open(fileobj=io.BytesIO(artifacts[0].read_bytes().split(b"\\n", 1)[1]), mode="r:gz") as archive:
+	with tarfile.open(fileobj=io.BytesIO(artifacts[0].read_bytes().split(b"\n", 1)[1]), mode="r:gz") as archive:
 		names = archive.getnames()
 	assert not any("previous-database.sql.gz" in name for name in names)
 	assert any("x-database.sql.gz" in name for name in names)
