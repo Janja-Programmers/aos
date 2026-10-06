@@ -22,6 +22,7 @@ from .constants import (
     MAX_ATTRIBUTE_OPTIONS,
     MAX_CATEGORY_ATTRIBUTES,
     MAX_CATEGORY_ATTRIBUTE_DEPENDENCIES,
+    MAX_DEPENDENT_ATTRIBUTE_OPTIONS,
     MAX_OPTIONS,
     MAX_SORT_ORDER,
     OPTION_MAX_LENGTH,
@@ -592,7 +593,7 @@ def _validate_attribute_dependency_mappings(
                 canonical = option
                 derived_child_values[child_attribute][key] = canonical
                 derived_children[child_attribute].append(canonical)
-                if len(derived_children[child_attribute]) > MAX_ATTRIBUTE_OPTIONS:
+                if len(derived_children[child_attribute]) > MAX_DEPENDENT_ATTRIBUTE_OPTIONS:
                     raise CatalogValidationError(
                         "Too many dependent options for an attribute.",
                         code="INVALID_CATEGORY_SCHEMA",

@@ -16,6 +16,7 @@ from .constants import (
     ALLOWED_PRICING_REQUIREMENTS,
     MAX_ATTRIBUTE_OPTIONS,
     MAX_CATEGORY_ATTRIBUTE_DEPENDENCIES,
+    MAX_DEPENDENT_ATTRIBUTE_OPTIONS,
     SELECT_ATTRIBUTE_TYPES,
 )
 from .errors import CatalogDataError, CatalogValidationError
@@ -276,7 +277,7 @@ def _apply_attribute_dependencies(
                     canonical = option
                     canonical_child_values[key] = canonical
                     child_options.append(canonical)
-                    if len(child_options) > MAX_ATTRIBUTE_OPTIONS:
+                    if len(child_options) > MAX_DEPENDENT_ATTRIBUTE_OPTIONS:
                         raise CatalogDataError("Catalog dependent option limit exceeded.")
                 canonical_row_options.append(canonical)
             by_parent[parent_option] = canonical_row_options

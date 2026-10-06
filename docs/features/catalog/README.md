@@ -168,7 +168,7 @@ Grouped dependency mapping stored under `AOS Category.attribute_dependencies`. F
 | `child_options` | Required `Small Text` containing the effective dependent options allowed for this parent option, one canonical option per line. For example `EliteBook\nProBook`. |
 | `mapping_key` | Hidden deterministic SHA-256 row identity derived from category + child attribute + parent option. Used by the database unique index without an oversized utf8mb4 composite key. |
 
-The resolver expands `child_options` into logical parent/child edges in memory and derives the dependent attribute's ordered effective option list from those mappings. `options_override` is deliberately unavailable for dependent rows, so administrators never enter the same option twice and there is no competing option source. Global definition options are also ignored for that category relationship once it is dependent. A child option may map to more than one parent option when the domain genuinely requires it by appearing in multiple parent rows. Duplicate parent groups are rejected. If the dependent attribute is required, every effective parent option must have at least one child option; this prevents a parent selection that makes the form impossible to complete. The category remains bounded to 10,000 expanded logical dependency edges and 1,500 unique effective options per attribute.
+The resolver expands `child_options` into logical parent/child edges in memory and derives the dependent attribute's ordered effective option list from those mappings. `options_override` is deliberately unavailable for dependent rows, so administrators never enter the same option twice and there is no competing option source. Global definition options are also ignored for that category relationship once it is dependent. A child option may map to more than one parent option when the domain genuinely requires it by appearing in multiple parent rows. Duplicate parent groups are rejected. If the dependent attribute is required, every effective parent option must have at least one child option; this prevents a parent selection that makes the form impossible to complete. The category remains bounded to 10,000 expanded logical dependency edges. Ordinary definition/override option lists and each individual parent mapping remain bounded to 1,500 choices, while a dependent attribute may derive up to 10,000 unique effective options across its mappings.
 
 #### Ads references
 
@@ -438,7 +438,7 @@ DocType metadata additionally provides uniqueness for category `category_name`, 
 Catalog is reference data optimized for very high read fan-out:
 
 - maximum 1,000 categories and depth two;
-- maximum 500 category relationships per category, 1,500 select choices per definition/override, and 10,000 dependency mappings per category;
+- maximum 500 category relationships per category, 1,500 select choices per definition/override or individual dependency row, 10,000 unique effective options per dependent attribute, and 10,000 expanded dependency mappings per category;
 - deterministic bounded queries only;
 - one bulk Media URL projection rather than N+1 lookup;
 - final-response Redis caching with immediate/post-commit invalidation, including category+attribute+parent-value option lookups;

@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from unittest import TestCase
 
+from aos.services.catalog.constants import (
+    MAX_ATTRIBUTE_OPTIONS,
+    MAX_DEPENDENT_ATTRIBUTE_OPTIONS,
+)
 from aos.services.catalog.errors import CatalogDataError, CatalogNotFoundError, CatalogValidationError
 from aos.services.catalog.service import CatalogService, resolve_attributes, resolve_pricing
 
@@ -276,6 +280,37 @@ class TestCatalogService(TestCase):
             category="Laptops", attribute="Model", parent_value="Apple"
         )
         self.assertEqual(apple["options"], ["MacBook Air"])
+
+    def test_schema_resolver_allows_dependent_universe_above_regular_option_limit(self):
+        first_count = MAX_ATTRIBUTE_OPTIONS // 2
+        second_count = MAX_ATTRIBUTE_OPTIONS - first_count + 1
+        first = "\n".join(f"Model A {index}" for index in range(first_count))
+        second = "\n".join(f"Model B {index}" for index in range(second_count))
+        chain = [
+            {
+                "name": "Cars",
+                "attributes": [
+                    {"name": "BRAND", "idx": 1, "attribute": "Brand", "sort_order": 1, "options_override": "A\nB", "depends_on_attribute": "", "is_required": 1, "is_active": 1},
+                    {"name": "MODEL", "idx": 2, "attribute": "Model", "sort_order": 2, "options_override": "", "depends_on_attribute": "Brand", "is_required": 1, "is_active": 1},
+                ],
+                "attribute_dependencies": [
+                    {"name": "D1", "child_attribute": "Model", "parent_option": "A", "child_options": first},
+                    {"name": "D2", "child_attribute": "Model", "parent_option": "B", "child_options": second},
+                ],
+                "attribute_definitions": {
+                    "Brand": attribute_definition("Brand", key="brand", options=""),
+                    "Model": attribute_definition("Model", key="model", options=""),
+                },
+            }
+        ]
+
+        resolved = resolve_attributes(chain, include_dependency_map=True)
+        model = next(item for item in resolved if item["id"] == "Model")
+
+        self.assertEqual(len(model["options"]), MAX_ATTRIBUTE_OPTIONS + 1)
+        self.assertLess(len(model["options"]), MAX_DEPENDENT_ATTRIBUTE_OPTIONS)
+        self.assertEqual(len(model["_dependency_options"]["A"]), first_count)
+        self.assertEqual(len(model["_dependency_options"]["B"]), second_count)
 
     def test_dependent_attribute_rejects_parallel_options_override(self):
         repo = FakeCatalogRepository(

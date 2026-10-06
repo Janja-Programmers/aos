@@ -4,7 +4,10 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import patch
 
-from aos.services.catalog.constants import MAX_ATTRIBUTE_OPTIONS
+from aos.services.catalog.constants import (
+    MAX_ATTRIBUTE_OPTIONS,
+    MAX_DEPENDENT_ATTRIBUTE_OPTIONS,
+)
 from aos.services.catalog.errors import CatalogValidationError
 from aos.services.catalog.validation import (
     canonical_attribute_key,
@@ -230,6 +233,60 @@ class TestCatalogValidation(TestCase):
         brand.depends_on_attribute = "Model"
         with self.assertRaises(CatalogValidationError):
             validate_category_document(doc)
+
+    @patch("aos.services.catalog.validation.frappe.get_all")
+    def test_dependent_option_universe_can_exceed_regular_attribute_limit(self, get_all):
+        get_all.return_value = [
+            {"name": "Brand", "field_type": "Select", "options": "A\nB", "is_active": 1},
+            {"name": "Model", "field_type": "Select", "options": "", "is_active": 1},
+        ]
+        brand = SimpleNamespace(
+            attribute="Brand",
+            sort_order=1,
+            is_active=1,
+            is_required=1,
+            options_override="",
+            depends_on_attribute="",
+        )
+        model = SimpleNamespace(
+            attribute="Model",
+            sort_order=2,
+            is_active=1,
+            is_required=1,
+            options_override="",
+            depends_on_attribute="Brand",
+        )
+        first_count = MAX_ATTRIBUTE_OPTIONS // 2
+        second_count = MAX_ATTRIBUTE_OPTIONS - first_count + 1
+        first = "\n".join(f"Model A {index}" for index in range(first_count))
+        second = "\n".join(f"Model B {index}" for index in range(second_count))
+        mappings = [
+            SimpleNamespace(child_attribute="Model", parent_option="A", child_options=first),
+            SimpleNamespace(child_attribute="Model", parent_option="B", child_options=second),
+        ]
+        doc = SimpleNamespace(
+            name="Cars",
+            category_name="Cars",
+            parent_aos_category="",
+            is_group=0,
+            is_active=1,
+            is_service=0,
+            sort_order=0,
+            pricing_requirement="Optional",
+            allowed_price_types="Fixed",
+            allowed_price_units="",
+            attributes=[brand, model],
+            attribute_dependencies=mappings,
+        )
+
+        validate_category_document(doc)
+
+        unique_count = len(
+            {option.casefold() for mapping in mappings for option in mapping.child_options.splitlines()}
+        )
+        self.assertEqual(unique_count, MAX_ATTRIBUTE_OPTIONS + 1)
+        self.assertLess(unique_count, MAX_DEPENDENT_ATTRIBUTE_OPTIONS)
+
     @patch("aos.services.catalog.validation.frappe.db.get_value")
     @patch("aos.services.catalog.validation.frappe.get_all")
     def test_leaf_parent_override_cannot_break_inherited_dependency(self, get_all, get_value):
