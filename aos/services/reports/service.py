@@ -1,4 +1,4 @@
-"""Application service for canonical User, Ad, and Short reports."""
+"""Application service for canonical User, Ad, Short, and Review reports."""
 
 from __future__ import annotations
 
@@ -17,8 +17,10 @@ from .constants import (
     AD_REPORT_FIELDS,
     DETAIL_MAX_LENGTH,
     REPORT_TARGET_AD,
+    REPORT_TARGET_REVIEW,
     REPORT_TARGET_SHORT,
     REPORT_TARGET_USER,
+    REVIEW_REPORT_FIELDS,
     SHORT_REPORT_FIELDS,
     STATUS_REVIEWING,
     USER_REPORT_FIELDS,
@@ -123,6 +125,50 @@ class ReportService:
             reason=reason,
             details=details,
             extra_fields={"short_owner": str(short.owner)},
+        )
+
+    def report_review(self, *, user: str, payload: dict[str, Any]) -> dict[str, Any]:
+        request = strip_transport_fields(payload)
+        ensure_known_fields(request, REVIEW_REPORT_FIELDS)
+        review_id = str(request.get("review_id") or "").strip()
+        if not review_id or len(review_id) > 140:
+            raise ReportNotFoundError("Review not found.")
+
+        from aos.services.reviews.errors import ReviewNotFoundError as ReviewTargetNotFoundError
+        from aos.services.reviews.ids import resolve_review_name
+        from aos.services.reviews.service import ReviewService
+
+        try:
+            ReviewService().get(payload={"review_id": review_id}, viewer=user)
+            review_name = resolve_review_name(review_id)
+        except ReviewTargetNotFoundError as exc:
+            raise ReportNotFoundError("Review not found.") from exc
+
+        review = frappe.db.get_value(
+            "AOS Review",
+            review_name,
+            ["name", "public_id", "reviewer", "status"],
+            as_dict=True,
+        )
+        if not review or str(review.status or "") != "Approved":
+            raise ReportNotFoundError("Review not found.")
+        if str(review.reviewer or "") == user:
+            raise ReportSelfError("You cannot report your own review.")
+
+        reason = validate_reason_for_target(request.get("reason_id"), REPORT_TARGET_REVIEW)
+        details = normalize_details(
+            request.get("details"), max_length=DETAIL_MAX_LENGTH["AOS Review Report"]
+        )
+        return self._create_or_replay(
+            doctype="AOS Review Report",
+            reporter=user,
+            target_field="review",
+            target_internal_id=str(review.name),
+            target_public_id=str(review.public_id),
+            report_type="review",
+            reason=reason,
+            details=details,
+            extra_fields={"review_owner": str(review.reviewer)},
         )
 
     @staticmethod

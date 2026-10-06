@@ -265,7 +265,7 @@ Owner documentation: [docs/api/internal.md](internal.md)
 | `/api/method/aos.api.metrics.backup_readiness` | Any* | Guest allowed | Private monitoring | `aos/api/metrics.py` |
 | `/api/method/aos.api.metrics.prometheus` | Any* | Guest allowed | Private monitoring | `aos/api/metrics.py` |
 
-## Reports (4)
+## Reports (5)
 
 Owner documentation: [docs/features/reports/README.md](../features/reports/README.md)
 
@@ -273,10 +273,11 @@ Owner documentation: [docs/features/reports/README.md](../features/reports/READM
 |---|---|---|---|---|
 | `/api/method/aos.api.v1.reports.get_report_reasons` | GET | Session required | Client | `aos/api/v1/reports/__init__.py` |
 | `/api/method/aos.api.v1.reports.report_ad` | POST | Session required | Client | `aos/api/v1/reports/__init__.py` |
+| `/api/method/aos.api.v1.reports.report_review` | POST | Session required | Client | `aos/api/v1/reports/__init__.py` |
 | `/api/method/aos.api.v1.reports.report_short` | POST | Session required | Client | `aos/api/v1/reports/__init__.py` |
 | `/api/method/aos.api.v1.reports.report_user` | POST | Session required | Client | `aos/api/v1/reports/__init__.py` |
 
-## Reviews (13)
+## Reviews (12)
 
 Owner documentation: [docs/features/reviews/README.md](../features/reviews/README.md)
 
@@ -291,7 +292,6 @@ Owner documentation: [docs/features/reviews/README.md](../features/reviews/READM
 | `/api/method/aos.api.v1.reviews.list_my_reviews` | GET | Session required | Client | `aos/api/v1/reviews/__init__.py` |
 | `/api/method/aos.api.v1.reviews.list_reviews` | GET | Guest allowed | Client | `aos/api/v1/reviews/__init__.py` |
 | `/api/method/aos.api.v1.reviews.list_reviews_received` | GET | Session required | Client | `aos/api/v1/reviews/__init__.py` |
-| `/api/method/aos.api.v1.reviews.report_review` | POST | Session required | Client | `aos/api/v1/reviews/__init__.py` |
 | `/api/method/aos.api.v1.reviews.undislike_review` | POST | Session required | Client | `aos/api/v1/reviews/__init__.py` |
 | `/api/method/aos.api.v1.reviews.unlike_review` | POST | Session required | Client | `aos/api/v1/reviews/__init__.py` |
 | `/api/method/aos.api.v1.reviews.update_review` | POST | Session required | Client | `aos/api/v1/reviews/__init__.py` |

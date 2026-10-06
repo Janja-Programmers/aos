@@ -17,7 +17,7 @@ def _schema(name: str) -> dict:
 
 
 class TestReportProductionSourceGuards(unittest.TestCase):
-    def test_public_reports_surface_is_exactly_user_ad_short_and_scoped_reasons(self):
+    def test_public_reports_surface_is_exactly_user_ad_short_review_and_scoped_reasons(self):
         source = _source("aos/api/v1/reports/__init__.py")
         tree = ast.parse(source)
         functions = {
@@ -31,7 +31,7 @@ class TestReportProductionSourceGuards(unittest.TestCase):
                 for decorator in node.decorator_list
             )
         }
-        self.assertEqual(functions, {"get_report_reasons", "report_user", "report_ad", "report_short"})
+        self.assertEqual(functions, {"get_report_reasons", "report_user", "report_ad", "report_short", "report_review"})
         self.assertNotIn("list_report_reasons", source)
         for unsupported in ("report_live", "report_message", "report_call", "report_comment", "report_seller"):
             self.assertNotIn(unsupported, source)
@@ -41,6 +41,7 @@ class TestReportProductionSourceGuards(unittest.TestCase):
         self.assertIn('USER_REPORT_FIELDS = frozenset({"account_id", "reason_id", "details"})', constants)
         self.assertIn('AD_REPORT_FIELDS = frozenset({"ad_id", "reason_id", "details"})', constants)
         self.assertIn('SHORT_REPORT_FIELDS = frozenset({"short_id", "reason_id", "details"})', constants)
+        self.assertIn('REVIEW_REPORT_FIELDS = frozenset({"review_id", "reason_id", "details"})', constants)
         self.assertIn('REASONS_FIELDS = frozenset({"target_type"})', constants)
         validation = _source("aos/services/reports/validation.py")
         self.assertIn("Unsupported report fields", validation)
@@ -49,7 +50,7 @@ class TestReportProductionSourceGuards(unittest.TestCase):
 
     def test_v1_wrappers_strip_only_framework_transport_metadata(self):
         source = _source("aos/api/v1/reports/__init__.py")
-        self.assertEqual(source.count("client_kwargs(kwargs)"), 4)
+        self.assertEqual(source.count("client_kwargs(kwargs)"), 5)
         self.assertNotIn("frappe.db", source)
 
     def test_write_endpoints_are_private_rate_limited_and_savepoint_scoped(self):
@@ -57,6 +58,7 @@ class TestReportProductionSourceGuards(unittest.TestCase):
             "aos/api/reports/report_user.py",
             "aos/api/reports/report_ad.py",
             "aos/api/reports/report_short.py",
+            "aos/api/reports/report_review.py",
         ):
             source = _source(relative)
             self.assertIn("require_login()", source, relative)
@@ -111,6 +113,7 @@ class TestReportProductionSourceGuards(unittest.TestCase):
         self.assertIn("require_public_ad_for_viewer", source)
         self.assertIn("normalize_short_id", source)
         self.assertIn("can_view_short", source)
+        self.assertIn("ReviewService().get", source)
         self.assertIn("visible.public_id", source)
         self.assertNotIn("record_report_user_activity", source)
         self.assertNotIn("record_ad_report_activity", source)
@@ -129,12 +132,13 @@ class TestReportProductionSourceGuards(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, joined)
 
-    def test_duplicate_integrity_is_reviewing_only_and_database_backed_for_three_targets(self):
+    def test_duplicate_integrity_is_reviewing_only_and_database_backed_for_all_targets(self):
         indexes = _source("aos/patches/v1_0/install_report_indexes.py")
         for schema_name, index_name in (
             ("aos_user_report", "uq_aos_user_report_active"),
             ("aos_ad_report", "uq_aos_ad_report_active"),
             ("aos_short_report", "uq_short_report_active"),
+            ("aos_review_report", "uq_aos_review_report_active"),
         ):
             fields = {row["fieldname"] for row in _schema(schema_name)["fields"]}
             self.assertIn("active_key", fields)
@@ -158,16 +162,17 @@ class TestReportProductionSourceGuards(unittest.TestCase):
         self.assertNotIn("FOR UPDATE", service)
         controllers = "\n".join(
             _source(f"aos/aos/doctype/{name}/{name}.py")
-            for name in ("aos_user_report", "aos_ad_report", "aos_short_report")
+            for name in ("aos_user_report", "aos_ad_report", "aos_short_report", "aos_review_report")
         )
-        self.assertEqual(controllers.count("active_report_key("), 3)
-        self.assertEqual(controllers.count("find_reviewing_report("), 3)
+        self.assertEqual(controllers.count("active_report_key("), 4)
+        self.assertEqual(controllers.count("find_reviewing_report("), 4)
 
     def test_report_ids_are_distributed_safe_opaque_ids(self):
         expected = {
             "aos_user_report": "URPT",
             "aos_ad_report": "ARPT",
             "aos_short_report": "SRPT",
+            "aos_review_report": "RREPORT",
         }
         for name, prefix in expected.items():
             source = _source(f"aos/aos/doctype/{name}/{name}.py")
@@ -185,7 +190,7 @@ class TestReportProductionSourceGuards(unittest.TestCase):
         lifecycle = _source("aos/services/reports/lifecycle.py")
         self.assertIn("require_reviewer(actor, doctype=doc.doctype)", lifecycle)
         self.assertIn("Submitted report details cannot be edited during review", lifecycle)
-        for name in ("aos_user_report", "aos_ad_report", "aos_short_report"):
+        for name in ("aos_user_report", "aos_ad_report", "aos_short_report", "aos_review_report"):
             schema = _schema(name)
             fields = {row["fieldname"]: row for row in schema["fields"]}
             self.assertEqual(fields["status"]["options"].splitlines(), ["Reviewing", "Resolved", "Rejected"])
@@ -199,6 +204,7 @@ class TestReportProductionSourceGuards(unittest.TestCase):
             ("aos_user_report", ("reported_user", "reported_by", "reason", "details")),
             ("aos_ad_report", ("ad", "seller", "reported_by", "reason", "details")),
             ("aos_short_report", ("short", "short_owner", "reported_by", "reason", "details")),
+            ("aos_review_report", ("review", "review_owner", "reported_by", "reason", "details")),
         ):
             fields = {row["fieldname"]: row for row in _schema(name)["fields"]}
             for field in evidence:
@@ -212,6 +218,7 @@ class TestReportProductionSourceGuards(unittest.TestCase):
         self.assertIn('"AOS User Report": 1000', constants)
         self.assertIn('"AOS Ad Report": 1000', constants)
         self.assertIn('"AOS Short Report": 1000', constants)
+        self.assertIn('"AOS Review Report": 1000', constants)
 
     def test_public_submission_projection_does_not_expose_private_or_internal_fields(self):
         service = _source("aos/services/reports/service.py")
@@ -239,7 +246,7 @@ class TestReportProductionSourceGuards(unittest.TestCase):
             self.assertIn(required, projection)
 
     def test_reporter_identity_is_session_owned(self):
-        for name in ("aos_user_report", "aos_ad_report", "aos_short_report"):
+        for name in ("aos_user_report", "aos_ad_report", "aos_short_report", "aos_review_report"):
             source = _source(f"aos/aos/doctype/{name}/{name}.py")
             self.assertIn("frappe.session", source)
             self.assertIn("self.reported_by =", source)
@@ -261,20 +268,47 @@ class TestReportProductionSourceGuards(unittest.TestCase):
         self.assertIn("uq_aos_ad_report_active", index_source)
         self.assertIn("uq_aos_user_report_active", index_source)
         self.assertIn("uq_short_report_active", index_source)
-        self.assertNotIn("DROP INDEX", index_source)
+        self.assertIn("uq_aos_review_report_active", index_source)
+        self.assertIn("uq_aos_review_report_user", index_source)
+        self.assertIn("DROP INDEX", index_source)
 
-    def test_review_reporting_consumes_classified_reason_master_without_becoming_public_reports_target(self):
-        controller = _source("aos/aos/doctype/aos_review_report/aos_review_report.py")
-        service = _source("aos/services/reviews/service.py")
-        self.assertIn("REPORT_TARGET_REVIEW", controller)
-        self.assertIn("validate_reason_for_target", controller)
-        self.assertIn("REPORT_TARGET_REVIEW", service)
-        self.assertIn("validate_reason_for_target", service)
-        public = _source("aos/services/reports/constants.py")
-        self.assertIn('"user": REPORT_TARGET_USER', public)
-        self.assertIn('"ad": REPORT_TARGET_AD', public)
-        self.assertIn('"short": REPORT_TARGET_SHORT', public)
-        self.assertNotIn('"review": REPORT_TARGET_REVIEW', public.split("PUBLIC_REPORT_TARGETS", 1)[1].split("}", 1)[0])
+    def test_review_reporting_is_owned_by_reports_with_no_reviews_alias(self):
+        public = _source("aos/api/v1/reports/__init__.py")
+        reviews = _source("aos/api/v1/reviews/__init__.py")
+        service = _source("aos/services/reports/service.py")
+        constants = _source("aos/services/reports/constants.py")
+        self.assertIn("def report_review", public)
+        self.assertNotIn("def report_review", reviews)
+        self.assertFalse((ROOT / "aos/api/reviews/report.py").exists())
+        self.assertIn("def report_review", service)
+        self.assertIn('"review": REPORT_TARGET_REVIEW', constants)
+        self.assertIn('REVIEW_REPORT_FIELDS = frozenset({"review_id", "reason_id", "details"})', constants)
+
+    def test_desk_reports_are_read_only_and_transitions_require_manual_action_service(self):
+        lifecycle = _source("aos/services/reports/lifecycle.py")
+        manual = _source("aos/services/reports/manual_review.py")
+        desk = _source("aos/public/js/report_review.js")
+        self.assertIn("aos_report_manual_review", lifecycle)
+        self.assertIn("FOR UPDATE", manual)
+        self.assertIn("Report changed since it was opened", manual)
+        self.assertIn('clean_decision not in {"resolve", "reject"}', manual)
+        self.assertIn("A rejection note is required", manual)
+        self.assertIn("Resolve Report", desk)
+        self.assertIn("Reject Report", desk)
+        for name in ("aos_user_report", "aos_ad_report", "aos_short_report", "aos_review_report"):
+            fields = {row["fieldname"]: row for row in _schema(name)["fields"]}
+            self.assertTrue(bool(fields["status"].get("read_only")), name)
+            self.assertTrue(bool(fields["decision_note"].get("read_only")), name)
+            role = next(row for row in _schema(name)["permissions"] if row.get("role") == "System Manager")
+            self.assertFalse(bool(role.get("create")), name)
+
+    def test_reports_have_no_automatic_decision_path(self):
+        reports_dir = ROOT / "aos/services/reports"
+        joined = "\n".join(path.read_text(encoding="utf-8") for path in reports_dir.rglob("*.py"))
+        self.assertNotIn("enqueue_moderation", joined)
+        self.assertNotIn("handle_callback", joined)
+        self.assertNotIn("scheduler", joined.lower())
+        self.assertIn("Reports never auto-resolve", _source("aos/services/reports/manual_review.py"))
 
     def test_reports_do_not_commit_outer_transaction(self):
         offenders = []

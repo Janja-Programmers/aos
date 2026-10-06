@@ -21,7 +21,6 @@ from .constants import (
     RATING_MIN,
     RATING_STEP,
     REACTIONS,
-    REPORT_DETAILS_MAX_LENGTH,
     TITLE_MAX_LENGTH,
     TITLE_MIN_LENGTH,
 )
@@ -178,17 +177,6 @@ def normalize_comment(value: Any, *, required: bool = True) -> str:
     )
 
 
-def normalize_report_details(value: Any) -> str:
-    return _normalize_text(
-        value,
-        field="report_details",
-        minimum=0,
-        maximum=REPORT_DETAILS_MAX_LENGTH,
-        required=False,
-        multiline=True,
-    )
-
-
 def normalize_images(value: Any) -> list[str]:
     if value in (None, ""):
         return []
@@ -253,17 +241,6 @@ def normalize_reaction(value: Any) -> str:
     if reaction not in REACTIONS:
         raise ReviewValidationError("Invalid reaction.", code="INVALID_REVIEW_REACTION")
     return reaction
-
-
-def normalize_report_reason(value: Any) -> str:
-    return _normalize_text(
-        value,
-        field="review_report_reason",
-        minimum=1,
-        maximum=140,
-        required=True,
-        multiline=False,
-    )
 
 
 def normalize_moderation_reason(value: Any) -> str:

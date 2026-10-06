@@ -5,13 +5,18 @@
  "engine": "InnoDB",
  "field_order": [
   "review",
+  "review_owner",
   "reported_by",
   "reason",
+  "details_section",
   "details",
   "review_tab",
   "status",
   "reviewed_by",
-  "reviewed_on"
+  "column_break_review",
+  "reviewed_on",
+  "decision_note",
+  "active_key"
  ],
  "fields": [
   {
@@ -22,7 +27,18 @@
    "label": "Review",
    "options": "AOS Review",
    "reqd": 1,
-   "search_index": 1
+   "search_index": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "review_owner",
+   "fieldtype": "Link",
+   "label": "Review Owner",
+   "options": "User",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "reported_by",
@@ -39,12 +55,18 @@
    "fieldtype": "Link",
    "label": "Reason",
    "options": "AOS Report Reason",
-   "reqd": 1
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "details_section",
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "details",
    "fieldtype": "Small Text",
-   "label": "Details"
+   "label": "Details",
+   "read_only": 1
   },
   {
    "fieldname": "review_tab",
@@ -60,7 +82,8 @@
    "label": "Status",
    "options": "Reviewing\nResolved\nRejected",
    "reqd": 1,
-   "search_index": 1
+   "search_index": 1,
+   "read_only": 1
   },
   {
    "fieldname": "reviewed_by",
@@ -70,17 +93,35 @@
    "read_only": 1
   },
   {
+   "fieldname": "column_break_review",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "reviewed_on",
    "fieldtype": "Datetime",
    "label": "Reviewed On",
    "read_only": 1
+  },
+  {
+   "fieldname": "decision_note",
+   "fieldtype": "Small Text",
+   "label": "Decision Note",
+   "read_only": 1
+  },
+  {
+   "fieldname": "active_key",
+   "fieldtype": "Data",
+   "label": "Active Key",
+   "hidden": 1,
+   "read_only": 1,
+   "length": 64
   }
  ],
  "module": "AOS",
  "name": "AOS Review Report",
  "permissions": [
   {
-   "create": 1,
+   "create": 0,
    "delete": 0,
    "email": 1,
    "export": 1,
@@ -94,10 +135,27 @@
  ],
  "sort_field": "creation",
  "sort_order": "DESC",
- "modified": "2026-07-28 12:00:00.000000",
+ "modified": "2026-10-06 18:35:00.000000",
  "modified_by": "Administrator",
  "owner": "Administrator",
  "allow_rename": 0,
  "track_changes": 1,
- "index_web_pages_for_search": 0
+ "index_web_pages_for_search": 0,
+ "grid_page_length": 50,
+ "rows_threshold_for_grid_search": 20,
+ "row_format": "Dynamic",
+ "states": [
+  {
+   "color": "Purple",
+   "title": "Reviewing"
+  },
+  {
+   "color": "Green",
+   "title": "Resolved"
+  },
+  {
+   "color": "Red",
+   "title": "Rejected"
+  }
+ ]
 }

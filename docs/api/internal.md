@@ -37,3 +37,7 @@ These three unversioned methods exist only for private monitoring:
 - `aos.api.metrics.backup_readiness`
 
 They are guest-decorated at the Frappe layer so Prometheus can scrape them, but `_serve()` calls `metrics_access_allowed()` before returning any payload. They are **not** part of the public v1 client contract.
+
+## Staff-only Desk actions
+
+`aos.api.internal.reports.review` is the only HTTP action used by Report Desk forms to close a complaint. It requires an authenticated staff session, rechecks write permission on the concrete Report DocType, row-locks the record, requires the current optimistic version, and permits only `Reviewing → Resolved|Rejected`. It is not a client API and performs no automated enforcement against the reported target.

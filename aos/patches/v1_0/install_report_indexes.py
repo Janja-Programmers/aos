@@ -21,16 +21,46 @@ INDEX_DEFINITIONS: tuple[tuple[str, str, tuple[str, ...], bool], ...] = (
     ("AOS Short Report", "uq_short_report_active", ("active_key",), True),
     ("AOS Report Reason", "idx_aos_report_reason_enabled", ("is_enabled", "sort_order", "label"), False),
     ("AOS Report Reason Target", "idx_aos_report_reason_target_scope", ("target_type", "parent"), False),
-    # Reviews is a protected feature; keep its existing report indexes intact.
     ("AOS Review Report", "idx_aos_review_report_backlog", ("status", "creation", "name"), False),
     ("AOS Review Report", "idx_aos_review_report_target", ("review", "status", "creation", "name"), False),
-    ("AOS Review Report", "uq_aos_review_report_user", ("review", "reported_by"), True),
+    ("AOS Review Report", "idx_aos_review_report_reporter", ("reported_by", "creation", "name"), False),
+    ("AOS Review Report", "uq_aos_review_report_active", ("active_key",), True),
 )
 
 
 def execute() -> None:
+    _prepare_review_report_active_key()
     for doctype, index_name, columns, unique in INDEX_DEFINITIONS:
         _ensure_index(doctype, index_name, columns, unique=unique)
+
+
+def _prepare_review_report_active_key() -> None:
+    """Move Review reports from permanent uniqueness to active-only uniqueness."""
+    if not frappe.db.table_exists("AOS Review Report") or not frappe.db.has_column("AOS Review Report", "active_key"):
+        return
+    from aos.services.reports.repository import active_report_key
+
+    rows = frappe.get_all(
+        "AOS Review Report",
+        filters={"status": "Reviewing"},
+        fields=["name", "review", "reported_by"],
+        order_by="creation asc, name asc",
+    )
+    for row in rows:
+        key = active_report_key(
+            doctype="AOS Review Report", target_id=str(row.review), reporter=str(row.reported_by)
+        )
+        frappe.db.set_value("AOS Review Report", row.name, "active_key", key, update_modified=False)
+    _drop_index_if_exists("AOS Review Report", "uq_aos_review_report_user")
+
+
+def _drop_index_if_exists(doctype: str, index_name: str) -> None:
+    if not _index_exists(doctype, index_name):
+        return
+    if str(getattr(frappe.db, "db_type", "mariadb") or "mariadb").lower() == "postgres":
+        frappe.db.sql_ddl(f'DROP INDEX IF EXISTS "{index_name}"')
+    else:
+        frappe.db.sql_ddl(f"ALTER TABLE `{_table(doctype)}` DROP INDEX `{index_name}`")
 
 
 def _table(doctype: str) -> str:

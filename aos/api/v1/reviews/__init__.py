@@ -15,7 +15,6 @@ from aos.api.reviews.reaction import (
     undislike_review_impl as _undislike_review_impl,
     unlike_review_impl as _unlike_review_impl,
 )
-from aos.api.reviews.report import report_review_impl as _report_review_impl
 from aos.api.reviews.update import update_review_impl as _update_review_impl
 from aos.api.reviews.viewer_state import get_review_viewer_state_impl as _get_review_viewer_state_impl
 from aos.api.v1._transport import client_kwargs
@@ -79,8 +78,3 @@ def dislike_review(**kwargs):
 @frappe.whitelist(methods=["POST"])
 def undislike_review(**kwargs):
     return _undislike_review_impl(**client_kwargs(kwargs))
-
-
-@frappe.whitelist(methods=["POST"])
-def report_review(**kwargs):
-    return _report_review_impl(**client_kwargs(kwargs))

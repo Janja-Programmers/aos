@@ -24,6 +24,12 @@
     "rationale": "Desk-only Moderation review endpoint; session authorization remains server-side and edge traffic is baseline bounded."
   },
   {
+    "endpoint": "aos.api.internal.reports.__init__.review",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Desk-only Reports manual-review endpoint; session authorization, DocType write permission, row locking, and optimistic version checks remain server-side."
+  },
+  {
     "endpoint": "aos.api.internal.shorts.__init__.get_review_context",
     "access": "authenticated",
     "policy": "baseline_authenticated",
@@ -912,6 +918,12 @@
     "rationale": "Covered by the Nginx public API baseline; endpoint-specific application limits may be stricter."
   },
   {
+    "endpoint": "aos.api.v1.reports.__init__.report_review",
+    "access": "authenticated",
+    "policy": "baseline_authenticated",
+    "rationale": "Covered by the Nginx public API baseline and the shared Reports application limits."
+  },
+  {
     "endpoint": "aos.api.v1.reports.__init__.report_short",
     "access": "authenticated",
     "policy": "baseline_authenticated",
@@ -973,12 +985,6 @@
   },
   {
     "endpoint": "aos.api.v1.reviews.__init__.list_reviews_received",
-    "access": "authenticated",
-    "policy": "baseline_authenticated",
-    "rationale": "Covered by the Nginx public API baseline and a stricter operation-specific Reviews application limit."
-  },
-  {
-    "endpoint": "aos.api.v1.reviews.__init__.report_review",
     "access": "authenticated",
     "policy": "baseline_authenticated",
     "rationale": "Covered by the Nginx public API baseline and a stricter operation-specific Reviews application limit."

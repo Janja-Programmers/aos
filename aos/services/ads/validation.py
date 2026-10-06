@@ -38,7 +38,6 @@ from .constants import (
     MAX_OFFSET,
     MAX_PAGE_SIZE,
     MAX_PRICE_UNIT_LENGTH,
-    MAX_REPORT_DETAILS_LENGTH,
     MAX_SEARCH_QUERY_LENGTH,
     MAX_SORT_ORDER,
     MAX_TITLE_LENGTH,
@@ -794,6 +793,3 @@ def normalize_draft_request(payload: Mapping[str, Any]) -> tuple[str, dict[str, 
     last_step = normalize_int(payload.get("last_step"), field="last_step", default=1, minimum=1, maximum=MAX_DRAFT_STEP)
     return draft_id, draft_payload, last_step
 
-
-def normalize_report_details(value: Any) -> str:
-    return normalize_text(value, field="details", max_length=MAX_REPORT_DETAILS_LENGTH, multiline=True)

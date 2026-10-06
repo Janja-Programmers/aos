@@ -28,8 +28,7 @@ class TestReviewsContracts(unittest.TestCase):
                 "unlike_review",
                 "dislike_review",
                 "undislike_review",
-                "report_review",
-            },
+                },
         )
         self.assertIn("client_kwargs(kwargs)", source)
 

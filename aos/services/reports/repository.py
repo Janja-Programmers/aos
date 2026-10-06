@@ -12,7 +12,6 @@ _REPORT_TABLES = {
     "AOS User Report": "tabAOS User Report",
     "AOS Ad Report": "tabAOS Ad Report",
     "AOS Short Report": "tabAOS Short Report",
-    # Reviews owns this record type but reuses the shared lifecycle lock.
     "AOS Review Report": "tabAOS Review Report",
 }
 
@@ -38,7 +37,7 @@ def find_reviewing_report(
     """
 
     table = _REPORT_TABLES.get(doctype)
-    if not table or doctype == "AOS Review Report":
+    if not table:
         raise ValueError("Unsupported active-key report type")
     key = active_report_key(doctype=doctype, target_id=target_id, reporter=reporter)
     params: list[str] = [key, STATUS_REVIEWING]

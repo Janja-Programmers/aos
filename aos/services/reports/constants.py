@@ -15,9 +15,6 @@ REPORT_TRANSITIONS = {
 REPORT_TARGET_USER = "User"
 REPORT_TARGET_AD = "Ad"
 REPORT_TARGET_SHORT = "Short"
-# Reviews is already a hardened feature and owns Review-report submission. It
-# consumes the shared reason master only so its existing contract does not
-# regress when Report Reason classification becomes mandatory.
 REPORT_TARGET_REVIEW = "Review"
 REPORT_REASON_TARGETS = frozenset(
     {REPORT_TARGET_USER, REPORT_TARGET_AD, REPORT_TARGET_SHORT, REPORT_TARGET_REVIEW}
@@ -26,6 +23,13 @@ PUBLIC_REPORT_TARGETS = {
     "user": REPORT_TARGET_USER,
     "ad": REPORT_TARGET_AD,
     "short": REPORT_TARGET_SHORT,
+    "review": REPORT_TARGET_REVIEW,
+}
+REPORT_DOCTYPE_BY_TYPE = {
+    "user": "AOS User Report",
+    "ad": "AOS Ad Report",
+    "short": "AOS Short Report",
+    "review": "AOS Review Report",
 }
 
 TRANSPORT_FIELDS = frozenset({"cmd"})
@@ -34,19 +38,21 @@ SUBMISSION_FIELDS = {
     "AOS User Report": ("reported_user", "reported_by", "reason", "details"),
     "AOS Ad Report": ("ad", "reported_by", "seller", "reason", "details"),
     "AOS Short Report": ("short", "short_owner", "reported_by", "reason", "details"),
-    "AOS Review Report": ("review", "reported_by", "reason", "details"),
+    "AOS Review Report": ("review", "review_owner", "reported_by", "reason", "details"),
 }
 
 DETAIL_MAX_LENGTH = {
     "AOS User Report": 1000,
     "AOS Ad Report": 1000,
     "AOS Short Report": 1000,
-    "AOS Review Report": 500,
+    "AOS Review Report": 1000,
 }
+REVIEW_NOTE_MAX_LENGTH = 1000
 
 USER_REPORT_FIELDS = frozenset({"account_id", "reason_id", "details"})
 SHORT_REPORT_FIELDS = frozenset({"short_id", "reason_id", "details"})
 AD_REPORT_FIELDS = frozenset({"ad_id", "reason_id", "details"})
+REVIEW_REPORT_FIELDS = frozenset({"review_id", "reason_id", "details"})
 REASONS_FIELDS = frozenset({"target_type"})
 
 REPORT_REASONS_LIMIT_PER_MINUTE_PER_USER = 60

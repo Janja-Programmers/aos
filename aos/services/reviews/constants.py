@@ -4,7 +4,6 @@ from __future__ import annotations
 
 REVIEW_DOCTYPE = "AOS Review"
 REACTION_DOCTYPE = "AOS Review Reaction"
-REPORT_DOCTYPE = "AOS Review Report"
 REVIEW_IMAGE_DOCTYPE = "AOS Review Image"
 
 STATUS_PENDING = "Pending"
@@ -24,7 +23,6 @@ TITLE_MIN_LENGTH = 2
 TITLE_MAX_LENGTH = 120
 COMMENT_MIN_LENGTH = 2
 COMMENT_MAX_LENGTH = 2000
-REPORT_DETAILS_MAX_LENGTH = 500
 MAX_REVIEW_IMAGES = 5
 
 ELIGIBILITY_BASIS_COMMUNICATION = "communication"
@@ -45,5 +43,4 @@ RATE_LIMITS = {
     "list_public": 120,
     "list_private": 90,
     "reaction": 60,
-    "report": 8,
 }

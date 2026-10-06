@@ -9,6 +9,7 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 |---|---|---|---|
 | `get_report_reasons` | GET | Session required | Client |
 | `report_ad` | POST | Session required | Client |
+| `report_review` | POST | Session required | Client |
 | `report_short` | POST | Session required | Client |
 | `report_user` | POST | Session required | Client |
 
@@ -17,232 +18,263 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 
 ## Overview
 
-Reports is the private complaint-intake domain for three public AOS targets: **User/Account**, **Ad**, and **Short**. An authenticated account submits a canonical target identifier, a canonical classified reason identifier, and optional bounded details. Reports validates the target through the already-hardened owning feature, persists a durable target-specific report row, and exposes that row to authorized staff in Frappe Desk.
+Reports is the private complaint-intake and human-review domain for four public AOS targets: **User/Account**, **Ad**, **Short**, and **Review**. All four targets use the same submission, reason-classification, duplicate/idempotency, lifecycle, Desk authorization, privacy, concurrency, and audit standards.
 
-Reports does not decide generic moderation outcomes and does not mutate Account, Seller, Ad, or Short state. It records evidence for staff review and for later Moderation integration.
+Reports is deliberately **manual**. Submitting a report records evidence and opens a `Reviewing` case. No scheduler, moderation provider, callback, threshold, report count, classifier, or background job resolves or rejects a Report. An authorized staff member must use the explicit Desk review action to close it.
+
+Reports does not itself suspend Accounts/Sellers, change Ad/Short/Review moderation state, remove content, or block users. Enforcement remains owned by the relevant feature or Moderation. A Report decision only closes the complaint record.
 
 ## Ownership
 
-Reports owns report submission, canonical reason classification, report persistence, reporter attribution, target relationships, the shared report review lifecycle, duplicate/idempotency rules, public-safe submission projections, and Desk report records.
+Reports owns:
 
-Reports does not own Account identity, Social blocking/privacy rules, Ad lifecycle/visibility, Short lifecycle/visibility, generic Moderation, Media, Notifications infrastructure, or Activity. Those contracts are consumed rather than recreated.
+- `AOS User Report`, `AOS Ad Report`, `AOS Short Report`, and `AOS Review Report`;
+- the public `report_*` submission APIs for all four target types;
+- `AOS Report Reason` and target classification;
+- session-owned reporter attribution;
+- target-specific visibility/reportability validation;
+- active-report idempotency and database uniqueness;
+- the canonical manual lifecycle;
+- staff decision metadata and Desk workflow;
+- public-safe report submission projections.
 
-The hardened Reviews feature owns Review-report submission. `AOS Review Report` continues to consume the same reason master and shared lifecycle; `Review` is therefore an internal reason scope only. It is **not** a fourth public Reports target and `get_report_reasons` rejects `review`.
+Reviews no longer owns a report endpoint. It only supplies the authoritative Review visibility/lifecycle boundary consumed by Reports.
+
+
+## Architecture
+
+```text
+Client report action
+  -> aos.api.v1.reports.report_*
+  -> authentication + distributed rate limit + savepoint
+  -> ReportService target adapter
+  -> owning feature visibility/reportability boundary
+  -> canonical reason validation
+  -> active-key duplicate reconciliation
+  -> target-specific AOS * Report row
+
+Frappe Desk
+  -> shared read-only Report form
+  -> Resolve Report / Reject Report
+  -> aos.api.internal.reports.review
+  -> manual_review.review_report
+  -> permission + row lock + optimistic version
+  -> guarded terminal lifecycle transition
+```
+
+The public submission path and the staff decision path are deliberately separate. The public path can only create `Reviewing` evidence rows. The staff path can only close an existing `Reviewing` row and cannot mutate the reported target.
 
 ## Target Types
 
-| Public target | Public identifier | Authoritative target boundary | Durable report DocType |
-|---|---|---|---|
-| `user` | `ACC-*` | Accounts public identity + account availability | `AOS User Report` |
-| `ad` | Ads `public_id` (`ad_id`) | Ads `require_public_ad_for_viewer` | `AOS Ad Report` |
-| `short` | `SHR-*` (`short_id`) | Shorts identity + `can_view` | `AOS Short Report` |
+| Public target | Public identifier | Authoritative target boundary | Durable Report DocType | Report prefix |
+|---|---|---|---|---|
+| `user` | `ACC-*` | Accounts public identity + active-account policy | `AOS User Report` | `URPT-*` |
+| `ad` | Ad `public_id` | Ads `require_public_ad_for_viewer` | `AOS Ad Report` | `ARPT-*` |
+| `short` | `SHR-*` | Shorts identity + `can_view` | `AOS Short Report` | `SRPT-*` |
+| `review` | Review `public_id` | Reviews public visibility + owning Ad visibility | `AOS Review Report` | `RREPORT-*` |
 
-The three DocTypes are intentionally retained. They preserve direct Links, target-specific Desk filters, existing derived Ad report counts, and referential integrity without turning the report table into a polymorphic mega-record. Shared validation, reason classification, duplicate handling, lifecycle, errors, rate limits, and projections live in the Reports service layer.
+Target-specific DocTypes are retained for referential integrity and efficient Desk filtering, while all policy and lifecycle behavior is centralized in `aos.services.reports`.
 
-## Reason Classification
+## Report Reasons
 
-`AOS Report Reason` uses a stable machine `reason_id` as both durable API identity and document name. Human-readable `label` is presentation data and may change without changing identity.
+`AOS Report Reason.reason_id` is the immutable API identity. `label`, `description`, `icon_key`, `sort_order`, `is_enabled`, and child `allowed_targets` are presentation/classification data.
 
-Allowed targets are normalized in child rows of `AOS Report Reason Target` rather than encoded into labels or duplicated reason rows. A reason can therefore apply to one or several targets. The server validates the requested reason against the target on every new submission.
+`get_report_reasons` accepts exactly `user`, `ad`, `short`, or `review`. Only enabled reasons explicitly classified for that target are returned. Disabled reasons cannot be used for new submissions but historical reports remain reviewable.
 
-The canonical fresh-site reason catalog is:
+The fresh-site reason catalog is:
 
-| Reason ID | Label | User | Ad | Short | Internal Review scope |
-|---|---|:---:|:---:|:---:|:---:|
-| `spam` | Spam | ✓ |  | ✓ | ✓ |
-| `harassment_abuse` | Harassment or abuse | ✓ |  | ✓ | ✓ |
-| `nudity_sexual_content` | Nudity or sexual content |  |  | ✓ |  |
-| `violence_dangerous_content` | Violence or dangerous content |  |  | ✓ |  |
-| `scam_fraud` | Scam or fraud | ✓ | ✓ | ✓ | ✓ |
-| `misleading_description` | Misleading or inaccurate description |  | ✓ |  |  |
-| `prohibited_restricted_item` | Prohibited or restricted item |  | ✓ |  |  |
-| `inappropriate_content` | Inappropriate content |  | ✓ | ✓ | ✓ |
-| `wrong_category` | Wrong category |  | ✓ |  |  |
-| `misleading_pricing` | Wrong or misleading pricing |  | ✓ |  |  |
-| `duplicate_ad` | Duplicate ad |  | ✓ |  |  |
-| `counterfeit_product` | Counterfeit or fake product |  | ✓ |  |  |
-| `other` | Other | ✓ | ✓ | ✓ | ✓ |
-
-Disabled reasons are never returned publicly and cannot be used for new reports. Disabling a reason does not invalidate historical report rows already under review.
-
-## Data Model
-
-### AOS Report Reason
-
-- `reason_id`: required, unique, immutable lowercase machine identity.
-- `label`: required public display label.
-- `description`: optional public-safe descriptive text.
-- `icon_key`: optional presentation hint.
-- `sort_order`: deterministic ordering key.
-- `is_enabled`: controls use for new reports and public listing.
-- `allowed_targets`: child rows containing canonical target classifications.
-
-### User / Ad / Short report rows
-
-Each durable row stores its target Link, authenticated `reported_by`, classified `reason`, optional `details`, `status`, staff review metadata, and a hidden `active_key` used only while the row is `Reviewing`. Ad/Short rows also retain their target-owner relationship fields used by Desk/derived projections.
-
-Submitted evidence fields are immutable after creation. Public clients cannot set reporter identity, target-owner fields, status, review metadata, or any staff-only state.
-
-## Naming
-
-User, Ad, and Short reports use distributed-safe opaque UUID-backed identifiers:
-
-- User: `URPT-<uuidhex>`
-- Ad: `ARPT-<uuidhex>`
-- Short: `SRPT-<uuidhex>`
-
-No naming series or process-local counter is used. The database primary key remains the final collision boundary.
+| Reason ID | User | Ad | Short | Review |
+|---|:---:|:---:|:---:|:---:|
+| `spam` | ✓ |  | ✓ | ✓ |
+| `harassment_abuse` | ✓ |  | ✓ | ✓ |
+| `nudity_sexual_content` |  |  | ✓ |  |
+| `violence_dangerous_content` |  |  | ✓ |  |
+| `scam_fraud` | ✓ | ✓ | ✓ | ✓ |
+| `misleading_description` |  | ✓ |  |  |
+| `prohibited_restricted_item` |  | ✓ |  |  |
+| `inappropriate_content` |  | ✓ | ✓ | ✓ |
+| `wrong_category` |  | ✓ |  |  |
+| `misleading_pricing` |  | ✓ |  |  |
+| `duplicate_ad` |  | ✓ |  |  |
+| `counterfeit_product` |  | ✓ |  |  |
+| `other` | ✓ | ✓ | ✓ | ✓ |
 
 ## Public API
 
-All four endpoints require an authenticated session, set private/no-store response headers, use stable `{ok,message,error,data}` response semantics, and reject unknown request fields.
+All endpoints require an authenticated Frappe session, set private/no-store response headers, reject unknown request fields, use shared distributed rate limits, and return the standard AOS response envelope.
 
 ### `GET /api/method/aos.api.v1.reports.get_report_reasons`
 
 Request:
 
 ```json
-{"target_type":"user"}
+{"target_type":"review"}
 ```
-
-`target_type` is exactly `user`, `ad`, or `short`. The response contains only enabled reasons classified for that target, ordered by `sort_order`, `label`, then ID. Public reason fields are `id`, `label`, `description`, and `icon_key`.
 
 ### `POST /api/method/aos.api.v1.reports.report_user`
 
-Request fields: `account_id`, `reason_id`, optional `details`.
-
-`account_id` must be a canonical `ACC-*` identity. Email, Frappe `User.name`, Profile aliases, client-supplied reporter fields, and report-and-block flags are not accepted.
+```json
+{"account_id":"ACC-...","reason_id":"harassment_abuse","details":"Optional evidence"}
+```
 
 ### `POST /api/method/aos.api.v1.reports.report_ad`
 
-Request fields: `ad_id`, `reason_id`, optional `details`.
-
-`ad_id` is Ads `public_id`; internal `AOS Ad.name` is not a public identifier.
+```json
+{"ad_id":"<ad-public-id>","reason_id":"scam_fraud","details":"Optional evidence"}
+```
 
 ### `POST /api/method/aos.api.v1.reports.report_short`
 
-Request fields: `short_id`, `reason_id`, optional `details`.
+```json
+{"short_id":"SHR-...","reason_id":"inappropriate_content","details":"Optional evidence"}
+```
 
-`short_id` must be the canonical `SHR-*` identity.
+### `POST /api/method/aos.api.v1.reports.report_review`
+
+```json
+{"review_id":"<review-public-id>","reason_id":"spam","details":"Optional evidence"}
+```
+
+There are no report-field aliases. In particular Review reporting uses `reason_id`, not a separate Reviews-owned `reason` contract.
 
 Successful submissions return only:
 
 ```json
 {
-  "report_id": "URPT-...",
-  "report_type": "user",
-  "target_id": "ACC-...",
-  "reason_id": "harassment_abuse",
-  "status": "Reviewing",
-  "created_at": "...",
-  "idempotent_replay": false
+  "report_id":"RREPORT-...",
+  "report_type":"review",
+  "target_id":"<review-public-id>",
+  "reason_id":"spam",
+  "status":"Reviewing",
+  "created_at":"...",
+  "idempotent_replay":false
 }
 ```
 
-The projection does not expose internal reporter identifiers, internal Ad docnames, target-owner internals, staff notes, Frappe owner/modified metadata, or other users' reports.
+Internal DocType names, target-owner internals, reporter identity, staff decision fields, Frappe ownership metadata, and other users' reports are never projected to the client.
 
-Stable Reports errors include `REPORT_INVALID_REQUEST`, `REPORT_INVALID_TARGET`, `REPORT_INVALID_REASON`, `REPORT_REASON_NOT_ALLOWED`, `REPORT_SELF_NOT_ALLOWED`, `REPORT_ACCESS_DENIED`, and `REPORT_CONFLICT`. Guest authentication failures use the hardened shared `UNAUTHORIZED` code; rate-limit failures also continue to use the shared response contract. Clients must branch on `error`, not exception prose.
+## Submission Validation
 
-## Lifecycle
+The reporter is always derived from the authenticated session. Clients cannot set `reported_by`, owner relationship fields, status, active key, reviewer identity, review timestamp, or decision note.
 
-The canonical lifecycle is:
+All report `details` fields use the same standard:
+
+- optional;
+- maximum 1,000 characters;
+- Unicode-normalized;
+- unsafe control characters rejected;
+- HTML rejected;
+- treated as untrusted evidence.
+
+Self-reporting is rejected for every target. Target visibility is checked through the owning feature at submission time. Historical evidence remains reviewable even if the target later becomes unavailable.
+
+## Duplicate / Idempotency Contract
+
+Every Report type has the same invariant: exactly one active `Reviewing` report may exist for one `(reporter,target)` pair.
+
+A hidden SHA-256 `active_key` is populated only while status is `Reviewing` and is protected by a unique database index. A retry while the active report exists returns that existing row with `idempotent_replay=true`; retry payloads do not overwrite the original reason/details. When the case becomes `Resolved` or `Rejected`, `active_key` is cleared and a later new complaint by the same reporter against the same target is allowed.
+
+This applies equally to User, Ad, Short, and Review reports. Review reports no longer use permanent `(review,reported_by)` uniqueness.
+
+## Manual Lifecycle
+
+The only lifecycle is:
 
 ```text
-Reviewing -> Resolved
-          -> Rejected
+Reviewing ──Resolve Report──> Resolved
+          └─Reject Report───> Rejected
 ```
 
-`Reviewing` is the only initial state. `Resolved` and `Rejected` are terminal. Only an actor with effective Write permission on the concrete Report DocType may perform a transition. The server stamps `reviewed_by` and `reviewed_on`; these values cannot be supplied directly.
+`Resolved` and `Rejected` are terminal.
 
-There is deliberately no Reports-owned `admin_action`. Generic enforcement against an Account, Seller, Ad, or Short belongs to Moderation or the owning feature, not to the complaint record.
+A Report status change is accepted by the persistence layer only when it carries the internal `aos_report_manual_review` action flag set by `aos.services.reports.manual_review.review_report`. Therefore even an authorized Desk user cannot bypass the workflow by changing `status` and saving the document directly.
 
-Reporters cannot edit or delete submitted report evidence through the public API. Targets have no public report-read endpoint.
+The manual service:
 
-## Desk Operations
+1. maps the explicit public report type to one fixed Report DocType;
+2. verifies effective DocType write permission;
+3. locks the Report row with `FOR UPDATE`;
+4. requires the current optimistic `modified` version;
+5. requires current status `Reviewing`;
+6. validates `resolve` or `reject`;
+7. requires a bounded rejection note for `reject`;
+8. applies the terminal transition;
+9. stamps `reviewed_by` and `reviewed_on` server-side;
+10. clears the active duplicate key through the normal Report controller.
 
-`AOS User Report`, `AOS Ad Report`, and `AOS Short Report` are staff-facing Desk records. System Manager has read/write/report/export access but cannot create, delete, share, or rename them through Desk. Creation remains an authenticated public-service responsibility.
+No automated code path carries the manual action flag.
 
-List views expose the target, reporter, reason, and status, with standard filters on target/reporter/reason/status where appropriate. Records are sorted newest first. Staff review changes only `status`; submitted evidence and identities are read-only.
+## Desk Workflow
 
-The reason master is auditable, cannot be renamed/deleted/shared, and is changed by editing the label/description/order/target scope or disabling a reason. `reason_id` is immutable.
+All four Report DocTypes have the same Desk security model:
+
+- System Manager: read/write/report/export/print;
+- no Desk create;
+- no delete;
+- no share;
+- no rename;
+- every data field is read-only, including `status`;
+- submitted evidence is immutable;
+- review metadata is read-only;
+- the form exposes only **Resolve Report** and **Reject Report** while status is `Reviewing`.
+
+`Reject Report` requires a `decision_note`; `Resolve Report` is confirmation-only. Both actions call the private staff endpoint `aos.api.internal.reports.review` with the report type, report ID, current version, and explicit decision. Terminal reports expose no further transition action.
+
+`decision_note`, `reviewed_by`, and `reviewed_on` are audit metadata and cannot be edited directly.
+
+## Manual-only / No Automatic Enforcement
+
+Report intake may be used as evidence by staff, but Reports performs no automatic enforcement. In particular it does not:
+
+- auto-resolve based on report count;
+- auto-reject using ML/moderation results;
+- suspend an Account or Seller;
+- change an Ad status;
+- hide/delete a Short;
+- approve/reject/hide a Review;
+- create a Social block;
+- emit an enforcement Notification.
+
+`AOS Ad.total_reports` remains a derived complaint count; it is not an automation trigger.
 
 ## Privacy
 
-Reporter identity is derived exclusively from the authenticated session and is stored for staff operations, but it is never returned to the reported target. There is no public endpoint for targets to enumerate complaints, reporter identities, details, staff status, or aggregate complaint data.
+Reporter identity is private staff data. Reported targets have no public report-read endpoint and cannot enumerate who reported them, report details, staff notes, or case state.
 
-Report submission does not create Activity events. Reports does not create Social blocks. No Notifications are emitted by Reports in the current product contract.
-
-Free-text `details` is optional, normalized, capped at 1,000 characters for User/Ad/Short reports, rejects unsafe control characters and HTML markup, and is treated as untrusted reporter input.
-
-## Duplicate / Idempotency Rules
-
-For **User, Ad, and Short**, exactly one `Reviewing` report may exist for a given `(reporter,target)` pair. A SHA-256 `active_key` is populated only while status is `Reviewing` and has a unique database index.
-
-A repeated submission while that report remains `Reviewing` returns the existing report as a successful idempotent replay. Reason/details supplied on the retry do not rewrite the original evidence. After the row becomes `Resolved` or `Rejected`, its `active_key` is cleared and the same reporter may submit a new report later if the target is still reportable.
-
-The unique `active_key` protects the invariant across workers/nodes. The normal duplicate lookup is advisory; if two workers race to insert, MariaDB uniqueness selects one winner and the loser performs a locking read of that committed winner before returning an idempotent replay. Reports deliberately does **not** lock the target row, so many different reporters do not serialize on one viral Ad/Short.
-
-## Transactions
-
-Each public write endpoint owns a short savepoint-scoped request transaction. The service performs authoritative target validation, reason classification, duplicate lookup, and insert without manually committing the outer request transaction. Expected failures roll back to the endpoint savepoint.
-
-Reports does not lock target rows and performs no external network/service calls inside report creation. Activity, Notifications, media operations, and moderation enforcement are not part of the report creation transaction.
+Reports does not create Activity events. Report submissions and case decisions do not themselves notify the target or reporter.
 
 ## Rate Limits
 
-Shared Redis-backed rate limiting is used; there are no process-local counters:
+- reason listing: 60/minute/authenticated user;
+- report submission: 10/minute per user per report type;
+- same target: 3/minute per user/report type/target.
 
-- `get_report_reasons`: 60 requests/minute per authenticated user.
-- each submit operation: 10 requests/minute per reporter.
-- each submit operation: 3 requests/minute per reporter+target.
+Database uniqueness, not rate limiting, is the correctness boundary for concurrent duplicate submission.
 
-Rate limits are abuse controls, not duplicate-integrity controls; database uniqueness remains authoritative.
+## Database / Concurrency
+
+All four report types use distributed-safe opaque IDs and an active-only unique key. The normal duplicate lookup is advisory; if two workers race, the database unique constraint selects the winner and the losing request locking-reads that winner and returns an idempotent replay.
+
+Manual decisions lock the Report row and also require optimistic version equality, preventing two staff reviewers from independently closing the same case.
+
+The report index installer migrates `AOS Review Report` away from the former permanent `(review,reported_by)` uniqueness, backfills active keys for already-Reviewing rows, removes the obsolete unique index if present, and installs `uq_aos_review_report_active`.
+
+
+## Performance / Scalability
+
+Reports is designed for horizontally scaled web workers. Submission correctness relies on database unique indexes rather than process-local locks, and duplicate races converge on the committed database winner. Staff decisions lock only the selected Report row, so unrelated reports and different reporters on a viral target do not serialize behind one target lock.
+
+Reason listing is bounded and index-backed. Report backlog, target, reporter, and active-key indexes support Desk queues and duplicate checks. Public submission responses do not run aggregate report-list queries; the Ad `total_reports` projection remains the only target-specific derived count. Capacity still depends on production database/Redis sizing and should be verified under production-like load rather than inferred from source structure.
 
 ## Cross-feature Dependencies
 
-- **Accounts**: canonical `ACC-*` target identity and active account availability.
-- **Social**: existing block state is not a prerequisite for User reporting. Reporting does not create a block. Ad/Short visibility may incorporate hardened Social visibility through their owning feature.
-- **Ads**: public `ad_id`, current visibility, seller ownership, and existing derived `total_reports` projection.
-- **Shorts**: canonical `SHR-*`, ownership, lifecycle/moderation/audience visibility.
-- **Reviews**: protected Review reporting consumes the classified reason master through an internal `Review` target scope.
-- **Notifications**: no current Reports-owned notification contract.
-- **Activity**: report submission is privacy-sensitive and emits no Activity record.
-
-## Moderation Boundary
-
-Reports owns the complaint record and staff review state only. It does not suspend accounts/sellers, hide Shorts, suspend Ads, or execute generic moderation decisions. The later Moderation hardening pass may consume Reports as evidence through a clean integration boundary.
-
-```text
-Report -> durable complaint/evidence -> later Moderation integration
-```
-
-## Account / Resource Lifecycle
-
-A User target must resolve from canonical `ACC-*` identity to an active, enabled account at submission time. Self-reporting is rejected. Social block state does not prevent the complaint itself.
-
-An Ad must be currently resolvable through Ads' authoritative public visibility boundary. This intentionally avoids leaking unavailable Ad state. An internal Ad docname is never accepted publicly.
-
-A Short must be currently viewable under Shorts' authoritative `can_view` policy. Hidden/private/inaccessible content is not exposed merely because a report could reference it.
-
-A target can become unavailable after a complaint was accepted. Historical report evidence remains reviewable in Desk; lifecycle transitions do not re-run current public visibility rules. Account-deletion cleanup removes the deleting reporter's private submitted report rows after the existing deletion lifecycle requires it, while reports *about* that account remain staff evidence.
-
-Because AOS has no signed historical-view token, an Ad/Short that becomes unavailable immediately before submission is rejected as unavailable rather than allowing Reports to bypass the owning feature's visibility boundary.
+- Accounts: public account identity/reportability.
+- Ads: public Ad visibility and Seller relationship; derived `total_reports` projection.
+- Shorts: canonical identity and visibility.
+- Reviews: public Review visibility and author relationship only; Reports owns report submission/lifecycle.
+- Authentication: reporter/staff session identity.
+- Frappe permissions: staff review authorization.
 
 ## Testing
 
-Reports tests cover target-scoped reason listing, disabled/mismatched reasons, canonical identities, authenticated/session-owned reporter identity, self-reporting, missing/unavailable targets, Social block behavior, strict unknown-field rejection, forged lifecycle fields, details bounds/HTML rejection, idempotent retries, database uniqueness, lifecycle authorization/terminal states, resource unavailability after submission, account-deletion cleanup, source-level privacy/moderation boundaries, schema installation, and index presence.
-
-Server acceptance should run:
-
-```bash
-bench --site <site> migrate
-bench run-tests --app aos
-```
-
-After migration, verify the four v1 endpoints manually before moving to the separate Postman phase.
-
-## Architecture
-Reports owns normalized reasons and User/Ad/Short report records, input validation, staff review and reporter-scoped projections. Social, Accounts, Ads and Shorts supply authoritative target visibility; Reports must not reproduce Moderation verdicts or Notification business rules. The active-key indexes serialize equivalent submissions across workers.
-
-## Performance / Scalability
-Per-reporter and target rate limits are shared and distributed. Backlog/reporter/target indexes support bounded report listing and review queues, while unique active keys prevent same-target repeat work; a viral target must not force a global reporter lock. Check database plans and concurrent submissions against a populated server before production capacity claims.
+Reports regression coverage verifies all four public targets, canonical reason scoping, mass-assignment rejection, active-only duplicate semantics, race reconciliation, opaque IDs, immutable Desk evidence, identical detail bounds, read-only status, manual-action-only transitions, staff authorization, optimistic versioning, terminal lifecycle, migration/index contracts, privacy-safe projections, and absence of automated moderation/notification side effects.

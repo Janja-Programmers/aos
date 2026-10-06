@@ -8,14 +8,16 @@ from frappe.tests.utils import FrappeTestCase
 from aos.api.reports.reasons import get_report_reasons_impl
 from aos.api.reports.report_ad import report_ad_impl
 from aos.api.reports.report_short import report_short_impl
+from aos.api.reports.report_review import report_review_impl
 from aos.api.reports.report_user import report_user_impl
 from aos.services.accounts.identity import ensure_public_account_id
 from aos.services.account_deletion_service import _cleanup_report_account_data
+from aos.services.reports.manual_review import review_report
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
 class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
-    """DB-backed contracts for the final User/Ad/Short Reports subsystem."""
+    """DB-backed contracts for the unified User/Ad/Short/Review Reports subsystem."""
 
     def setUp(self):
         self.prefix = self.make_prefix("reports")
@@ -27,13 +29,13 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.seller_owner = self.make_user("seller")
         self.short_owner = self.make_user("short-owner")
         self.shared_reason = self.make_report_reason(
-            targets=("User", "Ad", "Short"), key_suffix="shared"
+            targets=("User", "Ad", "Short", "Review"), key_suffix="shared"
         )
         self.user_reason = self.make_report_reason(targets=("User",), key_suffix="user_only")
         self.ad_reason = self.make_report_reason(targets=("Ad",), key_suffix="ad_only")
         self.short_reason = self.make_report_reason(targets=("Short",), key_suffix="short_only")
         self.disabled_reason = self.make_report_reason(
-            targets=("User", "Ad", "Short"), enabled=False, key_suffix="disabled"
+            targets=("User", "Ad", "Short", "Review"), enabled=False, key_suffix="disabled"
         )
         self.ad = self.make_ad(seller_user=self.seller_owner)
         self.short = self.make_short(owner=self.short_owner)
@@ -41,6 +43,23 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         # pin ownership explicitly for Report self/visibility tests.
         frappe.db.set_value("AOS Short", self.short.name, "owner", self.short_owner, update_modified=False)
         self.short.reload()
+        frappe.set_user(self.other)
+        self.review = frappe.get_doc({
+            "doctype": "AOS Review",
+            "ad": self.ad.name,
+            "reviewer": self.other,
+            "rating": 5,
+            "title": "Report target review",
+            "comment": "Review report fixture content",
+        })
+        self.review.insert(ignore_permissions=True)
+        frappe.set_user("Administrator")
+        review_doc = frappe.get_doc("AOS Review", self.review.name)
+        review_doc.flags.aos_review_action = "manual_approve"
+        review_doc.flags.aos_reviewed_by = "Administrator"
+        review_doc.status = "Approved"
+        review_doc.save(ignore_permissions=True)
+        self.review.reload()
         frappe.set_user(self.reporter)
 
     def tearDown(self):
@@ -77,6 +96,16 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         with patch("aos.api.reports.report_short.limit_report_submission", return_value=None):
             return report_short_impl(**payload)
 
+    def _report_review(self, **overrides):
+        payload = {
+            "review_id": self.review.public_id,
+            "reason_id": self.shared_reason,
+            "details": "Misleading review content",
+        }
+        payload.update(overrides)
+        with patch("aos.api.reports.report_review.limit_report_submission", return_value=None):
+            return report_review_impl(**payload)
+
     def _reasons(self, target_type: str, **overrides):
         payload = {"target_type": target_type}
         payload.update(overrides)
@@ -111,10 +140,13 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         user = self._reasons("user")
         ad = self._reasons("ad")
         short = self._reasons("short")
-        self.assertTrue(user.get("ok") and ad.get("ok") and short.get("ok"))
+        review = self._reasons("review")
+        self.assertTrue(user.get("ok") and ad.get("ok") and short.get("ok") and review.get("ok"))
         user_ids = [row["id"] for row in user["data"]["reasons"]]
         ad_ids = [row["id"] for row in ad["data"]["reasons"]]
         short_ids = [row["id"] for row in short["data"]["reasons"]]
+        review_ids = [row["id"] for row in review["data"]["reasons"]]
+        self.assertIn(self.shared_reason, review_ids)
         self.assertIn(self.user_reason, user_ids)
         self.assertNotIn(self.user_reason, ad_ids)
         self.assertNotIn(self.user_reason, short_ids)
@@ -258,6 +290,22 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertFalse(hidden.get("ok"), hidden)
         self.assertEqual(hidden.get("error"), "REPORT_INVALID_TARGET")
 
+    def test_review_reports_use_same_active_duplicate_and_payload_contract(self):
+        first = self._report_review()
+        second = self._report_review(reason_id=self.shared_reason, details="Different retry")
+        self.assertTrue(first.get("ok") and second.get("ok"))
+        self.assertEqual(first["data"]["report_id"], second["data"]["report_id"])
+        self.assertTrue(second["data"]["idempotent_replay"])
+        report = frappe.get_doc("AOS Review Report", first["data"]["report_id"] )
+        self.assertEqual(report.review_owner, self.other)
+        self.assertTrue(report.active_key)
+        frappe.set_user("Administrator")
+        review_report(report_type="review", report_id=report.name, decision="resolve", note="", version=str(report.modified), reviewer="Administrator")
+        frappe.set_user(self.reporter)
+        third = self._report_review()
+        self.assertTrue(third.get("ok"), third)
+        self.assertNotEqual(first["data"]["report_id"], third["data"]["report_id"] )
+
     def test_details_are_optional_bounded_and_html_is_rejected(self):
         html = self._report_user(details="<script>alert(1)</script>")
         too_long = self._report_user(details="x" * 1001)
@@ -279,12 +327,19 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         frappe.set_user("Administrator")
         doc = frappe.get_doc("AOS User Report", report_id)
         doc.status = "Resolved"
-        doc.save(ignore_permissions=True)
+        with self.assertRaises(frappe.ValidationError):
+            doc.save(ignore_permissions=True)
+        doc.reload()
+        result = review_report(
+            report_type="user", report_id=report_id, decision="resolve", note="",
+            version=str(doc.modified), reviewer="Administrator",
+        )
+        doc.reload()
+        self.assertEqual(result["status"], "Resolved")
         self.assertEqual(doc.status, "Resolved")
         self.assertEqual(doc.reviewed_by, "Administrator")
         self.assertTrue(doc.reviewed_on)
         self.assertFalse(doc.active_key)
-        doc.reload()
         doc.status = "Reviewing"
         with self.assertRaises(frappe.ValidationError):
             doc.save(ignore_permissions=True)
@@ -294,8 +349,8 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         self.assertTrue(first.get("ok"), first)
         frappe.set_user("Administrator")
         doc = frappe.get_doc("AOS Ad Report", first["data"]["report_id"])
-        doc.status = "Rejected"
-        doc.save(ignore_permissions=True)
+        review_report(report_type="ad", report_id=doc.name, decision="reject", note="Not actionable", version=str(doc.modified), reviewer="Administrator")
+        doc.reload()
         self.assertFalse(doc.active_key)
 
         frappe.set_user(self.reporter)
@@ -310,8 +365,8 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         frappe.set_user("Administrator")
         frappe.db.set_value("AOS Report Reason", self.user_reason, "is_enabled", 0, update_modified=False)
         doc = frappe.get_doc("AOS User Report", submitted["data"]["report_id"])
-        doc.status = "Rejected"
-        doc.save(ignore_permissions=True)
+        review_report(report_type="user", report_id=doc.name, decision="reject", note="Not actionable", version=str(doc.modified), reviewer="Administrator")
+        doc.reload()
         self.assertEqual(doc.status, "Rejected")
 
     def test_target_becoming_unavailable_does_not_destroy_existing_report_evidence(self):
@@ -320,8 +375,8 @@ class TestReportDatabase(AOSFeatureTestMixin, FrappeTestCase):
         frappe.set_user("Administrator")
         frappe.db.set_value("AOS Short", self.short.name, "lifecycle_status", "Hidden", update_modified=False)
         doc = frappe.get_doc("AOS Short Report", submitted["data"]["report_id"])
-        doc.status = "Resolved"
-        doc.save(ignore_permissions=True)
+        review_report(report_type="short", report_id=doc.name, decision="resolve", note="", version=str(doc.modified), reviewer="Administrator")
+        doc.reload()
         self.assertEqual(doc.status, "Resolved")
 
     def test_reason_identity_is_immutable_but_label_and_enabled_state_are_operable(self):

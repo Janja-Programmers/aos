@@ -11,7 +11,6 @@ from aos.services.reviews.validation import (
     normalize_images,
     normalize_limit,
     normalize_rating,
-    normalize_report_reason,
     normalize_title,
     normalize_version,
 )
@@ -69,8 +68,3 @@ class TestReviewValidation(unittest.TestCase):
         with self.assertRaises(ReviewValidationError):
             ensure_known_fields({"rating": 5, "reviewer": "attacker@example.com"}, {"rating"})
 
-    def test_report_reason_is_normalized(self):
-        self.assertEqual(normalize_report_reason("  Inappropriate Content  "), "Inappropriate Content")
-        for value in ("", "bad\x00reason", "<script>bad</script>"):
-            with self.subTest(value=value), self.assertRaises(ReviewValidationError):
-                normalize_report_reason(value)

@@ -2,13 +2,13 @@
 
 ## Overview
 
-Reviews is the ad-scoped marketplace feedback domain for AOS. An authenticated active account may create one Review for an eligible public Ad after canonical AOS communication with that Ad's Seller. Reviews use a required whole-star rating from 1–5, bounded title/comment text, up to five hardened `review_image` Media objects, explicit Like/Unlike/Dislike/Undislike reactions, reporting, automated moderation, and System Manager manual moderation in Frappe Desk. Only Approved Reviews contribute to public rating aggregates or appear on public Review surfaces.
+Reviews is the ad-scoped marketplace feedback domain for AOS. An authenticated active account may create one Review for an eligible public Ad after canonical AOS communication with that Ad's Seller. Reviews use a required whole-star rating from 1–5, bounded title/comment text, up to five hardened `review_image` Media objects, explicit Like/Unlike/Dislike/Undislike reactions, automated moderation, and System Manager manual moderation in Frappe Desk. Review complaint intake is owned by Reports. Only Approved Reviews contribute to public rating aggregates or appear on public Review surfaces.
 
 The current product has no completed-order/booking proof connected to Reviews. `verified_interaction` therefore means server-verified AOS Conversation/Message interaction with the Seller, not a verified purchase.
 
 ## Responsibilities
 
-Reviews owns Review content and lifecycle, one-Review-per-account-per-Ad enforcement, Review Media relationships, Review reaction state, Review-specific aggregate projections, public/private Review projections, Review pagination/filter/sort rules, moderation generation/state application, and Review reporting integration.
+Reviews owns Review content and lifecycle, one-Review-per-account-per-Ad enforcement, Review Media relationships, Review reaction state, Review-specific aggregate projections, public/private Review projections, Review pagination/filter/sort rules, and moderation generation/state application. Reports owns Review complaint intake and complaint lifecycle.
 
 ## Boundaries
 
@@ -23,7 +23,7 @@ AOS v1 Review wrapper
   -> ReviewService
      -> strict validation / eligibility
      -> hardened Ads / Accounts / Media / Seller contracts
-     -> AOS Review + child Media rows / Reaction / Report
+     -> AOS Review + child Media rows / Reaction
      -> Review lifecycle + aggregate hooks
      -> shared Moderation job/outbox
      -> canonical batched serializer
@@ -31,9 +31,11 @@ AOS v1 Review wrapper
 
 Writes use Frappe request transactions. Review API handling uses a savepoint only to roll back the failed Review operation; it does not commit. External/background moderation and notification delivery are not awaited inside Review database mutations.
 
+Review complaints are submitted through `aos.api.v1.reports.report_review`; there is no Reviews-owned report endpoint.
+
 ## Data Model
 
-`AOS Review` is the authoritative Review row. `AOS Review Image` is its child relationship to hardened Media. `AOS Review Reaction` stores one viewer relationship with a canonical `Like` or `Dislike` state. `AOS Review Report` stores one private report relationship per reporter/Review and consumes central `AOS Report Reason` records. Ad and Seller store derived Review count/rating projections plus an exact hidden integer rating sum for safe incremental updates.
+`AOS Review` is the authoritative Review row. `AOS Review Image` is its child relationship to hardened Media. `AOS Review Reaction` stores one viewer relationship with a canonical `Like` or `Dislike` state. Ad and Seller store derived Review count/rating projections plus an exact hidden integer rating sum for safe incremental updates.
 
 ## Fields
 
@@ -78,18 +80,6 @@ Writes use Frappe request transactions. Review API handling uses a savepoint onl
 
 Database uniqueness on `(review, user)` prevents simultaneous Like+Dislike rows for one viewer.
 
-### AOS Review Report
-
-| Field | Type | Required | Indexed/Unique | Purpose |
-|---|---|---:|---|---|
-| `review` | Link → AOS Review | yes | Search + report indexes | Report target. |
-| `reported_by` | Link → User | yes | Search + unique pair | Session-derived reporter. |
-| `reason` | Link → AOS Report Reason | yes | no | Central enabled report reason classified for the internal Review scope. |
-| `details` | Small Text | no | no | Bounded report detail. |
-| `status` | Select | yes | Search | Reports lifecycle state. |
-| `reviewed_by` | Link → User | server | no | Report operator. |
-| `reviewed_on` | Datetime | server | no | Report review timestamp. |
-
 ### Derived Ad/Seller fields
 
 `AOS Ad.review_rating_sum` and `AOS Seller.review_rating_sum` are hidden exact integer sums for Approved Review ratings. They combine with existing `total_reviews` and average fields to support constant-size transactional deltas without lossy average arithmetic or full rescans on normal writes.
@@ -103,8 +93,6 @@ User/Account --authors--> AOS Review --belongs to--> AOS Ad --belongs to--> AOS 
                                |
                                +--1 per viewer--> AOS Review Reaction
                                |
-                               +--reported by--> AOS Review Report --reason--> AOS Report Reason
-                               |
                                +--classified through--> shared Moderation Job/outbox
 ```
 
@@ -112,7 +100,7 @@ All public client references use Ad/Review/Seller/Account public identifiers whe
 
 ## Naming Strategy
 
-`AOS Review` uses `new_prefixed_name("REVIEW")` for its internal Frappe name and a separate collision-resistant `review_…` public ID from the hardened public-ID helper. `AOS Review Reaction` uses a deterministic hash name derived from `(review, user)` plus a database unique index on that pair; no sequence or process-local counter is used. `AOS Review Report` uses `new_prefixed_name("RREPORT")`. Child `AOS Review Image` naming remains framework child-row identity and is never public. No Review high-write DocType uses Frappe naming series.
+`AOS Review` uses `new_prefixed_name("REVIEW")` for its internal Frappe name and a separate collision-resistant `review_…` public ID from the hardened public-ID helper. `AOS Review Reaction` uses a deterministic hash name derived from `(review, user)` plus a database unique index on that pair; no sequence or process-local counter is used. Child `AOS Review Image` naming remains framework child-row identity and is never public. No Review high-write DocType uses Frappe naming series.
 
 ## API
 
@@ -132,7 +120,6 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 | `list_my_reviews` | GET | Session required | Client |
 | `list_reviews` | GET | Guest allowed | Client |
 | `list_reviews_received` | GET | Session required | Client |
-| `report_review` | POST | Session required | Client |
 | `undislike_review` | POST | Session required | Client |
 | `unlike_review` | POST | Session required | Client |
 | `update_review` | POST | Session required | Client |
@@ -156,7 +143,6 @@ The canonical public contract is under `aos.api.v1.reviews`; Frappe transport-ow
 | `unlike_review` | Remove Like only | session | `review_id` | Does not remove Dislike | 60 |
 | `dislike_review` | Set viewer state to Dislike | session | `review_id` | Repeated Dislike `changed=false`; Like→Dislike atomic | 60 |
 | `undislike_review` | Remove Dislike only | session | `review_id` | Does not remove Like | 60 |
-| `report_review` | Report public Review | session | `review_id`, `reason`, optional `details` | One report per reporter/Review; retry `changed=false` | 8 |
 
 Public sorts are `newest`, `helpful`, `rating_high`, and `rating_low`. Owner history also supports `oldest`. Public filters are exact rating and `with_media`. Ordering always includes deterministic `creation`/`public_id` tie-breakers. Cursor context binds scope, sort, and filters; malformed or incompatible cursors raise `INVALID_REVIEW_CURSOR`.
 
@@ -186,7 +172,7 @@ Approved Review rows are durable truth. On a lifecycle/rating transition, the Re
 
 ## Cross-feature Dependencies
 
-- **Reviews → Authentication:** session identity; clients never choose reviewer/reactor/reporter.
+- **Reviews → Authentication:** session identity; clients never choose reviewer/reactor.
 - **Reviews → Accounts:** canonical public author display/anonymized identity and active account policy.
 - **Reviews → Ads:** canonical public Ad resolution and public visibility; internal Link retained only in storage.
 - **Reviews → Sellers:** canonical Seller relationship/identity and seller-owned received Reviews.
@@ -195,7 +181,7 @@ Approved Review rows are durable truth. On a lifecycle/rating transition, the Re
 - **Reviews → Notifications:** approval/rejection and initial seller `review_received` notification via hardened service; notification failures do not roll back a valid moderation decision.
 - **Reviews → Moderation:** generic job/provider/outbox infrastructure; Reviews owns generation-safe lifecycle application and Desk override.
 - **Reviews → Social:** canonical block relationship suppresses inaccessible author content/reactions.
-- **Reviews → Reports:** central active reasons and existing report operations.
+- **Reviews → Reports:** Reports owns Review complaint submission, reasons, duplicate handling, and complaint lifecycle; Reviews supplies authoritative public Review visibility.
 
 ## Transaction / Concurrency Model
 

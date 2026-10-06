@@ -19,9 +19,6 @@ from aos.services.ads.errors import AdsNotFoundError
 from aos.services.ads.visibility import require_public_ad_for_viewer
 from aos.services.media.media_service import MediaService
 from aos.services.moderation_service import enqueue_review_moderation
-from aos.services.reports.constants import REPORT_TARGET_REVIEW
-from aos.services.reports.errors import ReportError
-from aos.services.reports.validation import validate_reason_for_target
 from aos.services.sellers.identity import public_seller_id_for_name
 
 from .aggregates import rating_distribution
@@ -30,7 +27,6 @@ from .constants import (
     ELIGIBILITY_BASIS_COMMUNICATION,
     PUBLIC_SORTS,
     REACTION_DOCTYPE,
-    REPORT_DOCTYPE,
     SELF_SORTS,
     STATUS_APPROVED,
     STATUS_HIDDEN,
@@ -53,8 +49,6 @@ from .validation import (
     normalize_limit,
     normalize_rating,
     normalize_rating_filter,
-    normalize_report_details,
-    normalize_report_reason,
     normalize_title,
     normalize_version,
 )
@@ -85,7 +79,6 @@ class ReviewService:
     LIST_FIELDS = frozenset({"ad_id", "sort", "rating", "with_media", "limit", "cursor"})
     PRIVATE_LIST_FIELDS = frozenset({"sort", "status", "rating", "with_media", "limit", "cursor"})
     REACTION_FIELDS = frozenset({"review_id"})
-    REPORT_FIELDS = frozenset({"review_id", "reason", "details"})
 
     def viewer_state(self, *, payload: dict[str, Any], viewer: str | None) -> dict[str, Any]:
         ensure_known_fields(payload, self.VIEWER_STATE_FIELDS)
@@ -469,53 +462,6 @@ class ReviewService:
 
     def undislike(self, *, user: str, payload: dict[str, Any]) -> dict[str, Any]:
         return self._set_reaction(user=user, payload=payload, target="Dislike", remove_only=True)
-
-    def report(self, *, user: str, payload: dict[str, Any]) -> dict[str, Any]:
-        ensure_known_fields(payload, self.REPORT_FIELDS)
-        public_id = normalize_identifier(payload.get("review_id"), field="review_id")
-        reason = normalize_report_reason(payload.get("reason"))
-        details = normalize_report_details(payload.get("details"))
-        try:
-            reason = validate_reason_for_target(reason, REPORT_TARGET_REVIEW)
-        except ReportError as exc:
-            raise ReviewValidationError(
-                "Invalid report reason.",
-                code="INVALID_REVIEW_REPORT_REASON",
-            ) from exc
-
-        review = self._public_review_row(public_id=public_id, viewer=user, lock=True)
-        if review.reviewer == user:
-            raise ReviewPermissionError("You cannot report your own review.", code="REVIEW_REPORT_NOT_ALLOWED")
-        existing = frappe.db.get_value(
-            REPORT_DOCTYPE,
-            {"review": review.name, "reported_by": user},
-            ["name", "status"],
-            as_dict=True,
-        )
-        if existing:
-            return {"report_id": existing.name, "status": existing.status, "changed": False}
-        doc = frappe.new_doc(REPORT_DOCTYPE)
-        doc.review = review.name
-        doc.reported_by = user
-        doc.reason = reason
-        doc.details = details
-        doc.status = "Reviewing"
-        try:
-            doc.insert(ignore_permissions=True)
-        except Exception as exc:
-            if not is_duplicate_entry_error(exc):
-                raise
-            existing = frappe.db.get_value(
-                REPORT_DOCTYPE,
-                {"review": review.name, "reported_by": user},
-                ["name", "status"],
-                as_dict=True,
-            )
-            if not existing:
-                raise ReviewConflictError("Review report could not be reconciled.", code="REVIEW_REPORT_CONFLICT") from None
-            return {"report_id": existing.name, "status": existing.status, "changed": False}
-        review_log("review.reported", review_id=public_id, operation=reason, status=doc.status)
-        return {"report_id": doc.name, "status": doc.status, "changed": True}
 
     def _set_reaction(self, *, user: str, payload: dict[str, Any], target: str, remove_only: bool) -> dict[str, Any]:
         ensure_known_fields(payload, self.REACTION_FIELDS)
