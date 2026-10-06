@@ -16,6 +16,7 @@ from aos.services.shorts.hot_metrics import (
     hot_key,
     record_signal,
 )
+from aos.services.accounts.identity import public_account_id_for_user
 from aos.tests.feature_test_helpers import AOSFeatureTestMixin
 
 
@@ -48,6 +49,85 @@ class TestShortsServiceRuntime(AOSFeatureTestMixin, FrappeTestCase):
         short.reload()
         self.assertEqual(short.owner, user)
         return user, short
+
+    def test_profile_shorts_returns_only_viewer_visible_published_target_content(self):
+        target = self.make_user("profile-target")
+        viewer = self.make_user("profile-viewer")
+
+        frappe.set_user(target)
+        public_short = self.make_short(owner=target)
+        private_short = self.make_short(owner=target)
+        private_short.audience = "only_me"
+        private_short.save(ignore_permissions=True)
+        draft_short = self.make_short(owner=target)
+        draft_short.lifecycle_status = "Draft"
+        draft_short.moderation_status = "Draft"
+        draft_short.save(ignore_permissions=True)
+
+        frappe.set_user(viewer)
+        unrelated = self.make_short(owner=viewer)
+        with patch("aos.services.shorts.service._rate"):
+            response = service.profile_shorts(
+                account_id=public_account_id_for_user(target),
+                limit=20,
+            )
+
+        self.assertTrue(response.get("ok"), response)
+        self.assertEqual(response["data"]["account_id"], public_account_id_for_user(target))
+        ids = [item["id"] for item in response["data"]["items"]]
+        self.assertEqual(ids, [public_short.name])
+        self.assertNotIn(private_short.name, ids)
+        self.assertNotIn(draft_short.name, ids)
+        self.assertNotIn(unrelated.name, ids)
+        self.assertNotIn("lifecycle_status", response["data"]["items"][0])
+        self.assertIsNone(response["data"]["next_cursor"])
+
+    def test_profile_shorts_honours_follow_audience_and_block_policy(self):
+        target = self.make_user("profile-follow-target")
+        viewer = self.make_user("profile-follow-viewer")
+
+        frappe.set_user(target)
+        followers_short = self.make_short(owner=target)
+        followers_short.audience = "followers"
+        followers_short.save(ignore_permissions=True)
+
+        frappe.set_user(viewer)
+        with patch("aos.services.shorts.service._rate"):
+            before_follow = service.profile_shorts(
+                account_id=public_account_id_for_user(target), limit=20
+            )
+        self.assertEqual(before_follow["data"]["items"], [])
+
+        frappe.get_doc(
+            {
+                "doctype": "AOS Follow",
+                "following_user": target,
+                "follower_user": viewer,
+            }
+        ).insert(ignore_permissions=True)
+        with patch("aos.services.shorts.service._rate"):
+            after_follow = service.profile_shorts(
+                account_id=public_account_id_for_user(target), limit=20
+            )
+        self.assertEqual(
+            [item["id"] for item in after_follow["data"]["items"]],
+            [followers_short.name],
+        )
+
+        frappe.get_doc(
+            {
+                "doctype": "AOS User Block",
+                "blocker_user": viewer,
+                "blocked_user": target,
+                "status": "Active",
+                "reason": "Shorts profile visibility test",
+            }
+        ).insert(ignore_permissions=True)
+        with patch("aos.services.shorts.service._rate"):
+            blocked = service.profile_shorts(
+                account_id=public_account_id_for_user(target), limit=20
+            )
+        self.assertEqual(blocked["data"]["items"], [])
 
     def test_published_content_edit_requires_fresh_moderation(self):
         user, short = self._published_short()

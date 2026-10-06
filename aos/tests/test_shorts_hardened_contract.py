@@ -36,6 +36,26 @@ class TestShortsHardenedContract(TestCase):
         self.assertFalse(any(name.startswith("toggle") for name in ENDPOINT_SPECS))
         self.assertNotIn("feed_by_ad", ENDPOINT_SPECS)
 
+    def test_profile_shorts_is_a_public_profile_projection_not_an_owner_library_alias(self):
+        self.assertIn("profile_shorts", ENDPOINT_SPECS)
+        self.assertEqual(
+            ENDPOINT_SPECS["profile_shorts"].fields,
+            frozenset({"account_id", "limit", "cursor"}),
+        )
+        self.assertEqual(
+            ENDPOINT_SPECS["my_shorts"].fields,
+            frozenset({"status", "limit", "cursor"}),
+        )
+        service = (ROOT / "aos/services/shorts/service.py").read_text()
+        body = service.split("def profile_shorts(**kwargs):", 1)[1].split("def _candidate_rows", 1)[0]
+        self.assertIn("resolve_account_reference(account_id)", body)
+        self.assertIn("filter_distributable_rows", body)
+        self.assertIn("serialize_short_rows", body)
+        self.assertNotIn("serialize_owner_short", body)
+        self.assertIn("lifecycle_status='Published'", body)
+        self.assertIn("moderation_status='Approved'", body)
+        self.assertIn("processing_status IN ('Ready','Not Required')", body)
+
     def test_media_purposes_cover_native_photo_and_derived_video_assets(self):
         for purpose in (
             "short_video_raw", "short_photo", "short_video_playback", "short_video_manifest",

@@ -9,6 +9,7 @@ ENDPOINT_SPECS={
 "submit_short":S({"short_id","version","idempotency_key"},("short_id",SHORT_ID_RE)),
 "get_short":S({"short_id"},("short_id",SHORT_ID_RE)),
 "my_shorts":S({"status","limit","cursor"}),
+"profile_shorts":S({"account_id","limit","cursor"}),
 "delete_short":S({"short_id","version"},("short_id",SHORT_ID_RE)),
 "retry_processing":S({"short_id","idempotency_key"},("short_id",SHORT_ID_RE)),
 "feed_for_you":S({"limit","cursor","mode","session_id"}),
@@ -27,4 +28,4 @@ ENDPOINT_SPECS={
 "create_segment_reuse_draft":S({"source_short_id","raw_video_media","source_start_ms","source_end_ms","caption"},("source_short_id",SHORT_ID_RE)),
 "get_short_metrics":S({"short_id"},("short_id",SHORT_ID_RE)),
 }
-MUTATING_ENDPOINTS={k for k in ENDPOINT_SPECS if k not in {"get_short","my_shorts","feed_for_you","feed_following","saved_shorts","list_comments","list_comment_replies","list_sounds","search_sounds","get_sound","sound_shorts","my_favorite_sounds","hashtag_shorts","get_short_metrics"}}
+MUTATING_ENDPOINTS={k for k in ENDPOINT_SPECS if k not in {"get_short","my_shorts","profile_shorts","feed_for_you","feed_following","saved_shorts","list_comments","list_comment_replies","list_sounds","search_sounds","get_sound","sound_shorts","my_favorite_sounds","hashtag_shorts","get_short_metrics"}}

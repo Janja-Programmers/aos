@@ -46,6 +46,11 @@ def my_shorts(**kwargs):
     """Execute the canonical Shorts `my_shorts` client operation."""
     return _call("my_shorts", kwargs)
 
+@frappe.whitelist(methods=['GET'])
+def profile_shorts(**kwargs):
+    """List published Shorts visible on another account's profile."""
+    return _call("profile_shorts", kwargs)
+
 @frappe.whitelist(methods=['POST'])
 def delete_short(**kwargs):
     """Execute the canonical Shorts `delete_short` client operation."""

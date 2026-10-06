@@ -63,6 +63,7 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 | `my_favorite_sounds` | GET | Session required | Client |
 | `my_shorts` | GET | Session required | Client |
 | `not_interested` | POST | Session required | Client |
+| `profile_shorts` | GET | Session required | Client |
 | `record_events` | POST | Guest allowed | Client |
 | `record_share` | POST | Guest allowed | Client |
 | `repost_short` | POST | Session required | Client |
@@ -85,6 +86,10 @@ This table is generated from the current `@frappe.whitelist` declarations. Busin
 The only client namespace is `/api/method/aos.api.v1.shorts.*`. Reads use GET where appropriate and mutations use POST. Large lists use signed keyset/cursor pagination. Explicit actions are used for like/unlike, save/unsave, repost/undo, comment like/unlike, Sound favorite/unfavorite, and Not Interested. Top-level comments and reply threads are independently cursor-paginated. The client never submits ranking weights or a trusted Content Mode.
 
 Video Processing has no client API. The signed processing callback is `/api/method/aos.api.internal.video_processing.handle_callback`. Desk review actions live under `aos.api.internal.shorts` and require authenticated Desk permission.
+
+### Profile collections
+
+`my_shorts` is the authenticated creator library and may expose the owner's non-public lifecycle states when requested. `profile_shorts(account_id, limit, cursor)` is a separate TikTok-style profile projection for viewing another account: it accepts only the opaque public `ACC-*` identity, returns recency-ordered public Short cards, and never exposes owner-only lifecycle/moderation/processing metadata. The server re-applies current publication readiness, creator-account availability, Social block state, and `everyone`/`followers`/`friends`/`only_me` audience policy before serialization. Its cursor scan advances across audience-ineligible rows so private posts cannot cause prematurely empty pages or hide older visible Shorts.
 
 ### Feeds and Content Modes
 

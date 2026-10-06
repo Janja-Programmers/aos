@@ -406,6 +406,67 @@ def my_shorts(**kwargs):
     return ok('Shorts loaded.',{'items':items,'next_cursor':nxt})
 
 
+def profile_shorts(**kwargs):
+    """Return the recency-ordered Shorts visible on a public account profile.
+
+    This is deliberately separate from ``my_shorts``.  The owner library may
+    expose Draft/Processing/Pending Review/Rejected/Hidden state, while a
+    profile collection must never leak non-distributable content.  Pagination
+    scans past audience-ineligible rows before deciding that a page is empty so
+    a run of ``only_me``/followers/friends posts cannot hide older eligible
+    Shorts from a legitimate viewer.
+    """
+    viewer=_user()
+    _rate('profile',user=viewer,limit=120)
+    account_id=str(kwargs.get('account_id') or '').strip().upper()
+    owner=resolve_account_reference(account_id)
+    if not owner:
+        raise ShortsNotFoundError('Profile is unavailable.')
+
+    limit=_limit(kwargs.get('limit'))
+    cursor=decode_cursor(kwargs.get('cursor'))
+    posted=cursor.get('posted')
+    short_id=cursor.get('id')
+    visible=[]
+    # One profile has a single owner/relationship projection.  A moderately
+    # larger scan window keeps the common case to one SQL round trip while the
+    # loop preserves complete pages when some posts are audience-ineligible.
+    scan_limit=min(max(limit*3,50),200)
+
+    while len(visible)<limit+1:
+        params={'owner':owner,'limit':scan_limit}
+        clause=''
+        if posted and short_id:
+            clause='AND (s.posted_on < %(posted)s OR (s.posted_on=%(posted)s AND s.name < %(id)s))'
+            params.update({'posted':posted,'id':short_id})
+        rows=frappe.db.sql(
+            f'''SELECT s.* FROM `tabAOS Short` s
+                WHERE s.owner=%(owner)s
+                  AND s.lifecycle_status='Published'
+                  AND s.moderation_status='Approved'
+                  AND s.processing_status IN ('Ready','Not Required')
+                  {clause}
+                ORDER BY s.posted_on DESC,s.name DESC
+                LIMIT %(limit)s''',
+            params,
+            as_dict=True,
+        )
+        if not rows:
+            break
+        visible.extend(filter_distributable_rows(rows,viewer=viewer))
+        if len(visible)>=limit+1 or len(rows)<scan_limit:
+            break
+        last=rows[-1]
+        posted=str(last.posted_on)
+        short_id=str(last.name)
+
+    more=len(visible)>limit
+    page=visible[:limit]
+    items=serialize_short_rows(page,viewer=viewer)
+    nxt=encode_cursor({'posted':str(page[-1].posted_on),'id':page[-1].name}) if more and page else None
+    return ok('Profile Shorts loaded.',{'account_id':account_id,'items':items,'next_cursor':nxt})
+
+
 def _candidate_rows(*,mode:str|None,viewer:str|None,pool=360):
     params={'limit':pool}; mode_clause=''
     if mode:
