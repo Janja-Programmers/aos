@@ -14,7 +14,9 @@ class TestSocketIOSupervisorContract(unittest.TestCase):
     def test_installer_only_overlays_socketio_program(self):
         script = (ROOT / "infra/nginx/install-socketio-supervisor.sh").read_text()
         self.assertIn('"/etc/supervisor/conf.d/frappe-bench.conf"', script)
-        self.assertIn('"/home/aos/frappe-bench/config/supervisor.conf"', script)
+        self.assertNotIn('"/home/aos/frappe-bench/config/supervisor.conf"', script)
+        self.assertIn('python3 - "$TARGET" "$TEMP"', script)
+        self.assertIn('before + heading + "".join(lines) + suffix', script)
         self.assertIn('command=/usr/local/libexec/aos-socketio-start', script)
         self.assertIn('umask=0007', script)
         self.assertIn('before-aos-socketio', script)
