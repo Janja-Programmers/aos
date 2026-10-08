@@ -21,9 +21,9 @@ server {
 
 
 server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    http2 on;
+    listen 443 ssl${NGINX_HTTP2_LISTEN_OPTION};
+    listen [::]:443 ssl${NGINX_HTTP2_LISTEN_OPTION};
+    ${NGINX_HTTP2_DIRECTIVE}
 
     server_name ${AOS_API_DOMAIN};
 
@@ -64,7 +64,7 @@ server {
         proxy_send_timeout 3600s;
 
         proxy_pass
-            http://${FRAPPE_SOCKETIO_HOST}:${FRAPPE_SOCKETIO_PORT};
+            ${FRAPPE_SOCKETIO_UPSTREAM};
     }
 
     error_page 429 = @aos_rate_limited;
