@@ -2,7 +2,7 @@
 
 Frappe 17 listens on `/run/aos-socketio/socketio.sock` when common-site config has `socketio_uds`. The Nginx origin is the Unix socket, **not** TCP port 9000.
 
-Supervisor loads `/etc/supervisor/conf.d/frappe-bench.conf` (regular root-owned file), not the Bench-generated `/home/aos/frappe-bench/config/supervisor.conf`. The AOS installer overlays only the Socket.IO program in a copy of the generated configuration while preserving unrelated sections. It must be rerun whenever Bench regenerates and reinstalls Supervisor config.
+Supervisor loads `/etc/supervisor/conf.d/frappe-bench.conf` (regular root-owned file), not the Bench-generated `/home/aos/frappe-bench/config/supervisor.conf`. The AOS installer patches only the Socket.IO program in the currently installed Supervisor configuration and preserves unrelated sections, including locally tuned Gunicorn worker counts. It must be rerun whenever Bench regenerates and reinstalls Supervisor config.
 
 ## Controlled install
 
