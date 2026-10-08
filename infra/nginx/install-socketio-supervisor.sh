@@ -39,7 +39,7 @@ if not any(line.startswith("user=aos") for line in lines):
 lines = [line for line in lines if not line.startswith(("command=", "umask="))]
 lines.insert(0, "command=/usr/local/libexec/aos-socketio-start")
 lines.insert(1, "umask=0007")
-output = before + heading + "\n".join(lines) + ("\n[" + after if sep else "")
+output = before + heading + "\n" + "\n".join(lines) + ("\n[" + after if sep else "")
 parser = configparser.RawConfigParser(strict=False)
 parser.read_string(output)
 assert parser["program:frappe-bench-node-socketio"]["umask"] == "0007"
