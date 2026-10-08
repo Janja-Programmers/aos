@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# Install a controlled overlay of the Bench-generated Supervisor configuration.
+# Patch only Socket.IO in the installed Supervisor configuration.
 # Run only during a coordinated maintenance window: supervisorctl update restarts Socket.IO.
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SOURCE="/home/aos/frappe-bench/config/supervisor.conf"
 TARGET="/etc/supervisor/conf.d/frappe-bench.conf"
 WRAPPER="/usr/local/libexec/aos-socketio-start"
 SOCKET="/run/aos-socketio/socketio.sock"
 
-[[ -f "$SOURCE" && -f "$TARGET" && -S "$SOCKET" ]] || {
+[[ -f "$TARGET" && -S "$SOCKET" ]] || {
   echo "Missing Supervisor config or active Socket.IO socket" >&2; exit 1;
 }
 sudo -u www-data test -w "$SOCKET" || {
@@ -22,24 +21,28 @@ sudo systemd-tmpfiles --create /etc/tmpfiles.d/aos-socketio.conf
 
 TEMP="$(mktemp)"
 trap 'rm -f "$TEMP"' EXIT
-python3 - "$SOURCE" "$TEMP" <<'PY'
+python3 - "$TARGET" "$TEMP" <<'PY'
 import configparser
+import re
 import sys
 from pathlib import Path
 
 src, dst = map(Path, sys.argv[1:3])
 text = src.read_text()
 heading = "[program:frappe-bench-node-socketio]"
-assert text.count(heading) == 1, "Expected exactly one Socket.IO Supervisor program"
+if text.count(heading) != 1:
+    raise SystemExit("Expected exactly one Socket.IO Supervisor program")
 before, remainder = text.split(heading, 1)
-body, sep, after = remainder.partition("\n[")
-lines = body.splitlines()
-if not any(line.startswith("user=aos") for line in lines):
+match = re.search(r"(?m)^\[", remainder)
+body = remainder[:match.start()] if match else remainder
+suffix = remainder[match.start():] if match else ""
+lines = body.splitlines(keepends=True)
+if not any(line.strip() == "user=aos" for line in lines):
     raise SystemExit("Socket.IO program user is not aos")
 lines = [line for line in lines if not line.startswith(("command=", "umask="))]
-lines.insert(0, "command=/usr/local/libexec/aos-socketio-start")
-lines.insert(1, "umask=0007")
-output = before + heading + "\n" + "\n".join(lines) + ("\n[" + after if sep else "")
+lines.insert(0, "command=/usr/local/libexec/aos-socketio-start\n")
+lines.insert(1, "umask=0007\n")
+output = before + heading + "".join(lines) + suffix
 parser = configparser.RawConfigParser(strict=False)
 parser.read_string(output)
 assert parser["program:frappe-bench-node-socketio"]["umask"] == "0007"
