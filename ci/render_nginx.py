@@ -7,6 +7,7 @@ from pathlib import Path
 
 VALUES = {
 	"AOS_API_DOMAIN": "api.invalid",
+	"AOS_WEB_DOMAIN": "web.invalid",
 	"AOS_LIVEKIT_DOMAIN": "live.invalid",
 	"AOS_MAPS_DOMAIN": "maps.invalid",
 	"AOS_MINIO_DOMAIN": "files.invalid",
