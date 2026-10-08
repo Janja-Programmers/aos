@@ -264,8 +264,6 @@ required_variables=(
   FRAPPE_SITE_NAME
   FRAPPE_WEB_HOST
   FRAPPE_WEB_PORT
-  FRAPPE_SOCKETIO_HOST
-  FRAPPE_SOCKETIO_PORT
 
   MAPS_OBJECT_STORAGE_BUCKET
   LIVEKIT_PORT
@@ -307,9 +305,49 @@ validate_port \
   "${FRAPPE_WEB_PORT}" \
   "FRAPPE_WEB_PORT"
 
-validate_port \
-  "${FRAPPE_SOCKETIO_PORT}" \
-  "FRAPPE_SOCKETIO_PORT"
+# UDS is opt-in and must match Frappe's socketio_uds site configuration.
+# The socket itself must be provisioned and permission-tested before cutover.
+if [[ -n "${FRAPPE_SOCKETIO_UDS:-}" ]]; then
+  if [[ ! "${FRAPPE_SOCKETIO_UDS}" =~ ^/run/aos-socketio/[a-zA-Z0-9._-]+\.sock$ ]]; then
+    echo "FRAPPE_SOCKETIO_UDS must be under /run/aos-socketio and end in .sock" >&2
+    exit 1
+  fi
+  if [[ ! -S "${FRAPPE_SOCKETIO_UDS}" ]]; then
+    echo "Socket.IO UDS is not listening: ${FRAPPE_SOCKETIO_UDS}" >&2
+    exit 1
+  fi
+  if ! sudo -u www-data test -w "${FRAPPE_SOCKETIO_UDS}"; then
+    echo "Nginx worker cannot connect to Socket.IO UDS" >&2
+    exit 1
+  fi
+  FRAPPE_SOCKETIO_UPSTREAM="http://unix:${FRAPPE_SOCKETIO_UDS}:"
+else
+  require_variable FRAPPE_SOCKETIO_HOST
+  require_variable FRAPPE_SOCKETIO_PORT
+  validate_port "${FRAPPE_SOCKETIO_PORT}" "FRAPPE_SOCKETIO_PORT"
+  FRAPPE_SOCKETIO_UPSTREAM="http://${FRAPPE_SOCKETIO_HOST}:${FRAPPE_SOCKETIO_PORT}"
+fi
+
+# Nginx 1.24 supports HTTP/2 via listen parameters; 1.25.1+ supports http2 on.
+NGINX_VERSION="$(nginx -v 2>&1 | sed -nE 's|.*nginx/([0-9]+)\.([0-9]+)\.([0-9]+).*|\1 \2 \3|p')"
+if [[ ! "${NGINX_VERSION}" =~ ^[0-9]+[[:space:]][0-9]+[[:space:]][0-9]+$ ]]; then
+  echo "Unable to determine Nginx version" >&2
+  exit 1
+fi
+read -r nginx_major nginx_minor nginx_patch <<< "${NGINX_VERSION}"
+if (( nginx_major > 1 || (nginx_major == 1 && (nginx_minor > 25 || (nginx_minor == 25 && nginx_patch >= 1))) )); then
+  NGINX_HTTP2_LISTEN_OPTION=""
+  NGINX_HTTP2_DIRECTIVE="http2 on;"
+else
+  NGINX_HTTP2_LISTEN_OPTION=" http2"
+  NGINX_HTTP2_DIRECTIVE=""
+fi
+
+# Never silently allow Bench and AOS to own the same public API hostname.
+if [[ -e "${NGINX_CONF_D_DIR}/frappe-bench.conf" || -L "${NGINX_CONF_D_DIR}/frappe-bench.conf" ]]; then
+  echo "Duplicate Bench Nginx include present; disable it before AOS Nginx installation" >&2
+  exit 1
+fi
 
 validate_port \
   "${LIVEKIT_PORT}" \
@@ -402,6 +440,10 @@ sudo install \
   "${LETSENCRYPT_CHALLENGE_DIR}"
 
 
+# These values are consumed by envsubst through SITE_SUBSTITUTION_VARIABLES.
+# Export them for envsubst and to make the child-process contract explicit.
+export FRAPPE_SOCKETIO_UPSTREAM NGINX_HTTP2_LISTEN_OPTION NGINX_HTTP2_DIRECTIVE
+
 # SUBSTITUTION VARIABLE SETS
 
 # This shared snippet currently contains only ordinary Nginx variables.
@@ -419,8 +461,9 @@ ${FRAPPE_BENCH_PATH}
 ${FRAPPE_SITE_NAME}
 ${FRAPPE_WEB_HOST}
 ${FRAPPE_WEB_PORT}
-${FRAPPE_SOCKETIO_HOST}
-${FRAPPE_SOCKETIO_PORT}
+${FRAPPE_SOCKETIO_UPSTREAM}
+${NGINX_HTTP2_LISTEN_OPTION}
+${NGINX_HTTP2_DIRECTIVE}
 
 ${MAPS_OBJECT_STORAGE_BUCKET}
 ${LIVEKIT_PORT}
