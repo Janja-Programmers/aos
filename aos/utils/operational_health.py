@@ -35,7 +35,7 @@ from aos.utils.health_model import (
 	health_check,
 	summarize_health,
 )
-from aos.utils.production_config import validate_production_config
+from aos.utils.production_config import validate_production_config, validate_staging_config
 
 DEFAULT_EXTERNAL_TIMEOUT_SECONDS = 3
 MAX_EXTERNAL_TIMEOUT_SECONDS = 10
@@ -517,7 +517,9 @@ def _production_config_check(
 	*, env: Mapping[str, Any] | None, site_config: Mapping[str, Any] | None
 ) -> dict[str, Any]:
 	try:
-		report = validate_production_config(env=env, site_config=site_config)
+		environment = _env(env, "AOS_ENVIRONMENT", "").lower()
+		validator = validate_staging_config if environment == "staging" else validate_production_config
+		report = validator(env=env, site_config=site_config)
 		summary = dict(report.get("summary") or {})
 		ready = bool(report.get("ready"))
 		return health_check(
