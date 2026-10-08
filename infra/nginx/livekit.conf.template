@@ -16,9 +16,9 @@ server {
 }
 
 server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    http2 on;
+    listen 443 ssl${NGINX_HTTP2_LISTEN_OPTION};
+    listen [::]:443 ssl${NGINX_HTTP2_LISTEN_OPTION};
+    ${NGINX_HTTP2_DIRECTIVE}
     server_name ${AOS_LIVEKIT_DOMAIN};
 
     ssl_certificate /etc/letsencrypt/live/${AOS_LIVEKIT_DOMAIN}/fullchain.pem;
