@@ -440,6 +440,10 @@ sudo install \
   "${LETSENCRYPT_CHALLENGE_DIR}"
 
 
+# These values are consumed by envsubst through SITE_SUBSTITUTION_VARIABLES.
+# Export them for envsubst and to make the child-process contract explicit.
+export FRAPPE_SOCKETIO_UPSTREAM NGINX_HTTP2_LISTEN_OPTION NGINX_HTTP2_DIRECTIVE
+
 # SUBSTITUTION VARIABLE SETS
 
 # This shared snippet currently contains only ordinary Nginx variables.
