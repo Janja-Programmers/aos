@@ -7,7 +7,7 @@ Production uses `BACKUP_LOCAL_RETENTION_MODE=encrypted-artifact` and `BACKUP_ENC
 The backup process:
 
 1. Validates encryption configuration before sensitive data is created.
-2. Creates database, public files, private files, configured volume, map, and configuration snapshots inside a mode-0700 temporary workspace.
+2. Invokes pinned Frappe `bench backup --backup-path` to write database, public-file and private-file archives **directly into** its unique mode-0700 temporary workspace, then captures configured volume, map and configuration snapshots. It never scans or creates backup artifacts in the site's persistent `private/backups` directory.
 3. Verifies the plaintext set and representative archive structure.
 4. Encrypts the complete verified set with `age`.
 5. Verifies the encrypted artifact SHA-256 and metadata.

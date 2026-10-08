@@ -20,6 +20,9 @@ def _layout(tmp_path: Path, *, fail_age: bool = False) -> tuple[Path, Path]:
 	site = "site.test"
 	backup_source = bench_root / "sites" / site / "private" / "backups"
 	backup_source.mkdir(parents=True)
+	# Pre-existing native backups must remain untouched and must never be swept
+	# into the new encrypted archive based on file modification timestamps.
+	(backup_source / "previous-database.sql.gz").write_bytes(b"PREVIOUS-BACKUP-NOT-CURRENT")
 	(bench_root / "sites" / site / "site_config.json").write_text("{}", encoding="utf-8")
 	backup_root = tmp_path / "backups"
 	backup_root.mkdir()
@@ -27,8 +30,10 @@ def _layout(tmp_path: Path, *, fail_age: bool = False) -> tuple[Path, Path]:
 	_write_executable(
 		bin_dir / "bench",
 		r"""#!/usr/bin/env python3
-import io, os, pathlib, tarfile
-root=pathlib.Path(os.environ["FRAPPE_BENCH_ROOT"])/"sites"/os.environ["FRAPPE_SITE"]/"private"/"backups"
+import io, os, pathlib, sys, tarfile
+args=sys.argv[1:]
+assert "--backup-path" in args, "Native Frappe output must be explicitly scoped"
+root=pathlib.Path(args[args.index("--backup-path")+1])
 root.mkdir(parents=True, exist_ok=True)
 (root/"x-database.sql.gz").write_bytes(b"database-sensitive-content")
 for name, member, content in [
@@ -105,9 +110,24 @@ def _run(tmp_path: Path, *, fail_age: bool = False) -> tuple[subprocess.Complete
 def test_production_retains_only_verified_encrypted_artifact(tmp_path: Path):
 	result, backup_root = _run(tmp_path)
 	assert result.returncode == 0, result.stdout + result.stderr
+	original = (
+		tmp_path / "bench" / "sites" / "site.test" / "private" / "backups"
+	)
+	assert sorted(path.name for path in original.iterdir()) == ["previous-database.sql.gz"]
+	assert (original / "previous-database.sql.gz").read_bytes() == b"PREVIOUS-BACKUP-NOT-CURRENT"
 	artifacts = list((backup_root / "encrypted").glob("*.tar.gz.age"))
 	assert len(artifacts) == 1
 	assert Path(str(artifacts[0]) + ".sha256").is_file()
+	# The fake age CLI prepends a fixed test header to the archive stream.
+	# Assert that only this run's native archives entered the encrypted bundle.
+	import io
+	import tarfile
+	with tarfile.open(fileobj=io.BytesIO(artifacts[0].read_bytes().split(b"\n", 1)[1]), mode="r:gz") as archive:
+		names = archive.getnames()
+	assert not any("previous-database.sql.gz" in name for name in names)
+	assert any("x-database.sql.gz" in name for name in names)
+	assert any("x-private-files.tgz" in name for name in names)
+	assert any("x-files.tgz" in name for name in names)
 	metadata = Path(str(artifacts[0]) + ".metadata.env").read_text(encoding="utf-8")
 	assert "PLAINTEXT_LOCAL_RETAINED=false" in metadata
 	assert "ENCRYPTED_ARTIFACT_VERIFIED=true" in metadata
@@ -123,3 +143,5 @@ def test_plaintext_workspace_is_cleaned_when_encryption_fails(tmp_path: Path):
 	work_root = backup_root / ".plaintext-work"
 	assert not work_root.exists() or not list(work_root.iterdir())
 	assert not list((backup_root / "encrypted").glob("*.tar.gz.age"))
+	original = tmp_path / "bench" / "sites" / "site.test" / "private" / "backups"
+	assert sorted(path.name for path in original.iterdir()) == ["previous-database.sql.gz"]
