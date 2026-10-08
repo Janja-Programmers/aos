@@ -192,6 +192,24 @@ class TestOperationalHealth(FrappeTestCase):
         self.assertIn("http://127.0.0.1:7880/", requested)
         self.assertNotIn("https://live.africaonlinestores.example-prod.com/", requested)
 
+    def test_operational_health_uses_staging_validator_for_staging_environment(self):
+        env = self._valid_env()
+        env["AOS_ENVIRONMENT"] = "staging"
+        with (
+            patch("aos.utils.operational_health.frappe.cache", return_value=_FakeCache()),
+            patch("aos.utils.operational_health.os.path.exists", return_value=True),
+        ):
+            report = self._validate_operational(
+                env=env,
+                site_config=self._valid_site_config(),
+                http_get=self._healthy_get,
+                storage_factory=_FakeStorage,
+            )
+
+        config = next(check for check in report["checks"] if check["name"] == "production_config")
+        self.assertEqual(config["status"], "healthy")
+        self.assertEqual(config["details"]["errors"], 0)
+
     def test_operational_health_all_services_ready_and_redacted(self):
         env = self._valid_env()
         with (
