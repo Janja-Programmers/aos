@@ -12,7 +12,7 @@ class TestNginxWebAcmeContract(unittest.TestCase):
         self.assertIn("location ^~ /.well-known/acme-challenge/", config)
         self.assertIn("root /var/www/letsencrypt;", config)
         self.assertIn("try_files $uri =404;", config)
-        self.assertLess(config.index("location ^~ /.well-known/acme-challenge/"), config.index("server {", 9))
+        self.assertLess(config.index("location ^~ /.well-known/acme-challenge/"), config.index("\nserver {", config.index("location ^~ /.well-known/acme-challenge/")))
         self.assertIn("listen 443 ssl${NGINX_HTTP2_LISTEN_OPTION};", config)
         self.assertIn("listen [::]:443 ssl${NGINX_HTTP2_LISTEN_OPTION};", config)
         self.assertIn("proxy_pass http://127.0.0.1:3000;", config)
