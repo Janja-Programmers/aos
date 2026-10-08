@@ -831,7 +831,7 @@ def reconcile_exhausted_dispatches(
                     outbox,
                     now=current,
                     outcome=state,
-                    error="DISPATCH_BUDGET_EXHAUSTED_UNRESOLVED",
+                    error="Dispatch budget exhausted; companion evidence unresolved.",
                     companion_generation=generation,
                 )
             _save_outbox(outbox)
