@@ -19,6 +19,12 @@ class TestMigrationPreflight(FrappeTestCase):
                 return [[1]]
             if "sum(data_free)" in normalized:
                 return [[0]]
+            if normalized == "select @@performance_schema":
+                return [[1]]
+            if "performance_schema.setup_instruments" in normalized:
+                return [["YES"]]
+            if normalized == "show global status like 'performance_schema_metadata_lock_lost'":
+                return [["Performance_schema_metadata_lock_lost", "0"]]
             if "innodb_trx" in normalized or "metadata_locks" in normalized:
                 return [[0]]
             if "tab aos transactional outbox" in normalized or "tabaos transactional outbox" in normalized:
@@ -56,6 +62,32 @@ class TestMigrationPreflight(FrappeTestCase):
         self.assertIn("backup_readiness", report["warnings"])
         backup = next(item for item in report["checks"] if item["name"] == "backup_readiness")
         self.assertEqual(backup["details"]["unhealthy_check_count"], 1)
+
+
+    def test_metadata_lock_instrumentation_is_required(self):
+        scenarios = {
+            "schema_off": [[[0]], [["YES"]], [["Performance_schema_metadata_lock_lost", "0"]]],
+            "instrument_off": [[[1]], [["NO"]], [["Performance_schema_metadata_lock_lost", "0"]]],
+            "instrument_missing": [[[1]], [], [["Performance_schema_metadata_lock_lost", "0"]]],
+            "counter_missing": [[[1]], [["YES"]], []],
+            "counter_lost": [[[1]], [["YES"]], [["Performance_schema_metadata_lock_lost", "2"]]],
+            "counter_invalid": [[[1]], [["YES"]], [["Performance_schema_metadata_lock_lost", "not-number"]]],
+            "healthy": [[[1]], [["YES"]], [["Performance_schema_metadata_lock_lost", "0"]]],
+        }
+        for scenario, results in scenarios.items():
+            with self.subTest(scenario=scenario):
+                with patch.object(frappe.db, "sql", side_effect=results):
+                    ready, _message, _details = migration_preflight._metadata_lock_instrumentation_check()
+                self.assertEqual(ready, scenario == "healthy")
+        with patch.object(frappe.db, "sql", side_effect=PermissionError("denied")):
+            with self.assertRaises(PermissionError):
+                migration_preflight._metadata_lock_instrumentation_check()
+
+    def test_metadata_lock_instrumentation_failure_blocks_preflight(self):
+        report = self._run(environment="staging", backup_ready=True)
+        self.assertTrue(report["ready"], report)
+        check = next(item for item in report["checks"] if item["name"] == "metadata_lock_instrumentation")
+        self.assertTrue(check["ready"])
 
     def test_patch_inventory_uses_pinned_frappe_api_and_excludes_applied_patches(self):
         with (
