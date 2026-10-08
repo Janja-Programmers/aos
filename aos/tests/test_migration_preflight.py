@@ -65,11 +65,6 @@ class TestMigrationPreflight(FrappeTestCase):
 
 
     def test_metadata_lock_instrumentation_is_required(self):
-        valid = [
-            ("SELECT @@performance_schema", [[1]]),
-            ("performance_schema.setup_instruments", [["YES"]]),
-            ("SHOW GLOBAL STATUS", [["Performance_schema_metadata_lock_lost", "0"]]),
-        ]
         scenarios = {
             "schema_off": [[[0]], [["YES"]], [["Performance_schema_metadata_lock_lost", "0"]]],
             "instrument_off": [[[1]], [["NO"]], [["Performance_schema_metadata_lock_lost", "0"]]],
