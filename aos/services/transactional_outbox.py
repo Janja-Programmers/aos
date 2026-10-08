@@ -818,6 +818,7 @@ def reconcile_exhausted_dispatches(
                 result["concurrent_updates_skipped"] += 1
                 continue
             state = status_data["state"]
+            unresolved_reason = "Dispatch budget exhausted; companion evidence unresolved."
             generation = max(0, int(status_data.get("dispatch_generation") or 0))
             outbox.last_reconciliation_at = current
             outbox.companion_work_state = status_data.get("work_state") or state
@@ -831,7 +832,7 @@ def reconcile_exhausted_dispatches(
                     outbox,
                     now=current,
                     outcome=state,
-                    error="Dispatch budget exhausted; companion evidence unresolved.",
+                    error=unresolved_reason,
                     companion_generation=generation,
                 )
             _save_outbox(outbox)
