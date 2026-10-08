@@ -179,7 +179,7 @@ mkdir -p \
 
 # Generate temporary validation-only certificates.
 # These certificates are not deployment credentials.
-for domain in api.invalid live.invalid maps.invalid files.invalid; do
+for domain in api.invalid web.invalid live.invalid maps.invalid files.invalid; do
     mkdir -p "${nginx_root}/certs/${domain}"
 
     openssl req \
