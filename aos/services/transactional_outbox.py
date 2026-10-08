@@ -769,6 +769,84 @@ def recover_overdue_published(
 		"concurrent_updates_skipped": concurrent_updates_skipped,
 	}
 
+def reconcile_exhausted_dispatches(
+    *, now=None, limit: int = 100, outbox_name: str | None = None
+) -> dict[str, int]:
+    """Advance due reconciliation when work dispatch budget is already exhausted.
+
+    A status observation never reauthorizes dispatch. Late signed callbacks can
+    still finalize Manual Review rows using their existing generation/token.
+    """
+    current = now or now_datetime()
+    limit = max(1, min(int(limit or 100), 1000))
+    filters: dict[str, Any] = {
+        "status": "Reconciliation Pending",
+        "next_attempt_at": ("<=", current),
+    }
+    if outbox_name:
+        filters["name"] = _clean(outbox_name, limit=140)
+    candidates = frappe.get_all(
+        OUTBOX_DOCTYPE,
+        filters=filters,
+        fields=["name"],
+        order_by="next_attempt_at asc, name asc",
+        limit=limit,
+    )
+    result = {"checked": 0, "pending": 0, "manual_review": 0, "completed": 0, "concurrent_updates_skipped": 0}
+    for candidate in candidates:
+        outbox = frappe.get_doc(OUTBOX_DOCTYPE, candidate.name)
+        if (
+            outbox.status != "Reconciliation Pending"
+            or int(outbox.attempt_count or 0) < int(outbox.max_attempts or 1)
+            or (outbox.next_attempt_at and outbox.next_attempt_at > current)
+            or (outbox.claim_token and outbox.lease_expires_at and outbox.lease_expires_at >= current)
+        ):
+            continue
+        try:
+            status_data = query_companion_job_status(outbox)
+        except Exception:
+            status_data = {"state": "unknown", "dispatch_generation": 0}
+        try:
+            # A callback or publisher may have changed the document during HTTP.
+            outbox.reload()
+            if (
+                outbox.status != "Reconciliation Pending"
+                or int(outbox.attempt_count or 0) < int(outbox.max_attempts or 1)
+                or (outbox.next_attempt_at and outbox.next_attempt_at > current)
+                or (outbox.claim_token and outbox.lease_expires_at and outbox.lease_expires_at >= current)
+            ):
+                result["concurrent_updates_skipped"] += 1
+                continue
+            state = status_data["state"]
+            generation = max(0, int(status_data.get("dispatch_generation") or 0))
+            outbox.last_reconciliation_at = current
+            outbox.companion_work_state = status_data.get("work_state") or state
+            outbox.companion_callback_state = status_data.get("callback_state") or None
+            if state == "callback_complete" or (
+                state == "failed" and status_data.get("callback_state") == "complete"
+            ):
+                next_status = _repair_callback_completed_outbox(outbox, status_data, now=current)
+            else:
+                next_status = _schedule_reconciliation(
+                    outbox,
+                    now=current,
+                    outcome=state,
+                    error="DISPATCH_BUDGET_EXHAUSTED_UNRESOLVED",
+                    companion_generation=generation,
+                )
+            _save_outbox(outbox)
+            result["checked"] += 1
+            if next_status == "Manual Review":
+                result["manual_review"] += 1
+            elif next_status in {"Completed", "Completed With Failure"}:
+                result["completed"] += 1
+            else:
+                result["pending"] += 1
+        except (DoesNotExistError, TimestampMismatchError):
+            result["concurrent_updates_skipped"] += 1
+    return result
+
+
 def outbox_dispatch_context(*, job_doctype: str, job_name: str) -> dict[str, Any]:
 	"""Return callback correlation for the currently leased private dispatch."""
 
@@ -980,6 +1058,7 @@ def publish_outbox_records(
 	owner = _publisher_owner()
 	recovered = recover_stale_claims(outbox_name=outbox_name, limit=limit)
 	callback_recovery = recover_overdue_published(limit=limit, outbox_name=outbox_name)
+	exhausted_recovery = reconcile_exhausted_dispatches(limit=limit, outbox_name=outbox_name)
 	frappe.db.commit()
 	claimed = 0
 	dispatched = 0
@@ -1017,6 +1096,8 @@ def publish_outbox_records(
 
 	return {
 		"recovered_stale_claims": recovered,
+		"reconciled_exhausted_dispatches": exhausted_recovery["checked"],
+		"exhausted_dispatch_manual_reviews": exhausted_recovery["manual_review"],
 		"recovered_overdue_callbacks": callback_recovery["requeued"],
 		"callback_timeout_dead_lettered": callback_recovery["dead_lettered"],
 		"claimed": claimed,
