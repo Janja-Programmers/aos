@@ -11,6 +11,7 @@ TLS_SOURCE="${ROOT}/infra/nginx/snippets/ssl.conf"
 TLS_TARGET="/etc/nginx/snippets/aos-ssl.conf"
 
 [[ -f "$ENV_FILE" && -f "$TEMPLATE" && -f "$TLS_SOURCE" ]] || { echo "Required input file missing" >&2; exit 1; }
+# shellcheck disable=SC1091
 source "${ROOT}/infra/scripts/load-dotenv.sh"
 load_dotenv_file "$ENV_FILE"
 AOS_WEB_DOMAIN="${AOS_WEB_DOMAIN:-aos-web-staging.duckdns.org}"
@@ -26,7 +27,7 @@ sudo test -f "$TARGET" || { echo "Missing existing web configuration" >&2; exit 
 [[ "$(sudo readlink -f "$ENABLED")" == "$TARGET" ]] || { echo "Unexpected enabled web configuration" >&2; exit 1; }
 sudo test -f "$TLS_TARGET" || { echo "Missing installed AOS TLS snippet" >&2; exit 1; }
 
-VERSION="$(nginx -v 2>&1 | sed -nE 's|.*nginx/([0-9]+)\\.([0-9]+)\\.([0-9]+).*|\\1 \\2 \\3|p')"
+VERSION="$(nginx -v 2>&1 | sed -nE 's|.*nginx/([0-9]+)\.([0-9]+)\.([0-9]+).*|\1 \2 \3|p')"
 [[ "$VERSION" =~ ^[0-9]+[[:space:]][0-9]+[[:space:]][0-9]+$ ]] || { echo "Unknown Nginx version" >&2; exit 1; }
 read -r MAJOR MINOR PATCH <<< "$VERSION"
 if (( MAJOR > 1 || (MAJOR == 1 && (MINOR > 25 || (MINOR == 25 && PATCH >= 1))) )); then
@@ -41,7 +42,6 @@ export AOS_WEB_DOMAIN NGINX_HTTP2_LISTEN_OPTION NGINX_HTTP2_DIRECTIVE
 TMP="$(mktemp)"
 BACKUP_DIR="$(sudo mktemp -d /etc/nginx/aos-web-backup.XXXXXXXX)"
 RESTORE_NEEDED=false
-RELOADED=false
 cleanup() {
     rc=$?
     if [[ "$RESTORE_NEEDED" == true ]]; then
@@ -58,7 +58,7 @@ sudo cp -p "$TARGET" "$BACKUP_DIR/web"
 sudo cp -p "$TLS_TARGET" "$BACKUP_DIR/tls"
 
 envsubst '${AOS_WEB_DOMAIN} ${NGINX_HTTP2_LISTEN_OPTION} ${NGINX_HTTP2_DIRECTIVE}' < "$TEMPLATE" > "$TMP"
-if grep -qE '\$\\{(AOS|NGINX)_[A-Z0-9_]+\\}' "$TMP"; then
+if grep -qE '\$\{(AOS|NGINX)_[A-Z0-9_]+\}' "$TMP"; then
     echo "Unresolved substitution in rendered Nginx template" >&2
     exit 1
 fi
@@ -68,7 +68,6 @@ sudo install -m 0644 "$TLS_SOURCE" "$TLS_TARGET"
 sudo nginx -t
 sudo systemctl reload nginx
 RESTORE_NEEDED=false
-RELOADED=true
 echo "PASS: Nginx web host and TLS snippet installed."
 echo "Backup retained at $BACKUP_DIR (root-owned)."
 echo "Next: test all endpoints and challenge paths before Certbot reconfiguration."
