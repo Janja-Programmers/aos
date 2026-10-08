@@ -102,6 +102,34 @@ def _transaction_check() -> tuple[bool, str, dict[str, Any]]:
     }
 
 
+def _metadata_lock_instrumentation_check() -> tuple[bool, str, dict[str, Any]]:
+    """Require observable metadata-lock instrumentation, not an empty disabled table."""
+    enabled = frappe.db.sql("SELECT @@performance_schema")
+    if not enabled or int(enabled[0][0] or 0) != 1:
+        return False, "Database Performance Schema is disabled.", {}
+
+    instruments = frappe.db.sql(
+        """
+        SELECT ENABLED
+        FROM performance_schema.setup_instruments
+        WHERE NAME = 'wait/lock/metadata/sql/mdl'
+        """
+    )
+    if len(instruments or []) != 1 or str(instruments[0][0]).upper() != "YES":
+        return False, "Metadata-lock instrumentation is not enabled.", {}
+
+    lost = frappe.db.sql("SHOW GLOBAL STATUS LIKE 'Performance_schema_metadata_lock_lost'")
+    if len(lost or []) != 1 or str(lost[0][0]).lower() != "performance_schema_metadata_lock_lost":
+        return False, "Metadata-lock instrumentation loss counter is unavailable.", {}
+    try:
+        lost_count = int(lost[0][1])
+    except (TypeError, ValueError, IndexError):
+        return False, "Metadata-lock instrumentation loss counter is invalid.", {}
+    if lost_count != 0:
+        return False, "Metadata-lock instrumentation has lost events.", {"lost_metadata_lock_events": lost_count}
+    return True, "Metadata-lock instrumentation is enabled with no lost events.", {"lost_metadata_lock_events": 0}
+
+
 def _metadata_lock_check() -> tuple[bool, str, dict[str, Any]]:
     rows = frappe.db.sql(
         """
@@ -218,6 +246,7 @@ def validate_migration_preflight() -> dict[str, Any]:
     _guard(checks, "filesystem_headroom", "error", _disk_check)
     _guard(checks, "database_space_metadata", "warning", _database_space_check)
     _guard(checks, "long_running_transactions", "error", _transaction_check)
+    _guard(checks, "metadata_lock_instrumentation", "error", _metadata_lock_instrumentation_check)
     _guard(checks, "pending_metadata_locks", "error", _metadata_lock_check)
 
     def backup_check() -> tuple[bool, str, dict[str, Any]]:
