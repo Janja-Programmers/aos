@@ -122,6 +122,18 @@ Reconciliation behavior:
 
 `Manual Review` is nonclaimable but remains callback-resolvable. A valid late signed callback can still complete it atomically.
 
+### Exhausted dispatch budget
+
+The scheduled publisher also reconciles due `Reconciliation Pending` rows whose
+`attempt_count >= max_attempts`. These rows are not eligible for work redispatch.
+A signed companion status observation advances the independent, bounded
+reconciliation budget; verified callback-complete evidence may repair the
+outbox. Otherwise unresolved rows ultimately enter callback-resolvable
+`Manual Review`, retaining their existing generation/token so a valid late
+callback can still complete atomically. An `absent` companion status is not
+proof that earlier work never ran. Operators must resolve the linked durable
+job separately using its authoritative lifecycle.
+
 ## Generation convergence
 
 Frappe stores `companion_authoritative_generation` and never proposes below that floor. Reconciliation has its own attempt count, maximum, next time, and last outcome. It cannot repeatedly propose the same stale generation forever.

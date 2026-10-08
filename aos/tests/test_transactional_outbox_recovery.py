@@ -23,6 +23,7 @@ from aos.services.transactional_outbox import (
     mark_outbox_callback,
     publish_outbox_records,
     recover_overdue_published,
+    reconcile_exhausted_dispatches,
     recover_stale_claims,
     validate_callback_idempotency,
 )
@@ -138,6 +139,57 @@ class TestTransactionalOutboxRecovery(FrappeTestCase):
         self.assertEqual(result["concurrent_updates_skipped"], 1)
         outbox.reload()
         self.assertEqual(outbox.status, "Published")
+
+    def test_exhausted_dispatch_reconciles_without_new_work(self):
+        _job, outbox = self._job_and_outbox(max_attempts=1)
+        outbox.status = "Reconciliation Pending"
+        outbox.attempt_count = 1
+        outbox.reconciliation_attempt_count = 0
+        outbox.reconciliation_max_attempts = 2
+        outbox.next_attempt_at = add_to_date(now_datetime(), seconds=-120, as_datetime=True)
+        outbox.dispatch_generation = 1
+        outbox.current_dispatch_token = uuid.uuid4().hex
+        outbox.save(ignore_permissions=True)
+        stable_token = outbox.current_dispatch_token
+
+        with patch(
+            "aos.services.transactional_outbox.query_companion_job_status",
+            return_value={"state": "absent", "dispatch_generation": 0},
+        ), patch("aos.services.transactional_outbox.frappe.enqueue") as enqueue:
+            first = reconcile_exhausted_dispatches(now=now_datetime(), outbox_name=outbox.name)
+            outbox.reload()
+            self.assertEqual(first["pending"], 1)
+            self.assertEqual(outbox.reconciliation_attempt_count, 1)
+            self.assertEqual(outbox.attempt_count, 1)
+            self.assertEqual(outbox.current_dispatch_token, stable_token)
+            second = reconcile_exhausted_dispatches(now=outbox.next_attempt_at, outbox_name=outbox.name)
+            outbox.reload()
+            self.assertEqual(second["manual_review"], 1)
+            self.assertEqual(outbox.status, "Manual Review")
+            self.assertEqual(outbox.current_dispatch_token, stable_token)
+            self.assertEqual(outbox.attempt_count, 1)
+            enqueue.assert_not_called()
+
+    def test_exhausted_reconciliation_skips_when_callback_changes_state(self):
+        _job, outbox = self._job_and_outbox(max_attempts=1)
+        outbox.status = "Reconciliation Pending"
+        outbox.attempt_count = 1
+        outbox.next_attempt_at = add_to_date(now_datetime(), seconds=-60, as_datetime=True)
+        outbox.save(ignore_permissions=True)
+
+        def callback_during_query(_row):
+            frappe.db.set_value(OUTBOX_DOCTYPE, outbox.name, "status", "Completed")
+            return {"state": "absent"}
+
+        with patch(
+            "aos.services.transactional_outbox.query_companion_job_status",
+            side_effect=callback_during_query,
+        ):
+            outcome = reconcile_exhausted_dispatches(now=now_datetime(), outbox_name=outbox.name)
+        self.assertEqual(outcome["checked"], 0)
+        self.assertEqual(outcome["concurrent_updates_skipped"], 1)
+        outbox.reload()
+        self.assertEqual(outbox.status, "Completed")
 
     def test_dispatch_uncertain_reuses_proposed_generation_and_token(self):
         _job, outbox = self._job_and_outbox(max_attempts=4)
