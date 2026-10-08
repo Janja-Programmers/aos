@@ -33,7 +33,7 @@ heading = "[program:frappe-bench-node-socketio]"
 if text.count(heading) != 1:
     raise SystemExit("Expected exactly one Socket.IO Supervisor program")
 before, remainder = text.split(heading, 1)
-match = re.search(r"(?m)^\\[", remainder)
+match = re.search(r"(?m)^\[", remainder)
 body = remainder[:match.start()] if match else remainder
 suffix = remainder[match.start():] if match else ""
 lines = body.splitlines(keepends=True)
